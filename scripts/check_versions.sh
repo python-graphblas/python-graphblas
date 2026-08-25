@@ -8,14 +8,14 @@
 # also update these version numbers to match the latest versions we currently test.
 conda search 'flake8-bugbear[channel=conda-forge]>=25.11.29'
 conda search 'flake8-simplify[channel=conda-forge]>=0.30.0'
-conda search 'numpy[channel=conda-forge]>=2.4'
+conda search 'numpy[channel=conda-forge]>=2.5'
 conda search 'pandas[channel=conda-forge]>=3.0'
-conda search 'scipy[channel=conda-forge]>=1.17'
+conda search 'scipy[channel=conda-forge]>=1.18'
 conda search 'networkx[channel=conda-forge]>=3.6'
-conda search 'awkward[channel=conda-forge]>=2.11'
+conda search 'awkward[channel=conda-forge]>=2.13'
 conda search 'sparse[channel=conda-forge]>=0.15'
 # fast_matrix_market is deprecated (no longer maintained; last supported Python is 3.12)
-conda search 'numba[channel=conda-forge]>=0.64'
+conda search 'numba[channel=conda-forge]>=0.67'
 conda search 'pyyaml[channel=conda-forge]>=6.0'
 conda search 'python-suitesparse-graphblas[channel=conda-forge]>=10.5.0'
 # conda search 'python[channel=conda-forge]>=3.11 *pypy*'
