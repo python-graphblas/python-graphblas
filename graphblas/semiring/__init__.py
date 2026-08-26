@@ -74,7 +74,9 @@ def __getattr__(key):
             f"module {__name__!r} unable to compile UDF for {key!r}; "
             "install numba for UDF support"
         )
-    raise AttributeError(f"module {__name__!r} has no attribute {key!r}")
+    from ..core.utils import _module_attr_error
+
+    raise _module_attr_error(__name__, key, __dir__())
 
 
 from ..core import operator  # noqa: E402 isort:skip

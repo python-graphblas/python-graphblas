@@ -33,6 +33,23 @@ def wrapdoc(func_with_doc):
     return inner
 
 
+def _module_attr_error(module_name, key, names):
+    """Build the AttributeError raised by an operator namespace's ``__getattr__``.
+
+    ``names`` should be the module's ``__dir__()`` so lazily-registered operators
+    are offered as "did you mean" suggestions without forcing them to build.
+    """
+    import difflib
+
+    msg = f"module {module_name!r} has no attribute {key!r}"
+    candidates = [name for name in names if not name.startswith("_")]
+    matches = difflib.get_close_matches(key, candidates, n=3)
+    if matches:
+        hint = " or ".join(repr(match) for match in matches)
+        msg = f"{msg}. Did you mean {hint}?"
+    return AttributeError(msg)
+
+
 # Include most common types (even mistakes)
 _output_types = {
     int: int,
