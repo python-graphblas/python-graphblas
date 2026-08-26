@@ -85,11 +85,15 @@ PYYAML_VERSIONS = {
     "3.14": ["6.0", ""],
 }
 
+# sparse is noarch with no numpy ceiling, so only its Python floors matter:
+# 0.16/0.17 declare >=3.10 and 0.18/0.19 declare >=3.11. On py3.13/3.14 the
+# pools start at 0.16 because 0.14/0.15 predate those Pythons (the old "NA"
+# here was written in the 0.15 era, when numba could not run there at all).
 SPARSE_VERSIONS = {
-    "3.11": ["0.14", "0.15", ""],
-    "3.12": ["0.14", "0.15", ""],
-    "3.13": "NA",
-    "3.14": "NA",
+    "3.11": ["0.14", "0.15", "0.16", "0.17", "0.18", "0.19", ""],
+    "3.12": ["0.14", "0.15", "0.16", "0.17", "0.18", "0.19", ""],
+    "3.13": ["0.16", "0.17", "0.18", "0.19", ""],
+    "3.14": ["0.16", "0.17", "0.18", "0.19", ""],
 }
 
 # PSG versions to pair with numpy 1.x (only reachable on py3.11/py3.12, since
@@ -316,10 +320,8 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
         v["numba"] = random.choice(["0.67", ""])
 
     # --- sparse ---
-
-    # sparse doesn't support Python 3.13+
-    if pyver in ("3.13", "3.14"):
-        v["sparse"] = "NA"
+    # No rules needed: the per-Python pools already respect sparse's Python
+    # floors, and the workflow skips sparse whenever numba is skipped or NA.
 
 
 # ---------------------------------------------------------------------------
@@ -605,9 +607,9 @@ def validate(v, pyver):
     if _ver(v["numpy"]) >= (2, 5) and v["numba"] not in ("", "NA") and _ver(v["numba"]) < (0, 67):
         errors.append(f"numba {v['numba']} requires numpy <2.5, got {v['numpy'] or 'latest'}")
 
-    # sparse Python availability
-    if pyver in ("3.13", "3.14") and v["sparse"] != "NA":
-        errors.append(f"sparse doesn't support Python {pyver}")
+    # sparse Python availability: 0.14/0.15 predate py3.13
+    if pyver in ("3.13", "3.14") and v["sparse"] not in ("", "NA") and _ver(v["sparse"]) < (0, 16):
+        errors.append(f"sparse {v['sparse']} doesn't support Python {pyver}")
 
     return errors
 
