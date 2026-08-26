@@ -2101,6 +2101,207 @@ def test_udt_multidim_array_keeps_shape_in_udf():
 
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
+def test_udt_array_udf_shape_errors():
+    """Array-UDT UDFs that can't fill the element are rejected at registration.
+
+    Numba's ``Array`` type records ``ndim`` but not extents, so neither case
+    below is a type error. Both used to reach the cfunc, where the shape
+    mismatch raises in a context that swallows the exception, handing the
+    caller an uninitialized element and no error.
+    """
+    # Shapes unique to this test: ``register_anonymous`` caches by dtype and
+    # freezes the JIT C name at first registration, so sharing a shape with
+    # another test makes both order-dependent.
+    udt9 = dtypes.register_anonymous(np.dtype((np.float64, (9,))), "_ShapeErr9")
+    udt10 = dtypes.register_anonymous(np.dtype((np.float64, (10,))), "_ShapeErr10")
+
+    def _truncate(x):  # pragma: no cover (numba)
+        return x[:2]
+
+    op = UnaryOp.register_anonymous(_truncate, "_shape_err_trunc", is_udt=True)
+    with pytest.raises(UdfParseError, match=r"shape \(2,\) when run on sample values"):
+        op[udt9]
+
+    # Two array UDTs sharing a base dtype and rank are indistinguishable once a
+    # UDF builds its result, so refuse to guess which one it meant.
+    def _built(x, y):  # pragma: no cover (numba)
+        return y + 0.0
+
+    op2 = BinaryOp.register_anonymous(_built, "_shape_err_ambiguous", is_udt=True)
+    with pytest.raises(UdfParseError, match="matches more than one input array UDT"):
+        op2[udt9, udt10]
+
+    # Ambiguity is decided on the UDTs, not their Numba shapes: these two are
+    # separate DataTypes with separate GraphBLAS handles, but Numba collapses
+    # the layered dtype to the flat one's ``nestedarray(float64, (2, 3))``.
+    flat = dtypes.register_anonymous(np.dtype((np.float64, (3, 4))), "_ShapeErrFlat")
+    layered = dtypes.register_anonymous(
+        np.dtype((np.dtype((np.float64, (4,))), (3,))), "_ShapeErrLayered"
+    )
+    assert flat.numba_type == layered.numba_type
+    with pytest.raises(UdfParseError, match="matches more than one input array UDT"):
+        op2[flat, layered]
+    assert op2[flat, flat].return_type is flat  # a same-type pair is not ambiguous
+
+    # An array UDF whose result matches no input names the mismatch rather
+    # than telling the user to return an array, which is what they did.
+    def _recast(x):  # pragma: no cover (numba)
+        return x.astype(np.float32)
+
+    op3 = UnaryOp.register_anonymous(_recast, "_shape_err_recast", is_udt=True)
+    with pytest.raises(UdfParseError, match="matches no input array UDT"):
+        op3[udt9]
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_record_array_leaf_shape_errors():
+    """A record UDF that under-fills an array-typed leaf is rejected at registration.
+
+    The wrapper slice-assigns array leaves, so a short return raises inside
+    the cfunc and abandons the write part-way: leaves after it keep whatever
+    SuiteSparse had in the buffer, scalar leaves included.
+    """
+    spec = np.dtype([("rl_vec", np.float64, (3,)), ("rl_tag", np.int64)], align=True)
+    udt = dtypes.register_anonymous(spec, "_RecLeafShape")
+
+    def _short(x, y):  # pragma: no cover (numba)
+        return (x["rl_vec"][:2], x["rl_tag"])
+
+    op = BinaryOp.register_anonymous(_short, "_rec_leaf_short", is_udt=True)
+    with pytest.raises(UdfParseError, match=r"shape \(2,\) for field .* holds \(3,\)"):
+        op[udt]
+
+    def _full(x, y):  # pragma: no cover (numba)
+        return (x["rl_vec"] + y["rl_vec"], x["rl_tag"] + y["rl_tag"])
+
+    op = BinaryOp.register_anonymous(_full, "_rec_leaf_full", is_udt=True)
+    v = Vector(udt, size=1)
+    v[0] = ([1.0, 2.0, 3.0], 7)
+    w = Vector(udt, size=1)
+    w[0] = ([4.0, 5.0, 6.0], 8)
+    got = v.ewise_mult(w, op).new()[0].new().value
+    np.testing.assert_array_equal(got["rl_vec"], [5.0, 7.0, 9.0])
+    assert got["rl_tag"] == 15
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_array_udf_broadcast_return():
+    """A return that broadcasts to the element fills it, and is not rejected.
+
+    The wrapper slice-assigns and numpy broadcasts on assignment, so a ``(1,)``
+    return legitimately fills every slot of a ``(6,)`` element. Requiring an
+    exact shape would refuse this, which works.
+    """
+    udt6 = dtypes.register_anonymous(np.dtype((np.float64, (6,))), "_BCast6")
+
+    def _fill(x):  # pragma: no cover (numba)
+        return x[:1] + 10.0
+
+    op1 = UnaryOp.register_anonymous(_fill, "_bcast_fill", is_udt=True)
+    assert op1[udt6].return_type is udt6
+    v = Vector(udt6, size=1)
+    v[0] = np.arange(1.0, 7.0)
+    np.testing.assert_array_equal(v.apply(op1).new()[0].new().value, [11.0] * 6)
+
+    # A row broadcast across a 2-D element: the same rule one rank up.
+    udt42 = dtypes.register_anonymous(np.dtype((np.float64, (4, 2))), "_BCast42")
+
+    def _fill_rows(x):  # pragma: no cover (numba)
+        return x[:1, :] + 100.0
+
+    op2 = UnaryOp.register_anonymous(_fill_rows, "_bcast_fill_rows", is_udt=True)
+    assert op2[udt42].return_type is udt42
+    v2 = Vector(udt42, size=1)
+    v2[0] = np.arange(8.0).reshape(4, 2)
+    np.testing.assert_array_equal(
+        v2.apply(op2).new()[0].new().value, np.tile([100.0, 101.0], (4, 1))
+    )
+
+    # The other side of the boundary: (2,) does not broadcast to (6,), Numba's
+    # slice-assign raises on it, and it stays rejected.
+    def _short(x):  # pragma: no cover (numba)
+        return x[:2] + 10.0
+
+    op3 = UnaryOp.register_anonymous(_short, "_bcast_short", is_udt=True)
+    with pytest.raises(UdfParseError, match=r"shape \(2,\) when run on sample values"):
+        op3[udt6]
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_record_leaf_broadcast_return():
+    """A broadcastable array leaf fills its field, and later leaves still land.
+
+    Same boundary as the array case, and
+    ``test_udt_record_array_leaf_shape_errors`` holds the rejecting side. The
+    scalar leaf is worth asserting because a leaf that raises in the cfunc
+    abandons the write, leaving every leaf after it as SuiteSparse had it.
+    """
+    spec = np.dtype([("bc_vec", np.float64, (11,)), ("bc_tag", np.int64)], align=True)
+    udt = dtypes.register_anonymous(spec, "_RecLeafBCast")
+
+    def _fill_leaf(x, y):  # pragma: no cover (numba)
+        return (x["bc_vec"][:1] + y["bc_vec"][:1], x["bc_tag"] + y["bc_tag"])
+
+    op1 = BinaryOp.register_anonymous(_fill_leaf, "_rec_leaf_bcast", is_udt=True)
+    v = Vector(udt, size=1)
+    v[0] = (np.arange(11.0), 7)
+    w = Vector(udt, size=1)
+    w[0] = (np.arange(11.0) + 1.0, 8)
+    got = v.ewise_mult(w, op1).new()[0].new().value
+    np.testing.assert_array_equal(got["bc_vec"], [1.0] * 11)
+    assert got["bc_tag"] == 15
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_broadcast_matches_numba_slice_assign():
+    """The shape check accepts exactly what the wrapper's slice-assign accepts.
+
+    The check turns a silent cfunc failure into a registration error, so a
+    shape it rejects that Numba would have assigned is a false rejection, and
+    one it accepts that Numba raises on is the failure it exists to catch. Pin
+    both directions against Numba itself, including the two ranks where
+    broadcasting alone gives the wrong answer: ``(1, 6)`` fills a ``(6,)``
+    destination because assignment drops leading ones, ``(6, 1)`` does not.
+    """
+    import numba
+
+    from graphblas.core.operator.base import _fits_by_broadcast
+
+    @numba.njit
+    def _assign(z, src):  # pragma: no cover (numba)
+        z[:] = src
+
+    for dst, src in [
+        ((6,), ()),
+        ((6,), (1,)),
+        ((6,), (6,)),
+        ((6,), (2,)),
+        ((6,), (12,)),
+        ((6,), (1, 6)),
+        ((6,), (6, 1)),
+        ((2, 3), (1, 3)),
+        ((2, 3), (2, 1)),
+        ((2, 3), (1, 1)),
+        ((2, 3), (3,)),
+        ((2, 3), (2, 3)),
+        ((2, 3), (6,)),
+        ((2, 3), (3, 2)),
+    ]:
+        try:
+            _assign(np.zeros(dst), np.ones(src))
+        except ValueError:
+            numba_assigns = False
+        else:
+            numba_assigns = True
+        assert _fits_by_broadcast(src, dst) is numba_assigns, (src, dst)
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
 def test_udt_record_array_field_roundtrip():
     """A record UDT with an array field writes exactly that field's extent.
 
