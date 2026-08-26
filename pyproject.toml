@@ -225,7 +225,7 @@ skip_empty = true
 exclude_lines = ["pragma: no cover", "raise AssertionError", "raise NotImplementedError"]
 
 [tool.codespell]
-ignore-words-list = "coo,ba"
+ignore-words-list = "bu,coo,ba"
 
 [tool.ruff]
 # https://github.com/charliermarsh/ruff/
@@ -386,6 +386,7 @@ ignore = [
 "graphblas/core/operator/base.py" = ["S102"] # exec is used for UDF
 "graphblas/core/operator/udt_utils.py" = ["S102"] # exec is used for UDT op codegen
 "graphblas/monoid/numpy.py" = ["PLW0108"] # lambda is needed for numba.njit
+"benchmarks/*.py" = ["T201", "B015", "B018"] # asv: bare exprs are the measurement; _verify prints
 "graphblas/core/ss/matrix.py" = [
   "NPY002",  # numba doesn't support rng generator yet
   "PLR1730",
