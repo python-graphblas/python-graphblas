@@ -212,9 +212,6 @@ filterwarnings = [
 [tool.coverage.run]
 branch = true
 source = ["graphblas"]
-omit = [
-  "graphblas/viz.py", # TODO: test and get coverage for viz.py
-]
 
 [tool.coverage.report]
 ignore_errors = false
