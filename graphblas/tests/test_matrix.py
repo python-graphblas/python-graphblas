@@ -4618,6 +4618,61 @@ def test_wrong_kind_mask_on_matrix_raises():
     assert A[0, [0, 1, 2]].new(input_mask=m.S) is not None
 
 
+def test_wrong_kind_mask_on_dup_and_full_assign():
+    # dup and whole-object update assign with `C(mask)[...] = A`, so a
+    # Vector mask used to reach GrB_Matrix_assign and leak the same raw
+    # cffi error as full-matrix operations.
+    A = Matrix(int, 3, 3)
+    A[0, 0] = 1
+    v = Vector(bool, 3)
+    v[0] = True
+    v[1] = True
+    err = "Unable to use Vector mask on Matrix assignment to a Matrix"
+    with pytest.raises(TypeError, match=err):
+        A.dup(mask=v.S)
+    C = Matrix(int, 3, 3)
+    with pytest.raises(TypeError, match=err):
+        C(v.S) << A
+    with pytest.raises(TypeError, match=err):
+        C(v.V) << A
+    with pytest.raises(TypeError, match=err):
+        C(~v.S) << A
+    with pytest.raises(TypeError, match=err):
+        C(v.S)[:, :] << A
+    with pytest.raises(TypeError, match=err):
+        C[:, :](v.S) << A
+    # A Matrix mask on these paths still works
+    assert A.dup(mask=A.S).isequal(A)
+    C(A.S) << A
+    assert C.isequal(A)
+    # A Vector mask on a Matrix row/column assignment is still valid
+    w = Vector(int, 3)
+    w[0] = 10
+    w[2] = 30
+    C = Matrix(int, 3, 3)
+    C(v.S)[0, :] << w
+    assert C.isequal(Matrix.from_coo([0], [0], [10], nrows=3, ncols=3))
+    C.clear()
+    C(v.S)[:, 0] << w
+    assert C.isequal(Matrix.from_coo([0], [0], [10], nrows=3, ncols=3))
+    C.clear()
+    C[0, :](v.S) << w
+    assert C.isequal(Matrix.from_coo([0], [0], [10], nrows=3, ncols=3))
+    C.clear()
+    C[:, 0](v.S) << w
+    assert C.isequal(Matrix.from_coo([0], [0], [10], nrows=3, ncols=3))
+
+    # The guard keys on dimension, not exact type, so a Vector subclass's
+    # mask is caught too instead of leaking the raw cffi error
+    class _VecSub(Vector):
+        pass
+
+    mv = _VecSub(bool, 3)
+    mv[0] = True
+    with pytest.raises(TypeError, match="Unable to use Vector mask"):
+        C(mv.S) << A
+
+
 def test_new_constructor_misuse_hint():
     # `.new()` resolves expressions; it is not a constructor or an instance
     # method on concrete objects. Both misuses should hint the right API.
