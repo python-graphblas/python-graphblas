@@ -519,7 +519,7 @@ class BinaryOp(OpBase):
     }
 
     @classmethod
-    def _build(cls, name, func, *, is_udt=False, anonymous=False):
+    def _build(cls, name, func, *, is_udt=False, anonymous=False, cache=False):
         if not isinstance(func, FunctionType):
             raise TypeError(f"UDF argument must be a function, not {type(func)}")
         if name is None:
@@ -532,7 +532,12 @@ class BinaryOp(OpBase):
         # setting it only on the wrapper leaves ``x // 0`` raising
         # ZeroDivisionError inside a cfunc, where Numba prints the traceback
         # and returns, handing GraphBLAS an element it never wrote.
-        binary_udf = numba.njit(func, error_model="numpy")
+        #
+        # ``cache`` is only True for the module-level built-in UDFs. Numba can
+        # only key a cache entry on a stable on-disk source, which lambdas and
+        # interactively defined functions do not have, so ops registered by
+        # users stay uncached.
+        binary_udf = numba.njit(func, error_model="numpy", cache=cache)
         new_type_obj = cls(name, func, anonymous=anonymous, is_udt=is_udt, numba_func=binary_udf)
         return_types = {}
         nt = numba.types
@@ -730,7 +735,9 @@ class BinaryOp(OpBase):
         return cls._build(name, func, anonymous=True, is_udt=is_udt)
 
     @classmethod
-    def register_new(cls, name, func, *, parameterized=False, is_udt=False, lazy=False):
+    def register_new(
+        cls, name, func, *, parameterized=False, is_udt=False, lazy=False, _cache=False
+    ):
         """Register a new BinaryOp and save it to ``graphblas.binary`` namespace.
 
         Parameters
@@ -797,13 +804,14 @@ class BinaryOp(OpBase):
                     "func": func,
                     "parameterized": parameterized,
                     "is_udt": is_udt,
+                    "_cache": _cache,
                 },
             )
         elif parameterized:
             binary_op = ParameterizedBinaryOp(name, func, is_udt=is_udt)
             setattr(module, funcname, binary_op)
         else:
-            binary_op = cls._build(name, func, is_udt=is_udt)
+            binary_op = cls._build(name, func, is_udt=is_udt, cache=_cache)
             setattr(module, funcname, binary_op)
         # Also save it to `graphblas.op` if not yet defined
         opmodule, funcname = cls._remove_nesting(name, module=op, modname="op", strict=False)
@@ -856,13 +864,20 @@ class BinaryOp(OpBase):
         if _supports_udfs:
             # Add floordiv
             # cdiv truncates towards 0, while floordiv truncates towards -inf
-            BinaryOp.register_new("floordiv", _floordiv, lazy=True)  # cast to integer
-            BinaryOp.register_new("rfloordiv", _rfloordiv, lazy=True)  # cast to integer
+            # cache=True persists the numba compilation of these built-in UDFs to
+            # disk so it is paid once per machine, not once per process. It shaves
+            # ~20% off a single op's first-touch build and ~45% when several are
+            # used (the per-process object-link and LLVM-init cost is not cached).
+            # Only module-level built-ins get cache=True (see _build).
+            BinaryOp.register_new("floordiv", _floordiv, lazy=True, _cache=True)  # cast to integer
+            BinaryOp.register_new(
+                "rfloordiv", _rfloordiv, lazy=True, _cache=True
+            )  # cast to integer
 
             # For aggregators
-            BinaryOp.register_new("absfirst", _absfirst, lazy=True)
-            BinaryOp.register_new("abssecond", _abssecond, lazy=True)
-            BinaryOp.register_new("rpow", _rpow, lazy=True)
+            BinaryOp.register_new("absfirst", _absfirst, lazy=True, _cache=True)
+            BinaryOp.register_new("abssecond", _abssecond, lazy=True, _cache=True)
+            BinaryOp.register_new("rpow", _rpow, lazy=True, _cache=True)
 
             # For algorithms
             binary._delayed["binom"] = (_register_binom, {})  # Lazy with custom creation
