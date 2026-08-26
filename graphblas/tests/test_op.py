@@ -1511,6 +1511,40 @@ def _udt_vectors(udt, xs, ys=None):
 
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
+def test_udt_mixed_record_dtypes_use_each_operands_own_dtype(udt_op_path):
+    """Two records sharing field names but not field types promote to the wider one.
+
+    ``_check_udt_pair`` matches record operands on field names only, so their
+    leaf dtypes can differ. Offering the return-type resolver just the left
+    operand left it no choice but that record, so an int record over a float
+    record came back as the int record: ``7 / 2.0`` landed as 3 and ``6 / 0.0``
+    as INT64_MAX. Swapping the operands changed the answer for the same pair.
+    """
+    int_udt = dtypes.register_anonymous(np.dtype([("mxd_a", np.int64)], align=True), "_MixedRecInt")
+    float_udt = dtypes.register_anonymous(
+        np.dtype([("mxd_a", np.float64)], align=True), "_MixedRecFloat"
+    )
+    v = Vector(int_udt, size=2)
+    v[0] = (6,)
+    v[1] = (7,)
+    w = Vector(float_udt, size=2)
+    w[0] = (0.0,)
+    w[1] = (2.0,)
+
+    result = v.ewise_mult(w, binary.truediv).new()
+    assert result.dtype == float_udt, "result should promote to the float record"
+    assert result[0].new().value["mxd_a"] == float("inf")
+    assert result[1].new().value["mxd_a"] == 3.5
+
+    # The same pair the other way round must agree, which it did not when the
+    # resolver only ever saw the left operand.
+    swapped = w.ewise_mult(v, binary.truediv).new()
+    assert swapped.dtype == float_udt
+    assert swapped[1].new().value["mxd_a"] == 2.0 / 7.0
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
 def test_udt_tuple_return_binaryop(record_udt):
     v, w = _record_pair(record_udt)
 
