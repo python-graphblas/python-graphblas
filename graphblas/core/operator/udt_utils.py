@@ -68,7 +68,12 @@ def _compile_codegen(src, *, func_name, source_label, extra_ns=None):
         filename,
     )
     code = compile(src, filename, "exec")
-    namespace = {"min": min, "max": max, "abs": abs}
+    # No ``min`` / ``max`` here on purpose. Binding Python's builtins is what
+    # gave UDT ``binary.min`` its order-dependent NaN handling, and no name in
+    # this namespace has the C99 ``fmin`` semantics SuiteSparse uses, so
+    # :func:`_minmax_expr` spells the comparison out instead. ``signbit`` is
+    # the one piece it needs that isn't syntax.
+    namespace = {"abs": abs, "signbit": np.signbit}
     if _has_numba:
         namespace["numba"] = numba
     if extra_ns:
@@ -534,13 +539,48 @@ if _has_numba:
         """Python-source builder; sibling of :func:`_c_expr_binary` for JIT C.
 
         ``x_dtype`` and ``y_dtype`` are each operand's numpy dtype at this
-        leaf, which ``_check_udt_pair`` allows to differ. None of the
-        expressions below vary on them; they are threaded here so that an
-        expression which does can tell the two sides apart.
+        leaf, which ``_check_udt_pair`` allows to differ. Only ``min`` and
+        ``max`` consult them, to tell a floating-point leaf from an integer
+        one; the rest are type-agnostic.
         """
         if py_op in _FUNC_BINARY_OPS:
-            return f"{py_op}({x_expr}, {y_expr})"
+            return _minmax_expr(py_op, x_expr, y_expr, x_dtype, y_dtype)
         return f"{x_expr} {py_op} {y_expr}"
+
+    def _minmax_expr(py_op, x_expr, y_expr, x_dtype, y_dtype):
+        """Return a Python expression for ``min`` / ``max`` matching C ``fmin``.
+
+        ``GrB_MIN_FP64`` is C99 ``fmin``, so this builder and
+        :func:`_c_minmax_expr` both have to reproduce it or ``binary.min``
+        means one thing on FP64 and another on a UDT. Two rules follow from
+        that: a NaN operand is ignored unless both are NaN, and a tie between
+        ``-0.0`` and ``0.0`` resolves to ``-0.0`` for ``min``, ``0.0`` for
+        ``max``, whichever side each sits on.
+
+        Neither ``min`` nor ``np.fmin`` gets both rules right under Numba.
+        Python's builtin returns its first argument whenever the comparison
+        is false, so it keeps a NaN on the left and drops one on the right.
+        ``np.fmin`` fixes the NaN rule but Numba lowers it without the
+        signed-zero tie-break that libm has, so it would disagree with the
+        JIT C kernel on the sign of a zero. Spelling the comparison out is
+        what keeps the two execution paths equal.
+
+        Integers have neither NaN nor a signed zero, so they take the same
+        plain comparison the C side emits. A leaf is treated as
+        floating-point if *either* operand is: broadcasting a float scalar
+        over an int record still produces float results.
+        """
+        cmp_op = "<" if py_op == "min" else ">"
+        if x_dtype.kind != "f" and y_dtype.kind != "f":
+            return f"({x_expr} if {x_expr} {cmp_op} {y_expr} else {y_expr})"
+        # ``y != y`` is the NaN test on the right operand: when it holds, the
+        # left one wins whatever it is, which is fmin's "ignore the NaN" rule
+        # and also (correctly) returns NaN when both are NaN.
+        tie = f"signbit({x_expr})" if py_op == "min" else f"not signbit({x_expr})"
+        return (
+            f"({x_expr} if ({x_expr} {cmp_op} {y_expr} or {y_expr} != {y_expr}"
+            f" or ({x_expr} == {y_expr} and {tie})) else {y_expr})"
+        )
 
     def _expr_unary(py_op, operand):
         """Python-source builder; sibling of :func:`_c_expr_unary` for JIT C."""
@@ -815,22 +855,48 @@ if _has_numba:
 # JIT C code generators below.
 
 
+def _c_minmax_expr(py_op, lhs, rhs, field_dtype):
+    """Return a C expression for ``min`` / ``max`` matching SuiteSparse.
+
+    ``GrB_MIN_FP64`` is C99 ``fmin``: it ignores a NaN operand rather than
+    ordering it. A UDT field has to do the same or ``binary.min`` means two
+    different things depending on the dtype it is typed for. Calling ``fmin``
+    itself is the way to be sure of that, tie-break on signed zeros included.
+    ``<math.h>`` reaches the JIT kernel through ``GraphBLAS.h``, the same
+    route ``_c_floordiv_expr`` relies on for ``floor``.
+
+    ``float`` fields need ``fminf``: passing them to ``fmin`` would compute
+    in double and round on the way back, which costs nothing in accuracy for
+    a min but does cost a conversion per element.
+
+    Integers have neither NaN nor a signed zero, so a plain comparison is
+    exact for them. ``_minmax_expr`` emits the matching Python source; the
+    two must agree, because SuiteSparse picks between the JIT kernel and the
+    Numba cfunc on its own.
+
+    ``field_dtype`` is None only if a caller omits it. Falling back to the
+    comparison keeps that case compiling; ``_make_jit_c_definition`` always
+    passes the real leaf dtype.
+    """
+    if field_dtype is not None and field_dtype.kind == "f":
+        fn = "fmin" if py_op == "min" else "fmax"
+        suffix = "f" if field_dtype.itemsize == 4 else ""
+        return f"{fn}{suffix}(({lhs}), ({rhs}))"
+    cmp_op = "<" if py_op == "min" else ">"
+    return f"(({lhs}) {cmp_op} ({rhs}) ? ({lhs}) : ({rhs}))"
+
+
 def _c_expr_binary(py_op, lhs, rhs, field_dtype=None):
     """Return a C expression for a binary op: e.g., ``(x->a) + (y->a)``.
 
-    ``field_dtype`` is the numpy dtype of the *result* element. It is only
+    ``field_dtype`` is the numpy dtype of the *result* element. It is
     consulted for ``floordiv`` (``//``), which needs Python ``//`` semantics
-    rather than C ``/`` (trunc toward zero for ints, true division for
-    floats). Other ops are type-agnostic at the C level.
+    rather than C ``/``, and for ``min`` / ``max``, which need C99 ``fmin`` /
+    ``fmax`` on floating-point fields so NaN is ignored rather than ordered.
+    The remaining ops are type-agnostic at the C level.
     """
-    if py_op == "min":
-        # Match Python ``min(a, b) = b if b < a else a`` so NaN propagates
-        # from the first operand (cfunc / numba follows the same rule).
-        # The naive ``(a < b ? a : b)`` would silently swallow NaN to the
-        # right-hand side and disagree with the cfunc path.
-        return f"(({rhs}) < ({lhs}) ? ({rhs}) : ({lhs}))"
-    if py_op == "max":
-        return f"(({rhs}) > ({lhs}) ? ({rhs}) : ({lhs}))"
+    if py_op in _FUNC_BINARY_OPS:
+        return _c_minmax_expr(py_op, lhs, rhs, field_dtype)
     if py_op == "//":
         return _c_floordiv_expr(lhs, rhs, field_dtype)
     c_op = _C_INFIX_OPS.get(py_op, py_op)

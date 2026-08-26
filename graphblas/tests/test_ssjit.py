@@ -735,41 +735,63 @@ def test_floordiv_udt_jit_matches_python_semantics():
 
 
 @pytest.mark.skipif("not supports_udfs")
-def test_min_max_udt_jit_propagates_nan():
-    """``binary.min``/``max`` on a float UDT must propagate NaN like Python/numba.
+def test_min_max_udt_jit_calls_fmin_and_ignores_nan():
+    """The JIT kernel for ``binary.min`` on a float UDT must call C ``fmin``.
 
-    Regression: the JIT codegen used to emit ``(a < b ? a : b)``, which
-    silently swallows NaN to the right-hand side. Python ``min(a, b)`` (and
-    numba's ``min``) returns ``a`` when neither comparison is true (NaN
-    involved), so ``min(NaN, 1.0) == NaN`` and ``min(1.0, NaN) == 1.0``.
-    The fix swaps the ternary to ``(b < a ? b : a)``.
+    ``GrB_MIN_FP64`` is C99 ``fmin``, which ignores a NaN operand from either
+    side. ``binary.min`` has to mean the same thing when it is typed for a
+    UDT as when it is typed for FP64, so the kernel calls ``fmin`` rather
+    than deciding NaN with a comparison. Two earlier spellings decided it,
+    in opposite directions: ``(a < b ? a : b)`` dropped a NaN on the right,
+    and ``(b < a ? b : a)`` dropped one on the left to agree with Python's
+    builtin ``min``, which the cfunc path was reaching by accident. Either
+    way the answer turned on which operand the NaN arrived on.
+
+    Integer fields keep the comparison: they have no NaN to order, and it
+    saves a conversion through ``double`` per element.
     """
-    if _IS_SSGB7:
-        pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
+    if not _has_jit_set:
+        pytest.skip("jit_c_source introspection requires SuiteSparse:GraphBLAS >= 9")
     _require_jit_on()
 
     # Field names unique to this test; see floordiv test for the cache rationale.
     udt = dtypes.register_anonymous(
-        np.dtype([("nan_a", np.float64), ("nan_b", np.float64)]), "_NanJitMM"
+        np.dtype([("nan_a", np.float64), ("nan_b", np.float32), ("nan_c", np.int32)]), "_NanJitMM"
     )
+    csrc = binary.min[udt].jit_c_source
+    assert "fmin((x->nan_a), (y->nan_a))" in csrc, csrc
+    assert "fminf((x->nan_b), (y->nan_b))" in csrc, csrc
+    assert "((x->nan_c) < (y->nan_c) ? (x->nan_c) : (y->nan_c))" in csrc, csrc
+    assert "fmax((x->nan_a), (y->nan_a))" in binary.max[udt].jit_c_source
+
     N = 100
     v = gb.Vector(udt, N)
     u = gb.Vector(udt, N)
     nan = float("nan")
     for i in range(N):
         # field nan_a: NaN on the left; field nan_b: NaN on the right at odd indices.
-        v[i] = (nan, 2.0 + i)
-        u[i] = (1.0 + i, nan if i % 2 else 3.0 + i)
+        v[i] = (nan, 2.0 + i, i)
+        u[i] = (1.0 + i, nan if i % 2 else 3.0 + i, 2 * i)
 
     w = v.ewise_mult(u, binary.min).new()
-    assert np.isnan(w[0].new().value[0])  # min(NaN, 1.0) -> NaN
-    assert w[1].new().value[1] == 3.0  # min(3.0, NaN) -> 3.0 (NaN swallowed)
+    assert w[0].new().value[0] == 1.0  # min(NaN, 1.0) -> 1.0
+    assert w[1].new().value[1] == 3.0  # min(3.0, NaN) -> 3.0
     assert w[2].new().value[1] == 4.0  # min(4.0, 5.0) -> 4.0 (normal case)
+    assert w[3].new().value[2] == 3  # integer field is unaffected
 
     w = v.ewise_mult(u, binary.max).new()
-    assert np.isnan(w[0].new().value[0])  # max(NaN, 1.0) -> NaN
-    assert w[1].new().value[1] == 3.0  # max(3.0, NaN) -> 3.0 (NaN swallowed)
+    assert w[0].new().value[0] == 1.0  # max(NaN, 1.0) -> 1.0
+    assert w[1].new().value[1] == 3.0  # max(3.0, NaN) -> 3.0
     assert w[2].new().value[1] == 5.0  # max(4.0, 5.0) -> 5.0 (normal case)
+    assert w[3].new().value[2] == 6  # integer field is unaffected
+
+    # Both operands NaN is the one case where a NaN survives, for min and max
+    # alike, and it is the only case ``fmin`` has no non-NaN answer for.
+    nan_only = gb.Vector(udt, N)
+    for i in range(N):
+        nan_only[i] = (nan, np.float32(i), i)
+    w = nan_only.ewise_mult(nan_only, binary.min).new()
+    assert np.isnan(w[0].new().value[0])
 
 
 @pytest.mark.skipif("not supports_udfs")
