@@ -116,7 +116,9 @@ class IndexUnaryOp(OpBase):
         if name is None:
             name = getattr(func, "__name__", "<anonymous_binary>")
         success = False
-        indexunary_udf = numba.njit(func)
+        # Set on the Dispatcher, not just the cfunc wrapper; see the note in
+        # ``BinaryOp._build``.
+        indexunary_udf = numba.njit(func, error_model="numpy")
         new_type_obj = cls(
             name, func, anonymous=anonymous, is_udt=is_udt, numba_func=indexunary_udf
         )
@@ -176,7 +178,9 @@ class IndexUnaryOp(OpBase):
                     def indexunary_wrapper(z, x, row, col, y):  # pragma: no cover (numba)
                         z[0] = indexunary_udf(x[0], row, col, y[0])
 
-                indexunary_wrapper = numba.cfunc(wrapper_sig, nopython=True)(indexunary_wrapper)
+                indexunary_wrapper = numba.cfunc(wrapper_sig, nopython=True, error_model="numpy")(
+                    indexunary_wrapper
+                )
                 new_indexunary = ffi_new("GrB_IndexUnaryOp*")
                 check_status_carg(
                     lib.GrB_IndexUnaryOp_new(
