@@ -20,6 +20,11 @@ def record_raw(text):
         rec.record_raw(text)
 
 
+def _is_recording():
+    """Whether a Recorder is active; fast paths that bypass ``call`` must check this."""
+    return _recorder.get(_prev_recorder) is not None
+
+
 def call(cfunc_name, args):
     call_args = [getattr(x, "_carg", x) if x is not None else NULL for x in args]
     cfunc = libget(cfunc_name)
