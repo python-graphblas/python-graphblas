@@ -25,11 +25,12 @@ import sys
 # When updating versions here, also update scripts/check_versions.sh
 # ---------------------------------------------------------------------------
 
+# numpy 2.5 has no py3.11 build.
 NUMPY_VERSIONS = {
     "3.11": ["1.24", "1.25", "1.26", "2.0", "2.1", "2.2", "2.3", "2.4", ""],
-    "3.12": ["1.26", "2.0", "2.1", "2.2", "2.3", "2.4", ""],
-    "3.13": ["2.1", "2.2", "2.3", "2.4", ""],
-    "3.14": ["2.3", "2.4", ""],
+    "3.12": ["1.26", "2.0", "2.1", "2.2", "2.3", "2.4", "2.5", ""],
+    "3.13": ["2.1", "2.2", "2.3", "2.4", "2.5", ""],
+    "3.14": ["2.3", "2.4", "2.5", ""],
 }
 
 # Deps that depend on numpy version (1.x vs 2.x path).
@@ -39,7 +40,8 @@ SCIPY_VERSIONS = {
         "3.11": ["1.9", "1.10", "1.11", "1.12", "1.13", "1.14", ""],
         "3.12": ["1.11", "1.12", "1.13", "1.14", ""],
     },
-    "2.x": ["1.13", "1.14", "1.15", "1.16", "1.17", ""],
+    # scipy 1.18 has no py3.11 build; see apply_constraints.
+    "2.x": ["1.13", "1.14", "1.15", "1.16", "1.17", "1.18", ""],
 }
 
 PANDAS_VERSIONS = {
@@ -51,19 +53,21 @@ PANDAS_VERSIONS = {
 }
 
 # The "2.x" pool starts at 2.6 because awkward <2.6 still uses numpy.AxisError,
-# which numpy 2.0 removed. 2.10 and 2.11 are the only pins that survive numpy >=2.5;
+# which numpy 2.0 removed. Only pins >=2.10 survive numpy >=2.5;
 # see the awkward constraints in `apply_constraints`.
 AWKWARD_VERSIONS = {
     "1.x": {
         "3.11": ["2.0", "2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9", ""],
         "3.12": ["2.4", "2.5", "2.6", "2.7", "2.8", "2.9", ""],
     },
-    "2.x": ["2.6", "2.7", "2.8", "2.9", "2.10", "2.11", ""],
+    "2.x": ["2.6", "2.7", "2.8", "2.9", "2.10", "2.11", "2.12", "2.13", ""],
 }
 
+# numba declares an exclusive numpy ceiling: 0.62 and 0.63 stop below 2.4, and
+# 0.64 through 0.66 below 2.5. Only 0.67 admits numpy 2.5.
 NUMBA_VERSIONS = {
     "1.x": ["0.57", "0.58", "0.59", "0.60", "0.61", ""],
-    "2.x": ["0.62", "0.63", "0.64", ""],
+    "2.x": ["0.62", "0.63", "0.64", "0.65", "0.66", "0.67", ""],
 }
 
 # Deps that only depend on Python version (not numpy)
@@ -81,11 +85,15 @@ PYYAML_VERSIONS = {
     "3.14": ["6.0", ""],
 }
 
+# sparse is noarch with no numpy ceiling, so only its Python floors matter:
+# 0.16/0.17 declare >=3.10 and 0.18/0.19 declare >=3.11. On py3.13/3.14 the
+# pools start at 0.16 because 0.14/0.15 predate those Pythons (the old "NA"
+# here was written in the 0.15 era, when numba could not run there at all).
 SPARSE_VERSIONS = {
-    "3.11": ["0.14", "0.15", ""],
-    "3.12": ["0.14", "0.15", ""],
-    "3.13": "NA",
-    "3.14": "NA",
+    "3.11": ["0.14", "0.15", "0.16", "0.17", "0.18", "0.19", ""],
+    "3.12": ["0.14", "0.15", "0.16", "0.17", "0.18", "0.19", ""],
+    "3.13": ["0.16", "0.17", "0.18", "0.19", ""],
+    "3.14": ["0.16", "0.17", "0.18", "0.19", ""],
 }
 
 # PSG versions to pair with numpy 1.x (only reachable on py3.11/py3.12, since
@@ -175,6 +183,10 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
         elif v["scipy"] == "1.15":
             v["scipy"] = random.choice(["1.15", "1.16", "1.17", ""])
 
+    # scipy <1.16 requires numpy <2.5 (the other half of the comment above)
+    if _ver(v["numpy"]) >= (2, 5) and v["scipy"] not in ("", "NA") and _ver(v["scipy"]) < (1, 16):
+        v["scipy"] = random.choice(["1.16", "1.17", "1.18", ""])
+
     # numpy 1.26 + scipy 1.9 conflict
     if v["numpy"] == "1.26" and v["scipy"] == "1.9":
         v["scipy"] = random.choice(["1.10", "1.11", ""])
@@ -186,6 +198,10 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
         v["scipy"] = random.choice(["1.16", "1.17", ""])
     elif pyver == "3.13" and v["scipy"] == "1.13":
         v["scipy"] = random.choice(["1.14", "1.15", "1.16", "1.17", ""])
+
+    # scipy 1.18 has no py3.11 build
+    if pyver == "3.11" and v["scipy"] == "1.18":
+        v["scipy"] = random.choice(["1.16", "1.17", ""])
 
     # --- pandas constraints ---
 
@@ -299,11 +315,13 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
     if not np_is_1x and v["numba"] not in ("", "NA") and _ver(v["numba"]) < (0, 62):
         v["numba"] = "NA"
 
-    # --- sparse ---
+    # numba <0.67 requires numpy <2.5
+    if _ver(v["numpy"]) >= (2, 5) and v["numba"] not in ("", "NA") and _ver(v["numba"]) < (0, 67):
+        v["numba"] = random.choice(["0.67", ""])
 
-    # sparse doesn't support Python 3.13+
-    if pyver in ("3.13", "3.14"):
-        v["sparse"] = "NA"
+    # --- sparse ---
+    # No rules needed: the per-Python pools already respect sparse's Python
+    # floors, and the workflow skips sparse whenever numba is skipped or NA.
 
 
 # ---------------------------------------------------------------------------
@@ -499,6 +517,10 @@ def validate(v, pyver):
     if _ver(v["numpy"]) >= (2, 3) and v["scipy"] in ("1.13", "1.14"):
         errors.append(f"scipy {v['scipy']} requires numpy <2.3, got {v['numpy']}")
 
+    # scipy <1.16 requires numpy <2.5
+    if _ver(v["numpy"]) >= (2, 5) and v["scipy"] not in ("", "NA") and _ver(v["scipy"]) < (1, 16):
+        errors.append(f"scipy {v['scipy']} requires numpy <2.5, got {v['numpy'] or 'latest'}")
+
     # numpy 1.26 + scipy 1.9
     if v["numpy"] == "1.26" and v["scipy"] == "1.9":
         errors.append("numpy 1.26 + scipy 1.9 conflict")
@@ -508,6 +530,8 @@ def validate(v, pyver):
         errors.append(f"scipy {v['scipy']} has no py3.14 build")
     if pyver == "3.13" and v["scipy"] == "1.13":
         errors.append("scipy 1.13 has no py3.13 build")
+    if pyver == "3.11" and v["scipy"] == "1.18":
+        errors.append("scipy 1.18 has no py3.11 build")
 
     # pandas Python availability
     if pyver == "3.14" and v["pandas"] == "2.2":
@@ -579,9 +603,13 @@ def validate(v, pyver):
     if not np_is_1x and v["numba"] not in ("", "NA") and _ver(v["numba"]) < (0, 62):
         errors.append(f"numba {v['numba']} doesn't support numpy 2.x")
 
-    # sparse Python availability
-    if pyver in ("3.13", "3.14") and v["sparse"] != "NA":
-        errors.append(f"sparse doesn't support Python {pyver}")
+    # numba <0.67 requires numpy <2.5
+    if _ver(v["numpy"]) >= (2, 5) and v["numba"] not in ("", "NA") and _ver(v["numba"]) < (0, 67):
+        errors.append(f"numba {v['numba']} requires numpy <2.5, got {v['numpy'] or 'latest'}")
+
+    # sparse Python availability: 0.14/0.15 predate py3.13
+    if pyver in ("3.13", "3.14") and v["sparse"] not in ("", "NA") and _ver(v["sparse"]) < (0, 16):
+        errors.append(f"sparse {v['sparse']} doesn't support Python {pyver}")
 
     return errors
 
