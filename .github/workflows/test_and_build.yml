@@ -195,6 +195,17 @@ jobs:
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psg${psgver}"
 
           set -x  # echo on
+          # conda-forge ships two ABIs for CPython 3.13+, and this step did not
+          # restate ``python``, so the solver was free to replace the interpreter
+          # setup-miniconda installed: a 3.14 draw on ubuntu-24.04-arm became
+          # 3.14.7-*_cp314t, where pandas 2.3 raises a GIL RuntimeWarning that
+          # filterwarnings=error turns into a collection error. Restating the
+          # version pins the interpreter and ``python-gil`` pins python_abi to
+          # the GIL build; setup-miniconda's own ``python-version`` above is
+          # equally ABI-free, so this covers that step too.
+          # python-suitesparse-graphblas pins the same pair in
+          # .github/workflows/test.yml, and asks for python-freethreading on the
+          # matrix entries that want the other ABI.
           $(command -v mamba || command -v conda) install -c nodefaults \
             packaging pip pytest coverage pytest-randomly cffi donfig tomli c-compiler make \
             pyyaml${yamlver} ${sparse} pandas${pdver} scipy${spver} numpy${npver} ${awkward} \
@@ -204,6 +215,7 @@ jobs:
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
             ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4"' || '' }} \
             ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'pypy' || '' }} \
+            ${{ !contains(steps.pyver.outputs.selected, 'pypy') && format('python={0} python-gil', steps.pyver.outputs.selected) || '' }} \
             ${{ matrix.os == 'windows-latest' && 'cmake' || 'm4' }} \
             # ${{ matrix.os != 'windows-latest' && 'pytest-forked' || '' }}  # to investigate crashes
       - name: Build extension module
