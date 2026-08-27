@@ -40,6 +40,12 @@ def register_new(name, jit_c_definition, *, np_type=None):
     if "struct" not in jit_c_definition:
         raise ValueError("Only struct typedefs are currently allowed for JIT dtypes")
 
+    # Registering a type by its C typedef is a request to compile C, so it is
+    # a fair place to raise SuiteSparse's non-compiling default.
+    from .jit_config import _enable_jit_for_udt
+
+    _enable_jit_for_udt()
+
     gb_obj = ffi.new("GrB_Type*")
     status = lib.GxB_Type_new(
         gb_obj, 0, ffi_new("char[]", name.encode()), ffi_new("char[]", jit_c_definition.encode())
