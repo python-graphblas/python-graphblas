@@ -17,5 +17,5 @@ conda search 'sparse[channel=conda-forge]>=0.15'
 # fast_matrix_market is deprecated (no longer maintained; last supported Python is 3.12)
 conda search 'numba[channel=conda-forge]>=0.64'
 conda search 'pyyaml[channel=conda-forge]>=6.0'
-conda search 'python-suitesparse-graphblas[channel=conda-forge]>=10.3.1'
+conda search 'python-suitesparse-graphblas[channel=conda-forge]>=10.5.0'
 # conda search 'python[channel=conda-forge]>=3.11 *pypy*'
