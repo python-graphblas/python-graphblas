@@ -28,15 +28,16 @@ import sys
 # version" step of test_and_build.yml, give it a row in every table keyed by Python
 # below (`check_python_pools` fails the run if you miss one), and revisit the floors
 # in `apply_constraints`. Those floors are written as `_ver(pyver) >= (3, N)`, so a
-# new Python inherits the previous one's floors instead of escaping them -- enough to
-# keep CI honest, but usually still too loose to install, so check each dep.
+# new Python inherits the previous one's floors instead of escaping them. That is
+# enough to keep CI honest, but usually still too loose to install, so check each dep.
 # ---------------------------------------------------------------------------
 
+# numpy 2.5 requires Python >=3.12, so py3.11 stops at 2.4.
 NUMPY_VERSIONS = {
     "3.11": ["1.24", "1.25", "1.26", "2.0", "2.1", "2.2", "2.3", "2.4", ""],
-    "3.12": ["1.26", "2.0", "2.1", "2.2", "2.3", "2.4", ""],
-    "3.13": ["2.1", "2.2", "2.3", "2.4", ""],
-    "3.14": ["2.3", "2.4", ""],
+    "3.12": ["1.26", "2.0", "2.1", "2.2", "2.3", "2.4", "2.5", ""],
+    "3.13": ["2.1", "2.2", "2.3", "2.4", "2.5", ""],
+    "3.14": ["2.3", "2.4", "2.5", ""],
 }
 
 # Deps that depend on numpy version (1.x vs 2.x path).
@@ -46,7 +47,32 @@ SCIPY_VERSIONS = {
         "3.11": ["1.9", "1.10", "1.11", "1.12", "1.13", "1.14", ""],
         "3.12": ["1.11", "1.12", "1.13", "1.14", ""],
     },
-    "2.x": ["1.13", "1.14", "1.15", "1.16", "1.17", ""],
+    "2.x": ["1.13", "1.14", "1.15", "1.16", "1.17", "1.18", ""],
+}
+
+# Oldest Python each scipy pin supports (scipy's requires-python). The "2.x" pool is
+# shared by every Python, so re-picks run through `_pick_scipy` to drop pins this
+# Python has no build for.
+# MAINT: 2026-09-16 scipy 1.18 requires Python >=3.12
+SCIPY_MIN_PYTHON = {"1.18": (3, 12)}
+
+# The numpy ceiling each scipy pin declares, the same idea as NUMBA_MAX_NUMPY below:
+# scipy caps `numpy <X`, so a pinned pair that violates it fails the conda solve.
+# Rows hold the stricter of what PyPI and conda-forge declare, since either one can be
+# the binding constraint (conda-forge caps scipy 1.12 at numpy <1.28, PyPI at <1.29).
+# Every pin in SCIPY_VERSIONS needs a row here (`check_ceilings` enforces it).
+# MAINT: 2026-09-16 scripts/audit_pypi_versions.py and audit_conda_versions.py check these
+SCIPY_MAX_NUMPY = {
+    "1.9": (1, 26),
+    "1.10": (1, 27),
+    "1.11": (1, 28),
+    "1.12": (1, 28),
+    "1.13": (2, 3),
+    "1.14": (2, 3),
+    "1.15": (2, 5),
+    "1.16": (2, 6),
+    "1.17": (2, 7),
+    "1.18": (2, 8),
 }
 
 PANDAS_VERSIONS = {
@@ -58,23 +84,45 @@ PANDAS_VERSIONS = {
 }
 
 # The "2.x" pool starts at 2.6 because awkward <2.6 still uses numpy.AxisError,
-# which numpy 2.0 removed. 2.10 and 2.11 are the only pins that survive numpy >=2.5;
-# see the awkward constraints in `apply_constraints`.
+# which numpy 2.0 removed. Only >=2.10 pins survive numpy >=2.5; see the awkward
+# constraints in `apply_constraints`.
 AWKWARD_VERSIONS = {
     "1.x": {
         "3.11": ["2.0", "2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9", ""],
         "3.12": ["2.4", "2.5", "2.6", "2.7", "2.8", "2.9", ""],
     },
-    "2.x": ["2.6", "2.7", "2.8", "2.9", "2.10", "2.11", ""],
+    "2.x": ["2.6", "2.7", "2.8", "2.9", "2.10", "2.11", "2.12", "2.13", ""],
 }
 
 NUMBA_VERSIONS = {
     "1.x": ["0.57", "0.58", "0.59", "0.60", "0.61", ""],
-    "2.x": ["0.62", "0.63", "0.64", ""],
+    "2.x": ["0.62", "0.63", "0.64", "0.65", "0.66", "0.67", ""],
 }
 
 # Oldest numba that supports each Python.
 NUMBA_MIN_PYTHON = {"3.11": (0, 57), "3.12": (0, 59), "3.13": (0, 61), "3.14": (0, 63)}
+
+# The numpy ceiling each numba pin declares. numba caps `numpy <X` and refuses to import
+# against anything newer. conda-forge carries that cap in `constrains` rather than
+# `depends`, whose cap is only the numpy ABI, so a pinned pair that violates it fails
+# the conda solve outright. Unpinned numba ("") installs the newest release, so it takes
+# the newest row: numba is the dependency that most often lags a new numpy, and a pinned
+# numpy that has outrun every numba would otherwise fail the solve. Every pin in
+# NUMBA_VERSIONS needs a row here (`check_ceilings` fails the run if one is missing).
+# MAINT: 2026-09-16 scripts/audit_pypi_versions.py and audit_conda_versions.py check these
+NUMBA_MAX_NUMPY = {
+    "0.57": (1, 25),
+    "0.58": (1, 27),
+    "0.59": (1, 27),
+    "0.60": (2, 1),
+    "0.61": (2, 3),
+    "0.62": (2, 4),
+    "0.63": (2, 4),
+    "0.64": (2, 5),
+    "0.65": (2, 5),
+    "0.66": (2, 5),
+    "0.67": (2, 6),
+}
 
 # Deps that only depend on Python version (not numpy)
 NETWORKX_VERSIONS = {
@@ -91,11 +139,16 @@ PYYAML_VERSIONS = {
     "3.14": ["6.0", ""],
 }
 
+# sparse is noarch, so there are no per-Python builds to check; the split is by what
+# each release plausibly saw. The 0.14/0.15 series began well before py3.13 (0.15.0 is
+# Jan 2024), and 0.16/0.17 (Apr/May 2025) predate py3.14. To skip sparse on a Python,
+# give it a ["NA"] pool: a bare "NA" would be indexed as a string by `random.choice`.
+# MAINT: 2026-09-16 sparse 0.19.2 is latest; 0.18 verified against py3.14 locally
 SPARSE_VERSIONS = {
-    "3.11": ["0.14", "0.15", ""],
-    "3.12": ["0.14", "0.15", ""],
-    "3.13": "NA",
-    "3.14": "NA",
+    "3.11": ["0.14", "0.15", "0.16", "0.17", "0.18", "0.19", ""],
+    "3.12": ["0.14", "0.15", "0.16", "0.17", "0.18", "0.19", ""],
+    "3.13": ["0.16", "0.17", "0.18", "0.19", ""],
+    "3.14": ["0.18", "0.19", ""],
 }
 
 # PSG versions to pair with numpy 1.x (only reachable on py3.11/py3.12, since
@@ -164,6 +217,49 @@ def _ver(s):
     return tuple(int(x) for x in s.split("."))
 
 
+def _numba_ceiling(pin):
+    """The numpy ceiling a numba pin declares, or None when numba is skipped."""
+    if pin == "NA":
+        return None
+    return max(NUMBA_MAX_NUMPY.values()) if pin == "" else NUMBA_MAX_NUMPY[pin]
+
+
+def _pick_scipy(pyver, npver, pool, floor=(0,)):
+    """Pick a scipy pin at or above `floor` that this Python and this numpy can use.
+
+    Filters the pool by the pin's requires-python (SCIPY_MIN_PYTHON), its numpy ceiling
+    (SCIPY_MAX_NUMPY) and the one numpy floor scipy imposes (>=1.15 needs numpy
+    >=1.26.4), so every re-pick site gets the same answer no matter where it sits in the
+    constraint order. "" (latest) is always a candidate: an unpinned scipy is one conda
+    resolves itself, so it satisfies every rule here by construction.
+    """
+    return random.choice(
+        [
+            s
+            for s in pool
+            if s
+            and _ver(s) >= floor
+            and SCIPY_MAX_NUMPY[s] > npver
+            and (_ver(s) < (1, 15) or npver >= (1, 26))
+            and _ver(pyver) >= SCIPY_MIN_PYTHON.get(s, (0,))
+        ]
+        + [""]
+    )
+
+
+def _numpy_ver(v, pyver):
+    """Version of numpy to compare against, resolving "" (latest) to what it installs.
+
+    An unpinned numpy is the newest release this Python can actually get, which is the
+    newest pin in its pool, not something infinitely new: numba 0.67 caps numpy at <2.6
+    and still qualifies today. Deriving it from the pool keeps it honest per Python
+    (py3.11 tops out at numpy 2.4) and leaves nothing extra to bump.
+    """
+    if v["numpy"]:
+        return _ver(v["numpy"])
+    return max(_ver(n) for n in NUMPY_VERSIONS[pyver] if n)
+
+
 def _min_for_python(table, pyver):
     """Look up `pyver` in a {python version: minimum} table, or None if it predates it.
 
@@ -193,6 +289,10 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
     The networkx section reads numpy, scipy, and pandas, so it runs after all three
     are final.
     """
+    # Nothing below changes the numpy pick, so derive these once.
+    npver = _numpy_ver(v, pyver)
+    np_is_1x = v["numpy"].startswith("1.") if v["numpy"] else False
+
     # --- scipy / numpy constraints ---
 
     # scipy >=1.15 requires numpy >=1.26.4
@@ -200,29 +300,23 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
         candidates = [s for s in scipy_pool if s and _ver(s) < (1, 15)]
         v["scipy"] = random.choice(candidates) if candidates else "1.14"
 
-    # scipy <1.13 doesn't support numpy 2.x (safety net)
-    np_is_1x = v["numpy"].startswith("1.") if v["numpy"] else False
-    if not np_is_1x and v["scipy"] not in ("", "NA") and _ver(v["scipy"]) < (1, 13):
-        v["scipy"] = random.choice([s for s in scipy_pool if _ver(s) >= (1, 13)])
-
-    # scipy <1.15.1 requires numpy <2.3; scipy <1.16 requires numpy <2.5
-    if _ver(v["numpy"]) >= (2, 3):
-        if v["scipy"] in ("1.13", "1.14"):
-            v["scipy"] = random.choice(["1.16", "1.17", ""])
-        elif v["scipy"] == "1.15":
-            v["scipy"] = random.choice(["1.15", "1.16", "1.17", ""])
-
-    # numpy 1.26 + scipy 1.9 conflict
-    if v["numpy"] == "1.26" and v["scipy"] == "1.9":
-        v["scipy"] = random.choice(["1.10", "1.11", ""])
+    # scipy's numpy ceiling (see SCIPY_MAX_NUMPY). This covers every scipy/numpy
+    # pairing at once: the pre-1.13 pins against numpy 2.x, 1.9 against numpy 1.26,
+    # and each later pin against the numpy that outgrew it.
+    if (ceiling := SCIPY_MAX_NUMPY.get(v["scipy"])) is not None and npver >= ceiling:
+        v["scipy"] = _pick_scipy(pyver, npver, scipy_pool)
 
     # --- scipy / Python version availability ---
 
     # scipy <1.14 has no py3.13 builds; scipy <1.16 has no py3.14 builds
     if _ver(pyver) >= (3, 14) and v["scipy"] not in ("", "NA") and _ver(v["scipy"]) < (1, 16):
-        v["scipy"] = random.choice(["1.16", "1.17", ""])
+        v["scipy"] = _pick_scipy(pyver, npver, scipy_pool, floor=(1, 16))
     elif _ver(pyver) >= (3, 13) and v["scipy"] == "1.13":
-        v["scipy"] = random.choice(["1.14", "1.15", "1.16", "1.17", ""])
+        v["scipy"] = _pick_scipy(pyver, npver, scipy_pool, floor=(1, 14))
+
+    # A scipy pin whose requires-python is newer than this Python has no build for it
+    if v["scipy"] and _ver(pyver) < SCIPY_MIN_PYTHON.get(v["scipy"], (0,)):
+        v["scipy"] = _pick_scipy(pyver, npver, scipy_pool)
 
     # --- pandas constraints ---
 
@@ -230,12 +324,10 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
     if _ver(pyver) >= (3, 14) and v["pandas"] == "2.2":
         v["pandas"] = random.choice(["2.3", "3.0", ""])
 
-    # pandas 3.0 requires numba >=0.60 and scipy >=1.14.1
-    if v["pandas"] == "3.0":
-        if v["numba"] not in ("", "NA") and _ver(v["numba"]) < (0, 60):
-            v["numba"] = "0.60"
-        if v["scipy"] not in ("", "NA") and _ver(v["scipy"]) < (1, 15):
-            v["scipy"] = random.choice(["1.15", "1.16", "1.17", ""])
+    # pandas 3.0 requires scipy >=1.14.1. It also requires numba >=0.60, which needs no
+    # rule: pandas 3.0 only appears in the numpy 2.x pool, whose numba pins start at 0.62.
+    if v["pandas"] == "3.0" and v["scipy"] not in ("", "NA") and _ver(v["scipy"]) < (1, 15):
+        v["scipy"] = _pick_scipy(pyver, npver, scipy_pool, floor=(1, 15))
 
     # conda-forge pandas >=2.2 carries run_constrained "scipy >=1.10.0" (latest 2.2.3
     # build and all 2.3 builds; 2.0/2.1 declare no scipy constraint), so a pandas
@@ -300,12 +392,14 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
 
     # --- matplotlib / numpy floor (notebooks job) ---
 
-    # matplotlib is installed unpinned for the notebooks task. matplotlib 3.11.0's
-    # runtime check requires numpy >=1.25, but its conda-forge metadata does not,
-    # so the solver happily pairs matplotlib 3.11 with a numpy 1.24 pin and the
-    # notebooks then die at `import matplotlib`. Pin below 3.11 whenever the
-    # numpy pick sits under that floor; empty means latest is fine.
-    # MAINT: 2026-08-05 confirmed with matplotlib 3.11.0 + numpy 1.24.4
+    # matplotlib is installed unpinned for the notebooks task. matplotlib 3.11's runtime
+    # check requires numpy >=1.25. conda-forge's 3.11.1 builds declare that floor, so the
+    # solver backs off on its own, but the 3.11.0 builds still say only "numpy >=1.23":
+    # the solver pairs 3.11.0 with a numpy 1.24 pin and the notebooks die at
+    # `import matplotlib`. Pin below 3.11 whenever the numpy pick sits under that floor;
+    # empty means latest is fine.
+    # MAINT: 2026-09-16 conda-forge matplotlib-base 3.11.0 depends on "numpy >=1.23",
+    # 3.11.1 on "numpy >=1.25"
     if v["numpy"] and _ver(v["numpy"]) < (1, 25):
         v["matplotlib"] = "<3.11"
     else:
@@ -320,26 +414,15 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
             pool = [n for n in numba_pool if _ver(n) >= min_ver]
             v["numba"] = random.choice(pool) if pool else ""
 
-    # numba <0.64 requires numpy <2.4
-    if _ver(v["numpy"]) >= (2, 4) and v["numba"] in ("0.62", "0.63"):
-        v["numba"] = "0.64"
-
-    # conda-forge numba 0.57 requires numpy <1.25, so that pairing fails the
-    # conda solve outright. Verified by dry-run solves: 0.57+1.25 conflicts;
-    # 0.58+1.25, 0.58+1.26, and 0.59+1.26 all solve.
-    # MAINT: 2026-08-05 confirmed against conda-forge with mamba dry-runs
-    if v["numba"] == "0.57" and np_is_1x and _ver(v["numpy"]) >= (1, 25):
-        v["numba"] = "0.58"
-
-    # numba <0.62 doesn't support numpy 2.x
-    if not np_is_1x and v["numba"] not in ("", "NA") and _ver(v["numba"]) < (0, 62):
-        v["numba"] = "NA"
-
-    # --- sparse ---
-
-    # sparse doesn't support Python 3.13+
-    if _ver(pyver) >= (3, 13):
-        v["sparse"] = "NA"
+    # numba's numpy ceiling (see NUMBA_MAX_NUMPY). This covers every numba/numpy
+    # pairing rule at once: 0.57 against numpy >=1.25, the pre-0.62 pins against
+    # numpy 2.x, and each later pin against the numpy that outgrew it. Re-pick from
+    # the pins that clear both this numpy and the Python minimum, or skip numba.
+    ceiling = _numba_ceiling(v["numba"])
+    if ceiling is not None and npver >= ceiling:
+        min_ver = _min_for_python(NUMBA_MIN_PYTHON, pyver)
+        pool = [n for n in numba_pool if n and NUMBA_MAX_NUMPY[n] > npver and _ver(n) >= min_ver]
+        v["numba"] = random.choice(pool) if pool else "NA"
 
 
 # ---------------------------------------------------------------------------
@@ -392,7 +475,7 @@ def pick_versions(pyver, source_type):
         "numba": random.choice(numba_pool),
         "networkx": random.choice(NETWORKX_VERSIONS[pyver]),
         "pyyaml": random.choice(PYYAML_VERSIONS[pyver]),
-        "sparse": _pick_scalar_or_list(SPARSE_VERSIONS[pyver]),
+        "sparse": random.choice(SPARSE_VERSIONS[pyver]),
     }
 
     # Source builds have issues with some numpy/scipy/pandas versions;
@@ -411,11 +494,6 @@ def pick_versions(pyver, source_type):
     return v
 
 
-def _pick_scalar_or_list(pool):
-    """Handle pools that are either "NA" (string) or a list of choices."""
-    return pool if isinstance(pool, str) else random.choice(pool)
-
-
 def _pick_psg(npver, pyver, source_type):
     """Pick python-suitesparse-graphblas version."""
     if source_type == "upstream":
@@ -430,8 +508,7 @@ def _pick_psg(npver, pyver, source_type):
             return ""
         return f"{eq}{random.choice(pool)}"
     pool = PSG_VERSIONS_NP2
-    floors = _min_for_python(PSG_MIN_PYTHON, pyver)
-    if floors is not None:
+    if (floors := _min_for_python(PSG_MIN_PYTHON, pyver)) is not None:
         floor = _ver(floors[source_type])
         pool = [ver for ver in pool if _ver(ver) >= floor]
     return random.choice([f"{eq}{ver}" for ver in pool] + [""])
@@ -507,7 +584,9 @@ def format_summary(v):
         "matplotlib",
     ):
         name = _SUMMARY_NAMES[key]
-        val = v[key]
+        # psg carries its own "=" or "==" pin prefix; strip it so the summary reads
+        # "psg=10.5.0.0" like every other entry instead of "psg==10.5.0.0".
+        val = v[key].lstrip("=") if key == "psg" else v[key]
         if val == "NA":
             parts.append(f"{name}=NA")
         elif val == "":
@@ -520,6 +599,31 @@ def format_summary(v):
 # ---------------------------------------------------------------------------
 # Validation (for testing the script itself)
 # ---------------------------------------------------------------------------
+
+
+def check_ceilings():
+    """Check that every scipy and numba pin has a numpy-ceiling row. Returns errors.
+
+    A pin with no row would silently skip the numpy-ceiling rule and be paired with a
+    numpy it refuses to import against.
+    """
+    tables = [
+        (
+            "SCIPY_MAX_NUMPY",
+            "scipy",
+            SCIPY_MAX_NUMPY,
+            [SCIPY_VERSIONS["2.x"], *SCIPY_VERSIONS["1.x"].values()],
+        ),
+        ("NUMBA_MAX_NUMPY", "numba", NUMBA_MAX_NUMPY, list(NUMBA_VERSIONS.values())),
+    ]
+    errors = []
+    for name, dep, table, pools in tables:
+        pins = {p for pool in pools for p in pool if p}
+        if missing := sorted(pins - table.keys(), key=_ver):
+            errors.append(f"{name} has no numpy ceiling for {dep} {', '.join(missing)}")
+        if extra := sorted(table.keys() - pins, key=_ver):
+            errors.append(f"{name} has rows for untested {dep} {', '.join(extra)}")
+    return errors
 
 
 def check_python_pools():
@@ -555,34 +659,28 @@ def validate(v, pyver, source_type=None):
     if v["numpy"] in ("1.24", "1.25") and _ver(v["scipy"]) >= (1, 15):
         errors.append(f"scipy {v['scipy']} requires numpy >=1.26.4, got {v['numpy']}")
 
-    # scipy <1.13 requires numpy 1.x
-    if not np_is_1x and v["scipy"] not in ("", "NA") and _ver(v["scipy"]) < (1, 13):
-        errors.append(f"scipy {v['scipy']} doesn't support numpy 2.x")
-
-    # scipy <1.15.1 requires numpy <2.3
-    if _ver(v["numpy"]) >= (2, 3) and v["scipy"] in ("1.13", "1.14"):
-        errors.append(f"scipy {v['scipy']} requires numpy <2.3, got {v['numpy']}")
-
-    # numpy 1.26 + scipy 1.9
-    if v["numpy"] == "1.26" and v["scipy"] == "1.9":
-        errors.append("numpy 1.26 + scipy 1.9 conflict")
+    # scipy's declared numpy ceiling (see SCIPY_MAX_NUMPY)
+    ceiling = SCIPY_MAX_NUMPY.get(v["scipy"])
+    if ceiling is not None and _numpy_ver(v, pyver) >= ceiling:
+        cap = ".".join(str(x) for x in ceiling)
+        errors.append(f"scipy {v['scipy']} requires numpy <{cap}, got {v['numpy'] or 'latest'}")
 
     # scipy Python availability
     if _ver(pyver) >= (3, 14) and v["scipy"] not in ("", "NA") and _ver(v["scipy"]) < (1, 16):
         errors.append(f"scipy {v['scipy']} has no py{pyver} build")
     elif _ver(pyver) >= (3, 13) and v["scipy"] == "1.13":
         errors.append(f"scipy 1.13 has no py{pyver} build")
+    if v["scipy"] and _ver(pyver) < (floor := SCIPY_MIN_PYTHON.get(v["scipy"], (0,))):
+        need = ".".join(str(x) for x in floor)
+        errors.append(f"scipy {v['scipy']} requires Python >={need}, has no py{pyver} build")
 
     # pandas Python availability
     if _ver(pyver) >= (3, 14) and v["pandas"] == "2.2":
         errors.append(f"pandas 2.2 has no py{pyver} build")
 
-    # pandas 3.0 requirements
-    if v["pandas"] == "3.0":
-        if v["numba"] not in ("", "NA") and _ver(v["numba"]) < (0, 60):
-            errors.append(f"pandas 3.0 requires numba >=0.60, got {v['numba']}")
-        if v["scipy"] not in ("", "NA") and _ver(v["scipy"]) < (1, 15):
-            errors.append(f"pandas 3.0 requires scipy >=1.14.1, got {v['scipy']}")
+    # pandas 3.0 requirements (numba >=0.60 is unreachable; see `apply_constraints`)
+    if v["pandas"] == "3.0" and v["scipy"] not in ("", "NA") and _ver(v["scipy"]) < (1, 15):
+        errors.append(f"pandas 3.0 requires scipy >=1.14.1, got {v['scipy']}")
 
     # conda-forge pandas >=2.2 constrains scipy >=1.10.0 (fails the conda solve)
     if (
@@ -606,10 +704,6 @@ def validate(v, pyver, source_type=None):
     # matplotlib 3.11 requires numpy >=1.25 at runtime (notebooks job)
     if v["numpy"] and _ver(v["numpy"]) < (1, 25) and v.get("matplotlib", "") != "<3.11":
         errors.append(f"matplotlib unpinned alongside numpy {v['numpy']} (needs <3.11)")
-
-    # conda-forge numba 0.57 requires numpy <1.25 (fails the conda solve)
-    if v["numba"] == "0.57" and v["numpy"] and _ver(v["numpy"]) >= (1, 25) and np_is_1x:
-        errors.append(f"numba 0.57 requires numpy <1.25, got {v['numpy']}")
 
     # awkward <2.10 requires numpy <2.5 (generic-unit datetime64("NaT") at import)
     if (
@@ -635,17 +729,18 @@ def validate(v, pyver, source_type=None):
     if v["numba"] not in ("", "NA") and _ver(v["numba"]) < numba_min:
         errors.append(f"numba {v['numba']} doesn't support Python {pyver}")
 
-    # numba <0.64 requires numpy <2.4
-    if v["numba"] in ("0.62", "0.63") and _ver(v["numpy"]) >= (2, 4):
-        errors.append(f"numba {v['numba']} requires numpy <2.4, got {v['numpy']}")
+    # numba's declared numpy ceiling (see NUMBA_MAX_NUMPY)
+    ceiling = _numba_ceiling(v["numba"])
+    if ceiling is not None and _numpy_ver(v, pyver) >= ceiling:
+        cap = ".".join(str(x) for x in ceiling)
+        errors.append(
+            f"numba {v['numba'] or 'latest'} requires numpy <{cap}, "
+            f"got {v['numpy'] or 'latest'}"
+        )
 
-    # numba <0.62 requires numpy 1.x
-    if not np_is_1x and v["numba"] not in ("", "NA") and _ver(v["numba"]) < (0, 62):
-        errors.append(f"numba {v['numba']} doesn't support numpy 2.x")
-
-    # sparse Python availability
-    if _ver(pyver) >= (3, 13) and v["sparse"] != "NA":
-        errors.append(f"sparse doesn't support Python {pyver}")
+    # sparse: the per-Python pool is the whole rule, so nothing may leave it
+    if v["sparse"] not in SPARSE_VERSIONS[pyver]:
+        errors.append(f"sparse {v['sparse']} isn't in the py{pyver} pool")
 
     # psg build availability (the floor depends on the Python and where psg comes from)
     floors = _min_for_python(PSG_MIN_PYTHON, pyver)
@@ -699,9 +794,8 @@ def main():
     if args.seed is not None:
         random.seed(args.seed)
 
-    pool_errors = check_python_pools()
-    if pool_errors:
-        print("Error: version pools disagree about which Pythons we support:", file=sys.stderr)
+    if pool_errors := check_python_pools() + check_ceilings():
+        print("Error: version pools are inconsistent:", file=sys.stderr)
         for e in pool_errors:
             print(f"  - {e}", file=sys.stderr)
         sys.exit(1)
