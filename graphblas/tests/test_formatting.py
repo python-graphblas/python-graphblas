@@ -5032,7 +5032,12 @@ def test_empty():
 
 @pytest.mark.skipif("not pd")
 def test_vector_as_matrix():
-    v = Vector.from_coo([1], [2], name="v_A")
+    # Built iso outright: the repr asserted below names the format, and
+    # SuiteSparse 10.5.0 no longer infers iso from a build whose values happen
+    # to be equal, so ``from_coo`` would render "bitmapc" on 10.5.0 and
+    # "bitmapc (iso)" on everything older.
+    v = Vector(int, 2, name="v_A")
+    v.ss.build_scalar([1], 2)
     A = v._as_matrix()
     repr_printer(A, "A")
     assert repr(A) == (

@@ -1,0 +1,80 @@
+# Checks the CI dependency pools in scripts/ci_pick_versions.py against the world.
+#
+# `ci_pick_versions.py --validate` runs in pre-commit and proves the picker agrees with
+# the constraints it documents. It cannot notice when a constraint has drifted from
+# reality, because that happens when a package releases, not when we commit. So this
+# workflow runs weekly, and on changes to the picker or the audits themselves.
+#
+# A failure here does not mean CI is broken right now. It means a pool or a table no
+# longer matches what PyPI or conda-forge publishes, and the next random pick that
+# lands on the stale combination will fail for reasons that look unrelated.
+
+name: Audit dependency versions
+
+on:
+  schedule:
+    # Mondays at 06:00 UTC, before most of the week's PRs
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - scripts/ci_pick_versions.py
+      - scripts/audit_pypi_versions.py
+      - scripts/audit_conda_versions.py
+      - .github/workflows/audit_versions.yml
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/ci_pick_versions.py
+      - scripts/audit_pypi_versions.py
+      - scripts/audit_conda_versions.py
+      - .github/workflows/audit_versions.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  pypi:
+    name: Audit against PyPI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip packaging
+      - name: Stress-test the picker
+        run: python scripts/ci_pick_versions.py --validate
+      - name: Audit pools against PyPI
+        run: python scripts/audit_pypi_versions.py --samples 200
+
+  conda:
+    name: Audit against conda-forge
+    runs-on: ubuntu-latest
+    # conda-forge is what CI installs from, so this is the one that binds. It needs a
+    # conda to search with, which is why it is a separate, slower job.
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: true
+          python-version: "3.12"
+          channels: conda-forge
+          conda-remove-defaults: true
+          channel-priority: strict
+          activate-environment: audit
+      - run: python -m pip install --upgrade pip packaging
+      - name: Audit pools against conda-forge
+        run: python scripts/audit_conda_versions.py --samples 100
