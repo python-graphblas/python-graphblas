@@ -130,7 +130,7 @@ jobs:
           echo "selected: $selected (from: ${choices[*]})"
           echo "selected=$selected" >> "$GITHUB_OUTPUT"
       - name: Setup conda
-        uses: conda-incubator/setup-miniconda@v3
+        uses: conda-incubator/setup-miniconda@v4
         id: setup_conda
         with:
           auto-update-conda: true
