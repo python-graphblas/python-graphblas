@@ -210,5 +210,5 @@ class BaseConfig(MutableMapping):
             + "})"
         )
 
-    def _ipython_key_completions_(self):  # pragma: no cover (ipython)
+    def _ipython_key_completions_(self):
         return list(self)
