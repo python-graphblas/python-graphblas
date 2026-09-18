@@ -4936,3 +4936,33 @@ def test_vector_as_matrix():
         "</table>\n"
         "</div></details></div>"
     )
+
+
+@pytest.mark.skipif("not pd")
+@pytest.mark.skipif("not dtypes._supports_complex")
+def test_chop_threshold_complex():
+    # The COO (long) form formats complex columns through the float column
+    # formatter, where display.chop_threshold compares each value's magnitude.
+    big = float(np.finfo(np.float64).max)
+    v = Vector.from_coo(
+        [10_000, 500_000], [complex(big, big), complex(1e-7, 0)], size=10**6, dtype="FC64"
+    )
+    with pd.option_context("display.chop_threshold", 1e-8):
+        # abs() of a python complex overflows for components near the float
+        # max; numpy's abs is inf, so nothing chops and this must render.
+        # Byte-identical to the pandas renderer, verified against 6f1eb02.
+        r = repr(v)
+        assert "1.797693e+308+1.797693e+308j" in r
+        assert "1.000000e-07+ 0.000000e+00j" in r
+        v._repr_html_()
+        # A value below the threshold chops to complex zero. pandas 3.0.3
+        # itself crashes on this input (its own _trim_zeros_complex cannot
+        # parse the float zero its chop substitutes into a complex column),
+        # so rendering at all is deliberately better than byte-identity.
+        w = Vector.from_coo(
+            [10_000, 500_000], [complex(1.0, 1.0), complex(5e-9, 0)], size=10**6, dtype="FC64"
+        )
+        r = repr(w)
+        assert "1.000000e+00+1.000000e+00j" in r
+        assert "0.000000e+00+0.000000e+00j" in r
+        w._repr_html_()
