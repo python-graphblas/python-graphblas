@@ -2954,6 +2954,7 @@ def test_expr_is_like_matrix(A):
         "__call__",
         "__del__",
         "__delitem__",
+        "__getattr__",
         "__lshift__",
         "__setitem__",
         "_assign_element",
@@ -3020,6 +3021,7 @@ def test_index_expr_is_like_matrix(A):
     expected = {
         "__del__",
         "__delitem__",
+        "__getattr__",
         "__setitem__",
         "_assign_element",
         "_delete_element",
@@ -4570,3 +4572,97 @@ def test_setdiag():
     A.setdiag(30, mask=v.S)
     expected[0, 0] = 30
     assert A.isequal(expected)
+
+
+def test_constructor_rejects_arraylike_first_arg():
+    # The first positional arg is the dtype; passing data instead used to raise a
+    # confusing "Unknown dtype" ValueError. It should now raise TypeError pointing
+    # at the from_* constructors.
+    with pytest.raises(TypeError, match="Matrix.*dtype.*from_coo.*from_dense"):
+        Matrix([[1, 2], [3, 4]])
+    with pytest.raises(TypeError, match="Matrix.*expects a dtype"):
+        Matrix(np.zeros((2, 2)))
+    # Valid dtype-first signatures still work, including list/tuple dtype specs
+    assert Matrix(int, 2, 2).dtype == dtypes.INT64
+    assert Matrix("INT64", nrows=2, ncols=2).dtype == dtypes.INT64
+    assert Matrix([("x", "i8"), ("y", "f8")], nrows=2, ncols=2).dtype._is_udt
+    assert Matrix((np.int32, (2, 2)), nrows=2, ncols=2).dtype._is_udt
+    # A non-array-like bad dtype keeps the original ValueError
+    with pytest.raises(ValueError, match="Unknown dtype"):
+        Matrix("not_a_dtype", nrows=2, ncols=2)
+
+
+def test_wrong_kind_mask_on_matrix_raises():
+    # A Vector mask on a Matrix output used to leak a raw cffi/C-signature
+    # error ("initializer for ctype 'struct GB_Matrix_opaque'"). It should
+    # now raise a clear TypeError, mirroring the Vector-output guard.
+    A = Matrix(int, 3, 3)
+    A[0, 0] = 1
+    v = Vector(int, 3)
+    v[0] = 1
+    # update path (full-matrix op with a Vector mask)
+    C = Matrix(int, 3, 3)
+    with pytest.raises(TypeError, match="Mask object must be type Matrix"):
+        C(mask=v.S) << A.ewise_mult(A)
+    # extract path
+    with pytest.raises(TypeError, match="Mask object must be type Matrix"):
+        A[:, :].new(mask=v.S)
+    # Valid Matrix mask on Matrix output still works
+    C = Matrix(int, 3, 3)
+    C(mask=A.S) << A.ewise_mult(A)
+    assert C.nvals == A.nvals
+    # Valid Vector input_mask broadcast on a Matrix extract still works
+    m = Vector(bool, 3)
+    m[0] = True
+    m[2] = True
+    assert A[0, [0, 1, 2]].new(input_mask=m.S) is not None
+
+
+def test_new_constructor_misuse_hint():
+    # `.new()` resolves expressions; it is not a constructor or an instance
+    # method on concrete objects. Both misuses should hint the right API.
+    A = Matrix(int, 3, 3)
+    v = Vector(int, 3)
+    s = Scalar.from_value(5)
+    # Class-level access stays a plain AttributeError: hinting it would need
+    # a metaclass, and both metaclass choices break something (see
+    # test_abc_mixin_subclass).
+    for cls in (Matrix, Vector, Scalar):
+        with pytest.raises(AttributeError, match="has no attribute 'new'"):
+            cls.new
+    # Instance-level misuse: A.new() -> hint .dup()
+    for obj in (A, v, s):
+        with pytest.raises(AttributeError, match=r"has no attribute 'new'.*\.dup\(\)"):
+            obj.new
+    # A genuinely-missing attribute keeps the plain AttributeError (no hint)
+    with pytest.raises(AttributeError, match="has no attribute 'frobnicate'"):
+        A.frobnicate
+    assert not hasattr(A, "new")
+    assert not hasattr(Matrix, "new")
+
+
+def test_abc_mixin_subclass():
+    # BaseType must stay metaclass-free: a plain `type` hint metaclass broke
+    # abc-based mixins with "metaclass conflict", and an ABCMeta-derived one
+    # leaks metaclass attributes into dir(Matrix), which the
+    # expression-surface guards report as drift.
+    import collections.abc
+
+    class SizedMatrix(Matrix, collections.abc.Sized):
+        def __len__(self):
+            return 1
+
+    assert issubclass(SizedMatrix, collections.abc.Sized)
+
+
+def test_transpose_hint():
+    # A.transpose() should point at the .T property rather than fail with a
+    # bare "no attribute" message; transpose is not a method here.
+    A = Matrix(int, 3, 3)
+    v = Vector(int, 3)
+    with pytest.raises(AttributeError, match=r"has no attribute 'transpose'.*\.T"):
+        A.transpose
+    with pytest.raises(AttributeError, match=r"has no attribute 'transpose'.*\.T"):
+        v.transpose
+    # .T still works
+    assert A.T.shape == (3, 3)

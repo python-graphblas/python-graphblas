@@ -16,6 +16,7 @@ from ..exceptions import (
 from . import _supports_udfs, automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _check_mask, _is_recording, call
 from .descriptor import lookup as descriptor_lookup
+from .dtypes import _raise_dtype_or_arraylike
 from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, InfixExprBase, Updater
 from .mask import Mask, StructuralMask, ValueMask
 from .operator import (
@@ -196,7 +197,10 @@ class Matrix(BaseType):
 
     def __new__(cls, dtype=FP64, nrows=0, ncols=0, *, name=None):
         self = object.__new__(cls)
-        self.dtype = lookup_dtype(dtype)
+        try:
+            self.dtype = lookup_dtype(dtype)
+        except (ValueError, TypeError) as exc:
+            _raise_dtype_or_arraylike("Matrix", dtype, exc)
         nrows = _as_scalar(nrows, _INDEX, is_cscalar=True)
         ncols = _as_scalar(ncols, _INDEX, is_cscalar=True)
         self.name = f"M_{next(Matrix._name_counter)}" if name is None else name
