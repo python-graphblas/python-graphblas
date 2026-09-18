@@ -325,12 +325,27 @@ def _check_udt_pair(op_name, dtype, dtype2, info_x, info_y):
             f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
             f"cannot mix record and array UDTs in a single element-wise op."
         )
-    if kind_x == "record" and detail_x != detail_y:
-        raise KeyError(
-            f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
-            f"record UDTs must share field names; got {list(detail_x)} vs "
-            f"{list(detail_y)}."
-        )
+    if kind_x == "record":
+        if detail_x != detail_y:
+            raise KeyError(
+                f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
+                f"record UDTs must share field names; got {list(detail_x)} vs "
+                f"{list(detail_y)}."
+            )
+        # Matching top-level names is not enough: the codegen pairs operands
+        # leaf by leaf, and a field that is a sub-record on one side and a
+        # scalar on the other contributes a different number of leaves. Left
+        # unchecked the pair reaches Numba, whose typing failure arrives as a
+        # UdfParseError, reporting a compile error for what is really the same
+        # shape disagreement the checks above report as a KeyError.
+        leaves_x = [c for _py, c, _d in _iter_record_leaves(dtype.np_type)]
+        leaves_y = [c for _py, c, _d in _iter_record_leaves(dtype2.np_type)]
+        if len(leaves_x) != len(leaves_y):
+            raise KeyError(
+                f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
+                f"record UDTs must nest the same way, so that each has the same "
+                f"number of leaf fields; got {leaves_x} vs {leaves_y}."
+            )
     if kind_x == "array" and detail_x != detail_y:
         raise KeyError(
             f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
