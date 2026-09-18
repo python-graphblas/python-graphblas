@@ -85,7 +85,14 @@ io = [
   "python-graphblas[networkx,scipy]",
   "python-graphblas[numba]; python_version<'3.15'", # make optional where numba is not supported
   "awkward >=2.0",
-  "sparse >=0.14; python_version<'3.13'",           # make optional, b/c sparse needs numba
+  # sparse needs numba, so it stays optional. numba gained py3.13 support in 0.61 and
+  # py3.14 in 0.63; sparse 0.16 is the first release that postdates py3.13, and 0.18 the
+  # first that postdates py3.14.
+  "sparse >=0.14; python_version<'3.13'",
+  "sparse >=0.16; python_version=='3.13'",
+  # Upper guard for the same reason as numba above: sparse depends on numba, so it has
+  # to drop out wherever numba does, not just trail it.
+  "sparse >=0.18; python_version>='3.14' and python_version<'3.15'",
   # fast-matrix-market is no longer maintained; last supported Python is 3.12
 ]
 viz = ["python-graphblas[networkx,scipy]", "matplotlib >=3.6"]
@@ -342,6 +349,7 @@ ignore = [
   "PLR0911", # Too many return statements
   "PLR0912", # Too many branches
   "PLR0913", # Too many arguments to function call
+  "PLR0917", # Too many positional arguments (Stable since ruff 0.16; same call for PLR0913)
   "PLR0915", # Too many statements
   "PLR2004", # Magic number used in comparison, consider replacing magic with a constant variable
   "PLW0603", # Using the global statement to update ... is discouraged (Note: yeah, discouraged, but too strict)
@@ -362,6 +370,7 @@ ignore = [
 
   # Ignored categories
   "C90", # mccabe (Too strict, but maybe we should make things less complex)
+  "CPY", # flake8-copyright (Stable since ruff 0.16; we don't put a header in every file)
   "I",   # isort (Should we replace `isort` with this?)
   "ANN", # flake8-annotations (We don't use annotations yet)
   "BLE", # flake8-blind-except (Maybe consider)
@@ -394,6 +403,7 @@ ignore = [
   "NPY002", # numba doesn't support rng generator yet
 ]
 "graphblas/core/utils.py" = ["PLE0302"] # `__set__` is used as a property
+"graphblas/core/formatting.py" = ["ISC004"] # Adjacent literals form one HTML fragment
 "scripts/ci_pick_versions.py" = ["S311"] # random.choice is intentional for CI version selection
 "graphblas/ss/_core.py" = ["N999"] # We want _core.py to be underscopre
 # Allow useless expressions, assert, pickle, RNG, print, no docstring, and yoda in tests
