@@ -425,6 +425,24 @@ def test_monoid_parameterized():
     assert monoid.is_idempotent
 
 
+def test_monoid_rejects_builtin_binaryop():
+    """A built-in binaryop cannot back a user monoid.
+
+    Built-ins already own their monoid association (binary.max resolves to
+    monoid.max), and SuiteSparse silently ignores the identity passed to
+    GrB_Monoid_new for them, so accepting one would produce a monoid whose
+    Python-side identity disagrees with what GraphBLAS computes with.
+    """
+    with pytest.raises(TypeError, match="must be a user-defined BinaryOp"):
+        Monoid.register_new("_bad_builtin_monoid", binary.max, 0)
+    with pytest.raises(TypeError, match="must be a user-defined BinaryOp"):
+        Monoid.register_anonymous(binary.plus, 1)
+    # The rejection happens before any object is created, so the built-in's
+    # own monoid association is untouched.
+    assert binary.max.monoid is monoid.max
+    assert not hasattr(gb.monoid, "_bad_builtin_monoid")
+
+
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_semiring_parameterized():
