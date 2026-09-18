@@ -956,6 +956,12 @@ class Matrix(BaseType):
     ):
         """Create a new Matrix from row and column indices and values.
 
+        .. warning::
+            When ``nrows`` or ``ncols`` is omitted, the shape is inferred from
+            the largest row or column index, so trailing all-empty rows or
+            columns are dropped. Pass ``nrows`` and ``ncols`` explicitly to pin
+            the shape.
+
         Parameters
         ----------
         rows : list or np.ndarray

@@ -29,6 +29,27 @@ def _get_types(ops, initdtype):
 
 
 class Aggregator:
+    """A reduction operator that collapses the values of a Matrix or Vector.
+
+    An Aggregator is used with the ``reduce`` family of methods: ``Vector.reduce``,
+    ``Matrix.reduce_rowwise``, ``Matrix.reduce_columnwise``, and ``Matrix.reduce_scalar``.
+    Some aggregators return a summary value (``sum``, ``mean``, ``max``); others return a
+    position (``ss.argmin``, ``ss.argmax``, ``ss.first_index``).
+
+    Built-in aggregators live in the ``graphblas.agg`` namespace, such as ``agg.sum``,
+    ``agg.mean``, and ``agg.count``. The position aggregators are SuiteSparse-specific and
+    live under ``agg.ss``; the bare ``agg.argmin`` spellings are deprecated. Unlike the
+    other operators, an Aggregator is not a single GraphBLAS object; many are built from a
+    monoid or semiring plus an optional finalize step, composed per dtype on first use.
+
+    Examples
+    --------
+    >>> import graphblas as gb
+    >>> v = gb.Vector.from_coo([0, 1, 2], [1, 2, 3])
+    >>> int(v.reduce(gb.agg.sum).new())
+    6
+    """
+
     opclass = "Aggregator"
 
     def __init__(
