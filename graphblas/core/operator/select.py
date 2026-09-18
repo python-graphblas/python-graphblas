@@ -25,7 +25,11 @@ class TypedBuiltinSelectOp(TypedOpBase):
 class TypedUserSelectOp(TypedOpBase):
     __slots__ = ()
     opclass = "SelectOp"
-    _owns_gb_obj = True  # underlying object is a GrB_IndexUnaryOp
+    # The underlying object is a ``GrB_IndexUnaryOp``. Instances built by
+    # ``_from_indexunary`` borrow that handle and set ``_gb_obj_owner``, which
+    # suppresses the free here. Freeing from both sides is a use-after-free that
+    # no test catches: the freed handle usually still reads as valid.
+    _owns_gb_obj = True
 
     def __init__(self, parent, name, type_, return_type, gb_obj, dtype2=None):
         super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}", dtype2=dtype2)
