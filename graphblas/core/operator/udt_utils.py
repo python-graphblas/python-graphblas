@@ -1287,7 +1287,14 @@ def _set_jit_c_strings(gb_obj, c_name, c_defn, set_string_func):
     Both strings are one-shot on SuiteSparse: a second set returns
     ``GrB_ALREADY_SET`` silently. The return is not checked here because
     callers always pass a freshly-allocated handle.
+
+    Arming an op with C source is the point at which this process has
+    committed to wanting a JIT compiler, so it is also where SuiteSparse's
+    non-compiling default gets raised.
     """
+    from ..ss.jit_config import _enable_jit_for_udt
+
+    _enable_jit_for_udt()
     set_string_func(gb_obj, ffi.new("char[]", c_name.encode()), lib.GxB_JIT_C_NAME)
     set_string_func(gb_obj, ffi.new("char[]", c_defn.encode()), lib.GxB_JIT_C_DEFINITION)
 

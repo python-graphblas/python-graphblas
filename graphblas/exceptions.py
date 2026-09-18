@@ -109,10 +109,9 @@ class NoJITWarning(UserWarning):
 
     Emitted from :func:`graphblas.core.ss.jit_config._maybe_warn_no_jit`
     when an op like ``binary.plus[udt]`` would otherwise have JIT-compiled,
-    but couldn't because the JIT compiler is unusable, ``jit_c_control``
-    is off, or the UDT isn't expressible as a C struct. Fires once per
-    ``(op, dtype)`` pair per process, so a user who registers several
-    UDTs gets one warning per pair regardless of cause.
+    but the UDT has no C form, so no kernel source was generated. Fires once
+    per ``(op, dtype)`` pair per process, so a user who registers several UDTs
+    gets one warning per pair.
 
     Inherits from :class:`UserWarning` so existing ``UserWarning`` filters
     still match it; users can also filter by category for a tight scope:

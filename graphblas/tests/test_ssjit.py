@@ -1,6 +1,9 @@
 import contextlib
 import os
+import subprocess
+import sys
 import sysconfig
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -23,6 +26,7 @@ from graphblas.core import _supports_udfs as supports_udfs
 from graphblas.core.operator.indexbinary import _has_idxbinop
 from graphblas.core.operator.udt_utils import _has_jit_set
 from graphblas.core.ss import _IS_SSGB7
+from graphblas.core.ss.jit_config import _enable_jit_for_udt
 
 from .conftest import autocompute, burble
 
@@ -41,13 +45,12 @@ if backend != "suitesparse":
 # can call it themselves. Tests use it through the public surface.
 _fix_jit_config = gb.ss.fix_jit_config if not _IS_SSGB7 else (lambda: None)
 
-# Capture the post-import JIT state before the autouse ``_setup_jit`` fixture
-# runs. ``_auto_fix_jit_at_import`` probes once; ``jit_c_control`` is ``'on'``
-# iff the env can actually JIT-compile. Tests that assert on the import-time
-# state read this constant; the fixture may transiently mutate the live config.
-_JIT_WORKS_AT_IMPORT = (
-    not _IS_SSGB7 and backend == "suitesparse" and gb.ss.config["jit_c_control"] == "on"
-)
+# ``_auto_fix_jit_at_import`` repairs the compiler path but leaves
+# ``jit_c_control`` alone, so compilation is enabled on demand by
+# ``_enable_jit_for_udt``. Ask it once here, before the autouse ``_setup_jit``
+# fixture mutates the live config: it answers whether this environment can
+# JIT-compile at all, and caches that answer for the rest of the process.
+_JIT_WORKS_AT_IMPORT = not _IS_SSGB7 and backend == "suitesparse" and _enable_jit_for_udt()
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -57,9 +60,8 @@ def _setup_jit():
     Strategy:
     1. _fix_jit_config(): fix conda-baked compiler paths and probe.
        - Returns True: JIT works, proceed.
-       - Returns False: probe failed. SuiteSparse will have left
-         ``jit_c_control = 'load'`` (compile disabled, cache loading
-         still allowed); we leave that state untouched.
+       - Returns False: probe failed. Whatever ``jit_c_control``
+         SuiteSparse was left at is left untouched.
        - Returns None: no conda env, try sysconfig instead.
     2. Sysconfig fallback: for non-conda installs (pure pip).
     """
@@ -71,10 +73,9 @@ def _setup_jit():
     prev = gb.ss.config["jit_c_control"]
 
     result = _fix_jit_config()
-    # ``True``: conda JIT configured and verified. ``False``: probe failed
-    # (``_probe_jit`` leaves ``jit_c_control`` at ``'load'``; don't try
-    # sysconfig, since if the conda compiler can't build GraphBLAS JIT
-    # kernels, Python's sysconfig compiler won't either). Both done.
+    # ``True``: conda JIT configured and verified. ``False``: probe failed;
+    # don't try sysconfig, since if the conda compiler can't build GraphBLAS
+    # JIT kernels, Python's sysconfig compiler won't either. Both done.
     if result is None:
         # No conda env. Try sysconfig for non-conda installs.
         cc = sysconfig.get_config_var("CC")
@@ -111,24 +112,155 @@ def _jit_mode(mode):
         gb.ss.config["jit_c_control"] = prev
 
 
+# Run in a subprocess: the import under test happens once per process, and by
+# the time any test executes it is long past. ``jit_c_control`` has to be read
+# through the C API rather than ``gb.ss.config``, because reaching for
+# ``gb.ss`` is itself the thing under test.
+_SS_IMPORT_PROBE = """
+import graphblas as gb
+
+gb.Vector                           # initialize the backend, but not gb.ss
+from graphblas.core import ffi, lib
+
+def control():
+    val_ptr = ffi.new("int32_t*")
+    assert lib.GxB_Global_Option_get_INT32(lib.GxB_JIT_C_CONTROL, val_ptr) == lib.GrB_SUCCESS
+    return val_ptr[0]
+
+before = control()
+gb.ss.about["library_version"]      # the line a user writes for a bug report
+print("package: " + gb.__file__)
+print("control: " + str(before))
+print("after: " + str(control()))
+"""
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_ss_import_leaves_jit_c_control_alone():
+    """Reading from ``gb.ss`` must not change the numerical machinery.
+
+    ``gb.ss`` is reached by attribute access, so importing it has to be inert.
+    It used to raise ``jit_c_control`` to ``'on'``, which decides whether
+    SuiteSparse loads kernels from its on-disk cache, so a line as harmless as
+    ``print(gb.ss.about["library_version"])`` changed how every later
+    operation in the process was computed.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    env = dict(os.environ, PYTHONPATH=str(repo_root))
+    result = subprocess.run(
+        [sys.executable, "-c", _SS_IMPORT_PROBE],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert result.returncode == 0, report
+    lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
+    # Assert the child probed this tree before trusting what it reports about it.
+    assert lines.get("package") == str(repo_root / "graphblas" / "__init__.py"), report
+    assert lines["after"] == lines["control"], report
+
+
+# Run in a subprocess: this is about the very first call in a process, and by
+# the time any test executes, plenty of JIT setup has already happened.
+_FIX_JIT_TWICE_PROBE = """
+import graphblas as gb
+
+print("package: " + gb.__file__)
+print("first: " + str(gb.ss.fix_jit_config()))
+print("second: " + str(gb.ss.fix_jit_config()))
+"""
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_fix_jit_config_first_call_agrees_with_the_second():
+    """``fix_jit_config()`` must report on the environment, not on itself.
+
+    Its probe registers a UDT, and registering a UDT asks to enable the JIT,
+    which would start a second probe inside the first. The inner probe
+    registered the probe type and the outer one then died redeclaring it, so
+    a perfectly working environment answered ``False`` the first time and
+    ``True`` every time after.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    env = dict(os.environ, PYTHONPATH=str(repo_root))
+    result = subprocess.run(
+        [sys.executable, "-c", _FIX_JIT_TWICE_PROBE],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert result.returncode == 0, report
+    lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
+    # Assert the child probed this tree before trusting what it reports about it.
+    assert lines.get("package") == str(repo_root / "graphblas" / "__init__.py"), report
+    assert lines["first"] == lines["second"], report
+
+
 @pytest.mark.skipif("_IS_SSGB7")
 def test_auto_fix_jit_at_import_left_compiler_usable():
-    """After ``import graphblas.ss``, a probe-confirmed compiler implies
-    ``jit_c_control == 'on'``.
-    """
+    """The import-time repair leaves a compiler the UDT path can actually use."""
     if not gb.ss.jit_compiler_is_usable():
         pytest.skip("sandboxed env without a usable compiler; auto-fix had nothing to repair")
     if not _JIT_WORKS_AT_IMPORT:
-        # Compiler file exists but the import-time probe failed (e.g., the
-        # baked-in flags target a different arch than the host). After a
-        # compile failure SuiteSparse drops ``jit_c_control`` to a
-        # non-compiling mode so downstream ops punt to generic cleanly; the
-        # probe absorbs that first failure. Which mode it lands in (``'load'``
-        # or ``'run'``) varies by SuiteSparse version.
+        # Compiler file exists but the probe failed (e.g., the baked-in flags
+        # target a different arch than the host). After a compile failure
+        # SuiteSparse drops ``jit_c_control`` to a non-compiling mode so
+        # downstream ops punt to generic cleanly; the probe absorbs that first
+        # failure. Which mode it lands in varies by SuiteSparse version.
         assert gb.ss.config["jit_c_control"] in {"load", "run"}
         pytest.skip("compiler present but JIT probe failed in this env")
     assert _JIT_WORKS_AT_IMPORT
     assert gb.ss.config["jit_c_control"] == "on"
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_enable_jit_for_udt_re_raises_a_lowered_control(monkeypatch):
+    """A cached "yes" must still raise a non-compiling control before arming a kernel.
+
+    The cache answers "can this process compile?", which is settled once. The
+    control is separate state that anything may have moved since, so returning
+    the cached answer without re-raising it left an op armed with C source that
+    SuiteSparse would never build, and nothing warned: codegen had succeeded.
+
+    Driven through a stand-in config, so the assertion holds on every host: a
+    library built without the JIT clamps writes down to ``'run'``, and would
+    never read back the ``'on'`` this is about. The live round trip is pinned
+    separately below, where the clamp is not in the way.
+    """
+    from graphblas.core.ss import jit_config
+
+    fake = {}
+    monkeypatch.setattr(jit_config, "_ss_config", lambda: fake)
+    monkeypatch.setattr(jit_config, "_jit_enabled_for_udt", True)
+    # An explicit opt-out is a choice, not one of SuiteSparse's defaults to raise.
+    for start, expected in (("run", "on"), ("load", "on"), ("off", "off"), ("pause", "pause")):
+        fake["jit_c_control"] = start
+        assert _enable_jit_for_udt() is True
+        assert fake["jit_c_control"] == expected
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_enable_jit_for_udt_re_raises_the_live_control():
+    """The same raise, through SuiteSparse's own config rather than a stand-in."""
+    if not _JIT_WORKS_AT_IMPORT:
+        pytest.skip("JIT not compiled in or not working here; the control need not hold 'on'")
+
+    from graphblas.core.ss import jit_config
+
+    prev_control = gb.ss.config["jit_c_control"]
+    prev_enabled = jit_config._jit_enabled_for_udt
+    try:
+        jit_config._jit_enabled_for_udt = True
+        gb.ss.config["jit_c_control"] = "run"
+        assert _enable_jit_for_udt() is True
+        assert gb.ss.config["jit_c_control"] == "on"
+    finally:
+        gb.ss.config["jit_c_control"] = prev_control
+        jit_config._jit_enabled_for_udt = prev_enabled
 
 
 @pytest.mark.skipif("_IS_SSGB7")
