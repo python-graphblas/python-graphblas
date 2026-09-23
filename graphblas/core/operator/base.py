@@ -267,51 +267,15 @@ if _has_numba:
                 return line
         return "Numba could not compile the function for these input types"
 
-    def _array_udt_operands(dtypes):
-        """Return the distinct array-UDT operands in ``dtypes``, order preserved.
-
-        ``x`` and ``y`` are usually the same UDT, hence the dedup. It is by
-        identity, not by shape: a flat ``FP64[2, 3]`` and a layered
-        ``FP64[3][2]`` are separate DataTypes with separate GrB_Type handles,
-        yet Numba collapses both to the same ``nestedarray(float64, (2, 3))``.
-        """
-        operands = []
-        for d in dtypes:
-            if (
-                d._is_udt
-                and d.np_type.subdtype is not None
-                and not any(d is seen for seen in operands)
-            ):
-                operands.append(d)
-        return operands
-
     def _resolve_udt_return_type(numba_ret_type, *dtypes):
         """Resolve a Numba return type to a DataType, matching Tuple returns to an input UDT.
 
         When a UDF returns a tuple, Numba infers ``Tuple(...)`` rather than a
         Record type. Match by field count, preferring a candidate whose field
-        types align with the Tuple's element types. An array return is matched
-        to an array-UDT operand by exact Numba type when the extents survived
-        (``NestedArray``), and by element type and rank when they did not.
+        types align with the Tuple's element types. An array the UDF builds
+        (``x + y``) is typed without its extents, so it takes the type of the
+        array-UDT operand with the same element type and rank.
         """
-        if isinstance(numba_ret_type, numba.core.types.NestedArray):
-            # An array-UDT operand returned as-is keeps its own Numba type.
-            # Match it to that operand before ``lookup_dtype``, which keys on
-            # the Numba type and so answers with whichever UDT that shares
-            # it was registered last: a flat ``FP64[2, 3]`` and a layered
-            # ``FP64[3][2]`` both map to ``nestedarray(float64, (2, 3))``.
-            # Naming the other one gives the op an output type that a monoid,
-            # or an assignment back into the operand's vector, rejects as a
-            # domain mismatch.
-            same = [d for d in _array_udt_operands(dtypes) if d.numba_type == numba_ret_type]
-            if len(same) > 1:
-                raise UdfParseError(
-                    f"UDT UDF returned {numba_ret_type!r}, which matches more than one "
-                    f"input array UDT ({', '.join(str(d) for d in same)}). "
-                    f"Make the operands the same type."
-                )
-            if same:
-                return same[0]
         try:
             return lookup_dtype(numba_ret_type)
         except (ValueError, TypeError):
@@ -368,35 +332,40 @@ if _has_numba:
                     f"scalar; tuple returns are only matched to record UDTs."
                 )
         elif isinstance(numba_ret_type, numba.core.types.Array):
-            # A UDF over an array UDT may build its result (``x + y``) instead
-            # of returning an operand. Numba types that as a plain Array, which
-            # ``lookup_dtype`` doesn't recognize, so match it back to an array
-            # UDT input by base element type and dimensionality.
-            array_inputs = _array_udt_operands(dtypes)
+            # Numba types an array the UDF builds as a plain ``Array``: element
+            # type and rank, but no extents, which only an operand can supply.
+            # (An operand returned as-is keeps its ``NestedArray`` type, extents
+            # and all, and ``lookup_dtype`` resolved it above.)
+            array_inputs = list(
+                dict.fromkeys(  # dedup: ``x`` and ``y`` are often the same UDT
+                    d for d in dtypes if d._is_udt and d.np_type.subdtype is not None
+                )
+            )
             if isinstance(numba_ret_type, numba.core.types.NestedArray):
-                # Its extents are known and matched no operand above, so a
-                # same-rank operand would be the wrong size (e.g., returning a
-                # record's 3-long array field over an ``FP64[4]`` operand).
-                candidates = []
+                # Extents survived, so ``lookup_dtype`` above named a UDT for
+                # them unless SuiteSparse refused to create it: builds without
+                # variable-length arrays cap a UDT at 128 bytes before SS 9.0
+                # and 1024 from then on. Matching those extents to a same-rank
+                # operand would hand SuiteSparse an element of the wrong size.
+                shaped_like = []
             else:
-                # An Array type carries ``ndim`` but not its extents, so
-                # operands that differ only in length are indistinguishable
-                # here. Guessing would hand SuiteSparse an element of the
-                # wrong size, so say so.
-                candidates = [
+                shaped_like = [
                     d
                     for d in array_inputs
                     if d.numba_type.dtype == numba_ret_type.dtype
-                    and len(d.numba_type.shape) == numba_ret_type.ndim
+                    and d.numba_type.ndim == numba_ret_type.ndim
                 ]
-            if len(candidates) > 1:
+            if len(shaped_like) == 1:
+                return shaped_like[0]
+            if shaped_like:
+                # Operands that differ only in length are indistinguishable
+                # here. Guessing would hand SuiteSparse an element of the
+                # wrong size, so say so.
                 raise UdfParseError(
                     f"UDT UDF returned {numba_ret_type!r}, which matches more than one "
-                    f"input array UDT ({', '.join(str(d) for d in candidates)}). "
+                    f"input array UDT ({', '.join(str(d) for d in shaped_like)}). "
                     f"Return one of the operands, or make the operands the same type."
                 )
-            if candidates:
-                return candidates[0]
             # An array UDT went in and an array came out, but not one that
             # fits: name the mismatch rather than fall through to the generic
             # "unsupported type", whose advice the user already followed.
@@ -426,12 +395,6 @@ if _has_numba:
         moves the descriptor rather than the element payload, corrupting
         whatever follows it (and overrunning the element outright once the
         descriptor is the wider of the two).
-
-        Read from ``numba_type`` rather than ``np_type.subdtype`` so this
-        agrees with the type the UDF was compiled against: numpy keeps nested
-        subarray dtypes layered, e.g. ``FP64[5]`` inside ``[6]`` stays
-        ``(dtype(('<f8', (5,))), (6,))``, while Numba collapses the same dtype
-        to ``nestedarray(float64, (6, 5))``.
         """
         nested = dtype.numba_type
         return nested.dtype, nested.shape

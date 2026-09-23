@@ -76,13 +76,12 @@ def register_new(name, jit_c_definition, *, np_type=None):
         else:
             numba_type = None
 
+    np_type = core.dtypes._flatten_subarrays(np_type)
+
     # For now, let's use "opaque" unsigned bytes for the c type.
     rv = core.dtypes.DataType(name, gb_obj, None, f"uint8_t[{size}]", numba_type, np_type)
     core.dtypes._registry[gb_obj] = rv
     if save_np_type or np_type not in core.dtypes._registry:
         core.dtypes._registry[np_type] = rv
-        if numba_type is not None and (save_np_type or numba_type not in core.dtypes._registry):
-            core.dtypes._registry[numba_type] = rv
-            core.dtypes._registry[numba_type.name] = rv
     setattr(dtypes.ss, name, rv)
     return rv

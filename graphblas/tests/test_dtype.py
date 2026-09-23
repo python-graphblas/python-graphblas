@@ -10,8 +10,8 @@ import graphblas as gb
 from graphblas import core, dtypes
 from graphblas.core import _supports_udfs as supports_udfs  # noqa: F401
 from graphblas.core import lib
-from graphblas.core.operator.udt_utils import _has_jit_set  # noqa: F401
-from graphblas.core.utils import _NP2
+from graphblas.core.operator.udt_utils import _has_jit_set
+from graphblas.core.utils import _NP2, values_to_numpy_buffer
 from graphblas.dtypes import lookup_dtype
 
 suitesparse = gb.backend == "suitesparse"
@@ -215,8 +215,111 @@ def test_default_names():
     )
     assert _default_name(np.dtype("(29,)uint8")) == "UINT8[29]"
     assert _default_name(np.dtype("(3,4)bool")) == "BOOL[3, 4]"
-    assert _default_name(np.dtype((np.dtype("(5,)float64"), (6,)))) == "FP64[5][6]"
+    assert _default_name(np.dtype((np.dtype([("x", np.int32)]), (6,)))) == "{'x': INT32}[6]"
     assert _default_name(np.dtype("S5")) == "dtype('S5')"
+
+
+def test_nested_subarrays_register_flat():
+    """An array-of-arrays dtype registers as the flat array UDT with its layout.
+
+    numpy keeps ``np.dtype((np.dtype((np.float32, (7,))), (3,)))`` layered and
+    compares it unequal to ``np.dtype((np.float32, (3, 7)))``, but nothing else
+    tells the two apart: same bytes, same expanded ``(..., 3, 7)`` array, same
+    Numba type. As two DataTypes they had separate GrB_Types, which SuiteSparse
+    refused to mix, and the layered one broke code that reads ``subdtype`` as
+    ``(scalar, shape)``.
+    """
+    flat = np.dtype((np.float32, (3, 7)))
+    layered = np.dtype((np.dtype((np.float32, (7,))), (3,)))
+    assert layered != flat
+    udt = lookup_dtype(layered)
+    assert udt.np_type == flat
+    assert udt.name == "FP32[3, 7]"
+    assert lookup_dtype(flat) is udt
+    assert dtypes.register_anonymous(layered) is udt
+    assert udt == layered
+    assert pickle.loads(pickle.dumps(udt)) is udt
+    if _has_jit_set:
+        assert udt.jit_c_definition is not None
+
+    deeper = np.dtype((np.dtype((np.dtype((np.float32, (7,))), (2,))), (3,)))
+    assert lookup_dtype(deeper).np_type == np.dtype((np.float32, (3, 2, 7)))
+
+
+def test_nested_subarrays_register_flat_in_records():
+    """Record fields flatten too, keeping offsets, itemsize, alignment, and titles."""
+    point = np.dtype((np.float32, (5,)))
+    layered = np.dtype([("fl_id", np.int16), ("fl_tri", point, (3,))], align=True)
+    flat = np.dtype([("fl_id", np.int16), ("fl_tri", np.float32, (3, 5))], align=True)
+    udt = lookup_dtype(layered)
+    assert udt.np_type == flat
+    assert udt.np_type.isalignedstruct
+    assert lookup_dtype(flat) is udt
+
+    packed = np.dtype([("fl_a", np.int8), ("fl_b", point, (2,))])
+    assert lookup_dtype(packed).np_type == np.dtype(
+        [("fl_a", np.int8), ("fl_b", np.float32, (2, 5))]
+    )
+
+    titled = np.dtype({"names": ["fl_t"], "formats": [(point, (4,))], "titles": ["Tee"]})
+    assert lookup_dtype(titled).np_type == np.dtype(
+        {"names": ["fl_t"], "formats": [(np.float32, (4, 5))], "titles": ["Tee"]}
+    )
+
+    # An array of records whose field nests subarrays.
+    assert lookup_dtype(np.dtype((layered, (2,)))).np_type == np.dtype((flat, (2,)))
+
+
+def test_nested_subarray_record_values_load_intact():
+    """Values whose record dtype nests subarrays load into the flattened UDT intact.
+
+    numpy casts between a field of two ``FP64[3]`` elements and an
+    ``FP64[2, 3]`` field wrongly in both directions: ``astype``,
+    ``np.array(..., dtype=)``, and item assignment all scramble the values. The
+    bytes already match, so ingest views such values instead of casting them.
+    """
+    point = np.dtype((np.float64, (3,)))
+    layered = np.dtype([("li_k", np.int64), ("li_pts", point, (2,))], align=True)
+    udt = lookup_dtype(layered)
+    vals = np.zeros(2, layered)
+    vals["li_k"] = [1, 2]
+    vals["li_pts"] = np.arange(12.0).reshape(2, 2, 3)
+
+    # Inferring the dtype views the values too, so the pair agrees.
+    arr, dtype = values_to_numpy_buffer(vals)
+    assert dtype is udt
+    assert arr.dtype == udt.np_type
+    np.testing.assert_array_equal(arr["li_pts"], vals["li_pts"])
+
+    v = gb.Vector.from_coo([0, 1], vals, dtype=udt)
+    np.testing.assert_array_equal(v[1].new().value["li_pts"], vals["li_pts"][1])
+    v = gb.Vector.from_coo([0, 1], vals)
+    assert v.dtype is udt
+    np.testing.assert_array_equal(v[1].new().value["li_pts"], vals["li_pts"][1])
+    v[0] = vals[1]
+    np.testing.assert_array_equal(v[0].new().value["li_pts"], vals["li_pts"][1])
+    s = gb.Scalar.from_value(vals[0], dtype=udt)
+    np.testing.assert_array_equal(s.value["li_pts"], vals["li_pts"][0])
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_lookup_numba_type_goes_through_numpy_dtype():
+    """A UDT's Numba type resolves through its numpy dtype, not a registry key.
+
+    Keyed directly, a layered and a flat array dtype, which share a Numba type,
+    resolved to whichever registered last, and a layout nobody had registered
+    yet did not resolve at all.
+    """
+    import numba
+
+    nb_type = numba.typeof(np.dtype((np.int32, (2, 9)))).dtype
+    udt = lookup_dtype(nb_type)
+    assert udt.np_type == np.dtype((np.int32, (2, 9)))
+    assert lookup_dtype(np.dtype((np.dtype((np.int32, (9,))), (2,)))) is udt
+    assert lookup_dtype(nb_type) is udt
+
+    rec = dtypes.register_anonymous(np.dtype([("nb_q", np.int32), ("nb_r", np.float32)]))
+    assert lookup_dtype(numba.typeof(rec.np_type).dtype) is rec
 
 
 def test_record_dtype_from_dict():

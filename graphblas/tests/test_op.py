@@ -2082,29 +2082,21 @@ def test_udt_record_array_field_roundtrip():
 def test_udt_array_udf_returning_operand_keeps_its_type():
     """A UDF that returns an array-UDT operand as-is produces that operand's UDT.
 
-    Numba collapses a layered ``FP64[5][2]`` to the flat ``FP64[2, 5]``'s
-    ``nestedarray(float64, (2, 5))``, and ``lookup_dtype`` keys on the Numba
-    type, so it named whichever of the two was registered last. ``return y``
-    over the flat UDT resolved to the layered one, which SuiteSparse rejects
-    as a domain mismatch in a monoid or on assignment into a flat vector.
+    A layered ``FP64[5][2]`` and the flat ``FP64[2, 5]`` share the Numba type
+    ``nestedarray(float64, (2, 5))``, and ``lookup_dtype`` used to key UDTs on
+    it, so ``return y`` named whichever of the two had registered last.
+    SuiteSparse rejects the other one as a domain mismatch in a monoid or on
+    assignment into the operand's vector. The two now register as one UDT, and
+    a Numba type resolves through its numpy dtype, not registration order.
     """
-    # Flat first, so the registry's last word on the shared Numba type is the
-    # layered UDT: the order that resolved the flat op to the wrong type.
     flat = dtypes.register_anonymous(np.dtype((np.float64, (2, 5))), "_RetOperandFlat")
-    layered = dtypes.register_anonymous(
-        np.dtype((np.dtype((np.float64, (5,))), (2,))), "_RetOperandLayered"
-    )
-    assert flat.numba_type == layered.numba_type
+    assert dtypes.register_anonymous(np.dtype((np.dtype((np.float64, (5,))), (2,)))) is flat
 
     def _second(x, y):  # pragma: no cover (numba)
         return y
 
     op = BinaryOp.register_anonymous(_second, "_ret_operand_second", is_udt=True)
     assert op[flat].return_type is flat
-    assert op[layered].return_type is layered
-    # Either operand could be the one returned, so refuse to guess.
-    with pytest.raises(UdfParseError, match="matches more than one input array UDT"):
-        op[flat, layered]
 
     v = Vector(flat, size=2)
     v[0] = np.arange(10.0).reshape(2, 5)
@@ -2116,11 +2108,8 @@ def test_udt_array_udf_returning_operand_keeps_its_type():
     res = v.reduce(monoid.any).new().value
     assert any(np.array_equal(res, v[i].new().value) for i in range(2))
 
-    # A record's array field returned as-is also knows its extents, so it is
-    # not matched to an operand of the same rank but a different length. The
-    # field's 19-long shape must stay unique to this test: registering an
-    # ``FP64[19]`` UDT anywhere in the session gives ``lookup_dtype`` an answer
-    # for the returned field, and this resolves to it instead of raising.
+    # A record's array field returned as-is carries its extents too, so it
+    # resolves to the array UDT of that shape, whether or not one existed.
     rec = dtypes.register_anonymous(
         np.dtype([("ro_n", np.int64), ("ro_vec", np.float64, (19,))], align=True),
         "_RetOperandRec",
@@ -2131,8 +2120,119 @@ def test_udt_array_udf_returning_operand_keeps_its_type():
         return x["ro_vec"]
 
     op2 = BinaryOp.register_anonymous(_field, "_ret_operand_field", is_udt=True)
+    assert op2[rec, udt14].return_type is dtypes.lookup_dtype(np.dtype((np.float64, (19,))))
+    r = Vector(rec, size=1)
+    r[0] = (1, np.arange(19.0))
+    u = Vector(udt14, size=1)
+    u[0] = np.zeros(14)
+    np.testing.assert_array_equal(r.ewise_mult(u, op2).new()[0].new().value, np.arange(19.0))
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_array_udf_building_array_takes_operand_shape():
+    """An array the UDF builds takes the type of the one operand it can match.
+
+    Numba types ``x + 1.0`` as a plain ``Array`` with an element type and a
+    rank but no extents, so only an operand can say how long the result is.
+    Two same-rank candidates, or none, is an error rather than a guess.
+    """
+    udt15 = dtypes.register_anonymous(np.dtype((np.float64, (15,))), "_BuildArr15")
+    udt16 = dtypes.register_anonymous(np.dtype((np.float64, (16,))), "_BuildArr16")
+
+    def _shift(x, y):  # pragma: no cover (numba)
+        return x + 1.0
+
+    op = BinaryOp.register_anonymous(_shift, "_build_arr_shift", is_udt=True)
+    assert op[udt15].return_type is udt15
+    with pytest.raises(UdfParseError, match="matches more than one input array UDT"):
+        op[udt15, udt16]
+
+    def _fold(x, y):  # pragma: no cover (numba)
+        return x.reshape(3, 5)
+
+    op2 = BinaryOp.register_anonymous(_fold, "_build_arr_fold", is_udt=True)
     with pytest.raises(UdfParseError, match="matches no input array UDT"):
-        op2[rec, udt14]
+        op2[udt15]
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_array_udf_known_extents_never_match_by_rank(monkeypatch):
+    """A return that kept its extents is not matched to a same-rank operand.
+
+    ``lookup_dtype`` names a UDT for known extents, registering one if no UDT
+    has that layout yet, so the rank matcher normally sees only an ``Array``
+    the UDF built, which carries no extents. Registration can fail, though:
+    SuiteSparse builds without variable-length arrays reject a UDT over 128
+    bytes before 9.0 and over 1024 from then on. Matching known extents to a
+    same-rank operand would then hand SuiteSparse an element of the wrong
+    size, so refuse instead. Simulated here, since this build registers the
+    type.
+    """
+    import numba
+
+    from graphblas.core.operator import base as _base
+
+    udt21 = dtypes.register_anonymous(np.dtype((np.float64, (21,))), "_RankGuard21")
+    ret = numba.typeof(np.dtype((np.float64, (23,)))).dtype
+    # Same element type and rank, different length: what the rank matcher sees.
+    assert ret.dtype == udt21.numba_type.dtype
+    assert ret.ndim == udt21.numba_type.ndim
+
+    real_lookup = _base.lookup_dtype
+
+    def refuse_nested(key, value=None):
+        if isinstance(key, numba.core.types.NestedArray):
+            raise ValueError("simulated: SuiteSparse refused to register this UDT")
+        return real_lookup(key, value)
+
+    monkeypatch.setattr(_base, "lookup_dtype", refuse_nested)
+    with pytest.raises(UdfParseError, match="matches no input array UDT"):
+        _base._resolve_udt_return_type(ret, udt21)
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_declared_with_nested_subarrays_gets_builtin_ops():
+    """Built-in ops work on UDTs declared with nested subarray dtypes.
+
+    numpy reports such a dtype's ``subdtype`` as ``(inner array dtype, outer
+    shape)``, which the auto-lift codegen took for ``(scalar, shape)``:
+    ``plus``, ``eq``, and ``ainv`` failed in Numba lowering, ``monoid.plus`` and
+    ``agg.sum`` could not build an identity, and a UDF returning a record
+    operand could come back as its flat-field twin. Registration flattens these
+    dtypes now, so they take the ordinary path.
+    """
+    udt = dtypes.register_anonymous(np.dtype((np.dtype((np.int64, (3,))), (4,))), "_NestedDeclArr")
+    assert udt.np_type == np.dtype((np.int64, (4, 3)))
+    vals = np.arange(12).reshape(4, 3)
+    v = Vector(udt, size=2)
+    v[0] = vals
+    v[1] = vals * 10
+    np.testing.assert_array_equal(binary.plus(v & v).new()[1].new().value, vals * 20)
+    assert binary.eq(v & v).new().to_coo()[1].all()
+    np.testing.assert_array_equal(unary.ainv(v).new()[0].new().value, -vals)
+    np.testing.assert_array_equal(v.reduce(monoid.plus).new().value, vals * 11)
+    np.testing.assert_array_equal(v.reduce(agg.sum).new().value, vals * 11)
+
+    point = np.dtype((np.float64, (3,)))
+    rec = dtypes.register_anonymous(
+        np.dtype([("nd_n", np.int64), ("nd_tri", point, (2,))], align=True), "_NestedDeclRec"
+    )
+    flat_twin = np.dtype([("nd_n", np.int64), ("nd_tri", np.float64, (2, 3))], align=True)
+    assert dtypes.register_anonymous(flat_twin) is rec
+    r = Vector(rec, size=2)
+    r[0] = (1, np.ones((2, 3)))
+    r[1] = (2, np.full((2, 3), 5.0))
+    res = r.reduce(monoid.plus).new().value
+    assert res["nd_n"] == 3
+    np.testing.assert_array_equal(res["nd_tri"], np.full((2, 3), 6.0))
+
+    def _first(x, y):  # pragma: no cover (numba)
+        return x
+
+    op = BinaryOp.register_anonymous(_first, "_nested_decl_first", is_udt=True)
+    assert op[rec].return_type is rec
 
 
 @pytest.mark.skipif("not supports_udfs")

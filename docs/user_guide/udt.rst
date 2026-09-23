@@ -32,7 +32,9 @@ A UDT is any ``numpy.dtype`` you register with python-graphblas. There are three
     point3 = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "Point3")
 
 Multi-dimensional shapes work too (``np.dtype((np.float64, (2, 4)))``); the
-layout is flattened row-major in C.
+layout is flattened row-major in C. An array of arrays has the same layout, so
+it registers as the same UDT: ``np.dtype((point3.np_type, (2,)))`` is
+``FP64[2, 3]``. Record fields that nest arrays are flattened the same way.
 
 **Dataclass UDTs** are record UDTs derived from a ``@dataclass``:
 
@@ -68,7 +70,11 @@ Field type rules:
 
 - Numeric scalar types (``int``, ``float``, ``bool``, ``complex``, the
   corresponding numpy scalar types) are supported.
-- Strings, Python objects, and nested UDTs are not.
+- Fixed-shape arrays (``("pos", np.float64, (3,))``) and records (a nested
+  struct) are supported as fields, and built-in operators lift through them.
+  In the dict and dataclass forms, write an array field as ``"FP64[3]"``; the
+  dict form also takes an existing UDT, such as ``{"id": int, "pos": point3}``.
+- Strings and Python objects are not supported.
 - Dataclass annotation strings (e.g., ``"int"``) resolve through
   ``lookup_dtype``.
 
@@ -236,6 +242,8 @@ JIT is skipped when:
   falls through to the Numba cfunc path.
 - A field type isn't in the numpy-to-C map (rare; the standard numeric
   scalar types all map).
+- A record has an array-valued field. Built-in operators still lift to it
+  through the Numba cfunc.
 - The numpy layout doesn't match what a C compiler would produce. The most
   common case is a packed record with mixed-width fields (e.g.,
   ``np.dtype([("a", int32), ("b", float64)])`` without ``align=True``).

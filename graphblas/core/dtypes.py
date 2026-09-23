@@ -10,6 +10,7 @@ from ..core import NULL, _has_numba, ffi, lib
 
 if _has_numba:
     import numba
+    from numba.np.numpy_support import as_dtype as _numba_as_dtype
 
 # Default assumption unless FC32/FC64 are found in lib
 _supports_complex = hasattr(lib, "GrB_FC64") or hasattr(lib, "GxB_FC64")
@@ -200,6 +201,10 @@ def register_anonymous(dtype, name=None):
     name; the SuiteSparse-side C name set at first registration does not
     change. See ``DataType.jit_c_name``.
 
+    Nested subarrays are flattened first, so ``np.dtype((np.dtype((np.float64,
+    (3,))), (2,)))``, two ``FP64[3]`` elements, registers as ``FP64[2, 3]`` and
+    returns the same ``DataType``. This applies inside records too.
+
     Parameters
     ----------
     dtype : np.dtype | dict | str | @dataclass
@@ -259,6 +264,7 @@ def register_anonymous(dtype, name=None):
             dtype = np.dtype((base_dtype.np_type, shape))
         else:
             raise
+    dtype = _flatten_subarrays(dtype)
     if dtype in _registry:
         # Always use the same object, but use the latest name. The
         # Python-side ``rv.name`` updates here, but the SuiteSparse-side
@@ -318,9 +324,6 @@ def register_anonymous(dtype, name=None):
     rv = DataType(name, gb_obj, None, f"uint8_t[{dtype.itemsize}]", numba_type, dtype)
     _registry[gb_obj] = rv
     _registry[dtype] = rv
-    if _has_numba:
-        _registry[numba_type] = rv
-        _registry[numba_type.name] = rv
     # Set JIT C type definition so SuiteSparse can JIT-compile kernels for this UDT.
     _set_udt_jit_c_definition(rv)
     return rv
@@ -532,6 +535,12 @@ def lookup_dtype(key, value=None):
         return _registry[key]
     except (KeyError, TypeError):
         pass
+    if _has_numba and isinstance(key, (numba.types.Record, numba.types.NestedArray)):
+        # A UDT's Numba type is not a registry key. Convert it to its numpy
+        # dtype, which is already flat, and look that up, so a layout no UDT
+        # has registered yet (e.g., a record's array field returned by a UDF)
+        # resolves the same way regardless of what else is registered.
+        return lookup_dtype(_numba_as_dtype(key))
     if value is not None and hasattr(value, "dtype") and value.dtype in _registry:
         return _registry[value.dtype]
     # np.dtype(x) accepts some weird values; we may want to guard against some
@@ -583,6 +592,61 @@ def _default_name(dtype):
         )
         return f"{{{args}}}"
     return repr(dtype)
+
+
+def _flatten_subarrays(np_type):
+    """Collapse each run of nested subarray dtypes in ``np_type`` into one subarray.
+
+    numpy keeps ``np.dtype((np.dtype((np.float64, (3,))), (2,)))`` layered, as
+    two ``FP64[3]`` elements, and compares it unequal to the flat
+    ``np.dtype((np.float64, (2, 3)))``. Nothing else tells them apart: the bytes
+    are the same, an array of either expands to a ``(..., 2, 3)`` float64 array,
+    and Numba types both as ``nestedarray(float64, (2, 3))``. Registering the flat
+    form gives each layout one DataType. Records are rebuilt only when a field
+    changes, keeping their offsets, titles, itemsize, and alignment flag.
+    """
+    if np_type.subdtype is not None:
+        base, shape = np_type.subdtype
+        flat_base = _flatten_subarrays(base)
+        if flat_base.subdtype is not None:
+            flat_base, inner_shape = flat_base.subdtype
+            shape += inner_shape
+        elif flat_base is base:
+            return np_type
+        return np.dtype((flat_base, shape))
+    if np_type.names is not None:
+        fields = [np_type.fields[name] for name in np_type.names]
+        formats = [_flatten_subarrays(field[0]) for field in fields]
+        if all(new is field[0] for new, field in zip(formats, fields, strict=True)):
+            return np_type
+        spec = {
+            "names": list(np_type.names),
+            "formats": formats,
+            "offsets": [field[1] for field in fields],
+            "itemsize": np_type.itemsize,
+        }
+        if any(len(field) > 2 for field in fields):
+            spec["titles"] = [field[2] if len(field) > 2 else None for field in fields]
+        return np.dtype(spec, align=np_type.isalignedstruct)
+    return np_type
+
+
+def _view_if_same_layout(values, np_type):
+    """Return ``values`` viewed as ``np_type`` if the two differ only in subarray nesting.
+
+    A record whose field nests subarrays has a different dtype from its
+    registered, flattened form, and numpy casts between the two wrongly in
+    either direction: ``astype``, ``np.array(..., dtype=)``, and item assignment
+    all scramble the field's values. The bytes already match, so a view is exact.
+    """
+    if (
+        isinstance(values, (np.ndarray, np.void))
+        and values.dtype != np_type
+        and values.dtype.itemsize == np_type.itemsize
+        and _flatten_subarrays(values.dtype) == np_type
+    ):
+        return values.view(np_type)
+    return values
 
 
 def _dtype_to_string(dtype):

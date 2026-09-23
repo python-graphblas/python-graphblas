@@ -4,6 +4,7 @@ import numpy as np
 
 from ..dtypes import _INDEX, lookup_dtype
 from . import ffi, lib
+from .dtypes import _view_if_same_layout
 
 _NP2 = np.__version__.startswith("2.")
 
@@ -93,9 +94,13 @@ def values_to_numpy_buffer(
     """
     if dtype is not None:
         dtype = lookup_dtype(dtype)
+        np_type = _get_subdtype(dtype.np_type)
         # https://numpy.org/doc/stable/release/2.0.0-notes.html#new-copy-keyword-meaning-for-array-and-asarray-constructors
         array = np.array(
-            array, _get_subdtype(dtype.np_type), copy=copy or _NP2 and None, order=order
+            _view_if_same_layout(array, np_type),
+            np_type,
+            copy=copy or _NP2 and None,
+            order=order,
         )
     else:
         is_input_np = isinstance(array, np.ndarray)
@@ -107,6 +112,10 @@ def values_to_numpy_buffer(
             # fix for win64 numpy handling of ints
             array = array.astype(np.int64)
         dtype = lookup_dtype(array.dtype)
+        # Registration flattens nested subarrays, so values declared with them
+        # carry a dtype the DataType we just looked up no longer matches. The
+        # bytes are identical, so view them and return a pair that agrees.
+        array = _view_if_same_layout(array, dtype.np_type)
         if subarray_after is not None and array.ndim > subarray_after:
             dtype = lookup_dtype(np.dtype((dtype.np_type, array.shape[subarray_after:])))
     if ownable and (not array.flags.owndata or not array.flags.writeable):
