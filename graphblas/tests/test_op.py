@@ -2118,11 +2118,11 @@ def test_udt_array_udf_returning_operand_keeps_its_type():
 
     # A record's array field returned as-is also knows its extents, so it is
     # not matched to an operand of the same rank but a different length. The
-    # field's 13-long shape must stay unique to this test: registering an
-    # ``FP64[13]`` UDT anywhere in the session gives ``lookup_dtype`` an answer
+    # field's 19-long shape must stay unique to this test: registering an
+    # ``FP64[19]`` UDT anywhere in the session gives ``lookup_dtype`` an answer
     # for the returned field, and this resolves to it instead of raising.
     rec = dtypes.register_anonymous(
-        np.dtype([("ro_n", np.int64), ("ro_vec", np.float64, (13,))], align=True),
+        np.dtype([("ro_n", np.int64), ("ro_vec", np.float64, (19,))], align=True),
         "_RetOperandRec",
     )
     udt14 = dtypes.register_anonymous(np.dtype((np.float64, (14,))), "_RetOperand14")
