@@ -281,16 +281,22 @@ machines. With the bogus default, SuiteSparse emits the JIT ``.c`` source
 but never compiles a ``.dylib`` or ``.so``, and silently falls back to the
 cfunc path. The 2-3x JIT speedup is silently lost.
 
-python-graphblas auto-fixes this at import. If ``jit_c_compiler_name``
-doesn't exist on disk, it is replaced with one from ``$CONDA_PREFIX/bin/``
-(or from ``sysconfig`` for pure-pip installs), and ``jit_c_control`` is
-bumped from the SS default ``'run'`` (run cached kernels only; no compile,
-no load from disk) to ``'on'`` (compile, load, and run). When the default
-config is already valid, only the mode bump applies.
+python-graphblas repairs the compiler path when ``graphblas.ss`` is
+imported, which the first access to ``gb.ss`` does. If
+``jit_c_compiler_name`` doesn't exist on disk, it is replaced with one from
+``$CONDA_PREFIX/bin/`` (or from ``sysconfig`` for pure-pip installs). The
+import changes nothing else, so reading ``gb.ss.about`` does not change what
+later operations compute.
+
+``jit_c_control`` is raised from the SS default ``'run'`` (run cached kernels
+only; no compile, no load from disk) to ``'on'`` (compile, load, and run) the
+first time a UDT registers a type or arms an operator with C source. Only
+``'run'`` and ``'load'`` are raised; an explicit ``'off'`` or ``'pause'`` is
+kept.
 
 Call the helper manually to re-fix or verify::
 
-    gb.ss.fix_jit_config()           # repair compiler path (full probe)
+    gb.ss.fix_jit_config()           # repair compiler path, set 'on', probe
     gb.ss.jit_compiler_is_usable()   # cheap check: True iff path exists
 
 Pickle and serialize
