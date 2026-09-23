@@ -242,8 +242,10 @@ def test_nested_subarrays_register_flat():
     if _has_jit_set:
         assert udt.jit_c_definition is not None
 
-    deeper = np.dtype((np.dtype((np.dtype((np.float32, (7,))), (2,))), (3,)))
-    assert lookup_dtype(deeper).np_type == np.dtype((np.float32, (3, 2, 7)))
+    # INT16 keeps this under 128 bytes, the most SuiteSparse < 9 accepts for a
+    # UDT on builds without variable-length arrays (Windows).
+    deeper = np.dtype((np.dtype((np.dtype((np.int16, (7,))), (2,))), (3,)))
+    assert lookup_dtype(deeper).np_type == np.dtype((np.int16, (3, 2, 7)))
 
 
 def test_nested_subarrays_register_flat_in_records():

@@ -2110,17 +2110,19 @@ def test_udt_array_udf_returning_operand_keeps_its_type():
 
     # A record's array field returned as-is carries its extents too, so it
     # resolves to the array UDT of that shape, whether or not one existed.
+    # FP32 keeps each UDT under 128 bytes, the most SuiteSparse < 9 accepts on
+    # builds without variable-length arrays (Windows).
     rec = dtypes.register_anonymous(
-        np.dtype([("ro_n", np.int64), ("ro_vec", np.float64, (19,))], align=True),
+        np.dtype([("ro_n", np.int64), ("ro_vec", np.float32, (19,))], align=True),
         "_RetOperandRec",
     )
-    udt14 = dtypes.register_anonymous(np.dtype((np.float64, (14,))), "_RetOperand14")
+    udt14 = dtypes.register_anonymous(np.dtype((np.float32, (14,))), "_RetOperand14")
 
     def _field(x, y):  # pragma: no cover (numba)
         return x["ro_vec"]
 
     op2 = BinaryOp.register_anonymous(_field, "_ret_operand_field", is_udt=True)
-    assert op2[rec, udt14].return_type is dtypes.lookup_dtype(np.dtype((np.float64, (19,))))
+    assert op2[rec, udt14].return_type is dtypes.lookup_dtype(np.dtype((np.float32, (19,))))
     r = Vector(rec, size=1)
     r[0] = (1, np.arange(19.0))
     u = Vector(udt14, size=1)
@@ -2173,8 +2175,9 @@ def test_udt_array_udf_known_extents_never_match_by_rank(monkeypatch):
 
     from graphblas.core.operator import base as _base
 
-    udt21 = dtypes.register_anonymous(np.dtype((np.float64, (21,))), "_RankGuard21")
-    ret = numba.typeof(np.dtype((np.float64, (23,)))).dtype
+    # FP32 keeps this UDT under that 128-byte cap, so it registers everywhere.
+    udt21 = dtypes.register_anonymous(np.dtype((np.float32, (21,))), "_RankGuard21")
+    ret = numba.typeof(np.dtype((np.float32, (23,)))).dtype
     # Same element type and rank, different length: what the rank matcher sees.
     assert ret.dtype == udt21.numba_type.dtype
     assert ret.ndim == udt21.numba_type.ndim
