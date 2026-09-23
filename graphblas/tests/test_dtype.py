@@ -8,7 +8,7 @@ import pytest
 
 import graphblas as gb
 from graphblas import core, dtypes
-from graphblas.core import _supports_udfs as supports_udfs  # noqa: F401
+from graphblas.core import _supports_udfs as supports_udfs
 from graphblas.core import lib
 from graphblas.core.operator.udt_utils import _has_jit_set
 from graphblas.core.utils import _NP2, values_to_numpy_buffer
@@ -291,15 +291,19 @@ def test_nested_subarray_record_values_load_intact():
     assert arr.dtype == udt.np_type
     np.testing.assert_array_equal(arr["li_pts"], vals["li_pts"])
 
-    v = gb.Vector.from_coo([0, 1], vals, dtype=udt)
-    np.testing.assert_array_equal(v[1].new().value["li_pts"], vals["li_pts"][1])
-    v = gb.Vector.from_coo([0, 1], vals)
-    assert v.dtype is udt
-    np.testing.assert_array_equal(v[1].new().value["li_pts"], vals["li_pts"][1])
-    v[0] = vals[1]
-    np.testing.assert_array_equal(v[0].new().value["li_pts"], vals["li_pts"][1])
     s = gb.Scalar.from_value(vals[0], dtype=udt)
     np.testing.assert_array_equal(s.value["li_pts"], vals["li_pts"][0])
+
+    # Off SuiteSparse, ``build`` uses ``binary.any`` as its ``dup_op``, which a
+    # UDT gets only by compiling it with Numba.
+    if suitesparse or supports_udfs:
+        v = gb.Vector.from_coo([0, 1], vals, dtype=udt)
+        np.testing.assert_array_equal(v[1].new().value["li_pts"], vals["li_pts"][1])
+        v = gb.Vector.from_coo([0, 1], vals)
+        assert v.dtype is udt
+        np.testing.assert_array_equal(v[1].new().value["li_pts"], vals["li_pts"][1])
+        v[0] = vals[1]
+        np.testing.assert_array_equal(v[0].new().value["li_pts"], vals["li_pts"][1])
 
 
 @pytest.mark.skipif("not supports_udfs")
