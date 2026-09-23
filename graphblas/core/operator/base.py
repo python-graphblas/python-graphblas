@@ -306,10 +306,7 @@ if _has_numba:
     def _array_udt_operands(dtypes):
         """Return the distinct array-UDT operands in ``dtypes``, order preserved.
 
-        ``x`` and ``y`` are usually the same UDT, hence the dedup. It is by
-        identity, not by shape: a flat ``FP64[2, 3]`` and a layered
-        ``FP64[3][2]`` are separate DataTypes with separate GrB_Type handles,
-        yet Numba collapses both to the same ``nestedarray(float64, (2, 3))``.
+        ``x`` and ``y`` are usually the same UDT, hence the dedup.
         """
         operands = []
         for d in dtypes:
