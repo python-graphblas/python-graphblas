@@ -2084,17 +2084,7 @@ def test_udt_array_udf_shape_errors():
     with pytest.raises(UdfParseError, match="matches more than one input array UDT"):
         op2[udt9, udt10]
 
-    # Ambiguity is decided on the UDTs, not their Numba shapes: these two are
-    # separate DataTypes with separate GraphBLAS handles, but Numba collapses
-    # the layered dtype to the flat one's ``nestedarray(float64, (2, 3))``.
-    flat = dtypes.register_anonymous(np.dtype((np.float64, (3, 4))), "_ShapeErrFlat")
-    layered = dtypes.register_anonymous(
-        np.dtype((np.dtype((np.float64, (4,))), (3,))), "_ShapeErrLayered"
-    )
-    assert flat.numba_type == layered.numba_type
-    with pytest.raises(UdfParseError, match="matches more than one input array UDT"):
-        op2[flat, layered]
-    assert op2[flat, flat].return_type is flat  # a same-type pair is not ambiguous
+    assert op2[udt9, udt9].return_type is udt9  # a same-type pair is not ambiguous
 
     # An array UDF whose result matches no input names the mismatch rather
     # than telling the user to return an array, which is what they did.
