@@ -32,7 +32,9 @@ A UDT is any ``numpy.dtype`` you register with python-graphblas. There are three
     point3 = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "Point3")
 
 Multi-dimensional shapes work too (``np.dtype((np.float64, (2, 4)))``); the
-layout is flattened row-major in C.
+layout is flattened row-major in C. An array of arrays has the same layout, so
+it registers as the same UDT: ``np.dtype((point3.np_type, (2,)))`` is
+``FP64[2, 3]``. Record fields that nest arrays are flattened the same way.
 
 **Dataclass UDTs** are record UDTs derived from a ``@dataclass``:
 
@@ -68,7 +70,11 @@ Field type rules:
 
 - Numeric scalar types (``int``, ``float``, ``bool``, ``complex``, the
   corresponding numpy scalar types) are supported.
-- Strings, Python objects, and nested UDTs are not.
+- Fixed-shape arrays (``("pos", np.float64, (3,))``) and records (a nested
+  struct) are supported as fields, and built-in operators lift through them.
+  In the dict and dataclass forms, write an array field as ``"FP64[3]"``; the
+  dict form also takes an existing UDT, such as ``{"id": int, "pos": point3}``.
+- Strings and Python objects are not supported.
 - Dataclass annotation strings (e.g., ``"int"``) resolve through
   ``lookup_dtype``.
 
@@ -173,6 +179,26 @@ For nested record UDTs the tuple is *flat over the leaves*. Given
 return ``(id, x, y)``, not ``(id, (x, y))``. Returning an existing record value
 (e.g., one of the inputs) is also fine and preserves the nested shape.
 
+For array UDTs each operand arrives as a numpy view of that element's values, in
+the UDT's declared shape: a ``np.dtype((np.float64, (2, 4)))`` UDT hands the UDF
+a 2-by-4 array, indexable as ``x[i, j]``. Array expressions work as written, and
+the UDF may return one of its operands or build a new array of the same shape:
+
+.. code-block:: python
+
+    def midpoint(x, y):
+        return (x + y) / 2
+
+    op = binary.register_new("midpoint", midpoint, is_udt=True)
+
+    a = Vector(point3, size=1)
+    a[0] = [0.0, 2.0, 4.0]
+    b = Vector(point3, size=1)
+    b[0] = [10.0, 20.0, 30.0]
+
+    c = a.ewise_mult(b, op[point3]).new()
+    # c[0] = [5.0, 11.0, 17.0]
+
 If your UDF references a field that doesn't exist, or returns the wrong arity,
 you'll get a ``UdfParseError`` with the actionable diagnostic line surfaced
 from Numba's typing pass instead of a 200-line traceback.
@@ -216,6 +242,8 @@ JIT is skipped when:
   falls through to the Numba cfunc path.
 - A field type isn't in the numpy-to-C map (rare; the standard numeric
   scalar types all map).
+- A record has an array-valued field. Built-in operators still lift to it
+  through the Numba cfunc.
 - The numpy layout doesn't match what a C compiler would produce. The most
   common case is a packed record with mixed-width fields (e.g.,
   ``np.dtype([("a", int32), ("b", float64)])`` without ``align=True``).

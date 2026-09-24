@@ -8,6 +8,7 @@ from ..dtypes import _INDEX, FP64, _index_dtypes, lookup_dtype, unify
 from ..exceptions import EmptyObject, check_status
 from . import _has_numba, _supports_udfs, automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, call
+from .dtypes import _view_if_same_layout
 from .expr import AmbiguousAssignOrExtract
 from .operator import get_typed_op
 from .utils import _Pointer, output_type, wrapdoc
@@ -356,15 +357,7 @@ class Scalar(BaseType):
             rv = np.array(ffi.buffer(scalar.gb_obj[0 : np_type.itemsize]))
             if np_type.subdtype is None:
                 return rv.view(np_type)[0]
-            # Collapse nested subarray dtypes before viewing. numpy keeps them
-            # layered, so a 6-long array of 5-long FP64 arrays has
-            # ``subdtype == (dtype(('<f8', (5,))), (6,))``; viewing all 240
-            # bytes as that 40-byte subarray dtype raises instead of reading
-            # the element.
             base, shape = np_type.subdtype
-            while base.subdtype is not None:
-                inner_base, inner_shape = base.subdtype
-                base, shape = inner_base, shape + inner_shape
             return rv.view(base).reshape(shape)
         return scalar.gb_obj[0]
 
@@ -387,7 +380,7 @@ class Scalar(BaseType):
                         val = _dict_to_record(np_type, val)
                 else:
                     arr = np.zeros(np_type.subdtype[1], dtype=np_type.subdtype[0])
-                arr[:] = val
+                arr[:] = _view_if_same_layout(val, arr.dtype)
                 self.gb_obj[0 : np_type.itemsize] = _udt_bytes(np_type, arr)
             else:
                 self.gb_obj[0] = val

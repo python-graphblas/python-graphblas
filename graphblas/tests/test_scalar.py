@@ -259,18 +259,17 @@ def test_udt_scalar_padding_is_zeroed():
     reason="SuiteSparse < 9 rejects a 240-byte UDT on builds without VLA support",
 )
 def test_udt_scalar_nested_array_roundtrip():
-    """A UDT whose element is itself an array dtype reads back at full extent.
+    """A UDT declared as an array of arrays reads back at full extent.
 
-    numpy keeps subarray dtypes layered rather than flattening them, so a
-    6-long array of 5-long FP64 arrays reports ``subdtype`` as a 40-byte inner
-    dtype with shape ``(6,)``. Viewing all 240 bytes as that inner dtype raised
-    ValueError: "Changing the dtype to a subarray type is only supported if the
-    total itemsize is unchanged".
+    numpy keeps subarray dtypes layered, so a 6-long array of 5-long FP64
+    arrays reports ``subdtype`` as a 40-byte inner dtype with shape ``(6,)``.
+    Viewing all 240 bytes as that inner dtype raised ValueError: "Changing the
+    dtype to a subarray type is only supported if the total itemsize is
+    unchanged". Registration now flattens it to ``FP64[6, 5]``.
     """
     inner = np.dtype((np.float64, (5,)))
     udt = dtypes.register_anonymous(np.dtype((inner, (6,))), "_NestedArrayUdt")
-    assert udt.np_type.itemsize == 240
-    assert udt.np_type.subdtype[0].subdtype is not None  # genuinely nested
+    assert udt.np_type == np.dtype((np.float64, (6, 5)))
 
     val = np.arange(30, dtype=np.float64).reshape(6, 5)
     got = Scalar.from_value(val, dtype=udt).value
