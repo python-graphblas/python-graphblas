@@ -506,7 +506,11 @@ def _format_float_column(values, digits):
 
     result = format_with(f"{{value: .{digits:d}f}}")
     too_long = bool(result) and max(len(x) for x in result) > digits + 6
-    abs_vals = np.abs(arr)
+    # A complex value with components near the float max has magnitude inf,
+    # which is what the checks below want. numpy 1.24 on arm64 also raises the
+    # FP overflow flag computing it, and that warning would escape from repr.
+    with np.errstate(over="ignore"):
+        abs_vals = np.abs(arr)
     has_large = bool((abs_vals > 1e6).any())
     has_small = bool(((abs_vals < 10.0 ** (-digits)) & (abs_vals > 0)).any())
     if has_small or (too_long and has_large):
