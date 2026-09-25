@@ -62,8 +62,8 @@ def fix_jit_config(*, use_sysconfig=True, probe=True):
 
     Replaces the baked-in compiler path (which often points at a conda-build
     host that doesn't exist in user environments) with one from
-    ``$CONDA_PREFIX/bin/``, and strips build-time-only flags (``-isysroot``,
-    ``-fdebug-prefix-map``).
+    ``$CONDA_PREFIX/bin/``, strips build-time-only flags (``-isysroot``,
+    ``-fdebug-prefix-map``), and sets ``jit_c_control`` to ``'on'``.
 
     Parameters
     ----------
@@ -73,10 +73,10 @@ def fix_jit_config(*, use_sysconfig=True, probe=True):
         to restrict the repair to a conda environment only.
     probe : bool, default True
         After fixing the config, try to JIT-register a trivial UDT to verify
-        the compiler actually works. SuiteSparse auto-flips ``jit_c_control``
-        from ``'on'`` to ``'load'`` on a failed compile; the probe absorbs
-        that first failure so user-visible ops afterwards see a stable
-        ``'load'`` (cache-only) state and punt to generic cleanly.
+        the compiler actually works. A failed compile makes SuiteSparse lower
+        ``jit_c_control`` to ``'load'``, and from SuiteSparse 9.4 on it also
+        raises ``JitError`` that one time; the probe takes that failure, so
+        later operations use the generic kernels without raising.
 
     Returns
     -------
@@ -250,8 +250,9 @@ def _auto_fix_jit_at_import():
         _repair_jit_compiler(cfg)
 
 
-# Tri-state: ``None`` until the first UDT asks for a JIT kernel, then the
-# answer to "can this process JIT-compile?" until something re-arms it.
+# Tri-state: ``None`` until a UDT first asks for a JIT kernel while the
+# control allows compiling, then the answer to "can this process
+# JIT-compile?" until ``fix_jit_config`` re-arms it.
 _jit_enabled_for_udt = None
 
 # True only while ``_probe_jit`` is registering its own UDT. That registration
@@ -270,13 +271,16 @@ def _enable_jit_for_udt():
     function-pointer path (typically 2-3x slower for elementwise ops).
 
     This is where that bump belongs, rather than at import: registering a
-    UDT or arming an op with C source is an act that plainly involves
-    compiling C, so enabling the compiler is not a surprise. Reading
-    ``gb.ss.about`` is not, so it leaves the setting alone.
+    type from its C typedef or arming an op with C source is an act that
+    plainly involves compiling C, so enabling the compiler is not a surprise.
+    Reading ``gb.ss.about`` is not, so it leaves the setting alone.
 
-    An explicit ``'off'`` or ``'pause'`` is honored: only SuiteSparse's own
-    non-compiling defaults are raised. Returns True iff compilation is
-    available, and answers from cache after the first call.
+    Only the default ``'run'`` is raised. An explicit ``'off'``, ``'pause'``,
+    or ``'load'`` is honored, and ``'load'`` is also where SuiteSparse leaves
+    the control after a compile fails, so raising it would retry that compile
+    at every later UDT op (raising ``JitError`` each time on SuiteSparse 9.4
+    and later). Returns True iff a kernel armed now will be compiled. Whether
+    this process can compile at all is probed once and cached.
     """
     global _jit_enabled_for_udt
     if _probing_jit:
@@ -285,31 +289,28 @@ def _enable_jit_for_udt():
         # starting a second one inside it.
         return True
     cfg = _ss_config()
-    if _jit_enabled_for_udt is not None:
-        # The cache answers "can this process compile?", which is settled once.
-        # It does not pin the control: anything may have moved it since, and a
-        # kernel armed now still needs it raised. Restoring a saved ``'run'``
-        # after an earlier op enabled the JIT used to disable compilation for
-        # the rest of the process, silently, because this returned here first.
-        if _jit_enabled_for_udt and cfg.get("jit_c_control") in ("run", "load"):
-            cfg["jit_c_control"] = "on"
-        return _jit_enabled_for_udt
-    if "jit_c_control" not in cfg:
-        _jit_enabled_for_udt = False
+    control = cfg.get("jit_c_control")
+    if control in (None, "off", "pause", "load"):
+        # ``None`` is a library with no JIT at all. The others are honored as
+        # set and not cached, so a saved ``'run'`` restored afterwards is
+        # still raised.
         return False
-    if not jit_compiler_is_usable():
-        _repair_jit_compiler(cfg)
+    if _jit_enabled_for_udt is None:
         if not jit_compiler_is_usable():
-            _jit_enabled_for_udt = False
-            return False
-    if cfg["jit_c_control"] in ("run", "load"):
+            _repair_jit_compiler(cfg)
+        if _jit_enabled_for_udt := jit_compiler_is_usable():
+            cfg["jit_c_control"] = "on"
+            # A library built without the JIT clamps that write back down to
+            # ``'run'``. Otherwise the probe is load-bearing: a failed compile
+            # drops the control to ``'load'`` and, from SuiteSparse 9.4 on,
+            # also raises ``JitError``, so without the probe that one error
+            # would reach the first user operation that needs a kernel.
+            _jit_enabled_for_udt = cfg["jit_c_control"] == "on" and _probe_jit(cfg)
+    elif _jit_enabled_for_udt and control == "run":
+        # The cache answers "can this process compile?", which is settled once.
+        # The control is separate state that anything may have lowered since,
+        # and a kernel armed now still needs it raised.
         cfg["jit_c_control"] = "on"
-    _jit_enabled_for_udt = cfg["jit_c_control"] == "on"
-    if _jit_enabled_for_udt:
-        # The probe is load-bearing. Without it SuiteSparse surfaces
-        # ``JitError`` on the first user-triggered compile; a failed compile
-        # is only converted to a silent non-compiling fallback afterwards.
-        _jit_enabled_for_udt = _probe_jit(cfg)
     return _jit_enabled_for_udt
 
 

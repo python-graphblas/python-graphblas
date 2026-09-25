@@ -256,12 +256,13 @@ Anonymous UDTs (no ``name=`` argument) still take the JIT path: a synthetic
 identifier. Pass ``name=`` only for readable JIT cache filenames and
 introspection.
 
-The first time auto-lift produces a non-JIT'd op for a given ``(op, dtype)``
-pair in a process, a ``graphblas.exceptions.NoJITWarning`` (a subclass of
-``UserWarning``) is emitted with the cause and the remediation. The warning
-fires once per ``(op, dtype)`` rather than once per process, so distinct
-fallback causes each surface a warning. Silence it by category or by
-message::
+When the cause is the UDT itself (the first four cases above), the first time
+auto-lift produces a non-JIT'd op for a given ``(op, dtype)`` pair in a
+process, a ``graphblas.exceptions.NoJITWarning`` (a subclass of
+``UserWarning``) names the cause. An unusable compiler does not warn;
+``gb.ss.fix_jit_config()`` returns ``False`` when it cannot compile, and
+``gb.ss.jit_compiler_is_usable()`` is the cheap check. Silence the warning by
+category or by message::
 
     import warnings
     from graphblas.exceptions import NoJITWarning
@@ -289,10 +290,13 @@ import changes nothing else, so reading ``gb.ss.about`` does not change what
 later operations compute.
 
 ``jit_c_control`` is raised from the SS default ``'run'`` (run cached kernels
-only; no compile, no load from disk) to ``'on'`` (compile, load, and run) the
-first time a UDT registers a type or arms an operator with C source. Only
-``'run'`` and ``'load'`` are raised; an explicit ``'off'`` or ``'pause'`` is
-kept.
+only; no compile, no load from disk) to ``'on'`` (compile, load, and run) when
+a UDT operator gets C source for SuiteSparse to compile, such as the first
+``binary.plus[udt]``, or when ``gb.dtypes.ss.register_new`` registers a type
+from a C typedef. Any other setting is kept, including ``'off'``, ``'pause'``,
+and ``'load'`` (load and run cached kernels, never compile). SuiteSparse
+itself sets ``'load'`` after a compile fails, so keeping it means a failing
+compile is tried once, not again at every later UDT operation.
 
 Call the helper manually to re-fix or verify::
 

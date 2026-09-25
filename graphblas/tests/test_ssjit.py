@@ -112,6 +112,27 @@ def _jit_mode(mode):
         gb.ss.config["jit_c_control"] = prev
 
 
+def _run_in_fresh_process(script):
+    """Run ``script`` in a new interpreter on this tree; return its ``key: value`` lines.
+
+    The script must print ``package: <gb.__file__>`` so the child can be shown
+    to have imported this tree before anything it reports is trusted.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=dict(os.environ, PYTHONPATH=str(repo_root)),
+    )
+    report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert result.returncode == 0, report
+    lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
+    assert lines.get("package") == str(repo_root / "graphblas" / "__init__.py"), report
+    return lines, report
+
+
 # Run in a subprocess: the import under test happens once per process, and by
 # the time any test executes it is long past. ``jit_c_control`` has to be read
 # through the C API rather than ``gb.ss.config``, because reaching for
@@ -130,7 +151,7 @@ def control():
 before = control()
 gb.ss.about["library_version"]      # the line a user writes for a bug report
 print("package: " + gb.__file__)
-print("control: " + str(before))
+print("before: " + str(before))
 print("after: " + str(control()))
 """
 
@@ -145,21 +166,8 @@ def test_ss_import_leaves_jit_c_control_alone():
     ``print(gb.ss.about["library_version"])`` changed how every later
     operation in the process was computed.
     """
-    repo_root = Path(__file__).resolve().parents[2]
-    env = dict(os.environ, PYTHONPATH=str(repo_root))
-    result = subprocess.run(
-        [sys.executable, "-c", _SS_IMPORT_PROBE],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
-    report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-    assert result.returncode == 0, report
-    lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
-    # Assert the child probed this tree before trusting what it reports about it.
-    assert lines.get("package") == str(repo_root / "graphblas" / "__init__.py"), report
-    assert lines["after"] == lines["control"], report
+    lines, report = _run_in_fresh_process(_SS_IMPORT_PROBE)
+    assert lines["after"] == lines["before"], report
 
 
 # Run in a subprocess: this is about the very first call in a process, and by
@@ -178,25 +186,12 @@ def test_fix_jit_config_first_call_agrees_with_the_second():
     """``fix_jit_config()`` must report on the environment, not on itself.
 
     Its probe registers a UDT, and registering a UDT asks to enable the JIT,
-    which would start a second probe inside the first. The inner probe
-    registered the probe type and the outer one then died redeclaring it, so
-    a perfectly working environment answered ``False`` the first time and
+    which would start a second probe inside the first. The inner probe would
+    register the probe type and the outer one would then die redeclaring it,
+    so a working environment would answer ``False`` the first time and
     ``True`` every time after.
     """
-    repo_root = Path(__file__).resolve().parents[2]
-    env = dict(os.environ, PYTHONPATH=str(repo_root))
-    result = subprocess.run(
-        [sys.executable, "-c", _FIX_JIT_TWICE_PROBE],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
-    report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-    assert result.returncode == 0, report
-    lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
-    # Assert the child probed this tree before trusting what it reports about it.
-    assert lines.get("package") == str(repo_root / "graphblas" / "__init__.py"), report
+    lines, report = _run_in_fresh_process(_FIX_JIT_TWICE_PROBE)
     assert lines["first"] == lines["second"], report
 
 
@@ -219,12 +214,13 @@ def test_auto_fix_jit_at_import_left_compiler_usable():
 
 @pytest.mark.skipif("_IS_SSGB7")
 def test_enable_jit_for_udt_re_raises_a_lowered_control(monkeypatch):
-    """A cached "yes" must still raise a non-compiling control before arming a kernel.
+    """A cached "yes" must still raise a lowered ``'run'`` before arming a kernel.
 
     The cache answers "can this process compile?", which is settled once. The
     control is separate state that anything may have moved since, so returning
-    the cached answer without re-raising it left an op armed with C source that
-    SuiteSparse would never build, and nothing warned: codegen had succeeded.
+    the cached answer without re-raising it would leave an op armed with C
+    source that SuiteSparse never builds, and nothing would warn: codegen
+    succeeded.
 
     Driven through a stand-in config, so the assertion holds on every host: a
     library built without the JIT clamps writes down to ``'run'``, and would
@@ -236,11 +232,38 @@ def test_enable_jit_for_udt_re_raises_a_lowered_control(monkeypatch):
     fake = {}
     monkeypatch.setattr(jit_config, "_ss_config", lambda: fake)
     monkeypatch.setattr(jit_config, "_jit_enabled_for_udt", True)
-    # An explicit opt-out is a choice, not one of SuiteSparse's defaults to raise.
-    for start, expected in (("run", "on"), ("load", "on"), ("off", "off"), ("pause", "pause")):
+    # An explicit opt-out is a choice, not the default to raise, and ``'load'`` is
+    # also where SuiteSparse parks the control after a compile fails.
+    for start, expected in (("run", "on"), ("load", "load"), ("off", "off"), ("pause", "pause")):
         fake["jit_c_control"] = start
-        assert _enable_jit_for_udt() is True
+        assert _enable_jit_for_udt() is (expected == "on")
         assert fake["jit_c_control"] == expected
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_enable_jit_for_udt_does_not_cache_an_opt_out(monkeypatch):
+    """An ``'off'`` at the first UDT op must not decide the rest of the process.
+
+    It says nothing about whether this process can compile. Caching a "no"
+    for it would leave a saved ``'run'``, restored afterwards, unraised for
+    good, so every later UDT op would run without the JIT and nothing would
+    say so. The same goes for ``'pause'`` and ``'load'``.
+    """
+    from graphblas.core.ss import jit_config
+
+    fake = {}
+    monkeypatch.setattr(jit_config, "_ss_config", lambda: fake)
+    monkeypatch.setattr(jit_config, "_jit_enabled_for_udt", None)
+    monkeypatch.setattr(jit_config, "jit_compiler_is_usable", lambda: True)
+    monkeypatch.setattr(jit_config, "_probe_jit", lambda cfg: True)
+    for start in ("off", "pause", "load"):
+        fake["jit_c_control"] = start
+        assert _enable_jit_for_udt() is False
+        assert fake["jit_c_control"] == start
+        assert jit_config._jit_enabled_for_udt is None
+    fake["jit_c_control"] = "run"
+    assert _enable_jit_for_udt() is True
+    assert fake["jit_c_control"] == "on"
 
 
 @pytest.mark.skipif("_IS_SSGB7")
@@ -259,6 +282,59 @@ def test_enable_jit_for_udt_re_raises_the_live_control():
         assert _enable_jit_for_udt() is True
         assert gb.ss.config["jit_c_control"] == "on"
     finally:
+        gb.ss.config["jit_c_control"] = prev_control
+        jit_config._jit_enabled_for_udt = prev_enabled
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+@pytest.mark.skipif("not supports_udfs")
+def test_failed_compile_is_not_retried_at_the_next_arming():
+    """A compile that fails is tried once, not again at every later UDT op.
+
+    SuiteSparse lowers ``jit_c_control`` to ``'load'`` after a failed compile
+    so the failure is not repeated. Arming another op must leave it there:
+    raising it back to ``'on'`` would run the failing compiler again at the
+    next kernel, and on SuiteSparse 9.4 and later raise ``JitError`` again,
+    with ``'off'`` the only way out.
+    """
+    if not _JIT_WORKS_AT_IMPORT:
+        pytest.skip("JIT not compiled in or not working here; nothing compiles to fail")
+    from graphblas.core.ss import jit_config
+    from graphblas.exceptions import JitError
+
+    # Field names unique to this test: ``register_anonymous`` caches one
+    # DataType per ``np.dtype``.
+    udt = dtypes.register_anonymous(
+        np.dtype([("nrt_a", np.int64), ("nrt_b", np.int64)], align=True), "_NoRetryUdt"
+    )
+    v = Vector.from_coo([0, 1], np.array([(1, 2), (3, 4)], dtype=udt.np_type), dtype=udt)
+    # Before 9.4 SuiteSparse does not report a failed compile: it returns
+    # ``GrB_NO_VALUE`` ("use the generic kernel"), though it still lowers the
+    # control.
+    reported = gb.ss.about["library_version"] >= (9, 4)
+    prev_cc = gb.ss.config["jit_c_compiler_name"]
+    prev_control = gb.ss.config["jit_c_control"]
+    prev_enabled = jit_config._jit_enabled_for_udt
+    try:
+        # Start from the default, so the first arming shows the raise.
+        gb.ss.config["jit_c_control"] = "run"
+        # A compiler that does not exist fails under every toolchain, where a
+        # flag it does not know is only a warning to MSVC. The cache is pinned
+        # to yes (true here) so the arming does not repair the path first.
+        gb.ss.config["jit_c_compiler_name"] = "/nonexistent/path/to/cc"
+        jit_config._jit_enabled_for_udt = True
+        plus = binary.plus[udt]
+        assert plus.jit_c_source is not None
+        assert gb.ss.config["jit_c_control"] == "on"
+        with pytest.raises(JitError) if reported else contextlib.nullcontext():
+            v.ewise_add(v, plus).new()
+        assert gb.ss.config["jit_c_control"] == "load"
+        assert binary.minus[udt].jit_c_source is not None
+        assert gb.ss.config["jit_c_control"] == "load"
+        result = v.ewise_add(v, plus).new()  # the generic kernel, without raising
+        assert tuple(result[1].new().value) == (6, 8)
+    finally:
+        gb.ss.config["jit_c_compiler_name"] = prev_cc
         gb.ss.config["jit_c_control"] = prev_control
         jit_config._jit_enabled_for_udt = prev_enabled
 
