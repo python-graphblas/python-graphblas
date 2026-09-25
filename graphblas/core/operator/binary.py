@@ -944,7 +944,6 @@ class BinaryOp(OpBase):
                 },
             )
         elif parameterized:
-            _validate_ret_dtype(ret_dtype, "binary", is_udt=is_udt, parameterized=True)
             binary_op = ParameterizedBinaryOp(name, func, is_udt=is_udt)
             setattr(module, funcname, binary_op)
         else:
