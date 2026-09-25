@@ -497,15 +497,9 @@ if _has_numba:
         the caller either: the resulting ``ValueError`` is raised inside a
         cfunc, which Numba prints and swallows, so the write stops there and
         every leaf from that point on keeps whatever SuiteSparse had in the
-        buffer. ``_check_array_udf_shape`` and
-        ``_check_record_udf_leaf_shapes`` reject such a return up front, but
-        only when they can run the UDF, so this is the backstop that always
-        runs rather than dead code.
-
-        Slice-assign also broadcasts, which is why those checks accept any
-        return that broadcasts to the element rather than requiring an exact
-        shape: filling a ``(6,)`` element from a ``(1,)`` return works here
-        and must keep working.
+        buffer. :func:`_check_udf_fills_output` rejects such a return when the
+        op is typed, but it cannot always learn the shape, so this stays the
+        backstop.
         """
         if zkind == "array_elements":
             return (
@@ -532,68 +526,6 @@ if _has_numba:
         BL, BR, zname = zinfo
         return f"{signature_line}\n{body_setup}    {zname} = {BL}{call_expr}{BR}\n"
 
-    def _udf_probe_value(dtype):
-        """Build a stand-in operand of ``dtype`` for a UDF probe.
-
-        Ones rather than zeros, for the same reason ``dtypes._sample_values``
-        avoids zeros: a UDF that divides by an operand raises on a zero-filled
-        probe, and :func:`_run_udf_probe` treats a raising probe as "cannot
-        check", which would quietly skip the check the probe exists to perform.
-        """
-        if dtype._is_udt:
-            np_type = dtype.np_type
-            if np_type.subdtype is None:
-                return np.ones(1, dtype=np_type)[0]
-            base_np_type, shape = np_type.subdtype
-            return np.ones(shape, dtype=base_np_type)
-        return _sample_values[dtype]
-
-    def _run_udf_probe(numba_func, operands):
-        """Run the UDF on stand-in operands. Returns ``(result,)``, or ``None``.
-
-        Numba's ``Array`` type records ``ndim`` but not extents, so a UDF that
-        builds its result (``x + y``) rather than returning an operand can only
-        be shape-checked by running it. Doing that at registration turns a
-        wrong-shape return into an error the caller sees. Left to the wrapper
-        it raises inside a cfunc, where Numba prints the traceback (once per
-        element) and returns, handing back an uninitialized element and no
-        exception.
-
-        The cost is that the first ``op[udt]`` lookup now executes the user's
-        function once, on ones, where before it only compiled it. Registering
-        the op does not, since compilation stays lazy, but
-        ``OpBase.__contains__`` is a typed lookup, so ``udt in some_op`` runs
-        the function as a side effect of a membership test. It costs no extra
-        compile: the probe passes an ``ndarray``, and the wrapper's
-        ``numba.carray`` view needs that same specialization anyway.
-
-        The check is best-effort, not a guarantee. A UDF that raises on the
-        probe values returns ``None`` here and is not checked at all, so one
-        that also returns a wrong shape still reaches the wrapper and still
-        fails the way it always did: a ``ValueError`` inside the cfunc that
-        Numba prints and swallows, a caller that sees no exception, and an
-        element left as SuiteSparse found it. The wrapper's slice-assign
-        remains the only backstop that always runs. Only the call is guarded,
-        so mistakes in the probe itself still surface.
-
-        One probe cannot settle a UDF whose output shape depends on operand
-        *values* rather than their types: it reports the shape for the probe
-        values, which is why the callers say so in their message.
-        """
-        args = [_udf_probe_value(d) for d in operands]
-        try:
-            return (numba_func(*args),)
-        except NumbaError as exc:
-            raise UdfParseError(_summarize_numba_typing_error(exc)) from exc
-        except Exception:
-            return None
-
-    # Shared tail for the shape diagnostics: the probed shape is one sample, so
-    # a value-dependent UDF can be rejected on a shape it returns only here.
-    _SHAPE_HINT = (
-        "A UDF whose output shape varies with its input values must still fit every element."
-    )
-
     def _fits_by_broadcast(shape, expected):
         """Whether a return of ``shape`` fills an ``expected``-shaped destination.
 
@@ -617,55 +549,117 @@ if _has_numba:
         except ValueError:
             return False
 
-    def _check_array_udf_shape(numba_func, return_type, operands):
-        """Reject a UDF whose built array cannot fill the array UDT's element."""
-        probed = _run_udf_probe(numba_func, operands)
-        if probed is None:
-            return
-        expected = return_type.numba_type.shape
-        shape = getattr(probed[0], "shape", None)
-        if shape is not None and not _fits_by_broadcast(shape, expected):
-            raise UdfParseError(
-                f"UDT UDF returned an array of shape {tuple(shape)} when run on sample "
-                f"values, but {return_type} elements are {tuple(expected)}. Return an "
-                f"array whose shape matches or broadcasts to that, or one of the "
-                f"operands. {_SHAPE_HINT}"
-            )
+    def _udf_probe_value(dtype):
+        """Build a stand-in operand of ``dtype`` for :func:`_run_udf_probe`.
 
-    def _check_record_udf_leaf_shapes(numba_func, return_type, operands):
-        """Reject a record return whose array-typed leaf cannot fill its field.
-
-        The array-leaf half of :func:`_check_array_udf_shape`. The wrapper
-        slice-assigns those leaves, so a wrong extent raises inside the cfunc
-        and abandons the write part-way: every leaf after it keeps whatever
-        SuiteSparse had in the buffer, scalar leaves included.
-
-        Only records that actually have an array leaf are probed, so the
-        common record UDF still registers without running the user's code.
+        Only the shape of the UDF's result is read, so any values it accepts
+        will do.
         """
-        from .udt_utils import _iter_record_leaves
+        if dtype._is_udt:
+            np_type = dtype.np_type
+            if np_type.subdtype is None:
+                return np.ones(1, dtype=np_type)[0]
+            base_np_type, shape = np_type.subdtype
+            return np.ones(shape, dtype=base_np_type)
+        return _sample_values[dtype]
 
-        leaves = [(py, d) for py, _c, d in _iter_record_leaves(return_type.np_type)]
-        if not any(d.subdtype is not None for _py, d in leaves):
+    def _run_udf_probe(numba_func, arg_dtypes):
+        """Call the UDF on stand-in operands. Returns ``(result,)``, or ``None`` if it raised.
+
+        A UDF that raises on the stand-in values is not checked, so one that
+        also returns a shape that does not fit is left to the wrapper, which
+        fails without telling the caller (see :func:`_compose_wrapper_body`).
+        Only the call is guarded, so a mistake in building the operands still
+        surfaces.
+
+        This is where typing an op for a UDT runs the user's function rather
+        than only compiling it, and ``OpBase.__contains__`` is a typed lookup,
+        so ``udt in some_op`` can run it too. It costs no extra compile: Numba
+        types the stand-ins as it types the wrapper's operands (a C-contiguous
+        array, a record, a scalar), so the call compiles the specialization the
+        wrapper needs anyway.
+        """
+        args = [_udf_probe_value(d) for d in arg_dtypes]
+        try:
+            return (numba_func(*args),)
+        except NumbaError as exc:
+            raise UdfParseError(_summarize_numba_typing_error(exc)) from exc
+        except Exception:
+            return None
+
+    def _raise_unless_fits(shape, expected, return_type, path, *, probed):
+        """Raise ``UdfParseError`` unless a return of ``shape`` fills an ``expected`` slot.
+
+        ``path`` is the record field, or ``None`` for an array UDT's element.
+        """
+        if _fits_by_broadcast(shape, expected):
             return
-        probed = _run_udf_probe(numba_func, operands)
-        if probed is None:
+        field = "" if path is None else f" for field {path} of {return_type}"
+        # A probed shape holds for the values the probe used. Saying so helps
+        # the author of a UDF whose output shape depends on its inputs' values.
+        how = " when run on sample values" if probed else ""
+        slot = f"{return_type} elements are" if path is None else "that field holds"
+        raise UdfParseError(
+            f"UDT UDF returned an array of shape {tuple(shape)}{field}{how}, but {slot} "
+            f"{tuple(expected)}. Return an array of that shape, or one that broadcasts to it."
+        )
+
+    def _check_udf_fills_output(numba_func, numba_ret_type, return_type, zkind, arg_dtypes):
+        """Reject a UDF whose return cannot fill the output element.
+
+        The wrapper slice-assigns an array return, and each array-typed record
+        leaf, into the element, so a shape that does not fit raises inside the
+        cfunc, where the caller never sees it (see
+        :func:`_compose_wrapper_body`). So does a record leaf the UDF can
+        return as ``None`` (``v if cond else None``, typed ``Optional``), array
+        or scalar, on the path that returns it; a leaf that is always ``None``
+        does not compile at all, and Numba's traceback says why at length.
+        Checking here makes each an error when the op is typed.
+
+        An ``Optional`` leaf is rejected from its type, whichever branch the
+        sample values would take. Numba also keeps the extents of an operand,
+        or operand field, returned as-is (a ``NestedArray``), so those are
+        checked from the type alone. An array the UDF builds (``x + y``,
+        ``x[:2]``) is a plain ``Array``, which has a rank but no extents, so
+        only running the UDF, on stand-ins built from ``arg_dtypes``, can say
+        what shape it has. A UDF that returns no built array is never run.
+        """
+        if zkind == "array_elements":
+            # (record field path, Numba type, slot shape, index into the tuple)
+            slots = [(None, numba_ret_type, return_type.np_type.shape, None)]
+        elif zkind == "record_fields":
+            from .udt_utils import _iter_record_leaves
+
+            # The tuple is flat over the leaves, one element per leaf.
+            leaves = list(_iter_record_leaves(return_type.np_type))
+            if len(numba_ret_type.types) != len(leaves):
+                return  # a wrong field count, not a wrong shape
+            slots = [
+                (path, numba_ret_type.types[i], leaf.shape, i)
+                for i, (path, _c, leaf) in enumerate(leaves)
+            ]
+        else:
             return
-        result = probed[0]
-        if not isinstance(result, tuple) or len(result) != len(leaves):
-            return
-        for (path, leaf_dtype), value in zip(leaves, result, strict=True):
-            if leaf_dtype.subdtype is None:
-                continue
-            expected = leaf_dtype.subdtype[1]
-            shape = getattr(value, "shape", None)
-            if shape is not None and not _fits_by_broadcast(shape, expected):
+        unknown = []
+        for path, nb_type, expected, i in slots:
+            if isinstance(nb_type, (numba.core.types.Optional, numba.core.types.NoneType)):
+                field = "" if path is None else f" for field {path}"
                 raise UdfParseError(
-                    f"UDT UDF returned an array of shape {tuple(shape)} for field "
-                    f"{path} of {return_type} when run on sample values, which holds "
-                    f"{tuple(expected)} there. Return an array whose shape matches or "
-                    f"broadcasts to that. {_SHAPE_HINT}"
+                    f"UDT UDF can return None{field}, but {return_type} cannot hold None. "
+                    f"Return a value on every path."
                 )
+            if not expected:
+                continue  # a scalar leaf: nothing to fit
+            if isinstance(nb_type, numba.core.types.NestedArray):
+                _raise_unless_fits(nb_type.shape, expected, return_type, path, probed=False)
+            elif isinstance(nb_type, numba.core.types.Array) or nb_type is None:
+                # No extents to read (or, with no return type given, no type
+                # at all), so learn the shape by running the UDF.
+                unknown.append((path, expected, i))
+        if unknown and (ran := _run_udf_probe(numba_func, arg_dtypes)) is not None:
+            for path, expected, i in unknown:
+                value = ran[0] if i is None else ran[0][i]
+                _raise_unless_fits(np.shape(value), expected, return_type, path, probed=True)
 
     def _get_udt_wrapper(
         numba_func, return_type, dtype, dtype2=None, *, include_indexes=False, numba_ret_type=None
@@ -682,22 +676,19 @@ if _has_numba:
         zsetup, zptr_type, zkind, zinfo = _output_handler(return_type, numba_ret_type)
         xsetup, xderef, xptr_type = _input_operand(dtype, "x")
         wrapper_args = [zptr_type, xptr_type]
-        probe_operands = [dtype]
+        arg_dtypes = [dtype]
         if include_indexes:
             wrapper_args.extend([UINT64.numba_type, UINT64.numba_type])
-            probe_operands.extend([UINT64, UINT64])
+            arg_dtypes.extend([UINT64, UINT64])
         ysetup, yderef_expr, yarg = "", "", ""
         if dtype2 is not None:
             ysetup, yderef, yptr_type = _input_operand(dtype2, "y")
             wrapper_args.append(yptr_type)
-            probe_operands.append(dtype2)
+            arg_dtypes.append(dtype2)
             yarg = ", y_ptr"
             yderef_expr = f", {yderef}"
         wrapper_sig = nt.void(*wrapper_args)
-        if zkind == "array_elements":
-            _check_array_udf_shape(numba_func, return_type, probe_operands)
-        elif zkind == "record_fields":
-            _check_record_udf_leaf_shapes(numba_func, return_type, probe_operands)
+        _check_udf_fills_output(numba_func, numba_ret_type, return_type, zkind, arg_dtypes)
 
         rcidx = ", row, col" if include_indexes else ""
         signature_line = f"def wrapper(z_ptr, x_ptr{rcidx}{yarg}):"
@@ -739,16 +730,8 @@ if _has_numba:
             UINT64.numba_type,
             tptr_type,
         )
-        # Same registration-time guards as :func:`_get_udt_wrapper`. Without
-        # them a wrong-shape return is memory-safe but silent: the wrapper's
-        # ``z[:] =`` raises inside the cfunc, Numba prints and swallows it,
-        # and the element is left as SuiteSparse found it.
-        if zkind in ("array_elements", "record_fields"):
-            probe_operands = [dtype, UINT64, UINT64, dtype2, UINT64, UINT64, dtype2]
-            if zkind == "array_elements":
-                _check_array_udf_shape(numba_func, return_type, probe_operands)
-            else:
-                _check_record_udf_leaf_shapes(numba_func, return_type, probe_operands)
+        arg_dtypes = [dtype, UINT64, UINT64, dtype2, UINT64, UINT64, dtype2]
+        _check_udf_fills_output(numba_func, numba_ret_type, return_type, zkind, arg_dtypes)
 
         signature_line = "def wrapper(z_ptr, x_ptr, ix, jx, y_ptr, iy, jy, t_ptr):"
         body_setup = f"{zsetup}{xsetup}{ysetup}{tsetup}"

@@ -202,9 +202,10 @@ element, either at the element's own shape or at one that broadcasts to it (a
     # c[0] = [5.0, 11.0, 17.0]
 
 A return that cannot fill the element, such as ``x[:2]`` from a 3-element UDT,
-is rejected when the op is typed for the UDT. The shape is learned by running
-the UDF once on sample values, so a UDF that raises on those values is not
-checked.
+is rejected when the op is typed for the UDT (``op[point3]``, or the first
+operation that uses it). Numba does not know the shape of an array the UDF
+builds, so the check runs the UDF once on sample values; a UDF that raises on
+those values is not checked.
 
 If your UDF references a field that doesn't exist, or returns the wrong arity,
 you'll get a ``UdfParseError`` with the actionable diagnostic line surfaced
