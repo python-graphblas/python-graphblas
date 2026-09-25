@@ -412,7 +412,6 @@ class UnaryOp(OpBase):
                 },
             )
         elif parameterized:
-            _validate_ret_dtype(ret_dtype, "unary", is_udt=is_udt, parameterized=True)
             unary_op = ParameterizedUnaryOp(name, func, is_udt=is_udt)
             setattr(module, funcname, unary_op)
         else:

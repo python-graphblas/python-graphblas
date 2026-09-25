@@ -4085,12 +4085,14 @@ def test_udt_ret_dtype_names_an_output_udt():
     """``ret_dtype`` names an output UDT that is not one of the operands.
 
     Without it the return type is inferred from what the UDF builds, and the
-    only names in scope are the input dtypes. That makes a rank-reducing op
-    such as FP64[9] -> FP64[3] unreachable: the inferred type is the input's,
-    and the shape check then rejects the shorter array the UDF returns.
+    only names in scope are the input dtypes. That makes an op that shortens
+    its element, such as FP64[10] -> FP64[3], unreachable: the inferred type
+    is the input's, and the shape check then rejects the shorter array the
+    UDF returns.
     """
-    # Shapes unique to this test; see the note in test_udt_array_udf_shape_errors.
-    nine = dtypes.register_anonymous(np.dtype((np.float64, (9,))), "_RetD9")
+    # The input shape is unique to this test; see the note in
+    # test_udt_array_udf_shape_errors.
+    ten = dtypes.register_anonymous(np.dtype((np.float64, (10,))), "_RetD10")
     three = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "_RetD3")
 
     def _first_three(x):  # pragma: no cover (numba)
@@ -4098,13 +4100,25 @@ def test_udt_ret_dtype_names_an_output_udt():
 
     without = UnaryOp.register_anonymous(_first_three, "_ret_dtype_without", is_udt=True)
     with pytest.raises(UdfParseError, match=r"shape \(3,\) when run on sample values"):
-        without[nine]
+        without[ten]
 
     op_ = UnaryOp.register_anonymous(_first_three, "_ret_dtype_with", is_udt=True, ret_dtype=three)
-    assert op_[nine].return_type is three
+    assert op_[ten].return_type is three
 
-    v = Vector(nine, size=2)
-    v[0] = np.arange(9.0)
+    # lazy=True must hand ret_dtype to the registration it defers, or the op
+    # that fires on first attribute access is built without it.
+    UnaryOp.register_new("_ret_dtype_lazy", _first_three, is_udt=True, lazy=True, ret_dtype=three)
+    try:
+        assert unary._ret_dtype_lazy[ten].return_type is three
+    finally:
+        # Same cleanup as test_udt_lazy_registration: the op lands in ``unary``
+        # and ``op``, and both keep a ``_delayed`` entry until it fires.
+        for module in (unary, op):
+            vars(module).pop("_ret_dtype_lazy", None)
+            module._delayed.pop("_ret_dtype_lazy", None)
+
+    v = Vector(ten, size=2)
+    v[0] = np.arange(10.0)
     w = op_(v).new()
     assert w.dtype is three
     np.testing.assert_array_equal(w[0].new().value, np.arange(3.0))
@@ -4226,6 +4240,16 @@ def test_udt_ret_dtype_index_ops():
         )
         assert ib[in11, in11].return_type is out2
 
+    # register_new also adds an IndexUnaryOp to ``select`` when it returns BOOL.
+    # A UDT op has no types until it is compiled, so a declared non-BOOL
+    # ret_dtype is what keeps this one out.
+    IndexUnaryOp.register_new("_ret_dtype_iu_named", _head_plus_row, is_udt=True, ret_dtype=out2)
+    try:
+        assert "_ret_dtype_iu_named" not in vars(select)
+    finally:
+        vars(indexunary).pop("_ret_dtype_iu_named", None)
+        vars(select).pop("_ret_dtype_iu_named", None)
+
 
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
@@ -4260,6 +4284,15 @@ def test_udt_ret_dtype_still_shape_checked():
     ok = UnaryOp.register_anonymous(_one, "_ret_dtype_prb_bcast", is_udt=True, ret_dtype=out2)
     assert ok[in14].return_type is out2
 
+    # An operand returned as-is keeps its extents in its Numba type, so the
+    # declared shape is checked without running the UDF (no "sample values").
+    def _as_is(x):  # pragma: no cover (numba)
+        return x
+
+    as_is = UnaryOp.register_anonymous(_as_is, "_ret_dtype_prb_as_is", is_udt=True, ret_dtype=out2)
+    with pytest.raises(UdfParseError, match=r"shape \(14,\), but _RetDPrb2 elements are \(2,\)"):
+        as_is[in14]
+
     # The record half of the probe checks the declared type's array leaves.
     rec = dtypes.register_anonymous(
         np.dtype([("v", np.float64, (4,)), ("n", np.int64)], align=True), "_RetDPrbRec"
@@ -4273,6 +4306,86 @@ def test_udt_ret_dtype_still_shape_checked():
     )
     with pytest.raises(UdfParseError, match=r"shape \(2,\) for field \['v'\] of _RetDPrbRec"):
         recop[in14, in14]
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_ret_dtype_rejects_a_return_it_cannot_hold():
+    """A declared ``ret_dtype`` is checked against what the UDF returns.
+
+    Inference only names a type the return can be written as, and a declared
+    type skips it. Unchecked, a mismatch reached the wrapper, which either
+    failed to compile with a raw Numba error or, worse, ran and gave a wrong
+    answer with no error: a longer tuple lost its extra values, an array
+    written to a scalar kept its first element, and a tuple written to an
+    array element left it uninitialized.
+    """
+    # Names and shapes unique to this test; see the note in
+    # test_udt_array_udf_shape_errors.
+    rec2 = dtypes.register_anonymous(
+        np.dtype([("rdm_lo", np.float64), ("rdm_hi", np.float64)], align=True), "_RetDMisRec2"
+    )
+    rec3 = dtypes.register_anonymous(
+        np.dtype([("rdm_a", np.int64), ("rdm_b", np.int64), ("rdm_c", np.int64)], align=True),
+        "_RetDMisRec3",
+    )
+    arr2 = dtypes.register_anonymous(np.dtype((np.float32, (2,))), "_RetDMisArr2")
+    arr3 = dtypes.register_anonymous(np.dtype((np.float32, (3,))), "_RetDMisArr3")
+
+    def binary_rejects(func, ret_dtype, match):
+        op_ = BinaryOp.register_anonymous(func, is_udt=True, ret_dtype=ret_dtype)
+        with pytest.raises(UdfParseError, match=match):
+            op_[FP64, FP64]
+
+    binary_rejects(
+        lambda x, y: (x, y, x + y), rec2, "tuple of length 3, but ret_dtype=_RetDMisRec2 has 2"
+    )
+    binary_rejects(lambda x, y: (x,), rec2, "tuple of length 1, but ret_dtype=_RetDMisRec2 has 2")
+    binary_rejects(
+        lambda x, y: x + y, rec2, "returned float64, which cannot be written as ret_dtype"
+    )
+
+    # A nested record takes a flat tuple, one value per leaf, and the count in
+    # the message says so when it differs from the number of top-level fields.
+    nested = dtypes.register_anonymous(
+        np.dtype(
+            [("rdm_in", [("rdm_p", np.float64), ("rdm_q", np.float64)]), ("rdm_r", np.float64)],
+            align=True,
+        ),
+        "_RetDMisNested",
+    )
+    binary_rejects(
+        lambda x, y: ((x, y), x + y),
+        nested,
+        "tuple of length 2, but ret_dtype=_RetDMisNested has 3 fields once nested records",
+    )
+    flat = BinaryOp.register_anonymous(lambda x, y: (x, y, x + y), is_udt=True, ret_dtype=nested)
+    assert flat[FP64, FP64].return_type is nested
+    binary_rejects(lambda x, y: (x, y, x + y), arr2, "tuple of length 3, which cannot be written")
+    binary_rejects(lambda x, y: (x, y), FP64, "tuple of length 2, which cannot be written")
+
+    def unary_rejects(func, ret_dtype, operand, match):
+        op_ = UnaryOp.register_anonymous(func, is_udt=True, ret_dtype=ret_dtype)
+        with pytest.raises(UdfParseError, match=match):
+            op_[operand]
+
+    unary_rejects(lambda x: x * 1.0, FP64, arr3, "returned an array, which cannot be written")
+    unary_rejects(lambda x: x, rec3, rec2, r"record with fields \['rdm_lo', 'rdm_hi'\]")
+    unary_rejects(lambda x: x, arr3, rec2, "record with fields")
+    unary_rejects(lambda x: x, rec2, arr3, "returned an array, which cannot be written")
+
+    # What a declared type can hold still works: one value per field, a
+    # scalar that fills an array element, and a scalar cast to the declared type.
+    ok = BinaryOp.register_anonymous(lambda x, y: (x, y), is_udt=True, ret_dtype=rec2)
+    fill = BinaryOp.register_anonymous(lambda x, y: x + y, is_udt=True, ret_dtype=arr2)
+    cast = BinaryOp.register_anonymous(lambda x, y: x + y, is_udt=True, ret_dtype=INT64)
+    w = Vector(FP64, size=1)
+    w[0] = 3.0
+    u = Vector(FP64, size=1)
+    u[0] = 1.0
+    assert tuple(w.ewise_mult(u, ok).new()[0].new().value.tolist()) == (3.0, 1.0)
+    np.testing.assert_array_equal(w.ewise_mult(u, fill).new()[0].new().value, [4.0, 4.0])
+    assert w.ewise_mult(u, cast).new()[0].new().value == 4
 
 
 def _ret_dtype_pickle_udf(x):  # pragma: no cover (numba)
@@ -4346,3 +4459,8 @@ def test_udt_ret_dtype_survives_pickle(tmp_path):
         assert lines.get("package") == str(repo_root / "graphblas" / "__init__.py"), report
         for key, want in checks.items():
             assert lines.get(key) == want, report
+
+    # An op without ret_dtype pickles as the 3-tuple it always did, which
+    # versions without ret_dtype can still read.
+    plain = UnaryOp.register_anonymous(_ret_dtype_pickle_udf, "_ret_dtype_plain", is_udt=True)
+    assert len(plain.__reduce__()[1]) == 3

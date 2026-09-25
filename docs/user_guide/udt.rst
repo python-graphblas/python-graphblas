@@ -221,14 +221,14 @@ The ``x[:2]`` rejection above is a case of this: the output really is a
 2-element UDT, but nothing says so.
 
 Pass ``ret_dtype`` to say it outright. It takes anything ``lookup_dtype``
-accepts and requires ``is_udt=True``::
+accepts and requires ``is_udt=True``:
+
+.. code-block:: python
 
     nine = gb.dtypes.register_anonymous(np.dtype((np.float64, (9,))), "Nine")
     three = gb.dtypes.register_anonymous(np.dtype((np.float64, (3,))), "Three")
 
-    head = gb.core.operator.UnaryOp.register_anonymous(
-        lambda x: x[:3], "head", is_udt=True, ret_dtype=three
-    )
+    head = gb.unary.register_anonymous(lambda x: x[:3], "head", is_udt=True, ret_dtype=three)
     head[nine].return_type  # Three
 
 ``ret_dtype`` is available on ``register_anonymous`` and ``register_new`` for
@@ -239,10 +239,11 @@ output type should vary with its inputs still needs one registration per
 output type.
 
 Declaring the type does not switch off the shape check described above; it
-points the check at the declared type instead. A UDF whose result cannot
-fill a ``ret_dtype`` element is still rejected when the op is typed, so a
-wrong ``ret_dtype`` is a registration error rather than a silently
-mis-typed result.
+points the check at the declared type instead. The result must also be
+something the declared type can hold: one value per field for a record, an
+array or a scalar for an array UDT, and a scalar for a scalar type. A UDF that
+breaks either rule is rejected when the op is typed, so a wrong ``ret_dtype``
+is a registration error rather than a silently mis-typed result.
 
 It does not apply to ``SelectOp``, whose return type GraphBLAS fixes at
 ``BOOL``, nor to builtin (non-UDT) dtypes, where the return type comes from
