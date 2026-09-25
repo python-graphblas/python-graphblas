@@ -614,9 +614,9 @@ class OpBase:
 
         Shared by the five UDF-capable subclasses (UnaryOp, BinaryOp,
         IndexUnaryOp, SelectOp, IndexBinaryOp), all of which use the
-        default ``__reduce__`` below. ``ret_dtype`` is passed only when set:
-        SelectOp shares this path and takes no ret_dtype, and pickles written
-        before ret_dtype existed carry a 3-tuple.
+        default ``__reduce__`` below. ``ret_dtype`` is passed on only when set:
+        SelectOp shares this path and takes no ret_dtype, and an op without one
+        pickles as the 3-tuple it always did.
         """
         if (rv := cls._find(name)) is not None:
             return rv
@@ -637,19 +637,19 @@ class OpBase:
         ``Aggregator`` define their own ``__reduce__`` because their pickle
         shape differs (they hold a binary op + identity, etc.).
         """
+        # ``ret_dtype`` rides along only when set, so an op without one pickles
+        # exactly as before and older versions can still read it.
+        ret = () if (ret_dtype := getattr(self, "_ret_dtype", None)) is None else (ret_dtype,)
         if self._anonymous:
             if hasattr(self.orig_func, "_parameterized_info"):
                 return (_deserialize_parameterized, self.orig_func._parameterized_info)
             return (
                 type(self)._deserialize_anon_udf,
-                (self.orig_func, self.name, self._is_udt, getattr(self, "_ret_dtype", None)),
+                (self.orig_func, self.name, self._is_udt, *ret),
             )
         if (name := f"{self._modname}.{self.name}") in _STANDARD_OPERATOR_NAMES:
             return name
-        return (
-            type(self)._deserialize_udf,
-            (self.name, self.orig_func, self._is_udt, getattr(self, "_ret_dtype", None)),
-        )
+        return (type(self)._deserialize_udf, (self.name, self.orig_func, self._is_udt, *ret))
 
     @classmethod
     def _check_supports_udf(cls, method_name):
