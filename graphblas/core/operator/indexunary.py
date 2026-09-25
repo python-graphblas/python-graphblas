@@ -359,14 +359,18 @@ class IndexUnaryOp(OpBase):
                 },
             )
         elif parameterized:
-            _validate_ret_dtype(ret_dtype, "indexunary", is_udt=is_udt, parameterized=True)
             indexunary_op = ParameterizedIndexUnaryOp(name, func, is_udt=is_udt)
             setattr(module, funcname, indexunary_op)
         else:
             indexunary_op = cls._build(name, func, is_udt=is_udt, ret_dtype=ret_dtype)
             setattr(module, funcname, indexunary_op)
-            # If return type is BOOL, register additionally as a SelectOp
-            if all(x == BOOL for x in indexunary_op.types.values()):
+            # If return type is BOOL, register additionally as a SelectOp. A UDT
+            # op has no types until it is compiled, so only a declared
+            # ``ret_dtype`` can rule it out here.
+            declared = indexunary_op._ret_dtype
+            if (declared is None or declared == BOOL) and all(
+                x == BOOL for x in indexunary_op.types.values()
+            ):
                 from .select import SelectOp
 
                 select_module, funcname = SelectOp._remove_nesting(name, strict=False)

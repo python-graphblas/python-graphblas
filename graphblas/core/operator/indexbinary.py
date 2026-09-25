@@ -525,7 +525,6 @@ class IndexBinaryOp(OpBase):
                 },
             )
         elif parameterized:
-            _validate_ret_dtype(ret_dtype, "indexbinary", is_udt=is_udt, parameterized=True)
             idxbinop = ParameterizedIndexBinaryOp(name, func, is_udt=is_udt)
             setattr(module, funcname, idxbinop)
         else:
