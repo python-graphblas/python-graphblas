@@ -112,6 +112,39 @@ def _bool_to_int8(dtype):
     return INT8 if dtype == BOOL else dtype
 
 
+def _validate_ret_dtype(ret_dtype, opclass, *, is_udt, parameterized):
+    """Normalize a user-supplied ``ret_dtype`` to a DataType, or raise.
+
+    ``ret_dtype`` names the operator's output type outright instead of letting
+    it be inferred from what the UDF returns. Inference can only name a type it
+    can see, which is why this is limited to the UDT path: the builtin path
+    derives its output from Numba's typing of each sample input, and forcing a
+    single type across all of them would silently recast results.
+    """
+    if ret_dtype is None:
+        return None
+    if not is_udt:
+        raise ValueError(
+            f"{opclass}: ret_dtype requires is_udt=True. The return type for builtin "
+            f"dtypes comes from compiling the function for each input type, so a single "
+            f"fixed type cannot describe it."
+        )
+    if parameterized:
+        raise ValueError(
+            f"{opclass}: ret_dtype does not work with parameterized=True. "
+            f"A parameterized operator builds and registers its function when called, "
+            f"and that inner registration does not accept a return dtype; register the "
+            f"built function without parameterized=True to declare one."
+        )
+    try:
+        return lookup_dtype(ret_dtype)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(
+            f"{opclass}: ret_dtype={ret_dtype!r} is not a recognized dtype. "
+            f"Pass a DataType, a numpy dtype, or a name such as 'FP64'."
+        ) from exc
+
+
 class OpPath:
     def __init__(self, parent, name):
         self._parent = parent
@@ -269,6 +302,74 @@ if _has_numba:
             if line:
                 return line
         return "Numba could not compile the function for these input types"
+
+    def _udt_ret_type(parent_op, numba_ret_type, *dtypes):
+        """Return the operator's declared ``ret_dtype``, else infer one from the UDF.
+
+        Inference can only name a type that is already an operand, so an output
+        UDT that appears nowhere in the inputs is unreachable without this. A
+        declared type is checked against the UDF's return first.
+        """
+        if (ret_dtype := parent_op._ret_dtype) is not None:
+            _check_declared_ret_type(ret_dtype, numba_ret_type)
+            return ret_dtype
+        return _resolve_udt_return_type(numba_ret_type, *dtypes)
+
+    def _check_declared_ret_type(ret_dtype, numba_ret_type):
+        """Reject a UDF whose return cannot be written as the declared ``ret_dtype``.
+
+        Inference only names a type the return can be written as; a declared
+        type skips it. Left to the wrapper, a mismatch is a raw Numba error when
+        the wrapper compiles, or a silent wrong answer when it runs: a longer
+        tuple loses its extra values, an array written to a scalar keeps its
+        first element, and a tuple written to an array element leaves it
+        uninitialized. Shapes, and record leaves that can be ``None``, are
+        checked afterwards by :func:`_check_udf_fills_output`.
+        """
+        nt = numba.core.types
+        np_type = ret_dtype.np_type
+        if ret_dtype._is_udt and np_type.names is not None:
+            from .udt_utils import _iter_record_leaves
+
+            nleaves = len(list(_iter_record_leaves(np_type)))
+            if isinstance(numba_ret_type, nt.BaseTuple):
+                if len(numba_ret_type.types) == nleaves:
+                    return
+                # The tuple is flat over the leaves, so a nested record counts
+                # the fields of its inner records, not the inner records.
+                nested = (
+                    "" if nleaves == len(np_type.names) else " once nested records are flattened"
+                )
+                raise UdfParseError(
+                    f"UDT UDF returned a tuple of length {len(numba_ret_type.types)}, but "
+                    f"ret_dtype={ret_dtype} has {nleaves} fields{nested}. "
+                    f"Return one value per field."
+                )
+            if numba_ret_type == ret_dtype.numba_type:
+                return  # a ``ret_dtype`` value, such as an operand of that type
+            wanted = f"a tuple of its {nleaves} fields, or a {ret_dtype} value"
+        elif ret_dtype._is_udt and np_type.subdtype is not None:
+            if isinstance(numba_ret_type, (nt.Array, nt.Number, nt.Boolean)):
+                return  # a scalar fills every slot; the shape is checked later
+            wanted = "an array, or a scalar to fill every slot"
+        else:
+            if isinstance(numba_ret_type, (nt.Number, nt.Boolean)):
+                return
+            wanted = "a scalar"
+        if isinstance(numba_ret_type, nt.BaseTuple):
+            returned = f"a tuple of length {len(numba_ret_type.types)}"
+        elif isinstance(numba_ret_type, nt.Array):
+            returned = "an array"
+        elif isinstance(numba_ret_type, nt.Record):
+            returned = f"a record with fields {list(numba_ret_type.fields)}"
+        elif isinstance(numba_ret_type, (nt.Optional, nt.NoneType)):
+            returned = "a value that can be None"
+        else:
+            returned = f"{numba_ret_type}"
+        raise UdfParseError(
+            f"UDT UDF returned {returned}, which cannot be written as "
+            f"ret_dtype={ret_dtype}. Return {wanted}."
+        )
 
     def _resolve_udt_return_type(numba_ret_type, *dtypes):
         """Resolve a Numba return type to a DataType, matching Tuple returns to an input UDT.
@@ -1163,21 +1264,25 @@ class OpBase:
         return cls.register_new(name, *args)
 
     @classmethod
-    def _deserialize_udf(cls, name, orig_func, is_udt):
+    def _deserialize_udf(cls, name, orig_func, is_udt, ret_dtype=None):
         """Re-register a named UDF on unpickle, or reuse if already present.
 
         Shared by the five UDF-capable subclasses (UnaryOp, BinaryOp,
         IndexUnaryOp, SelectOp, IndexBinaryOp), all of which use the
-        default ``__reduce__`` below.
+        default ``__reduce__`` below. ``ret_dtype`` is passed on only when set:
+        SelectOp shares this path and takes no ret_dtype, and an op without one
+        pickles as the 3-tuple it always did.
         """
         if (rv := cls._find(name)) is not None:
             return rv
-        return cls.register_new(name, orig_func, is_udt=is_udt)
+        kwargs = {} if ret_dtype is None else {"ret_dtype": ret_dtype}
+        return cls.register_new(name, orig_func, is_udt=is_udt, **kwargs)
 
     @classmethod
-    def _deserialize_anon_udf(cls, func, name, is_udt):
+    def _deserialize_anon_udf(cls, func, name, is_udt, ret_dtype=None):
         """Re-register an anonymous UDF on unpickle."""
-        return cls.register_anonymous(func, name, is_udt=is_udt)
+        kwargs = {} if ret_dtype is None else {"ret_dtype": ret_dtype}
+        return cls.register_anonymous(func, name, is_udt=is_udt, **kwargs)
 
     def __reduce__(self):
         """Default ``__reduce__`` for UDF-capable subclasses.
@@ -1187,13 +1292,19 @@ class OpBase:
         ``Aggregator`` define their own ``__reduce__`` because their pickle
         shape differs (they hold a binary op + identity, etc.).
         """
+        # ``ret_dtype`` rides along only when set, so an op without one pickles
+        # exactly as before and older versions can still read it.
+        ret = () if (ret_dtype := getattr(self, "_ret_dtype", None)) is None else (ret_dtype,)
         if self._anonymous:
             if hasattr(self.orig_func, "_parameterized_info"):
                 return (_deserialize_parameterized, self.orig_func._parameterized_info)
-            return (type(self)._deserialize_anon_udf, (self.orig_func, self.name, self._is_udt))
+            return (
+                type(self)._deserialize_anon_udf,
+                (self.orig_func, self.name, self._is_udt, *ret),
+            )
         if (name := f"{self._modname}.{self.name}") in _STANDARD_OPERATOR_NAMES:
             return name
-        return (type(self)._deserialize_udf, (self.name, self.orig_func, self._is_udt))
+        return (type(self)._deserialize_udf, (self.name, self.orig_func, self._is_udt, *ret))
 
     @classmethod
     def _check_supports_udf(cls, method_name):
