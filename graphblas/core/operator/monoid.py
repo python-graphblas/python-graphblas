@@ -29,6 +29,16 @@ from .binary import BinaryOp, ParameterizedBinaryOp, TypedBuiltinBinaryOp
 _BUILTIN_UDT_MONOIDS = {"plus", "times", "min", "max"}
 
 
+def _is_builtin_binaryop(binaryop):
+    """True if ``binaryop`` wraps built-in GraphBLAS operators rather than a UDF.
+
+    Built-ins are the only binary ops constructed with neither a Python func nor
+    a numba func. That covers ``binary.numpy.float_power`` too, which is
+    assembled out of ``binary.pow``'s typed ops.
+    """
+    return binaryop.orig_func is None and binaryop._numba_func is None
+
+
 def _scalar_identity(monoid_name, scalar_dtype):
     """Return the identity for a single numeric (or bool) numpy dtype, or ``None``.
 
@@ -258,6 +268,24 @@ class Monoid(OpBase):
     def _build(cls, name, binaryop, identity, *, is_idempotent=False, anonymous=False):
         if type(binaryop) is not BinaryOp:
             raise TypeError(f"binaryop must be a BinaryOp, not {type(binaryop)}")
+        if _is_builtin_binaryop(binaryop):
+            # Rejected up front, before any object is created: a built-in binaryop
+            # cannot back a user monoid. Its typed ops are ``TypedBuiltinBinaryOp``
+            # with no ``_monoid`` slot, so ``TypedUserMonoid`` would raise an opaque
+            # AttributeError partway through, having already repointed
+            # ``binary.<name>._monoid`` at the half-built monoid. Even if that were
+            # patched over, SuiteSparse ignores the identity handed to
+            # ``GrB_Monoid_new`` whenever the built-in op already has a built-in
+            # monoid (max, min, plus, times, any), so the result would silently
+            # disagree with ``monoid[dtype].identity``.
+            raise TypeError(
+                "binaryop must be a user-defined BinaryOp, not the built-in "
+                f"binary.{binaryop.name}. Built-in binary operators already own their "
+                "monoid association (binary.plus resolves to monoid.plus, and so on). "
+                "To build a monoid with a different identity, register the function as "
+                "a new BinaryOp (BinaryOp.register_new or BinaryOp.register_anonymous) "
+                "and pass that."
+            )
         if name is None:
             name = binaryop.name
         new_type_obj = cls(
