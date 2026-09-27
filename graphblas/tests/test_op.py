@@ -2252,6 +2252,8 @@ def test_udt_broadcast_matches_numba_slice_assign():
 
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
+# _ProbeWhenRec's numpy repr is 142 chars; see test_udt_eq_nested_record_with_nan_leaf.
+@pytest.mark.filterwarnings("ignore:UDT repr is too large")
 def test_udt_udf_shape_check_runs_udf_only_for_built_arrays(monkeypatch):
     """The shape check runs the UDF only when Numba's type lacks the extents.
 
