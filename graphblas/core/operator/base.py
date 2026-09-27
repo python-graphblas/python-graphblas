@@ -833,7 +833,7 @@ class OpBase:
                     raise KeyError(f"{self.name} does not work with {type_}")
             else:
                 return self._typed_ops[type_]
-        # This is a UDT or is able to operate on UDTs such as `first` any `any`
+        # This is a UDT or is able to operate on UDTs such as `first` and `any`
         dtype = lookup_dtype(type_)
         return self._compile_udt(dtype, dtype)
 
@@ -903,7 +903,7 @@ class OpBase:
         """Initialize operators for this operator type.
 
         include_in_ops determines whether the operators are included in the
-        ``gb.ops`` namespace in addition to the defined module.
+        ``gb.op`` namespace in addition to the defined module.
         """
         if cls._initialized:  # pragma: no cover (safety)
             return

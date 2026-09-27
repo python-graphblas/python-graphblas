@@ -175,7 +175,7 @@ class Semiring(OpBase):
     and the Monoid taking the place of the standard addition operator.
 
     Built-in and registered Semirings are located in the ``graphblas.semiring`` namespace
-    as well as in the ``graphblas.ops`` combined namespace.
+    as well as in the ``graphblas.op`` combined namespace.
     """
 
     __slots__ = "_monoid", "_binaryop"

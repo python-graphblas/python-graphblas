@@ -267,7 +267,7 @@ import graphblas as gb
 
 # scipy.sparse matrices
 A = gb.io.from_scipy_sparse(m)
-m = gb.io.to_scipy_sparse(m, format="csr")
+m = gb.io.to_scipy_sparse(A, format="csr")
 
 # networkx graphs
 A = gb.io.from_networkx(g)

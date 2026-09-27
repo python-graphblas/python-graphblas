@@ -136,7 +136,7 @@ class GlobalConfig(BaseConfig):
         Which GPU to use; default is -1, which means do not run on the GPU.
         Only available for SuiteSparse:GraphBLAS >=8
         **GPU support is a work in progress; not recommended to use**
-    jit_c_control : {"off", "pause", "run", "load", "on}
+    jit_c_control : {"off", "pause", "run", "load", "on"}
         Control the CPU JIT:
         "off" : do not use the JIT and free all JIT kernels if loaded
         "pause" : do not run JIT kernels, but keep any loaded

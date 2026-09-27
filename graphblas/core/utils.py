@@ -153,7 +153,7 @@ def get_shape(nrows, ncols, dtype=None, **arrays):
                 break
         else:
             raise ValueError(
-                "Either nrows and ncols must be provided, or one of the following arrays"
+                "Either nrows and ncols must be provided, or one of the following arrays "
                 f'must be 2d (from which to get nrows and ncols): {", ".join(arrays)}'
             )
         if nrows is None:

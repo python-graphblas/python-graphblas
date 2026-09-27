@@ -4059,10 +4059,10 @@ class ss:
             - "lz4hc": LZ4 compression that allows the compression level (1-9) to be set.
               Low compression level (1) is faster, high (9) is more compact.  Default is 9.
             - "zstd": ZSTD compression, which allows compression level (1-19) to be set.
-              Low compression level (1) is faster, high (19) is more compact.  Default is 19.
+              Low compression level (1) is faster, high (19) is more compact.  Default is 1.
             - "none" or None: no compression
-        level : int [1-9], optional
-            The compression level, between 1 to 9, to use with "lz4hc" and "zstd" compression.
+        level : int, optional
+            The compression level to use with "lz4hc" (1-9) and "zstd" (1-19) compression.
             Level 1 is the fastest and largest, and is the default for "zstd" compression.
             Level 9 is the default when using "lz4hc" compression.
         nthreads : int, optional

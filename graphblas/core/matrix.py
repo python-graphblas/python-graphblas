@@ -368,7 +368,7 @@ class Matrix(BaseType):
             size = ffi_new("size_t*")
             check_status(lib.GxB_Matrix_memoryUsage(size, self.gb_obj[0]), self)
             return size[0] + object.__sizeof__(self)
-        raise TypeError("Unable to get size of Matrix with backend: {backend}")
+        raise TypeError(f"Unable to get size of Matrix with backend: {backend}")
 
     def isequal(self, other, *, check_dtype=False, **opts):
         """Check for exact equality (same size, same structure).
@@ -377,7 +377,7 @@ class Matrix(BaseType):
         ----------
         other : Matrix
             The matrix to compare against
-        check_dtypes : bool
+        check_dtype : bool
             If True, also checks that dtypes match
 
         Returns
@@ -532,7 +532,7 @@ class Matrix(BaseType):
             Requested dtype for the output values array.
         rows : bool, default=True
             Whether to return rows; will return ``None`` for rows if ``False``
-        columns  :bool, default=True
+        columns : bool, default=True
             Whether to return columns; will return ``None`` for columns if ``False``
         values : bool, default=True
             Whether to return values; will return ``None`` for values if ``False``
@@ -1131,15 +1131,15 @@ class Matrix(BaseType):
         ----------
         indptr : list or np.ndarray
             Pointers for each column into row_indices and values; ``indptr.size == ncols + 1``.
-        col_indices : list or np.ndarray
-            Column indices.
+        row_indices : list or np.ndarray
+            Row indices.
         values : list or np.ndarray or scalar, default 1.0
             List of values. If a scalar is provided, all values will be set to this single value.
         dtype :
             Data type of the Matrix. If not provided, the values will be inspected
             to choose an appropriate dtype.
         nrows : int, optional
-            Number of rows in the Matrix. If not provided, ``ncols`` is computed
+            Number of rows in the Matrix. If not provided, ``nrows`` is computed
             from the maximum row index found in ``row_indices``.
         ncols : int, optional
             Number of columns in the Matrix. ncols is computed as ``len(indptr) - 1``.
@@ -1529,7 +1529,7 @@ class Matrix(BaseType):
 
         Parameters
         ----------
-        d : Mapping or Sequence
+        nested_dicts : Mapping or Sequence
             The dict-like object to convert. The keys will be cast to uint64 for the indices.
         dtype :
             Data type of the Matrix. If not provided, the values will be inspected
@@ -2974,7 +2974,7 @@ class Matrix(BaseType):
         elif v._size != size:
             raise DimensionMismatch(
                 f"Dimensions not compatible for assigning length {v._size} Vector "
-                f"to {k}'th diagonal of Matrix with shape {self._nrows}x{self._ncols}."
+                f"to {k}'th diagonal of Matrix with shape {self._nrows}x{self._ncols}. "
                 f"The Vector should be size {size}."
             )
 

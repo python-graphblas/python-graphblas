@@ -133,7 +133,7 @@ class UnaryOp(OpBase):
     """Takes one input and returns one output, possibly of a different data type.
 
     Built-in and registered UnaryOps are located in the ``graphblas.unary`` namespace
-    as well as in the ``graphblas.ops`` combined namespace.
+    as well as in the ``graphblas.op`` combined namespace.
     """
 
     __slots__ = "orig_func", "is_positional", "_is_udt", "_numba_func"

@@ -182,7 +182,7 @@ class Scalar(BaseType):
             size = ffi_new("size_t*")
             check_status(lib.GxB_Scalar_memoryUsage(size, self.gb_obj[0]), self)
             return base + size[0]
-        raise TypeError("Unable to get size of GrB_Scalar with backend: {backend}")
+        raise TypeError(f"Unable to get size of GrB_Scalar with backend: {backend}")
 
     def isequal(self, other, *, check_dtype=False):
         """Check for exact equality (including whether the value is missing).
@@ -191,7 +191,7 @@ class Scalar(BaseType):
         ----------
         other : Scalar
             Scalar to compare against
-        check_dtypes : bool, default=False
+        check_dtype : bool, default=False
             If True, also checks that dtypes match
 
         Returns

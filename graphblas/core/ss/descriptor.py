@@ -153,7 +153,7 @@ def get_descriptor(**opts):
         Whether and how to compress the data for serialization.
         The default is "zstd" with ``compression_level=1``
     compression_level : int
-        1-9 for "lz4hc" compression: (1) is the fastest, (9) is the most compact (default 1).
+        1-9 for "lz4hc" compression: (1) is the fastest, (9) is the most compact (default 9).
         1-19 for "zstd" compression: (1) is the fastest, (19) is the most compact (default 1).
         Ignored for other compression methods.
 
@@ -212,7 +212,7 @@ def _set_compression(desc, compression, level):
         comp = _str_to_compression[compression]
     if level is not None:
         if compression not in {"lz4hc", "zstd"}:
-            raise TypeError('level argument is only valid when using "lz4hc" compression')
+            raise TypeError('level argument is only valid when using "lz4hc" or "zstd" compression')
         level = int(level)
         upper = 9 if compression == "lz4hc" else 19
         default = 9 if compression == "lz4hc" else 1
