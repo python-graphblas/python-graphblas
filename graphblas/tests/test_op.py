@@ -6500,6 +6500,8 @@ def test_udt_ret_dtype_still_shape_checked():
 
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
+# _RetDMisNested's numpy repr is 141 chars; see test_udt_eq_nested_record_with_nan_leaf.
+@pytest.mark.filterwarnings("ignore:UDT repr is too large")
 def test_udt_ret_dtype_rejects_a_return_it_cannot_hold():
     """A declared ``ret_dtype`` is checked against what the UDF returns.
 
