@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import sysconfig
+import uuid
 from pathlib import Path
 
 import numpy as np
@@ -193,6 +194,149 @@ def test_fix_jit_config_first_call_agrees_with_the_second():
     """
     lines, report = _run_in_fresh_process(_FIX_JIT_TWICE_PROBE)
     assert lines["first"] == lines["second"], report
+
+
+# Run in a subprocess: this process has already probed the JIT and cached the
+# answer, and a fresh one has to probe at its first registration. Each
+# registration starts from ``'run'``, so one registrar raising the control
+# cannot cover for another that does not.
+_SS_REGISTER_NEW_PROBE = """
+import graphblas as gb
+from graphblas import binary, indexbinary, indexunary, select, unary
+from graphblas.core.operator.indexbinary import _has_idxbinop
+
+print("package: " + gb.__file__)
+registrars = {
+    "unary": lambda: unary.ss.register_new(
+        "rn_neg", "void rn_neg (double *z, double *x) { (*z) = -(*x) ; }", "FP64", "FP64"
+    ),
+    "binary": lambda: binary.ss.register_new(
+        "rn_absdiff",
+        "void rn_absdiff (double *z, double *x, double *y) { (*z) = fabs ((*x) - (*y)) ; }",
+        "FP64", "FP64", "FP64",
+    ),
+    "indexunary": lambda: indexunary.ss.register_new(
+        "rn_diffy",
+        "void rn_diffy (double *z, double *x, GrB_Index i, GrB_Index j, double *y) "
+        "{ (*z) = (i + j) * fabs ((*x) - (*y)) ; }",
+        "FP64", "FP64", "FP64",
+    ),
+    "select": lambda: select.ss.register_new(
+        "rn_woot",
+        "void rn_woot (bool *z, const int32_t *x, GrB_Index i, GrB_Index j, int32_t *y) "
+        "{ (*z) = ((*x) + i + j == (*y)) ; }",
+        "INT32", "INT32",
+    ),
+}
+if _has_idxbinop:
+    registrars["indexbinary"] = lambda: indexbinary.ss.register_new(
+        "rn_add_theta",
+        "void rn_add_theta (double *z, double *x, GrB_Index ix, GrB_Index jx, "
+        "double *y, GrB_Index iy, GrB_Index jy, double *theta) "
+        "{ (*z) = (*x) + (*y) + (*theta) ; }",
+        "FP64", "FP64", "FP64", "FP64",
+    )
+for kind, register in registrars.items():
+    gb.ss.config["jit_c_control"] = "run"
+    try:
+        register()
+    except Exception as exc:
+        print(kind + ": " + type(exc).__name__)
+    else:
+        print(kind + ": ok")
+"""
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_ss_register_new_enables_the_jit():
+    """Registering an op from C source raises SuiteSparse's default ``'run'``.
+
+    SuiteSparse compiles the C definition, or loads it from its cache, when the
+    op is created. ``'run'`` does neither, so without the raise the
+    registration fails. Each registrar has to ask for the JIT itself: since
+    ``gb.ss`` stopped raising the control at import, nothing else does it
+    first.
+    """
+    if not _JIT_WORKS_AT_IMPORT:
+        pytest.skip("JIT not compiled in or not working here; nothing can compile")
+    lines, report = _run_in_fresh_process(_SS_REGISTER_NEW_PROBE)
+    kinds = ["unary", "binary", "indexunary", "select"]
+    kinds += ["indexbinary"] if _has_idxbinop else []
+    assert {kind: lines.get(kind) for kind in kinds} == dict.fromkeys(kinds, "ok"), report
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_ss_register_new_says_why_the_jit_cannot_build_it(monkeypatch):
+    """A C-source registration the JIT cannot build names the reason.
+
+    For each of these SuiteSparse reports a bare ``NullPointer`` (op) or
+    ``InvalidValue`` (type) with no message. None of them compiles anything, so
+    this runs with or without a working compiler; a library built without the
+    JIT skips ``'load'`` and the failed probe.
+    """
+    from graphblas.core.ss import jit_config
+    from graphblas.exceptions import InvalidValue, NullPointer
+
+    # New names every run, so no cached kernel can satisfy ``'load'``.
+    suffix = uuid.uuid4().hex[:8]
+    op_name = f"why_neg_{suffix}"
+    cdef = f"void {op_name} (double *z, double *x) {{ (*z) = -(*x) ; }}"
+    type_name = f"why_t_{suffix}"
+    tdef = f"typedef struct {{ int64_t why_a ; }} {type_name} ;"
+    prev = gb.ss.config["jit_c_control"]
+    try:
+        for control, match in [
+            ("off", "jit_c_control is 'off', so SuiteSparse will not compile it"),
+            ("load", "jit_c_control is 'load', so SuiteSparse only loads kernels"),
+        ]:
+            gb.ss.config["jit_c_control"] = control
+            if gb.ss.config["jit_c_control"] != control:
+                # A library built without the JIT clamps 'load' down to 'run'.
+                continue
+            with pytest.raises(NullPointer, match=match):
+                unary.ss.register_new(op_name, cdef, "FP64", "FP64")
+            with pytest.raises(InvalidValue, match=match):
+                dtypes.ss.register_new(type_name, tdef)
+        # A process that cannot compile leaves SuiteSparse's default in place.
+        monkeypatch.setattr(jit_config, "_jit_enabled_for_udt", False)
+        gb.ss.config["jit_c_control"] = "run"
+        with pytest.raises(NullPointer, match="jit_c_control is still 'run'"):
+            unary.ss.register_new(op_name, cdef, "FP64", "FP64")
+        # A probe that fails in this very call leaves 'load' before the op is created.
+        gb.ss.config["jit_c_control"] = "on"
+        if gb.ss.config["jit_c_control"] == "on":
+
+            def failed_probe(cfg):
+                cfg["jit_c_control"] = "load"
+                return False
+
+            monkeypatch.setattr(jit_config, "_jit_enabled_for_udt", None)
+            monkeypatch.setattr(jit_config, "jit_compiler_is_usable", lambda: True)
+            monkeypatch.setattr(jit_config, "_probe_jit", failed_probe)
+            gb.ss.config["jit_c_control"] = "run"
+            with pytest.raises(NullPointer, match="the C compiler does not work here"):
+                unary.ss.register_new(op_name, cdef, "FP64", "FP64")
+    finally:
+        gb.ss.config["jit_c_control"] = prev
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_ss_register_new_says_the_compile_failed():
+    """C source that does not compile says so, and that ``jit_c_control`` is now ``'load'``."""
+    if not _JIT_WORKS_AT_IMPORT:
+        pytest.skip("JIT not compiled in or not working here; nothing compiles to fail")
+    from graphblas.exceptions import JitError, NullPointer
+
+    cdef = "void why_bad (double *z, double *x) { (*z) = why_undeclared ; }"
+    prev = gb.ss.config["jit_c_control"]
+    try:
+        gb.ss.config["jit_c_control"] = "on"
+        # SuiteSparse reports a failed compile as JitError from 9.4 on.
+        with pytest.raises((NullPointer, JitError), match="SuiteSparse failed to compile it"):
+            unary.ss.register_new("why_bad", cdef, "FP64", "FP64")
+        assert gb.ss.config["jit_c_control"] == "load"
+    finally:
+        gb.ss.config["jit_c_control"] = prev
 
 
 @pytest.mark.skipif("_IS_SSGB7")
@@ -445,6 +589,21 @@ def test_jit_udt():
         np_type=np_type,
     )
     assert dtype.np_type == np_type
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_jit_udt_name_leaves_room_for_the_nul():
+    """A type name as long as ``GxB_MAX_NAME_LEN`` is rejected before SuiteSparse sees it.
+
+    SuiteSparse keeps one character fewer, so that name would no longer match
+    its typedef, and the registration would fail as a compile error.
+    """
+    from graphblas.core import lib
+
+    limit = lib.GxB_MAX_NAME_LEN
+    name = "n" * limit
+    with pytest.raises(ValueError, match=f"Max size is {limit - 1}; got {limit}"):
+        dtypes.ss.register_new(name, f"typedef struct {{ int64_t a ; }} {name} ;")
 
 
 def test_jit_unary(v):

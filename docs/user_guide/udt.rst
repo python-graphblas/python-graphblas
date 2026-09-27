@@ -290,13 +290,18 @@ import changes nothing else, so reading ``gb.ss.about`` does not change what
 later operations compute.
 
 ``jit_c_control`` is raised from the SS default ``'run'`` (run cached kernels
-only; no compile, no load from disk) to ``'on'`` (compile, load, and run) when
-a UDT operator gets C source for SuiteSparse to compile, such as the first
-``binary.plus[udt]``, or when ``gb.dtypes.ss.register_new`` registers a type
-from a C typedef. Any other setting is kept, including ``'off'``, ``'pause'``,
-and ``'load'`` (load and run cached kernels, never compile). SuiteSparse
-itself sets ``'load'`` after a compile fails, so keeping it means a failing
-compile is tried once, not again at every later UDT operation.
+only; no compile, no load from disk) to ``'on'`` (compile, load, and run) by
+each of these, since each asks SuiteSparse to compile C source:
+
+- a UDT operator that gets C source, such as the first ``binary.plus[udt]``;
+- ``gb.dtypes.ss.register_new``, which registers a type from a C typedef;
+- ``gb.binary.ss.register_new`` and its ``unary``, ``indexunary``, ``select``,
+  and ``indexbinary`` siblings, which register an operator from a C definition.
+
+A setting other than ``'run'`` is kept, including ``'off'``, ``'pause'``, and
+``'load'`` (load and run cached kernels, never compile). SuiteSparse itself
+sets ``'load'`` after a compile fails, so keeping it means a failing compile
+is tried once, not again at every later request.
 
 Call the helper manually to re-fix or verify::
 

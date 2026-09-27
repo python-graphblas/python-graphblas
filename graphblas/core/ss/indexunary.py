@@ -105,20 +105,23 @@ def register_new(name, jit_c_definition, input_type, thunk_type, ret_type):
     else:
         # We use `is_udt=True` to make dtype handling flexible and explicit.
         rv = IndexUnaryOp(name, is_udt=True)
+    from .jit_config import _compiling_c_source
+
     gb_obj = ffi_new("GrB_IndexUnaryOp*")
-    check_status_carg(
-        lib.GxB_IndexUnaryOp_new(
-            gb_obj,
-            NULL,
-            ret_type._carg,
-            input_type._carg,
-            thunk_type._carg,
-            ffi_new("char[]", funcname.encode()),
-            ffi_new("char[]", jit_c_definition.encode()),
-        ),
-        "IndexUnaryOp",
-        gb_obj[0],
-    )
+    with _compiling_c_source(f"gb.indexunary.{name}"):
+        check_status_carg(
+            lib.GxB_IndexUnaryOp_new(
+                gb_obj,
+                NULL,
+                ret_type._carg,
+                input_type._carg,
+                thunk_type._carg,
+                ffi_new("char[]", funcname.encode()),
+                ffi_new("char[]", jit_c_definition.encode()),
+            ),
+            "IndexUnaryOp",
+            gb_obj[0],
+        )
     op = TypedJitIndexUnaryOp(
         rv, funcname, input_type, ret_type, gb_obj[0], jit_c_definition, dtype2=thunk_type
     )

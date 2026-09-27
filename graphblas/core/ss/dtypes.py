@@ -31,9 +31,13 @@ def register_new(name, jit_c_definition, *, np_type=None):
         raise ValueError(f"`name` argument must be a valid Python identifier; got: {name!r}")
     if name in core.dtypes._registry or hasattr(dtypes.ss, name):
         raise ValueError(f"{name!r} name for dtype is unavailable")
-    if len(name) > lib.GxB_MAX_NAME_LEN:
+    # GxB_MAX_NAME_LEN counts the terminating NUL, so SuiteSparse keeps one fewer
+    # character; a name that long would no longer match its typedef and would
+    # fail to compile.
+    if len(name) >= lib.GxB_MAX_NAME_LEN:
         raise ValueError(
-            f"`name` argument is too large. Max size is {lib.GxB_MAX_NAME_LEN}; got {len(name)}"
+            "`name` argument is too large. "
+            f"Max size is {lib.GxB_MAX_NAME_LEN - 1}; got {len(name)}"
         )
     if name not in jit_c_definition:
         raise ValueError("`name` argument must be same name as the typedef in `jit_c_definition`")
@@ -42,15 +46,17 @@ def register_new(name, jit_c_definition, *, np_type=None):
 
     # Registering a type by its C typedef is a request to compile C, so it is
     # a fair place to raise SuiteSparse's non-compiling default.
-    from .jit_config import _enable_jit_for_udt
-
-    _enable_jit_for_udt()
+    from .jit_config import _compiling_c_source
 
     gb_obj = ffi.new("GrB_Type*")
-    status = lib.GxB_Type_new(
-        gb_obj, 0, ffi_new("char[]", name.encode()), ffi_new("char[]", jit_c_definition.encode())
-    )
-    check_status_carg(status, "Type", gb_obj[0])
+    with _compiling_c_source(f"gb.dtypes.ss.{name}"):
+        status = lib.GxB_Type_new(
+            gb_obj,
+            0,
+            ffi_new("char[]", name.encode()),
+            ffi_new("char[]", jit_c_definition.encode()),
+        )
+        check_status_carg(status, "Type", gb_obj[0])
 
     # Let SuiteSparse:GraphBLAS determine the size (we gave 0 as size above)
     size_ptr = ffi_new("size_t*")

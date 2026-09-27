@@ -20,6 +20,7 @@ the configured compiler exists on disk. Useful for emitting a one-time
 warning at import or at first JIT use.
 """
 
+import contextlib
 import os
 import pathlib
 import platform
@@ -241,7 +242,7 @@ def _auto_fix_jit_at_import():
     submodule, and that must not change what any later operation computes or
     which kernels SuiteSparse is willing to load from its on-disk cache.
     Compilation is enabled later, by :func:`_enable_jit_for_udt`, when a UDT
-    actually needs a kernel built.
+    actually needs a kernel built, or a type or op is registered from C source.
     """
     cfg = _ss_config()
     if "jit_c_control" not in cfg:
@@ -250,7 +251,7 @@ def _auto_fix_jit_at_import():
         _repair_jit_compiler(cfg)
 
 
-# Tri-state: ``None`` until a UDT first asks for a JIT kernel while the
+# Tri-state: ``None`` until the first request to compile C source while the
 # control allows compiling, then the answer to "can this process
 # JIT-compile?" until ``fix_jit_config`` re-arms it.
 _jit_enabled_for_udt = None
@@ -263,17 +264,19 @@ _probing_jit = False
 
 
 def _enable_jit_for_udt():
-    """Enable JIT compilation the first time a UDT needs a kernel built.
+    """Enable JIT compilation the first time C source needs compiling.
 
     SuiteSparse defaults ``jit_c_control`` to ``'run'``, which runs kernels
     already loaded but neither compiles nor loads any. UDT auto-lift wants
     ``'on'``; without it every UDT op falls back to the Numba
-    function-pointer path (typically 2-3x slower for elementwise ops).
+    function-pointer path (typically 2-3x slower for elementwise ops). An op
+    or type registered from C source has no fallback: under ``'run'`` its
+    creation fails outright.
 
     This is where that bump belongs, rather than at import: registering a
-    type from its C typedef or arming an op with C source is an act that
-    plainly involves compiling C, so enabling the compiler is not a surprise.
-    Reading ``gb.ss.about`` is not, so it leaves the setting alone.
+    type or an op from C source, or arming an op with C source, is an act
+    that plainly involves compiling C, so enabling the compiler is not a
+    surprise. Reading ``gb.ss.about`` is not, so it leaves the setting alone.
 
     Only the default ``'run'`` is raised. An explicit ``'off'``, ``'pause'``,
     or ``'load'`` is honored, and ``'load'`` is also where SuiteSparse leaves
@@ -312,6 +315,67 @@ def _enable_jit_for_udt():
         # and a kernel armed now still needs it raised.
         cfg["jit_c_control"] = "on"
     return _jit_enabled_for_udt
+
+
+@contextlib.contextmanager
+def _compiling_c_source(name):
+    """Enable the JIT to create ``name`` from C source, and explain a failure.
+
+    SuiteSparse compiles the C source, or loads the kernel from its cache, as
+    part of creating the type or op. When it cannot, it reports a bare
+    ``NullPointer`` (op) or ``InvalidValue`` (type), or from 9.4 a
+    ``JitError`` for a failed compile, none with a message. ``jit_c_control``
+    before and after says which case it was, so the same exception type is
+    raised again with the reason, chained to the original.
+    """
+    from ...exceptions import InvalidValue, JitError, NullPointer
+
+    cfg = _ss_config()
+    initial = cfg.get("jit_c_control")
+    _enable_jit_for_udt()
+    before = cfg.get("jit_c_control")
+    try:
+        yield
+    except (NullPointer, InvalidValue, JitError) as exc:
+        after = cfg.get("jit_c_control")
+        if after in {"off", "pause"} and after == before:
+            reason = (
+                f"jit_c_control is {after!r}, so SuiteSparse will not compile it. "
+                "Set gb.ss.config['jit_c_control'] = 'on' to allow that."
+            )
+        elif after == "load" and before == "on":
+            reason = (
+                "SuiteSparse failed to compile it and set jit_c_control to 'load', so "
+                "nothing else compiles in this process until jit_c_control is set back "
+                "to 'on'. SuiteSparse prints the compiler's output when "
+                "gb.ss.config['burble'] is True."
+            )
+        elif after == before == "load" and initial != "load":
+            # ``_enable_jit_for_udt`` only ever writes 'on', so 'load' here means
+            # the probe it just ran failed to compile.
+            reason = (
+                "the C compiler does not work here: SuiteSparse could not compile a "
+                "small test type, and set jit_c_control to 'load'. To see the "
+                "compiler's output, set gb.ss.config['burble'] = True and "
+                "jit_c_control back to 'on', then try again."
+            )
+        elif after == before == "load":
+            reason = (
+                "jit_c_control is 'load', so SuiteSparse only loads kernels already in "
+                "its cache, and this one is not there. SuiteSparse also sets 'load' "
+                "itself after a compile fails. Set gb.ss.config['jit_c_control'] = "
+                "'on' to compile it."
+            )
+        elif after == before == "run":
+            reason = (
+                "jit_c_control is still 'run', which neither compiles nor loads: "
+                "python-graphblas did not find the configured C compiler, or "
+                "SuiteSparse was built without the JIT. gb.ss.fix_jit_config() looks "
+                "for a compiler and turns the JIT on."
+            )
+        else:
+            raise
+        raise type(exc)(f"Cannot create {name} from C source: {reason}") from exc
 
 
 # Keyed by ``(op_name, dtype_name)`` so each distinct pair warns once.

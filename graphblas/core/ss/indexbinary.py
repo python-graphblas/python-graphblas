@@ -111,21 +111,24 @@ def register_new(name, jit_c_definition, x_type, y_type, theta_type, ret_type):
             )
     else:
         rv = IndexBinaryOp(name, is_udt=True)
+    from .jit_config import _compiling_c_source
+
     gb_obj = ffi_new("GxB_IndexBinaryOp*")
-    check_status_carg(
-        lib.GxB_IndexBinaryOp_new(
-            gb_obj,
-            NULL,
-            ret_type._carg,
-            x_type._carg,
-            y_type._carg,
-            theta_type._carg,
-            ffi_new("char[]", funcname.encode()),
-            ffi_new("char[]", jit_c_definition.encode()),
-        ),
-        "IndexBinaryOp",
-        gb_obj[0],
-    )
+    with _compiling_c_source(f"gb.indexbinary.{name}"):
+        check_status_carg(
+            lib.GxB_IndexBinaryOp_new(
+                gb_obj,
+                NULL,
+                ret_type._carg,
+                x_type._carg,
+                y_type._carg,
+                theta_type._carg,
+                ffi_new("char[]", funcname.encode()),
+                ffi_new("char[]", jit_c_definition.encode()),
+            ),
+            "IndexBinaryOp",
+            gb_obj[0],
+        )
     op = TypedJitIndexBinaryOp(
         rv, funcname, x_type, ret_type, gb_obj[0], jit_c_definition, dtype2=theta_type
     )
