@@ -286,8 +286,11 @@ def test_enable_jit_for_udt_re_raises_the_live_control():
         jit_config._jit_enabled_for_udt = prev_enabled
 
 
-@pytest.mark.skipif("_IS_SSGB7")
 @pytest.mark.skipif("not supports_udfs")
+# The op this test arms, binary.plus on a UDT, carries C source only on SS 9+
+# (see test_udt_jit_c_source_introspection). On 8.x the stand-in config tests
+# above still check that _enable_jit_for_udt leaves 'load' alone.
+@pytest.mark.skipif("not _has_jit_set")
 def test_failed_compile_is_not_retried_at_the_next_arming():
     """A compile that fails is tried once, not again at every later UDT op.
 
