@@ -21,7 +21,7 @@ def mmread(source, engine="auto", *, dup_op=None, name=None, **kwargs):
     Parameters
     ----------
     source : str or file
-        Filename (.mtx or .mtz.gz) or file-like object
+        Filename (.mtx or .mtx.gz) or file-like object
     engine : {"auto", "scipy", "fmm", "fast_matrix_market"}, default "auto"
         How to read the matrix market file. "scipy" uses ``scipy.io.mmread``,
         "fmm" and "fast_matrix_market" uses ``fast_matrix_market.mmread``,

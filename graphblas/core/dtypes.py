@@ -308,7 +308,7 @@ def register_anonymous(dtype, name=None):
             else:
                 np_repr = np_repr[: lib.GxB_MAX_NAME_LEN]
             warnings.warn(
-                f"{msg}.  It will use the following name, "
+                f"{msg} It will use the following name, "
                 f"and the dtype may need to be specified when deserializing: {np_repr}",
                 stacklevel=2,
             )

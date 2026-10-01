@@ -226,7 +226,7 @@ class Monoid(OpBase):
     """Takes two inputs and returns one output, all of the same data type.
 
     Built-in and registered Monoids are located in the ``graphblas.monoid`` namespace
-    as well as in the ``graphblas.ops`` combined namespace.
+    as well as in the ``graphblas.op`` combined namespace.
     """
 
     __slots__ = "_binaryop", "_identity", "_is_idempotent"
@@ -347,10 +347,10 @@ class Monoid(OpBase):
 
         Parameters
         ----------
-        binaryop: BinaryOp or ParameterizedBinaryOp
+        binaryop : BinaryOp or ParameterizedBinaryOp
             The binary operator of the monoid, which should be able to use the same
             dtype for both inputs and the output.
-        identity: scalar or Mapping
+        identity : scalar or Mapping
             The identity of the monoid such that ``op(x, identity) == x`` for any x.
             ``identity`` may also be a mapping from dtype to scalar.
         name : str, optional
@@ -381,10 +381,10 @@ class Monoid(OpBase):
             The name of the operator. This will show up as ``gb.monoid.{name}``.
             The name may contain periods, ".", which will result in nested objects
             such as ``gb.monoid.x.y.z`` for name ``"x.y.z"``.
-        binaryop: BinaryOp or ParameterizedBinaryOp
+        binaryop : BinaryOp or ParameterizedBinaryOp
             The binary operator of the monoid, which should be able to use the same
             dtype for both inputs and the output.
-        identity: scalar or Mapping
+        identity : scalar or Mapping
             The identity of the monoid such that ``op(x, identity) == x`` for any x.
             ``identity`` may also be a mapping from dtype to scalar.
         is_idempotent : bool, default False

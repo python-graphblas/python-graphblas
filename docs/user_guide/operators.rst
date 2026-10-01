@@ -331,7 +331,7 @@ This facilitates writing more succinct code such as:
 
     cur_min(accum=op.min) << op.min_plus(A @ B).reduce_rowwise(op.min)
 
-In the case of name conflicts (ex. binary.min and monoid.min), only one will exist in the the
+In the case of name conflicts (ex. binary.min and monoid.min), only one will exist in the
 ``graphblas.op`` namespace. However, almost all functions which require a specific kind of
 operator have a mechanism to convert from an identically named operator of a different type.
 

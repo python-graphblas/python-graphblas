@@ -90,19 +90,22 @@ def register_new(name, jit_c_definition, input_type, ret_type):
     else:
         # We use `is_udt=True` to make dtype handling flexible and explicit.
         rv = UnaryOp(name, is_udt=True)
+    from .jit_config import _compiling_c_source
+
     gb_obj = ffi_new("GrB_UnaryOp*")
-    check_status_carg(
-        lib.GxB_UnaryOp_new(
-            gb_obj,
-            NULL,
-            ret_type._carg,
-            input_type._carg,
-            ffi_new("char[]", funcname.encode()),
-            ffi_new("char[]", jit_c_definition.encode()),
-        ),
-        "UnaryOp",
-        gb_obj[0],
-    )
+    with _compiling_c_source(f"gb.unary.{name}"):
+        check_status_carg(
+            lib.GxB_UnaryOp_new(
+                gb_obj,
+                NULL,
+                ret_type._carg,
+                input_type._carg,
+                ffi_new("char[]", funcname.encode()),
+                ffi_new("char[]", jit_c_definition.encode()),
+            ),
+            "UnaryOp",
+            gb_obj[0],
+        )
     op = TypedJitUnaryOp(rv, funcname, input_type, ret_type, gb_obj[0], jit_c_definition)
     rv._add(op, is_jit=True)
     setattr(module, funcname, rv)

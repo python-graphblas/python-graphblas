@@ -335,7 +335,7 @@ class Vector(BaseType):
             size = ffi_new("size_t*")
             check_status(lib.GxB_Vector_memoryUsage(size, self.gb_obj[0]), self)
             return size[0] + object.__sizeof__(self)
-        raise TypeError("Unable to get size of Vector with backend: {backend}")
+        raise TypeError(f"Unable to get size of Vector with backend: {backend}")
 
     def isequal(self, other, *, check_dtype=False, **opts):
         """Check for exact equality (same size, same structure).
@@ -344,7 +344,7 @@ class Vector(BaseType):
         ----------
         other : Vector
             The vector to compare against
-        check_dtypes : bool, default=False
+        check_dtype : bool, default=False
             If True, also checks that dtypes match
 
         Returns
@@ -469,7 +469,7 @@ class Vector(BaseType):
         ----------
         dtype :
             Requested dtype for the output values array.
-        indices :bool, default=True
+        indices : bool, default=True
             Whether to return indices; will return ``None`` for indices if ``False``
         values : bool, default=True
             Whether to return values; will return ``None`` for values if ``False``
@@ -609,8 +609,6 @@ class Vector(BaseType):
         ----------
         k : int
             Off-diagonal offset in the Matrix.
-        dtype :
-            Data type of the new Matrix. Normal typecasting rules apply.
         name : str, optional
             Name to give the new Matrix.
 
@@ -800,10 +798,8 @@ class Vector(BaseType):
         ----------
         value : scalar
             Scalar value used to fill the Vector.
-        nrows : int
-            Number of rows.
-        ncols : int
-            Number of columns.
+        size : int
+            Size of the Vector.
         dtype : DataType, optional
             Data type of the Vector. If not provided, the scalar value will be
             inspected to choose an appropriate dtype.
@@ -1316,7 +1312,7 @@ class Vector(BaseType):
 
         Parameters
         ----------
-        other: Matrix
+        other : Matrix
             The matrix on the right side in the computation
         op : :class:`~graphblas.core.operator.Semiring`
             Semiring used in the computation

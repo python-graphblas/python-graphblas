@@ -402,7 +402,7 @@ class BinaryOp(OpBase):
     """Takes two inputs and returns one output, possibly of a different data type.
 
     Built-in and registered BinaryOps are located in the ``graphblas.binary`` namespace
-    as well as in the ``graphblas.ops`` combined namespace.
+    as well as in the ``graphblas.op`` combined namespace.
     """
 
     __slots__ = (

@@ -5,7 +5,7 @@ table.matrix {
   border: 0px;
 }
 
-/* Disable a horizintal line from the default stylesheet */
+/* Disable a horizontal line from the default stylesheet */
 .table.matrix > :not(caption) > * > * {
   border-bottom-width: 0px;
 }
@@ -48,7 +48,7 @@ table.matrix > tbody tr td:last-of-type {
 
 /* prevents empty cells from collapsing, especially empty rows */
 table.matrix > tbody tr td:empty::before {
-  /* basicaly fills empty cells with &nbsp; */
+  /* basically fills empty cells with &nbsp; */
   content: "\00a0\00a0\00a0";
   visibility: hidden;
 }

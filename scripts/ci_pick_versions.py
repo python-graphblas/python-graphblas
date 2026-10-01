@@ -139,16 +139,20 @@ PYYAML_VERSIONS = {
     "3.14": ["6.0", ""],
 }
 
-# sparse is noarch, so there are no per-Python builds to check; the split is by what
-# each release plausibly saw. The 0.14/0.15 series began well before py3.13 (0.15.0 is
-# Jan 2024), and 0.16/0.17 (Apr/May 2025) predate py3.14. To skip sparse on a Python,
-# give it a ["NA"] pool: a bare "NA" would be indexed as a string by `random.choice`.
-# MAINT: 2026-09-16 sparse 0.19.2 is latest; 0.18 verified against py3.14 locally
+# sparse is noarch and caps neither Python nor numpy: every release here declares numba
+# >=0.49, numpy >=1.17 and a Python floor at or below our oldest (>=3.8 for 0.14/0.15,
+# >=3.10 for 0.16/0.17, >=3.11 for 0.18/0.19), so every pin installs on every Python and
+# the rows are all the same. It depends on numba, so the workflow drops sparse wherever it
+# skips numba. To skip sparse on a Python, give it a ["NA"] pool: a bare "NA" would be
+# indexed as a string by `random.choice`.
+# MAINT: 2026-09-26 sparse 0.19.2 is latest. Each pin, as conda resolves it, passes the
+# pydata-sparse tests on py3.13 and py3.14 with the oldest and newest numpy/numba pair
+# each one draws.
 SPARSE_VERSIONS = {
     "3.11": ["0.14", "0.15", "0.16", "0.17", "0.18", "0.19", ""],
     "3.12": ["0.14", "0.15", "0.16", "0.17", "0.18", "0.19", ""],
-    "3.13": ["0.16", "0.17", "0.18", "0.19", ""],
-    "3.14": ["0.18", "0.19", ""],
+    "3.13": ["0.14", "0.15", "0.16", "0.17", "0.18", "0.19", ""],
+    "3.14": ["0.14", "0.15", "0.16", "0.17", "0.18", "0.19", ""],
 }
 
 # PSG versions to pair with numpy 1.x (only reachable on py3.11/py3.12, since
@@ -423,6 +427,10 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
         min_ver = _min_for_python(NUMBA_MIN_PYTHON, pyver)
         pool = [n for n in numba_pool if n and NUMBA_MAX_NUMPY[n] > npver and _ver(n) >= min_ver]
         v["numba"] = random.choice(pool) if pool else "NA"
+
+    # --- sparse ---
+    # No rules needed: sparse caps neither Python nor numpy, and the workflow drops it
+    # whenever numba is skipped or NA.
 
 
 # ---------------------------------------------------------------------------

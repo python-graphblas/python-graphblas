@@ -14,7 +14,7 @@ def to_awkward(A, format=None):
     ----------
     A : Matrix or Vector
         GraphBLAS object to be converted
-    format : str {'csr', 'csc', 'hypercsr', 'hypercsc', 'vec}
+    format : str {'csr', 'csc', 'hypercsr', 'hypercsc', 'vec'}
         Default format is csr for Matrix; vec for Vector
 
     The Awkward Array will have top-level attributes based on format:
