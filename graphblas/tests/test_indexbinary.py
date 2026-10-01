@@ -301,7 +301,7 @@ def test_bind_raw_array_udt_theta():
 
 
 def test_array_udt_udf_shape_is_checked():
-    """An IBO whose UDF builds a wrong-shape array is rejected at registration.
+    """An IBO whose UDF builds a wrong-shape array is rejected when typed.
 
     The same guard the binary and unary paths get. Numba's ``Array`` type
     carries ``ndim`` but not extents, so the mismatch is not a type error; left

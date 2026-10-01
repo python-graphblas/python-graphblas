@@ -2074,6 +2074,16 @@ def test_udt_array_udf_shape_errors():
     with pytest.raises(UdfParseError, match=r"shape \(2,\) when run on sample values"):
         op[udt9]
 
+    # IndexUnaryOp passes the row and column between x and the thunk, and so
+    # must the probe: with the thunk's array in an index slot, ``i + j`` would
+    # not type as a slice bound. The probe's indices are 1, so this is (2,).
+    def _head(x, i, j, thunk):  # pragma: no cover (numba)
+        return (x + thunk)[: i + j]
+
+    op = IndexUnaryOp.register_anonymous(_head, "_shape_err_head", is_udt=True)
+    with pytest.raises(UdfParseError, match=r"shape \(2,\) when run on sample values"):
+        op[udt9]
+
 
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
@@ -2120,6 +2130,23 @@ def test_udt_record_array_leaf_shape_errors():
 
     op = BinaryOp.register_anonymous(_no_tag, "_rec_leaf_no_tag", is_udt=True)
     with pytest.raises(UdfParseError, match=r"can return None for field \['rl_tag'\]"):
+        op[udt]
+
+    # An array for a scalar leaf would fail the wrapper compile the same way
+    # (Numba has no record setitem for it), whether it is an operand's field
+    # or built.
+    def _arr_for_tag(x, y):  # pragma: no cover (numba)
+        return (x["rl_vec"], x["rl_vec"])
+
+    op = BinaryOp.register_anonymous(_arr_for_tag, "_rec_leaf_arr_for_tag", is_udt=True)
+    with pytest.raises(UdfParseError, match=r"returned an array for field \['rl_tag'\]"):
+        op[udt]
+
+    def _built_for_tag(x, y):  # pragma: no cover (numba)
+        return (x["rl_vec"], x["rl_vec"] + y["rl_vec"])
+
+    op = BinaryOp.register_anonymous(_built_for_tag, "_rec_leaf_built_for_tag", is_udt=True)
+    with pytest.raises(UdfParseError, match=r"returned an array for field \['rl_tag'\]"):
         op[udt]
 
     def _full(x, y):  # pragma: no cover (numba)
@@ -2204,6 +2231,92 @@ def test_udt_record_leaf_broadcast_return():
     np.testing.assert_array_equal(got["bc_vec"], [1.0] * 11)
     assert got["bc_tag"] == 15
 
+    # A scalar fills the leaf the same way. Its type says it is no array, so
+    # the check lets it through without running the UDF.
+    def _fill_leaf_scalar(x, y):  # pragma: no cover (numba)
+        return (x["bc_vec"][0] + y["bc_vec"][0], x["bc_tag"] + y["bc_tag"])
+
+    op2 = BinaryOp.register_anonymous(_fill_leaf_scalar, "_rec_leaf_bcast_scalar", is_udt=True)
+    got = v.ewise_mult(w, op2).new()[0].new().value
+    np.testing.assert_array_equal(got["bc_vec"], [1.0] * 11)
+    assert got["bc_tag"] == 15
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_record_leaf_sequence_return():
+    """A tuple or list fills an array leaf only at its exact length.
+
+    Numba copies a sequence into the field element by element, and unlike an
+    array it does not broadcast one. A wrong length raises inside the cfunc,
+    and the element comes back holding whatever was in the buffer. A tuple's
+    length is in its type; a list's is learned by running the UDF.
+    """
+    spec = np.dtype([("sq_v", np.float64, (3,)), ("sq_t", np.int64)], align=True)
+    udt = dtypes.register_anonymous(spec, "_RecLeafSeq")
+    v = Vector(udt, size=1)
+    v[0] = ([1.0, 2.0, 3.0], 7)
+
+    def _tuple3(x, y):  # pragma: no cover (numba)
+        return ((x["sq_v"][0], x["sq_v"][1], 9.0), x["sq_t"])
+
+    def _list3(x, y):  # pragma: no cover (numba)
+        return ([x["sq_v"][0], x["sq_v"][1], 9.0], x["sq_t"])
+
+    for func in [_tuple3, _list3]:
+        op = BinaryOp.register_anonymous(func, f"_rec_leaf_seq{func.__name__}", is_udt=True)
+        got = v.ewise_mult(v, op).new()[0].new().value
+        np.testing.assert_array_equal(got["sq_v"], [1.0, 2.0, 9.0])
+        assert got["sq_t"] == 7
+
+    def _tuple2(x, y):  # pragma: no cover (numba)
+        return ((x["sq_v"][0], 9.0), x["sq_t"])
+
+    op = BinaryOp.register_anonymous(_tuple2, "_rec_leaf_seq_tuple2", is_udt=True)
+    with pytest.raises(UdfParseError, match=r"tuple of length 2 for field \['sq_v'\] of _RecL"):
+        op[udt]
+
+    # As a (1,) array this would broadcast; as a tuple it does not.
+    def _tuple1(x, y):  # pragma: no cover (numba)
+        return ((9.0,), x["sq_t"])
+
+    op = BinaryOp.register_anonymous(_tuple1, "_rec_leaf_seq_tuple1", is_udt=True)
+    with pytest.raises(UdfParseError, match=r"tuple of length 1 .* holds \(3,\)\. Return 3 values"):
+        op[udt]
+
+    def _list2(x, y):  # pragma: no cover (numba)
+        return ([x["sq_v"][0], 9.0], x["sq_t"])
+
+    op = BinaryOp.register_anonymous(_list2, "_rec_leaf_seq_list2", is_udt=True)
+    with pytest.raises(UdfParseError, match=r"list of length 2 .* when run on sample values"):
+        op[udt]
+
+    # A sequence never fills a field of higher rank; Numba will not compile it.
+    spec2 = np.dtype([("sq_m", np.float64, (2, 2)), ("sq_n", np.int64)], align=True)
+    udt2 = dtypes.register_anonymous(spec2, "_RecLeafSeq2D")
+
+    def _flat4(x, y):  # pragma: no cover (numba)
+        return ((1.0, 2.0, 3.0, 4.0), x["sq_n"])
+
+    op = BinaryOp.register_anonymous(_flat4, "_rec_leaf_seq_flat4", is_udt=True)
+    with pytest.raises(UdfParseError, match=r"only fills a one-dimensional field"):
+        op[udt2]
+
+    # Nor a scalar field, like an array (test_udt_record_array_leaf_shape_errors).
+    def _tuple_for_t(x, y):  # pragma: no cover (numba)
+        return (x["sq_v"], (x["sq_t"], 1))
+
+    op = BinaryOp.register_anonymous(_tuple_for_t, "_rec_leaf_seq_tuple_for_t", is_udt=True)
+    with pytest.raises(UdfParseError, match=r"returned a tuple for field \['sq_t'\] .* a scalar"):
+        op[udt]
+
+    def _list_for_t(x, y):  # pragma: no cover (numba)
+        return (x["sq_v"], [x["sq_t"], 1])
+
+    op = BinaryOp.register_anonymous(_list_for_t, "_rec_leaf_seq_list_for_t", is_udt=True)
+    with pytest.raises(UdfParseError, match=r"returned a list for field \['sq_t'\] .* a scalar"):
+        op[udt]
+
 
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
@@ -2240,6 +2353,10 @@ def test_udt_broadcast_matches_numba_slice_assign():
         ((2, 3), (2, 3)),
         ((2, 3), (6,)),
         ((2, 3), (3, 2)),
+        # Every leading one is dropped, not just the first.
+        ((6,), (1, 1, 6)),
+        ((2, 3), (1, 1, 3)),
+        ((2, 3), (2, 1, 3)),
     ]:
         try:
             _assign(np.zeros(dst), np.ones(src))
@@ -2259,8 +2376,10 @@ def test_udt_udf_shape_check_runs_udf_only_for_built_arrays(monkeypatch):
 
     An operand, or operand field, returned as-is keeps its extents in Numba's
     ``NestedArray`` type, so it is checked without running user code. That
-    includes rejecting one returned into a field of another shape. Only an
-    array the UDF builds, typed as a plain ``Array``, needs the probe.
+    includes rejecting one returned into a field of another shape. A tuple is
+    checked the same way, since its length is in its type. Only an array the
+    UDF builds, typed as a plain ``Array``, needs the probe; so does a list,
+    whose type has no length (``test_udt_record_leaf_sequence_return``).
     """
     from graphblas.core.operator import base as _base
 
@@ -2301,6 +2420,21 @@ def test_udt_udf_shape_check_runs_udf_only_for_built_arrays(monkeypatch):
         UdfParseError, match=r"shape \(2,\) for field \['pw_a'\] of _ProbeWhenRec, but"
     ):
         op[rec]
+
+    # A scalar for an array leaf broadcasts into it; its type says it is no
+    # array, so there is nothing to probe.
+    def _scalars(x, y):  # pragma: no cover (numba)
+        return (x["pw_n"], y["pw_n"], x["pw_n"] + y["pw_n"])
+
+    op = BinaryOp.register_anonymous(_scalars, "_probe_when_scalars", is_udt=True)
+    assert op[rec].return_type is rec
+
+    # A tuple carries its length in its type, so it is checked without a run.
+    def _tuple_leaf(x, y):  # pragma: no cover (numba)
+        return ((x["pw_a"][0], x["pw_a"][1], 9.0), y["pw_b"], x["pw_n"])
+
+    op = BinaryOp.register_anonymous(_tuple_leaf, "_probe_when_tuple_leaf", is_udt=True)
+    assert op[rec].return_type is rec
     assert probed == []
 
     def _sum(x, y):  # pragma: no cover (numba)

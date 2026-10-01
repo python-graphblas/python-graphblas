@@ -604,6 +604,37 @@ if _has_numba:
             f"{tuple(expected)}. Return an array of that shape, or one that broadcasts to it."
         )
 
+    def _raise_unless_sequence_fits(kind, length, expected, return_type, path, *, probed):
+        """Raise ``UdfParseError`` unless a ``kind`` of ``length`` fills record field ``path``.
+
+        Numba copies a tuple or list into an array field element by element,
+        which works only for a one-dimensional field and only at its exact
+        length. Unlike an array, a sequence does not broadcast, so a 1-tuple
+        does not fill a 3-element field. A wrong length raises inside the cfunc
+        just as a wrong-shape array does; a field of higher rank fails the
+        wrapper compile.
+        """
+        if expected == (length,):
+            return
+        how = " when run on sample values" if probed else ""
+        if len(expected) == 1:
+            fix = f"Return {expected[0]} values, or an array that broadcasts to {expected}."
+        else:
+            fix = f"A {kind} only fills a one-dimensional field; return an array."
+        raise UdfParseError(
+            f"UDT UDF returned a {kind} of length {length} for field {path} of {return_type}"
+            f"{how}, but that field holds {expected}. {fix}"
+        )
+
+    # Numba types a record UDF might return for a scalar field, none of which the
+    # wrapper can write there, each with the kind the error names. ``Array``
+    # covers ``NestedArray``.
+    _NON_SCALAR_KINDS = (
+        ("an array", numba.core.types.Array),
+        ("a tuple", numba.core.types.BaseTuple),
+        ("a list", numba.core.types.List),
+    )
+
     def _check_udf_fills_output(numba_func, numba_ret_type, return_type, zkind, arg_dtypes):
         """Reject a UDF whose return cannot fill the output element.
 
@@ -613,8 +644,10 @@ if _has_numba:
         :func:`_compose_wrapper_body`). So does a record leaf the UDF can
         return as ``None`` (``v if cond else None``, typed ``Optional``), array
         or scalar, on the path that returns it; a leaf that is always ``None``
-        does not compile at all, and Numba's traceback says why at length.
-        Checking here makes each an error when the op is typed.
+        does not compile at all, and Numba's traceback says why at length. Nor
+        does an array, tuple or list returned for a scalar leaf: Numba has no
+        record setitem for them. Checking here makes each an error when the op
+        is typed.
 
         An ``Optional`` leaf is rejected from its type, whichever branch the
         sample values would take. Numba also keeps the extents of an operand,
@@ -622,7 +655,10 @@ if _has_numba:
         checked from the type alone. An array the UDF builds (``x + y``,
         ``x[:2]``) is a plain ``Array``, which has a rank but no extents, so
         only running the UDF, on stand-ins built from ``arg_dtypes``, can say
-        what shape it has. A UDF that returns no built array is never run.
+        what shape it has. A tuple or list for an array leaf must match its
+        length exactly (:func:`_raise_unless_sequence_fits`); a tuple's length
+        is in its type, and a list's is learned the same way as a built
+        array's. A UDF that returns no built array or list is never run.
         """
         if zkind == "array_elements":
             # (record field path, Numba type, slot shape, index into the tuple)
@@ -649,6 +685,12 @@ if _has_numba:
                     f"Return a value on every path."
                 )
             if not expected:
+                for kind, cls in _NON_SCALAR_KINDS:
+                    if isinstance(nb_type, cls):
+                        raise UdfParseError(
+                            f"UDT UDF returned {kind} for field {path} of {return_type}, but "
+                            f"that field holds a scalar. Return a scalar for it."
+                        )
                 continue  # a scalar leaf: nothing to fit
             if isinstance(nb_type, numba.core.types.NestedArray):
                 _raise_unless_fits(nb_type.shape, expected, return_type, path, probed=False)
@@ -656,10 +698,21 @@ if _has_numba:
                 # No extents to read (or, with no return type given, no type
                 # at all), so learn the shape by running the UDF.
                 unknown.append((path, expected, i))
+            elif isinstance(nb_type, numba.core.types.BaseTuple):
+                _raise_unless_sequence_fits(
+                    "tuple", len(nb_type.types), expected, return_type, path, probed=False
+                )
+            elif isinstance(nb_type, numba.core.types.List):
+                unknown.append((path, expected, i))  # a list's length is not in its type
         if unknown and (ran := _run_udf_probe(numba_func, arg_dtypes)) is not None:
             for path, expected, i in unknown:
                 value = ran[0] if i is None else ran[0][i]
-                _raise_unless_fits(np.shape(value), expected, return_type, path, probed=True)
+                if isinstance(value, list):
+                    _raise_unless_sequence_fits(
+                        "list", len(value), expected, return_type, path, probed=True
+                    )
+                else:
+                    _raise_unless_fits(np.shape(value), expected, return_type, path, probed=True)
 
     def _get_udt_wrapper(
         numba_func, return_type, dtype, dtype2=None, *, include_indexes=False, numba_ret_type=None
