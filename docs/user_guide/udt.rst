@@ -179,10 +179,17 @@ For nested record UDTs the tuple is *flat over the leaves*. Given
 return ``(id, x, y)``, not ``(id, (x, y))``. Returning an existing record value
 (e.g., one of the inputs) is also fine and preserves the nested shape.
 
+Every field needs a value on every path through the UDF. A record cannot hold
+``None``, so a UDF that can return ``None`` for a field
+(``v if cond else None``) is rejected when the op is typed. So is an array,
+tuple, or list returned for a scalar field.
+
 For array UDTs each operand arrives as a numpy view of that element's values, in
 the UDT's declared shape: a ``np.dtype((np.float64, (2, 4)))`` UDT hands the UDF
 a 2-by-4 array, indexable as ``x[i, j]``. Array expressions work as written, and
-the UDF may return one of its operands or build a new array of the same shape:
+the UDF may return one of its operands or build a new array that fills the
+element, either at the element's own shape or at one that broadcasts to it (a
+``(1,)`` return fills every slot of a ``(6,)`` element):
 
 .. code-block:: python
 
@@ -198,6 +205,15 @@ the UDF may return one of its operands or build a new array of the same shape:
 
     c = a.ewise_mult(b, op[point3]).new()
     # c[0] = [5.0, 11.0, 17.0]
+
+A return that cannot fill the element, such as ``x[:2]`` from a 3-element UDT,
+is rejected with a ``UdfParseError`` when the op is typed for the UDT
+(``op[point3]``, or the first operation that uses it). The same goes for an
+array returned into an array-typed field of a record UDT. A tuple or list also
+fills such a field, but only a one-dimensional one and only at its exact
+length; unlike an array, it does not broadcast. Numba does not know the shape
+of an array the UDF builds, or the length of a list, so the check runs the UDF
+once on sample values; a UDF that raises on those values is not checked.
 
 If your UDF references a field that doesn't exist, or returns the wrong arity,
 you'll get a ``UdfParseError`` with the actionable diagnostic line surfaced
