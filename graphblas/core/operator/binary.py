@@ -1004,15 +1004,12 @@ class BinaryOp(OpBase):
         binary.eq._udt_ops = {}
         binary.ne._udt_types = {}
         binary.ne._udt_ops = {}
-        # Element-wise arithmetic ops are auto-generated from per-field /
-        # per-element scalar ops.
-        if _has_numba:
-            for op_name in _BUILTIN_UDT_BINARY_OPS:
-                binop = getattr(binary, op_name, None)
-                if binop is not None:
-                    binop._udt_types = {}
-                    binop._udt_ops = {}
-                    binop._custom_dtype = _udt_dtype
+        # Element-wise arithmetic ops on UDTs are auto-generated from
+        # per-field / per-element scalar ops; the attributes that enable this
+        # are seeded in ``__init__`` (keyed on ``_BUILTIN_UDT_BINARY_OPS``).
+        # Do not seed them here with ``getattr(binary, op_name)``: that would
+        # force lazily-registered UDF ops like ``floordiv`` to numba-compile
+        # for every dtype at import time (about half a second of startup here).
         cls._initialized = True
 
     def __init__(
@@ -1037,6 +1034,13 @@ class BinaryOp(OpBase):
         if is_udt:
             self._udt_types = {}  # {(dtype, dtype): DataType}
             self._udt_ops = {}  # {(dtype, dtype): TypedUserBinaryOp}
+        elif _has_numba and name in _BUILTIN_UDT_BINARY_OPS:
+            # Built-in arithmetic ops auto-lift to UDTs field-by-field.
+            # Seeded here rather than in ``_initialize`` so that delayed ops
+            # (e.g. ``floordiv``) are not force-built at import time.
+            self._udt_types = {}
+            self._udt_ops = {}
+            self._custom_dtype = _udt_dtype
 
     __call__ = TypedBuiltinBinaryOp.__call__
     is_commutative = TypedBuiltinBinaryOp.is_commutative
