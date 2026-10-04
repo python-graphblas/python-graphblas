@@ -3170,37 +3170,115 @@ def test_udt_eq_ne_rejects_incompatible_pairs():
 @pytest.mark.skipif("not supports_udfs")
 # SS < 9 has no GrB_NAME setter, so registration falls back to storing the
 # numpy repr in the type name and warns when it does not fit in 128 chars.
-# _NestDeep's repr is 142; how it serializes is not what the test is about.
+# Each nested record's repr here is 141 or 142; how they serialize is not what
+# the test is about.
 @pytest.mark.filterwarnings("ignore:UDT repr is too large")
-def test_udt_record_nesting_mismatch_is_a_keyerror():
-    """Records sharing field names but not nesting depth are rejected as a KeyError.
+@pytest.mark.parametrize("op", ["plus", "eq"])
+@pytest.mark.parametrize("case", ["leaf_count", "nesting", "inner_names", "inner_order"])
+def test_udt_record_nesting_mismatch_is_a_keyerror(case, op):
+    """Records sharing top-level field names but nesting differently are a KeyError.
 
-    ``_check_udt_pair`` matched on top-level names only, but the codegen pairs
-    operands leaf by leaf, and a field that is a sub-record on one side and a
-    scalar on the other contributes a different number of leaves. Without the
-    guard the pair reaches Numba, whose typing failure arrives as a
-    ``UdfParseError``: a compile error reported for what is really the same
-    shape disagreement its sibling checks raise ``KeyError`` for.
+    ``_check_udt_pair`` matched on top-level names only, but the codegen reads
+    both operands at the left one's leaf paths. A field that is a sub-record on
+    one side and a scalar on the other, or sub-records with different names,
+    reached Numba, whose typing failure was a ``UdfParseError`` for ``plus``
+    and a raw ``TypingError`` for ``eq``: compile errors for what is really the
+    shape disagreement its sibling checks raise ``KeyError`` for. Sub-record
+    fields in a different order are rejected as top-level ones are, so that
+    leaf ``i`` of one operand is leaf ``i`` of the other.
     """
-    flat = dtypes.register_anonymous(
-        np.dtype([("nst_a", np.float64), ("nst_b", np.float64)], align=True), "_NestFlat"
-    )
-    nested = dtypes.register_anonymous(
-        np.dtype(
-            [
-                ("nst_a", np.dtype([("nst_n1", np.float64), ("nst_n2", np.float64)])),
-                ("nst_b", np.float64),
-            ],
-            align=True,
+    f8 = np.float64
+    sub = [("nst_n1", f8), ("nst_n2", f8)]
+    left, right = {
+        # A scalar field on the left is a sub-record on the right.
+        "leaf_count": ([("nst_a", f8), ("nst_b", f8)], [("nst_a", sub), ("nst_b", f8)]),
+        # Three leaves each, but nested under different fields.
+        "nesting": ([("nst_a", sub), ("nst_b", f8)], [("nst_a", f8), ("nst_b", sub)]),
+        "inner_names": (
+            [("nst_a", sub), ("nst_b", f8)],
+            [("nst_a", [("nst_m1", f8), ("nst_m2", f8)]), ("nst_b", f8)],
         ),
-        "_NestDeep",
-    )
-    v = Vector(flat, size=1)
-    v[0] = (1.0, 2.0)
-    w = Vector(nested, size=1)
-    w[0] = ((3.0, 4.0), 5.0)
-    with pytest.raises(KeyError, match="same number of leaf fields"):
+        "inner_order": ([("nst_a", sub), ("nst_b", f8)], [("nst_a", sub[::-1]), ("nst_b", f8)]),
+    }[case]
+    v = Vector(dtypes.register_anonymous(np.dtype(left, align=True), "_NestLeft"), size=1)
+    w = Vector(dtypes.register_anonymous(np.dtype(right, align=True), "_NestRight"), size=1)
+    with pytest.raises(KeyError, match="must nest the same way, with the same field names"):
+        v.ewise_mult(w, getattr(binary, op)).new()
+
+
+def _record_with_field_shape(shape, name):
+    """Register a record UDT whose ``fsh_a`` field has ``shape`` (a scalar for ``()``)."""
+    field = ("fsh_a", np.float64, shape) if shape else ("fsh_a", np.float64)
+    return dtypes.register_anonymous(np.dtype([field, ("fsh_b", np.float64)]), name)
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.parametrize("op", ["plus", "eq"])
+@pytest.mark.parametrize(
+    ("left", "right", "match"),
+    [
+        ((3,), (4,), "shapes broadcast together"),
+        ((2, 3), (3, 2), "shapes broadcast together"),
+        ((), (3,), "only when the array is on the left"),
+    ],
+)
+def test_udt_record_field_shape_mismatch_is_a_keyerror(left, right, match, op):
+    """Record array fields that cannot be combined are a KeyError.
+
+    The codegen combines array fields as numpy does, by broadcasting, so a
+    ``(3,)`` field with a ``(4,)`` one raised inside the cfunc, where the
+    caller never saw it, and the result element kept whatever was in the
+    buffer (``eq`` read it as its bool). A scalar field on the left of an
+    array one failed Numba's typing instead.
+    """
+    v = Vector(_record_with_field_shape(left, "_FshLeft"), size=1)
+    w = Vector(_record_with_field_shape(right, "_FshRight"), size=1)
+    with pytest.raises(KeyError, match=match):
+        v.ewise_mult(w, getattr(binary, op)).new()
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.parametrize(("left", "right"), [((1,), (3,)), ((3,), (3, 1)), ((3, 1), (3,))])
+def test_udt_record_field_broadcast_exceeding_left_is_a_keyerror(left, right):
+    """An arithmetic op writes the broadcast into a field shaped like the left one.
+
+    ``_check_udf_fills_output`` caught these pairs when the wrapper was built,
+    but as "UDT UDF returned an array of shape (3,)" on sample values, naming a
+    UDF the user did not write. ``eq`` reduces the field to one bool, so it
+    takes the same pair.
+    """
+    v = Vector(_record_with_field_shape(left, "_FshLeft"), size=1)
+    w = Vector(_record_with_field_shape(right, "_FshRight"), size=1)
+    with pytest.raises(KeyError, match="broadcast to the left field's shape"):
         v.ewise_mult(w, binary.plus).new()
+    v[0] = (np.ones(left), 1.0)
+    w[0] = (np.ones(right), 1.0)
+    assert binary.eq(v & w).new().isequal(Vector.from_coo([0], [True]))
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.parametrize(
+    ("left", "right"), [((3,), ()), ((3,), (1,)), ((3,), (1, 3)), ((2, 3), (3,))]
+)
+def test_udt_record_field_shapes_that_broadcast(left, right):
+    """Record array fields that broadcast together still combine as numpy arrays do."""
+    X = _record_with_field_shape(left, "_FshLeft")
+    xa = np.arange(1.0, 1.0 + np.prod(left)).reshape(left)
+    v = Vector(X, size=2)
+    v[0] = (xa, 2.0)
+    v[1] = (np.full(left, 10.0), 2.0)
+    w = Vector(_record_with_field_shape(right, "_FshRight"), size=2)
+    w[0] = (np.full(right, 10.0), 2.0)
+    w[1] = (np.full(right, 10.0), 2.0)
+    total = v.ewise_mult(w, binary.plus).new()
+    assert total.dtype == X
+    expected = np.empty(left)
+    expected[...] = xa + np.full(right, 10.0)
+    first = total[0].new().value
+    np.testing.assert_array_equal(first["fsh_a"], expected)
+    assert first["fsh_b"] == 4.0
+    # Element 0 differs only in ``fsh_a``, so its False comes from the arrays.
+    assert binary.eq(v & w).new().isequal(Vector.from_coo([0, 1], [False, True]))
 
 
 @pytest.mark.skipif("not supports_udfs")

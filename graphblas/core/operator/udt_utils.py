@@ -314,7 +314,8 @@ def _check_udt_pair(op_name, dtype, dtype2, info_x, info_y):
     ``info_x`` and ``info_y`` are ``_get_udt_info`` results. When either is
     ``None`` (one side is a scalar broadcast), no check fires. Without this
     gate the generated wrapper code raises a cryptic Numba ``TypingError``
-    on the first field access.
+    on the first field access, or, for array fields that do not broadcast,
+    fails inside the cfunc without telling the caller.
     """
     if info_x is None or info_y is None:
         return
@@ -332,19 +333,53 @@ def _check_udt_pair(op_name, dtype, dtype2, info_x, info_y):
                 f"record UDTs must share field names; got {list(detail_x)} vs "
                 f"{list(detail_y)}."
             )
-        # Matching top-level names is not enough: the codegen pairs operands
-        # leaf by leaf, and a field that is a sub-record on one side and a
-        # scalar on the other contributes a different number of leaves. Left
-        # unchecked the pair reaches Numba, whose typing failure arrives as a
-        # UdfParseError, reporting a compile error for what is really the same
-        # shape disagreement the checks above report as a KeyError.
-        leaves_x = [c for _py, c, _d in _iter_record_leaves(dtype.np_type)]
-        leaves_y = [c for _py, c, _d in _iter_record_leaves(dtype2.np_type)]
-        if len(leaves_x) != len(leaves_y):
+        # Matching top-level names is not enough. The codegen reads both
+        # operands at the left one's leaf paths, so a field that is a
+        # sub-record on one side and a scalar on the other, or sub-records
+        # with different names, fails Numba's typing: a compile error
+        # reported for what is really the same shape disagreement the check
+        # above reports as a KeyError. The paths must also come in the same
+        # order, as the top-level names must, so that leaf ``i`` of one
+        # operand is leaf ``i`` of the other.
+        leaves_x = list(_iter_record_leaves(dtype.np_type))
+        leaves_y = list(_iter_record_leaves(dtype2.np_type))
+        if [py for py, _c, _d in leaves_x] != [py for py, _c, _d in leaves_y]:
             raise KeyError(
                 f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
-                f"record UDTs must nest the same way, so that each has the same "
-                f"number of leaf fields; got {leaves_x} vs {leaves_y}."
+                f"record UDTs must nest the same way, with the same field names at "
+                f"every level; got {[c for _py, c, _d in leaves_x]} vs "
+                f"{[c for _py, c, _d in leaves_y]}."
+            )
+        # Array fields combine as numpy arrays do, by broadcasting. Two shapes
+        # that do not broadcast raise inside the cfunc, where the caller never
+        # sees it, and the result keeps whatever was in the buffer. Each field's
+        # code is generated from the left operand's leaf, so a scalar field on
+        # the left of an array one never compiles, and the arithmetic ops write
+        # the broadcast into a field shaped like the left one, so it must fit
+        # there (``_fits_by_broadcast``, the rule the wrapper applies to a UDF's
+        # return; left to the wrapper, the error names a UDF the user did not
+        # write). ``eq`` and ``ne`` reduce the field to one bool, so they only
+        # need the shapes to broadcast.
+        from .base import _fits_by_broadcast
+
+        for (_py, c, leaf_x), (_py_y, _c_y, leaf_y) in zip(leaves_x, leaves_y, strict=True):
+            try:
+                combined = np.broadcast_shapes(leaf_x.shape, leaf_y.shape)
+            except ValueError:
+                rule = "must have fields whose shapes broadcast together"
+            else:
+                if not leaf_x.shape and leaf_y.shape:
+                    rule = (
+                        "can pair an array field with a scalar field only when the array is "
+                        "on the left"
+                    )
+                elif op_name not in ("eq", "ne") and not _fits_by_broadcast(combined, leaf_x.shape):
+                    rule = "must have fields that broadcast to the left field's shape"
+                else:
+                    continue
+            raise KeyError(
+                f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
+                f"record UDTs {rule}; field {c} is {leaf_x.shape} vs {leaf_y.shape}."
             )
     if kind_x == "array" and detail_x != detail_y:
         raise KeyError(
