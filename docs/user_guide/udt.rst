@@ -141,6 +141,16 @@ UDTs with any complex leaf (no ordering, no integer modulus); use ``plus``,
 ``minus``, ``times``, or ``truediv`` for complex arithmetic, or register a
 custom binary op.
 
+The lifted binary ops also take two different UDTs. Two record UDTs pair up
+when they nest the same way, with the same field names in the same order at
+every level. Array fields combine as numpy arrays do, by broadcasting, and the
+arithmetic ops give each result field the shape of the left operand's field, so
+a ``(3,)`` field pairs with a ``(1,)`` or scalar one on its right but not on
+its left. ``eq`` and ``ne`` reduce each field to one bool, so for them an array
+field on the left need only broadcast with the right one. Two array UDTs pair
+up when they share a base dtype and flat size. Any other pair raises
+``KeyError`` on the first lookup.
+
 Composite aggregators (``agg.hypot``, ``agg.L1norm``, ``agg.Linfnorm``,
 ``agg.sum_of_squares``, ``agg.sum_of_inverses``) do *not* auto-lift to UDTs;
 they reference scalar-only binary ops that don't generalize trivially.
