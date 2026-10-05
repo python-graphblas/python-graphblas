@@ -55,7 +55,7 @@ repos:
   # We can probably remove `isort` if we come to trust `ruff --fix`,
   # but we'll need to figure out the configuration to do this in `ruff`
   - repo: https://github.com/pycqa/isort
-    rev: 9.0.1
+    rev: 9.0.2
     hooks:
       - id: isort
   # Let's keep `pyupgrade` even though `ruff --fix` probably does most of it
@@ -70,19 +70,19 @@ repos:
       - id: auto-walrus
         args: [--line-length, "100"]
   - repo: https://github.com/psf/black-pre-commit-mirror
-    rev: 26.5.1
+    rev: 26.10.0
     hooks:
       - id: black
       - id: black-jupyter
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.8
+    rev: v0.16.10
     hooks:
       - id: ruff-check
         args: [--fix-only, --show-fixes]
   # Let's keep `flake8` even though `ruff` does much of the same.
   # `flake8-bugbear` and `flake8-simplify` have caught things missed by `ruff`.
   - repo: https://github.com/PyCQA/flake8
-    rev: 7.3.0
+    rev: 7.4.1
     hooks:
       - id: flake8
         args: ["--config=.flake8"]
@@ -100,7 +100,7 @@ repos:
           - tomli; python_version<'3.11'
         files: ^(graphblas|docs)/
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.8
+    rev: v0.16.10
     hooks:
       - id: ruff-check
       # - id: ruff-format  # we prefer black; uncomment to compare with ruff's formatter
@@ -114,7 +114,7 @@ repos:
   - repo: https://github.com/regebro/pyroma
     # 5.1 is still in beta (5.1b2) and a pre-release pin defeats pre-commit.ci's
     # autoupdate "avoid prereleases" logic; stay on 5.0.1 until 5.1 GAs.
-    rev: "5.0.1"
+    rev: "5.1b1"
     hooks:
       - id: pyroma
         args: [-n, "10", .]
@@ -123,7 +123,7 @@ repos:
     hooks:
       - id: shellcheck
   - repo: https://github.com/rbubley/mirrors-prettier
-    rev: v3.9.7
+    rev: v3.9.9
     hooks:
       - id: prettier
         args: [--prose-wrap=preserve]
@@ -148,7 +148,7 @@ repos:
     hooks:
       - id: actionlint
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.38.0
+    rev: 0.38.2
     hooks:
       - id: check-dependabot
       - id: check-github-workflows
