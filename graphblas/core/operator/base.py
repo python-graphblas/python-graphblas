@@ -192,7 +192,14 @@ if _has_numba:
         from ``typed_user_cls.opclass``. ``dtype2`` is ``None`` for unary
         ops; the rest pass both. Returns the cached ``TypedUser*Op``.
         """
-        wrapper = numba.cfunc(wrapper_sig, nopython=True, error_model="numpy")(wrapper)
+        try:
+            wrapper = numba.cfunc(wrapper_sig, nopython=True, error_model="numpy")(wrapper)
+        except NumbaError as exc:
+            dtypes_str = str(dtype) if dtype2 is None else f"{dtype}, {dtype2}"
+            raise UdfParseError(
+                f"{parent_op._modname}.{parent_op.name} does not work with ({dtypes_str}): "
+                f"{_summarize_numba_typing_error(exc)}"
+            ) from exc
         c_typename = _GB_OBJ_C_TYPENAME[typed_user_cls.opclass]
         error_label = c_typename.removeprefix("GrB_").removeprefix("GxB_")
         gb_obj = ffi.new(f"{c_typename}*")

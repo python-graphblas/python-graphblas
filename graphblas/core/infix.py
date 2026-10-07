@@ -1,6 +1,6 @@
 from .. import backend, binary
 from ..dtypes import BOOL
-from ..exceptions import DimensionMismatch
+from ..exceptions import DimensionMismatch, DomainMismatch
 from ..monoid import land, lor
 from ..semiring import any_pair
 from . import automethods, recorder, utils
@@ -492,9 +492,16 @@ def _dummy(obj, obj_type):
 
 def _mismatched(left, right, method, op):
     # Create dummy expression to raise on incompatible dimensions
-    getattr(_dummy(left) if isinstance(left, InfixExprBase) else left, method)(
-        _dummy(right) if isinstance(right, InfixExprBase) else right, op
-    )
+    try:
+        getattr(_dummy(left) if isinstance(left, InfixExprBase) else left, method)(
+            _dummy(right) if isinstance(right, InfixExprBase) else right, op
+        )
+    except DomainMismatch:
+        # GraphBLAS reports a UDT that does not cast before the shapes, but the
+        # shapes are what this is here to report.
+        raise DimensionMismatch(
+            f"Dimensions not compatible for {method}: {left.shape} and {right.shape}"
+        ) from None
     raise DimensionMismatch  # pragma: no cover
 
 
