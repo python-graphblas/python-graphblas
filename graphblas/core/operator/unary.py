@@ -124,6 +124,7 @@ if _has_numba:
     from .udt_utils import (
         _has_jit_set,
         _maybe_warn_jit_skipped,
+        compile_udt_cast_wrapper,
         compile_udt_unary_wrapper,
         set_jit_c_on_op,
     )
@@ -494,3 +495,23 @@ class UnaryOp(OpBase):
 
 
 ParameterizedUnaryOp._op_class = UnaryOp
+
+
+# {to_dtype: UnaryOp}; each one's typed ops are keyed by the type they cast from.
+_udt_casts = {}
+
+
+def _udt_cast_op(dtype, to_dtype):
+    """Return the UnaryOp storing an element of UDT ``dtype`` as UDT ``to_dtype``.
+
+    ``base._store_cast_op`` decides when to use it, after
+    ``udt_utils._udt_cast_error`` has accepted the pair. It is compiled once
+    per pair and has no JIT kernel.
+    """
+    parent = _udt_casts.get(to_dtype)
+    if parent is None:
+        parent = _udt_casts[to_dtype] = UnaryOp(f"cast_to_{to_dtype}", anonymous=True, is_udt=True)
+    if dtype in parent._udt_ops:
+        return parent._udt_ops[dtype]
+    wrapper, wrapper_sig = compile_udt_cast_wrapper(dtype, to_dtype)
+    return _finalize_udt_op(parent, dtype, None, to_dtype, wrapper, wrapper_sig, TypedUserUnaryOp)

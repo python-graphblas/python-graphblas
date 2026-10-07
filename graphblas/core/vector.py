@@ -25,6 +25,12 @@ from .scalar import (
     ScalarExpression,
     ScalarIndexExpr,
     _as_scalar,
+    _cast_for_store,
+    _check_literal_fits,
+    _check_scalar_fits,
+    _ewise_add_converts_operands,
+    _ewise_add_in_result_type,
+    _literal_dtype,
     _scalar_index,
 )
 from .utils import (
@@ -1026,15 +1032,30 @@ class Vector(BaseType):
             # Per the spec, op may be a semiring, but this is weird, so don't.
             self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
 
-        if other.ndim == 2:
-            # Broadcast columnwise from the left
-            if other._nrows != self._size:
-                # Check this before we compute a possibly large matrix below
-                raise DimensionMismatch(
-                    "Dimensions not compatible for broadcasting Vector from the left "
-                    f"to columns of Matrix in {method_name}.  Matrix.nrows (={other._nrows}) "
-                    f"must equal Vector.size (={self._size})."
+        if other.ndim == 2 and other._nrows != self._size:
+            # Broadcast columnwise from the left. Check this before we compute a
+            # possibly large matrix below.
+            raise DimensionMismatch(
+                "Dimensions not compatible for broadcasting Vector from the left "
+                f"to columns of Matrix in {method_name}.  Matrix.nrows (={other._nrows}) "
+                f"must equal Vector.size (={self._size})."
+            )
+        if _ewise_add_converts_operands(op, self.dtype, other.dtype):
+            # GraphBLAS casts an unpaired entry to the result type, which a UDT
+            # cannot be. Convert both operands to the result type first and
+            # apply the op in that one type: an int8 UDT plus a float32 one is
+            # float32, with every entry of either side.
+            args = [self, other, _ewise_add_in_result_type, (self, other, op)]
+            if other.ndim == 2:
+                return MatrixExpression(
+                    method_name, None, args, nrows=other._nrows, ncols=other._ncols, op=op
                 )
+            expr = VectorExpression(method_name, None, args, op=op)
+            if self._size != other._size:
+                expr.new(name="")  # incompatible shape; raise now
+            return expr
+
+        if other.ndim == 2:
             return MatrixExpression(
                 method_name,
                 None,
@@ -1207,6 +1228,8 @@ class Vector(BaseType):
         left_dtype = temp_op.type
         dtype = left_dtype if left_dtype._is_udt else None
         if type(left_default) is not Scalar:
+            if dtype is not None:
+                _check_literal_fits(dtype, left_default)
             try:
                 left = Scalar.from_value(
                     left_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
@@ -1221,10 +1244,13 @@ class Vector(BaseType):
                     op=op,
                 )
         else:
+            _check_scalar_fits(dtype, left_default)
             left = _as_scalar(left_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
         right_dtype = temp_op.type2
         dtype = right_dtype if right_dtype._is_udt else None
         if type(right_default) is not Scalar:
+            if dtype is not None:
+                _check_literal_fits(dtype, right_default)
             try:
                 right = Scalar.from_value(
                     right_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
@@ -1239,6 +1265,7 @@ class Vector(BaseType):
                     op=op,
                 )
         else:
+            _check_scalar_fits(dtype, right_default)
             right = _as_scalar(right_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
 
         if is_infix:
@@ -1420,6 +1447,11 @@ class Vector(BaseType):
         if isinstance(op, str):
             op = op_from_string(op)
         op, opclass = find_opclass(op)
+        if opclass == "Monoid" and self.dtype._is_udt:
+            # Applying a Monoid applies its BinaryOp. Typing it as that op lets a
+            # literal promote as it would with the BinaryOp, where a Monoid takes
+            # one type and would need the literal converted into the UDT.
+            op, opclass = op.binaryop, "BinaryOp"
         if opclass in {"IndexUnaryOp", "SelectOp"}:
             # Provide default value for index unary
             if right is None:
@@ -1441,7 +1473,7 @@ class Vector(BaseType):
             expr_repr = None
         elif right is None:
             if type(left) is not Scalar:
-                dtype = self.dtype if self.dtype._is_udt else None
+                dtype = _literal_dtype(self.dtype, left, op)
                 try:
                     left = Scalar.from_value(left, dtype, is_cscalar=None, name="")
                 except TypeError:
@@ -1477,7 +1509,7 @@ class Vector(BaseType):
             expr_repr = "{1.name}.apply({op}, left={0._expr_name})"
         elif left is None:
             if type(right) is not Scalar:
-                dtype = self.dtype if (self.dtype._is_udt and not op.is_positional) else None
+                dtype = _literal_dtype(self.dtype, right, op)
                 try:
                     right = Scalar.from_value(right, dtype, is_cscalar=None, name="")
                 except TypeError:
@@ -1873,6 +1905,8 @@ class Vector(BaseType):
 
     def _assign_element(self, resolved_indexes, value):
         idx = resolved_indexes.indices[0]
+        if type(value) is Scalar:
+            value = _cast_for_store(value, self.dtype)
         if type(value) is not Scalar:
             dtype = self.dtype if self.dtype._is_udt else None
             try:
@@ -1901,6 +1935,8 @@ class Vector(BaseType):
 
     def _prep_for_assign(self, resolved_indexes, value, mask, is_submask, replace, opts):
         method_name = "__setitem__"
+        if output_type(value) in {Scalar, Vector}:
+            value = _cast_for_store(value, self.dtype)
         idx = resolved_indexes.indices[0]
         size = idx.size
         cscalar = idx.cscalar

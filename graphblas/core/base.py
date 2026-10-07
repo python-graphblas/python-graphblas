@@ -162,6 +162,59 @@ def _expect_op(self, op, values, *, within, **kwargs):
         raise TypeError(message) from None
 
 
+# Whether a UDT result may be stored in an object of another UDT type, cast
+# element by element as GraphBLAS casts built-in types. False makes every
+# store that would need a UDT cast raise DomainMismatch.
+_udt_store_casts = True
+
+
+def _store_cast_op(result_dtype, output_dtype):
+    """Return the UnaryOp that converts a result for an object of ``output_dtype``, or ``None``.
+
+    GraphBLAS casts between built-in types on store (C's casts, with a float
+    saturating into an integer type), but it cannot cast to or from a UDT;
+    left to GraphBLAS, that is a bare GrB_DOMAIN_MISMATCH or, for a single
+    element, bytes read as the wrong type. So when a UDT is involved, the
+    result is stored by applying the op returned here, which casts each
+    element or record leaf the way GraphBLAS casts built-in types, between
+    UDTs whose layouts correspond (``udt_utils._udt_cast_error``). Any other
+    pair raises ``DomainMismatch``. ``None`` means GraphBLAS stores the result
+    as it is. This is the one place that decides what may be stored where.
+    """
+    if result_dtype is output_dtype or not (result_dtype._is_udt or output_dtype._is_udt):
+        return None
+    from . import _has_numba
+
+    reason = "UDTs do not cast"
+    if _udt_store_casts and _has_numba and result_dtype._is_udt and output_dtype._is_udt:
+        from .operator.udt_utils import _udt_cast_error
+
+        if (reason := _udt_cast_error(result_dtype, output_dtype)) is None:
+            from .operator.unary import _udt_cast_op
+
+            return _udt_cast_op(result_dtype, output_dtype)
+    elif _udt_store_casts and _has_numba:
+        reason = "a UDT casts only to another UDT"
+    from ..exceptions import DomainMismatch
+
+    raise DomainMismatch(
+        f"cannot store a result of type {result_dtype} in an object of type "
+        f"{output_dtype}: {reason}. Use .new() for an object of the result's type, or "
+        "compute the result in the type you want to store."
+    )
+
+
+def _scalar_accum_op(scalar, accum):
+    """Return the op to accumulate into ``scalar`` with, as ``scalar.ewise_add`` runs it.
+
+    ``__call__`` types ``accum`` on the object's dtype. For a UDT Scalar, that
+    would convert a literal into the UDT (``s += 0.5``), where a Vector
+    computes ``s + 0.5`` in its own type and casts as it stores; the untyped
+    op does the same here.
+    """
+    return accum.parent if scalar.dtype._is_udt else accum
+
+
 AmbiguousAssignOrExtract._expect_op = _expect_op
 AmbiguousAssignOrExtract._expect_type = _expect_type
 
@@ -341,7 +394,7 @@ class BaseType:
                 if expr._is_scalar and self._is_scalar:
                     # Extract element (s << v[1])
                     if accum is not None:
-                        self(**opts) << self.ewise_add(expr, accum)
+                        self(**opts) << self.ewise_add(expr, _scalar_accum_op(self, accum))
                         return
                     expr.parent._extract_element(
                         expr.resolved_indexes,
@@ -362,9 +415,13 @@ class BaseType:
                 expr = expr._extract_delayed()
             elif type(expr) is type(self):
                 # Simple assignment (w << v)
+                if (cast_op := _store_cast_op(expr.dtype, self.dtype)) is not None:
+                    expr = expr.apply(cast_op)
+                    self._update(expr, mask, accum, replace, input_mask, opts=opts)
+                    return
                 if self._is_scalar:
                     if accum is not None:
-                        self(**opts) << self.ewise_add(expr, accum)
+                        self(**opts) << self.ewise_add(expr, _scalar_accum_op(self, accum))
                         return
                     if opts:
                         # Ignore opts for now
@@ -386,7 +443,7 @@ class BaseType:
                     # s << (v @ v)
                     expr = expr._to_expr()
                 elif accum is not None:
-                    self(**opts) << self.ewise_add(expr, accum)
+                    self(**opts) << self.ewise_add(expr, _scalar_accum_op(self, accum))
                     return
                 else:
                     if opts:
@@ -446,6 +503,20 @@ class BaseType:
 
         if input_mask is not None:
             raise TypeError("`input_mask` argument may only be used for extract")
+        # With an accumulator too: it is typed on this object's dtype, so the
+        # result still has to be that type. Before the Aggregator branch, which
+        # hands GraphBLAS the output as it is: agg.first on another UDT read its
+        # bytes as this object's type.
+        if (cast_op := _store_cast_op(expr.dtype, self.dtype)) is not None:
+            # Compute in the result's type, then cast as the result is stored,
+            # so the mask, accumulator and replace apply to the cast values.
+            # Masking the temporary too only skips values the store drops.
+            if self._is_scalar:
+                result = expr.new(name="s_result", **opts)
+            else:
+                result = expr.new(mask=mask, name="result", **opts)
+            self._update(result.apply(cast_op), mask, accum, replace, opts=opts)
+            return
         if expr.op is not None and expr.op.opclass == "Aggregator":
             updater = self(mask=mask, accum=accum, replace=replace, **opts)
             expr.op._new(updater, expr)

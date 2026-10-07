@@ -68,6 +68,22 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
         # Handle special cases such as first and second (may have UDTs)
         if op._custom_dtype is not None and (rv := op._custom_dtype(op, dtype, dtype2)) is not None:
             return rv
+        # UDTs do not cast, so never unify a UDT with another type: numpy would
+        # promote two records to one of them (or a third), and GraphBLAS would
+        # reject the operand of the other type with GrB_DOMAIN_MISMATCH. An op
+        # that does not lift to UDTs says so here with a KeyError, where a UDT
+        # with a built-in type mostly failed to unify with numpy's TypeError.
+        if dtype is not dtype2 and (dtype._is_udt or dtype2._is_udt):
+            if op.is_positional:
+                return op[UINT64]
+            if op._udt_types is None:
+                raise KeyError(f"{op.name} does not work with ({dtype}, {dtype2})")
+            if kind == "binary" and isinstance(op, Monoid) and dtype != dtype2:
+                # A Monoid takes one type, but used element-wise it is its
+                # BinaryOp, which takes the pair: ``v.ewise_add(w)`` works where
+                # ``v + w`` does. Indexing (``monoid.plus[X, Y]``) still raises.
+                return get_typed_op(op.binaryop, dtype, dtype2)
+            return op._compile_udt(dtype, dtype2)
         # Generic case: try to unify the two dtypes
         try:
             return op[

@@ -26,6 +26,12 @@ from .scalar import (
     ScalarExpression,
     ScalarIndexExpr,
     _as_scalar,
+    _cast_for_store,
+    _check_literal_fits,
+    _check_scalar_fits,
+    _ewise_add_converts_operands,
+    _ewise_add_in_result_type,
+    _literal_dtype,
     _scalar_index,
 )
 from .utils import (
@@ -1921,14 +1927,29 @@ class Matrix(BaseType):
             # Per the spec, op may be a semiring, but this is weird, so don't.
             self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
 
-        if other.ndim == 1:
+        if other.ndim == 1 and self._ncols != other._size:
             # Broadcast rowwise from the right
-            if self._ncols != other._size:
-                raise DimensionMismatch(
-                    "Dimensions not compatible for broadcasting Vector from the right "
-                    f"to rows of Matrix in {method_name}.  Matrix.ncols (={self._ncols}) "
-                    f"must equal Vector.size (={other._size})."
-                )
+            raise DimensionMismatch(
+                "Dimensions not compatible for broadcasting Vector from the right "
+                f"to rows of Matrix in {method_name}.  Matrix.ncols (={self._ncols}) "
+                f"must equal Vector.size (={other._size})."
+            )
+        if _ewise_add_converts_operands(op, self.dtype, other.dtype):
+            # See Vector._ewise_add: convert both operands to the result type,
+            # then apply the op in that one type, since GraphBLAS cannot cast a UDT.
+            expr = MatrixExpression(
+                method_name,
+                None,
+                [self, other, _ewise_add_in_result_type, (self, other, op)],
+                nrows=self._nrows,
+                ncols=self._ncols,
+                op=op,
+            )
+            if other.ndim == 2 and self.shape != other.shape:
+                expr.new(name="")  # incompatible shape; raise now
+            return expr
+
+        if other.ndim == 1:
             return MatrixExpression(
                 method_name,
                 None,
@@ -2102,6 +2123,8 @@ class Matrix(BaseType):
         left_dtype = temp_op.type
         dtype = left_dtype if left_dtype._is_udt else None
         if type(left_default) is not Scalar:
+            if dtype is not None:
+                _check_literal_fits(dtype, left_default)
             try:
                 left = Scalar.from_value(
                     left_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
@@ -2116,10 +2139,13 @@ class Matrix(BaseType):
                     op=op,
                 )
         else:
+            _check_scalar_fits(dtype, left_default)
             left = _as_scalar(left_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
         right_dtype = temp_op.type2
         dtype = right_dtype if right_dtype._is_udt else None
         if type(right_default) is not Scalar:
+            if dtype is not None:
+                _check_literal_fits(dtype, right_default)
             try:
                 right = Scalar.from_value(
                     right_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
@@ -2134,6 +2160,7 @@ class Matrix(BaseType):
                     op=op,
                 )
         else:
+            _check_scalar_fits(dtype, right_default)
             right = _as_scalar(right_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
 
         if is_infix:
@@ -2419,6 +2446,11 @@ class Matrix(BaseType):
         if isinstance(op, str):
             op = op_from_string(op)
         op, opclass = find_opclass(op)
+        if opclass == "Monoid" and self.dtype._is_udt:
+            # Applying a Monoid applies its BinaryOp. Typing it as that op lets a
+            # literal promote as it would with the BinaryOp, where a Monoid takes
+            # one type and would need the literal converted into the UDT.
+            op, opclass = op.binaryop, "BinaryOp"
         if opclass in {"IndexUnaryOp", "SelectOp"}:
             # Provide default value for index unary
             if right is None:
@@ -2440,7 +2472,7 @@ class Matrix(BaseType):
             expr_repr = None
         elif right is None:
             if type(left) is not Scalar:
-                dtype = self.dtype if self.dtype._is_udt else None
+                dtype = _literal_dtype(self.dtype, left, op)
                 try:
                     left = Scalar.from_value(left, dtype, is_cscalar=None, name="")
                 except TypeError:
@@ -2476,7 +2508,7 @@ class Matrix(BaseType):
             expr_repr = "{1.name}.apply({op}, left={0._expr_name})"
         elif left is None:
             if type(right) is not Scalar:
-                dtype = self.dtype if (self.dtype._is_udt and not op.is_positional) else None
+                dtype = _literal_dtype(self.dtype, right, op)
                 try:
                     right = Scalar.from_value(right, dtype, is_cscalar=None, name="")
                 except TypeError:
@@ -3087,6 +3119,8 @@ class Matrix(BaseType):
 
     def _assign_element(self, resolved_indexes, value):
         rowidx, colidx = resolved_indexes.indices
+        if type(value) is Scalar:
+            value = _cast_for_store(value, self.dtype)
         if type(value) is not Scalar:
             dtype = self.dtype if self.dtype._is_udt else None
             try:
@@ -3115,6 +3149,8 @@ class Matrix(BaseType):
 
     def _prep_for_assign(self, resolved_indexes, value, mask, is_submask, replace, opts):
         method_name = "__setitem__"
+        if output_type(value) in {Scalar, Vector, Matrix}:
+            value = _cast_for_store(value, self.dtype)
         rowidx, colidx = resolved_indexes.indices
         rowsize = rowidx.size
         rows = rowidx.index

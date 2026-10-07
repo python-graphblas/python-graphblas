@@ -957,8 +957,7 @@ def test_udt_jit_c_source_introspection():
     times_arr = binary.times[arr_udt]
     src_arr = times_arr.jit_c_source
     assert src_arr is not None
-    assert "z->v[0] = (x->v[0]) * (y->v[0])" in src_arr
-    assert "z->v[10] = (x->v[10]) * (y->v[10])" in src_arr
+    assert "for (int64_t i = 0 ; i < 11 ; i++) { z->v[i] = (x->v[i]) * (y->v[i]) ; }" in src_arr
 
     # Builtin scalar op: no JIT source
     assert binary.plus[int].jit_c_source is None
