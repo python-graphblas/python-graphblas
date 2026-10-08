@@ -46,7 +46,8 @@ so it does not depend on the installed version of numpy. User-defined types
 follow the same rule, field by field (see :doc:`udt`).
 
 A comparison has no result type to keep, so an integer outside the operand's
-range compares exactly, as in numpy: ``v < 300`` is True for every element.
+range compares exactly, as in numpy: ``v < 300`` is True for every element, as
+is ``w < 2**63`` for an INT64 vector ``w``.
 Nor does ``v / 300`` raise, since its result is FP64 whatever the integer. An
 FP32 vector ``== 0.1`` compares in FP32, and ``== 1e300`` compares with
 infinity, with a ``RuntimeWarning`` as in numpy. The defaults of ``ewise_union``

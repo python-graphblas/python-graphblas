@@ -1,4 +1,5 @@
 import itertools
+import math
 from functools import lru_cache
 
 import numpy as np
@@ -397,7 +398,23 @@ class Scalar(BaseType):
                         val = _dict_to_record(np_type, val)
                 else:
                     arr = np.zeros(np_type.subdtype[1], dtype=np_type.subdtype[0])
-                arr[:] = _view_if_same_layout(val, arr.dtype)
+                val = _view_if_same_layout(val, arr.dtype)
+                if _has_narrow_float_leaf(np_type) and np.geterr()["over"] == "warn":
+                    # A float too large for a float32 leaf is infinity, and numpy
+                    # warns; warn at the caller's line instead, as a built-in
+                    # FP32 does, so the default filter shows each place it happens.
+                    try:
+                        with np.errstate(over="raise"):
+                            arr[:] = val
+                    except FloatingPointError:
+                        utils._warn_from_caller(
+                            f"overflow encountered in cast: {val!r} as {self.dtype}",
+                            RuntimeWarning,
+                        )
+                        with np.errstate(over="ignore"):
+                            arr[:] = val
+                else:
+                    arr[:] = val
                 self.gb_obj[0 : np_type.itemsize] = _udt_bytes(np_type, arr)
             else:
                 self.gb_obj[0] = val
@@ -689,7 +706,7 @@ class Scalar(BaseType):
                 other = op(other).new()
 
         if type(other) is not Scalar:
-            dtype = _literal_dtype(self.dtype, other, op)
+            other, dtype = _literal_operand(self.dtype, other, op)
             try:
                 other = Scalar.from_value(other, dtype, is_cscalar=False, name="")
             except TypeError:
@@ -773,7 +790,7 @@ class Scalar(BaseType):
                 other = op(other).new()
 
         if type(other) is not Scalar:
-            dtype = _literal_dtype(self.dtype, other, op)
+            other, dtype = _literal_operand(self.dtype, other, op)
             try:
                 other = Scalar.from_value(other, dtype, is_cscalar=False, name="")
             except TypeError:
@@ -850,10 +867,9 @@ class Scalar(BaseType):
         right_dtype = self.dtype
         dtype = right_dtype if right_dtype._is_udt else None
         if type(other) is not Scalar:
+            other, literal_dtype = _literal_operand(right_dtype, other, op)
             try:
-                other = Scalar.from_value(
-                    other, _literal_dtype(right_dtype, other, op), is_cscalar=False, name=""
-                )
+                other = Scalar.from_value(other, literal_dtype, is_cscalar=False, name="")
             except TypeError:
                 other = self._expect_type(
                     other,
@@ -879,7 +895,7 @@ class Scalar(BaseType):
             if dtype is not None:
                 _check_literal_fits(dtype, left_default)
             else:
-                dtype = _literal_dtype(left_dtype, left_default, op)
+                left_default, dtype = _literal_operand(left_dtype, left_default, op)
             try:
                 left = Scalar.from_value(
                     left_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
@@ -902,7 +918,7 @@ class Scalar(BaseType):
             if dtype is not None:
                 _check_literal_fits(dtype, right_default)
             else:
-                dtype = _literal_dtype(right_dtype, right_default, op)
+                right_default, dtype = _literal_operand(right_dtype, right_default, op)
             try:
                 right = Scalar.from_value(
                     right_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
@@ -1191,12 +1207,12 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
     # End auto-generated code: Scalar
 
 
-def _literal_dtype(dtype, value, op):
-    """Return the dtype to build ``value`` with, as the other operand of ``op`` beside ``dtype``.
+def _literal_operand(dtype, value, op):
+    """Return literal ``value`` and the dtype to make it, as ``op``'s operand beside ``dtype``.
 
-    ``None`` means the value's own dtype. This is where python-graphblas
-    decides how a literal operand is typed; beside a built-in dtype, see
-    :func:`_weak_builtin_literal_dtype`.
+    A dtype of ``None`` means the value's own dtype. This is where
+    python-graphblas decides how a literal operand is typed; beside a built-in
+    dtype, see :func:`_weak_builtin_literal_dtype`.
 
     Beside a UDT, a literal becomes an element of that UDT, as it must for a
     user's op, when its type allows it (:func:`_check_literal_fits`). With a
@@ -1215,21 +1231,41 @@ def _literal_dtype(dtype, value, op):
       weak in the same way, leaf by leaf: ``int8_udt + (1, 2, 3)`` stays
       ``int8_udt`` and ``+ (0.5, 1.5, 2.5)`` has float64 elements.
 
-    ``eq`` and ``ne`` type a literal the same way, as numpy compares, but a
-    comparison keeps no result type, so an int out of a leaf's range takes a
-    type that holds it: ``int8_udt == 300`` is False, not an error, and
+    ``eq`` and ``ne`` type a literal the same way, as numpy compares, so
     ``fp32_udt == 0.1`` compares in float32, as ``fp32_vec == 0.1`` does.
+
+    A comparison keeps no result type, so a Python int beyond an integer
+    element's range is compared exactly, as numpy 2 compares it, as infinity
+    of its sign: every element compares with that infinity as with the int,
+    while a type that held both would round them (in FP64, the INT64
+    ``2**63 - 1`` and the int ``2**63`` are equal). So ``int64_vec < 2**63`` is
+    all True and ``int8_vec == 300`` all False. Beside a UDT, where only ``eq``
+    and ``ne`` compare, a literal with such an int in an integer leaf equals no
+    element: ``int8_udt == 300`` is False, not an error.
     """
     if getattr(op, "is_positional", False):
-        return None
+        return value, None
     if not dtype._is_udt:
-        return _weak_builtin_literal_dtype(dtype, value, op)
+        literal_dtype = _weak_builtin_literal_dtype(dtype, value, op)
+        if (
+            literal_dtype is not dtype
+            and literal_dtype is not None
+            and type(value) is int
+            and dtype.np_type.kind in "iu"
+        ):
+            # Only an int beyond dtype's range takes another type here, typed so
+            # by a comparison or by an op that gives another type (truediv).
+            if isinstance(op, str):
+                op = binary_from_string(op)
+            if op.name in _COMPARISONS:
+                return (math.inf if value > 0 else -math.inf), FP64
+        return value, literal_dtype
     if getattr(op, "_udt_types", True) is None:
         # An op that does not take UDTs at all (``lt``) reports that itself.
-        return dtype
+        return value, dtype
     from .operator.binary import BinaryOp
     from .operator.monoid import Monoid
-    from .operator.udt_utils import BUILTIN_UDT_BINARY_OPS
+    from .operator.udt_utils import BUILTIN_UDT_BINARY_OPS, _int_beyond_leaf
 
     if isinstance(op, Monoid) and not op._anonymous:
         # Element-wise, a Monoid is its BinaryOp (``get_typed_op`` types it so).
@@ -1242,9 +1278,17 @@ def _literal_dtype(dtype, value, op):
             exact = is_comparison or op.name == "truediv"
             literal_type = _literal_type(dtype, value, exact=exact)
             if literal_type is not None:
-                return literal_type
+                if is_comparison and not isinstance(value, (np.generic, np.ndarray)):
+                    np_type = dtype.np_type
+                    parts = _dict_to_record(np_type, value) if isinstance(value, dict) else value
+                    beyond = _int_beyond_leaf(np_type, parts)
+                    if beyond is not None:
+                        # As infinity in every leaf, it still equals no element.
+                        value = math.inf if beyond > 0 else -math.inf
+                        literal_type = _literal_type(dtype, value)
+                return value, literal_type
     _check_literal_fits(dtype, value)
-    return dtype
+    return value, dtype
 
 
 # Built-in ops that compare their operands, and so keep no result type.
@@ -1270,9 +1314,9 @@ def _weak_builtin_literal_dtype(dtype, value, op=None):
     not compare it with the values, such as a row index.
 
     A comparison keeps no result type, so an int beyond ``dtype``'s range
-    takes a type that holds it and compares exactly, as numpy compares it:
-    ``int8_vec < 300`` is all True. ``op`` of ``None``, for a fill value, does
-    the same, so the value is not lost.
+    takes a type that holds it rather than raise (:func:`_literal_operand` then
+    compares it as infinity). ``op`` of ``None``, for a fill value, does the
+    same, so the value is not lost.
     """
     kind = _LITERAL_KINDS.get(type(value))
     if kind is None:
@@ -1596,15 +1640,14 @@ def _scalar_eq(scalar, other):
         if type(other) is Scalar:
             other_dtype, value = other.dtype, other.value
         else:
-            other_dtype = _weak_builtin_literal_dtype(scalar.dtype, other, binary.eq)
-            value = other
+            value, other_dtype = _literal_operand(scalar.dtype, other, binary.eq)
         if other_dtype is not None and not other_dtype._is_udt:
             if other_dtype is not scalar.dtype:
                 other_dtype = get_typed_op(binary.eq, scalar.dtype, other_dtype).type
             convert = other_dtype.np_type.type
             if other_dtype.np_type in _SINGLE_PRECISION:
-                # 1e300 beside FP32 is infinity, and _weak_builtin_literal_dtype
-                # has warned at the caller's line, so numpy need not warn again.
+                # 1e300 beside FP32 is infinity, and _literal_operand has
+                # warned at the caller's line, so numpy need not warn again.
                 with np.errstate(over="ignore"):
                     return (convert(scalar.value) == convert(value)).item()
             return (convert(scalar.value) == convert(value)).item()
@@ -1741,6 +1784,17 @@ def _dict_to_record(np_type, d):
         else:
             rv.append(val)
     return tuple(rv)
+
+
+@lru_cache
+def _has_narrow_float_leaf(np_type):
+    """Whether ``np_type`` has a float leaf narrower than float64, which a float may overflow."""
+    if np_type.subdtype is not None:
+        return _has_narrow_float_leaf(np_type.subdtype[0])
+    if np_type.names is not None:
+        return any(_has_narrow_float_leaf(np_type.fields[name][0]) for name in np_type.names)
+    kind, size = np_type.kind, np_type.itemsize
+    return (kind == "f" and size < 8) or (kind == "c" and size < 16)
 
 
 @lru_cache

@@ -176,9 +176,9 @@ dtype, so it never narrows. Below, ``v`` is a Vector of an ``INT8[3]`` UDT.
      - ``v + 1`` is ``INT8[3]``, ``v * 2.5`` and ``v + (0.5, 1, 2)`` are
        ``FP64[3]``, ``v + 300`` raises
    * - ``eq`` and ``ne``
-     - Type a literal as above, as built-in comparisons do, except that an int
-       out of a field's range takes a type that holds it, so the comparison is
-       exact. Return ``BOOL``. Array elements broadcast, as numpy's ``==``
+     - Type a literal as above, as built-in comparisons do, except that a
+       literal with an int out of a field's range equals no element, rather
+       than raise. Return ``BOOL``. Array elements broadcast, as numpy's ``==``
        does, and so does ``==`` on a Scalar, which returns a bool. ``isequal``
        compares as ``np.array_equal``: elements must have the same shape,
        apart from leading axes of length 1.

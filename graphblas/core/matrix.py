@@ -33,7 +33,7 @@ from .scalar import (
     _element_shapes_differ,
     _ewise_add_cast_error,
     _ewise_add_needs_cast,
-    _literal_dtype,
+    _literal_operand,
     _literal_store_dtype,
     _scalar_index,
     _weak_builtin_literal_dtype,
@@ -2145,7 +2145,7 @@ class Matrix(BaseType):
             if dtype is not None:
                 _check_literal_fits(dtype, left_default)
             else:
-                dtype = _literal_dtype(left_dtype, left_default, op)
+                left_default, dtype = _literal_operand(left_dtype, left_default, op)
             try:
                 left = Scalar.from_value(
                     left_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
@@ -2168,7 +2168,7 @@ class Matrix(BaseType):
             if dtype is not None:
                 _check_literal_fits(dtype, right_default)
             else:
-                dtype = _literal_dtype(right_dtype, right_default, op)
+                right_default, dtype = _literal_operand(right_dtype, right_default, op)
             try:
                 right = Scalar.from_value(
                     right_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
@@ -2495,7 +2495,7 @@ class Matrix(BaseType):
             expr_repr = None
         elif right is None:
             if type(left) is not Scalar:
-                dtype = _literal_dtype(self.dtype, left, op)
+                left, dtype = _literal_operand(self.dtype, left, op)
                 try:
                     left = Scalar.from_value(left, dtype, is_cscalar=None, name="")
                 except TypeError:
@@ -2531,7 +2531,7 @@ class Matrix(BaseType):
             expr_repr = "{1.name}.apply({op}, left={0._expr_name})"
         elif left is None:
             if type(right) is not Scalar:
-                dtype = _literal_dtype(self.dtype, right, op)
+                right, dtype = _literal_operand(self.dtype, right, op)
                 try:
                     right = Scalar.from_value(right, dtype, is_cscalar=None, name="")
                 except TypeError:
@@ -2654,7 +2654,7 @@ class Matrix(BaseType):
         given = thunk
         if type(thunk) is not Scalar:
             # A thunk beside a UDT becomes an element of it, so it must fit, as in apply.
-            dtype = _literal_dtype(self.dtype, thunk, op)
+            thunk, dtype = _literal_operand(self.dtype, thunk, op)
             try:
                 thunk = Scalar.from_value(thunk, dtype, is_cscalar=None, name="")
             except TypeError:

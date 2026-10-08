@@ -3526,8 +3526,10 @@ def test_udt_eq_ne_type_a_literal_as_builtin_comparisons_do():
     The number is weak, leaf by leaf, so ``fp32_udt == 0.1`` compares in
     float32 and is True, as ``fp32_vec == 0.1`` and numpy are; it was strong,
     and compared float32 0.1 with float64 0.1. A comparison keeps no result
-    type, so an int out of a leaf's range takes a type that holds it, even past
-    int64, where it raised. numpy scalars stay strong.
+    type, so a literal with an int out of a leaf's range equals no element,
+    even past int64, where it raised. Beside an int64 leaf, it is not rounded
+    to equal one (in float64, the int64 ``2**63 - 1`` and ``2**63`` are equal).
+    numpy scalars stay strong.
     """
     f32 = dtypes.register_anonymous(np.dtype((np.float32, (7,))), "_EqWeakF32")
     i8 = dtypes.register_anonymous(np.dtype((np.int8, (7,))), "_EqWeakI8")
@@ -3546,6 +3548,46 @@ def test_udt_eq_ne_type_a_literal_as_builtin_comparisons_do():
         assert (w != number).new()[0].new().value
     assert (w == tuple(range(7))).new()[0].new().value
     assert not (w == (0.5, *range(1, 7))).new()[0].new().value
+    i64 = dtypes.register_anonymous(np.dtype((np.int64, (2,))), "_EqWeakI64")
+    x = Vector(i64, size=2)
+    x[0] = [2**63 - 1, 2**63 - 1]
+    x[1] = [-(2**63), 0]
+    for literal in [2**63, (2**63, 2**63), [2**63 - 1, 2**63], -(2**63) - 1, 10**400]:
+        assert (x == literal).new().to_coo()[1].tolist() == [False, False]
+        assert (x != literal).new().to_coo()[1].tolist() == [True, True]
+    assert (x == (2**63 - 1, 2**63 - 1)).new().to_coo()[1].tolist() == [True, False]
+    rec = dtypes.register_anonymous(
+        np.dtype([("a", np.int64), ("b", np.uint64)], align=True), "_EqWeakRec64"
+    )
+    r = Vector(rec, size=1)
+    r[0] = (2**63 - 1, 2**64 - 1)
+    for literal in [(2**63, 2**64 - 1), {"a": 2**63 - 1, "b": 2**64}, (2**63 - 1, -1)]:
+        assert not (r == literal).new()[0].new().value
+        assert (r != literal).new()[0].new().value
+    assert (r == {"a": 2**63 - 1, "b": 2**64 - 1}).new()[0].new().value
+
+
+def test_udt_float32_overflow_warns_at_the_callers_line():
+    """A float too large for a float32 leaf is infinity, with a warning at the caller's line.
+
+    numpy warned from inside python-graphblas, so the default filter showed it
+    once per process; a built-in FP32 warns at the caller's line, as numpy does.
+    """
+    f32 = dtypes.register_anonymous(np.dtype((np.float32, (2,))), "_OverflowF32")
+    v = Vector(f32, size=1)
+    with pytest.warns(RuntimeWarning, match="overflow encountered in cast") as record:
+        v[0] = [1e300, 1]
+    assert [w.filename for w in record] == [__file__]
+    assert v[0].new().value.tolist() == [np.inf, 1]
+    with pytest.warns(RuntimeWarning, match="overflow encountered in cast") as record:
+        (v == 1e300).new()
+    assert [w.filename for w in record] == [__file__]
+    if supports_udfs:
+        with pytest.warns(RuntimeWarning, match="overflow encountered in cast") as record:
+            (v + 1e300).new()
+        assert [w.filename for w in record] == [__file__]
+    with np.errstate(over="ignore"):
+        v[0] = [1e300, 1]  # no warning, as numpy
 
 
 @pytest.mark.skipif("not supports_udfs")
@@ -4928,14 +4970,6 @@ def test_udt_fused_store_matches_compute_then_cast():
     C = Matrix(i16s, nrows=2, ncols=2)
     C << A.T.apply(binary.times, right=2)
     assert C.isequal(A.T.apply(binary.times, right=2).new().dup(dtype=i16s))
-
-
-def _udt_leaf_arrays(vector, size):
-    """The values of a record UDT vector's entries 0 to ``size - 1``, one array per leaf."""
-    values = [vector[k].new().value for k in range(size)]
-    return {
-        name: np.array([value[name] for value in values]) for name in vector.dtype.np_type.names
-    }
 
 
 def _assert_same_floats(got, expected, msg):
