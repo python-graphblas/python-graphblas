@@ -367,12 +367,15 @@ class Matrix(BaseType):
         # int/float/bool/complex are taken here so dtype inference and cffi
         # coercion match _assign_element exactly; everything else (slices, fancy
         # indexing, numpy or Scalar values, `A(mask)[i, j] << x`) falls back to
-        # the full assign path, leaving mask/accum and coercion unchanged.
+        # the full assign path, leaving mask/accum and coercion unchanged. So
+        # does an int beyond INT64, which that path types as the matrix's dtype
+        # (``uint64_mat[i, j] = 2**63``; scalar._literal_store_dtype).
         if (
             not opts
             and type(keys) is tuple
             and len(keys) == 2
             and type(expr) in (int, float, bool, complex)
+            and (type(expr) is not int or -(2**63) <= expr < 2**63)
             and not self.dtype._is_udt
             and not _is_recording()
         ):
