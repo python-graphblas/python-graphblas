@@ -568,7 +568,7 @@ def unify(type1, type2, *, is_left_scalar=False, is_right_scalar=False):
     unify(FP32, INT32) -> FP64
 
     ``is_left_scalar`` and ``is_right_scalar`` no longer change the result. A
-    Python number is typed before it gets here (``scalar._literal_dtype``), and
+    Python number is typed before it gets here (``scalar._literal_operand``), and
     a typed scalar promotes as any operand does, as numpy 2 promotes it. They
     used to stand the scalar in as a 0-d array of value 0, which numpy 1 typed
     by value, so ``int8_vec + 300`` wrapped there.

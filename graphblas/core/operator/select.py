@@ -89,14 +89,15 @@ def _value_select_in_own_type(op, dtype, thunk, given):
         if value != value:
             new_name, new_value = keep_all if name == "valuene" else keep_none
         elif name in {"valueeq", "valuene"}:
-            exact = value == math.floor(value) if math.isfinite(value) else False
+            # An int is whole, and math.isfinite cannot take one too large for a float.
+            exact = type(value) is int or (math.isfinite(value) and value == math.floor(value))
             if exact and lo <= value <= hi:
                 new_name, new_value = name, int(value)
             else:
                 new_name, new_value = keep_all if name == "valuene" else keep_none
         else:
             # Integers: x < t is x < ceil(t), x <= t is x <= floor(t), and so on.
-            if math.isinf(value):
+            if type(value) is float and math.isinf(value):
                 bound = value
             elif name in {"valuelt", "valuege"}:
                 bound = math.ceil(value)

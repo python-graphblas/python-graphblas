@@ -615,9 +615,10 @@ def _weak_literal_leaf(values, kind, elem, *, exact=False):
 
     Each is typed by :func:`_weak_literal_element`, so an int out of an integer
     ``elem``'s range raises ``OverflowError``. With ``exact``, for a comparison,
-    which keeps no result type, such an int takes int64, uint64 or float64,
-    whichever holds the values, so it compares exactly, as numpy compares it:
-    ``int8_vec < 300`` is all True. Built-in dtypes and UDT leaves both use this.
+    which keeps no result type, a fill value or truediv, such an int takes
+    int64, uint64 or float64, whichever holds the values (a comparison then
+    compares it as infinity: ``scalar._literal_operand``). Built-in dtypes and
+    UDT leaves both use this.
     """
     if exact and kind == "i" and elem.kind in "biu":
         # The integer type an int would take: ``elem``, or INT64 beside a bool.
@@ -731,6 +732,29 @@ def _weak_literal_udt(dtype, value, *, exact=False):
     except _LiteralDoesNotFit:
         return None
     return dtype if literal_type == np_type else lookup_dtype(literal_type)
+
+
+def _int_beyond_leaf(np_type, value):
+    """Return a Python int in literal ``value`` beyond its integer leaf's range, or ``None``.
+
+    ``value`` is laid out like an element of ``np_type``, as
+    :func:`_weak_literal_udt` reads it (a record's dict already a tuple). No
+    element equals a literal with such an int, whatever its other leaves.
+    """
+    if np_type.names is not None:
+        parts = value if isinstance(value, (tuple, list)) else [value] * len(np_type.names)
+        for name, part in zip(np_type.names, parts, strict=True):
+            found = _int_beyond_leaf(np_type.fields[name][0], part)
+            if found is not None:
+                return found
+        return None
+    base, shape = np_type.subdtype or (np_type, ())
+    if base.kind in "iu":
+        lo, hi = _int_bounds(base)
+        for x in _literal_leaf_values(value, shape) or ():
+            if type(x) is int and not lo <= x <= hi:
+                return x
+    return None
 
 
 def _array_literal_udt(dtype, value):

@@ -1591,6 +1591,56 @@ def test_python_number_is_weak_beside_builtin_dtypes():
     assert dtypes.unify(dtypes.INT8, dtypes.INT64, is_right_scalar=True) == dtypes.INT64
 
 
+def test_python_int_beyond_64_bit_element_compares_exactly():
+    """A Python int beyond a 64-bit integer element's range compares exactly, as in numpy 2.
+
+    It compares as infinity of its sign. A type that held both would round
+    them: in FP64, the INT64 ``2**63 - 1`` and the int ``2**63`` are equal, so
+    ``int64_vec < 2**63`` was False there (main raised OverflowError).
+    """
+    compare = {
+        "eq": lambda x, y: x == y,
+        "ne": lambda x, y: x != y,
+        "lt": lambda x, y: x < y,
+        "le": lambda x, y: x <= y,
+        "gt": lambda x, y: x > y,
+        "ge": lambda x, y: x >= y,
+    }
+    i64_values = [-(2**63), -(2**63) + 1, 0, 2**63 - 2, 2**63 - 1]
+    u64_values = [0, 2**63, 2**64 - 2, 2**64 - 1]
+    i64 = Vector.from_coo(range(5), i64_values, dtype=dtypes.INT64)
+    u64 = Vector.from_coo(range(4), u64_values, dtype=dtypes.UINT64)
+    for vec, values, numbers in [
+        (i64, i64_values, [2**63, -(2**63) - 1, 2**64, -(2**64), 10**400]),
+        (u64, u64_values, [2**64, 2**64 + 1, -1, -(10**400)]),
+    ]:
+        empty = Vector(vec.dtype, size=vec.size)
+        for name, py_op in compare.items():
+            for number in numbers:
+                expected = [py_op(x, number) for x in values]
+                for expr in [
+                    py_op(vec, number),
+                    vec.apply(getattr(binary, name), right=number),
+                    vec.apply(getattr(indexunary, f"value{name}"), number),
+                    vec.ewise_union(empty, getattr(binary, name), 0, number),
+                ]:
+                    assert expr.new().to_coo()[1].tolist() == expected
+                kept = vec.select(getattr(select, f"value{name}"), number).new()
+                assert kept.to_coo()[0].tolist() == [i for i, x in enumerate(expected) if x]
+                flipped = py_op(number, vec).new()
+                assert flipped.to_coo()[1].tolist() == [py_op(number, x) for x in values]
+    A = Matrix.from_coo([0, 1], [0, 1], [2**63 - 1, -(2**63)])
+    assert (A < 2**63).new().to_coo()[2].tolist() == [True, True]
+    assert (A == -(2**63) - 1).new().to_coo()[2].tolist() == [False, False]
+    s = Scalar.from_value(2**63 - 1)
+    assert (s == 2**63) is False
+    assert s != 2**63
+    assert (s < 2**63).new().value
+    assert (Scalar.from_value(2**64 - 1, dtype=dtypes.UINT64) == 2**64) is False
+    # A float element compares with the int as a float, as numpy 2 does.
+    assert (Vector.from_coo([0], [2.0**63]) == 2**63 + 1).new().to_coo()[1].tolist() == [True]
+
+
 def test_select_value_thunk_of_another_type():
     """Select with a value op compares exactly when the thunk's type differs from the values'.
 
