@@ -171,12 +171,16 @@ dtype, so it never narrows. Below, ``v`` is a Vector of an ``INT8[3]`` UDT.
      - Weak, field by field: a field's dtype when its kind holds the number,
        else INT64, FP64 or FC64 (numpy 2's NEP 50 rule, on numpy 1 too, and
        extended to sequences). An int out of an integer field's range raises
-       ``OverflowError``.
+       ``OverflowError``, except for ``truediv``, whose fields are floats
+       whatever the int (``v / 300`` is ``FP64[3]``).
      - ``v + 1`` is ``INT8[3]``, ``v * 2.5`` and ``v + (0.5, 1, 2)`` are
        ``FP64[3]``, ``v + 300`` raises
    * - ``eq`` and ``ne``
-     - Compare the values as given and return ``BOOL``.
-     - ``v == 300`` is ``False``
+     - Type a literal as above, as built-in comparisons do, except that an int
+       out of a field's range takes a type that holds it, so the comparison is
+       exact. Return ``BOOL``.
+     - ``v == 300`` is ``False``; an ``FP32[3]`` UDT ``== 0.1`` compares in
+       FP32
    * - A literal that must become an element: beside a user-defined op, an
        ``IndexUnaryOp`` thunk, an ``ewise_union`` default
      - Its type by the rules above must fit the UDT: the UDT itself, or a

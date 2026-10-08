@@ -10,7 +10,8 @@ from . import _has_numba, _supports_udfs, automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, call
 from .dtypes import _view_if_same_layout
 from .expr import AmbiguousAssignOrExtract
-from .operator import get_typed_op
+from .operator import IndexUnaryOp, SelectOp, TypedOpBase, binary_from_string, get_typed_op
+from .operator.udt_utils import _LITERAL_KINDS, _weak_literal_leaf
 from .utils import _Pointer, output_type, wrapdoc
 
 if _supports_udfs:
@@ -859,7 +860,10 @@ class Scalar(BaseType):
         left_dtype = temp_op.type
         dtype = left_dtype if left_dtype._is_udt else None
         if type(left_default) is not Scalar:
-            _check_literal_fits(dtype, left_default)
+            if dtype is not None:
+                _check_literal_fits(dtype, left_default)
+            else:
+                dtype = _literal_dtype(left_dtype, left_default, op)
             try:
                 left = Scalar.from_value(
                     left_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
@@ -879,7 +883,10 @@ class Scalar(BaseType):
         right_dtype = temp_op.type2
         dtype = right_dtype if right_dtype._is_udt else None
         if type(right_default) is not Scalar:
-            _check_literal_fits(dtype, right_default)
+            if dtype is not None:
+                _check_literal_fits(dtype, right_default)
+            else:
+                dtype = _literal_dtype(right_dtype, right_default, op)
             try:
                 right = Scalar.from_value(
                     right_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
@@ -1172,8 +1179,8 @@ def _literal_dtype(dtype, value, op):
     """Return the dtype to build ``value`` with, as the other operand of ``op`` beside ``dtype``.
 
     ``None`` means the value's own dtype. This is where python-graphblas
-    decides how a literal operand is typed beside a UDT; built-in dtypes
-    always get ``None`` and are typed by ``unify``.
+    decides how a literal operand is typed; beside a built-in dtype, see
+    :func:`_weak_builtin_literal_dtype`.
 
     Beside a UDT, a literal becomes an element of that UDT, as it must for a
     user's op, when its type allows it (:func:`_check_literal_fits`). With a
@@ -1192,18 +1199,21 @@ def _literal_dtype(dtype, value, op):
       weak in the same way, leaf by leaf: ``int8_udt + (1, 2, 3)`` stays
       ``int8_udt`` and ``+ (0.5, 1.5, 2.5)`` has float64 elements.
 
-    ``eq`` and ``ne`` take a number as it is, strong, since a comparison
-    needs no result type and ``int8_udt == 300`` should be False, not an error;
-    a sequence likewise, so ``int8_udt == (0.5, 1, 2)`` compares the values.
+    ``eq`` and ``ne`` type a literal the same way, as numpy compares, but a
+    comparison keeps no result type, so an int out of a leaf's range takes a
+    type that holds it: ``int8_udt == 300`` is False, not an error, and
+    ``fp32_udt == 0.1`` compares in float32, as ``fp32_vec == 0.1`` does.
     """
-    if not dtype._is_udt or getattr(op, "is_positional", False):
+    if getattr(op, "is_positional", False):
         return None
+    if not dtype._is_udt:
+        return _weak_builtin_literal_dtype(dtype, value, op)
     if getattr(op, "_udt_types", True) is None:
         # An op that does not take UDTs at all (``lt``) reports that itself.
         return dtype
     from .operator.binary import BinaryOp
     from .operator.monoid import Monoid
-    from .operator.udt_utils import _LITERAL_KINDS, BUILTIN_UDT_BINARY_OPS, _as_python_number
+    from .operator.udt_utils import BUILTIN_UDT_BINARY_OPS
 
     if isinstance(op, Monoid) and not op._anonymous:
         # Element-wise, a Monoid is its BinaryOp (``get_typed_op`` types it so).
@@ -1211,22 +1221,114 @@ def _literal_dtype(dtype, value, op):
     if type(op) is BinaryOp and not op._anonymous:
         is_comparison = op.name in ("eq", "ne")
         if is_comparison or op.name in BUILTIN_UDT_BINARY_OPS:
-            if is_comparison and type(_as_python_number(value)) in _LITERAL_KINDS:
-                return None
-            literal_type = _literal_type(dtype, value, strong_numbers=is_comparison)
+            # truediv gives float leaves whatever the int, so, as a comparison, it
+            # types an int out of an integer leaf's range exactly instead of raising.
+            exact = is_comparison or op.name == "truediv"
+            literal_type = _literal_type(dtype, value, exact=exact)
             if literal_type is not None:
                 return literal_type
     _check_literal_fits(dtype, value)
     return dtype
 
 
-def _literal_type(dtype, value, *, strong_numbers=False):
+# Built-in ops that compare their operands, and so keep no result type.
+_COMPARISONS = {"eq", "ne", "lt", "le", "gt", "ge"}
+_COMPARISONS.update([f"value{name}" for name in list(_COMPARISONS)])
+
+
+# The types a Python float or complex can overflow.
+_SINGLE_PRECISION = {np.dtype(np.float32), np.dtype(np.complex64)}
+
+
+def _weak_builtin_literal_dtype(dtype, value, op=None):
+    """Return the dtype of Python number ``value`` beside built-in ``dtype``, or ``None``.
+
+    A Python ``bool``, ``int``, ``float`` or ``complex`` is weak, as numpy 2
+    types it (NEP 50), by the table UDT leaves use
+    (``udt_utils._weak_literal_leaf``): ``int8_vec + 1`` is INT8,
+    ``fp32_vec * 0.5`` is FP32, ``int8_vec * 0.5`` is FP64, and
+    ``int8_vec + 300`` raises ``OverflowError``. python-graphblas applies the
+    table itself, so numpy 1 gives the same answers. ``None`` keeps the value's
+    own dtype (strong): for anything but a Python number, for a typed op, which
+    fixes the operand types itself, and for the thunk of an index op that does
+    not compare it with the values, such as a row index.
+
+    A comparison keeps no result type, so an int beyond ``dtype``'s range
+    takes a type that holds it and compares exactly, as numpy compares it:
+    ``int8_vec < 300`` is all True. ``op`` of ``None``, for a fill value, does
+    the same, so the value is not lost.
+    """
+    kind = _LITERAL_KINDS.get(type(value))
+    if kind is None:
+        return None
+    if isinstance(op, str):
+        try:
+            op = binary_from_string(op)
+        except Exception:
+            return None
+    exact = op is None
+    if op is not None:
+        if isinstance(op, TypedOpBase):
+            return None
+        exact = getattr(op, "name", None) in _COMPARISONS and not op._anonymous
+        if isinstance(op, (IndexUnaryOp, SelectOp)) and not exact:
+            return None
+    try:
+        np_type = _weak_literal_leaf([value], kind, dtype.np_type, exact=exact)
+    except OverflowError:
+        if exact or not _gives_another_type(op, dtype):
+            raise
+        # An op whose result is not the operand's type has no narrow result to
+        # keep, so an int out of range is typed exactly, as for a comparison:
+        # int8_vec / 300 is FP64, as numpy divides integers in float64.
+        np_type = _weak_literal_leaf([value], kind, dtype.np_type, exact=True)
+    if np_type == dtype.np_type:
+        rv = dtype
+    else:
+        try:
+            rv = lookup_dtype(np_type)
+        except ValueError:  # A complex literal where the backend has no complex types
+            return None
+    if kind != "b" and (op is None or not exact) and rv.np_type in _SINGLE_PRECISION:
+        import struct
+
+        parts = (value.real, value.imag) if kind == "c" else (float(value),)
+        try:
+            for part in parts:
+                struct.pack("<f", part)  # raises when a finite part rounds to infinity
+        except OverflowError:
+            if op is None:
+                # A fill value widens rather than lose its value, as an int out of
+                # range does: FP32's to_dense(fill_value=1e300) is float64.
+                return lookup_dtype(np.complex128 if kind == "c" else np.float64)
+            # As numpy 2 and a UDT warn: fp32_vec + 1e300 (or + 2**200) is inf.
+            utils._warn_from_caller(
+                f"overflow encountered in cast: {value!r} is infinity as {rv}", RuntimeWarning
+            )
+    return rv
+
+
+def _gives_another_type(op, dtype):
+    """Whether built-in ``op`` on two operands of built-in ``dtype`` gives another type.
+
+    ``truediv`` on integers gives FP64, and the numpy ufuncs that compute in
+    float give a float type, as numpy computes them in a float loop.
+    """
+    if op is None or getattr(op, "_anonymous", True) or not hasattr(op, "__getitem__"):
+        return False
+    try:
+        return op[dtype].return_type != dtype
+    except Exception:  # An op that does not take this dtype reports it itself, later.
+        return False
+
+
+def _literal_type(dtype, value, *, exact=False):
     """Return the type of literal ``value`` beside UDT ``dtype``, or ``None`` when it has none.
 
     A Python number (a ``Fraction`` or ``Decimal`` counts as the int or float
     it is worth) or a tuple, list or dict of them is weak, leaf by leaf
-    (``udt_utils._weak_literal_udt``); with ``strong_numbers`` each leaf takes
-    the number's own dtype instead, as a comparison wants. A numpy value is
+    (``udt_utils._weak_literal_udt``); with ``exact``, for a comparison, an int
+    out of a leaf's range takes a type that holds it. A numpy value is
     strong: its dtype, in the array layout of its shape for an array
     (``udt_utils._array_literal_udt``); a sequence holding numpy values is the
     array numpy makes of it. Anything else has no type here, and
@@ -1244,7 +1346,7 @@ def _literal_type(dtype, value, *, strong_numbers=False):
     if isinstance(value, dict) and np_type.names is not None:
         value = _dict_to_record(np_type, value)
     if type(value) in _LITERAL_KINDS or isinstance(value, (tuple, list)):
-        literal_type = _weak_literal_udt(dtype, value, weak=not strong_numbers)
+        literal_type = _weak_literal_udt(dtype, value, exact=exact)
         if literal_type is not None or type(value) in _LITERAL_KINDS:
             return literal_type
         try:

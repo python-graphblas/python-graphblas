@@ -3520,6 +3520,35 @@ def test_udt_eq_ne_scalar_broadcast_nan_propagates():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udt_eq_ne_type_a_literal_as_builtin_comparisons_do():
+    """``eq`` and ``ne`` beside a UDT type a Python number as a built-in comparison does.
+
+    The number is weak, leaf by leaf, so ``fp32_udt == 0.1`` compares in
+    float32 and is True, as ``fp32_vec == 0.1`` and numpy are; it was strong,
+    and compared float32 0.1 with float64 0.1. A comparison keeps no result
+    type, so an int out of a leaf's range takes a type that holds it, even past
+    int64, where it raised. numpy scalars stay strong.
+    """
+    f32 = dtypes.register_anonymous(np.dtype((np.float32, (7,))), "_EqWeakF32")
+    i8 = dtypes.register_anonymous(np.dtype((np.int8, (7,))), "_EqWeakI8")
+    v = Vector(f32, size=1)
+    v[0] = np.full(7, 0.1)
+    assert (v == 0.1).new()[0].new().value
+    assert not (v != 0.1).new()[0].new().value
+    assert (v == (0.1,) * 7).new()[0].new().value
+    assert not (v == np.float64(0.1)).new()[0].new().value
+    builtin = Vector.from_coo([0], [0.1], dtype=dtypes.FP32)
+    assert (builtin == 0.1).new()[0].new().value
+    w = Vector(i8, size=1)
+    w[0] = np.arange(7)
+    for number in [300, -(2**63) - 1, 2**63, 2**64]:
+        assert not (w == number).new()[0].new().value
+        assert (w != number).new()[0].new().value
+    assert (w == tuple(range(7))).new()[0].new().value
+    assert not (w == (0.5, *range(1, 7))).new()[0].new().value
+
+
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_eq_ne_scalar_broadcast_array_1d():
     arr1d = dtypes.register_anonymous(np.dtype((np.float64, (3,))), name="_EqBcastA3")
@@ -4137,6 +4166,10 @@ def test_udt_array_scalar_promotes_like_builtin():
     assert (w + np.int64(1)).new().dtype == ints  # the UDT registered with that layout
     with pytest.raises(OverflowError, match="300 out of bounds for int8"):
         w + 300
+    # truediv gives float elements whatever the int, as numpy divides in float64.
+    result = (w / 300).new()
+    assert result.dtype.np_type.base == np.float64
+    np.testing.assert_array_equal(result[0].new().value, (base + 1) / 300)
     x = Vector(fp32s, size=1)
     x[0] = base
     result = (x + 0.5).new()

@@ -33,6 +33,7 @@ from .scalar import (
     _ewise_add_needs_cast,
     _literal_dtype,
     _scalar_index,
+    _weak_builtin_literal_dtype,
 )
 from .utils import (
     _CArray,
@@ -1519,7 +1520,8 @@ class Matrix(BaseType):
             # dtype of fill_value can upcast the dtype
             if type(fill_value) is not Scalar:
                 try:
-                    fill_value = Scalar.from_value(fill_value, is_cscalar=None, name="")
+                    dtype = _weak_builtin_literal_dtype(self.dtype, fill_value)
+                    fill_value = Scalar.from_value(fill_value, dtype, is_cscalar=None, name="")
                 except TypeError:
                     fill_value = self._expect_type(
                         fill_value,
@@ -2130,7 +2132,10 @@ class Matrix(BaseType):
         left_dtype = temp_op.type
         dtype = left_dtype if left_dtype._is_udt else None
         if type(left_default) is not Scalar:
-            _check_literal_fits(dtype, left_default)
+            if dtype is not None:
+                _check_literal_fits(dtype, left_default)
+            else:
+                dtype = _literal_dtype(left_dtype, left_default, op)
             try:
                 left = Scalar.from_value(
                     left_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
@@ -2150,7 +2155,10 @@ class Matrix(BaseType):
         right_dtype = temp_op.type2
         dtype = right_dtype if right_dtype._is_udt else None
         if type(right_default) is not Scalar:
-            _check_literal_fits(dtype, right_default)
+            if dtype is not None:
+                _check_literal_fits(dtype, right_default)
+            else:
+                dtype = _literal_dtype(right_dtype, right_default, op)
             try:
                 right = Scalar.from_value(
                     right_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
