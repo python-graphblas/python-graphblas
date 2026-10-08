@@ -18,6 +18,7 @@ from .operator import (
     get_typed_op,
     op_from_string,
 )
+from .operator.select import _value_select_in_own_type
 from .scalar import (
     _COMPLETE,
     _MATERIALIZE,
@@ -28,9 +29,11 @@ from .scalar import (
     _cast_for_store,
     _check_literal_fits,
     _check_scalar_fits,
+    _element_shapes_differ,
     _ewise_add_cast_error,
     _ewise_add_needs_cast,
     _literal_dtype,
+    _literal_store_dtype,
     _scalar_index,
     _weak_builtin_literal_dtype,
 )
@@ -358,6 +361,11 @@ class Vector(BaseType):
         -------
         bool
 
+        Notes
+        -----
+        Elements of array UDTs must have the same shape, apart from leading axes
+        of length 1, as in ``np.array_equal``; ``==`` broadcasts instead.
+
         See Also
         --------
         :meth:`isclose` : For equality check of floating point dtypes
@@ -365,6 +373,8 @@ class Vector(BaseType):
         """
         other = self._expect_type(other, Vector, within="isequal", argname="other")
         if check_dtype and self.dtype != other.dtype:
+            return False
+        if _element_shapes_differ(self.dtype, other.dtype):
             return False
         if self._size != other._size:
             return False
@@ -1628,6 +1638,7 @@ class Vector(BaseType):
 
         if thunk is None:
             thunk = False  # most basic form of 0 when unifying dtypes
+        given = thunk
         if type(thunk) is not Scalar:
             # A thunk beside a UDT becomes an element of it, so it must fit, as in apply.
             dtype = _literal_dtype(self.dtype, thunk, op)
@@ -1643,6 +1654,7 @@ class Vector(BaseType):
                     op=op,
                 )
         op = get_typed_op(op, self.dtype, thunk.dtype, is_right_scalar=True, kind="select")
+        op, thunk = _value_select_in_own_type(op, self.dtype, thunk, given)
         self._expect_op(op, ("SelectOp", "IndexUnaryOp"), within=method_name, argname="op")
         if thunk._is_cscalar:
             if thunk.dtype._is_udt:
@@ -1919,7 +1931,7 @@ class Vector(BaseType):
     def _assign_element(self, resolved_indexes, value):
         idx = resolved_indexes.indices[0]
         if type(value) is not Scalar:
-            dtype = self.dtype if self.dtype._is_udt else None
+            dtype = _literal_store_dtype(self.dtype, value)
             try:
                 value = Scalar.from_value(value, dtype, is_cscalar=None, name="")
             except TypeError:
@@ -1986,7 +1998,7 @@ class Vector(BaseType):
                 expr_repr = "[[{2._expr_name} elements]] = {0.name}"
         else:
             if type(value) is not Scalar:
-                dtype = self.dtype if self.dtype._is_udt else None
+                dtype = _literal_store_dtype(self.dtype, value)
                 try:
                     value = Scalar.from_value(value, dtype, is_cscalar=None, name="")
                 except (TypeError, ValueError):

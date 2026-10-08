@@ -1559,6 +1559,16 @@ def test_python_number_is_weak_beside_builtin_dtypes():
     assert (u8 > -1).new().to_coo()[1].tolist() == [True, True]
     assert i8.apply(indexunary.valuelt, 300).new().to_coo()[1].tolist() == [True, True]
     assert (f32 == 0.1).new().to_coo()[1].tolist() == [True, False]  # compared as float32
+    # A float too large for FP32 is infinity in a comparison too, with a warning, as in
+    # numpy 2 (an int out of range is exact; a float has no type that is both FP32 and
+    # holds it). The Scalar's == warns once, at the caller's line.
+    finf = Vector.from_coo([0, 1], [np.inf, 1], dtype=dtypes.FP32)
+    with pytest.warns(RuntimeWarning, match="overflow encountered in cast") as record:
+        assert (finf == 1e300).new().to_coo()[1].tolist() == [True, False]
+    assert {w.filename for w in record} == {__file__}
+    with pytest.warns(RuntimeWarning, match="overflow encountered in cast") as record:
+        assert Scalar.from_value(np.inf, dtype=dtypes.FP32) == 1e300
+    assert [w.filename for w in record] == [__file__]
     # ewise_union defaults and fill values follow the rule too.
     w8 = Vector.from_coo([1], [1], dtype=dtypes.INT8, size=2)
     assert i8.ewise_union(w8, binary.plus, 0, 0).dtype == dtypes.INT8
@@ -1579,6 +1589,49 @@ def test_python_number_is_weak_beside_builtin_dtypes():
         assert i8.apply(above, 300).new().to_coo()[1].tolist() == [False, False]
     # Typed scalars promote as numpy 2 promotes them, on numpy 1 too.
     assert dtypes.unify(dtypes.INT8, dtypes.INT64, is_right_scalar=True) == dtypes.INT64
+
+
+def test_select_value_thunk_of_another_type():
+    """Select with a value op compares exactly when the thunk's type differs from the values'.
+
+    SuiteSparse:GraphBLAS's select reads such a thunk's bytes as the values'
+    type: on an INT8 vector, ``valueeq`` with 1.0 compared with 0 and kept
+    nothing, ``valuelt`` with 300 compared with 44, and ``valueeq`` with 356
+    kept 100. python-graphblas now compares in the values' own type with a
+    thunk that keeps the same elements.
+    """
+    i8 = Vector.from_coo([0, 1, 2, 3], [-5, 1, 2, 100], dtype=dtypes.INT8)
+    u8 = Vector.from_coo([0, 1], [0, 255], dtype=dtypes.UINT8)
+    f32 = Vector.from_coo([0, 1, 2], [np.float32(0.1), 1.0, np.nan], dtype=dtypes.FP32)
+    bools = Vector.from_coo([0, 1], [False, True])
+    for x, op, thunk, kept in [
+        (i8, select.valueeq, 1.0, [1]),
+        (i8, select.valueeq, 356, []),
+        (i8, select.valuene, 356, [0, 1, 2, 3]),
+        (i8, select.valuelt, 300, [0, 1, 2, 3]),
+        (i8, select.valuege, 2.5, [3]),
+        (i8, select.valuele, 2.5, [0, 1, 2]),
+        (i8, select.valuegt, -300, [0, 1, 2, 3]),
+        (i8, select.valuegt, np.nan, []),
+        (i8, select.valuene, np.nan, [0, 1, 2, 3]),
+        (i8, indexunary.valueeq, np.float64(2.0), [2]),
+        (i8, select.valueeq, Scalar.from_value(1.0), [1]),
+        (i8, select.valuelt, Scalar.from_value(300, dtype=dtypes.INT64), [0, 1, 2, 3]),
+        (u8, select.valuelt, np.int64(-1), []),
+        (u8, select.valuegt, np.int64(-1), [0, 1]),
+        (bools, select.valueeq, 256, []),
+        (bools, select.valueeq, 1, [1]),
+        # A strong FP64 thunk compares in FP64: float32(0.1) is not 0.1.
+        (f32, select.valueeq, np.float64(0.1), []),
+        (f32, select.valuegt, np.float64(0.1), [0, 1]),
+        (f32, select.valuene, np.float64(0.1), [0, 1, 2]),
+        # A Python float beside FP32 is FP32 (NEP 50), as numpy compares it.
+        (f32, select.valueeq, 0.1, [0]),
+    ]:
+        assert x.select(op, thunk).new().to_coo()[0].tolist() == kept, (x.dtype, op, thunk)
+    A = Matrix.from_coo([0, 0, 1], [0, 1, 1], [1, 100, -5], dtype=dtypes.INT8)
+    assert A.select(select.valueeq, 1.0).new().to_coo()[2].tolist() == [1]
+    assert A.select(select.valuelt, 300).new().nvals == 3
 
 
 def test_inner(v):

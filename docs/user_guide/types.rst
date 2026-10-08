@@ -48,7 +48,8 @@ follow the same rule, field by field (see :doc:`udt`).
 A comparison has no result type to keep, so an integer outside the operand's
 range compares exactly, as in numpy: ``v < 300`` is True for every element.
 Nor does ``v / 300`` raise, since its result is FP64 whatever the integer. An
-FP32 vector ``== 0.1`` compares in FP32. The defaults of ``ewise_union``
+FP32 vector ``== 0.1`` compares in FP32, and ``== 1e300`` compares with
+infinity, with a ``RuntimeWarning`` as in numpy. The defaults of ``ewise_union``
 follow the rule, and so does the ``fill_value`` of ``to_dense``, except that a
 value that does not fit widens the result instead of raising. A literal given
 to a typed operator, such as ``binary.plus["INT64"]``, takes that operator's
