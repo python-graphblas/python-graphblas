@@ -134,84 +134,135 @@ For example:
     plus_times  = semiring.plus_times[edge_dtype]    # field-wise multiply-add semiring
     total       = v.reduce(agg.sum[edge_dtype]).new()  # field-wise reduce
 
-The lift is field-by-field for record UDTs and element-by-element for array
-UDTs. Each field or element of the result has the dtype the op gives on the
-built-in dtypes, so a lifted op does not narrow: ``truediv`` on an ``INT64[3]``
-UDT gives ``FP64[3]``, as ``truediv`` on two INT64 vectors gives FP64. Field
-types that don't support the operation raise ``KeyError`` on the first lookup.
-``binary.min``, ``binary.max``, and ``binary.floordiv`` reject UDTs with any
-complex leaf (no ordering, no integer modulus); use ``plus``, ``minus``,
-``times``, or ``truediv`` for complex arithmetic, or register a custom binary
-op.
+How results are typed
+~~~~~~~~~~~~~~~~~~~~~
 
-A scalar operand combines with every field or element. A vector, ``Scalar``,
-numpy scalar or 0-d array of a built-in dtype keeps its dtype, so with ``v`` of
-an ``INT8[3]`` UDT, ``v + np.int64(1)`` is ``INT64[3]``. A Python number is
-weak, as numpy 2 treats it (NEP 50): in each field or element it takes that
-field's dtype when the field's kind can hold it, and its own default dtype
-(INT64, FP64 or FC64) when not. So ``v + 1`` stays ``INT8[3]``, ``v * 2.5``
-is ``FP64[3]``, and ``v + 300`` raises ``OverflowError``. A record with an ``INT8`` field and an ``FP32``
-field, plus ``0.5``, has an ``FP64`` field and an ``FP32`` one. python-graphblas
-applies this rule itself, so it does not depend on the installed numpy (vectors
-of built-in dtypes still type a Python number through numpy, which differs
-between numpy 1 and 2). ``eq`` and ``ne`` compare with the number as it is.
+A lifted op types each field or element as it types a Vector of that built-in
+dtype, so it never narrows. Below, ``v`` is a Vector of an ``INT8[3]`` UDT.
 
-A literal is converted to the UDT instead when it is a whole element (a tuple,
-a list, or a numpy array that is not 0-d), when the op is user-defined or a
-Monoid, and for the defaults of ``ewise_union``, which must have the op's input
-types (a default given as a Scalar of another type is converted too).
-``apply`` with a Monoid applies its BinaryOp, so there a literal is typed as
-that BinaryOp types it. The conversion must keep every value:
-``v + (1, 2, 3)`` works, but ``v + (0.5, 1.5, 2.5)`` raises ``ValueError``
-rather than adding ``(0, 1, 2)``, and ``v.ewise_union(w, binary.plus, 0.5, 0)``
-raises rather than using ``0`` for a missing ``v`` entry. A number may still
-round to a narrower float field, as it does beside an ``FP32`` field above.
+.. list-table::
+   :header-rows: 1
+   :widths: 25 45 30
 
-The lifted binary ops also take two different UDTs whose shapes match. Two
-record UDTs match when they nest the same way, with the same field names in the
-same order at every level, and each array field has the same shape in both;
-array fields do not broadcast against each other. Two array UDTs match when
-their shapes broadcast together as numpy arrays do, and the result has the
-broadcast shape: ``FP64[3]`` pairs with ``INT64[2, 3]`` to give ``FP64[2, 3]``,
-and ``FP64[3, 1]`` with ``FP64[1, 4]`` gives ``FP64[3, 4]``. ``eq`` is True
-when every pair of elements numpy would compare is equal. Any other pair, such
-as ``FP64[2, 3]`` with ``FP64[3, 2]``, raises ``KeyError`` on the first lookup.
-Field and element dtypes may differ, and each pair of them follows the
-built-in dtype rules; a dtype that is not a built-in one, such as bytes, pairs
-only with itself. A Monoid takes one type, so ``ewise_add``, ``ewise_mult`` and
-``ewise_union`` with a Monoid on two different UDTs use its BinaryOp.
+   * - Operands
+     - Rule
+     - Example
+   * - One UDT
+     - Each field or element as on its built-in dtype.
+     - ``v / v`` is ``FP64[3]``
+   * - Two UDTs
+     - Records pair when they have the same field names, in the same order, at
+       every level, and the same shape for each field. Array UDTs pair when
+       their shapes broadcast as numpy's do. Any other pair raises
+       ``KeyError``.
+     - ``INT8[3]`` with ``INT64[2, 3]`` gives ``INT64[2, 3]``
+   * - Result type
+     - An operand's type when it holds the result; else the promoted layout,
+       which is the UDT registered with that layout if there is one, else an
+       anonymous UDT.
+     - ``{x: INT64, y: FP64}`` with ``{x: FP64, y: INT64}`` gives
+       ``{x: FP64, y: FP64}``
+   * - A built-in Vector, ``Scalar``, numpy scalar or numpy array
+     - Strong: keeps its dtype. A scalar combines with every field or element;
+       an array pairs as an array UDT of its own shape.
+     - ``v + np.int64(1)`` is ``INT64[3]``
+   * - A Python number, or a tuple, list or dict of them laid out like an
+       element
+     - Weak, field by field: a field's dtype when its kind holds the number,
+       else INT64, FP64 or FC64 (numpy 2's NEP 50 rule, on numpy 1 too, and
+       extended to sequences). An int out of an integer field's range raises
+       ``OverflowError``.
+     - ``v + 1`` is ``INT8[3]``, ``v * 2.5`` and ``v + (0.5, 1, 2)`` are
+       ``FP64[3]``, ``v + 300`` raises
+   * - ``eq`` and ``ne``
+     - Compare the values as given and return ``BOOL``.
+     - ``v == 300`` is ``False``
+   * - A literal that must become an element: beside a user-defined op, an
+       ``IndexUnaryOp`` thunk, an ``ewise_union`` default
+     - Its type by the rules above must fit the UDT: the UDT itself, or a
+       numpy value or ``Scalar`` that casts to it safely. A weak int does not
+       fit a bool field: write ``True`` or ``False``. A value that does not fit
+       but converts exactly, such as ``0`` for a bool field or ``2.0`` for an
+       int field, still converts with a ``DeprecationWarning`` and will raise
+       in a future version; any other raises ``ValueError``, and a float too
+       large for a float field raises ``OverflowError``.
+     - ``v.ewise_union(w, binary.plus, 0.5, 0)`` raises
 
-The result is an operand's UDT when that type holds it, on either side.
-Otherwise it is the promoted type: for array UDTs, the structural type such as
-``FP64[3]``, and for records, the record with the same names and nesting and
-the promoted field dtypes, so ``{"x": INT64, "y": FP64}`` plus
-``{"x": FP64, "y": INT64}`` gives ``{"x": FP64, "y": FP64}``. That is the UDT
-registered with that layout if there is one, else an anonymous UDT. ``eq`` and
-``ne`` compare the values and return ``BOOL``.
+A Monoid used element-wise (``apply``, ``ewise_mult``, ``ewise_union``) uses
+its BinaryOp, for literals and for two different UDTs. ``min``, ``max`` and ``floordiv`` reject UDTs
+with a complex field; use a custom op for those.
 
-A result stored in an object of another UDT type is cast to that type, as
-GraphBLAS casts built-in dtypes when it stores a result: the object's type is
-the request. GraphBLAS cannot cast a UDT itself, so python-graphblas casts each
-element or record leaf the way GraphBLAS casts that pair of built-in dtypes.
-Integers wrap; a float stored as an integer is truncated toward zero, saturates
-at the integer type's bounds, and is 0 if NaN; a complex number loses its
-imaginary part; and anything nonzero is ``True``. So
-``int_udt_vec << int_udt_vec + 0.5``, ``int_udt_vec += 0.5`` and
-``(int_udt_vec + 0.5).new(dtype=int_udt)`` truncate, as they do for an ``INT8``
-vector, and so does assigning, accumulating or masking into an object of
-another UDT type. The two types must correspond as the operands of a lifted op
-must, above (same field names and nesting, same shapes). numpy also casts
-records by position whatever their names, and arrays to another length, but
-those raise ``DomainMismatch`` here, as does storing a UDT result in an object
-of a built-in dtype or the reverse. The cast is an extra pass over the result,
-which is first computed in its own type. ``ewise_add`` has a related limit:
-GraphBLAS casts a value that has no partner to the op's output type, so it
-takes UDT operands only when both have the result's type. With a lifted
-arithmetic op, it converts each operand to the result type first, which changes
-no value, and applies the op there. So ``v + w`` and
-``v.ewise_add(w, binary.max)`` work for two UDTs of different types, and
-``truediv`` works on an integer UDT. With any other op it raises
-``DomainMismatch``; use ``ewise_union`` with a default for each side instead.
+Each element, including each element of an array field, is computed as the
+built-in op computes it, and the Numba cfunc and a C JIT kernel give the same
+bits: ``min`` and ``max`` ignore NaN (C's ``fmin`` and ``fmax``) and resolve a
+tie between ``-0.0`` and ``0.0`` to ``-0.0`` for ``min`` and ``0.0`` for
+``max``, ``floordiv`` is numpy's, with 0 for an integer divided by zero, and
+``truediv`` is numpy's (Smith's method for complex numbers), with numpy's
+infinities for a zero divisor. A few edge cases can differ from built-in
+vectors, where the UDT gives numpy's answer: ``INT64_MIN // -1`` is
+``INT64_MIN`` (an ``INT64`` vector gives 0), a complex product or quotient with
+an infinite or NaN part, a complex quotient with a ``-0.0`` divisor, and the
+signed-zero tie, which SuiteSparse's built-in ``min`` leaves to the C library.
+
+Storing results
+~~~~~~~~~~~~~~~
+
+GraphBLAS casts built-in dtypes when it stores a result, but it cannot cast a
+UDT, so python-graphblas does it, without ever making a temporary copy of the
+data.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 60
+
+   * - Store
+     - What happens
+   * - Into an object of another UDT type of the same layout: records that
+       pair as operands do, or arrays of the same shape apart from leading
+       axes of length 1
+     - Each field or element is cast as GraphBLAS casts that pair of built-in
+       dtypes: integers wrap; a float stored as an integer truncates toward
+       zero, saturates at the bounds, and is 0 if NaN; a complex number loses
+       its imaginary part; anything nonzero is ``True``.
+   * - ...from an existing object: ``w << v``, ``v.dup(dtype=...)``, with a
+       mask, an accumulator or ``replace``
+     - One pass through a cast op.
+   * - ...from an element-wise lifted op: ``apply``, ``ewise_mult``,
+       ``ewise_union``, and infix operators that use them
+     - The op writes the object's type itself, in the same call:
+       ``int_udt_vec += 0.5`` truncates, as it does for an ``INT8`` vector.
+   * - ...from anything else: ``mxm``, ``reduce`` into a Vector, ``ewise_add``,
+       a user-defined op, or a whole Vector or Matrix assigned into part of an
+       object
+     - ``DomainMismatch``: this would need a converted copy of the whole
+       result. Make it explicitly: compute the result, then store it
+       (``w << expr.new()``); to assign, convert the value with
+       ``.dup(dtype=...)`` first.
+   * - ...from a ``Scalar`` or one element
+     - Computed in its own type, then cast.
+   * - Between a UDT and a built-in dtype, or layouts that do not correspond
+     - ``DomainMismatch``.
+
+For the same reason, ``ewise_add`` on Vectors and Matrices raises
+``DomainMismatch`` when an operand's type differs from the result's, as for two
+different UDTs or ``truediv`` on an integer UDT: it would copy a value that has
+no partner into the result type. ``ewise_union`` and ``ewise_mult`` work. Infix
+``+`` on two such operands takes the union instead, with each operand's zero for
+a missing value, as ``-`` takes 0. That zero is ``-0.0`` in a float field, so an
+entry of one operand alone keeps its value, as ``ewise_add`` would copy it;
+only a ``-0.0`` beside an integer field of the other operand becomes ``0.0``. A
+Scalar is one element, so ``ewise_add`` converts its operands to the result type
+instead.
+
+.. code-block:: python
+
+    v = Vector(int8x3, size=2)          # an INT8[3] UDT
+    f = Vector(fp32x3, size=2)          # an FP32[3] UDT
+    (v * 2.5).new()                     # FP64[3]: the literal is weak, 2.5 needs FP64
+    (v * f).new()                       # FP32[3], as INT8 times FP32
+    v += 1                              # stays INT8[3]
+    v << v * 2.5                        # computes in FP64, stores as INT8 (truncates)
+    (v + f).new()                       # FP32[3], by ewise_union; v.ewise_add(f) raises
 
 Composite aggregators (``agg.hypot``, ``agg.L1norm``, ``agg.Linfnorm``,
 ``agg.sum_of_squares``, ``agg.sum_of_inverses``) do *not* auto-lift to UDTs;

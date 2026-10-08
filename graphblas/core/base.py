@@ -162,12 +162,6 @@ def _expect_op(self, op, values, *, within, **kwargs):
         raise TypeError(message) from None
 
 
-# Whether a UDT result may be stored in an object of another UDT type, cast
-# element by element as GraphBLAS casts built-in types. False makes every
-# store that would need a UDT cast raise DomainMismatch.
-_udt_store_casts = True
-
-
 def _store_cast_op(result_dtype, output_dtype):
     """Return the UnaryOp that converts a result for an object of ``output_dtype``, or ``None``.
 
@@ -186,14 +180,14 @@ def _store_cast_op(result_dtype, output_dtype):
     from . import _has_numba
 
     reason = "UDTs do not cast"
-    if _udt_store_casts and _has_numba and result_dtype._is_udt and output_dtype._is_udt:
+    if _has_numba and result_dtype._is_udt and output_dtype._is_udt:
         from .operator.udt_utils import _udt_cast_error
 
         if (reason := _udt_cast_error(result_dtype, output_dtype)) is None:
             from .operator.unary import _udt_cast_op
 
             return _udt_cast_op(result_dtype, output_dtype)
-    elif _udt_store_casts and _has_numba:
+    elif _has_numba:
         reason = "a UDT casts only to another UDT"
     from ..exceptions import DomainMismatch
 
@@ -202,6 +196,47 @@ def _store_cast_op(result_dtype, output_dtype):
         f"{output_dtype}: {reason}. Use .new() for an object of the result's type, or "
         "compute the result in the type you want to store."
     )
+
+
+def _fused_store_expr(expr, output_dtype):
+    """Return ``expr`` computing straight into ``output_dtype``, or raise ``DomainMismatch``.
+
+    A result of another UDT type is stored by the op that computes it, which
+    casts each element as it writes it (``udt_utils.fused_store_op``), so no
+    temporary of the result's own type is made: data GraphBLAS works on is
+    often too large to hold twice. That works for an element-wise
+    computation by a built-in op that lifts to UDTs (``apply``,
+    ``ewise_mult``, ``ewise_union``). ``ewise_add`` copies an entry present in
+    only one input without the op, and a semiring or reduction would add in
+    the narrower type, so those and any other computation raise.
+    """
+    import copy
+
+    from .operator.udt_utils import fused_store_op
+
+    op, cfunc_name = expr.op, expr.cfunc_name
+    if op is not None and op.opclass == "Monoid":
+        # Element-wise, a Monoid is its BinaryOp.
+        op, cfunc_name = op.binaryop, cfunc_name.replace("_Monoid", "_BinaryOp")
+    fused = None
+    if any(k in cfunc_name for k in ("_apply", "eWiseMult", "eWiseUnion")):
+        fused = fused_store_op(op, output_dtype)
+    if fused is None:
+        from ..exceptions import DomainMismatch
+
+        method = "extraction" if expr.method_name == "__getitem__" else expr.method_name
+        what = method if op is None else f"{method} with {op.name}"
+        raise DomainMismatch(
+            f"cannot store a result of type {expr.dtype} in an object of type "
+            f"{output_dtype}: GraphBLAS cannot cast a UDT, and only a built-in op that lifts "
+            "to UDTs, in apply, ewise_mult or ewise_union, can write another type as it "
+            f"computes ({what} cannot), so this would need a temporary copy of the whole "
+            "result. Make it explicitly by storing the computed result, as in "
+            "`obj << expr.new()`, which casts it in one more pass."
+        )
+    rv = copy.copy(expr)
+    rv.op, rv.cfunc_name, rv.dtype = fused, cfunc_name, output_dtype
+    return rv
 
 
 def _scalar_accum_op(scalar, accum):
@@ -456,16 +491,20 @@ class BaseType:
                 from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
                 if type(expr) is TransposedMatrix and type(self) is Matrix:
-                    # Transpose (C << A.T)
-                    expr = MatrixExpression(
-                        "transpose",
-                        "GrB_transpose",
-                        [expr],
-                        expr_repr="{0}",
-                        dtype=expr.dtype,
-                        nrows=expr._nrows,
-                        ncols=expr._ncols,
-                    )
+                    if (cast_op := _store_cast_op(expr.dtype, self.dtype)) is not None:
+                        # C << A.T of another UDT type: the cast reads A transposed.
+                        expr = expr.apply(cast_op)
+                    else:
+                        # Transpose (C << A.T)
+                        expr = MatrixExpression(
+                            "transpose",
+                            "GrB_transpose",
+                            [expr],
+                            expr_repr="{0}",
+                            dtype=expr.dtype,
+                            nrows=expr._nrows,
+                            ncols=expr._ncols,
+                        )
                 elif isinstance(expr, InfixExprBase):
                     # w << (v & v)
                     expr = expr._to_expr()
@@ -508,15 +547,16 @@ class BaseType:
         # hands GraphBLAS the output as it is: agg.first on another UDT read its
         # bytes as this object's type.
         if (cast_op := _store_cast_op(expr.dtype, self.dtype)) is not None:
-            # Compute in the result's type, then cast as the result is stored,
-            # so the mask, accumulator and replace apply to the cast values.
-            # Masking the temporary too only skips values the store drops.
             if self._is_scalar:
+                # One element: compute it in its own type, then cast it as it is
+                # stored, so the accumulator applies to the cast value.
                 result = expr.new(name="s_result", **opts)
-            else:
-                result = expr.new(mask=mask, name="result", **opts)
-            self._update(result.apply(cast_op), mask, accum, replace, opts=opts)
-            return
+                self._update(result.apply(cast_op), mask, accum, replace, opts=opts)
+                return
+            if expr.cfunc_name is not None:
+                # A recipe (cfunc_name None) stores through ``<<`` itself, and
+                # each of its stores is checked there.
+                expr = _fused_store_expr(expr, self.dtype)
         if expr.op is not None and expr.op.opclass == "Aggregator":
             updater = self(mask=mask, accum=accum, replace=replace, **opts)
             expr.op._new(updater, expr)

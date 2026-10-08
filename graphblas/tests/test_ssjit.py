@@ -1104,41 +1104,182 @@ def test_floordiv_udt_jit_matches_python_semantics():
 
 
 @pytest.mark.skipif("not supports_udfs")
-def test_min_max_udt_jit_propagates_nan():
-    """``binary.min``/``max`` on a float UDT must propagate NaN like Python/numba.
+def test_min_max_udt_jit_ignores_nan_and_breaks_zero_ties():
+    """The C JIT kernel for ``binary.min`` on a float UDT answers as the cfunc does.
 
-    Regression: the JIT codegen used to emit ``(a < b ? a : b)``, which
-    silently swallows NaN to the right-hand side. Python ``min(a, b)`` (and
-    numba's ``min``) returns ``a`` when neither comparison is true (NaN
-    involved), so ``min(NaN, 1.0) == NaN`` and ``min(1.0, NaN) == 1.0``.
-    The fix swaps the ternary to ``(b < a ? b : a)``.
+    ``GrB_MIN_FP64`` is C99 ``fmin``, which ignores a NaN operand from either
+    side, and so does ``binary.min`` on a UDT field. C99 leaves the tie
+    between ``-0.0`` and ``0.0`` to the C library (glibc's x86-64 ``fmin``
+    returns an operand by position), so the kernel spells the comparison out,
+    as the cfunc does, rather than calling ``fmin``: a tie gives ``-0.0`` for
+    ``min`` and ``0.0`` for ``max`` on every platform. Earlier spellings
+    decided NaN by position, in opposite directions: ``(a < b ? a : b)``
+    dropped a NaN on the right, and ``(b < a ? b : a)`` one on the left.
+
+    Integer fields keep the plain comparison: they have no NaN or signed zero.
     """
-    if _IS_SSGB7:
-        pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
+    if not _has_jit_set:
+        pytest.skip("jit_c_source introspection requires SuiteSparse:GraphBLAS >= 9")
     _require_jit_on()
 
     # Field names unique to this test; see floordiv test for the cache rationale.
     udt = dtypes.register_anonymous(
-        np.dtype([("nan_a", np.float64), ("nan_b", np.float64)]), "_NanJitMM"
+        np.dtype([("nan_a", np.float64), ("nan_b", np.float32), ("nan_c", np.int32)]), "_NanJitMM"
     )
+    csrc = binary.min[udt].jit_c_source
+    assert "fmin" not in csrc, csrc
+    assert "signbit(x->nan_a)" in csrc, csrc
+    assert "signbit(x->nan_b)" in csrc, csrc
+    assert "((x->nan_c) < (y->nan_c) ? (x->nan_c) : (y->nan_c))" in csrc, csrc
+    assert "!signbit(x->nan_a)" in binary.max[udt].jit_c_source
+
     N = 100
     v = gb.Vector(udt, N)
     u = gb.Vector(udt, N)
     nan = float("nan")
     for i in range(N):
         # field nan_a: NaN on the left; field nan_b: NaN on the right at odd indices.
-        v[i] = (nan, 2.0 + i)
-        u[i] = (1.0 + i, nan if i % 2 else 3.0 + i)
+        v[i] = (nan, 2.0 + i, i)
+        u[i] = (1.0 + i, nan if i % 2 else 3.0 + i, 2 * i)
 
     w = v.ewise_mult(u, binary.min).new()
-    assert np.isnan(w[0].new().value[0])  # min(NaN, 1.0) -> NaN
-    assert w[1].new().value[1] == 3.0  # min(3.0, NaN) -> 3.0 (NaN swallowed)
+    assert w[0].new().value[0] == 1.0  # min(NaN, 1.0) -> 1.0
+    assert w[1].new().value[1] == 3.0  # min(3.0, NaN) -> 3.0
     assert w[2].new().value[1] == 4.0  # min(4.0, 5.0) -> 4.0 (normal case)
+    assert w[3].new().value[2] == 3  # integer field is unaffected
 
     w = v.ewise_mult(u, binary.max).new()
-    assert np.isnan(w[0].new().value[0])  # max(NaN, 1.0) -> NaN
-    assert w[1].new().value[1] == 3.0  # max(3.0, NaN) -> 3.0 (NaN swallowed)
+    assert w[0].new().value[0] == 1.0  # max(NaN, 1.0) -> 1.0
+    assert w[1].new().value[1] == 3.0  # max(3.0, NaN) -> 3.0
     assert w[2].new().value[1] == 5.0  # max(4.0, 5.0) -> 5.0 (normal case)
+    assert w[3].new().value[2] == 6  # integer field is unaffected
+
+    # Both operands NaN is the one case where a NaN survives, for min and max
+    # alike, and it is the only case ``fmin`` has no non-NaN answer for.
+    nan_only = gb.Vector(udt, N)
+    for i in range(N):
+        nan_only[i] = (nan, np.float32(i), i)
+    w = nan_only.ewise_mult(nan_only, binary.min).new()
+    assert np.isnan(w[0].new().value[0])
+
+    # Signed-zero ties, in both orders and both fields, on the C kernel and the cfunc.
+    left = gb.Vector(udt, N)
+    right = gb.Vector(udt, N)
+    for i in range(N):
+        a, b = (-0.0, 0.0) if i % 2 else (0.0, -0.0)
+        left[i] = (a, a, i)
+        right[i] = (b, b, i)
+    for mode in ["on", "off"]:
+        with _jit_mode(mode):
+            lo = left.ewise_mult(right, binary.min).new()
+            hi = left.ewise_mult(right, binary.max).new()
+        for i in range(2):
+            assert np.signbit(lo[i].new().value[0]), mode
+            assert np.signbit(lo[i].new().value[1]), mode
+            assert not np.signbit(hi[i].new().value[0]), mode
+            assert not np.signbit(hi[i].new().value[1]), mode
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_complex_truediv_udt_jit_matches_cfunc_at_extremes():
+    """Complex division in the C JIT kernel is the cfunc's, bit for bit, at any magnitude.
+
+    SuiteSparse compiles C JIT kernels with ``-fcx-limited-range`` under GCC,
+    which turns C's ``_Complex`` division into the naive formula: complex64
+    ``1e20 / 1e20`` came out ``nan`` and ``(1+1j) / (1e160+1e160j)`` came out
+    ``0`` on Linux. The kernel divides with real arithmetic instead, by the
+    algorithm Numba (and CPython) use, so no flag changes it.
+    """
+    if not _has_jit_set:
+        pytest.skip("jit_c_source introspection requires SuiteSparse:GraphBLAS >= 9")
+    _require_jit_on()
+    if numba is None:
+        pytest.skip("numba required for the cfunc baseline")
+
+    udt = dtypes.register_anonymous(
+        np.dtype([("cxd_s", np.complex64), ("cxd_d", np.complex128)], align=True), "_CxDivJit"
+    )
+    csrc = binary.truediv[udt].jit_c_source
+    assert "crealf" in csrc, csrc
+    assert "(x->cxd_d) / (y->cxd_d)" not in csrc, csrc
+    # (complex64 pair, complex128 pair); the first four are finite and the C
+    # library's division got them wrong under the limited-range flag.
+    pairs = [
+        ((1e20, 1e20), (1e200, 1e200)),
+        ((1e-25 + 1e-25j, 1e-25), (1e200 + 1e200j, 1e200 + 1e200j)),
+        ((1 + 1j, 1e30 + 1e30j), (1 + 1j, 1e160 + 1e160j)),
+        ((3e30 + 4e30j, 1e30 - 2e30j), (1e-170, 1e-170 + 1e-170j)),
+        ((0j, -2 + 0.5j), (0j, -2 + 0.5j)),
+        ((-2 + 0.5j, -2 + 0.5j), (-2 + 0.5j, -2 + 0.5j)),
+        ((3 + 4j, complex(0.0, -0.0)), (3 + 4j, complex(0.0, -0.0))),
+        ((complex(np.inf, np.nan), 1 + 1j), (complex(np.inf, np.nan), 1 + 1j)),
+    ]
+    N = 64
+    v = gb.Vector(udt, N)
+    u = gb.Vector(udt, N)
+    for i in range(N):
+        (a_s, b_s), (a_d, b_d) = pairs[i % len(pairs)]
+        v[i] = (a_s, a_d)
+        u[i] = (b_s, b_d)
+    with _jit_mode("on"):
+        jit = v.ewise_mult(u, binary.truediv).new()
+    with _jit_mode("off"):
+        cfunc = v.ewise_mult(u, binary.truediv).new()
+    assert jit.to_dense().tobytes() == cfunc.to_dense().tobytes()
+    result = jit.to_dense()
+    for i, ((a_s, b_s), (a_d, b_d)) in enumerate(pairs[:4]):
+        assert np.isclose(result[i]["cxd_s"], np.complex64(a_s) / np.complex64(b_s), rtol=1e-6)
+        assert np.isclose(result[i]["cxd_d"], np.complex128(a_d) / np.complex128(b_d), rtol=1e-15)
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_complex_times_udt_jit_matches_cfunc_with_infinities():
+    """Complex multiplication in the C JIT kernel is the cfunc's, bit for bit.
+
+    Numba and numpy multiply by the textbook formula; clang's ``_Complex``
+    multiply adds C99 Annex G's recovery, so ``1j * (inf+infj)`` came out
+    ``-inf+infj`` from a C kernel on macOS and ``nan+nanj`` from the cfunc
+    (GCC's ``-fcx-limited-range`` drops the recovery, so Linux agreed). The
+    kernel multiplies with real arithmetic instead, for record fields and
+    array elements alike.
+    """
+    if not _has_jit_set:
+        pytest.skip("jit_c_source introspection requires SuiteSparse:GraphBLAS >= 9")
+    _require_jit_on()
+    if numba is None:
+        pytest.skip("numba required for the cfunc baseline")
+
+    rec = dtypes.register_anonymous(
+        np.dtype([("cxt_s", np.complex64), ("cxt_d", np.complex128)], align=True), "_CxTimesJit"
+    )
+    arr = dtypes.register_anonymous(np.dtype((np.complex128, (2,))), "_CxTimesJitArr")
+    assert "(x->cxt_d) * (y->cxt_d)" not in binary.times[rec].jit_c_source
+    inf, nan = np.inf, np.nan
+    pairs = [
+        (1j, complex(inf, inf)),
+        (-2.5j, complex(inf, -inf)),
+        (complex(inf, 0.0), complex(0.0, 1.0)),
+        (complex(nan, inf), 2 + 1j),
+        (complex(1e30, 1e30), complex(1e30, -1e30)),
+        (3 + 4j, -1.5 + 0.25j),
+        (complex(-0.0, 0.0), complex(0.0, -0.0)),
+    ]
+    N = 3 * len(pairs)
+    for udt, element in [(rec, lambda z: (z, z)), (arr, lambda z: [z, -z])]:
+        v = gb.Vector(udt, N)
+        u = gb.Vector(udt, N)
+        for i in range(N):
+            a, b = pairs[i % len(pairs)]
+            v[i] = element(a)
+            u[i] = element(b)
+        with _jit_mode("on"):
+            jit = v.ewise_mult(u, binary.times).new()
+        with _jit_mode("off"):
+            cfunc = v.ewise_mult(u, binary.times).new()
+        assert jit.to_dense().tobytes() == cfunc.to_dense().tobytes()
+    result = jit[0].new().value  # 1j * (inf+infj), numpy's nan+nanj
+    assert np.isnan(result[0].real)
+    assert np.isnan(result[0].imag)
 
 
 @pytest.mark.skipif("not supports_udfs")

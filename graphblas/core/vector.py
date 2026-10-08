@@ -28,8 +28,8 @@ from .scalar import (
     _cast_for_store,
     _check_literal_fits,
     _check_scalar_fits,
-    _ewise_add_converts_operands,
-    _ewise_add_in_result_type,
+    _ewise_add_cast_error,
+    _ewise_add_needs_cast,
     _literal_dtype,
     _scalar_index,
 )
@@ -599,7 +599,11 @@ class Vector(BaseType):
                 dtype = self.dtype
             rv = Vector(dtype, size=self._size, name=name)
             if not clear:
-                rv(mask=mask, **opts)[...] = self
+                if rv.dtype._is_udt or self.dtype._is_udt:
+                    # ``<<``, not assign: a UDT of another type casts in one pass.
+                    rv(mask=mask, **opts) << self
+                else:
+                    rv(mask=mask, **opts)[...] = self
         else:
             if opts:
                 # Ignore opts for now
@@ -1040,20 +1044,13 @@ class Vector(BaseType):
                 f"to columns of Matrix in {method_name}.  Matrix.nrows (={other._nrows}) "
                 f"must equal Vector.size (={self._size})."
             )
-        if _ewise_add_converts_operands(op, self.dtype, other.dtype):
-            # GraphBLAS casts an unpaired entry to the result type, which a UDT
-            # cannot be. Convert both operands to the result type first and
-            # apply the op in that one type: an int8 UDT plus a float32 one is
-            # float32, with every entry of either side.
-            args = [self, other, _ewise_add_in_result_type, (self, other, op)]
-            if other.ndim == 2:
-                return MatrixExpression(
-                    method_name, None, args, nrows=other._nrows, ncols=other._ncols, op=op
+        if _ewise_add_needs_cast(op, self.dtype, other.dtype):
+            # GraphBLAS would report the UDT cast before the sizes.
+            if other.ndim == 1 and self._size != other._size:
+                raise DimensionMismatch(
+                    f"Vector sizes must match in {method_name}: {self._size} and {other._size}"
                 )
-            expr = VectorExpression(method_name, None, args, op=op)
-            if self._size != other._size:
-                expr.new(name="")  # incompatible shape; raise now
-            return expr
+            raise _ewise_add_cast_error(op, self.dtype, other.dtype)
 
         if other.ndim == 2:
             return MatrixExpression(
@@ -1228,8 +1225,7 @@ class Vector(BaseType):
         left_dtype = temp_op.type
         dtype = left_dtype if left_dtype._is_udt else None
         if type(left_default) is not Scalar:
-            if dtype is not None:
-                _check_literal_fits(dtype, left_default)
+            _check_literal_fits(dtype, left_default)
             try:
                 left = Scalar.from_value(
                     left_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
@@ -1249,8 +1245,7 @@ class Vector(BaseType):
         right_dtype = temp_op.type2
         dtype = right_dtype if right_dtype._is_udt else None
         if type(right_default) is not Scalar:
-            if dtype is not None:
-                _check_literal_fits(dtype, right_default)
+            _check_literal_fits(dtype, right_default)
             try:
                 right = Scalar.from_value(
                     right_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
@@ -1626,7 +1621,8 @@ class Vector(BaseType):
         if thunk is None:
             thunk = False  # most basic form of 0 when unifying dtypes
         if type(thunk) is not Scalar:
-            dtype = self.dtype if (self.dtype._is_udt and not op.is_positional) else None
+            # A thunk beside a UDT becomes an element of it, so it must fit, as in apply.
+            dtype = _literal_dtype(self.dtype, thunk, op)
             try:
                 thunk = Scalar.from_value(thunk, dtype, is_cscalar=None, name="")
             except TypeError:
@@ -1875,6 +1871,15 @@ class Vector(BaseType):
             dtype = self.dtype
         else:
             dtype = lookup_dtype(dtype)
+        if dtype is not self.dtype and (dtype._is_udt or self.dtype._is_udt):
+            # GraphBLAS copies a UDT element as raw bytes of this vector's type,
+            # past the end of a smaller one, so extract it in this type and cast
+            # it as a store does (or raise).
+            value = self._extract_element(resolved_indexes, None, opts, is_cscalar=is_cscalar)
+            if result is None:
+                result = Scalar(dtype, is_cscalar=is_cscalar, name=name)
+            result << value
+            return result
         idx = resolved_indexes.indices[0]
         if result is None:
             result = Scalar(dtype, is_cscalar=is_cscalar, name=name)
@@ -1905,8 +1910,6 @@ class Vector(BaseType):
 
     def _assign_element(self, resolved_indexes, value):
         idx = resolved_indexes.indices[0]
-        if type(value) is Scalar:
-            value = _cast_for_store(value, self.dtype)
         if type(value) is not Scalar:
             dtype = self.dtype if self.dtype._is_udt else None
             try:
@@ -1919,6 +1922,10 @@ class Vector(BaseType):
                     argname="value",
                     extra_message="Literal scalars also accepted.",
                 )
+        if value.dtype._is_udt or self.dtype._is_udt:
+            # After the conversion: an autocomputed element of another UDT type
+            # arrives here as a Scalar too.
+            value = _cast_for_store(value, self.dtype)
         if value._is_cscalar:
             if value._empty:
                 call("GrB_Vector_removeElement", [self, idx.index])

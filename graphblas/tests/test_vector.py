@@ -2097,11 +2097,12 @@ def test_udt():
     assert s == t
     t = v.reduce(monoid.any, allow_empty=False).new()
     assert s == t
-    v << binary.first(1, v)
+    # A literal fills every field by type; an int does not fit the bool field, True does.
+    v << binary.first(True, v)
     assert v.isequal(ones)
     v << binary.first(s, v)
     assert v.isequal(zeros)
-    v << binary.second(v, (1, 1))
+    v << binary.second(v, (True, 1))
     assert v.isequal(ones)
     v << binary.second(v, s)
     assert v.isequal(zeros)

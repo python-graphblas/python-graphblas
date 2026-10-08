@@ -99,12 +99,8 @@ if _has_numba:
             shape_y = None if y_is_scalar else dtype2.np_type.subdtype[1]
             shape = np.broadcast_shapes(*(s for s in (shape_x, shape_y) if s is not None))
             N = reduce(mul, shape)
-            x_ptr_type = nt.CPointer(
-                numba.from_dtype(dtype.np_type if x_is_scalar else info_x[1][0])
-            )
-            y_ptr_type = nt.CPointer(
-                numba.from_dtype(dtype2.np_type if y_is_scalar else info_y[1][0])
-            )
+            x_ptr_type = nt.CPointer(numba.from_dtype(dtype.np_type.base))
+            y_ptr_type = nt.CPointer(numba.from_dtype(dtype2.np_type.base))
             wrapper_sig = nt.void(nt.CPointer(INT8.numba_type), x_ptr_type, y_ptr_type)
             ns = {}
             x_setup, x_ref = _array_operand_source("x", shape_x, shape, ns)
