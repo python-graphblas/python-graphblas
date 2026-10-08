@@ -1266,8 +1266,8 @@ def test_udt():
     result = v.apply(_udt_index, (False, 3)).new()
     expected = Vector.from_coo([0, 1, 2], [3, -3, -3])
     assert result.isequal(expected)
-    # A number fills every field, and 3 in the bool field would be True.
-    with pytest.raises(ValueError, match="would change 3 to True"):
+    # A number fills every field, and an int is not a bool: 3 does not fit.
+    with pytest.raises(ValueError, match="3 does not fit"):
         v.apply(_udt_index, 3)
 
     def _udt_first(x, y):
@@ -1277,7 +1277,11 @@ def test_udt():
     assert udt in udt_first
     assert operator.get_typed_op(udt_first, udt) is udt_first[udt]
     assert udt_first(v & w).new().isequal(v)
-    assert udt_first(v, 1).new().isequal(v)
+    # A literal fills every field, by type: an int does not fit the bool field,
+    # True does. 1 still converts, being exact, but that is deprecated.
+    assert udt_first(v, True).new().isequal(v)
+    with pytest.warns(DeprecationWarning, match="1 does not fit TestUDT"):
+        assert udt_first(v, 1).new().isequal(v)
     assert udt_first[udt, dtypes.INT64].return_type == udt
     assert udt_first[dtypes.INT64, udt].return_type == dtypes.INT64
     assert udt_first[udt, dtypes.BOOL].return_type == udt
@@ -1354,10 +1358,11 @@ def test_udt():
     sel = SelectOp.register_anonymous(_this_or_that, is_udt=True)
     sel[udt]
     assert udt in sel
-    result = v.select(sel, 0).new()
+    # The thunk becomes an element of the record, whose bool field takes False, not 0.
+    result = v.select(sel, False).new()
     assert result.nvals == 0
     assert result.dtype == v.dtype
-    result = w.select(sel, 0).new()
+    result = w.select(sel, False).new()
     assert result.nvals == 3
     assert result.isequal(w)
 
@@ -1427,6 +1432,435 @@ def test_select_op_outlives_source_indexunary():
     gc.collect()
     v = Vector.from_coo([0, 1, 2], [1, 5, 9])
     assert v.select(sel, 5).new().isequal(Vector.from_coo([0, 2], [1, 9], size=3))
+
+
+_jit_can_compile_cache = []
+
+
+def _jit_can_compile():
+    """True when SuiteSparse has a C compiler it can actually use.
+
+    Without one it falls back to the Numba cfunc and says nothing, so the
+    ``jit`` parameter would run the cfunc and report a pass.
+
+    ``jit_compiler_is_usable`` alone is not enough: it only checks that the
+    configured compiler path exists on disk, and a runner can have the file
+    yet fail every compile (broken toolchain, missing headers).
+    ``_enable_jit_for_udt`` is the same call the UDT auto-lift path makes,
+    and it does a real compile once per process, so its answer is the
+    honest one here; ``test_ssjit`` keys its skips on the same signal. The
+    fixture calls this before it mutates the control, and the cache keeps
+    later per-test mutations from flipping it.
+    """
+    if not _jit_can_compile_cache:
+        from graphblas.core.ss.jit_config import _enable_jit_for_udt
+
+        _jit_can_compile_cache.append(gb.ss.jit_compiler_is_usable() and _enable_jit_for_udt())
+    return _jit_can_compile_cache[0]
+
+
+@pytest.fixture(params=["jit", "cfunc"])
+def udt_op_path(request):
+    """Pin SuiteSparse to one execution path for built-in UDT operators.
+
+    Each auto-lifted UDT op carries both a C JIT definition and a Numba
+    cfunc, and SuiteSparse chooses between them per call depending on
+    whether a C compiler is available. A machine with one and a machine
+    without therefore run different code, so results have to hold on both.
+    """
+    path = request.param
+    if backend != "suitesparse" or "jit_c_control" not in gb.ss.config:
+        if path == "jit":
+            pytest.skip("no SuiteSparse C JIT on this backend")
+        yield path
+        return
+    previous = gb.ss.config["jit_c_control"]
+    if path == "jit":
+        if not _jit_can_compile():
+            pytest.skip("C JIT compilation not available (probe failed or compiler missing)")
+        # Set it rather than assume it. SuiteSparse demotes ``on`` to ``load``
+        # after a failed compile, and a demoted control routes to the cfunc
+        # silently, so this parameter would pass while running the other path.
+        gb.ss.config["jit_c_control"] = "on"
+    else:
+        gb.ss.config["jit_c_control"] = "off"
+    try:
+        yield path
+    finally:
+        # Read before restoring: a demotion during the test is the signal that
+        # the kernel never compiled, which no assertion in the test can see.
+        demoted = path == "jit" and gb.ss.config["jit_c_control"] != "on"
+        gb.ss.config["jit_c_control"] = previous
+        if demoted:
+            pytest.fail("SuiteSparse demoted jit_c_control; the JIT path did not run")
+
+
+def _udt_vectors(udt, xs, ys=None):
+    """Build one or two dense UDT vectors whose leaves all hold the given values.
+
+    Values that repeat down the whole vector make it iso-valued, and
+    SuiteSparse answers those from a single element without reaching for a
+    C JIT kernel, so callers pass varied data.
+    """
+    names = udt.np_type.names
+    out = []
+    for vals in (xs, ys):
+        if vals is None:
+            continue
+        v = Vector(udt, size=len(vals))
+        for i, val in enumerate(vals):
+            v[i] = tuple(val for _ in names) if names else np.full(udt.np_type.subdtype[1], val)
+        out.append(v)
+    return out
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_mixed_record_dtypes_use_each_operands_own_dtype(udt_op_path):
+    """Two records sharing field names but not field types promote to the wider one.
+
+    ``_check_udt_pair`` matches record operands on field names only, so their
+    leaf dtypes can differ. Offering the return-type resolver just the left
+    operand left it no choice but that record, so an int record over a float
+    record came back as the int record: ``7 / 2.0`` landed as 3 and ``6 / 0.0``
+    as INT64_MAX. Swapping the operands changed the answer for the same pair.
+    """
+    int_udt = dtypes.register_anonymous(np.dtype([("mxd_a", np.int64)], align=True), "_MixedRecInt")
+    float_udt = dtypes.register_anonymous(
+        np.dtype([("mxd_a", np.float64)], align=True), "_MixedRecFloat"
+    )
+    v = Vector(int_udt, size=2)
+    v[0] = (6,)
+    v[1] = (7,)
+    w = Vector(float_udt, size=2)
+    w[0] = (0.0,)
+    w[1] = (2.0,)
+
+    result = v.ewise_mult(w, binary.truediv).new()
+    assert result.dtype == float_udt, "result should promote to the float record"
+    assert result[0].new().value["mxd_a"] == float("inf")
+    assert result[1].new().value["mxd_a"] == 3.5
+
+    # The same pair the other way round must agree, which it did not when the
+    # resolver only ever saw the left operand.
+    swapped = w.ewise_mult(v, binary.truediv).new()
+    assert swapped.dtype == float_udt
+    assert swapped[1].new().value["mxd_a"] == 2.0 / 7.0
+
+
+def _bitwise_eq(got, want):
+    """Compare two floats by bit pattern, treating any two NaNs as equal.
+
+    Bit patterns rather than ``==`` because ``-0.0 == 0.0``, and the sign of
+    a zero is exactly what a min/max tie-break decides. NaNs are exempted
+    because ``fmin`` may hand back either operand's NaN payload.
+    """
+    if np.isnan(got) and np.isnan(want):
+        return True
+    return got.tobytes() == want.tobytes()
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+@pytest.mark.parametrize("np_dtype", [np.float64, np.float32])
+def test_udt_min_max_answer_what_the_builtin_dtype_answers(udt_op_path, np_dtype):
+    """``binary.min[udt]`` must give what ``binary.min[FP64]`` gives, bit for bit.
+
+    An operator that means one thing on FP64 and another on a record of
+    FP64 is not one operator. SuiteSparse's ``GrB_MIN_FP64`` is C99 ``fmin``,
+    so that is what the UDT kernels have to be, and this compares them
+    directly against the built-in rather than against a convention chosen on
+    the Python side. The grid is every ordered pair drawn from NaN, both
+    infinities, both zeros and two ordinary values, so it covers a NaN on
+    either side, two NaNs, and a signed-zero tie either way round.
+
+    The signed-zero tie itself is compared by value only. C99 leaves
+    ``fmin(-0.0, 0.0)`` unspecified and the built-in answers differently per
+    platform (left operand on macOS x86, right operand on Linux x86, IEEE
+    minNum on arm64 and Windows), so bit-for-bit agreement on that one pair
+    is not something any implementation can promise. Everything else,
+    including which zero a mixed zero/nonzero pair keeps, stays bit-exact.
+
+    What this catches, in the two spellings it replaces: Python's builtin
+    ``min``, which the generated code reached through the exec namespace,
+    ordered NaN by position, and ``np.fmin`` under Numba gets the NaN rule
+    right but keeps the left operand on a signed-zero tie, so it drifts from
+    the C JIT kernel on ``min(0.0, -0.0)``. Both execution paths are checked
+    because SuiteSparse picks between them without telling anyone.
+    """
+    nan, inf = float("nan"), float("inf")
+    values = [nan, inf, -inf, -0.0, 0.0, 1.5, -2.5]
+    xs = [x for x in values for _ in values]
+    ys = list(values) * len(values)
+
+    udt = dtypes.register_anonymous(
+        np.dtype([("mmb_a", np_dtype)], align=True), f"_MinMaxBuiltin{np.dtype(np_dtype).name}"
+    )
+    v, w = _udt_vectors(udt, xs, ys)
+    ref_v = Vector.from_dense(np.array(xs, dtype=np_dtype))
+    ref_w = Vector.from_dense(np.array(ys, dtype=np_dtype))
+
+    for gb_op in (binary.min, binary.max):
+        expected = gb_op(ref_v & ref_w).new().to_dense()
+        result = gb_op(v & w).new()
+        for i, (x, y) in enumerate(zip(xs, ys, strict=True)):
+            got = result[i].new().value[0]
+            if x == 0 and y == 0 and np.signbit(x) != np.signbit(y):
+                # The one unspecified cell of the grid: either signed zero is
+                # a correct answer from either implementation, so only agree
+                # that both produced a zero.
+                msg = (
+                    f"{udt_op_path} {gb_op.name}({x}, {y}) on {udt.name}: "
+                    f"got {got!r}, built-in {np.dtype(np_dtype).name} gives {expected[i]!r}"
+                )
+                assert got == 0, msg
+                assert expected[i] == 0, msg
+                continue
+            assert _bitwise_eq(got, expected[i]), (
+                f"{udt_op_path} {gb_op.name}({x}, {y}) on {udt.name}: "
+                f"got {got!r}, built-in {np.dtype(np_dtype).name} gives {expected[i]!r}"
+            )
+
+    # A NaN anywhere in the input must not change where a reduce lands. Under
+    # the Python-builtin semantics this same multiset reduced to 1.0 or to nan
+    # depending on which index the NaN sat at.
+    for data in ([1.0, 2.0, 3.0, nan], [nan, 1.0, 2.0, 3.0], [1.0, nan, 3.0, 2.0]):
+        (u,) = _udt_vectors(udt, data)
+        assert u.reduce(monoid.min[udt]).new().value[0] == 1.0, f"{udt_op_path} {data}"
+        assert u.reduce(monoid.max[udt]).new().value[0] == 3.0, f"{udt_op_path} {data}"
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_truediv_divides_in_floating_point(udt_op_path):
+    """``binary.truediv`` on integer fields divides in float64 and keeps the quotient.
+
+    Regression: the C JIT kernel emitted C ``/``, which is integer division.
+    ``10**18 / 3`` came out as 333333333333333333 under the C JIT and
+    333333333333333312 (float64, like numpy) through the cfunc, so the same
+    program gave different answers depending on whether a C compiler was
+    installed. The result fields are now float64, as ``truediv`` on two INT64
+    vectors is FP64, so the quotient is not truncated either.
+    """
+    udt = dtypes.register_anonymous(
+        np.dtype([("tdv_i", np.int64), ("tdv_j", np.int64)], align=True), "_TrueDivIntUDT"
+    )
+    xs = [10**18, 10**18 + 1, 7, 22]
+    ys = [3, 3, 2, 7]
+    expected = np.array(xs, np.int64) / np.array(ys, np.int64)
+    v, w = _udt_vectors(udt, xs, ys)
+    result = binary.truediv(v & w).new()
+    assert [result.dtype.np_type[name] for name in ("tdv_i", "tdv_j")] == [np.dtype(np.float64)] * 2
+    got = [result[i].new().value[0] for i in range(len(xs))]
+    assert got == list(expected), udt_op_path
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_floordiv_matches_numpy_on_floats(udt_op_path):
+    """``binary.floordiv`` on float fields is not ``floor(a / b)``.
+
+    Regression: the C JIT kernel computed ``floor(a / b)``, which rounds
+    differently from the remainder-based algorithm numpy and CPython use and
+    treats infinities as ordinary values. ``1.0 // 0.1`` came out as 10.0
+    instead of 9.0, and ``inf // 2.0`` as ``inf`` instead of NaN, while the
+    cfunc agreed with numpy all along.
+    """
+    nan = float("nan")
+    inf = float("inf")
+    # ``floor(a / b)`` disagrees with numpy on the first four pairs: inf and
+    # -inf where numpy gives NaN, 10.0 rather than 9.0 for 1.0 // 0.1, and
+    # -0.0 rather than -1.0 for -2.0 // inf.
+    xs = [inf, -inf, 1.0, -2.0, 2.0, -2.0, 0.0, nan, -7.0, 7.0, -0.0, 7.5]
+    ys = [2.0, 2.0, 0.1, inf, 0.0, 0.0, 0.0, 2.0, 2.0, -2.0, 4.0, 2.5]
+    for np_dtype, name in ((np.float64, "_FloorDivF64UDT"), (np.float32, "_FloorDivF32UDT")):
+        udt = dtypes.register_anonymous(
+            np.dtype([("fdv_a", np_dtype), ("fdv_b", np_dtype)], align=True), name
+        )
+        with np.errstate(divide="ignore", invalid="ignore"):
+            expected = np.floor_divide(np.array(xs, np_dtype), np.array(ys, np_dtype))
+        v, w = _udt_vectors(udt, xs, ys)
+        result = binary.floordiv(v & w).new()
+        got = np.array([result[i].new().value[0] for i in range(len(xs))], np_dtype)
+        np.testing.assert_array_equal(got, expected, err_msg=f"{udt_op_path} {np_dtype.__name__}")
+        # ``assert_array_equal`` reads -0.0 and 0.0 as equal, so the sign of a
+        # zero quotient needs its own assertion. It is the whole job of the
+        # ``copysign`` branch the C JIT kernel emits for an exact-zero result.
+        np.testing.assert_array_equal(
+            np.signbit(got),
+            np.signbit(expected),
+            err_msg=f"{udt_op_path} {np_dtype.__name__} sign of zero",
+        )
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_integer_division_by_zero_is_defined(udt_op_path):
+    """Integer division by zero must return a value rather than trap.
+
+    The C JIT kernel divided in integers, where a zero divisor is undefined
+    behaviour: on x86-64 ``idiv`` raises #DE, which is SIGFPE and process
+    death rather than an exception. AArch64's ``sdiv`` returns 0 and does not
+    trap, so this cannot be exhibited on an arm64 machine. The same trap
+    fires on ``INT_MIN / -1``, whose quotient is not representable.
+
+    ``truediv`` now gives float64 fields, as on built-in integer vectors, so a
+    zero divisor gives an infinity there. ``floordiv`` stays in integers, where
+    the values are a choice: a zero divisor gives 0, as ``np.floor_divide``
+    does, and ``INT_MIN // -1`` wraps to ``INT_MIN``, as numpy does.
+    """
+    signed = dtypes.register_anonymous(
+        np.dtype([("dvz_a", np.int32), ("dvz_b", np.int8)], align=True), "_DivZeroSignedUDT"
+    )
+    unsigned = dtypes.register_anonymous(
+        np.dtype([("dvz_c", np.uint32), ("dvz_d", np.uint64)], align=True), "_DivZeroUnsignedUDT"
+    )
+    inf = float("inf")
+    v, w = _udt_vectors(signed, [7, -7, 100, -128], [0, 0, 3, -1])
+    result = binary.truediv(v & w).new()
+    got = [result[i].new().value[0] for i in range(4)]
+    assert got == [inf, -inf, 100 / 3, 128.0], udt_op_path
+    result = binary.floordiv(v & w).new()
+    got = [result[i].new().value[0] for i in range(4)]
+    assert got[:3] == [0, 0, 33], udt_op_path
+    # ``-128 // -1`` is the second trapping case; numpy wraps it to INT8_MIN.
+    result = binary.floordiv(v & w).new()
+    assert result[3].new().value[1] == np.iinfo(np.int8).min, udt_op_path
+
+    v, w = _udt_vectors(unsigned, [7, 9, 100, 5], [0, 0, 3, 2])
+    result = binary.truediv(v & w).new()
+    got = [result[i].new().value[0] for i in range(4)]
+    assert got == [inf, inf, 100 / 3, 2.5], udt_op_path
+    result = binary.floordiv(v & w).new()
+    got = [result[i].new().value[0] for i in range(4)]
+    assert got == [0, 0, 33, 2], udt_op_path
+
+    # Floor division still floors for signed operands of mixed sign.
+    v, w = _udt_vectors(signed, [-7, 7, -9, 11], [2, -2, 2, 3])
+    result = binary.floordiv(v & w).new()
+    got = [result[i].new().value[0] for i in range(4)]
+    assert got == [-4, -4, -5, 3], udt_op_path
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.skipif("not dtypes._supports_complex")
+def test_udt_complex_truediv_by_zero(udt_op_path):
+    """``binary.truediv`` on a complex field survives a zero divisor.
+
+    Numba's complex division raises ``ZeroDivisionError`` unconditionally,
+    outside the error model's control, so the cfunc left the element unwritten
+    while the C JIT kernel returned numpy's infinities. Reading back the
+    abandoned element gave uninitialized memory, or the previous element's
+    answer, either of which looks like a plausible value.
+    """
+    udt = dtypes.register_anonymous(
+        np.dtype([("cxz_a", np.complex128)], align=True), "_ComplexDivZeroUDT"
+    )
+    xs = [3 + 4j, 0j, 1 + 1j, 2 - 2j]
+    ys = [0j, 0j, 2 + 0j, 0j]
+    v, w = _udt_vectors(udt, xs, ys)
+    result = binary.truediv(v & w).new()
+    got = np.array([result[i].new().value[0] for i in range(len(xs))])
+    with np.errstate(divide="ignore", invalid="ignore"):
+        expected = np.array(xs) / np.array(ys)
+    np.testing.assert_array_equal(got, expected, err_msg=udt_op_path)
+
+
+@pytest.mark.skipif("not supports_udfs")
+# 136-byte UDT, which SS < 9 rejects; see test_udt_large_array.
+@pytest.mark.skipif(
+    "ss_version_major < 9",
+    reason="SuiteSparse < 9 rejects a 136-byte UDT on builds without VLA support",
+)
+def test_udt_float_truediv_by_zero_is_infinite(udt_op_path):
+    """A zero divisor on a float field gives numpy's infinity, not a lost element.
+
+    Unlike the integer case, nothing here is guarded: the generated code
+    divides and lets IEEE produce the infinity. That only holds because the
+    generated wrapper is compiled under Numba's numpy error model, which
+    nothing else in the suite pins down.
+    """
+    udt = dtypes.register_anonymous(np.dtype((np.float64, (17,))), "_FloatDivZeroArr17")
+    xs = [1.0, -1.0, 0.0, 6.0]
+    ys = [0.0, 0.0, 0.0, 3.0]
+    v, w = _udt_vectors(udt, xs, ys)
+    result = binary.truediv(v & w).new()
+    got = np.array([result[i].new().value[0] for i in range(len(xs))])
+    with np.errstate(divide="ignore", invalid="ignore"):
+        expected = np.array(xs) / np.array(ys)
+    np.testing.assert_array_equal(got, expected, err_msg=udt_op_path)
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_array_ops_match_record_ops(udt_op_path):
+    """The array-UDT codegen carries the same division and NaN fixes as records.
+
+    Records and flat arrays go through separate branches in both the Numba
+    and the C JIT generators, so each fix has to land in both.
+    """
+    nan = float("nan")
+    inf = float("inf")
+    float_udt = dtypes.register_anonymous(np.dtype((np.float64, (13,))), "_ArrOpsF64")
+    xs = [inf, 1.0, -2.0, nan, -7.0, 2.0]
+    ys = [2.0, 0.1, inf, 2.0, 2.0, 1.0]
+    v, w = _udt_vectors(float_udt, xs, ys)
+    # The reference computations touch inf and nan, and numpy raises the FP
+    # invalid flag for them on some platforms (Linux and Windows, via fmod)
+    # but not others; pyproject promotes the RuntimeWarning to an error.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        expected_floordiv = np.floor_divide(np.array(xs), np.array(ys))
+        expected_min = np.fmin(np.array(xs), np.array(ys))
+    np.testing.assert_array_equal(
+        [binary.floordiv(v & w).new()[i].new().value[0] for i in range(len(xs))],
+        expected_floordiv,
+        err_msg=udt_op_path,
+    )
+    # ``np.fmin``, not ``np.minimum``: ``binary.min`` is SuiteSparse's
+    # ``GrB_MIN_FP64``, which ignores a NaN operand rather than propagating it.
+    np.testing.assert_array_equal(
+        [binary.min(v & w).new()[i].new().value[0] for i in range(len(xs))],
+        expected_min,
+        err_msg=udt_op_path,
+    )
+
+    int_udt = dtypes.register_anonymous(np.dtype((np.int64, (6,))), "_ArrOpsI64")
+    ixs = [10**18, 7, -7, 100, -9, 5]
+    iys = [3, 0, 0, 3, 2, 2]
+    v, w = _udt_vectors(int_udt, ixs, iys)
+    result = binary.truediv(v & w).new()
+    got = [result[i].new().value[0] for i in range(len(ixs))]
+    with np.errstate(divide="ignore"):
+        assert got == list(np.array(ixs) / np.array(iys)), udt_op_path
+    result = binary.floordiv(v & w).new()
+    got = [result[i].new().value[0] for i in range(len(ixs))]
+    assert got == [333333333333333333, 0, 0, 33, -5, 2], udt_op_path
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_multidim_array_ops_match_numpy(udt_op_path):
+    """Built-in ops on a multi-dimensional array UDT agree with numpy on both paths.
+
+    The C JIT typedef flattens any rank to ``double v [N]`` and the Numba
+    wrapper walks the same flat run, so a 2-D UDT covers codegen that the 1-D
+    cases reach only by accident of both being contiguous.
+    """
+    udt = dtypes.register_anonymous(np.dtype((np.float64, (3, 2))), "_ArrOps2D")
+    xs = [1.0, -7.0, float("inf"), 2.0]
+    ys = [0.1, 2.0, 2.0, 0.0]
+    v, w = _udt_vectors(udt, xs, ys)
+    for gb_op, reference in (
+        (binary.floordiv, np.floor_divide),
+        (binary.truediv, np.true_divide),
+        # ``fmin`` rather than ``minimum``: these inputs carry no NaN, so the
+        # two agree here, but ``binary.min`` is the NaN-ignoring one.
+        (binary.min, np.fmin),
+    ):
+        result = gb_op(v & w).new()
+        element = result[0].new().value
+        assert element.shape == (3, 2)
+        got = np.array([result[i].new().value[1, 1] for i in range(len(xs))])
+        with np.errstate(divide="ignore", invalid="ignore"):
+            expected = reference(np.array(xs), np.array(ys))
+        np.testing.assert_array_equal(got, expected, err_msg=f"{udt_op_path} {gb_op.name}")
 
 
 @pytest.mark.skipif("not supports_udfs")
@@ -3510,9 +3944,12 @@ def test_udt_array_pairs_broadcast_as_numpy(x_type, y_type):
             np.testing.assert_array_equal(value, expected)
         assert not binary.eq(a & b).new()[0].new().value
         assert binary.ne(a & b).new()[0].new().value
-        # ewise_add converts an entry without a partner to the result type, so
-        # it broadcasts to the result's shape.
-        added = a.ewise_add(b, binary.minus).new()
+        # ewise_add would copy an entry without a partner as the result type, a
+        # cast GraphBLAS cannot make for a UDT; ewise_union computes it instead,
+        # so it broadcasts to the result's shape.
+        with pytest.raises(DomainMismatch, match="ewise_add cannot use binary.minus"):
+            a.ewise_add(b, binary.minus)
+        added = a.ewise_union(b, binary.minus, 0, 0).new()
         assert added.dtype == result_type
         np.testing.assert_array_equal(added[0].new().value, expected)
         lone = 1 if a is v else 2
@@ -3636,10 +4073,13 @@ def test_udt_array_pair_promotes_the_base():
         assert binary.ne(a & b).new().isequal(Vector.from_coo([0, 1], [True, False]))
     # A semiring's monoid is typed by its multiplier's result.
     assert v.inner(w, semiring.plus_times).new().dtype == floats
-    # GraphBLAS would cast an entry of ``v`` alone to the result type, which
-    # UDTs do not do; ``plus`` converts both sides first instead.
-    assert v.ewise_add(w, binary.plus).new().isequal((v + w).new())
+    # GraphBLAS would cast an entry of ``v`` alone to the result type, which a
+    # UDT cannot be; ewise_union computes that entry with the op instead, and
+    # infix ``+`` uses it, with 0 for the missing value.
+    with pytest.raises(DomainMismatch, match="ewise_add cannot use binary.plus"):
+        v.ewise_add(w)
     assert v.ewise_union(w, binary.plus, 0, 0.0).new().dtype == floats
+    assert (v + w).new().isequal(v.ewise_union(w, binary.plus, 0, 0.0).new())
 
 
 @pytest.mark.skipif("not supports_udfs")
@@ -3779,8 +4219,8 @@ def test_udt_user_op_named_like_a_lifted_op():
     ``"plus"`` or ``"max"`` was compiled as the built-in, its function ignored,
     and on a built-in dtype it raised KeyError. A literal beside a UDT is
     converted to the UDT for it, since nothing says how a UDF combines a scalar
-    with an element, but only when that changes no value: ``0.5`` became an
-    element of zeros.
+    with an element, but only when its type fits: ``0.5`` became an element of
+    zeros.
     """
     udt = dtypes.register_anonymous(np.dtype((np.int64, (2, 3))), "_NamedLikeLifted")
 
@@ -3796,15 +4236,19 @@ def test_udt_user_op_named_like_a_lifted_op():
     v[0] = np.ones((2, 3), dtype=np.int64)
     for udf_op, right, expected in [
         (plus_like, 3, 13),
-        (plus_like, 2.0, 12),
+        (plus_like, np.int8(2), 12),
         (max_like, 3, -2),
     ]:
         result = v.apply(udf_op, right=right).new()
         assert result.dtype == udt
         np.testing.assert_array_equal(result[0].new().value, np.full((2, 3), expected))
         assert udf_op[udt].jit_c_source is None
-    with pytest.raises(ValueError, match="would change 0.5 to 0"):
+    # A float is not an int, whatever its value, as numpy refuses ``ints += 2.0``;
+    # 2.0 still converts, being exact, but that is deprecated.
+    with pytest.raises(ValueError, match="0.5 does not fit"):
         v.apply(plus_like, right=0.5)
+    with pytest.warns(DeprecationWarning, match="2.0 does not fit"):
+        v.apply(plus_like, right=2.0)
     assert plus_like(Vector.from_coo([0], [5]), 2).new().isequal(Vector.from_coo([0], [52]))
 
 
@@ -3853,19 +4297,19 @@ def test_udt_python_number_is_weak_per_leaf():
 
 
 @pytest.mark.skipif("not supports_udfs")
-def test_udt_infix_plus_on_mixed_types_is_the_union_with_zero():
-    """``ewise_add`` with a lifted op on UDT operands of different types runs without a cast.
+def test_udt_ewise_add_needs_operands_of_the_result_type():
+    """``ewise_add`` on UDT operands of another type than the result's: Scalars only.
 
-    GraphBLAS casts an entry present in only one input to the result type,
-    which a UDT cannot be: a UDT Scalar plus ``0.5`` (infix ``+`` is
-    ``ewise_add``), an int8 array UDT vector plus a float32 one, and
-    ``truediv`` on two int UDT vectors of the same type (float64 result) all
-    raised a bare GrB_DOMAIN_MISMATCH. Each lifted op gives the same values on
-    operands already converted to its result type, so ``ewise_add`` converts
-    them (subtracting zero, which keeps ``-0.0``) and applies the op there.
+    GraphBLAS copies an entry present in only one input into the result, cast
+    to the result type, which a UDT cannot be. A Scalar is one element, so its
+    operands are converted to the result type first (which changes no value,
+    not even ``-0.0``). Vectors and Matrices would need converted copies of
+    whole operands, so they raise, and ``ewise_union`` computes the same sum
+    with the op instead.
     """
     int8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_UniPlusI8")
     fp32s = dtypes.register_anonymous(np.dtype((np.float32, (3,))), "_UniPlusF32")
+    f64s = dtypes.lookup_dtype(np.dtype((np.float64, (3,))))
     s = gb.Scalar.from_value([1, 2, 3], dtype=int8s)
     for expr in [s + 0.5, 0.5 + s]:
         result = expr.new()
@@ -3873,79 +4317,92 @@ def test_udt_infix_plus_on_mixed_types_is_the_union_with_zero():
         np.testing.assert_array_equal(result.value, [1.5, 2.5, 3.5])
     result = (gb.Scalar(int8s) + 0.5).new()  # an empty Scalar adds as 0
     np.testing.assert_array_equal(result.value, [0.5, 0.5, 0.5])
+    neg = gb.Scalar.from_value([-0.0, 0.0, -1.5], dtype=fp32s)
+    result = (neg + gb.Scalar(f64s)).new()
+    assert result.dtype == f64s
+    np.testing.assert_array_equal(np.signbit(result.value), [True, False, True])
     v = Vector(int8s, size=3)
     v[0] = [1, 2, 3]
     v[1] = [4, 5, 6]
     w = Vector(fp32s, size=3)
     w[1] = [0.5, 0.5, 0.5]
     w[2] = [7, 8, 9]
-    for a, b in [(v, w), (w, v)]:
-        result = (a + b).new()
-        assert result.dtype == fp32s
-        assert result.nvals == 3
-        np.testing.assert_array_equal(result[0].new().value, [1, 2, 3])
-        np.testing.assert_array_equal(result[1].new().value, [4.5, 5.5, 6.5])
-        np.testing.assert_array_equal(result[2].new().value, [7, 8, 9])
     A = Matrix(int8s, nrows=1, ncols=2)
     A[0, 0] = [1, 2, 3]
     B = Matrix(fp32s, nrows=1, ncols=2)
     B[0, 1] = [0.5, 0.5, 0.5]
+    for expr in [lambda: v.ewise_add(w), lambda: w.ewise_add(v), lambda: binary.plus(v | w)]:
+        with pytest.raises(DomainMismatch, match="ewise_add cannot use .* converted copies"):
+            expr()
+    # Infix ``+`` takes the union with each operand's zero for a missing value
+    # instead, as ``-`` takes 0.
+    for left, right in [(v, w), (w, v)]:
+        result = (left + right).new()
+        assert result.dtype == fp32s
+        assert result.isequal(left.ewise_union(right, binary.plus, False, False).new())
+        assert result.to_coo()[1].tolist() == [[1, 2, 3], [4.5, 5.5, 6.5], [7, 8, 9]]
     result = (A + B).new()
     assert result.dtype == fp32s
-    assert result.nvals == 2
-    # A broadcast of the wrong size raises up front, as for a same-type pair,
-    # not once both operands have been converted.
+    assert result.to_coo()[2].tolist() == [[1, 2, 3], [0.5, 0.5, 0.5]]
+    assert (A + B.T.T).new().isequal(result)
+    result = (A + Vector.from_coo([1], [[0.5, 0.5, 0.5]], dtype=fp32s, size=2)).new()
+    assert result.to_coo()[2].tolist() == [[1, 2, 3], [0.5, 0.5, 0.5]]
+    # That zero is -0.0 in a float field, so an entry of one operand alone keeps
+    # its value, as ewise_add would copy it; beside an int field, 0 turns -0.0
+    # into 0.0.
+    zeros = Vector(fp32s, size=3)
+    zeros[2] = [-0.0, 0.0, -1.5]
+    for left, right in [(zeros, Vector(f64s, size=3)), (Vector(f64s, size=3), zeros)]:
+        result = (left + right).new()
+        assert result.dtype == f64s
+        np.testing.assert_array_equal(np.signbit(result[2].new().value), [True, False, True])
+    result = (v + zeros).new()
+    np.testing.assert_array_equal(np.signbit(result[2].new().value), [False, False, True])
+    x = v.dup()
+    x += w  # an accumulating store: cast, then added, as for built-in types
+    assert x.dtype == int8s
+    assert x.to_coo()[1].tolist() == [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+    # The same type in and out still goes through ewise_add itself...
+    assert (v + v).new().dtype == int8s
+    # ...but not int truediv, whose result is float.
+    with pytest.raises(DomainMismatch, match="binary.truediv"):
+        v.ewise_add(v, binary.truediv)
+    udf = BinaryOp.register_anonymous(lambda x, y: x, "_uni_first", is_udt=True)
+    with pytest.raises(DomainMismatch, match="ewise_add cannot use .* on _UniPlusI8 and"):
+        v.ewise_add(Vector(f64s, size=3), udf)
+    # A size or broadcast error is reported first, as for a same-type pair.
+    with pytest.raises(DimensionMismatch):
+        v.ewise_add(Vector(fp32s, size=2), binary.plus)
     with pytest.raises(DimensionMismatch, match="Matrix.nrows"):
         v.ewise_add(B, binary.plus)
     with pytest.raises(DimensionMismatch, match="Matrix.ncols"):
         B.ewise_add(v, binary.plus)
-    # A same-type pair still goes through ewise_add itself.
-    assert (v + v).new().dtype == int8s
-    # The method does the same, for each lifted op; an unpaired entry is kept as is.
-    assert v.ewise_add(w, binary.plus).new().isequal((v + w).new())
-    for binop, both in [(binary.minus, [3.5, 4.5, 5.5]), (binary.max, [4, 5, 6])]:
-        result = v.ewise_add(w, binop).new()
-        assert result.dtype == fp32s
-        np.testing.assert_array_equal(result[0].new().value, [1, 2, 3])
-        np.testing.assert_array_equal(result[1].new().value, both)
-        np.testing.assert_array_equal(result[2].new().value, [7, 8, 9])
-    u = Vector(int8s, size=3)
-    u[1] = [2, 2, 2]
-    u[2] = [-3, 0, 4]
-    result = v.ewise_add(u, binary.truediv).new()
-    assert result.dtype.np_type == np.dtype((np.float64, (3,)))
-    assert result.to_coo()[1].tolist() == [[1, 2, 3], [2, 2.5, 3], [-3, 0, 4]]
-    # Converting keeps the sign of a zero, as GraphBLAS's cast does.
-    f64s = dtypes.lookup_dtype(np.dtype((np.float64, (3,))))
-    neg = Vector(fp32s, size=2)
-    neg[0] = [-0.0, 0.0, -1.5]
-    pos = Vector(f64s, size=2)
-    pos[1] = [1, 1, 1]
-    result = (neg + pos).new()
-    assert result.dtype == f64s
-    np.testing.assert_array_equal(np.signbit(result[0].new().value), [True, False, True])
-    # Any other op cannot run in the result type, so it is a clear error up front.
-    udf = BinaryOp.register_anonymous(lambda x, y: x, "_uni_first", is_udt=True)
-    with pytest.raises(DomainMismatch, match="ewise_add cannot use .* on _UniPlusI8 and"):
-        v.ewise_add(Vector(f64s, size=3), udf)
-    # A result of another type is cast to the object's type before it is
-    # accumulated, as for built-in types.
+    # ewise_union computes an entry alone with the op, so it needs no cast.
+    result = v.ewise_union(w, binary.plus, 0, 0).new()
+    assert result.dtype == fp32s
+    assert result.to_coo()[1].tolist() == [[1, 2, 3], [4.5, 5.5, 6.5], [7, 8, 9]]
+    # Accumulating it into the int8 object casts as it stores, as built-ins do.
     x = v.dup()
-    x(accum=binary.plus) << x + w
+    x(accum=binary.plus) << x.ewise_union(w, binary.plus, 0, 0)
     assert x.dtype == int8s
     assert x.to_coo()[1].tolist() == [[2, 4, 6], [8, 10, 12], [7, 8, 9]]
 
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_literal_converts_only_when_exact():
-    """A literal that has to become an element of a UDT must keep every value.
+    """A literal that has to become an element of a UDT must be of that type.
 
-    Tuples, lists and arrays beside a UDT, literals beside a user-defined op,
-    and ``ewise_union`` defaults are converted into the UDT, which numpy does
+    A literal beside a user-defined op, an IndexUnaryOp thunk and an
+    ``ewise_union`` default are converted into the UDT, which numpy does
     silently: ``(0.5, 1.5, 2.5)`` added ``(0, 1, 2)`` to an int8 array UDT, and
-    a default of ``0.5`` stood in as ``0``. A Monoid in ``apply`` is typed as
-    its BinaryOp, so its literal promotes instead of being converted.
+    a default of ``0.5`` stood in as ``0``. The literal's type decides, as
+    numpy's same_kind rule decides ``ints += x``: a Python number or sequence
+    is weak, so ``1`` and ``(1, 2, 3)`` are int8 and ``0.5`` and ``2.0`` are
+    float64; a numpy value is strong and must cast safely. A Monoid in
+    ``apply`` is typed as its BinaryOp, so its literal promotes instead.
     """
+    import re
+
     arr = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_ExactArr")
     rec = dtypes.register_anonymous(
         np.dtype([("ex_i", np.int16), ("ex_f", np.float32)], align=True), "_ExactRec"
@@ -3956,34 +4413,49 @@ def test_udt_literal_converts_only_when_exact():
     w[1] = [4, 5, 6]
     r = Vector(rec, size=1)
     r[0] = (1, 1.5)
-    # Exact values convert, including a float of a narrower float field.
-    plus = binary.plus
-    assert v.apply(plus, right=(1, 2, 3)).new()[0].new().value.tolist() == [2, 4, 6]
-    assert v.apply(plus, right=[2.0, 2.0, 2.0]).new().dtype == arr
-    assert (v + np.ones(3, dtype=np.int64)).new().dtype == arr
-    expected = (2, np.float32(1.5) + np.float32(0.1))
-    assert r.apply(plus, right=(1, 0.1)).new()[0].new().value.tolist() == expected
-    assert r.apply(binary.plus, right={"ex_i": 2, "ex_f": 0.5}).new()[0].new().value.tolist() == (
-        3,
-        2.0,
-    )
-    for expr in [
-        lambda: v.apply(plus, right=(0.5, 1.5, 2.5)),
-        lambda: v.apply(binary.times, left=np.array([0.5, 1, 1])),
-        lambda: r.apply(plus, left=(0.5, 1)),
-        lambda: v.ewise_union(w, binary.plus, 0.5, 0),
-        lambda: v.ewise_union(w, binary.plus, 0, 0.5),
-        lambda: gb.Scalar.from_value([1, 2, 3], arr).ewise_union(
-            gb.Scalar(arr), binary.plus, 0, 0.5
+    udf = BinaryOp.register_anonymous(lambda x, y: x + y, "_exact_plus", is_udt=True)
+    second = BinaryOp.register_anonymous(lambda x, y: y, "_exact_second", is_udt=True)
+    # Literals of the UDT's type convert, a float rounding into a float32 field.
+    assert v.apply(udf, right=(1, 2, 3)).new()[0].new().value.tolist() == [2, 4, 6]
+    assert v.apply(udf, right=[True, 2, 3]).new().dtype == arr
+    assert v.apply(udf, right=np.ones(3, dtype=np.int8)).new().dtype == arr
+    assert v.apply(udf, right=np.int8(1)).new().dtype == arr
+    assert r.apply(second, right=(1, 0.1)).new()[0].new().value.tolist() == (1, np.float32(0.1))
+    assert r.apply(second, right={"ex_i": 2, "ex_f": 0.5}).new()[0].new().value.tolist() == (2, 0.5)
+    assert r.apply(second, right=np.int8(2)).new()[0].new().value.tolist() == (2, 2.0)
+    # A sequence holding numpy values is strong, as the array numpy makes of it.
+    assert binary.plus(v, (np.int8(1), 2, 3)).new().dtype.np_type == np.dtype((np.int64, (3,)))
+    # The error names the literal's type; a layout's name is whatever UDT
+    # registered it first, so only the built-in scalar types are pinned here.
+    for expr, typed_as in [
+        (lambda: v.apply(udf, right=(0.5, 1.5, 2.5)), "_ExactArr"),
+        (lambda: v.apply(udf, left=np.array([0.5, 1, 1])), "_ExactArr"),
+        (lambda: v.apply(udf, right=(np.float64(0.5), 1, 1)), "_ExactArr"),
+        (lambda: r.apply(second, left=(0.5, 1)), "_ExactRec"),
+        (lambda: v.ewise_union(w, udf, 0.5, 0), "_ExactArr"),
+        (lambda: v.ewise_union(w, udf, 0, 0.5), "_ExactArr"),
+        (
+            lambda: gb.Scalar.from_value([1, 2, 3], arr).ewise_union(gb.Scalar(arr), udf, 0, 0.5),
+            "_ExactArr",
         ),
-        lambda: v == (0.5, 2, 3),
     ]:
-        with pytest.raises(ValueError, match="would change 0.5 to 0"):
+        with pytest.raises(ValueError, match=re.escape(f"does not fit {typed_as}")):
+            expr()
+    # One that does not fit by type but converts exactly still converts, as it
+    # did on main, with a DeprecationWarning.
+    for expr, typed_as in [
+        (lambda: v.apply(udf, right=[2.0, 2.0, 2.0]), "_ExactArr"),
+        (lambda: v.apply(udf, right=np.ones(3, dtype=np.int64)), "_ExactArr"),
+        (lambda: v.apply(udf, right=np.int64(1)), "_ExactArr: it is typed as INT64,"),
+        (lambda: v.apply(udf, right=(np.int8(1), 2, 3)), "_ExactArr"),
+        (lambda: r.apply(second, right=np.int32(2)), "_ExactRec: it is typed as INT32,"),
+    ]:
+        with pytest.warns(DeprecationWarning, match=re.escape(f"does not fit {typed_as}")):
             expr()
     with pytest.raises(OverflowError, match="300 out of bounds for int8"):
-        v.apply(plus, right=(1, 2, 300))
+        v.apply(udf, right=(1, 2, 300))
     # Defaults that fit still work, and fill in for the missing side.
-    result = v.ewise_union(w, binary.plus, 10, 20).new()
+    result = v.ewise_union(w, udf, 10, 20).new()
     assert result.to_coo()[1].tolist() == [[21, 22, 23], [14, 15, 16]]
     # apply with a Monoid promotes as its BinaryOp does, on either side.
     for expr in [v.apply(monoid.plus, right=0.5), v.apply(monoid.plus, left=0.5)]:
@@ -3993,20 +4465,218 @@ def test_udt_literal_converts_only_when_exact():
     assert v.apply(monoid.max, right=2).new().dtype == arr
 
 
+# _SeqNest's numpy repr is over 128 chars on numpy 1; see test_udt_eq_nested_record_with_nan_leaf.
+@pytest.mark.filterwarnings("ignore:UDT repr is too large")
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_sequence_and_array_literals_type_like_numbers():
+    """A tuple, list or array beside a UDT under a lifted op is typed, not converted into the UDT.
+
+    A tuple or list of Python numbers is weak leaf by leaf, as a Python number
+    is: ``int8_udt + (1, 2, 3)`` stays int8 and ``+ (0.5, 1.5, 2.5)`` is
+    float64, where converting it raised (and before that added ``(0, 1, 2)``).
+    A numpy array is strong, as its own array type. ``eq`` and ``ne`` compare
+    the values. A literal beside a user-defined op is still converted
+    (``test_udt_literal_converts_only_when_exact``).
+    """
+    int8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_SeqI8")
+    fp32s = dtypes.register_anonymous(np.dtype((np.float32, (3,))), "_SeqF32")
+    nested = dtypes.register_anonymous(
+        np.dtype(
+            [("sq_a", np.int16), ("sq_in", [("sq_b", np.int8), ("sq_c", np.float32)])],
+            align=True,
+        ),
+        "_SeqNest",
+    )
+    f64s = np.dtype((np.float64, (3,)))
+    v = Vector(int8s, size=2)
+    v[0] = [1, 2, 3]
+    v[1] = [4, 5, 6]
+    # Weak: the leaf's dtype when its kind holds the numbers, of the widest kind among them.
+    for literal in [(1, 2, 3), [1, 2, 3], (True, 2, 3), (1,)]:
+        result = (v + literal).new()
+        assert result.dtype == int8s
+        np.testing.assert_array_equal(result[0].new().value, np.add([1, 2, 3], literal))
+    halves = (0.5, 1.5, 2.5)
+    for expr in [v + halves, halves + v, v.apply(binary.plus, right=list(halves))]:
+        result = expr.new()
+        assert result.dtype.np_type == f64s
+        np.testing.assert_array_equal(result[0].new().value, [1.5, 3.5, 5.5])
+    result = binary.plus(v, (1, 0.5, 3)).new()  # one float anywhere makes the leaf float
+    assert result.dtype.np_type == f64s
+    np.testing.assert_array_equal(result[0].new().value, [2, 2.5, 6])
+    result = binary.times(v, (1j, 1, 1)).new()
+    assert result.dtype.np_type == np.dtype((np.complex128, (3,)))
+    np.testing.assert_array_equal(result[0].new().value, [1j, 2, 3])
+    with pytest.raises(OverflowError, match="300 out of bounds for int8"):
+        binary.plus(v, (1, 2, 300))
+    v += (1, 1, 1)
+    np.testing.assert_array_equal(v[0].new().value, [2, 3, 4])
+    # The float64 result is cast as it is stored, as a built-in int8 vector's would be.
+    v += (0.5, 1, 1)
+    np.testing.assert_array_equal(v[0].new().value, [2, 4, 5])
+    # A float list beside float32 stays float32, as 0.5 does.
+    x = Vector(fp32s, size=1)
+    x[0] = [1, 2, 3]
+    assert binary.plus(x, [0.5, 0.5, 0.5]).new().dtype == fp32s
+    # Strong: an array is its own dtype, in its shape, or broadcast to the UDT's.
+    for literal, expected in [
+        (np.array([0.5, 1, 2]), f64s),
+        (np.array([1, 2, 3]), np.dtype((np.int64, (3,)))),
+        (np.array([1], np.int8), int8s.np_type),
+        (np.array([0.5]), f64s),
+        (np.ones((1, 3)), np.dtype((np.float64, (1, 3)))),
+    ]:
+        result = (v + literal).new()
+        assert result.dtype.np_type == expected
+        np.testing.assert_array_equal(result[0].new().value, np.add([2, 4, 5], literal))
+    # Records: by position, nested for a nested record, a dict by name, or a
+    # 0-d structured array of another record type.
+    n = Vector(nested, size=1)
+    n[0] = (1, (2, 3.5))
+    assert binary.plus(n, (1, (1, 1))).new().dtype == nested
+    result = binary.plus(n, (1, (0.5, 1))).new()
+    assert result.dtype.np_type == np.dtype(
+        [("sq_a", np.int16), ("sq_in", [("sq_b", np.float64), ("sq_c", np.float32)])],
+        align=True,
+    )
+    assert result[0].new().value.tolist() == (2, (2.5, 4.5))
+    assert (n + {"sq_a": 0.5, "sq_in": {"sq_b": 1, "sq_c": 1}}).new()[0].new().value.tolist() == (
+        1.5,
+        (3, 4.5),
+    )
+    strong = np.array(
+        (1, (0.5, 1)),
+        dtype=[("sq_a", np.int8), ("sq_in", [("sq_b", np.float64), ("sq_c", np.int8)])],
+    )
+    assert (n + strong).new()[0].new().value.tolist() == (2, (2.5, 4.5))
+    # eq and ne take the literal as it is, like numpy, instead of raising.
+    assert (v == (0.5, 4, 5)).new().isequal(Vector.from_coo([0, 1], [False, False]))
+    assert (v == (2, 4, 5)).new().isequal(Vector.from_coo([0, 1], [True, False]))
+    assert (v != (2, 4, 500)).new().isequal(Vector.from_coo([0, 1], [True, True]))
+    assert (v == np.array([2.0, 4, 5])).new()[0].new().value
+    # Matrix and Scalar take the same path.
+    A = Matrix(int8s, nrows=1, ncols=1)
+    A[0, 0] = [1, 2, 3]
+    ones = [1, 1, 1]
+    assert (A + halves).new().dtype.np_type == f64s
+    assert (A + ones).new().dtype == int8s
+    s = gb.Scalar.from_value([1, 2, 3], int8s)
+    assert (s + halves).new().dtype.np_type == f64s
+    assert (s * ones).new().dtype == int8s
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_ewise_union_defaults_are_typed_not_converted():
+    """An ``ewise_union`` default beside a UDT is typed as a literal and must fit the operand.
+
+    GraphBLAS casts a default to the op's input type, which for a UDT operand
+    is its own type, and converting the operands instead would copy them. So
+    a default is typed by the literal rules and accepted only when that type
+    fits: ``1`` and ``(1, 1, 1)`` fit an int8 UDT, ``0.5``, ``np.int64(1)`` and
+    a float64 Scalar do not. A Scalar (one element) of a type that casts
+    safely is converted.
+    """
+    import re
+
+    int8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_UnionI8")
+    fp32s = dtypes.register_anonymous(np.dtype((np.float32, (3,))), "_UnionF32")
+    v = Vector(int8s, size=3)
+    v[0] = [0, 1, 2]
+    v[1] = [4, 5, 6]
+    w = Vector(int8s, size=3)
+    w[1] = [1, 1, 1]
+    w[2] = [7, 8, 9]
+    plus = binary.plus
+    expected = [[1, 2, 3], [5, 6, 7], [7, 8, 9]]
+    for left, right in [
+        (0, 1),
+        ((0, 0, 0), [1, 1, 1]),
+        (np.int8(0), np.array([1, 1, 1], np.int8)),
+        (gb.Scalar.from_value(0, "INT8"), gb.Scalar.from_value([1, 1, 1], int8s)),
+        (False, True),
+    ]:
+        for expr in [
+            v.ewise_union(w, plus, left, right),
+            v.ewise_union(w, monoid.plus, left, right),
+        ]:
+            result = expr.new()
+            assert result.dtype == int8s
+            assert result.to_coo()[1].tolist() == expected
+
+    def union_forms(d):
+        return [
+            lambda: v.ewise_union(w, plus, d, 0),
+            lambda: v.ewise_union(w, plus, 0, d),
+            lambda: plus(v | w, left_default=d, right_default=0),
+            lambda: v.ewise_union(w, monoid.plus, d, 0),
+        ]
+
+    for default, message in [
+        (0.5, "0.5 does not fit _UnionI8"),
+        ((0.5, 0.5, 0.5), "(0.5, 0.5, 0.5) does not fit _UnionI8"),
+        (np.float32(0.5), "does not fit _UnionI8: it is typed as FP32,"),
+        (gb.Scalar.from_value(0.5), "Scalar of type FP64 does not fit _UnionI8"),
+    ]:
+        for expr in union_forms(default):
+            with pytest.raises(ValueError, match=re.escape(message)):
+                expr()
+    # Exact values of another type still convert, as on main, with a
+    # DeprecationWarning.
+    for default, message in [
+        (2.0, "2.0 does not fit _UnionI8"),
+        (np.int64(1), "does not fit _UnionI8: it is typed as INT64,"),
+        (np.array([1, 1, 1]), "array([1, 1, 1]) does not fit _UnionI8"),
+        (gb.Scalar.from_value(1), "Scalar of type INT64 does not fit _UnionI8"),
+    ]:
+        for expr in union_forms(default):
+            with pytest.warns(DeprecationWarning, match=re.escape(message)):
+                expr()
+    with pytest.raises(OverflowError, match="300 out of bounds for int8"):
+        v.ewise_union(w, plus, 300, 0)
+    # Each side is typed beside its own operand, so a mixed pair takes a
+    # default of each type, and an int8 Scalar casts safely into float32.
+    x = Vector(fp32s, size=3)
+    x[2] = [0.5, 0.5, 0.5]
+    result = v.ewise_union(x, plus, 0, 0.5).new()
+    assert result.dtype == fp32s
+    assert result.to_coo()[1].tolist() == [[0.5, 1.5, 2.5], [4.5, 5.5, 6.5], [0.5, 0.5, 0.5]]
+    result = v.ewise_union(x, plus, 0, gb.Scalar.from_value([1, 1, 1], int8s)).new()
+    assert result.to_coo()[1].tolist() == [[1, 2, 3], [5, 6, 7], [0.5, 0.5, 0.5]]
+    with pytest.raises(ValueError, match="0.5 does not fit _UnionI8"):
+        v.ewise_union(x, plus, 0.5, 0)
+    # Matrix and Scalar check the same way.
+    A = Matrix(int8s, nrows=2, ncols=1)
+    A[0, 0] = [0, 1, 2]
+    B = Matrix(int8s, nrows=2, ncols=1)
+    B[1, 0] = [7, 8, 9]
+    assert A.ewise_union(B, plus, 1, 1).new().to_coo()[2].tolist() == [[1, 2, 3], [8, 9, 10]]
+    s = gb.Scalar.from_value([1, 2, 3], int8s)
+    assert s.ewise_union(gb.Scalar(int8s), plus, 0, 1).new().value.tolist() == [2, 3, 4]
+    for expr in [
+        lambda: A.ewise_union(B, plus, 0.5, 0),
+        lambda: A.ewise_union(v, plus, 0, 0.5),
+        lambda: s.ewise_union(gb.Scalar(int8s), plus, 0, 0.5),
+    ]:
+        with pytest.raises(ValueError, match="0.5 does not fit _UnionI8"):
+            expr()
+
+
 @pytest.mark.skipif("not supports_udfs")
 # SS < 9 names a UDT by its numpy repr and warns when that is over 128 chars,
 # as the records with a field per dtype pair are.
 @pytest.mark.filterwarnings("ignore:UDT repr is too large")
-def test_udt_store_casts_each_element_as_builtin_types_do(monkeypatch):
+def test_udt_store_casts_each_element_as_builtin_types_do():
     """A UDT result stored in an object of another UDT type is cast element by element.
 
     GraphBLAS cannot cast a UDT, so storing across UDT types raised, and
     setting one element from a Scalar of another UDT type read its bytes as the
     object's type. Each array element or record leaf is now cast as GraphBLAS
-    casts built-in types on store (compared below), for every way of storing:
-    ``<<``, a mask, an accumulator, ``replace``, ``.new(dtype=)``, Scalars and
-    assignment. Layouts that do not correspond, and a built-in type on either
-    side, raise ``DomainMismatch``.
+    casts built-in types on store (compared below), without a temporary copy:
+    an object stores through the cast op (``<<``, a mask, an accumulator,
+    ``replace``, ``dup``), an element-wise expression of a lifted op casts as
+    it computes, and a Scalar or one element is converted. Anything that would
+    need a converted copy of a whole object raises, as do layouts that do not
+    correspond and a built-in type on either side.
     """
     # One record casts every pair of leaf dtypes, so it compiles once.
     pairs = [
@@ -4064,7 +4734,7 @@ def test_udt_store_casts_each_element_as_builtin_types_do(monkeypatch):
     w = Vector.from_coo([0, 1, 2], [ones] * 3, dtype=i8s)
     w(mask.S, accum=binary.plus) << v
     assert w.to_coo()[1].tolist() == [[[2, 0], [-128, 1], [-127, 3]], ones, ones]
-    w(mask.S) << v * 1  # an expression, computed into a temporary first
+    w(mask.S) << v * 1  # an expression of a lifted op casts as it computes
     assert w.to_coo()[1].tolist() == [first, ones]
     w(mask.S, replace=True) << v
     assert w.to_coo()[1].tolist() == [first]
@@ -4085,8 +4755,25 @@ def test_udt_store_casts_each_element_as_builtin_types_do(monkeypatch):
     C = Matrix(i8s, nrows=2, ncols=2)
     C << A.T
     assert C.to_coo()[2].tolist() == [first]
-    C[0, :] = v[[0, 1]].new()
+    # A whole Vector of another type would need a converted copy to assign.
+    with pytest.raises(DomainMismatch, match="converted copy of the whole value"):
+        C[0, :] = v[[0, 1]].new()
+    C[0, :] = v[[0, 1]].new().dup(dtype=i8s)
     assert C[0, 0].new().value.tolist() == first
+    # So would a computation that cannot write another type as it computes.
+    with pytest.raises(DomainMismatch, match="would need a temporary copy"):
+        C << A.mxm(A, semiring.plus_times)
+    with pytest.raises(DomainMismatch, match="would need a temporary copy"):
+        w << v.ewise_add(v, binary.plus)
+    with pytest.raises(DomainMismatch, match="extraction cannot"):
+        w << v[[0, 1, 2]]
+    # The computed result, stored as an existing object, casts in one pass.
+    C << A.mxm(A, semiring.plus_times).new()
+    # power raises before it computes any product; n of 0 and 1 store as above.
+    with pytest.raises(DomainMismatch, match="mxm with plus_times cannot"):
+        C << A.power(3)
+    C << A.power(1)
+    assert C.to_coo()[2].tolist() == [first]
     # Leading axes of length 1 do not change the layout.
     lead = dtypes.register_anonymous(np.dtype((np.float32, (1, 3, 2))), "_StoreCastLead")
     u = Vector(lead, size=3)
@@ -4099,6 +4786,9 @@ def test_udt_store_casts_each_element_as_builtin_types_do(monkeypatch):
     renamed = np.dtype([(f"sr{i}", dst) for i, (_src, dst) in enumerate(pairs)])
     with pytest.raises(DomainMismatch, match="same field names"):
         Vector(dtypes.register_anonymous(renamed), size=7) << x
+    raw = Vector(dtypes.register_anonymous(np.dtype("S48"), "_StoreCastBytes"), size=3)
+    with pytest.raises(DomainMismatch, match="only record and array UDTs cast"):
+        raw << v
     for expr in [
         lambda: Vector(f64s, size=3) << Vector.from_coo([0], [1.5], size=3),
         lambda: Vector(dtypes.FP64, size=3) << v,
@@ -4106,21 +4796,311 @@ def test_udt_store_casts_each_element_as_builtin_types_do(monkeypatch):
     ]:
         with pytest.raises(DomainMismatch, match="a UDT casts only to another UDT"):
             expr()
-    # The switch back to hard: every UDT store across types raises.
-    monkeypatch.setattr(gb.core.base, "_udt_store_casts", False)
-    for expr in [lambda: w << v, lambda: w.__setitem__(0, v[0].new())]:
-        with pytest.raises(DomainMismatch, match="UDTs do not cast"):
-            expr()
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_extracted_element_of_another_type_is_cast():
+    """One element extracted into another UDT type is cast, not copied as raw bytes.
+
+    GraphBLAS's extractElement for a UDT copies the bytes of the object's type
+    into the destination, so ``s << v[0]`` with ``s`` of another UDT read
+    garbage, and wrote past the end of a smaller element (also on main).
+    """
+    f64s = dtypes.register_anonymous(np.dtype((np.float64, (2,))), "_ExtractF64")
+    i16s = dtypes.register_anonymous(np.dtype((np.int16, (2,))), "_ExtractI16")
+    rec = dtypes.register_anonymous(np.dtype([("ex_a", np.int8), ("ex_b", np.int8)]), "_ExtractRec")
+    v = Vector(f64s, size=3)
+    v[0] = [1.7, -300.2]
+    A = Matrix(f64s, nrows=2, ncols=3)
+    A[1, 2] = [2.5, -1e30]
+    s = gb.Scalar(i16s)
+    s << v[0]
+    assert s.value.tolist() == [1, -300]
+    assert v[0].new(dtype=i16s).value.tolist() == [1, -300]
+    assert A.T[2, 1].new(dtype=i16s).value.tolist() == [2, -32768]  # saturates
+    w = Vector(i16s, size=3)
+    C = Matrix(i16s, nrows=2, ncols=2)
+    with gb.config.set(autocompute=True):
+        w[1] = v[0]
+        C[1, 0] = A[1, 2]
+    assert w[1].new().value.tolist() == [1, -300]
+    assert C[1, 0].new().value.tolist() == [2, -32768]
+    # A larger destination, and a missing element.
+    x = Vector(i16s, size=2)
+    x[0] = [7, -8]
+    assert x[0].new(dtype=f64s).value.tolist() == [7.0, -8.0]
+    assert x[1].new(dtype=f64s).is_empty
+    for dtype in [rec, dtypes.FP64]:
+        with pytest.raises(DomainMismatch, match="cannot store"):
+            v[0].new(dtype=dtype)
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_fused_store_matches_compute_then_cast():
+    """Storing an element-wise result into another UDT type casts as the op computes.
+
+    The op computes each element as it would for its own result type and casts
+    it into the object's type as it writes it, so the values are those of
+    computing the result and then casting it (``.new().dup(dtype=)``), with no
+    temporary of the result's type: special values, records with array
+    fields, literals on either side, unary ops, masks and accumulators.
+    """
+    i16s = dtypes.register_anonymous(np.dtype((np.int16, (2, 2))), "_FuseI16")
+    f32s = dtypes.register_anonymous(np.dtype((np.float32, (2, 2))), "_FuseF32")
+    rec_i = dtypes.register_anonymous(
+        np.dtype([("fz_a", np.int8), ("fz_b", np.uint16, (3,))]), "_FuseRecI"
+    )
+    rec_f = dtypes.register_anonymous(
+        np.dtype([("fz_a", np.float64), ("fz_b", np.float64, (3,))]), "_FuseRecF"
+    )
+    i = Vector(i16s, size=4)
+    i[0] = [[1, -2], [32767, -32768]]
+    i[2] = [[7, 0], [-7, 3]]
+    f = Vector(f32s, size=4)
+    f[0] = [[np.nan, -np.inf], [1e10, -0.5]]
+    f[1] = [[2.5, -2.5], [65535.9, 1.5]]
+    f[2] = [[0.25, 3.75], [-1.0, 2.0]]
+    r = Vector(rec_f, size=4)
+    r[0] = (300.7, [-1.5, 70000.2, np.nan])
+    r[1] = (-129.9, [2.5, 3.5, 1e300])
+    cases = [
+        (lambda: i * 2.5, i16s),
+        (lambda: 2.5 - i, i16s),
+        (lambda: i / 4, i16s),
+        (lambda: i.ewise_mult(f, binary.times), i16s),
+        (lambda: f.ewise_mult(i, binary.minus), i16s),
+        (lambda: i.ewise_union(f, binary.plus, 0, 0), i16s),
+        (lambda: f.apply(unary.ainv), i16s),
+        (lambda: f.apply(monoid.max, right=3), i16s),
+        (lambda: f * f, i16s),
+        (lambda: f.ewise_mult(f, monoid.plus), i16s),
+        (lambda: r * 1.5, rec_i),
+        (lambda: r.apply(unary.abs), rec_i),
+    ]
+    mask = Vector.from_coo([0, 2], [True, True], size=4)
+    for make, out in cases:
+        expected = make().new().dup(dtype=out)
+        fused = Vector(out, size=expected.size)
+        fused << make()
+        assert fused.isequal(expected), make
+        # A mask and an accumulator act on the cast values, as they would on
+        # values that were already of the object's type.
+        start = expected.dup()
+        explicit = start.dup()
+        explicit(mask.S, accum=binary.plus) << make().new().dup(dtype=out)
+        start(mask.S, accum=binary.plus) << make()
+        assert start.isequal(explicit), make
+    A = Matrix(f32s, nrows=2, ncols=2)
+    A[0, 1] = [[1.5, -2.5], [np.nan, 1e9]]
+    C = Matrix(i16s, nrows=2, ncols=2)
+    C << A.T.apply(binary.times, right=2)
+    assert C.isequal(A.T.apply(binary.times, right=2).new().dup(dtype=i16s))
+
+
+def _udt_leaf_arrays(vector, size):
+    """The values of a record UDT vector's entries 0 to ``size - 1``, one array per leaf."""
+    values = [vector[k].new().value for k in range(size)]
+    return {
+        name: np.array([value[name] for value in values]) for name in vector.dtype.np_type.names
+    }
+
+
+def _assert_same_floats(got, expected, msg):
+    """Equal, NaN equal to NaN, and with the same sign on every zero (of each complex part)."""
+    got, expected = np.asarray(got), np.asarray(expected)
+    np.testing.assert_array_equal(got, expected, err_msg=msg)
+    for part in (np.real, np.imag) if got.dtype.kind == "c" else (np.asarray,):
+        np.testing.assert_array_equal(
+            np.signbit(part(got)), np.signbit(part(expected)), err_msg=msg
+        )
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.filterwarnings("ignore:UDT repr is too large")
+def test_udt_record_array_fields_compute_element_by_element():
+    """An array-valued record field computes each element as a scalar field does.
+
+    As a whole-array expression it ran through Numba's ufuncs: ``min`` and
+    ``max`` did not compile (and the scalar NaN rule, applied to an array, left
+    garbage), a zero complex divisor raised inside the cfunc and left the
+    element unwritten, and ``int8 / int8`` ran in float32. Each element now
+    takes the scalar expression, so a field agrees with numpy's ``fmin``,
+    ``fmax``, ``floor_divide`` and ``true_divide`` element for element, with a
+    record or a number on the other side. ``INT64_MIN // -1`` is the one
+    integer quotient Numba gets wrong by itself (0, where numpy wraps).
+    """
+    nan, inf = float("nan"), float("inf")
+    rec = dtypes.register_anonymous(
+        np.dtype(
+            [
+                ("aef_s", np.float64),
+                ("aef_f", np.float64, (2, 3)),
+                ("aef_i", np.int8, (4,)),
+                ("aef_l", np.int64, (3,)),
+                ("aef_m", np.int64),
+            ],
+            align=True,
+        ),
+        "_ArrElemFields",
+    )
+    fx = np.array([[nan, 1.0, -0.0], [inf, 1.0, 7.5]])
+    fy = np.array([[1.0, nan, 2.0], [2.0, 0.1, -2.5]])
+    ix = np.array([-128, 7, -7, 100], np.int8)
+    iy = np.array([-1, 0, 2, 3], np.int8)
+    int64_min = np.iinfo(np.int64).min
+    lx = np.array([int64_min, -7, 9], np.int64)
+    ly = np.array([-1, 2, 0], np.int64)
+    v = Vector(rec, size=1)
+    v[0] = (nan, fx, ix, lx, int64_min)
+    w = Vector(rec, size=1)
+    w[0] = (1.0, fy, iy, ly, -1)
+    # The references overflow (``-128 // -1``) and divide by zero on purpose.
+    with np.errstate(all="ignore"):
+        for gb_op, reference in [
+            (binary.min, np.fmin),
+            (binary.max, np.fmax),
+            (binary.floordiv, np.floor_divide),
+            (binary.truediv, np.true_divide),
+        ]:
+            got = gb_op(v & w).new()[0].new().value
+            _assert_same_floats(got["aef_s"], reference(nan, 1.0), gb_op.name)
+            _assert_same_floats(got["aef_f"], reference(fx, fy), gb_op.name)
+            np.testing.assert_array_equal(got["aef_i"], reference(ix, iy), err_msg=gb_op.name)
+            np.testing.assert_array_equal(got["aef_l"], reference(lx, ly), err_msg=gb_op.name)
+            np.testing.assert_array_equal(
+                got["aef_m"], reference(np.int64(int64_min), np.int64(-1)), err_msg=gb_op.name
+            )
+            # A number on the other side reaches every element of the field.
+            for other in [np.float64(0.5), np.float64(nan)]:
+                got = v.apply(gb_op, right=other).new()[0].new().value
+                _assert_same_floats(got["aef_f"], reference(fx, other), f"{gb_op.name} {other}")
+            got = v.apply(gb_op, right=np.int8(-1)).new()[0].new().value
+            np.testing.assert_array_equal(
+                got["aef_i"], reference(ix, np.int8(-1)), err_msg=gb_op.name
+            )
+            np.testing.assert_array_equal(
+                got["aef_l"], reference(lx, np.int8(-1)), err_msg=gb_op.name
+            )
+
+    cplx = dtypes.register_anonymous(
+        np.dtype([("aef_c", np.complex128, (3,))], align=True), "_ArrElemComplex"
+    )
+    cx = np.array([3 + 4j, 1j, 2 - 2j])
+    cy = np.array([0j, 2, 0j])
+    v = Vector(cplx, size=1)
+    v[0] = (cx,)
+    w = Vector(cplx, size=1)
+    w[0] = (cy,)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        expected = cx / cy
+    np.testing.assert_array_equal(binary.truediv(v & w).new()[0].new().value["aef_c"], expected)
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_array_min_max_and_division_match_numpy(udt_op_path):
+    """Array UDT elements take ``fmin``, ``fmax`` and numpy's divisions on both paths.
+
+    NaN sits on each side in turn, and ``INT64_MIN // -1`` is the integer
+    quotient Numba gets wrong by itself.
+    """
+    nan, inf = float("nan"), float("inf")
+    f64 = dtypes.register_anonymous(np.dtype((np.float64, (2, 3))), "_ArrNumpyF64")
+    i64 = dtypes.register_anonymous(np.dtype((np.int64, (3,))), "_ArrNumpyI64")
+    fx = np.array([[nan, 1.0, -7.5], [inf, 1.0, 0.0]])
+    fy = np.array([[1.0, nan, 2.0], [2.0, 0.1, 0.0]])
+    int64_min = np.iinfo(np.int64).min
+    ix = np.array([int64_min, -7, 9], np.int64)
+    iy = np.array([-1, 2, 0], np.int64)
+    # Two entries each, with the values swapped in the second, so neither
+    # vector is iso-valued (SuiteSparse answers those without a kernel).
+    v = Vector(f64, size=2)
+    w = Vector(f64, size=2)
+    v[0], w[0], v[1], w[1] = fx, fy, fy, fx
+    a = Vector(i64, size=2)
+    b = Vector(i64, size=2)
+    a[0], b[0], a[1], b[1] = ix, iy, ix[::-1], iy[::-1]
+    # The references divide by zero and overflow on purpose.
+    with np.errstate(all="ignore"):
+        for gb_op, reference in [
+            (binary.min, np.fmin),
+            (binary.max, np.fmax),
+            (binary.floordiv, np.floor_divide),
+            (binary.truediv, np.true_divide),
+        ]:
+            got = gb_op(v & w).new()
+            for k, (x, y) in enumerate([(fx, fy), (fy, fx)]):
+                msg = f"{udt_op_path} {gb_op.name} [{k}]"
+                _assert_same_floats(got[k].new().value, reference(x, y), msg)
+            got = gb_op(a & b).new()
+            for k, (x, y) in enumerate([(ix, iy), (ix[::-1], iy[::-1])]):
+                msg = f"{udt_op_path} {gb_op.name} [{k}]"
+                np.testing.assert_array_equal(got[k].new().value, reference(x, y), err_msg=msg)
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_fused_store_keeps_min_max_and_division_semantics(udt_op_path):
+    """A fused store computes ``min``, ``max`` and the divisions as the op does, then casts.
+
+    The fused op is cfunc only, so with the C JIT on, the plain op runs the C
+    kernel and the two paths are compared here directly: NaN in ``min`` and
+    ``max``, zero divisors, ``INT_MIN // -1``, a complex zero divisor, and
+    array-valued record fields.
+    """
+    nan, inf = float("nan"), float("inf")
+    f64 = dtypes.register_anonymous(np.dtype((np.float64, (2, 2))), "_FuseSemF64")
+    f32 = dtypes.register_anonymous(np.dtype((np.float32, (2, 2))), "_FuseSemF32")
+    i8s = dtypes.register_anonymous(np.dtype((np.int8, (4,))), "_FuseSemI8")
+    i32s = dtypes.register_anonymous(np.dtype((np.int32, (4,))), "_FuseSemI32")
+    rec64 = dtypes.register_anonymous(
+        np.dtype([("fss_a", np.float64), ("fss_b", np.float64, (3,))], align=True), "_FuseSemR64"
+    )
+    rec32 = dtypes.register_anonymous(
+        np.dtype([("fss_a", np.float32), ("fss_b", np.float32, (3,))], align=True), "_FuseSemR32"
+    )
+    c128 = dtypes.register_anonymous(
+        np.dtype([("fss_c", np.complex128)], align=True), "_FuseSemC128"
+    )
+    c64 = dtypes.register_anonymous(np.dtype([("fss_c", np.complex64)], align=True), "_FuseSemC64")
+    f, g = _udt_vectors(f64, [nan, 1.0, -7.0, inf, 0.0], [1.0, nan, 2.0, 2.0, 0.0])
+    i, j = _udt_vectors(i8s, [-128, 7, -7, 100, 5], [-1, 0, 2, 3, -2])
+    r = Vector(rec64, size=3)
+    s = Vector(rec64, size=3)
+    for k, (x, y) in enumerate([(nan, 1.0), (1.0, nan), (-7.5, 2.0)]):
+        r[k] = (x, [x, y, x * 2])
+        s[k] = (y, [y, x, 0.0])
+    c = Vector(c128, size=2)
+    d = Vector(c128, size=2)
+    c[0], d[0] = (3 + 4j,), (0j,)
+    c[1], d[1] = (1j,), (2 + 0j,)
+    cases = [(f, g, f32, op) for op in ("min", "max", "floordiv", "truediv")]
+    cases += [(i, j, i32s, "floordiv"), (r, s, rec32, "min"), (r, s, rec32, "max")]
+    cases += [(r, s, rec32, "floordiv"), (c, d, c64, "truediv")]
+    for x, y, out, name in cases:
+        gb_op = getattr(binary, name)
+        expected = gb_op(x & y).new().dup(dtype=out)
+        fused = Vector(out, size=x.size)
+        fused << gb_op(x & y)
+        assert fused.nvals == expected.nvals, (udt_op_path, name, out)
+        for k in range(x.size):
+            got, want = fused[k].new().value, expected[k].new().value
+            msg = f"{udt_op_path} {name} into {out} at {k}"
+            if out.np_type.names is None:
+                _assert_same_floats(got, want, msg)
+            else:
+                for field in out.np_type.names:
+                    _assert_same_floats(got[field], want[field], msg)
 
 
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.filterwarnings("ignore:UDT repr is too large")
 def test_udt_records_differing_only_in_layout_combine():
-    """A packed and an aligned record with the same leaves add, either way round.
+    """A packed and an aligned record with the same leaves combine, either way round.
 
     The result is the left operand's type, since it holds every leaf. Converting
-    the other operand to it for ``ewise_add`` subtracted a zero, which came back
-    as the other operand's own type, so the conversion recursed forever.
+    the other operand to it for a Scalar's ``ewise_add`` subtracted a zero,
+    which came back as the other operand's own type, so the conversion recursed
+    forever; Vectors raised RecursionError the same way before ``ewise_add``
+    refused operands of another type than the result's.
     """
     fields = [("lay_f", np.float64), ("lay_i", np.int16), ("lay_n", [("lay_k", np.int32)])]
     packed = dtypes.register_anonymous(np.dtype(fields), "_LayPacked")
@@ -4131,20 +5111,22 @@ def test_udt_records_differing_only_in_layout_combine():
     y[0] = (-0.0, 1, (1,))
     y[2] = (10.0, 20, (30,))
     for a, b in [(x, y), (y, x)]:
-        for expr in [a + b, a.ewise_add(b, binary.max), a.ewise_add(b)]:
-            result = expr.new()
-            assert result.dtype == a.dtype
-            assert result.nvals == 2
-            assert result[2].new().value.tolist() == (10.0, 20, (30,))
-        assert (a + b).new()[0].new().value.tolist() == (1.5, 3, (4,))
+        result = a.ewise_union(b, binary.plus, 0, 0).new()
+        assert result.dtype == a.dtype
+        assert result.to_coo()[1].tolist() == [(1.5, 3, (4,)), (10.0, 20, (30,))]
+        assert (a * b).new().dtype == a.dtype
+        with pytest.raises(DomainMismatch, match="ewise_add cannot use"):
+            a.ewise_add(b)
+        assert (a + b).new().isequal(result)
     s = gb.Scalar.from_value((1.5, 2, (3,)), dtype=packed)
     t = gb.Scalar.from_value((1.0, 1, (1,)), dtype=aligned)
     assert (s + t).new().value.tolist() == (2.5, 3, (4,))
     # Converting keeps a negative zero where there is no partner.
-    z = Vector(aligned, size=1)
-    z[0] = (-0.0, 0, (0,))
-    result = (Vector(packed, size=1) + z).new()
-    assert np.signbit(result[0].new().value["lay_f"])
+    z = gb.Scalar.from_value((-0.0, 0, (0,)), dtype=aligned)
+    assert np.signbit((gb.Scalar(packed) + z).new().value["lay_f"])
+    # Either layout stores into the other through the cast op.
+    x << y
+    assert x.to_coo()[1].tolist() == [(-0.0, 1, (1,)), (10.0, 20, (30,))]
 
 
 @pytest.mark.skipif("not supports_udfs")
@@ -4194,11 +5176,15 @@ def test_udt_typed_scalar_operands_and_defaults():
     B = Matrix(i8s, nrows=1, ncols=2)
     B[0, 1] = [4, 5, 6]
     for a, b in [(v, w), (A, B)]:
-        with pytest.raises(ValueError, match="would change 0.5 to 0"):
+        # A default must have the operand's type, and FP64 does not cast safely to
+        # int8; 2.0 still converts, being exact, but that is deprecated.
+        with pytest.raises(ValueError, match="Scalar of type FP64 does not fit _TsI8"):
             a.ewise_union(b, binary.plus, gb.Scalar.from_value(0.5), 0)
-        with pytest.raises(ValueError, match="would change 0.5 to 0"):
+        with pytest.warns(DeprecationWarning, match="Scalar of type FP64 does not fit _TsI8"):
+            a.ewise_union(b, binary.plus, gb.Scalar.from_value(2.0), 0)
+        with pytest.raises(ValueError, match="Scalar of type _TsF8 does not fit _TsI8"):
             a.ewise_union(b, binary.plus, 0, sf)
-        assert a.ewise_union(b, binary.plus, gb.Scalar.from_value(2.0), 0).new().dtype == i8s
+        assert a.ewise_union(b, binary.plus, gb.Scalar.from_value(2, "INT8"), 0).new().dtype == i8s
     # Matrix.apply with a Monoid promotes as Vector.apply does.
     result = A.apply(monoid.plus, right=0.5).new()
     assert result.dtype.np_type == np.dtype((np.float64, (3,)))
@@ -4225,11 +5211,12 @@ def test_udt_errors_name_the_real_problem():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_literal_rules_edge_cases():
-    """Edges of the weak rule and of the exactness check, each pinned on its own.
+    """Edges of the weak rule, each pinned on its own.
 
     numpy 2 raises OverflowError itself when ``300`` is converted to int8, which
     hid that the weak rule's own range check matters on numpy 1, where the
-    conversion wraps.
+    conversion wraps. A ``Fraction`` or ``Decimal`` is typed as the int or
+    float it is worth; numpy would have truncated either into an int field.
     """
     from decimal import Decimal
     from fractions import Fraction
@@ -4246,13 +5233,18 @@ def test_udt_literal_rules_edge_cases():
     v = Vector(i8s, size=1)
     v[0] = [1, 2, 3]
     for value in [Fraction(1, 2), Decimal("0.5")]:
-        with pytest.raises(ValueError, match="would change"):
-            v + value
-    assert (v + Fraction(2)).new()[0].new().value.tolist() == [3, 4, 5]
+        result = (v + value).new()
+        assert result.dtype.np_type == np.dtype((np.float64, (3,)))
+        assert result[0].new().value.tolist() == [1.5, 2.5, 3.5]
+    for value in [Fraction(2), Decimal(2)]:
+        result = (v + value).new()
+        assert result.dtype == i8s
+        assert result[0].new().value.tolist() == [3, 4, 5]
+    udf = BinaryOp.register_anonymous(lambda x, y: x + y, "_edge_plus", is_udt=True)
+    with pytest.raises(ValueError, match=r"Fraction\(1, 2\) does not fit _EdgeI8"):
+        v.apply(udf, right=Fraction(1, 2))
     c = Vector(c8s, size=1)
     c[0] = [1, 2, 3]
-    with pytest.raises(ValueError, match="would change 1e[+]300 to"):
-        c.apply(binary.plus, right=(1e300, 0, 0))
     assert c.apply(binary.plus, right=(1 + 2j, 0, 0)).new()[0].new().value[0] == 2 + 2j
 
 
@@ -4283,11 +5275,15 @@ def test_udt_store_casts_reach_every_store_path():
     w = Vector(f8s, size=3)
     w[0] = [0.5, 0.5, 0.5]
     w[1] = [1.5, 1.5, 1.5]
+    # Assigning part of an object from a whole object of another type would
+    # need a converted copy, an expression's (extract) as well; so would
+    # ewise_add, which copies an entry without a partner as it is.
     x = v.dup()
-    x[[0, 1]] << w[[0, 1]]
+    for expr in [lambda: x[[0, 1]] << w[[0, 1]], lambda: x[[0, 2]] << (v + 0.5).new()[[0, 2]]]:
+        with pytest.raises(DomainMismatch, match="converted copy of the whole value"):
+            expr()
+    x[[0, 1]] << w[[0, 1]].new().dup(dtype=i8s)
     assert x.to_coo()[1].tolist() == [[0, 0, 0], [1, 1, 1], [4, 5, 6]]
-    x[[0, 2]] << (v + 0.5).new()[[0, 2]]
-    assert x.to_coo()[1].tolist() == [[1, 2, 3], [1, 1, 1], [4, 5, 6]]
     s = gb.Scalar.from_value([1, 2, 3], dtype=i8s)
     s += 0.5
     np.testing.assert_array_equal(s.value, [1, 2, 3])
@@ -4298,6 +5294,139 @@ def test_udt_store_casts_reach_every_store_path():
     np.testing.assert_array_equal(result.value, [2, 3, 4])
     with pytest.raises(DomainMismatch, match="a UDT casts only to another UDT"):
         s.dup(dtype="FP64")
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_literal_fits_in_select_bool_arrays_and_overflow():
+    """Three edges of the literal rules found by review.
+
+    A user IndexUnaryOp's thunk in ``select`` skipped the must-fit check (1.5
+    became 1), a bool numpy array beside an array UDT failed to look up a
+    ``BOOL[3]`` type (main converted it), and a float literal too large for a
+    float32 field became infinity where it must become an element.
+    """
+    i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_EdgeSelI8")
+    f4s = dtypes.register_anonymous(np.dtype((np.float32, (3,))), "_EdgeSelF4")
+
+    def ge_first(x, i, j, t):  # pragma: no cover (numba)
+        return x[0] >= t[0]
+
+    ge = IndexUnaryOp.register_anonymous(ge_first, "_edge_sel_ge", is_udt=True)
+    v = Vector(i8s, size=3)
+    v[0] = [1, 2, 3]
+    v[1] = [2, 3, 4]
+    assert v.select(ge, 2).new().to_coo()[0].tolist() == [1]
+    for thunk in [1.5, (1.5, 0, 0), np.float64(2.5)]:
+        with pytest.raises(ValueError, match="does not fit _EdgeSelI8"):
+            v.select(ge, thunk)
+    A = Matrix(i8s, nrows=1, ncols=2)
+    A[0, 0] = [1, 2, 3]
+    with pytest.raises(ValueError, match="does not fit _EdgeSelI8"):
+        A.select(ge, 1.5)
+    # A bool array converts into any numeric element, as it did, and bools in a
+    # sequence compare as 0 and 1 (a BOOL[3] UDT cannot be registered).
+    result = v.apply(binary.plus, right=np.array([True, False, True])).new()
+    assert result.dtype == i8s
+    assert result[0].new().value.tolist() == [2, 2, 4]
+    ones = Vector(i8s, size=2)
+    ones[0] = [1, 0, 1]
+    assert (ones == (True, False, True)).new()[0].new().value
+    assert not (ones != [True, False, True]).new()[0].new().value
+    # A float too large for a float32 field raises where it must become an element.
+    f = Vector(f4s, size=2)
+    f[0] = [1, 2, 3]
+    with pytest.raises(OverflowError, match="overflows _EdgeSelF4"):
+        f.ewise_union(f, binary.plus, 1e300, 0)
+    with pytest.raises(OverflowError, match="overflows _EdgeSelF4"):
+        f.apply(binary.register_anonymous(lambda x, y: x, "_edge_sel_first", is_udt=True), 1e300)
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_exact_literal_of_another_type_is_deprecated():
+    """A must-fit value that fits only by value converts, with a DeprecationWarning.
+
+    On main any literal, thunk or default was converted into the UDT, and what
+    did not fit was lost. Now it must fit by type; one whose values convert
+    exactly, such as 0 for a bool field, still converts for the deprecation
+    period, and the warning points at the caller's line.
+    """
+    rec = dtypes.register_anonymous(
+        np.dtype([("dp_b", np.bool_), ("dp_f", np.float64), ("dp_i", np.int8)]), "_DeprecRec"
+    )
+    i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_DeprecI8")
+    r = Vector(rec, size=2)
+    r[0] = (True, 1.5, 2)
+    s = Vector(rec, size=2)
+    s[1] = (False, 2.5, 3)
+    expected = r.ewise_union(s, binary.plus, False, False).new()
+    for default in [0, (0, 0.0, 0), {"dp_b": 0, "dp_f": 0.0, "dp_i": 0}]:
+        with pytest.warns(DeprecationWarning, match="does not fit _DeprecRec") as record:
+            result = r.ewise_union(s, binary.plus, default, False).new()
+        assert result.isequal(expected)
+        assert {w.filename for w in record} == {__file__}
+    with pytest.raises(ValueError, match="3 does not fit _DeprecRec"):
+        r.ewise_union(s, binary.plus, 3, False)
+
+    def ge_first(x, i, j, t):  # pragma: no cover (numba)
+        return x[0] >= t[0]
+
+    ge = IndexUnaryOp.register_anonymous(ge_first, "_deprec_ge", is_udt=True)
+    v = Vector(i8s, size=3)
+    v[0] = [1, 2, 3]
+    v[1] = [2, 3, 4]
+    A = Matrix(i8s, nrows=1, ncols=2)
+    A[0, 1] = [2, 3, 4]
+    for x in [v, A]:
+        with pytest.warns(DeprecationWarning, match="2.0 does not fit _DeprecI8"):
+            assert x.select(ge, 2.0).new().isequal(x.select(ge, 2).new())
+        for thunk in [1.5, float("nan"), np.int64(300)]:
+            with pytest.raises(ValueError, match="does not fit _DeprecI8"):
+                x.select(ge, thunk)
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_monoid_literal_is_typed_as_its_binaryop():
+    """A literal beside a Monoid is typed as beside its BinaryOp, everywhere.
+
+    ``apply`` already used the BinaryOp, but a Scalar's ``ewise_add`` and
+    ``ewise_mult`` with a Monoid converted the literal into the UDT (so ``0.5``
+    had to fit), where the same call with ``binary.plus`` promoted.
+    """
+    i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_MonoLitI8")
+    s = gb.Scalar.from_value([1, 2, 3], dtype=i8s)
+    for expr in [s.ewise_add(0.5, monoid.plus), s.ewise_add(0.5, binary.plus)]:
+        result = expr.new()
+        assert result.dtype.np_type == np.dtype((np.float64, (3,)))
+        np.testing.assert_array_equal(result.value, [1.5, 2.5, 3.5])
+    assert s.ewise_mult(2, monoid.times).new().dtype == i8s
+    # ewise_union defaults still have to fit the op's input types.
+    v = Vector(i8s, size=2)
+    v[0] = [1, 2, 3]
+    with pytest.raises(ValueError, match="does not fit _MonoLitI8"):
+        v.ewise_union(v, monoid.plus, 0.5, 0)
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_outer_on_mixed_types():
+    """``outer`` builds its semiring from the op, typed on both input types.
+
+    ``get_semiring`` typed the semiring by the op's first input type only, so
+    ``outer`` on two different UDTs, or a UDT and a built-in dtype, was a bare
+    GrB_DOMAIN_MISMATCH.
+    """
+    i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_OuterI8")
+    f4s = dtypes.register_anonymous(np.dtype((np.float32, (3,))), "_OuterF4")
+    v = Vector(i8s, size=2)
+    v[0] = [1, 2, 3]
+    u = Vector(f4s, size=2)
+    u[1] = [0.5, 0.5, 0.5]
+    for a, b in [(v, u), (u, v)]:
+        result = a.outer(b).new()
+        assert result.dtype == f4s
+        assert result.to_coo()[2].tolist() == [[0.5, 1.0, 1.5]]
+    result = v.outer(Vector.from_coo([0], [2.0], size=2)).new()
+    assert result.dtype.np_type == np.dtype((np.float64, (3,)))
+    assert result.to_coo()[2].tolist() == [[2.0, 4.0, 6.0]]
 
 
 @pytest.mark.skipif("not supports_udfs")
@@ -4369,11 +5498,15 @@ def test_udt_pair_is_never_unified():
     v[0] = (1.0, 2)
     w = Vector(Y, size=1)
     w[0] = (1, 2.0)
-    for expr in [v.ewise_add(w, monoid.plus), v.ewise_add(w), monoid.plus(v | w)]:
+    for expr in [v.ewise_mult(w, monoid.plus), v.ewise_union(w, monoid.plus, 0, 0)]:
         result = expr.new()
         assert result.dtype.np_type == np.dtype([("uni_a", np.float64), ("uni_b", np.float64)])
         assert result[0].new().value.tolist() == (2.0, 4.0)
     assert v.ewise_mult(w, monoid.max).new()[0].new().value.tolist() == (1.0, 2.0)
+    # ewise_add, the Monoid's default, would need converted copies of the operands.
+    for expr in [lambda: v.ewise_add(w), lambda: monoid.plus(v | w)]:
+        with pytest.raises(DomainMismatch, match="ewise_add cannot use binary.plus"):
+            expr()
     with pytest.raises(TypeError, match="Monoid inputs must be the same dtype"):
         monoid.plus[X, Y]
 

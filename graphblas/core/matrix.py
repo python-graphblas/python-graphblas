@@ -29,8 +29,8 @@ from .scalar import (
     _cast_for_store,
     _check_literal_fits,
     _check_scalar_fits,
-    _ewise_add_converts_operands,
-    _ewise_add_in_result_type,
+    _ewise_add_cast_error,
+    _ewise_add_needs_cast,
     _literal_dtype,
     _scalar_index,
 )
@@ -113,6 +113,16 @@ def _power(updater, A, n, op):
     if n == 1:
         updater << A
         return
+    if (out_dtype := updater.parent.dtype) is not A.dtype and (
+        out_dtype._is_udt or A.dtype._is_udt
+    ):
+        # The last product is stored by mxm, which cannot cast a UDT as it writes;
+        # raise before computing the others.
+        from .base import _fused_store_expr, _store_cast_op
+
+        expr = op(A @ A)
+        if _store_cast_op(expr.dtype, out_dtype) is not None:
+            _fused_store_expr(expr, out_dtype)
     # Use repeated squaring: compute A^2, A^4, A^8, etc., and combine terms as needed.
     # See `numpy.linalg.matrix_power` for a simpler implementation to understand how this works.
     # We reuse `result` and `square` outputs, and use `square_expr` so masks can be applied.
@@ -713,7 +723,11 @@ class Matrix(BaseType):
                 dtype = self.dtype
             rv = Matrix(dtype, nrows=self._nrows, ncols=self._ncols, name=name)
             if not clear:
-                rv(mask=mask, **opts)[...] = self
+                if rv.dtype._is_udt or self.dtype._is_udt:
+                    # ``<<``, not assign: a UDT of another type casts in one pass.
+                    rv(mask=mask, **opts) << self
+                else:
+                    rv(mask=mask, **opts)[...] = self
         else:
             if opts:
                 # Ignore opts for now
@@ -1934,20 +1948,13 @@ class Matrix(BaseType):
                 f"to rows of Matrix in {method_name}.  Matrix.ncols (={self._ncols}) "
                 f"must equal Vector.size (={other._size})."
             )
-        if _ewise_add_converts_operands(op, self.dtype, other.dtype):
-            # See Vector._ewise_add: convert both operands to the result type,
-            # then apply the op in that one type, since GraphBLAS cannot cast a UDT.
-            expr = MatrixExpression(
-                method_name,
-                None,
-                [self, other, _ewise_add_in_result_type, (self, other, op)],
-                nrows=self._nrows,
-                ncols=self._ncols,
-                op=op,
-            )
+        if _ewise_add_needs_cast(op, self.dtype, other.dtype):
+            # GraphBLAS would report the UDT cast before the shapes.
             if other.ndim == 2 and self.shape != other.shape:
-                expr.new(name="")  # incompatible shape; raise now
-            return expr
+                raise DimensionMismatch(
+                    f"Matrix shapes must match in {method_name}: {self.shape} and {other.shape}"
+                )
+            raise _ewise_add_cast_error(op, self.dtype, other.dtype)
 
         if other.ndim == 1:
             return MatrixExpression(
@@ -2123,8 +2130,7 @@ class Matrix(BaseType):
         left_dtype = temp_op.type
         dtype = left_dtype if left_dtype._is_udt else None
         if type(left_default) is not Scalar:
-            if dtype is not None:
-                _check_literal_fits(dtype, left_default)
+            _check_literal_fits(dtype, left_default)
             try:
                 left = Scalar.from_value(
                     left_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
@@ -2144,8 +2150,7 @@ class Matrix(BaseType):
         right_dtype = temp_op.type2
         dtype = right_dtype if right_dtype._is_udt else None
         if type(right_default) is not Scalar:
-            if dtype is not None:
-                _check_literal_fits(dtype, right_default)
+            _check_literal_fits(dtype, right_default)
             try:
                 right = Scalar.from_value(
                     right_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
@@ -2629,7 +2634,8 @@ class Matrix(BaseType):
         if thunk is None:
             thunk = False  # most basic form of 0 when unifying dtypes
         if type(thunk) is not Scalar:
-            dtype = self.dtype if (self.dtype._is_udt and not op.is_positional) else None
+            # A thunk beside a UDT becomes an element of it, so it must fit, as in apply.
+            dtype = _literal_dtype(self.dtype, thunk, op)
             try:
                 thunk = Scalar.from_value(thunk, dtype, is_cscalar=None, name="")
             except TypeError:
@@ -3058,6 +3064,13 @@ class Matrix(BaseType):
             dtype = self.dtype
         else:
             dtype = lookup_dtype(dtype)
+        if dtype is not self.dtype and (dtype._is_udt or self.dtype._is_udt):
+            # See Vector._extract_element: extract in this type, then cast.
+            value = self._extract_element(resolved_indexes, None, opts, is_cscalar=is_cscalar)
+            if result is None:
+                result = Scalar(dtype, is_cscalar=is_cscalar, name=name)
+            result << value
+            return result
         rowidx, colidx = resolved_indexes.indices
         if self._is_transposed:
             rowidx, colidx = colidx, rowidx
@@ -3119,8 +3132,6 @@ class Matrix(BaseType):
 
     def _assign_element(self, resolved_indexes, value):
         rowidx, colidx = resolved_indexes.indices
-        if type(value) is Scalar:
-            value = _cast_for_store(value, self.dtype)
         if type(value) is not Scalar:
             dtype = self.dtype if self.dtype._is_udt else None
             try:
@@ -3133,6 +3144,10 @@ class Matrix(BaseType):
                     argname="value",
                     extra_message="Literal scalars also accepted.",
                 )
+        if value.dtype._is_udt or self.dtype._is_udt:
+            # After the conversion: an autocomputed element of another UDT type
+            # arrives here as a Scalar too.
+            value = _cast_for_store(value, self.dtype)
         if value._is_cscalar:
             if value._empty:
                 call("GrB_Matrix_removeElement", [self, rowidx.index, colidx.index])

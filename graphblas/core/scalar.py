@@ -686,11 +686,14 @@ class Scalar(BaseType):
                 )
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
-        if _ewise_add_converts_operands(op, self.dtype, other.dtype):
+        if _ewise_add_needs_cast(op, self.dtype, other.dtype):
+            if not _is_lifted_op(op.parent):
+                raise _ewise_add_cast_error(op, self.dtype, other.dtype)
             # GraphBLAS casts an unpaired entry to the result type, which a UDT
             # cannot be. Convert both to the result type first, which changes no
             # value, and apply the op in that one type: an int8 UDT plus 0.5 is
-            # float64, and an empty Scalar still adds as 0.
+            # float64, and an empty Scalar still adds as 0. A Scalar is one
+            # element, so the converted copies cost nothing.
             if self.dtype != op.return_type:
                 self = _converted_to(self, op.return_type, name="")
             if other.dtype != op.return_type:
@@ -856,8 +859,7 @@ class Scalar(BaseType):
         left_dtype = temp_op.type
         dtype = left_dtype if left_dtype._is_udt else None
         if type(left_default) is not Scalar:
-            if dtype is not None:
-                _check_literal_fits(dtype, left_default)
+            _check_literal_fits(dtype, left_default)
             try:
                 left = Scalar.from_value(
                     left_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
@@ -877,8 +879,7 @@ class Scalar(BaseType):
         right_dtype = temp_op.type2
         dtype = right_dtype if right_dtype._is_udt else None
         if type(right_default) is not Scalar:
-            if dtype is not None:
-                _check_literal_fits(dtype, right_default)
+            _check_literal_fits(dtype, right_default)
             try:
                 right = Scalar.from_value(
                     right_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
@@ -1174,58 +1175,200 @@ def _literal_dtype(dtype, value, op):
     decides how a literal operand is typed beside a UDT; built-in dtypes
     always get ``None`` and are typed by ``unify``.
 
-    Beside a UDT, a tuple, list or array literal becomes an element of that
-    UDT, as it must for a user's op, but only when no value changes
-    (:func:`_check_literal_fits`). With a built-in op that lifts to UDTs, a
-    number is an operand in its own right, typed as numpy 2 types it (NEP 50):
+    Beside a UDT, a literal becomes an element of that UDT, as it must for a
+    user's op, when its type allows it (:func:`_check_literal_fits`). With a
+    built-in op that lifts to UDTs, a literal is an operand in its own right,
+    typed as numpy 2 types it (NEP 50), by :func:`_literal_type`:
 
-    - a numpy scalar or 0-d array keeps its dtype (strong);
+    - a numpy scalar or array keeps its dtype (strong); an array's type is the
+      array layout of its dtype (``udt_utils._array_literal_udt``);
     - a Python ``bool``, ``int``, ``float`` or ``complex`` is weak: in each
       element or leaf it takes that element's dtype when it fits the kind, so
       ``int8_udt + 1`` stays ``int8_udt`` and ``int8_udt += 1`` can be stored,
       while ``int8_udt * 2.5`` has float64 elements (see
-      ``udt_utils._weak_literal_udt``). Converting every literal to the UDT,
-      as before, made ``int8_udt * 2.5`` multiply by 2.
+      ``udt_utils._weak_literal_udt``), where converting it to the UDT would
+      multiply by 2;
+    - a tuple, list or dict of Python numbers, laid out like an element, is
+      weak in the same way, leaf by leaf: ``int8_udt + (1, 2, 3)`` stays
+      ``int8_udt`` and ``+ (0.5, 1.5, 2.5)`` has float64 elements.
 
     ``eq`` and ``ne`` take a number as it is, strong, since a comparison
-    needs no result type and ``int8_udt == 300`` should be False, not an error.
+    needs no result type and ``int8_udt == 300`` should be False, not an error;
+    a sequence likewise, so ``int8_udt == (0.5, 1, 2)`` compares the values.
     """
     if not dtype._is_udt or getattr(op, "is_positional", False):
         return None
-    is_python_number = type(value) in {bool, int, float, complex}
-    is_numpy_number = isinstance(value, (np.bool_, np.number)) or (
-        isinstance(value, np.ndarray) and value.ndim == 0 and value.dtype.kind in "biufc"
-    )
-    if is_python_number or is_numpy_number:
-        from .operator.binary import BinaryOp
-        from .operator.udt_utils import BUILTIN_UDT_BINARY_OPS, _weak_literal_udt
-
-        if type(op) is BinaryOp and not op._anonymous:
-            if op.name in ("eq", "ne") or (is_numpy_number and op.name in BUILTIN_UDT_BINARY_OPS):
-                return None
-            if op.name in BUILTIN_UDT_BINARY_OPS:
-                return _weak_literal_udt(dtype, value)
-    if getattr(op, "_udt_types", True) is not None:
+    if getattr(op, "_udt_types", True) is None:
         # An op that does not take UDTs at all (``lt``) reports that itself.
-        _check_literal_fits(dtype, value)
+        return dtype
+    from .operator.binary import BinaryOp
+    from .operator.monoid import Monoid
+    from .operator.udt_utils import _LITERAL_KINDS, BUILTIN_UDT_BINARY_OPS, _as_python_number
+
+    if isinstance(op, Monoid) and not op._anonymous:
+        # Element-wise, a Monoid is its BinaryOp (``get_typed_op`` types it so).
+        op = op.binaryop
+    if type(op) is BinaryOp and not op._anonymous:
+        is_comparison = op.name in ("eq", "ne")
+        if is_comparison or op.name in BUILTIN_UDT_BINARY_OPS:
+            if is_comparison and type(_as_python_number(value)) in _LITERAL_KINDS:
+                return None
+            literal_type = _literal_type(dtype, value, strong_numbers=is_comparison)
+            if literal_type is not None:
+                return literal_type
+    _check_literal_fits(dtype, value)
     return dtype
 
 
-def _check_literal_fits(dtype, value):
-    """Raise if converting literal ``value`` into UDT ``dtype`` would change one of its values.
+def _literal_type(dtype, value, *, strong_numbers=False):
+    """Return the type of literal ``value`` beside UDT ``dtype``, or ``None`` when it has none.
 
-    A literal becomes an element of the UDT when nothing else types it: a tuple,
-    list or array beside a UDT, a literal beside a user-defined op, the
-    defaults of ``ewise_union``. numpy turns ``0.5`` into ``0`` in an integer
-    field without a word, and the op would then run on a value the caller never
-    wrote. A number may round to a narrower float, as numpy 2 rounds a Python
-    number beside float32, but may not lose an imaginary part or overflow to
-    infinity.
+    A Python number (a ``Fraction`` or ``Decimal`` counts as the int or float
+    it is worth) or a tuple, list or dict of them is weak, leaf by leaf
+    (``udt_utils._weak_literal_udt``); with ``strong_numbers`` each leaf takes
+    the number's own dtype instead, as a comparison wants. A numpy value is
+    strong: its dtype, in the array layout of its shape for an array
+    (``udt_utils._array_literal_udt``); a sequence holding numpy values is the
+    array numpy makes of it. Anything else has no type here, and
+    ``Scalar.from_value`` reports it.
     """
-    import numbers
+    from .operator.udt_utils import (
+        _LITERAL_KINDS,
+        _array_literal_udt,
+        _as_python_number,
+        _weak_literal_udt,
+    )
 
-    if not isinstance(value, (numbers.Number, tuple, list, dict, np.generic, np.ndarray)):
+    value = _as_python_number(value)
+    np_type = dtype.np_type
+    if isinstance(value, dict) and np_type.names is not None:
+        value = _dict_to_record(np_type, value)
+    if type(value) in _LITERAL_KINDS or isinstance(value, (tuple, list)):
+        literal_type = _weak_literal_udt(dtype, value, weak=not strong_numbers)
+        if literal_type is not None or type(value) in _LITERAL_KINDS:
+            return literal_type
+        try:
+            value = np.asarray(value)
+        except (TypeError, ValueError):  # ragged
+            return None
+    if isinstance(value, (np.bool_, np.number)):
+        return lookup_dtype(value.dtype)
+    if isinstance(value, (np.ndarray, np.void)):
+        if value.ndim == 0 and value.dtype.kind in "biufc":
+            return lookup_dtype(value.dtype)
+        return _array_literal_udt(dtype, value)
+    return None
+
+
+def _check_literal_fits(dtype, value):
+    """Raise unless literal ``value`` may become an element of UDT ``dtype``, by its type.
+
+    A literal becomes an element of the UDT when nothing else types it: beside
+    a user-defined op, as an IndexUnaryOp thunk, or as an ``ewise_union``
+    default, which GraphBLAS casts to the op's input type, and a UDT casts only
+    to itself. Its type decides, not its values (:func:`_literal_type`): a
+    Python number or a sequence of them is weak, so ``1`` and ``(1, 2, 3)``
+    beside ``INT8[3]`` are ``INT8[3]`` and fit, ``0.5`` is ``FP64[3]`` and does
+    not, and ``300`` is ``OverflowError``; a numpy value is strong and fits when
+    each leaf casts safely into the UDT's (``np.can_cast``), so ``np.int8(1)``
+    fits ``INT8[3]`` and ``np.int64(1)`` does not. ``Scalar.from_value`` then
+    converts it, which changes no value. A literal that does not fit by type but
+    converts exactly still converts, with a DeprecationWarning
+    (:func:`_refuse_unless_exact`). A ``dtype`` of ``None``, a built-in type,
+    takes any literal.
+    """
+    if dtype is None:
         return
+    from .operator.udt_utils import _casts_safely_into
+
+    literal_type = _literal_type(dtype, value)
+    if literal_type is not None and not _casts_safely_into(literal_type, dtype):
+        _refuse_unless_exact(
+            dtype,
+            value,
+            f"{value!r} does not fit {dtype}: it is typed as {literal_type}, and a literal "
+            "becomes an element of a UDT only when its type is that UDT or casts into it "
+            "safely, field by field (a Python number or sequence takes a field's dtype when "
+            "the field's kind holds it).",
+            "Write it in the element's types, such as False rather than 0 for a bool field "
+            "and 2 rather than 2.0 for an integer field.",
+        )
+        return
+    # A weak float fits a float32 field by type, but a finite one too large for
+    # it would become infinity; numpy warns as it converts, on numpy 1 and 2.
+    import warnings
+
+    np_type = dtype.np_type
+    if np_type.names is not None:
+        target = np.zeros(1, dtype=np_type)
+        if isinstance(value, dict):
+            value = _dict_to_record(np_type, value)
+    else:
+        target = np.zeros(np_type.subdtype[1], dtype=np_type.subdtype[0])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        try:
+            target[...] = value
+        except RuntimeWarning:
+            raise OverflowError(
+                f"{value!r} overflows {dtype}: a literal that becomes an element of a UDT "
+                "must not turn a finite number into infinity."
+            ) from None
+        except (TypeError, ValueError):
+            pass  # Scalar.from_value reports these.
+
+
+def _check_scalar_fits(dtype, scalar):
+    """Raise unless a typed Scalar casts safely into UDT ``dtype``, as a literal must.
+
+    An ``ewise_union`` default must have the op's input type, so it is
+    converted; the same rule as for a literal (:func:`_check_literal_fits`).
+    """
+    from .operator.udt_utils import _casts_safely_into
+
+    if (
+        dtype is not None
+        and scalar.dtype != dtype
+        and not scalar._is_empty
+        and not _casts_safely_into(scalar.dtype, dtype)
+    ):
+        _refuse_unless_exact(
+            dtype,
+            scalar.value,
+            f"a Scalar of type {scalar.dtype} does not fit {dtype}: it is used where only "
+            "that UDT can go, and casts into it only when every field casts safely.",
+            "Convert it first with .dup(dtype=...).",
+        )
+
+
+def _refuse_unless_exact(dtype, value, reason, advice):
+    """Raise ValueError ``reason``, or only warn if ``value`` converts into ``dtype`` exactly.
+
+    MAINT 2026-10-07: a literal or Scalar that must become an element of a UDT
+    must fit it by type since #591. Before, any value was converted and what did
+    not fit was lost; one that converts exactly, such as ``0`` for a bool field
+    or ``2.0`` for an integer field, still converts, with a DeprecationWarning.
+    Eight months after the release that adds the warning (the deprecation policy
+    in docs/getting_started/faq.rst), always raise here and delete
+    ``_converts_exactly``, ``_object_layout`` and ``utils._warn_from_caller``.
+    """
+    if not _converts_exactly(dtype, value):
+        raise ValueError(reason)
+    utils._warn_from_caller(
+        f"{reason} Its values convert exactly, so it is converted for now; this is "
+        f"deprecated and will raise ValueError in a future version. {advice}",
+        DeprecationWarning,
+    )
+
+
+def _converts_exactly(dtype, value):
+    """Whether converting ``value`` into UDT ``dtype`` keeps every number in it.
+
+    A float may round to a narrower float, as numpy 2 rounds a Python number
+    beside float32, but may not become infinite or lose an imaginary part.
+    """
+    import warnings
+
     np_type = dtype.np_type
     try:
         if np_type.names is not None:
@@ -1238,16 +1381,12 @@ def _check_literal_fits(dtype, value):
             given = np.empty(shape, dtype=object)
             converted = np.zeros(shape, dtype=base)
         given[:] = value
-        import warnings
-
         with warnings.catch_warnings():
-            # numpy warns for some lossy conversions (an out-of-range int on
-            # numpy 1, a complex array into floats); the comparison below
-            # reports each of them the same way on every numpy.
+            # numpy warns for some lossy conversions; the comparison below finds each.
             warnings.simplefilter("ignore")
             converted[:] = _view_if_same_layout(value, converted.dtype)
-    except (TypeError, ValueError):
-        return  # Not something this can read; Scalar.from_value reports it.
+    except (TypeError, ValueError, OverflowError):
+        return False
     for given_leaf, converted_leaf in zip(
         _leaf_arrays(given), _leaf_arrays(converted), strict=True
     ):
@@ -1257,29 +1396,21 @@ def _check_literal_fits(dtype, value):
         for x, y in zip(given_leaf.ravel().tolist(), converted_leaf.ravel().tolist(), strict=True):
             if kind in "fc":
                 z = complex(x)
-                changed = (kind == "f" and z.imag != 0) or (np.isfinite(z) and not np.isfinite(y))
-            else:
-                changed = x != y
-                if changed and kind in "iu" and type(x) is int:
-                    # numpy 2 raises this for a Python int itself; numpy 1 wraps.
-                    raise OverflowError(
-                        f"Python integer {x} out of bounds for {converted_leaf.dtype}"
-                    )
-            if changed:
-                raise ValueError(
-                    f"converting {value!r} to {dtype} would change {x!r} to {y!r}; a value is "
-                    "converted into a UDT only when none of it changes."
-                )
+                if (kind == "f" and z.imag != 0) or (np.isfinite(z) and not np.isfinite(y)):
+                    return False
+            elif x != y:
+                return False
+    return True
 
 
-def _check_scalar_fits(dtype, scalar):
-    """Raise if a typed Scalar would change a value when converted into UDT ``dtype``.
-
-    An ``ewise_union`` default must have the op's input type, so it is
-    converted; the same rule as for a literal (:func:`_check_literal_fits`).
-    """
-    if dtype is not None and scalar.dtype != dtype and not scalar._is_empty:
-        _check_literal_fits(dtype, scalar.value)
+def _object_layout(np_type):
+    """Return ``np_type`` with every leaf an object, keeping field names, nesting and shapes."""
+    if np_type.names is not None:
+        return np.dtype([(name, _object_layout(np_type.fields[name][0])) for name in np_type.names])
+    if np_type.subdtype is not None:
+        base, shape = np_type.subdtype
+        return np.dtype((_object_layout(base), shape))
+    return np.dtype(object)
 
 
 def _is_lifted_op(op):
@@ -1293,16 +1424,6 @@ def _is_lifted_op(op):
     return type(op) is BinaryOp and not op._anonymous and op.name in BUILTIN_UDT_BINARY_OPS
 
 
-def _object_layout(np_type):
-    """Return ``np_type`` with every leaf an object, keeping field names, nesting and shapes."""
-    if np_type.names is not None:
-        return np.dtype([(name, _object_layout(np_type.fields[name][0])) for name in np_type.names])
-    if np_type.subdtype is not None:
-        base, shape = np_type.subdtype
-        return np.dtype((_object_layout(base), shape))
-    return np.dtype(object)
-
-
 def _leaf_arrays(arr):
     """Yield the array of each leaf of a structured array, in field order."""
     if arr.dtype.names is None:
@@ -1312,49 +1433,48 @@ def _leaf_arrays(arr):
             yield from _leaf_arrays(arr[name])
 
 
-def _ewise_add_converts_operands(op, left_dtype, right_dtype):
-    """Whether ``ewise_add`` must convert its operands to ``op``'s result type before the op.
+def _ewise_add_needs_cast(op, left_dtype, right_dtype):
+    """Whether ``ewise_add`` with ``op`` would have GraphBLAS cast to or from a UDT.
 
     eWiseAdd copies an entry present in only one input into the result, cast
     to the op's output type, and GraphBLAS checks that cast before it looks at
     the data. A UDT casts only to itself, so such a pair is a bare
-    GrB_DOMAIN_MISMATCH even when every entry has a partner. Each lifted
-    arithmetic op gives the same values on operands already converted to its
-    result type, since that type is what it promotes their elements to, so
-    those convert first (``_ewise_add_in_result_type``). Any other op raises
-    ``DomainMismatch`` here.
+    GrB_DOMAIN_MISMATCH even when every entry has a partner.
     """
     out = op.return_type
     if not (out._is_udt or left_dtype._is_udt or right_dtype._is_udt):
         return False
-    if left_dtype == out and right_dtype == out:
-        return False
-    from .operator.udt_utils import BUILTIN_UDT_BINARY_OPS
+    return left_dtype != out or right_dtype != out
 
-    parent = op.parent
-    if op.opclass == "BinaryOp" and not parent._anonymous and parent.name in BUILTIN_UDT_BINARY_OPS:
-        return True
+
+def _ewise_add_cast_error(op, left_dtype, right_dtype):
+    """Return the ``DomainMismatch`` for an ``ewise_add`` that would need a UDT cast."""
     from ..exceptions import DomainMismatch
 
-    raise DomainMismatch(
-        f"ewise_add cannot use {parent!r} on {left_dtype} and {right_dtype}: an entry present "
-        f"in only one input is cast to the result type {out}, and UDTs do not cast. Use "
-        "ewise_union, which takes a default for each side, or ewise_mult."
+    return DomainMismatch(
+        f"ewise_add cannot use {op.parent!r} on {left_dtype} and {right_dtype}: an entry "
+        f"present in only one input is copied into the result as {op.return_type}, and "
+        "GraphBLAS cannot cast a UDT, so this would need converted copies of the operands. "
+        "Use ewise_union, which takes a default for each side (infix + does, with zeros), or "
+        "ewise_mult; or convert an operand first with .dup(dtype=...)."
     )
 
 
-def _ewise_add_in_result_type(updater, left, right, op):
-    """Recipe for ``ewise_add`` when ``_ewise_add_converts_operands`` says to convert.
+def _plus_zero(dtype):
+    """Return a Scalar of ``dtype`` that ``plus`` adds to any value without changing it.
 
-    Each operand is converted to the result type (:func:`_converted_to`), and
-    the op then runs on the two operands in that one type.
+    Its float and complex leaves are ``-0.0``, because ``-0.0 + x`` is ``x``
+    for every float, where ``0.0 + -0.0`` is ``0.0``.
     """
-    out = op.return_type
-    if left.dtype != out:
-        left = _converted_to(left, out, name="left_temp", **updater.opts)
-    if right.dtype != out:
-        right = _converted_to(right, out, name="right_temp", **updater.opts)
-    updater << left.ewise_add(right, op.parent)
+    np_type = dtype.np_type
+    if np_type.subdtype is not None:
+        zero = np.zeros(np_type.subdtype[1], dtype=np_type.subdtype[0])
+    else:
+        zero = np.zeros(1, dtype=np_type)
+    for leaf in _leaf_arrays(zero):
+        if leaf.dtype.kind in "fc":
+            leaf[...] = complex(-0.0, -0.0) if leaf.dtype.kind == "c" else -0.0
+    return Scalar.from_value(zero if np_type.subdtype is not None else zero[0], dtype, name="")
 
 
 def _converted_to(operand, dtype, **new_kwargs):
@@ -1364,19 +1484,8 @@ def _converted_to(operand, dtype, **new_kwargs):
     zero on the left, the result is ``dtype`` itself even when the operand has
     the same elements in another layout (a packed and an aligned record),
     since a left operand that holds the promoted elements is the result type.
-    The float and complex leaves of that zero are ``-0.0``, because
-    ``-0.0 + x`` is ``x`` for every float, where ``0.0 + -0.0`` is ``0.0``.
     """
-    np_type = dtype.np_type
-    if np_type.names is not None:
-        zero = np.zeros(1, dtype=np_type)
-    else:
-        zero = np.zeros(np_type.subdtype[1], dtype=np_type.subdtype[0])
-    for leaf in _leaf_arrays(zero):
-        if leaf.dtype.kind in "fc":
-            leaf[...] = complex(-0.0, -0.0) if leaf.dtype.kind == "c" else -0.0
-    zero = Scalar.from_value(zero[0] if np_type.names is not None else zero, dtype, name="")
-    rv = operand.apply(binary.plus, left=zero).new(**new_kwargs)
+    rv = operand.apply(binary.plus, left=_plus_zero(dtype)).new(**new_kwargs)
     if rv.dtype != dtype:  # pragma: no cover (safety)
         from ..exceptions import DomainMismatch
 
@@ -1385,19 +1494,27 @@ def _converted_to(operand, dtype, **new_kwargs):
 
 
 def _cast_for_store(value, dtype):
-    """Return a Scalar, Vector or Matrix ``value`` as ``dtype``, to be assigned into an object.
+    """Return Scalar, Vector or Matrix ``value``, or its expression, to assign as ``dtype``.
 
     GraphBLAS's assign and setElement take a UDT value as raw bytes, so one of
     another type would be read as the wrong type; ``base._store_cast_op``
-    casts it first or raises.
+    casts it or raises. Assign cannot cast as it writes, so a value of
+    another UDT type needs a converted copy: one element for a Scalar, which
+    is made here, but the whole value for a Vector or Matrix, which raises.
     """
     from .base import _store_cast_op
 
     if (cast_op := _store_cast_op(value.dtype, dtype)) is None:
         return value
+    if output_type(value) is not Scalar:
+        from ..exceptions import DomainMismatch
+
+        raise DomainMismatch(
+            f"cannot assign a value of type {value.dtype} into an object of type {dtype}: "
+            "assign cannot cast a UDT as it writes, so this would need a converted copy of "
+            "the whole value. Make it explicitly with .dup(dtype=...) first."
+        )
     if not isinstance(value, BaseType):
-        # An expression, such as ``x[[0, 1]] << y + 0.5``: compute it in its own
-        # type, then cast it.
         value = value.new(name="")
     return value.apply(cast_op).new(name=value.name)
 
