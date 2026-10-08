@@ -3,7 +3,7 @@ import warnings
 from ast import literal_eval
 
 import numpy as np
-from numpy import promote_types, result_type
+from numpy import promote_types
 
 from .. import backend, dtypes
 from ..core import NULL, _has_numba, ffi, lib
@@ -566,14 +566,15 @@ def unify(type1, type2, *, is_left_scalar=False, is_right_scalar=False):
     unify(INT8, UINT16) -> INT32
     unify(BOOL, UINT16) -> UINT16
     unify(FP32, INT32) -> FP64
+
+    ``is_left_scalar`` and ``is_right_scalar`` no longer change the result. A
+    Python number is typed before it gets here (``scalar._literal_dtype``), and
+    a typed scalar promotes as any operand does, as numpy 2 promotes it. They
+    used to stand the scalar in as a 0-d array of value 0, which numpy 1 typed
+    by value, so ``int8_vec + 300`` wrapped there.
     """
     if type1 is type2:
         return type1
-    if is_left_scalar:
-        if not is_right_scalar:
-            return lookup_dtype(result_type(np.array(0, type1.np_type), type2.np_type))
-    elif is_right_scalar:
-        return lookup_dtype(result_type(type1.np_type, np.array(0, type2.np_type)))
     return lookup_dtype(promote_types(type1.np_type, type2.np_type))
 
 

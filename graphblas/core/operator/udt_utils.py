@@ -579,6 +579,12 @@ _WEAK_LITERAL_DEFAULT = {
 }
 
 
+@lru_cache
+def _int_bounds(elem):
+    info = np.iinfo(elem)
+    return info.min, info.max
+
+
 def _weak_literal_element(value, kind, elem):
     """Return the dtype a Python literal of ``kind`` takes beside an element of ``elem``.
 
@@ -590,13 +596,42 @@ def _weak_literal_element(value, kind, elem):
     """
     if elem.kind in _WEAK_LITERAL_FITS[kind]:
         if kind == "i" and elem.kind in "iu":
-            info = np.iinfo(elem)
-            if not info.min <= value <= info.max:
+            lo, hi = _int_bounds(elem)
+            if not lo <= value <= hi:
                 raise OverflowError(f"Python integer {value} out of bounds for {elem}")
         return elem
     if kind == "c" and elem.kind == "f":
         return np.result_type(elem, np.complex64)
-    return _WEAK_LITERAL_DEFAULT[kind]
+    rv = _WEAK_LITERAL_DEFAULT[kind]
+    if kind == "i":  # beside a bool, an int is INT64, and must fit it
+        lo, hi = _int_bounds(rv)
+        if not lo <= value <= hi:
+            raise OverflowError(f"Python integer {value} out of bounds for {rv}")
+    return rv
+
+
+def _weak_literal_leaf(values, kind, elem, *, exact=False):
+    """Return the one dtype Python numbers ``values`` of widest kind ``kind`` take beside ``elem``.
+
+    Each is typed by :func:`_weak_literal_element`, so an int out of an integer
+    ``elem``'s range raises ``OverflowError``. With ``exact``, for a comparison,
+    which keeps no result type, such an int takes int64, uint64 or float64,
+    whichever holds the values, so it compares exactly, as numpy compares it:
+    ``int8_vec < 300`` is all True. Built-in dtypes and UDT leaves both use this.
+    """
+    if exact and kind == "i" and elem.kind in "biu":
+        # The integer type an int would take: ``elem``, or INT64 beside a bool.
+        lo, hi = _int_bounds(elem if elem.kind != "b" else _WEAK_LITERAL_DEFAULT["i"])
+        for x in values:
+            if not lo <= x <= hi:
+                if all(-(2**63) <= x < 2**63 for x in values):
+                    return np.dtype(np.int64)
+                if all(0 <= x < 2**64 for x in values):
+                    return np.dtype(np.uint64)
+                return np.dtype(np.float64)
+    for x in values:
+        elem_type = _weak_literal_element(x, kind, elem)
+    return elem_type
 
 
 _LITERAL_KINDS = {bool: "b", int: "i", float: "f", complex: "c"}
@@ -642,7 +677,7 @@ def _literal_leaf_values(value, shape):
     return values if all(type(x) in _LITERAL_KINDS for x in values) else None
 
 
-def _weak_literal_udt(dtype, value, *, weak=True):
+def _weak_literal_udt(dtype, value, *, exact=False):
     """Return the UDT a Python number, or a tuple or list of them, becomes beside UDT ``dtype``.
 
     The literal is read as an element of ``dtype``: a number stands in every
@@ -654,9 +689,10 @@ def _weak_literal_udt(dtype, value, *, weak=True):
     ``int8_udt + (1, 2, 3)`` stay ``int8_udt``, while ``int8_udt * 2.5`` and
     ``int8_udt + (0.5, 1.5, 2.5)`` give float64 elements. A leaf that is not a
     number (bytes, datetime) takes the literal's default dtype and fails to
-    pair. With ``weak=False`` every leaf takes the numbers' default dtype
-    (INT64, FP64, FC64), as ``eq`` and ``ne`` take a number as it is. A sequence
-    not laid out like an element gives ``None``.
+    pair. With ``exact``, for ``eq`` and ``ne``, an int out of a leaf's range
+    takes a type that holds it instead of raising (:func:`_weak_literal_leaf`),
+    so ``int8_udt == 300`` is False. A sequence not laid out like an element
+    gives ``None``.
     """
     from ..dtypes import lookup_dtype
 
@@ -666,15 +702,10 @@ def _weak_literal_udt(dtype, value, *, weak=True):
         if values is None:
             raise _LiteralDoesNotFit
         kind = max((_LITERAL_KINDS[type(x)] for x in values), key="bifc".index)
-        if weak and base.kind in "biufc":
-            # One dtype for the leaf; an int out of the element's range raises.
-            for x in values:
-                elem = _weak_literal_element(x, kind, base)
+        if base.kind in "biufc":
+            elem = _weak_literal_leaf(values, kind, base, exact=exact)
         else:
             elem = _WEAK_LITERAL_DEFAULT[kind]
-            if elem.kind == "b" and shape and base.kind in "biufc":
-                # A bool array cannot be a UDT, and a bool compares as 0 or 1.
-                elem = base
         return np.dtype((elem, shape)) if shape else elem
 
     def record_leaves(np_type, part):
