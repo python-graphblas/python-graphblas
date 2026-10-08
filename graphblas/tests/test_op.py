@@ -5418,6 +5418,66 @@ def test_udt_exact_literal_of_another_type_is_deprecated():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udt_isequal_is_array_equal_and_eq_broadcasts():
+    """Isequal compares array elements as np.array_equal; == broadcasts, on Scalars too.
+
+    eq on array UDTs broadcasts, as numpy's == does, and isequal used it, so an
+    FP64[3] of [1, 1, 1] was isequal to an FP64[1] of [1]. A Scalar's == was
+    isequal itself, and a literal was converted into the UDT first, so an
+    INT8[3] of [0, 0, 0] equaled 0.5 (truncated to 0) by either spelling.
+    """
+    f3 = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "_IeqF3")
+    f1 = dtypes.register_anonymous(np.dtype((np.float64, (1,))), "_IeqF1")
+    f13 = dtypes.register_anonymous(np.dtype((np.float64, (1, 3))), "_IeqF13")
+    i3 = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_IeqI3")
+    rec = dtypes.register_anonymous(np.dtype([("ieq_a", np.int8), ("ieq_b", np.float32)]), "_IeqR")
+
+    def vec(dtype, value):
+        v = Vector(dtype, size=2)
+        v[1] = value
+        return v
+
+    ones = vec(f3, [1, 1, 1])
+    assert not ones.isequal(vec(f1, [1]))
+    assert (ones == vec(f1, [1])).new().reduce(monoid.land).new().value  # == broadcasts
+    assert ones.isequal(vec(f13, [[1, 1, 1]]))  # leading axes of length 1 do not count
+    assert ones.isequal(vec(i3, [1, 1, 1]))
+    assert not ones.isequal(Vector.from_coo([1], [1.0], size=2))
+    assert vec(f1, [5]).isequal(Vector.from_coo([1], [5.0], size=2))
+    A = Matrix.from_coo([0], [1], [[1, 1, 1]], dtype=f3, nrows=1, ncols=2)
+    assert not A.isequal(Matrix.from_coo([0], [1], [[1]], dtype=f1, nrows=1, ncols=2))
+    assert A.isequal(Matrix.from_coo([0], [1], [[1, 1, 1]], dtype=i3, nrows=1, ncols=2))
+
+    u = gb.Scalar.from_value([1, 1, 1], i3)
+    zeros = gb.Scalar.from_value([0, 0, 0], i3)
+    assert u == 1
+    assert u != 0
+    assert u == gb.Scalar.from_value(1)
+    assert gb.Scalar.from_value(1) == u
+    assert u == gb.Scalar.from_value([1.0], f1)
+    assert not u.isequal(1)
+    assert not u.isequal([1])
+    assert not u.isequal(gb.Scalar.from_value([1.0], f1))
+    assert u.isequal((1, 1, 1))
+    assert u.isequal(np.ones((1, 3), dtype=np.int8))
+    assert gb.Scalar.from_value([5], f1).isequal(5)
+    # A literal is compared as given, not converted into the UDT first.
+    assert zeros != 0.5
+    assert not zeros.isequal(0.5)
+    assert not zeros.isequal((0, 0, 0.5))
+    r = gb.Scalar.from_value((0, 0.1), rec)
+    assert r == (0, 0.1)  # 0.1 beside a float32 field is float32, as == types it
+    assert r.isequal((0, 0.1))
+    assert r != (0.5, 0.1)
+    assert not r.isequal((0.5, 0.1))
+    # Empty Scalars are equal to each other, and to None.
+    assert gb.Scalar(i3) == gb.Scalar(f3)
+    assert gb.Scalar(i3) == None  # noqa: E711
+    assert gb.Scalar(i3) != u
+    assert u != gb.Scalar(i3)
+
+
+@pytest.mark.skipif("not supports_udfs")
 def test_udt_monoid_literal_is_typed_as_its_binaryop():
     """A literal beside a Monoid is typed as beside its BinaryOp, everywhere.
 

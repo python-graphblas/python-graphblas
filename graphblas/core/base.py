@@ -509,12 +509,12 @@ class BaseType:
                     # w << (v & v)
                     expr = expr._to_expr()
                 else:
-                    from .scalar import Scalar
+                    from .scalar import Scalar, _literal_store_dtype
 
                     if type(expr) is Scalar:
                         scalar = expr
                     else:
-                        dtype = self.dtype if self.dtype._is_udt else None
+                        dtype = _literal_store_dtype(self.dtype, expr)
                         try:
                             scalar = Scalar.from_value(expr, dtype, is_cscalar=None, name="")
                         except TypeError:

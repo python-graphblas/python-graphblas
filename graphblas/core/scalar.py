@@ -134,15 +134,17 @@ class Scalar(BaseType):
     def __eq__(self, other):
         """Check equality.
 
-        Equality comparison uses :meth:`isequal`. Use that directly for finer control of
-        what is considered equal.
+        Compares with ``binary.eq``, as ``==`` on a Vector or Matrix does, so the
+        elements of array UDTs broadcast (an ``INT8[3]`` Scalar of ``[1, 1, 1]``
+        equals ``1``), but returns a bool. Two empty Scalars are equal, and
+        ``s == None`` checks whether ``s`` is empty. :meth:`isequal` is stricter.
         """
-        return self.isequal(other)
+        return _scalar_eq(self, other)
 
     __hash__ = None
 
     def __ne__(self, other):
-        return not self.isequal(other)
+        return not _scalar_eq(self, other)
 
     def __bool__(self):
         """Truthiness check.
@@ -199,6 +201,11 @@ class Scalar(BaseType):
         -------
         bool
 
+        Notes
+        -----
+        Elements of array UDTs must have the same shape, apart from leading axes
+        of length 1, as in ``np.array_equal``; ``==`` broadcasts instead.
+
         See Also
         --------
         :meth:`isclose` : For equality check of floating point dtypes
@@ -207,8 +214,15 @@ class Scalar(BaseType):
         if type(other) is not Scalar:
             if other is None:
                 return self._is_empty
+            dtype = None
+            if self.dtype._is_udt:
+                # A literal is compared as given, as ``==`` types it, not converted
+                # into the UDT (0.5 would become 0 in an int field), and an array
+                # literal must have the element's shape, as in np.array_equal.
+                if _literal_shape_differs(self.dtype, other):
+                    return False
+                dtype = _literal_type(self.dtype, other, exact=True) or self.dtype
             try:
-                dtype = self.dtype if self.dtype._is_udt else None
                 other = Scalar.from_value(other, dtype, is_cscalar=None, name="s_isequal")
             except TypeError:
                 other = self._expect_type(
@@ -221,6 +235,8 @@ class Scalar(BaseType):
             # Don't check dtype if we had to infer dtype of `other`
             check_dtype = False
         if check_dtype and self.dtype != other.dtype:
+            return False
+        if _element_shapes_differ(self.dtype, other.dtype):
             return False
         if self._is_empty:
             return other._is_empty
@@ -391,7 +407,7 @@ class Scalar(BaseType):
                 val = _Pointer(_as_scalar(val, self.dtype, is_cscalar=True))
                 dtype_name = "UDT"
             else:
-                val = _as_scalar(val, is_cscalar=True)
+                val = _as_scalar(val, _literal_store_dtype(self.dtype, val), is_cscalar=True)
                 dtype_name = val.dtype.name
             call(f"GrB_Scalar_setElement_{dtype_name}", [self, val])
 
@@ -1289,7 +1305,7 @@ def _weak_builtin_literal_dtype(dtype, value, op=None):
             rv = lookup_dtype(np_type)
         except ValueError:  # A complex literal where the backend has no complex types
             return None
-    if kind != "b" and (op is None or not exact) and rv.np_type in _SINGLE_PRECISION:
+    if kind != "b" and rv.np_type in _SINGLE_PRECISION:
         import struct
 
         parts = (value.real, value.imag) if kind == "c" else (float(value),)
@@ -1301,7 +1317,8 @@ def _weak_builtin_literal_dtype(dtype, value, op=None):
                 # A fill value widens rather than lose its value, as an int out of
                 # range does: FP32's to_dense(fill_value=1e300) is float64.
                 return lookup_dtype(np.complex128 if kind == "c" else np.float64)
-            # As numpy 2 and a UDT warn: fp32_vec + 1e300 (or + 2**200) is inf.
+            # As numpy 2 and a UDT warn: fp32_vec + 1e300 (or + 2**200) is inf, and
+            # so is the 1e300 of fp32_vec == 1e300, which numpy compares with inf too.
             utils._warn_from_caller(
                 f"overflow encountered in cast: {value!r} is infinity as {rv}", RuntimeWarning
             )
@@ -1562,6 +1579,78 @@ def _ewise_add_cast_error(op, left_dtype, right_dtype):
     )
 
 
+def _scalar_eq(scalar, other):
+    """Return ``scalar == other`` as a bool, by ``binary.eq`` (see ``Scalar.__eq__``)."""
+    if other is None:
+        return scalar._is_empty
+    if type(other) is not Scalar and output_type(other) is Scalar:
+        other = other.new(name="s_eq_other")  # an expression, such as ``-s`` or ``v[0]``
+    if type(other) is Scalar and (scalar._is_empty or other._is_empty):
+        return scalar._is_empty and other._is_empty
+    if scalar._is_empty:
+        return False
+    if not scalar.dtype._is_udt:
+        # For built-in dtypes, compare the two values in the type ``eq`` is typed
+        # for, which is what it computes, without a GraphBLAS call: ``s == 0``
+        # takes about 2 us instead of 11.
+        if type(other) is Scalar:
+            other_dtype, value = other.dtype, other.value
+        else:
+            other_dtype = _weak_builtin_literal_dtype(scalar.dtype, other, binary.eq)
+            value = other
+        if other_dtype is not None and not other_dtype._is_udt:
+            if other_dtype is not scalar.dtype:
+                other_dtype = get_typed_op(binary.eq, scalar.dtype, other_dtype).type
+            convert = other_dtype.np_type.type
+            if other_dtype.np_type in _SINGLE_PRECISION:
+                # 1e300 beside FP32 is infinity, and _weak_builtin_literal_dtype
+                # has warned at the caller's line, so numpy need not warn again.
+                with np.errstate(over="ignore"):
+                    return (convert(scalar.value) == convert(value)).item()
+            return (convert(scalar.value) == convert(value)).item()
+    return bool(scalar.ewise_mult(other, binary.eq).new(name="s_eq").value)
+
+
+def _element_shapes_differ(dtype1, dtype2):
+    """Whether elements of ``dtype1`` and ``dtype2`` differ in shape, for ``isequal``.
+
+    ``==`` on array UDTs broadcasts, as numpy's does, but ``isequal`` asks
+    whether two values are the same array, as ``np.array_equal`` does: the
+    shapes must match, apart from leading axes of length 1 (the rule a store
+    uses), and an element of a built-in dtype has shape ``()``. Records pair
+    field by field instead (``udt_utils._check_udt_pair``).
+    """
+    if dtype1 is dtype2 or not (dtype1._is_udt or dtype2._is_udt):
+        return False
+    from .operator.udt_utils import _strip_leading_ones
+
+    shapes = []
+    for np_type in (dtype1.np_type, dtype2.np_type):
+        if np_type.names is not None:
+            return False
+        shapes.append(_strip_leading_ones(np_type.subdtype[1]) if np_type.subdtype else ())
+    return shapes[0] != shapes[1]
+
+
+def _literal_shape_differs(dtype, value):
+    """Whether literal ``value`` differs in shape from an element of array UDT ``dtype``.
+
+    As :func:`_element_shapes_differ`, for ``Scalar.isequal`` with a literal: a
+    number has shape ``()``, so it equals an ``FP64[1]`` element but not an
+    ``FP64[3]`` one, as in ``np.array_equal``. ``False`` for a record UDT.
+    """
+    from .operator.udt_utils import _strip_leading_ones
+
+    np_type = dtype.np_type
+    if np_type.subdtype is None or isinstance(value, dict):
+        return False
+    try:
+        shape = np.shape(value)
+    except ValueError:  # ragged; Scalar.from_value reports it
+        return False
+    return _strip_leading_ones(shape) != _strip_leading_ones(np_type.subdtype[1])
+
+
 def _plus_zero(dtype):
     """Return a Scalar of ``dtype`` that ``plus`` adds to any value without changing it.
 
@@ -1593,6 +1682,19 @@ def _converted_to(operand, dtype, **new_kwargs):
 
         raise DomainMismatch(f"cannot convert {operand.dtype} to {dtype}")
     return rv
+
+
+def _literal_store_dtype(dtype, value):
+    """Return the dtype to make literal ``value`` a Scalar of, to store it as ``dtype``.
+
+    A UDT types the literal itself. A Python int is INT64 by itself, so one
+    beyond INT64 (the top half of UINT64) is made ``dtype``:
+    ``uint64_vec[0] = 2**64 - 1`` works, and a type that cannot hold it raises.
+    ``None`` lets ``Scalar.from_value`` choose.
+    """
+    if dtype._is_udt or type(value) is int and not -(2**63) <= value < 2**63:
+        return dtype
+    return None
 
 
 def _cast_for_store(value, dtype):

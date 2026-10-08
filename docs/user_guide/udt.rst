@@ -178,9 +178,13 @@ dtype, so it never narrows. Below, ``v`` is a Vector of an ``INT8[3]`` UDT.
    * - ``eq`` and ``ne``
      - Type a literal as above, as built-in comparisons do, except that an int
        out of a field's range takes a type that holds it, so the comparison is
-       exact. Return ``BOOL``.
+       exact. Return ``BOOL``. Array elements broadcast, as numpy's ``==``
+       does, and so does ``==`` on a Scalar, which returns a bool. ``isequal``
+       compares as ``np.array_equal``: elements must have the same shape,
+       apart from leading axes of length 1.
      - ``v == 300`` is ``False``; an ``FP32[3]`` UDT ``== 0.1`` compares in
-       FP32
+       FP32; a Scalar ``s`` of ``[1, 1, 1]`` has ``s == 1`` but not
+       ``s.isequal(1)``
    * - A literal that must become an element: beside a user-defined op, an
        ``IndexUnaryOp`` thunk, an ``ewise_union`` default
      - Its type by the rules above must fit the UDT: the UDT itself, or a
