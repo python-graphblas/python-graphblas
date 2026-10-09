@@ -336,7 +336,7 @@ class AmbiguousAssignOrExtract:
         if input_mask is not None:
             if mask is not None:
                 raise TypeError("mask and input_mask arguments cannot both be given")
-            from .base import _check_mask
+            from .mask import _check_mask
 
             input_mask = _check_mask(input_mask, self.parent)
             mask = self._input_mask_to_mask(input_mask, **opts)
