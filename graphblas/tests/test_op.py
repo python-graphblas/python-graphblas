@@ -1765,6 +1765,39 @@ def test_udt_complex_truediv_by_zero(udt_op_path):
 
 
 @pytest.mark.skipif("not supports_udfs")
+@pytest.mark.skipif("not dtypes._supports_complex")
+def test_udt_complex_times_truediv_with_infinities_as_numpy(udt_op_path):
+    """Complex ``*`` and ``/`` on a UDT field answer as numpy does at infinities.
+
+    From Python 3.14, CPython recovers infinities that the textbook formulas
+    leave as ``nan`` (C99 Annex G), so ``1j * (inf+infj)`` is ``-inf+infj``
+    there and ``nan+nanj`` in numpy. Numba 0.68 follows CPython, so a cfunc
+    built on Numba's operators answered as Python and the C JIT kernel as
+    numpy. Both now spell numpy's formulas out, on any Python and Numba.
+    """
+    inf, nan = np.inf, np.nan
+    # The last pair is finite, with an exact product and quotient: numpy
+    # divides by multiplying with ``1 / denominator``, which can round the last
+    # bit differently from CPython's division, which the kernels use.
+    xs = [1j, -2.5j, complex(nan, inf), complex(inf, nan), 1 + 1j, complex(inf, 0.0), -1 + 7j]
+    ys = [complex(inf, inf), complex(inf, -inf), 2 + 1j, 1 + 1j, complex(inf, inf), 1j, 1 + 1j]
+    rec = dtypes.register_anonymous(
+        np.dtype([("cxi_s", np.complex64), ("cxi_d", np.complex128)], align=True), "_CxInfRec"
+    )
+    arr = dtypes.register_anonymous(np.dtype((np.complex64, (3,))), "_CxInfArr3")
+    for udt, leaves in [(rec, [0, 1]), (arr, [0, 2])]:
+        v, w = _udt_vectors(udt, xs, ys)
+        for gb_op, reference in [(binary.times, np.multiply), (binary.truediv, np.true_divide)]:
+            result = gb_op(v & w).new()
+            for leaf in leaves:
+                got = np.array([result[i].new().value[leaf] for i in range(len(xs))])
+                with np.errstate(invalid="ignore"):
+                    expected = reference(np.array(xs, got.dtype), np.array(ys, got.dtype))
+                msg = f"{gb_op.name} {got.dtype} {udt_op_path}"
+                np.testing.assert_array_equal(got, expected, err_msg=msg)
+
+
+@pytest.mark.skipif("not supports_udfs")
 # 136-byte UDT, which SS < 9 rejects; see test_udt_large_array.
 @pytest.mark.skipif(
     "ss_version_major < 9",

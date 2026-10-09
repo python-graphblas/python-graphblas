@@ -1187,8 +1187,10 @@ def test_complex_truediv_udt_jit_matches_cfunc_at_extremes():
     SuiteSparse compiles C JIT kernels with ``-fcx-limited-range`` under GCC,
     which turns C's ``_Complex`` division into the naive formula: complex64
     ``1e20 / 1e20`` came out ``nan`` and ``(1+1j) / (1e160+1e160j)`` came out
-    ``0`` on Linux. The kernel divides with real arithmetic instead, by the
-    algorithm Numba (and CPython) use, so no flag changes it.
+    ``0`` on Linux. The kernel divides with real arithmetic instead, by
+    CPython's algorithm before 3.14, so no flag changes it; the cfunc spells
+    out the same steps, since from Python 3.14 Numba's own ``/`` recovers
+    infinities as CPython's does (``(inf+nanj) / (1+1j)`` is ``inf-infj``).
     """
     if not _has_jit_set:
         pytest.skip("jit_c_source introspection requires SuiteSparse:GraphBLAS >= 9")
@@ -1236,12 +1238,13 @@ def test_complex_truediv_udt_jit_matches_cfunc_at_extremes():
 def test_complex_times_udt_jit_matches_cfunc_with_infinities():
     """Complex multiplication in the C JIT kernel is the cfunc's, bit for bit.
 
-    Numba and numpy multiply by the textbook formula; clang's ``_Complex``
-    multiply adds C99 Annex G's recovery, so ``1j * (inf+infj)`` came out
+    numpy multiplies by the textbook formula; clang's ``_Complex`` multiply
+    adds C99 Annex G's recovery, so ``1j * (inf+infj)`` came out
     ``-inf+infj`` from a C kernel on macOS and ``nan+nanj`` from the cfunc
     (GCC's ``-fcx-limited-range`` drops the recovery, so Linux agreed). The
     kernel multiplies with real arithmetic instead, for record fields and
-    array elements alike.
+    array elements alike. CPython adds the recovery from 3.14 and Numba 0.68
+    follows it, so the cfunc spells the formula out too.
     """
     if not _has_jit_set:
         pytest.skip("jit_c_source introspection requires SuiteSparse:GraphBLAS >= 9")
