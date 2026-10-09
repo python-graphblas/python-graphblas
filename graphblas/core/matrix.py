@@ -19,6 +19,7 @@ from .operator import (
     get_typed_op,
     op_from_string,
 )
+from .operator.select import _value_select_in_own_type
 from .scalar import (
     _COMPLETE,
     _MATERIALIZE,
@@ -26,7 +27,16 @@ from .scalar import (
     ScalarExpression,
     ScalarIndexExpr,
     _as_scalar,
+    _cast_for_store,
+    _check_literal_fits,
+    _check_scalar_fits,
+    _element_shapes_differ,
+    _ewise_add_cast_error,
+    _ewise_add_needs_cast,
+    _literal_operand,
+    _literal_store_dtype,
     _scalar_index,
+    _weak_builtin_literal_dtype,
 )
 from .utils import (
     _CArray,
@@ -107,6 +117,16 @@ def _power(updater, A, n, op):
     if n == 1:
         updater << A
         return
+    if (out_dtype := updater.parent.dtype) is not A.dtype and (
+        out_dtype._is_udt or A.dtype._is_udt
+    ):
+        # The last product is stored by mxm, which cannot cast a UDT as it writes;
+        # raise before computing the others.
+        from .base import _fused_store_expr, _store_cast_op
+
+        expr = op(A @ A)
+        if _store_cast_op(expr.dtype, out_dtype) is not None:
+            _fused_store_expr(expr, out_dtype)
     # Use repeated squaring: compute A^2, A^4, A^8, etc., and combine terms as needed.
     # See `numpy.linalg.matrix_power` for a simpler implementation to understand how this works.
     # We reuse `result` and `square` outputs, and use `square_expr` so masks can be applied.
@@ -384,6 +404,11 @@ class Matrix(BaseType):
         -------
         bool
 
+        Notes
+        -----
+        Elements of array UDTs must have the same shape, apart from leading axes
+        of length 1, as in ``np.array_equal``; ``==`` broadcasts instead.
+
         See Also
         --------
         :meth:`isclose` : For equality check of floating point dtypes
@@ -393,6 +418,8 @@ class Matrix(BaseType):
             other, (Matrix, TransposedMatrix), within="isequal", argname="other"
         )
         if check_dtype and self.dtype != other.dtype:
+            return False
+        if _element_shapes_differ(self.dtype, other.dtype):
             return False
         if self._nrows != other._nrows:
             return False
@@ -707,7 +734,11 @@ class Matrix(BaseType):
                 dtype = self.dtype
             rv = Matrix(dtype, nrows=self._nrows, ncols=self._ncols, name=name)
             if not clear:
-                rv(mask=mask, **opts)[...] = self
+                if rv.dtype._is_udt or self.dtype._is_udt:
+                    # ``<<``, not assign: a UDT of another type casts in one pass.
+                    rv(mask=mask, **opts) << self
+                else:
+                    rv(mask=mask, **opts)[...] = self
         else:
             if opts:
                 # Ignore opts for now
@@ -1499,7 +1530,8 @@ class Matrix(BaseType):
             # dtype of fill_value can upcast the dtype
             if type(fill_value) is not Scalar:
                 try:
-                    fill_value = Scalar.from_value(fill_value, is_cscalar=None, name="")
+                    dtype = _weak_builtin_literal_dtype(self.dtype, fill_value)
+                    fill_value = Scalar.from_value(fill_value, dtype, is_cscalar=None, name="")
                 except TypeError:
                     fill_value = self._expect_type(
                         fill_value,
@@ -1921,14 +1953,22 @@ class Matrix(BaseType):
             # Per the spec, op may be a semiring, but this is weird, so don't.
             self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
 
-        if other.ndim == 1:
+        if other.ndim == 1 and self._ncols != other._size:
             # Broadcast rowwise from the right
-            if self._ncols != other._size:
+            raise DimensionMismatch(
+                "Dimensions not compatible for broadcasting Vector from the right "
+                f"to rows of Matrix in {method_name}.  Matrix.ncols (={self._ncols}) "
+                f"must equal Vector.size (={other._size})."
+            )
+        if _ewise_add_needs_cast(op, self.dtype, other.dtype):
+            # GraphBLAS would report the UDT cast before the shapes.
+            if other.ndim == 2 and self.shape != other.shape:
                 raise DimensionMismatch(
-                    "Dimensions not compatible for broadcasting Vector from the right "
-                    f"to rows of Matrix in {method_name}.  Matrix.ncols (={self._ncols}) "
-                    f"must equal Vector.size (={other._size})."
+                    f"Matrix shapes must match in {method_name}: {self.shape} and {other.shape}"
                 )
+            raise _ewise_add_cast_error(op, self.dtype, other.dtype)
+
+        if other.ndim == 1:
             return MatrixExpression(
                 method_name,
                 None,
@@ -2102,6 +2142,10 @@ class Matrix(BaseType):
         left_dtype = temp_op.type
         dtype = left_dtype if left_dtype._is_udt else None
         if type(left_default) is not Scalar:
+            if dtype is not None:
+                _check_literal_fits(dtype, left_default)
+            else:
+                left_default, dtype = _literal_operand(left_dtype, left_default, op)
             try:
                 left = Scalar.from_value(
                     left_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
@@ -2116,10 +2160,15 @@ class Matrix(BaseType):
                     op=op,
                 )
         else:
+            _check_scalar_fits(dtype, left_default)
             left = _as_scalar(left_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
         right_dtype = temp_op.type2
         dtype = right_dtype if right_dtype._is_udt else None
         if type(right_default) is not Scalar:
+            if dtype is not None:
+                _check_literal_fits(dtype, right_default)
+            else:
+                right_default, dtype = _literal_operand(right_dtype, right_default, op)
             try:
                 right = Scalar.from_value(
                     right_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
@@ -2134,6 +2183,7 @@ class Matrix(BaseType):
                     op=op,
                 )
         else:
+            _check_scalar_fits(dtype, right_default)
             right = _as_scalar(right_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
 
         if is_infix:
@@ -2419,6 +2469,11 @@ class Matrix(BaseType):
         if isinstance(op, str):
             op = op_from_string(op)
         op, opclass = find_opclass(op)
+        if opclass == "Monoid" and self.dtype._is_udt:
+            # Applying a Monoid applies its BinaryOp. Typing it as that op lets a
+            # literal promote as it would with the BinaryOp, where a Monoid takes
+            # one type and would need the literal converted into the UDT.
+            op, opclass = op.binaryop, "BinaryOp"
         if opclass in {"IndexUnaryOp", "SelectOp"}:
             # Provide default value for index unary
             if right is None:
@@ -2440,7 +2495,7 @@ class Matrix(BaseType):
             expr_repr = None
         elif right is None:
             if type(left) is not Scalar:
-                dtype = self.dtype if self.dtype._is_udt else None
+                left, dtype = _literal_operand(self.dtype, left, op)
                 try:
                     left = Scalar.from_value(left, dtype, is_cscalar=None, name="")
                 except TypeError:
@@ -2476,7 +2531,7 @@ class Matrix(BaseType):
             expr_repr = "{1.name}.apply({op}, left={0._expr_name})"
         elif left is None:
             if type(right) is not Scalar:
-                dtype = self.dtype if (self.dtype._is_udt and not op.is_positional) else None
+                right, dtype = _literal_operand(self.dtype, right, op)
                 try:
                     right = Scalar.from_value(right, dtype, is_cscalar=None, name="")
                 except TypeError:
@@ -2596,8 +2651,10 @@ class Matrix(BaseType):
 
         if thunk is None:
             thunk = False  # most basic form of 0 when unifying dtypes
+        given = thunk
         if type(thunk) is not Scalar:
-            dtype = self.dtype if (self.dtype._is_udt and not op.is_positional) else None
+            # A thunk beside a UDT becomes an element of it, so it must fit, as in apply.
+            thunk, dtype = _literal_operand(self.dtype, thunk, op)
             try:
                 thunk = Scalar.from_value(thunk, dtype, is_cscalar=None, name="")
             except TypeError:
@@ -2610,6 +2667,7 @@ class Matrix(BaseType):
                     op=op,
                 )
         op = get_typed_op(op, self.dtype, thunk.dtype, is_right_scalar=True, kind="select")
+        op, thunk = _value_select_in_own_type(op, self.dtype, thunk, given)
         self._expect_op(op, ("SelectOp", "IndexUnaryOp"), within=method_name, argname="op")
         if thunk._is_cscalar:
             if thunk.dtype._is_udt:
@@ -2949,7 +3007,7 @@ class Matrix(BaseType):
         elif type(values) is Scalar:
             is_scalar = True
         else:
-            dtype = self.dtype if self.dtype._is_udt else None
+            dtype = _literal_store_dtype(self.dtype, values)
             try:
                 # Try to make it a Scalar
                 values = Scalar.from_value(values, dtype, is_cscalar=None, name="")
@@ -3026,6 +3084,13 @@ class Matrix(BaseType):
             dtype = self.dtype
         else:
             dtype = lookup_dtype(dtype)
+        if dtype is not self.dtype and (dtype._is_udt or self.dtype._is_udt):
+            # See Vector._extract_element: extract in this type, then cast.
+            value = self._extract_element(resolved_indexes, None, opts, is_cscalar=is_cscalar)
+            if result is None:
+                result = Scalar(dtype, is_cscalar=is_cscalar, name=name)
+            result << value
+            return result
         rowidx, colidx = resolved_indexes.indices
         if self._is_transposed:
             rowidx, colidx = colidx, rowidx
@@ -3088,7 +3153,7 @@ class Matrix(BaseType):
     def _assign_element(self, resolved_indexes, value):
         rowidx, colidx = resolved_indexes.indices
         if type(value) is not Scalar:
-            dtype = self.dtype if self.dtype._is_udt else None
+            dtype = _literal_store_dtype(self.dtype, value)
             try:
                 value = Scalar.from_value(value, dtype, is_cscalar=None, name="")
             except TypeError:
@@ -3099,6 +3164,10 @@ class Matrix(BaseType):
                     argname="value",
                     extra_message="Literal scalars also accepted.",
                 )
+        if value.dtype._is_udt or self.dtype._is_udt:
+            # After the conversion: an autocomputed element of another UDT type
+            # arrives here as a Scalar too.
+            value = _cast_for_store(value, self.dtype)
         if value._is_cscalar:
             if value._empty:
                 call("GrB_Matrix_removeElement", [self, rowidx.index, colidx.index])
@@ -3115,6 +3184,8 @@ class Matrix(BaseType):
 
     def _prep_for_assign(self, resolved_indexes, value, mask, is_submask, replace, opts):
         method_name = "__setitem__"
+        if output_type(value) in {Scalar, Vector, Matrix}:
+            value = _cast_for_store(value, self.dtype)
         rowidx, colidx = resolved_indexes.indices
         rowsize = rowidx.size
         rows = rowidx.index
@@ -3311,7 +3382,7 @@ class Matrix(BaseType):
             )
         else:
             if type(value) is not Scalar:
-                dtype = self.dtype if self.dtype._is_udt else None
+                dtype = _literal_store_dtype(self.dtype, value)
                 try:
                     value = Scalar.from_value(value, dtype, is_cscalar=None, name="")
                 except (TypeError, ValueError):

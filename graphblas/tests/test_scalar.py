@@ -367,6 +367,53 @@ def test_scalar_to_numpy(s):
         assert a.shape == b.shape
 
 
+def test_uint64_top_half_from_value():
+    """An int from 2**63 to 2**64 - 1 goes into a UINT64 GrB_Scalar, Vector or Matrix.
+
+    A Python int was typed INT64 by itself, so it raised OverflowError.
+    """
+    for value in [2**63, 2**64 - 1]:
+        for is_cscalar in [False, True]:
+            s = Scalar.from_value(value, dtype=dtypes.UINT64, is_cscalar=is_cscalar)
+            assert s.value == value
+            assert s == value
+        v = Vector(dtypes.UINT64, size=3)
+        v[0] = value
+        v[1:] = value
+        assert v.to_coo()[1].tolist() == [value] * 3
+        v << value
+        assert v.to_coo()[1].tolist() == [value] * 3
+        A = Matrix(dtypes.UINT64, nrows=2, ncols=2)
+        A[0, 1] = value
+        A[1, :] = value
+        assert A.to_coo()[2].tolist() == [value] * 3
+        f = Vector(dtypes.FP64, size=1)
+        f[0] = value
+        assert f[0].new().value == float(value)
+    with pytest.raises(OverflowError):
+        Scalar.from_value(2**63, dtype=dtypes.INT8, is_cscalar=False)
+    i64 = Vector(dtypes.INT64, size=1)
+    with pytest.raises(OverflowError):
+        i64[0] = 2**63  # not wrapped
+    u64 = Vector(dtypes.UINT64, size=1)
+    with pytest.raises(OverflowError):
+        u64[0] = 2**64
+
+
+def test_eq_types_a_literal_as_binary_eq_does():
+    """``==`` on a Scalar compares as ``binary.eq`` does, as on a Vector, and returns a bool."""
+    assert Scalar.from_value(0.1, dtype=dtypes.FP32) == 0.1  # in FP32, as numpy 2 compares it
+    assert Scalar.from_value(1, dtype=dtypes.INT8) != 300  # exact, as a comparison
+    assert Scalar.from_value(1, dtype=dtypes.INT8) == Scalar.from_value(1.0)
+    not_a_number = float("nan")
+    assert Scalar.from_value(not_a_number) != not_a_number
+    assert not (Scalar.from_value(not_a_number) == not_a_number)  # noqa: SIM201
+    empty = Scalar(dtypes.INT64)
+    assert empty == Scalar(dtypes.FP64)
+    assert empty == None  # noqa: E711
+    assert empty != 0
+
+
 @autocompute
 def test_neg():
     for dtype in sorted(
@@ -658,6 +705,58 @@ def test_record_from_dict():
         {"x": 1, "y": {"a": 2, "b": 3}}, dtype={"x": int, "y": {"a": int, "b": int}}
     )
     assert s == (1, (2, 3))
+
+
+@pytest.mark.skipif("not gb.core._has_numba")
+def test_udt_eq_without_numba_matches_binary_eq(monkeypatch):
+    """Without Numba, ``==`` on a UDT Scalar compares in numpy, as ``binary.eq`` would.
+
+    ``binary.eq`` on a UDT needs Numba; ``==`` on a Scalar used to compare in
+    Python, so it works without Numba still. Here both ways must agree.
+    """
+    rec = dtypes.register_anonymous(np.dtype([("x", np.int64), ("y", np.float64)], align=True))
+    arr = dtypes.register_anonymous(np.dtype((np.int8, (3,))))
+    f32 = dtypes.register_anonymous(np.dtype((np.float32, (2,))))
+    r = Scalar.from_value((1, 2.5), rec)
+    a = Scalar.from_value([1, 1, 1], arr)
+    f = Scalar.from_value([0.1, 0.1], f32)
+    cases = [
+        (r, (1, 2.5)),
+        (r, (1, 2)),
+        (r, {"x": 1, "y": 2.5}),
+        (a, 1),
+        (a, [1, 1, 1]),
+        (a, [1]),
+        (a, [1, 2, 1]),
+        (a, 0.5),
+        (a, 300),
+        (a, 2**63),
+        (a, Scalar.from_value([1, 1, 1], arr)),
+        (f, 0.1),
+        (f, np.float64(0.1)),
+    ]
+    # UDTs that binary.eq does not pair raise its KeyError both ways.
+    other_names = dtypes.register_anonymous(
+        np.dtype([("p", np.int64), ("q", np.float64)], align=True)
+    )
+    arr2 = dtypes.register_anonymous(np.dtype((np.int8, (2,))))
+    unpaired = [
+        (r, Scalar.from_value((1, 2.5), other_names)),
+        (a, Scalar.from_value([1, 1], arr2)),
+        (r, a),
+    ]
+
+    def compare_all():
+        for s, other in unpaired:
+            with pytest.raises(KeyError, match="does not work with"):
+                s == other  # noqa: B015
+        return [(s == other, s != other) for s, other in cases]
+
+    with_numba = compare_all()
+    monkeypatch.setattr(gb.core.scalar, "_has_numba", False)
+    without_numba = compare_all()
+    assert without_numba == with_numba
+    assert with_numba[:3] == [(True, False), (False, True), (True, False)]
 
 
 def test_get(s):

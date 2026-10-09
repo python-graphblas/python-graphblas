@@ -18,6 +18,7 @@ from .operator import (
     get_typed_op,
     op_from_string,
 )
+from .operator.select import _value_select_in_own_type
 from .scalar import (
     _COMPLETE,
     _MATERIALIZE,
@@ -25,7 +26,16 @@ from .scalar import (
     ScalarExpression,
     ScalarIndexExpr,
     _as_scalar,
+    _cast_for_store,
+    _check_literal_fits,
+    _check_scalar_fits,
+    _element_shapes_differ,
+    _ewise_add_cast_error,
+    _ewise_add_needs_cast,
+    _literal_operand,
+    _literal_store_dtype,
     _scalar_index,
+    _weak_builtin_literal_dtype,
 )
 from .utils import (
     _CArray,
@@ -351,6 +361,11 @@ class Vector(BaseType):
         -------
         bool
 
+        Notes
+        -----
+        Elements of array UDTs must have the same shape, apart from leading axes
+        of length 1, as in ``np.array_equal``; ``==`` broadcasts instead.
+
         See Also
         --------
         :meth:`isclose` : For equality check of floating point dtypes
@@ -358,6 +373,8 @@ class Vector(BaseType):
         """
         other = self._expect_type(other, Vector, within="isequal", argname="other")
         if check_dtype and self.dtype != other.dtype:
+            return False
+        if _element_shapes_differ(self.dtype, other.dtype):
             return False
         if self._size != other._size:
             return False
@@ -593,7 +610,11 @@ class Vector(BaseType):
                 dtype = self.dtype
             rv = Vector(dtype, size=self._size, name=name)
             if not clear:
-                rv(mask=mask, **opts)[...] = self
+                if rv.dtype._is_udt or self.dtype._is_udt:
+                    # ``<<``, not assign: a UDT of another type casts in one pass.
+                    rv(mask=mask, **opts) << self
+                else:
+                    rv(mask=mask, **opts)[...] = self
         else:
             if opts:
                 # Ignore opts for now
@@ -934,7 +955,8 @@ class Vector(BaseType):
             # dtype of fill_value can upcast the dtype
             if type(fill_value) is not Scalar:
                 try:
-                    fill_value = Scalar.from_value(fill_value, is_cscalar=None, name="")
+                    dtype = _weak_builtin_literal_dtype(self.dtype, fill_value)
+                    fill_value = Scalar.from_value(fill_value, dtype, is_cscalar=None, name="")
                 except TypeError:
                     fill_value = self._expect_type(
                         fill_value,
@@ -1026,15 +1048,23 @@ class Vector(BaseType):
             # Per the spec, op may be a semiring, but this is weird, so don't.
             self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
 
-        if other.ndim == 2:
-            # Broadcast columnwise from the left
-            if other._nrows != self._size:
-                # Check this before we compute a possibly large matrix below
+        if other.ndim == 2 and other._nrows != self._size:
+            # Broadcast columnwise from the left. Check this before we compute a
+            # possibly large matrix below.
+            raise DimensionMismatch(
+                "Dimensions not compatible for broadcasting Vector from the left "
+                f"to columns of Matrix in {method_name}.  Matrix.nrows (={other._nrows}) "
+                f"must equal Vector.size (={self._size})."
+            )
+        if _ewise_add_needs_cast(op, self.dtype, other.dtype):
+            # GraphBLAS would report the UDT cast before the sizes.
+            if other.ndim == 1 and self._size != other._size:
                 raise DimensionMismatch(
-                    "Dimensions not compatible for broadcasting Vector from the left "
-                    f"to columns of Matrix in {method_name}.  Matrix.nrows (={other._nrows}) "
-                    f"must equal Vector.size (={self._size})."
+                    f"Vector sizes must match in {method_name}: {self._size} and {other._size}"
                 )
+            raise _ewise_add_cast_error(op, self.dtype, other.dtype)
+
+        if other.ndim == 2:
             return MatrixExpression(
                 method_name,
                 None,
@@ -1207,6 +1237,10 @@ class Vector(BaseType):
         left_dtype = temp_op.type
         dtype = left_dtype if left_dtype._is_udt else None
         if type(left_default) is not Scalar:
+            if dtype is not None:
+                _check_literal_fits(dtype, left_default)
+            else:
+                left_default, dtype = _literal_operand(left_dtype, left_default, op)
             try:
                 left = Scalar.from_value(
                     left_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
@@ -1221,10 +1255,15 @@ class Vector(BaseType):
                     op=op,
                 )
         else:
+            _check_scalar_fits(dtype, left_default)
             left = _as_scalar(left_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
         right_dtype = temp_op.type2
         dtype = right_dtype if right_dtype._is_udt else None
         if type(right_default) is not Scalar:
+            if dtype is not None:
+                _check_literal_fits(dtype, right_default)
+            else:
+                right_default, dtype = _literal_operand(right_dtype, right_default, op)
             try:
                 right = Scalar.from_value(
                     right_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
@@ -1239,6 +1278,7 @@ class Vector(BaseType):
                     op=op,
                 )
         else:
+            _check_scalar_fits(dtype, right_default)
             right = _as_scalar(right_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
 
         if is_infix:
@@ -1420,6 +1460,11 @@ class Vector(BaseType):
         if isinstance(op, str):
             op = op_from_string(op)
         op, opclass = find_opclass(op)
+        if opclass == "Monoid" and self.dtype._is_udt:
+            # Applying a Monoid applies its BinaryOp. Typing it as that op lets a
+            # literal promote as it would with the BinaryOp, where a Monoid takes
+            # one type and would need the literal converted into the UDT.
+            op, opclass = op.binaryop, "BinaryOp"
         if opclass in {"IndexUnaryOp", "SelectOp"}:
             # Provide default value for index unary
             if right is None:
@@ -1441,7 +1486,7 @@ class Vector(BaseType):
             expr_repr = None
         elif right is None:
             if type(left) is not Scalar:
-                dtype = self.dtype if self.dtype._is_udt else None
+                left, dtype = _literal_operand(self.dtype, left, op)
                 try:
                     left = Scalar.from_value(left, dtype, is_cscalar=None, name="")
                 except TypeError:
@@ -1477,7 +1522,7 @@ class Vector(BaseType):
             expr_repr = "{1.name}.apply({op}, left={0._expr_name})"
         elif left is None:
             if type(right) is not Scalar:
-                dtype = self.dtype if (self.dtype._is_udt and not op.is_positional) else None
+                right, dtype = _literal_operand(self.dtype, right, op)
                 try:
                     right = Scalar.from_value(right, dtype, is_cscalar=None, name="")
                 except TypeError:
@@ -1593,8 +1638,10 @@ class Vector(BaseType):
 
         if thunk is None:
             thunk = False  # most basic form of 0 when unifying dtypes
+        given = thunk
         if type(thunk) is not Scalar:
-            dtype = self.dtype if (self.dtype._is_udt and not op.is_positional) else None
+            # A thunk beside a UDT becomes an element of it, so it must fit, as in apply.
+            thunk, dtype = _literal_operand(self.dtype, thunk, op)
             try:
                 thunk = Scalar.from_value(thunk, dtype, is_cscalar=None, name="")
             except TypeError:
@@ -1607,6 +1654,7 @@ class Vector(BaseType):
                     op=op,
                 )
         op = get_typed_op(op, self.dtype, thunk.dtype, is_right_scalar=True, kind="select")
+        op, thunk = _value_select_in_own_type(op, self.dtype, thunk, given)
         self._expect_op(op, ("SelectOp", "IndexUnaryOp"), within=method_name, argname="op")
         if thunk._is_cscalar:
             if thunk.dtype._is_udt:
@@ -1843,6 +1891,15 @@ class Vector(BaseType):
             dtype = self.dtype
         else:
             dtype = lookup_dtype(dtype)
+        if dtype is not self.dtype and (dtype._is_udt or self.dtype._is_udt):
+            # GraphBLAS copies a UDT element as raw bytes of this vector's type,
+            # past the end of a smaller one, so extract it in this type and cast
+            # it as a store does (or raise).
+            value = self._extract_element(resolved_indexes, None, opts, is_cscalar=is_cscalar)
+            if result is None:
+                result = Scalar(dtype, is_cscalar=is_cscalar, name=name)
+            result << value
+            return result
         idx = resolved_indexes.indices[0]
         if result is None:
             result = Scalar(dtype, is_cscalar=is_cscalar, name=name)
@@ -1874,7 +1931,7 @@ class Vector(BaseType):
     def _assign_element(self, resolved_indexes, value):
         idx = resolved_indexes.indices[0]
         if type(value) is not Scalar:
-            dtype = self.dtype if self.dtype._is_udt else None
+            dtype = _literal_store_dtype(self.dtype, value)
             try:
                 value = Scalar.from_value(value, dtype, is_cscalar=None, name="")
             except TypeError:
@@ -1885,6 +1942,10 @@ class Vector(BaseType):
                     argname="value",
                     extra_message="Literal scalars also accepted.",
                 )
+        if value.dtype._is_udt or self.dtype._is_udt:
+            # After the conversion: an autocomputed element of another UDT type
+            # arrives here as a Scalar too.
+            value = _cast_for_store(value, self.dtype)
         if value._is_cscalar:
             if value._empty:
                 call("GrB_Vector_removeElement", [self, idx.index])
@@ -1901,6 +1962,8 @@ class Vector(BaseType):
 
     def _prep_for_assign(self, resolved_indexes, value, mask, is_submask, replace, opts):
         method_name = "__setitem__"
+        if output_type(value) in {Scalar, Vector}:
+            value = _cast_for_store(value, self.dtype)
         idx = resolved_indexes.indices[0]
         size = idx.size
         cscalar = idx.cscalar
@@ -1935,7 +1998,7 @@ class Vector(BaseType):
                 expr_repr = "[[{2._expr_name} elements]] = {0.name}"
         else:
             if type(value) is not Scalar:
-                dtype = self.dtype if self.dtype._is_udt else None
+                dtype = _literal_store_dtype(self.dtype, value)
                 try:
                     value = Scalar.from_value(value, dtype, is_cscalar=None, name="")
                 except (TypeError, ValueError):

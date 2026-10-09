@@ -49,6 +49,30 @@ _output_types = {
 _output_types.update((k, k) for k in set(np.sctypeDict.values()))
 
 
+def _warn_from_caller(message, category):
+    """Warn at the first caller outside python-graphblas, so default filters can show it.
+
+    Python shows a DeprecationWarning by default only when it is attributed to
+    ``__main__``, and a check that warns may sit at any depth below the public
+    method. python-graphblas's own tests count as callers.
+    """
+    import sys
+    import warnings
+    from pathlib import Path
+
+    package = Path(__file__).parent.parent
+    tests = package / "tests"
+    frame = sys._getframe(1)
+    stacklevel = 2
+    while frame is not None:
+        filename = Path(frame.f_code.co_filename)
+        if not filename.is_relative_to(package) or filename.is_relative_to(tests):
+            break
+        frame = frame.f_back
+        stacklevel += 1
+    warnings.warn(message, category, stacklevel=stacklevel)
+
+
 def output_type(val):
     try:
         return _output_types[type(val)]

@@ -3693,11 +3693,12 @@ def test_udt():
     assert s == t
     t = A.reduce_scalar(monoid.any, allow_empty=False).new()
     assert s == t
-    A << binary.first(1, A)
+    # A literal fills every field by type; an int does not fit the bool field, True does.
+    A << binary.first(True, A)
     assert A.isequal(ones)
     A << binary.first(s, A)
     assert A.isequal(zeros)
-    A << binary.second(A, 1)
+    A << binary.second(A, True)
     assert A.isequal(ones)
     A << binary.second(A, s)
     assert A.isequal(zeros)
