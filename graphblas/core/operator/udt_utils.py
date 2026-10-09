@@ -71,10 +71,13 @@ def _compile_codegen(src, *, func_name, source_label, extra_ns=None):
     # Generated code never calls Python's ``min`` / ``max`` (still reachable as
     # builtins): they order a NaN by argument position, where SuiteSparse's
     # ``fmin`` ignores it, so :func:`_minmax_expr` spells the comparison out,
-    # with ``signbit`` for the signed-zero tie.
+    # with ``signbit`` for the signed-zero tie. Complex ``*`` and ``/`` call
+    # :func:`_complex_times` and :func:`_complex_truediv` (see _expr_binary).
     namespace = {"abs": abs, "np": np, "signbit": np.signbit}
     if _has_numba:
         namespace["numba"] = numba
+        namespace["_complex_times"] = _complex_times
+        namespace["_complex_truediv"] = _complex_truediv
     if extra_ns:
         namespace.update(extra_ns)
     exec(code, namespace)
@@ -979,7 +982,7 @@ if _has_numba:
         ``x_expr`` and ``y_expr`` are scalars, never arrays. ``x_dtype`` and
         ``y_dtype`` are the numpy dtypes the op computes in for each operand:
         the built-in op's input types, which the operands are converted to
-        first. Three ops consult them:
+        first. These ops consult them:
 
         - ``min`` / ``max`` follow SuiteSparse's own ``GrB_MIN_FP64``, which
           is C99 ``fmin`` and ignores a NaN operand rather than ordering or
@@ -991,11 +994,12 @@ if _has_numba:
           unrepresentable quotient, while numpy wraps to ``INT64_MIN``. Since
           ``a // -1`` is exactly ``-a``, routing that divisor through
           negation (which wraps) reaches numpy's answer without the trap.
-        - ``/`` where either side is complex. Numba's complex division raises
-          ``ZeroDivisionError`` unconditionally, outside the error model's
-          control, so a zero divisor left the element unwritten while the C
-          kernel returned numpy's infinities. Spelling out the zero case here
-          makes both paths match numpy.
+        - ``*`` and ``/`` where either side is complex go through
+          :func:`_complex_times` and :func:`_complex_truediv`, the formulas
+          the C kernel spells out. Numba's own operators are CPython's, so
+          its ``/`` raises ``ZeroDivisionError`` on a zero divisor, and from
+          Python 3.14 (Numba 0.68) both recover infinities that numpy and the
+          C kernel leave as ``nan``.
 
         ``/`` on two integers needs nothing: the built-in typing makes its
         result float64, as ``truediv`` on two INT64 vectors is FP64, so
@@ -1005,12 +1009,59 @@ if _has_numba:
             return _minmax_expr(py_op, x_expr, y_expr, x_dtype, y_dtype)
         if py_op == "//" and _is_signed_int(x_dtype) and _is_signed_int(y_dtype):
             return f"(-{x_expr} if {y_expr} == -1 else {x_expr} // {y_expr})"
+        if py_op == "*" and "c" in (x_dtype.kind, y_dtype.kind):
+            return f"_complex_times({x_expr}, {y_expr})"
         if py_op == "/" and "c" in (x_dtype.kind, y_dtype.kind):
-            return (
-                f"({x_expr} / {y_expr} if {y_expr} != 0 "
-                f"else complex({x_expr}.real / 0.0, {x_expr}.imag / 0.0))"
-            )
+            return f"_complex_truediv({x_expr}, {y_expr})"
         return f"{x_expr} {py_op} {y_expr}"
+
+    @numba.njit(error_model="numpy")
+    def _complex_times(x, y):
+        """Multiply two complex numbers by the textbook formula, as numpy does.
+
+        Numba's own ``*`` is CPython's, which from Python 3.14 (Numba 0.68)
+        adds C99 Annex G's recovery of infinities: ``1j * (inf+infj)`` is
+        ``-inf+infj`` there and ``nan+nanj`` in numpy. This is
+        :func:`_c_complex_times_stmt`, product for product, so the cfunc and
+        the C kernel agree whatever the Python and Numba versions. The parts
+        keep the operands' precision; the complex128 result holds them
+        exactly, for the caller to store in the field's type.
+        """
+        ar = x.real
+        ai = x.imag
+        br = y.real
+        bi = y.imag
+        return complex(ar * br - ai * bi, ar * bi + ai * br)
+
+    @numba.njit(error_model="numpy")
+    def _complex_truediv(x, y):
+        """Divide two complex numbers by Smith's method, as the C kernel does.
+
+        This is CPython's ``_Py_c_quot`` before Python 3.14 (scale by the
+        larger part of the divisor), statement for statement as
+        :func:`_c_complex_truediv_stmt` spells it. Numba's own ``/`` raises
+        ``ZeroDivisionError`` on a zero divisor, outside the error model's
+        control, and from Python 3.14 (Numba 0.68) recovers infinities:
+        ``(inf+nanj) / (1+1j)`` is ``inf-infj`` there and ``nan+nanj`` in
+        numpy. A zero divisor divides the parts by ``0.0`` as reals, for
+        numpy's infinities. The result is complex128, as in
+        :func:`_complex_times`.
+        """
+        ar = x.real
+        ai = x.imag
+        br = y.real
+        bi = y.imag
+        if br == 0 and bi == 0:
+            return complex(ar / 0.0, ai / 0.0)
+        if abs(br) >= abs(bi):
+            r = bi / br
+            d = br + bi * r
+            return complex((ar + ai * r) / d, (ai - ar * r) / d)
+        if bi == 0:  # the real part is NaN
+            return complex(np.nan, np.nan)
+        r = br / bi
+        d = br * r + bi
+        return complex((ar * r + ai) / d, (ai * r - ar) / d)
 
     def _minmax_expr(py_op, x_expr, y_expr, x_dtype, y_dtype):
         """Return a Python expression for ``min`` / ``max`` matching C ``fmin``.
@@ -1686,16 +1737,14 @@ def _c_complex_truediv_stmt(target, lhs, rhs, field_dtype):
     with ``-fcx-limited-range`` under GCC, which replaces C99 Annex G division
     with the naive formula: it squares the divisor's parts, so ``1e20 / 1e20``
     in complex64 gave ``nan`` and ``(1+1j) / (1e160+1e160j)`` gave ``0`` on
-    Linux. This block is Numba's complex division, which is CPython's
-    ``_Py_c_quot`` (Smith's method: scale by the larger part of the divisor),
-    computed in the field's own precision with real arithmetic only, so no
-    flag changes it. Each product is its own statement: clang contracts a
-    multiply and an add within one expression into a fused multiply-add,
-    which rounds once where Numba rounds twice, and GCC under ``-std=c11``
-    does not contract at all. A zero divisor divides the parts by ``0.0`` as
-    reals, for numpy's infinities, as ``_expr_binary`` spells it for the
-    cfunc; ``rhs == 0`` on a ``_Complex`` compares both parts, mirroring the
-    cfunc's ``y != 0``.
+    Linux. This block is the cfunc's :func:`_complex_truediv`, statement for
+    statement: CPython's ``_Py_c_quot`` before Python 3.14 (Smith's method:
+    scale by the larger part of the divisor), computed in the field's own
+    precision with real arithmetic only, so no flag changes it. Each product
+    is its own statement: clang contracts a multiply and an add within one
+    expression into a fused multiply-add, which rounds once where Numba
+    rounds twice, and GCC under ``-std=c11`` does not contract at all. A zero
+    divisor divides the parts by ``0.0`` as reals, for numpy's infinities.
 
     The constructor is SuiteSparse's ``GB_CMPLX32``/``GB_CMPLX64`` rather
     than C11's ``CMPLXF``/``CMPLX``, which macOS does not define.
@@ -1725,13 +1774,15 @@ def _c_complex_truediv_stmt(target, lhs, rhs, field_dtype):
 def _c_complex_times_stmt(target, lhs, rhs, field_dtype):
     """Return a C block multiplying two complex fields into ``target``, as the Numba cfunc does.
 
-    Numba and numpy multiply complex numbers by the textbook formula. C99
-    Annex G adds a recovery step that turns some of its ``nan`` results into
+    numpy multiplies complex numbers by the textbook formula. C99 Annex G
+    adds a recovery step that turns some of its ``nan`` results into
     infinities, and whether C's ``*`` on ``_Complex`` takes it depends on the
     compiler: GCC under SuiteSparse's ``-fcx-limited-range`` does not, clang
     does. So ``1j * (inf+infj)`` was ``nan+nanj`` on Linux and the cfunc but
-    ``-inf+infj`` from a C kernel on macOS. This block is the textbook formula
-    in real arithmetic, one product per statement so clang cannot contract it
+    ``-inf+infj`` from a C kernel on macOS. CPython takes it too from 3.14,
+    and Numba follows CPython, so the cfunc does not use Numba's ``*``
+    either: this block is :func:`_complex_times`, the textbook formula in
+    real arithmetic, one product per statement so clang cannot contract it
     into a fused multiply-add (see :func:`_c_complex_truediv_stmt`).
     """
     ctype, cmplx, creal, cimag, _, _ = _c_complex_names(field_dtype)

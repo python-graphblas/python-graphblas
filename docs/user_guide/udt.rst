@@ -205,8 +205,10 @@ built-in op computes it, and the Numba cfunc and a C JIT kernel give the same
 bits: ``min`` and ``max`` ignore NaN (C's ``fmin`` and ``fmax``) and resolve a
 tie between ``-0.0`` and ``0.0`` to ``-0.0`` for ``min`` and ``0.0`` for
 ``max``, ``floordiv`` is numpy's, with 0 for an integer divided by zero, and
-``truediv`` is numpy's (Smith's method for complex numbers), with numpy's
-infinities for a zero divisor. A few edge cases can differ from built-in
+``truediv`` is numpy's, with numpy's infinities for a zero divisor. A complex
+quotient takes Smith's method, as numpy's does, but divides where numpy
+multiplies by a reciprocal, so it can differ from numpy's in the last bit (and
+stays finite where numpy's overflows). A few edge cases can differ from built-in
 vectors, where the UDT gives numpy's answer: ``INT64_MIN // -1`` is
 ``INT64_MIN`` (an ``INT64`` vector gives 0), a complex product or quotient with
 an infinite or NaN part, a complex quotient with a ``-0.0`` divisor, and the
