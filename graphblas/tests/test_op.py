@@ -1,4 +1,5 @@
 import itertools
+import sys
 
 import numpy as np
 import pytest
@@ -42,7 +43,7 @@ from graphblas.dtypes import (
     UINT32,
     UINT64,
 )
-from graphblas.exceptions import DimensionMismatch, DomainMismatch, UdfParseError
+from graphblas.exceptions import DimensionMismatch, DomainMismatch, InvalidValue, UdfParseError
 
 from .conftest import shouldhave
 
@@ -2222,13 +2223,14 @@ def test_udt_jit_typedef():
     assert "double jy" in defn
     assert "JitTypeTest" in defn
 
-    # Array UDT
-    arr_dtype = np.dtype((np.float64, (7,)))
-    arr_udt = dtypes.register_anonymous(arr_dtype, "Vec7")
+    # Array UDT, of a length no other test uses: a literal can register float64
+    # arrays of common lengths under another name first, in any test order.
+    arr_dtype = np.dtype((np.float64, (31,)))
+    arr_udt = dtypes.register_anonymous(arr_dtype, "Vec31")
     lib.GrB_Type_get_String(arr_udt._carg, buf, lib.GxB_JIT_C_DEFINITION)
     defn = ffi.string(buf).decode()
-    assert "double v [7]" in defn
-    assert "Vec7" in defn
+    assert "double v [31]" in defn
+    assert "Vec31" in defn
 
     # 2D array UDT
     mat_dtype = np.dtype((np.int32, (5, 5)))
@@ -2270,20 +2272,20 @@ def test_udt_jit_op_definitions():
     assert "ainv_JitOpTest" in defn
     assert "jp" in defn
 
-    # Array UDT JIT definitions
-    arr_dtype = np.dtype((np.float64, (5,)))
-    arr_udt = dtypes.register_anonymous(arr_dtype, "Vec5Jit")
+    # Array UDT JIT definitions, of a length no other test uses (see test_udt_jit_typedef)
+    arr_dtype = np.dtype((np.float64, (37,)))
+    arr_udt = dtypes.register_anonymous(arr_dtype, "Vec37Jit")
     typed = binary.plus[arr_udt]
     lib.GrB_BinaryOp_get_String(typed.gb_obj, buf, lib.GxB_JIT_C_DEFINITION)
     defn = ffi.string(buf).decode()
-    assert "plus_Vec5Jit" in defn
+    assert "plus_Vec37Jit" in defn
     assert "z->v[i] = (x->v[i]) + (y->v[i])" in defn
-    assert "i < 5" in defn
+    assert "i < 37" in defn
 
     typed = unary.ainv[arr_udt]
     lib.GrB_UnaryOp_get_String(typed.gb_obj, buf, lib.GxB_JIT_C_DEFINITION)
     defn = ffi.string(buf).decode()
-    assert "ainv_Vec5Jit" in defn
+    assert "ainv_Vec37Jit" in defn
 
 
 @pytest.mark.skipif("not supports_udfs")
@@ -3579,10 +3581,10 @@ def test_udt_float32_overflow_warns_at_the_callers_line():
         v[0] = [1e300, 1]
     assert [w.filename for w in record] == [__file__]
     assert v[0].new().value.tolist() == [np.inf, 1]
-    with pytest.warns(RuntimeWarning, match="overflow encountered in cast") as record:
-        (v == 1e300).new()
-    assert [w.filename for w in record] == [__file__]
-    if supports_udfs:
+    if supports_udfs:  # UDT eq and plus need Numba where there is no C JIT
+        with pytest.warns(RuntimeWarning, match="overflow encountered in cast") as record:
+            (v == 1e300).new()
+        assert [w.filename for w in record] == [__file__]
         with pytest.warns(RuntimeWarning, match="overflow encountered in cast") as record:
             (v + 1e300).new()
         assert [w.filename for w in record] == [__file__]
@@ -4078,7 +4080,14 @@ def test_udt_array_ops_on_large_elements():
 
     Unrolled, Numba took about two minutes to type ``minus`` on this element.
     """
-    T = dtypes.register_anonymous(np.dtype((np.float64, (64, 64))), "_LoopBig")
+    try:
+        T = dtypes.register_anonymous(np.dtype((np.float64, (64, 64))), "_LoopBig")
+    except InvalidValue:
+        if sys.platform != "win32":
+            raise
+        # SuiteSparse:GraphBLAS built by MSVC (no variable-length arrays) refuses a
+        # UDT larger than 1024 bytes (GB_VLA_MAXSIZE); this one is 32768.
+        pytest.skip("SuiteSparse:GraphBLAS limits a UDT to 1024 bytes on Windows")
     S = dtypes.register_anonymous(np.dtype((np.float64, (64, 1))), "_LoopBigCol")
     x = np.arange(64 * 64, dtype=np.float64).reshape(64, 64)
     col = np.arange(64, dtype=np.float64).reshape(64, 1)
@@ -4498,8 +4507,10 @@ def test_udt_literal_converts_only_when_exact():
     assert r.apply(second, right=(1, 0.1)).new()[0].new().value.tolist() == (1, np.float32(0.1))
     assert r.apply(second, right={"ex_i": 2, "ex_f": 0.5}).new()[0].new().value.tolist() == (2, 0.5)
     assert r.apply(second, right=np.int8(2)).new()[0].new().value.tolist() == (2, 2.0)
-    # A sequence holding numpy values is strong, as the array numpy makes of it.
-    assert binary.plus(v, (np.int8(1), 2, 3)).new().dtype.np_type == np.dtype((np.int64, (3,)))
+    # A sequence holding numpy values is strong, as the array numpy makes of it
+    # (int64, or int32 on Windows with numpy 1).
+    made = np.asarray((np.int8(1), 2, 3)).dtype
+    assert binary.plus(v, (np.int8(1), 2, 3)).new().dtype.np_type == np.dtype((made, (3,)))
     # The error names the literal's type; a layout's name is whatever UDT
     # registered it first, so only the built-in scalar types are pinned here.
     for expr, typed_as in [
@@ -4596,7 +4607,7 @@ def test_udt_sequence_and_array_literals_type_like_numbers():
     # Strong: an array is its own dtype, in its shape, or broadcast to the UDT's.
     for literal, expected in [
         (np.array([0.5, 1, 2]), f64s),
-        (np.array([1, 2, 3]), np.dtype((np.int64, (3,)))),
+        (np.array([1, 2, 3]), np.dtype((np.array([1]).dtype, (3,)))),  # int32 on numpy 1 Windows
         (np.array([1], np.int8), int8s.np_type),
         (np.array([0.5]), f64s),
         (np.ones((1, 3)), np.dtype((np.float64, (1, 3)))),

@@ -539,6 +539,44 @@ def test_udt_jit_c_info_pinned_at_first_register():
     assert "_PinUDT_first" in udt.jit_c_definition
 
 
+@pytest.mark.skipif("not _has_jit_set")
+def test_udt_layouts_under_one_name_get_their_own_jit_c_names():
+    """Two UDT layouts registered under one name get distinct JIT C names.
+
+    SuiteSparse's JIT knows a type by its C name alone, so the second layout
+    ran kernels compiled for the first: making an iso Vector non-iso expanded
+    28-byte elements with a kernel for 6-byte ones (wrong values), or 6-byte
+    elements with one for 28-byte ones (heap corruption, in either order of
+    the tests that did this).
+    """
+    small = dtypes.register_anonymous(np.dtype((np.int16, (1, 3, 1))), "_SameJitName")
+    big = dtypes.register_anonymous(np.dtype((np.int16, (2, 1, 7))), "_SameJitName")
+    assert small.jit_c_name == "_SameJitName"
+    assert big.jit_c_name != small.jit_c_name
+    assert big.jit_c_name in big.jit_c_definition
+    jit_c_control = gb.ss.config["jit_c_control"] if gb.backend == "suitesparse" else None
+    if jit_c_control is not None:
+        gb.ss.config["jit_c_control"] = "on"
+    try:
+        for udt in [small, big]:
+            shape = udt.np_type.shape
+            one = np.full(shape, 1, np.int16)
+            two = np.full(shape, 2, np.int16)
+            v = gb.Vector(udt, size=4)
+            v[0] = one
+            v[1] = one  # iso
+            v[2] = two  # no longer iso: SuiteSparse expands the iso value
+            values = [v[i].new().value.tolist() for i in range(3)]
+            assert values == [one.tolist(), one.tolist(), two.tolist()]
+    finally:
+        if jit_c_control is not None:
+            gb.ss.config["jit_c_control"] = jit_c_control
+    if gb.backend == "suitesparse":
+        # Nor may a typedef registered in C take a name a UDT already has.
+        with pytest.raises(ValueError, match="unavailable"):
+            dtypes.ss.register_new("_SameJitName", "typedef struct { int8_t q ; } _SameJitName ;")
+
+
 def test_dtype_to_from_string():
     types = [dtypes.BOOL, dtypes.FP64]
     for c in string.ascii_letters:

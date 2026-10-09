@@ -294,6 +294,12 @@ def _is_valid_c_identifier(name):
 # process state.
 _synthetic_udt_counter = itertools.count(1)
 
+# The C typedef given to SuiteSparse under each ``GxB_JIT_C_NAME`` in this
+# process. SuiteSparse's JIT knows a type by that name alone (its hash is the
+# name's), so two layouts under one name would share compiled kernels, and a
+# kernel compiled for one would read and write the other's element size.
+_jit_c_type_defs = {}
+
 
 def _pick_c_type_name(python_name):
     """Return a valid C identifier for use as ``GxB_JIT_C_NAME`` on a UDT.

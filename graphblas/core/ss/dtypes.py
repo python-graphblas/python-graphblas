@@ -29,7 +29,11 @@ def register_new(name, jit_c_definition, *, np_type=None):
         )
     if not name.isidentifier():
         raise ValueError(f"`name` argument must be a valid Python identifier; got: {name!r}")
-    if name in core.dtypes._registry or hasattr(dtypes.ss, name):
+    from ..operator.udt_utils import _jit_c_type_defs
+
+    # SuiteSparse's JIT knows a type by its C name alone, so it must not be
+    # another type's C name either.
+    if name in core.dtypes._registry or hasattr(dtypes.ss, name) or name in _jit_c_type_defs:
         raise ValueError(f"{name!r} name for dtype is unavailable")
     # GxB_MAX_NAME_LEN counts the terminating NUL, so SuiteSparse keeps one fewer
     # character; a name that long would no longer match its typedef and would
@@ -57,6 +61,7 @@ def register_new(name, jit_c_definition, *, np_type=None):
             ffi_new("char[]", jit_c_definition.encode()),
         )
         check_status_carg(status, "Type", gb_obj[0])
+    _jit_c_type_defs[name] = jit_c_definition
 
     # Let SuiteSparse:GraphBLAS determine the size (we gave 0 as size above)
     size_ptr = ffi_new("size_t*")
