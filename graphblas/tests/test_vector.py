@@ -1538,7 +1538,10 @@ def test_python_number_is_weak_beside_builtin_dtypes():
     assert (Scalar.from_value(0.5, dtype=dtypes.FP32) * 0.5).new().dtype == dtypes.FP32
     A = Matrix.from_coo([0], [0], [100], dtype=dtypes.INT8)
     assert (A * 2).dtype == dtypes.INT8
-    for expr in [lambda: i8 + 300, lambda: u8 + -1, lambda: i8 // 300, lambda: s8 * 300]:
+    exprs = [lambda: i8 + 300, lambda: u8 + -1, lambda: s8 * 300]
+    if supports_udfs:  # integer floordiv is a Numba op
+        exprs.append(lambda: i8 // 300)
+    for expr in exprs:
         with pytest.raises(OverflowError, match="out of bounds"):
             expr()
     # truediv gives FP64 whatever the int, so an int out of range does not raise:

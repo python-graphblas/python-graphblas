@@ -143,7 +143,12 @@ def _set_udt_jit_c_definition(datatype):
     Supports both record UDTs (``{'x': float, 'y': float}``) and array UDTs
     (``np.dtype((np.float64, (3,)))``).
     """
-    from .operator.udt_utils import _has_jit_set
+    from .operator.udt_utils import (
+        _has_jit_set,
+        _jit_c_type_defs,
+        _synthetic_udt_counter,
+        _udt_c_typedef,
+    )
 
     if not _has_jit_set or not datatype._is_udt:
         return
@@ -151,6 +156,11 @@ def _set_udt_jit_c_definition(datatype):
     if info is None:
         return
     c_name, typedef = info
+    # A name already given to another layout (two UDTs registered under one
+    # name) gets a fresh one: SuiteSparse would share their JIT kernels.
+    while _jit_c_type_defs.setdefault(c_name, typedef) != typedef:
+        info = _udt_c_typedef(f"_gbudt_{next(_synthetic_udt_counter)}", datatype.np_type)
+        c_name, typedef = info
     lib.GrB_Type_set_String(datatype._carg, ffi.new("char[]", c_name.encode()), lib.GxB_JIT_C_NAME)
     lib.GrB_Type_set_String(
         datatype._carg, ffi.new("char[]", typedef.encode()), lib.GxB_JIT_C_DEFINITION

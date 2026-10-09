@@ -139,6 +139,8 @@ class Scalar(BaseType):
         elements of array UDTs broadcast (an ``INT8[3]`` Scalar of ``[1, 1, 1]``
         equals ``1``), but returns a bool. Two empty Scalars are equal, and
         ``s == None`` checks whether ``s`` is empty. :meth:`isequal` is stricter.
+        Without Numba, which ``binary.eq`` needs for UDTs, a UDT's values are
+        compared in numpy, which broadcasts them the same way.
         """
         return _scalar_eq(self, other)
 
@@ -1651,7 +1653,48 @@ def _scalar_eq(scalar, other):
                 with np.errstate(over="ignore"):
                     return (convert(scalar.value) == convert(value)).item()
             return (convert(scalar.value) == convert(value)).item()
+    if not _has_numba and (scalar.dtype._is_udt or (type(other) is Scalar and other.dtype._is_udt)):
+        # binary.eq on a UDT needs Numba, so compare the values in numpy, as ==
+        # on a Scalar did before it used binary.eq, with the literal typed as
+        # binary.eq types it, and leaf by leaf as binary.eq compares.
+        from .operator.udt_utils import _check_udt_pair, _get_udt_info
+
+        if type(other) is not Scalar:
+            value, dtype = _literal_operand(scalar.dtype, other, binary.eq)
+            other = Scalar.from_value(value, dtype, is_cscalar=None, name="s_eq_other")
+        # Two UDTs pair as for binary.eq, or raise its KeyError (records with other
+        # field names, array shapes that do not broadcast, a record and an array).
+        info = _get_udt_info(scalar.dtype), _get_udt_info(other.dtype)
+        _check_udt_pair("eq", scalar.dtype, other.dtype, *info)
+        return _leaves_equal(scalar.value, scalar.dtype.np_type, other.value, other.dtype.np_type)
     return bool(scalar.ewise_mult(other, binary.eq).new(name="s_eq").value)
+
+
+def _leaves_equal(x, x_type, y, y_type):
+    """Whether values ``x`` and ``y`` are equal in every leaf, as ``binary.eq`` compares them.
+
+    For ``==`` on a UDT Scalar without Numba. Records pair their fields in
+    order (the caller checks, by ``_check_udt_pair``, that two records pair as
+    for ``binary.eq``), and a value that is not a record stands in every
+    field. Each pair of leaves compares in the type their dtypes promote to,
+    whatever the values (numpy 1 types a scalar by its value), and broadcasts.
+    """
+    if x_type.names is not None or y_type.names is not None:
+        x_names = x_type.names or [None] * len(y_type.names)
+        y_names = y_type.names or [None] * len(x_type.names)
+        return all(
+            _leaves_equal(
+                x if x_name is None else x[x_name],
+                x_type if x_name is None else x_type.fields[x_name][0],
+                y if y_name is None else y[y_name],
+                y_type if y_name is None else y_type.fields[y_name][0],
+            )
+            for x_name, y_name in zip(x_names, y_names, strict=True)
+        )
+    x = np.asarray(x, dtype=x_type.base)
+    y = np.asarray(y, dtype=y_type.base)
+    common = np.result_type(x.dtype, y.dtype)
+    return bool(np.all(x.astype(common) == y.astype(common)))
 
 
 def _element_shapes_differ(dtype1, dtype2):
