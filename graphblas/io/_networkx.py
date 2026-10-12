@@ -69,36 +69,9 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
         # there is no edge in the (sub)graph
         row, col, data = (), (), ()
 
-    if G.is_directed():
-        rows, cols, vals = row, col, data
-        # A multigraph can have parallel edges (duplicate ``(u, v)``); summing
-        # them with ``plus`` matches scipy's coo -> csr accumulation. A simple
-        # graph has no duplicate coordinates, so ``dup_op=None`` is exact and
-        # skips the accumulator.
-        dup_op = plus if G.is_multigraph() else None
-    else:
-        # Symmetrize: mirror off-diagonal entries. Self-loops would be double
-        # counted, so subtract the diagonal contribution once, matching
-        # nx.to_scipy_sparse_array. dup_op=plus then sums the diagonal triple
-        # (wt + wt - wt) back to wt. For a multigraph, plus also sums parallel
-        # edges (duplicate coordinates) the same way scipy's coo -> csr does;
-        # for a simple graph off-diagonal entries are unique so plus is a no-op
-        # there.
-        d = data + data
-        r = row + col
-        c = col + row
-        selfloops = list(nx.selfloop_edges(G, data=weight, default=1))
-        if selfloops:
-            diag_index, diag_data = zip(*((index[u], -wt) for u, v, wt in selfloops), strict=True)
-            d += diag_data
-            r += diag_index
-            c += diag_index
-        rows, cols, vals = r, c, d
-        dup_op = plus
-
-    values = np.array(vals, dtype=dtype)
+    values = np.array(data, dtype=dtype)
     if dtype is None and values.dtype == np.int32:
-        # ``vals`` is a Python sequence, and from_coo widens an int32 dtype
+        # ``data`` is a Python sequence, and from_coo widens an int32 dtype
         # INFERRED from sequence input to int64 (values_to_numpy_buffer): python
         # ints infer int32 on win64 with numpy < 2, and np.int32 scalar weights
         # infer it on every platform. Widen the same way so from_networkx and
@@ -133,20 +106,30 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
         # empty coo array to float64, so match that when dtype is unset.
         return Matrix(lookup_dtype(values.dtype), nrows=nlen, ncols=nlen, name=name)
 
-    rows = np.array(rows, dtype=np.uint64)
-    cols = np.array(cols, dtype=np.uint64)
-    if backend == "suitesparse" and not G.is_multigraph() and (values[[0]] == values).all():
+    rows = np.array(row, dtype=np.uint64)
+    cols = np.array(col, dtype=np.uint64)
+    if not G.is_directed():
+        # Mirror each edge into the other triangle. A self-loop is its own
+        # mirror, so it is stored once with its own weight. (nx.to_scipy_sparse_array
+        # mirrors every entry and sums ``wt + wt - wt`` on the diagonal instead,
+        # which turns an infinite self-loop into nan, overflows a large finite one,
+        # and cannot be written in an unsigned dtype.)
+        offdiag = rows != cols
+        rows, cols = np.concatenate([rows, cols[offdiag]]), np.concatenate([cols, rows[offdiag]])
+        values = np.concatenate([values, values[offdiag]])
+    dup_op = None
+    if G.is_multigraph():
+        # Parallel edges share a coordinate; summing them with ``plus`` matches
+        # scipy's coo -> csr accumulation. A simple graph has no repeated
+        # coordinate, so it needs no accumulator.
+        dup_op = plus
+    elif backend == "suitesparse" and (values[[0]] == values).all():
         # Every edge carries the same weight, which is the whole story for an
         # unweighted graph. Store one value rather than one per entry, as
         # ``from_scipy_sparse`` does for the same data. SuiteSparse used to
         # notice this after a build on its own; 10.5.0 stopped ("no longer do
-        # a post-iso check"), so ask for it outright.
-        #
-        # A multigraph is excluded because ``plus`` sums parallel edges, which
-        # can make uniform inputs non-uniform. An undirected graph needs no
-        # exclusion: without self-loops its coordinates are unique so ``plus``
-        # never fires, and with them ``values`` holds both ``wt`` and ``-wt``
-        # and fails the uniformity test above.
+        # a post-iso check"), so ask for it outright. A multigraph is excluded
+        # because ``plus`` can make uniform inputs non-uniform.
         A = Matrix(lookup_dtype(values.dtype), nrows=nlen, ncols=nlen, name=name)
         A.ss.build_scalar(rows, cols, values[0])
         return A
