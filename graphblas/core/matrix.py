@@ -1868,18 +1868,17 @@ class Matrix(BaseType):
         # This is pretty fast, but can anybody make it faster? ;)
         cols = cols.tolist()
         values = values.tolist()
+        # Consecutive pairs of indptr, without sliding_window_view, which refuses
+        # the one-element indptr of a Matrix with no entries.
+        indptr = indptr.tolist()
         return {
             row: dict(zip(cols[start:stop], values[start:stop], strict=True))
-            for row, (start, stop) in zip(
-                compressed_rows.tolist(),
-                np.lib.stride_tricks.sliding_window_view(indptr, 2).tolist(),
-                strict=True,
+            for row, start, stop in zip(
+                compressed_rows.tolist(), indptr[:-1], indptr[1:], strict=True
             )
         }
         # Alternative
-        # slices = list(
-        #     itertools.starmap(slice, np.lib.stride_tricks.sliding_window_view(indptr, 2).tolist())
-        # )
+        # slices = list(itertools.starmap(slice, zip(indptr[:-1], indptr[1:])))
         # return {
         #     r: dict(zip(c, v))
         #     for r, c, v in zip(
