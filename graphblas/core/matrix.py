@@ -252,13 +252,19 @@ class Matrix(BaseType):
         """Cast this Matrix with one column to a Vector.
 
         This is SuiteSparse-specific and may change in the future.
-        This does not copy the matrix.
+        This does not copy the matrix, but converts it to be held by column if it
+        is held by row.
         """
         if self._ncols != 1:
             raise ValueError(
                 f"Matrix must have a single column (not {self._ncols}) to be cast to a Vector"
             )
         if backend == "suitesparse":
+            # SuiteSparse holds a GrB_Vector as a one-column matrix by column. Cast
+            # from a matrix held by row (a reshape of a by-row Matrix is one), the
+            # Vector has size 1 to SuiteSparse whatever its Python-side size.
+            if self.ss.config["format"] != "by_col":
+                self.ss.config["format"] = "by_col"
             return Vector._from_obj(
                 ffi.cast("GrB_Vector*", self.gb_obj),
                 self.dtype,
