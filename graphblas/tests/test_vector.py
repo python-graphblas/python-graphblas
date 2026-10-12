@@ -187,6 +187,17 @@ def test_ss_iso_value_of_an_empty_iso_vector():
                 v.ss.iso_value
 
 
+@pytest.mark.skipif("not suitesparse")
+@pytest.mark.parametrize("method", ["export", "unpack"])
+def test_ss_export_full_of_a_vector_that_is_not_full(method):
+    # SuiteSparse refuses with GrB_INVALID_VALUE and sets no message, so the
+    # error used to be blank.
+    v = Vector.from_coo([1], [2.0], size=3)
+    with pytest.raises(InvalidValue, match="1 of 3 entries is not full"):
+        getattr(v.ss, method)("full")
+    assert v.isequal(Vector.from_coo([1], [2.0], size=3))
+
+
 def test_from_coo_default_values():
     u = Vector.from_coo([1, 3])
     v = Vector.from_coo([1, 3], [1.0, 1.0])
