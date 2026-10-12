@@ -163,6 +163,21 @@ def test_matrix_to_from_networkx():
 
 
 @pytest.mark.skipif("not nx")
+def test_to_networkx_keeps_rows_without_entries():
+    # Nodes 1 and 4 have no edges, and the entries name the others in the order
+    # 0, 3, 2: every row is still a node, in index order, so the round trip gives
+    # back the same matrix.
+    M = gb.Matrix.from_coo([2, 0, 3], [0, 3, 3], [5, 6, 7], nrows=5, ncols=5)
+    G = gb.io.to_networkx(M)
+    assert list(G) == [0, 1, 2, 3, 4]
+    assert gb.io.from_networkx(G).isequal(M, check_dtype=True)
+    G = gb.io.to_networkx(M, edge_attribute=None)
+    assert list(G) == [0, 1, 2, 3, 4]
+    assert sorted(G.edges) == [(0, 3), (2, 0), (3, 3)]
+    assert len(gb.io.to_networkx(Matrix(int, 3, 3))) == 3
+
+
+@pytest.mark.skipif("not nx")
 def test_from_networkx_undirected():
     # Undirected graphs go through from_networkx's direct COO path (no scipy),
     # which symmetrizes off-diagonal entries and keeps self-loops single-counted.
