@@ -177,6 +177,24 @@ def test_from_coo_scalar():
             C.ss.iso_value
 
 
+@pytest.mark.skipif("not suitesparse")
+def test_ss_iso_value_of_an_empty_iso_matrix():
+    # SuiteSparse marks a Matrix built from no tuples iso, and may mark other empty
+    # results iso too; iso_value used to leak StopIteration on them (RuntimeError
+    # inside a generator). There is no value, so the Scalar is empty.
+    C = Matrix.from_coo([], [], 7, nrows=3, ncols=2)
+    D = Matrix.from_coo([0], [1], [1.0], nrows=3, ncols=2).select("==", 2).new()
+    assert C.ss.is_iso
+    for M in [C, D]:
+        if M.ss.is_iso:
+            value = M.ss.iso_value
+            assert isinstance(value, Scalar)
+            assert value.dtype == M.dtype
+            assert value.is_empty
+    with pytest.raises(ValueError, match="not iso"):
+        Matrix(int, 3, 2).ss.iso_value
+
+
 def test_from_coo_default_values():
     B = Matrix.from_coo([1, 3], [2, 4])
     C = Matrix.from_coo([1, 3], [2, 4], [1.0, 1.0])
