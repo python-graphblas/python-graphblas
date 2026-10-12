@@ -212,6 +212,36 @@ def test_from_networkx_uniform_weights_are_iso(graph_cls, selfloop, weight):
 
 
 @pytest.mark.skipif("not nx")
+@pytest.mark.parametrize("graph_cls", [nx.Graph, nx.DiGraph] if nx else [])
+@pytest.mark.parametrize("dtype", [None, bool, "float32"])
+def test_from_networkx_structure_matches_the_general_path(graph_cls, dtype):
+    # weight=None reads only the coordinates. An attribute no edge carries takes
+    # the general path and gives every entry the default 1, so the two agree.
+    G = graph_cls()
+    G.add_edges_from([("a", "b"), ("b", ("t", 1)), (("t", 1), ("t", 1)), ("b", "a")])
+    G.add_node(frozenset({1}))
+    edgeless = graph_cls()
+    edgeless.add_nodes_from(range(3))
+    cases = [
+        (G, None),
+        (G, list(G)[::-1]),
+        (G, [("t", 1), "a"]),
+        (G, [frozenset({1})]),
+        (edgeless, None),
+    ]
+    for H, nodelist in cases:
+        M = gb.io.from_networkx(H, nodelist=nodelist, weight=None, dtype=dtype)
+        expected = gb.io.from_networkx(H, nodelist=nodelist, weight="absent", dtype=dtype)
+        assert M.isequal(expected, check_dtype=True)
+        if suitesparse and M.nvals > 0:
+            assert M.ss.is_iso
+    with pytest.raises(nx.NetworkXError, match="no nodes"):
+        gb.io.from_networkx(graph_cls(), weight=None)
+    with pytest.raises(nx.NetworkXError, match="not in G"):
+        gb.io.from_networkx(G, nodelist=["a", "missing"], weight=None)
+
+
+@pytest.mark.skipif("not nx")
 @pytest.mark.parametrize("wt", [np.inf, -np.inf, 1e308])
 def test_from_networkx_undirected_selfloop_keeps_its_weight(wt):
     # Summing wt + wt - wt on the diagonal, as nx.to_scipy_sparse_array does,
