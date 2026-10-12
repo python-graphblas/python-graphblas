@@ -168,6 +168,22 @@ def test_from_coo_scalar():
             u.ss.iso_value
 
 
+@pytest.mark.skipif("not suitesparse")
+def test_ss_iso_value_of_an_empty_iso_vector():
+    # As for Matrix: an empty Vector SuiteSparse marks iso has an empty iso_value.
+    u = Vector.from_coo([], 7, size=3)
+    w = Vector.from_coo([1], [1.0], size=3).select("==", 2).new()
+    assert u.ss.is_iso
+    for v in [u, w]:
+        if v.ss.is_iso:
+            value = v.ss.iso_value
+            assert isinstance(value, Scalar)
+            assert value.dtype == v.dtype
+            assert value.is_empty
+    with pytest.raises(ValueError, match="not iso"):
+        Vector(int, 3).ss.iso_value
+
+
 def test_from_coo_default_values():
     u = Vector.from_coo([1, 3])
     v = Vector.from_coo([1, 3], [1.0, 1.0])
