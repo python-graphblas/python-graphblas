@@ -7,7 +7,7 @@ import graphblas as gb
 
 from ... import binary, monoid
 from ...dtypes import _INDEX, BOOL, INT64, UINT64, lookup_dtype
-from ...exceptions import _error_code_lookup, check_status, check_status_carg
+from ...exceptions import InvalidValue, _error_code_lookup, check_status, check_status_carg
 from .. import NULL, _has_numba, ffi, lib
 from ..base import call
 from ..operator import get_typed_op
@@ -1126,6 +1126,12 @@ class ss:
                 rv["nrows"] = nrows
                 rv["ncols"] = ncols
         elif format in {"fullr", "fullc"}:
+            if parent._nvals != nrows * ncols:
+                # SuiteSparse refuses with GrB_INVALID_VALUE and no message.
+                raise InvalidValue(
+                    f"Matrix with {parent._nvals} of {nrows * ncols} entries is not full, "
+                    f"so it cannot {method} to format {format!r}"
+                )
             if format == "fullr":
                 cfunc = getattr(lib, f"GxB_Matrix_{method}_FullR")
             else:
