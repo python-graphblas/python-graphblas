@@ -3066,6 +3066,25 @@ def test_dup_expr(A):
 
 
 @pytest.mark.skipif("not suitesparse")
+@pytest.mark.parametrize(
+    "fmt", ["csr", "csc", "hypercsr", "hypercsc", "bitmapr", "bitmapc", "fullr", "fullc"]
+)
+@pytest.mark.parametrize("order", ["rowwise", "columnwise"])
+def test_ss_flatten_size(fmt, order):
+    # SuiteSparse holds a Vector by column. A reshape of a Matrix held by row was
+    # cast to a Vector as it stood, and SuiteSparse then saw a Vector of size 1:
+    # .size was 1 and every index past 0 raised InvalidIndex, though isequal and
+    # to_coo, which read the Python-side size, looked right.
+    A = Matrix.from_coo([0, 0, 0, 1, 1, 1], [0, 1, 2, 0, 1, 2], [1, 2, 3, 4, 5, 6])
+    B = Matrix.ss.import_any(**A.ss.export(format=fmt))
+    v = B.ss.flatten(order=order)
+    expected = A.to_dense().ravel(order="C" if order == "rowwise" else "F").tolist()
+    assert v.size == 6
+    assert [v.get(i) for i in range(6)] == expected
+    assert v.dup().size == 6
+
+
+@pytest.mark.skipif("not suitesparse")
 def test_ss_flatten(A):
     data = [
         [3, 0, 3, 5, 6, 0, 6, 1, 6, 2, 4, 1],
