@@ -198,6 +198,42 @@ def test_ss_export_full_of_a_vector_that_is_not_full(method):
     assert v.isequal(Vector.from_coo([1], [2.0], size=3))
 
 
+@pytest.mark.parametrize("dtype", ["BOOL", "INT8", "UINT8", "INT64", "UINT64", "FP32", "FP64"])
+@pytest.mark.parametrize("value", [True, False, 0, -1, 300, 2**40, 1.5, -0.0, float("nan")])
+@pytest.mark.parametrize("mask_kind", [None, "S", "V", "~S", "~V"])
+@pytest.mark.parametrize("replace", [False, True])
+def test_update_with_a_literal_matches_the_full_path(dtype, value, mask_kind, replace):
+    # w(mask, replace) << x for a Python bool, int or float takes a fast path; an
+    # active Recorder sends the same update down the full path to compare with.
+    w = Vector.from_coo([0, 2, 4], [1, 0, 1], dtype=dtype, size=6)
+    m = Vector.from_coo([1, 2, 3, 5], [True, False, True, True], size=6)
+    mask = {None: None, "S": m.S, "V": m.V, "~S": ~m.S, "~V": ~m.V}[mask_kind]
+    if mask is None and replace:
+        return
+    fast = w.dup()
+    full = w.dup()
+    fast(mask=mask, replace=replace) << value
+    with gb.Recorder():
+        full(mask=mask, replace=replace) << value
+    assert fast.dtype == full.dtype
+    fast_indices, fast_values = fast.to_coo()
+    full_indices, full_values = full.to_coo()
+    np.testing.assert_array_equal(fast_indices, full_indices)
+    np.testing.assert_array_equal(fast_values, full_values)  # nan equals nan here
+    np.testing.assert_array_equal(np.signbit(fast_values), np.signbit(full_values))
+
+
+def test_update_with_a_literal_keeps_the_full_path_errors():
+    v = Vector(int, 3)
+    with pytest.raises(TypeError, match="Mask object must be type Vector"):
+        v(Matrix(bool, 3, 3).S) << 1
+    with pytest.raises(DimensionMismatch):
+        v(Vector(bool, 4).S) << 1
+    u = Vector(dtypes.UINT64, 2)
+    u << 2**64 - 1  # beyond INT64: typed as the target's dtype by the full path
+    assert u.get(0) == 2**64 - 1
+
+
 def test_from_coo_default_values():
     u = Vector.from_coo([1, 3])
     v = Vector.from_coo([1, 3], [1.0, 1.0])

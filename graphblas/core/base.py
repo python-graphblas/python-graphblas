@@ -4,7 +4,7 @@ from .. import backend, config
 from .. import replace as replace_singleton
 from ..dtypes import BOOL
 from ..exceptions import check_status
-from . import NULL
+from . import NULL, ffi, lib
 from .descriptor import lookup as descriptor_lookup
 from .expr import AmbiguousAssignOrExtract, Updater
 from .literals import _literal_store_dtype
@@ -25,6 +25,54 @@ def record_raw(text):
 def _is_recording():
     """Whether a Recorder is active; fast paths that bypass ``call`` must check this."""
     return _recorder.get(_prev_recorder) is not None
+
+
+_ASSIGN_LITERAL_TYPES = (bool, int, float)
+
+
+def _is_plain_mask(mask, output):
+    """Whether ``mask`` needs nothing from the full assign path: a Mask of an object
+    of ``output``'s own type and shape, and not a value mask of a UDT.
+    """
+    return (
+        isinstance(mask, Mask)
+        and type(mask.parent) is type(output)
+        and mask.parent.shape == output.shape
+        and (mask.structure or not mask.parent.dtype._is_udt)
+    )
+
+
+def _assign_literal(output, value, mask, replace):
+    """``output(mask, replace) << value`` with GrB_*_assign_<T> over all indices.
+
+    ``value`` takes the dtype the full path gives its Scalar, and GraphBLAS casts
+    it to ``output``'s dtype, as the full path's assign does.
+    """
+    from ..dtypes import lookup_dtype
+
+    vdtype = lookup_dtype(type(value), value)
+    cvalue = ffi.new(f"{vdtype.c_type}*")
+    cvalue[0] = value  # cffi coercion, identical to the Scalar.value setter
+    if mask is None:
+        mask_carg = NULL
+        desc = None
+    else:
+        mask_carg = mask.parent._carg
+        desc = descriptor_lookup(
+            output_replace=replace,
+            mask_complement=mask.complement,
+            mask_structure=mask.structure,
+        )
+    desc = NULL if desc is None else desc._carg
+    if output.ndim == 1:
+        args = (output._carg, mask_carg, NULL, cvalue[0], lib.GrB_ALL, output._size, desc)
+        err_code = libget(f"GrB_Vector_assign_{vdtype.name}")(*args)
+    else:
+        nrows, ncols = output._nrows, output._ncols
+        args = (output._carg, mask_carg, NULL, cvalue[0], lib.GrB_ALL, nrows, lib.GrB_ALL, ncols)
+        err_code = libget(f"GrB_Matrix_assign_{vdtype.name}")(*args, desc)
+    if err_code:
+        check_status(err_code, output)
 
 
 def call(cfunc_name, args):
@@ -374,6 +422,25 @@ class BaseType:
         return self._update(expr, opts=opts)
 
     def _update(self, expr, mask=None, accum=None, replace=False, input_mask=None, *, opts):
+        # Fast path for `w(mask, replace) << x` with an exact-fit Python bool, int or
+        # float x: the assign the Updater path ends in, without building a second
+        # Updater, an index resolver and a Scalar (about 7 us of Python a call).
+        # Ints beyond INT64 (which that path types as the target's dtype), a UDT
+        # target, accum, opts, any mask the path would convert or reject, and an
+        # active Recorder (so the call is recorded) take the full path.
+        if (
+            type(expr) in _ASSIGN_LITERAL_TYPES
+            and not self._is_scalar
+            and accum is None
+            and input_mask is None
+            and not opts
+            and (type(expr) is not int or -(2**63) <= expr < 2**63)
+            and not self.dtype._is_udt
+            and (not replace if mask is None else _is_plain_mask(mask, self))
+            and not _is_recording()
+        ):
+            _assign_literal(self, expr, mask, replace)
+            return
         if not isinstance(expr, BaseExpression):
             if isinstance(expr, AmbiguousAssignOrExtract):
                 if expr._is_scalar and self._is_scalar:
