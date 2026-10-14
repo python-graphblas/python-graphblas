@@ -13,7 +13,7 @@ _has_idxbinop = hasattr(lib, "GxB_IndexBinaryOp_new")
 if _has_numba:
     import numba
 
-    from .base import (
+    from .udf import (
         _bool_to_int8,
         _compile_udf_for_udt,
         _get_udt_wrapper_indexbinary,

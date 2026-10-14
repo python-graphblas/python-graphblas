@@ -3,6 +3,7 @@ import itertools
 import pickle
 import sys
 import types
+import warnings
 import weakref
 
 import numpy as np
@@ -1493,6 +1494,199 @@ def test_ss_nbytes(v):
     assert v.ss.nbytes > 0
 
 
+def test_python_number_is_weak_beside_builtin_dtypes():
+    """A Python number takes a built-in collection's dtype when that kind holds it (NEP 50).
+
+    How a literal was typed used to depend on the installed numpy: on numpy 2 a
+    Python int was INT64 and a float FP64 beside anything, and on numpy 1 the
+    collection's dtype won by value, so ``int8_vec + 300`` wrapped and
+    ``int8_vec < 300`` compared with 44. python-graphblas now applies numpy 2's
+    rule itself, the table UDT elements use, on numpy 1 and 2 alike. numpy
+    scalars and Scalars keep their dtype.
+    """
+    i8 = Vector.from_coo([0, 1], [100, -100], dtype=dtypes.INT8)
+    u8 = Vector.from_coo([0, 1], [0, 200], dtype=dtypes.UINT8)
+    f32 = Vector.from_coo([0, 1], [0.1, 1.5], dtype=dtypes.FP32)
+    u64 = Vector.from_coo([0, 1], [0, 2**63], dtype=dtypes.UINT64)
+    bools = Vector.from_coo([0, 1], [True, False])
+    for expr, dtype, values in [
+        (i8 + 1, dtypes.INT8, [101, -99]),
+        (1 + i8, dtypes.INT8, [101, -99]),
+        (i8 + True, dtypes.INT8, [101, -99]),
+        (binary.plus(i8, 1), dtypes.INT8, [101, -99]),
+        (i8.apply(binary.minus, left=1), dtypes.INT8, [-99, 101]),
+        (i8.apply(monoid.max, right=1), dtypes.INT8, [100, 1]),
+        (i8.apply("+", right=1), dtypes.INT8, [101, -99]),
+        (1 - u8, dtypes.UINT8, [1, 57]),  # wraps, as numpy 2 does
+        (i8 * 0.5, dtypes.FP64, [50, -50]),
+        (u64 + 1, dtypes.UINT64, [1, 2**63 + 1]),
+        (bools + 1, dtypes.INT64, [2, 1]),
+        (f32 * 2, dtypes.FP32, [np.float32(0.2), 3]),
+        # Strong: numpy scalars, Scalars, and the literal of a typed op
+        (i8 + np.int64(1), dtypes.INT64, [101, -99]),
+        (i8 + Scalar.from_value(1), dtypes.INT64, [101, -99]),
+        (binary.plus["INT64"](i8, 1), dtypes.INT64, [101, -99]),
+        (binary.plus["FP64"](i8, 300), dtypes.FP64, [400, 200]),
+    ]:
+        assert expr.dtype == dtype
+        assert expr.new().to_coo()[1].tolist() == values
+    assert (f32 * 0.5).dtype == dtypes.FP32
+    if dtypes._supports_complex:
+        assert (f32 + 1j).dtype == dtypes.FC32
+    s8 = Scalar.from_value(100, dtype=dtypes.INT8)
+    assert (s8 + 1).new().dtype == (1 + s8).new().dtype == dtypes.INT8
+    assert (Scalar.from_value(0.5, dtype=dtypes.FP32) * 0.5).new().dtype == dtypes.FP32
+    A = Matrix.from_coo([0], [0], [100], dtype=dtypes.INT8)
+    assert (A * 2).dtype == dtypes.INT8
+    exprs = [lambda: i8 + 300, lambda: u8 + -1, lambda: s8 * 300]
+    if supports_udfs:  # integer floordiv is a Numba op
+        exprs.append(lambda: i8 // 300)
+    for expr in exprs:
+        with pytest.raises(OverflowError, match="out of bounds"):
+            expr()
+    # truediv gives FP64 whatever the int, so an int out of range does not raise:
+    # numpy divides integers in float64 too.
+    assert (i8 / 300).dtype == (300 / i8).dtype == dtypes.FP64
+    assert (i8 / 300).new().to_coo()[1].tolist() == [100 / 300, -100 / 300]
+    # A float too large for FP32 becomes infinity with a warning, as in numpy 2.
+    with pytest.warns(RuntimeWarning, match="overflow encountered in cast") as record:
+        result = (f32 + 1e300).new()
+    assert result.dtype == dtypes.FP32
+    assert np.isinf(result.to_coo()[1]).all()
+    assert {w.filename for w in record} == {__file__}
+    with pytest.warns(RuntimeWarning, match="overflow encountered in cast"):
+        assert np.isinf((f32 + 2**200).new().to_coo()[1]).all()  # an int too
+    # A comparison keeps no result type, so an int out of range compares exactly.
+    assert (i8 < 300).new().to_coo()[1].tolist() == [True, True]
+    assert (i8 == 300).new().to_coo()[1].tolist() == [False, False]
+    assert (u8 > -1).new().to_coo()[1].tolist() == [True, True]
+    assert i8.apply(indexunary.valuelt, 300).new().to_coo()[1].tolist() == [True, True]
+    assert (f32 == 0.1).new().to_coo()[1].tolist() == [True, False]  # compared as float32
+    # A float too large for FP32 is infinity in a comparison too, with a warning, as in
+    # numpy 2 (an int out of range is exact; a float has no type that is both FP32 and
+    # holds it). The Scalar's == warns once, at the caller's line.
+    finf = Vector.from_coo([0, 1], [np.inf, 1], dtype=dtypes.FP32)
+    with pytest.warns(RuntimeWarning, match="overflow encountered in cast") as record:
+        assert (finf == 1e300).new().to_coo()[1].tolist() == [True, False]
+    assert {w.filename for w in record} == {__file__}
+    with pytest.warns(RuntimeWarning, match="overflow encountered in cast") as record:
+        assert Scalar.from_value(np.inf, dtype=dtypes.FP32) == 1e300
+    assert [w.filename for w in record] == [__file__]
+    # ewise_union defaults and fill values follow the rule too.
+    w8 = Vector.from_coo([1], [1], dtype=dtypes.INT8, size=2)
+    assert i8.ewise_union(w8, binary.plus, 0, 0).dtype == dtypes.INT8
+    assert i8.ewise_union(w8, binary.plus, 0.5, 0).dtype == dtypes.FP64
+    sparse = Vector.from_coo([0], [5], dtype=dtypes.INT8, size=2)
+    assert sparse.to_dense(fill_value=0).dtype == np.int8
+    assert sparse.to_dense(fill_value=300).tolist() == [5, 300]  # widened, not lost
+    sparse32 = Vector.from_coo([0], [5], dtype=dtypes.FP32, size=2)
+    assert sparse32.to_dense(fill_value=0.5).dtype == np.float32
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert sparse32.to_dense(fill_value=1e300).tolist() == [5, 1e300]  # widened
+        assert sparse32.to_dense(fill_value=2**200).tolist() == [5, 2.0**200]
+    # A thunk that is not compared with the values keeps its own type.
+    assert i8.select(select.rowle, 2**40).new().nvals == 2
+    if supports_udfs:
+        above = indexunary.register_anonymous(lambda x, i, j, thunk: x > thunk)
+        assert i8.apply(above, 300).new().to_coo()[1].tolist() == [False, False]
+    # Typed scalars promote as numpy 2 promotes them, on numpy 1 too.
+    assert dtypes.unify(dtypes.INT8, dtypes.INT64, is_right_scalar=True) == dtypes.INT64
+
+
+def test_python_int_beyond_64_bit_element_compares_exactly():
+    """A Python int beyond a 64-bit integer element's range compares exactly, as in numpy 2.
+
+    It compares as infinity of its sign. A type that held both would round
+    them: in FP64, the INT64 ``2**63 - 1`` and the int ``2**63`` are equal, so
+    ``int64_vec < 2**63`` was False there (main raised OverflowError).
+    """
+    compare = {
+        "eq": lambda x, y: x == y,
+        "ne": lambda x, y: x != y,
+        "lt": lambda x, y: x < y,
+        "le": lambda x, y: x <= y,
+        "gt": lambda x, y: x > y,
+        "ge": lambda x, y: x >= y,
+    }
+    i64_values = [-(2**63), -(2**63) + 1, 0, 2**63 - 2, 2**63 - 1]
+    u64_values = [0, 2**63, 2**64 - 2, 2**64 - 1]
+    i64 = Vector.from_coo(range(5), i64_values, dtype=dtypes.INT64)
+    u64 = Vector.from_coo(range(4), u64_values, dtype=dtypes.UINT64)
+    for vec, values, numbers in [
+        (i64, i64_values, [2**63, -(2**63) - 1, 2**64, -(2**64), 10**400]),
+        (u64, u64_values, [2**64, 2**64 + 1, -1, -(10**400)]),
+    ]:
+        empty = Vector(vec.dtype, size=vec.size)
+        for name, py_op in compare.items():
+            for number in numbers:
+                expected = [py_op(x, number) for x in values]
+                for expr in [
+                    py_op(vec, number),
+                    vec.apply(getattr(binary, name), right=number),
+                    vec.apply(getattr(indexunary, f"value{name}"), number),
+                    vec.ewise_union(empty, getattr(binary, name), 0, number),
+                ]:
+                    assert expr.new().to_coo()[1].tolist() == expected
+                kept = vec.select(getattr(select, f"value{name}"), number).new()
+                assert kept.to_coo()[0].tolist() == [i for i, x in enumerate(expected) if x]
+                flipped = py_op(number, vec).new()
+                assert flipped.to_coo()[1].tolist() == [py_op(number, x) for x in values]
+    A = Matrix.from_coo([0, 1], [0, 1], [2**63 - 1, -(2**63)])
+    assert (A < 2**63).new().to_coo()[2].tolist() == [True, True]
+    assert (A == -(2**63) - 1).new().to_coo()[2].tolist() == [False, False]
+    s = Scalar.from_value(2**63 - 1)
+    assert (s == 2**63) is False
+    assert s != 2**63
+    assert (s < 2**63).new().value
+    assert (Scalar.from_value(2**64 - 1, dtype=dtypes.UINT64) == 2**64) is False
+    # A float element compares with the int as a float, as numpy 2 does.
+    assert (Vector.from_coo([0], [2.0**63]) == 2**63 + 1).new().to_coo()[1].tolist() == [True]
+
+
+def test_select_value_thunk_of_another_type():
+    """Select with a value op compares exactly when the thunk's type differs from the values'.
+
+    SuiteSparse:GraphBLAS's select reads such a thunk's bytes as the values'
+    type: on an INT8 vector, ``valueeq`` with 1.0 compared with 0 and kept
+    nothing, ``valuelt`` with 300 compared with 44, and ``valueeq`` with 356
+    kept 100. python-graphblas now compares in the values' own type with a
+    thunk that keeps the same elements.
+    """
+    i8 = Vector.from_coo([0, 1, 2, 3], [-5, 1, 2, 100], dtype=dtypes.INT8)
+    u8 = Vector.from_coo([0, 1], [0, 255], dtype=dtypes.UINT8)
+    f32 = Vector.from_coo([0, 1, 2], [np.float32(0.1), 1.0, np.nan], dtype=dtypes.FP32)
+    bools = Vector.from_coo([0, 1], [False, True])
+    for x, op, thunk, kept in [
+        (i8, select.valueeq, 1.0, [1]),
+        (i8, select.valueeq, 356, []),
+        (i8, select.valuene, 356, [0, 1, 2, 3]),
+        (i8, select.valuelt, 300, [0, 1, 2, 3]),
+        (i8, select.valuege, 2.5, [3]),
+        (i8, select.valuele, 2.5, [0, 1, 2]),
+        (i8, select.valuegt, -300, [0, 1, 2, 3]),
+        (i8, select.valuegt, np.nan, []),
+        (i8, select.valuene, np.nan, [0, 1, 2, 3]),
+        (i8, indexunary.valueeq, np.float64(2.0), [2]),
+        (i8, select.valueeq, Scalar.from_value(1.0), [1]),
+        (i8, select.valuelt, Scalar.from_value(300, dtype=dtypes.INT64), [0, 1, 2, 3]),
+        (u8, select.valuelt, np.int64(-1), []),
+        (u8, select.valuegt, np.int64(-1), [0, 1]),
+        (bools, select.valueeq, 256, []),
+        (bools, select.valueeq, 1, [1]),
+        # A strong FP64 thunk compares in FP64: float32(0.1) is not 0.1.
+        (f32, select.valueeq, np.float64(0.1), []),
+        (f32, select.valuegt, np.float64(0.1), [0, 1]),
+        (f32, select.valuene, np.float64(0.1), [0, 1, 2]),
+        # A Python float beside FP32 is FP32 (NEP 50), as numpy compares it.
+        (f32, select.valueeq, 0.1, [0]),
+    ]:
+        assert x.select(op, thunk).new().to_coo()[0].tolist() == kept, (x.dtype, op, thunk)
+    A = Matrix.from_coo([0, 0, 1], [0, 1, 1], [1, 100, -5], dtype=dtypes.INT8)
+    assert A.select(select.valueeq, 1.0).new().to_coo()[2].tolist() == [1]
+    assert A.select(select.valuelt, 300).new().nvals == 3
+
+
 def test_inner(v):
     R = Matrix(v.dtype, nrows=1, ncols=v.size)  # row vector
     C = Matrix(v.dtype, nrows=v.size, ncols=1)  # column vector
@@ -2097,11 +2291,12 @@ def test_udt():
     assert s == t
     t = v.reduce(monoid.any, allow_empty=False).new()
     assert s == t
-    v << binary.first(1, v)
+    # A literal fills every field by type; an int does not fit the bool field, True does.
+    v << binary.first(True, v)
     assert v.isequal(ones)
     v << binary.first(s, v)
     assert v.isequal(zeros)
-    v << binary.second(v, (1, 1))
+    v << binary.second(v, (True, 1))
     assert v.isequal(ones)
     v << binary.second(v, s)
     assert v.isequal(zeros)

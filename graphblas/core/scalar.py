@@ -1,5 +1,4 @@
 import itertools
-from functools import lru_cache
 
 import numpy as np
 
@@ -8,9 +7,26 @@ from ..dtypes import _INDEX, FP64, _index_dtypes, lookup_dtype, unify
 from ..exceptions import EmptyObject, check_status
 from . import _has_numba, _supports_udfs, automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, call
-from .dtypes import _view_if_same_layout
 from .expr import AmbiguousAssignOrExtract
+from .literals import (
+    _SINGLE_PRECISION,
+    _check_literal_fits,
+    _check_scalar_fits,
+    _literal_operand,
+    _literal_store_dtype,
+    _literal_type,
+)
 from .operator import get_typed_op
+from .udt import (
+    _element_bytes,
+    _element_shapes_differ,
+    _element_value,
+    _ewise_add_needs_cast,
+    _is_lifted_op,
+    _literal_shape_differs,
+    _scalar_ewise_add_converted,
+    _udt_eq_without_numba,
+)
 from .utils import _Pointer, output_type, wrapdoc
 
 if _supports_udfs:
@@ -133,15 +149,19 @@ class Scalar(BaseType):
     def __eq__(self, other):
         """Check equality.
 
-        Equality comparison uses :meth:`isequal`. Use that directly for finer control of
-        what is considered equal.
+        Compares with ``binary.eq``, as ``==`` on a Vector or Matrix does, so the
+        elements of array UDTs broadcast (an ``INT8[3]`` Scalar of ``[1, 1, 1]``
+        equals ``1``), but returns a bool. Two empty Scalars are equal, and
+        ``s == None`` checks whether ``s`` is empty. :meth:`isequal` is stricter.
+        Without Numba, which ``binary.eq`` needs for UDTs, a UDT's values are
+        compared in numpy, which broadcasts them the same way.
         """
-        return self.isequal(other)
+        return _scalar_eq(self, other)
 
     __hash__ = None
 
     def __ne__(self, other):
-        return not self.isequal(other)
+        return not _scalar_eq(self, other)
 
     def __bool__(self):
         """Truthiness check.
@@ -198,6 +218,11 @@ class Scalar(BaseType):
         -------
         bool
 
+        Notes
+        -----
+        Elements of array UDTs must have the same shape, apart from leading axes
+        of length 1, as in ``np.array_equal``; ``==`` broadcasts instead.
+
         See Also
         --------
         :meth:`isclose` : For equality check of floating point dtypes
@@ -206,8 +231,15 @@ class Scalar(BaseType):
         if type(other) is not Scalar:
             if other is None:
                 return self._is_empty
+            dtype = None
+            if self.dtype._is_udt:
+                # A literal is compared as given, as ``==`` types it, not converted
+                # into the UDT (0.5 would become 0 in an int field), and an array
+                # literal must have the element's shape, as in np.array_equal.
+                if _literal_shape_differs(self.dtype, other):
+                    return False
+                dtype = _literal_type(self.dtype, other, exact=True) or self.dtype
             try:
-                dtype = self.dtype if self.dtype._is_udt else None
                 other = Scalar.from_value(other, dtype, is_cscalar=None, name="s_isequal")
             except TypeError:
                 other = self._expect_type(
@@ -220,6 +252,8 @@ class Scalar(BaseType):
             # Don't check dtype if we had to infer dtype of `other`
             check_dtype = False
         if check_dtype and self.dtype != other.dtype:
+            return False
+        if _element_shapes_differ(self.dtype, other.dtype):
             return False
         if self._is_empty:
             return other._is_empty
@@ -353,12 +387,7 @@ class Scalar(BaseType):
             dtype_name = "UDT" if is_udt else self.dtype.name
             call(f"GrB_Scalar_extractElement_{dtype_name}", [_Pointer(scalar), self])
         if is_udt:
-            np_type = self.dtype.np_type
-            rv = np.array(ffi.buffer(scalar.gb_obj[0 : np_type.itemsize]))
-            if np_type.subdtype is None:
-                return rv.view(np_type)[0]
-            base, shape = np_type.subdtype
-            return rv.view(base).reshape(shape)
+            return _element_value(self.dtype, scalar.gb_obj)
         return scalar.gb_obj[0]
 
     @value.setter
@@ -369,19 +398,7 @@ class Scalar(BaseType):
             if output_type(val) is Scalar:
                 val = val.value  # raise below if wrong type (as determined by cffi)
             if self.dtype._is_udt:
-                np_type = self.dtype.np_type
-                # Zeros, not empty: when numpy writes only the fields, a
-                # record's alignment padding is whatever the allocation
-                # happened to contain. ``_udt_bytes`` zeros the padding in the
-                # other direction, when numpy copies whole items instead.
-                if np_type.subdtype is None:
-                    arr = np.zeros(1, dtype=np_type)
-                    if isinstance(val, dict) and np_type.names is not None:
-                        val = _dict_to_record(np_type, val)
-                else:
-                    arr = np.zeros(np_type.subdtype[1], dtype=np_type.subdtype[0])
-                arr[:] = _view_if_same_layout(val, arr.dtype)
-                self.gb_obj[0 : np_type.itemsize] = _udt_bytes(np_type, arr)
+                self.gb_obj[0 : self.dtype.np_type.itemsize] = _element_bytes(self.dtype, val)
             else:
                 self.gb_obj[0] = val
             self._empty = False
@@ -390,7 +407,7 @@ class Scalar(BaseType):
                 val = _Pointer(_as_scalar(val, self.dtype, is_cscalar=True))
                 dtype_name = "UDT"
             else:
-                val = _as_scalar(val, is_cscalar=True)
+                val = _as_scalar(val, _literal_store_dtype(self.dtype, val), is_cscalar=True)
                 dtype_name = val.dtype.name
             call(f"GrB_Scalar_setElement_{dtype_name}", [self, val])
 
@@ -468,7 +485,11 @@ class Scalar(BaseType):
         else:
             new_scalar = Scalar(dtype, is_cscalar=is_cscalar, name=name)
             if not clear and not self._is_empty:
-                if new_scalar.is_cscalar and not new_scalar.dtype._is_udt:
+                if self.dtype._is_udt:
+                    # Cast as storing it would (``udt._store_cast_op``), not as numpy
+                    # does; a UDT does not cast to a built-in dtype at all.
+                    new_scalar << self
+                elif new_scalar.is_cscalar and not new_scalar.dtype._is_udt:
                     # Cast value so we don't raise given explicit dup with dtype
                     new_scalar.value = new_scalar.dtype.np_type.type(self.value)
                 else:
@@ -668,7 +689,7 @@ class Scalar(BaseType):
                 other = op(other).new()
 
         if type(other) is not Scalar:
-            dtype = self.dtype if self.dtype._is_udt else None
+            other, dtype = _literal_operand(self.dtype, other, op)
             try:
                 other = Scalar.from_value(other, dtype, is_cscalar=False, name="")
             except TypeError:
@@ -682,6 +703,8 @@ class Scalar(BaseType):
                 )
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
+        if _ewise_add_needs_cast(op, self.dtype, other.dtype):
+            self, other, op = _scalar_ewise_add_converted(self, other, op)
         return ScalarExpression(
             method_name,
             f"GrB_Vector_eWiseAdd_{op.opclass}",
@@ -739,7 +762,7 @@ class Scalar(BaseType):
                 other = op(other).new()
 
         if type(other) is not Scalar:
-            dtype = self.dtype if self.dtype._is_udt else None
+            other, dtype = _literal_operand(self.dtype, other, op)
             try:
                 other = Scalar.from_value(other, dtype, is_cscalar=False, name="")
             except TypeError:
@@ -816,8 +839,9 @@ class Scalar(BaseType):
         right_dtype = self.dtype
         dtype = right_dtype if right_dtype._is_udt else None
         if type(other) is not Scalar:
+            other, literal_dtype = _literal_operand(right_dtype, other, op)
             try:
-                other = Scalar.from_value(other, dtype, is_cscalar=False, name="")
+                other = Scalar.from_value(other, literal_dtype, is_cscalar=False, name="")
             except TypeError:
                 other = self._expect_type(
                     other,
@@ -828,46 +852,17 @@ class Scalar(BaseType):
                     op=op,
                 )
         else:
+            # A typed Scalar keeps its dtype beside a lifted op, as it does for
+            # Vector.ewise_union: ``s8 - sf`` is float, not ``sf`` cut to int8.
+            if dtype is not None and other.dtype != dtype and _is_lifted_op(op):
+                dtype = None
+            _check_scalar_fits(dtype, other)
             other = _as_scalar(other, dtype, is_cscalar=False)  # pragma: is_grbscalar
 
         temp_op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
 
-        left_dtype = temp_op.type
-        dtype = left_dtype if left_dtype._is_udt else None
-        if type(left_default) is not Scalar:
-            try:
-                left = Scalar.from_value(
-                    left_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
-                )
-            except TypeError:
-                left = self._expect_type(
-                    left_default,
-                    Scalar,
-                    within=method_name,
-                    keyword_name="left_default",
-                    extra_message="Literal scalars also accepted.",
-                    op=op,
-                )
-        else:
-            left = _as_scalar(left_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
-        right_dtype = temp_op.type2
-        dtype = right_dtype if right_dtype._is_udt else None
-        if type(right_default) is not Scalar:
-            try:
-                right = Scalar.from_value(
-                    right_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
-                )
-            except TypeError:
-                right = self._expect_type(
-                    right_default,
-                    Scalar,
-                    within=method_name,
-                    keyword_name="right_default",
-                    extra_message="Literal scalars also accepted.",
-                    op=op,
-                )
-        else:
-            right = _as_scalar(right_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
+        left = _union_default(self, left_default, temp_op.type, op, "left_default")
+        right = _union_default(self, right_default, temp_op.type2, op, "right_default")
 
         op1 = get_typed_op(op, self.dtype, right.dtype, kind="binary")
         op2 = get_typed_op(op, left.dtype, other.dtype, kind="binary")
@@ -1140,6 +1135,39 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
     # End auto-generated code: Scalar
 
 
+def _scalar_eq(scalar, other):
+    """Return ``scalar == other`` as a bool, by ``binary.eq`` (see ``Scalar.__eq__``)."""
+    if other is None:
+        return scalar._is_empty
+    if type(other) is not Scalar and output_type(other) is Scalar:
+        other = other.new(name="s_eq_other")  # an expression, such as ``-s`` or ``v[0]``
+    if type(other) is Scalar and (scalar._is_empty or other._is_empty):
+        return scalar._is_empty and other._is_empty
+    if scalar._is_empty:
+        return False
+    if not scalar.dtype._is_udt:
+        # For built-in dtypes, compare the two values in the type ``eq`` is typed
+        # for, which is what it computes, without a GraphBLAS call: ``s == 0``
+        # takes about 2 us instead of 11.
+        if type(other) is Scalar:
+            other_dtype, value = other.dtype, other.value
+        else:
+            value, other_dtype = _literal_operand(scalar.dtype, other, binary.eq)
+        if other_dtype is not None and not other_dtype._is_udt:
+            if other_dtype is not scalar.dtype:
+                other_dtype = get_typed_op(binary.eq, scalar.dtype, other_dtype).type
+            convert = other_dtype.np_type.type
+            if other_dtype.np_type in _SINGLE_PRECISION:
+                # 1e300 beside FP32 is infinity, and _literal_operand has
+                # warned at the caller's line, so numpy need not warn again.
+                with np.errstate(over="ignore"):
+                    return (convert(scalar.value) == convert(value)).item()
+            return (convert(scalar.value) == convert(value)).item()
+    if not _has_numba and (scalar.dtype._is_udt or (type(other) is Scalar and other.dtype._is_udt)):
+        return _udt_eq_without_numba(scalar, other)
+    return bool(scalar.ewise_mult(other, binary.eq).new(name="s_eq").value)
+
+
 def _as_scalar(scalar, dtype=None, *, is_cscalar):
     if type(scalar) is not Scalar:
         return Scalar.from_value(scalar, dtype, is_cscalar=is_cscalar, name="")
@@ -1148,76 +1176,39 @@ def _as_scalar(scalar, dtype=None, *, is_cscalar):
     return scalar
 
 
-def _dict_to_record(np_type, d):
-    """Converts e.g. ``{"x": 1, "y": 2.3}`` to ``(1, 2.3)``."""
-    rv = []
-    for name, (dtype, _) in np_type.fields.items():
-        val = d[name]
-        if dtype.names is not None and isinstance(val, dict):
-            rv.append(_dict_to_record(dtype, val))
-        else:
-            rv.append(val)
-    return tuple(rv)
+def _union_default(obj, default, input_dtype, op, keyword_name):
+    """Return ``default`` for ``obj.ewise_union`` as a Scalar, where the op takes ``input_dtype``.
 
-
-@lru_cache
-def _padding_ranges(np_type):
-    """The ``(start, stop)`` byte ranges of ``np_type`` that are alignment padding.
-
-    Walks records, nested records, and array dtypes, and returns the gaps
-    between the field data.
+    GraphBLAS casts a default to the op's input type, and a UDT casts only to
+    itself, so where that is a UDT the default becomes an element of it and must
+    fit (``literals._check_literal_fits``). Otherwise a literal default is typed
+    as any literal operand is (``literals._literal_operand``), and a Scalar keeps
+    its type. ``keyword_name`` names the argument when ``default`` is not a scalar.
     """
-    data = []
-    _collect_data_ranges(np_type, 0, data)
-    data.sort()
-    ranges = []
-    pos = 0
-    for start, stop in data:
-        if start > pos:
-            ranges.append((pos, start))
-        pos = max(pos, stop)
-    if pos < np_type.itemsize:
-        ranges.append((pos, np_type.itemsize))
-    return tuple(ranges)
-
-
-def _collect_data_ranges(np_type, offset, out):
-    """Append the ``(start, stop)`` byte ranges of ``np_type`` that hold field data."""
-    if np_type.subdtype is not None:
-        base = np_type.subdtype[0]
-        for start in range(offset, offset + np_type.itemsize, base.itemsize):
-            _collect_data_ranges(base, start, out)
-    elif np_type.names is not None:
-        for field_type, field_offset in (np_type.fields[name][:2] for name in np_type.names):
-            _collect_data_ranges(field_type, offset + field_offset, out)
+    dtype = input_dtype if input_dtype._is_udt else None
+    if type(default) is Scalar:
+        _check_scalar_fits(dtype, default)
+        return _as_scalar(default, dtype, is_cscalar=False)  # pragma: is_grbscalar
+    if dtype is not None:
+        _check_literal_fits(dtype, default)
     else:
-        out.append((offset, offset + np_type.itemsize))
-
-
-def _udt_bytes(np_type, arr):
-    """The bytes of a UDT buffer, with any alignment padding zeroed.
-
-    ``tobytes()`` flattens any-rank numpy buffers (in particular, multi-dim
-    array UDTs like ``FP64[2, 3]``) to a 1-D byte buffer that cffi can copy
-    into GrB_Scalar storage.
-
-    numpy promises nothing about the padding bytes it leaves behind, and which
-    way it goes has changed across releases: numpy 2.5 made ``arr[:] = record``
-    a whole-item copy out of an uninitialized temporary, so even a buffer from
-    ``np.zeros`` comes back with junk between the fields. A caller's own array
-    can carry junk padding in too. Since the whole record is copied into the
-    GrB_Scalar and read back out of ``Scalar.value``, anything that compares or
-    hashes those raw bytes would otherwise see an equal-valued scalar as
-    unequal.
-    """
-    raw = arr.tobytes()
-    ranges = _padding_ranges(np_type)
-    if not ranges:
-        return raw
-    buf = bytearray(raw)
-    for start, stop in ranges:
-        buf[start:stop] = bytes(stop - start)
-    return bytes(buf)
+        default, dtype = _literal_operand(input_dtype, default, op)
+    try:
+        return Scalar.from_value(
+            default,
+            dtype,
+            is_cscalar=False,  # pragma: is_grbscalar
+            name="",
+        )
+    except TypeError:
+        return obj._expect_type(
+            default,
+            Scalar,
+            within="ewise_union",
+            keyword_name=keyword_name,
+            extra_message="Literal scalars also accepted.",
+            op=op,
+        )
 
 
 _MATERIALIZE = Scalar.from_value(lib.GrB_MATERIALIZE, is_cscalar=True, name="GrB_MATERIALIZE")
