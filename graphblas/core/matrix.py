@@ -199,7 +199,7 @@ class Matrix(BaseType):
 
     """
 
-    __slots__ = "_nrows", "_ncols", "_parent", "ss"
+    __slots__ = "_nrows", "_ncols", "_parent"
     ndim = 2
     _is_transposed = False
     _name_counter = itertools.count()
@@ -217,8 +217,6 @@ class Matrix(BaseType):
         self._nrows = nrows.value
         self._ncols = ncols.value
         self._parent = None
-        if backend == "suitesparse":
-            self.ss = ss(self)
         return self
 
     @classmethod
@@ -230,8 +228,6 @@ class Matrix(BaseType):
         self._nrows = nrows
         self._ncols = ncols
         self._parent = parent
-        if backend == "suitesparse":
-            self.ss = ss(self)
         return self
 
     def __del__(self):
@@ -3558,10 +3554,20 @@ class Matrix(BaseType):
 
 
 if backend == "suitesparse":
-    Matrix.ss = class_property(Matrix.ss, ss)
+    # `.ss` is built lazily per access rather than stored on the instance: a
+    # stored `ss(self)` holds `_parent` back to this Matrix (and so does its
+    # config), forming a reference cycle that keeps the object (and its C-side
+    # GrB buffer) alive until the cyclic gc runs instead of dying by refcount.
+    # See gh-559. Class-level `Matrix.ss` still resolves to the `ss` class so
+    # the `import_*` classmethods keep working.
+    def _ss(self):
+        return ss(self)
+
+    _ss.__name__ = _ss.__qualname__ = "ss"
+    Matrix.ss = class_property(property(_ss), ss)
 else:
     Matrix.ss = class_property(
-        Matrix.ss, 'ss attribute is only available with "suitesparse" backend', exceptional=True
+        property(), 'ss attribute is only available with "suitesparse" backend', exceptional=True
     )
 
 
