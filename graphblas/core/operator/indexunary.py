@@ -12,7 +12,7 @@ from .base import OpBase, ParameterizedUdf, TypedOpBase, _call_op
 if _has_numba:
     import numba
 
-    from .base import (
+    from .udf import (
         _bool_to_int8,
         _compile_udf_for_udt,
         _finalize_udt_op,

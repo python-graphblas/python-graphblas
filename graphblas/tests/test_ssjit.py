@@ -25,7 +25,7 @@ from graphblas import (
 )
 from graphblas.core import _supports_udfs as supports_udfs
 from graphblas.core.operator.indexbinary import _has_idxbinop
-from graphblas.core.operator.udt_utils import _has_jit_set
+from graphblas.core.operator.udt_codegen import _has_jit_set
 from graphblas.core.ss import _IS_SSGB7
 from graphblas.core.ss.jit_config import _enable_jit_for_udt
 

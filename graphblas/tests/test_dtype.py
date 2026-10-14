@@ -10,7 +10,7 @@ import graphblas as gb
 from graphblas import core, dtypes
 from graphblas.core import _supports_udfs as supports_udfs
 from graphblas.core import lib
-from graphblas.core.operator.udt_utils import _has_jit_set
+from graphblas.core.operator.udt_codegen import _has_jit_set
 from graphblas.core.utils import _NP2, values_to_numpy_buffer
 from graphblas.dtypes import lookup_dtype
 

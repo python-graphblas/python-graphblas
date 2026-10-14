@@ -9,6 +9,7 @@ from . import _supports_udfs, automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _check_mask, call
 from .descriptor import lookup as descriptor_lookup
 from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, InfixExprBase, Updater
+from .literals import _literal_operand, _literal_store_dtype, _weak_builtin_literal_dtype
 from .mask import Mask, StructuralMask, ValueMask
 from .operator import (
     UNKNOWN_OPCLASS,
@@ -26,16 +27,14 @@ from .scalar import (
     ScalarExpression,
     ScalarIndexExpr,
     _as_scalar,
+    _scalar_index,
+    _union_default,
+)
+from .udt import (
     _cast_for_store,
-    _check_literal_fits,
-    _check_scalar_fits,
     _element_shapes_differ,
     _ewise_add_cast_error,
     _ewise_add_needs_cast,
-    _literal_operand,
-    _literal_store_dtype,
-    _scalar_index,
-    _weak_builtin_literal_dtype,
 )
 from .utils import (
     _CArray,
@@ -1234,52 +1233,8 @@ class Vector(BaseType):
             )
             temp_op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
 
-        left_dtype = temp_op.type
-        dtype = left_dtype if left_dtype._is_udt else None
-        if type(left_default) is not Scalar:
-            if dtype is not None:
-                _check_literal_fits(dtype, left_default)
-            else:
-                left_default, dtype = _literal_operand(left_dtype, left_default, op)
-            try:
-                left = Scalar.from_value(
-                    left_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
-                )
-            except TypeError:
-                left = self._expect_type(
-                    left_default,
-                    Scalar,
-                    within=method_name,
-                    keyword_name="left_default",
-                    extra_message="Literal scalars also accepted.",
-                    op=op,
-                )
-        else:
-            _check_scalar_fits(dtype, left_default)
-            left = _as_scalar(left_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
-        right_dtype = temp_op.type2
-        dtype = right_dtype if right_dtype._is_udt else None
-        if type(right_default) is not Scalar:
-            if dtype is not None:
-                _check_literal_fits(dtype, right_default)
-            else:
-                right_default, dtype = _literal_operand(right_dtype, right_default, op)
-            try:
-                right = Scalar.from_value(
-                    right_default, dtype, is_cscalar=False, name=""  # pragma: is_grbscalar
-                )
-            except TypeError:
-                right = self._expect_type(
-                    right_default,
-                    Scalar,
-                    within=method_name,
-                    keyword_name="right_default",
-                    extra_message="Literal scalars also accepted.",
-                    op=op,
-                )
-        else:
-            _check_scalar_fits(dtype, right_default)
-            right = _as_scalar(right_default, dtype, is_cscalar=False)  # pragma: is_grbscalar
+        left = _union_default(self, left_default, temp_op.type, op, "left_default")
+        right = _union_default(self, right_default, temp_op.type2, op, "right_default")
 
         if is_infix:
             op1 = _get_typed_op_from_exprs(op, self, right, kind="binary")

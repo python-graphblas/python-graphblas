@@ -29,7 +29,7 @@ def register_new(name, jit_c_definition, *, np_type=None):
         )
     if not name.isidentifier():
         raise ValueError(f"`name` argument must be a valid Python identifier; got: {name!r}")
-    from ..operator.udt_utils import _jit_c_type_defs
+    from ..operator.udt_codegen import _jit_c_type_defs
 
     # SuiteSparse's JIT knows a type by its C name alone, so it must not be
     # another type's C name either.
