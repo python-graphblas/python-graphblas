@@ -388,7 +388,7 @@ class Matrix(BaseType):
         # indexing, numpy or Scalar values, `A(mask)[i, j] << x`) falls back to
         # the full assign path, leaving mask/accum and coercion unchanged. So
         # does an int beyond INT64, which that path types as the matrix's dtype
-        # (``uint64_mat[i, j] = 2**63``; scalar._literal_store_dtype).
+        # (``uint64_mat[i, j] = 2**63``; literals._literal_store_dtype).
         if (
             not opts
             and type(keys) is tuple
