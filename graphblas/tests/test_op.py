@@ -2240,7 +2240,7 @@ def test_udt_unary_ainv_abs_array(array_udt):
 def test_udt_jit_typedef():
     """Registering a UDT sets GxB_JIT_C_NAME and GxB_JIT_C_DEFINITION."""
     from graphblas.core import ffi, lib
-    from graphblas.core.operator.udt_utils import _has_jit_set
+    from graphblas.core.operator.udt_codegen import _has_jit_set
 
     if not _has_jit_set:
         pytest.skip("JIT not available")
@@ -2279,7 +2279,7 @@ def test_udt_jit_typedef():
 def test_udt_jit_op_definitions():
     """Auto-compiled UDT ops carry the JIT C name and source."""
     from graphblas.core import ffi, lib
-    from graphblas.core.operator.udt_utils import _has_jit_set
+    from graphblas.core.operator.udt_codegen import _has_jit_set
 
     if not _has_jit_set:
         pytest.skip("JIT not available")
@@ -2434,7 +2434,7 @@ def test_udt_array_wrapper_stays_within_element(shape):
 
     import numba
 
-    from graphblas.core.operator.base import _get_udt_wrapper
+    from graphblas.core.operator.udf import _get_udt_wrapper
 
     udt = dtypes.register_anonymous(np.dtype((np.float64, shape)), f"_ArrWrapPin{len(shape)}D")
 
@@ -2813,7 +2813,7 @@ def test_udt_broadcast_matches_numba_slice_assign():
     """
     import numba
 
-    from graphblas.core.operator.base import _fits_by_broadcast
+    from graphblas.core.operator.udf import _fits_by_broadcast
 
     @numba.njit
     def _assign(z, src):  # pragma: no cover (numba)
@@ -2862,16 +2862,16 @@ def test_udt_udf_shape_check_runs_udf_only_for_built_arrays(monkeypatch):
     UDF builds, typed as a plain ``Array``, needs the probe; so does a list,
     whose type has no length (``test_udt_record_leaf_sequence_return``).
     """
-    from graphblas.core.operator import base as _base
+    from graphblas.core.operator import udf as _udf
 
     probed = []
-    real_probe = _base._run_udf_probe
+    real_probe = _udf._run_udf_probe
 
     def spy(numba_func, arg_dtypes):
         probed.append(numba_func.py_func.__name__)
         return real_probe(numba_func, arg_dtypes)
 
-    monkeypatch.setattr(_base, "_run_udf_probe", spy)
+    monkeypatch.setattr(_udf, "_run_udf_probe", spy)
     udt = dtypes.register_anonymous(np.dtype((np.float32, (18,))), "_ProbeWhen18")
     rec = dtypes.register_anonymous(
         np.dtype(
@@ -3057,7 +3057,7 @@ def test_udt_array_udf_known_extents_never_match_by_rank(monkeypatch):
     """
     import numba
 
-    from graphblas.core.operator import base as _base
+    from graphblas.core.operator import udf as _udf
 
     # FP32 keeps this UDT under that 128-byte cap, so it registers everywhere.
     udt21 = dtypes.register_anonymous(np.dtype((np.float32, (21,))), "_RankGuard21")
@@ -3066,16 +3066,16 @@ def test_udt_array_udf_known_extents_never_match_by_rank(monkeypatch):
     assert ret.dtype == udt21.numba_type.dtype
     assert ret.ndim == udt21.numba_type.ndim
 
-    real_lookup = _base.lookup_dtype
+    real_lookup = _udf.lookup_dtype
 
     def refuse_nested(key, value=None):
         if isinstance(key, numba.core.types.NestedArray):
             raise ValueError("simulated: SuiteSparse refused to register this UDT")
         return real_lookup(key, value)
 
-    monkeypatch.setattr(_base, "lookup_dtype", refuse_nested)
+    monkeypatch.setattr(_udf, "lookup_dtype", refuse_nested)
     with pytest.raises(UdfParseError, match="matches no input array UDT"):
-        _base._resolve_udt_return_type(ret, udt21)
+        _udf._resolve_udt_return_type(ret, udt21)
 
 
 @pytest.mark.skipif("not supports_udfs")
@@ -5332,7 +5332,7 @@ def test_udt_literal_rules_edge_cases():
     from decimal import Decimal
     from fractions import Fraction
 
-    from graphblas.core.operator.udt_utils import _weak_literal_udt
+    from graphblas.core.literals import _weak_literal_udt
 
     i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_EdgeI8")
     f4s = dtypes.register_anonymous(np.dtype((np.float32, (3,))), "_EdgeF4")
@@ -5610,7 +5610,7 @@ def test_udt_jit_kernel_only_for_a_same_type_result():
     64 entries keep SuiteSparse off its iso and short-vector shortcuts, so a
     JIT kernel would run.
     """
-    from graphblas.core.operator.udt_utils import _has_jit_set
+    from graphblas.core.operator.udt_codegen import _has_jit_set
 
     ints = dtypes.register_anonymous(np.dtype((np.int32, (11,))), "_JitDivI11")
     N = 64
@@ -6064,7 +6064,7 @@ def test_compile_codegen_helper():
     """
     import linecache
 
-    from graphblas.core.operator.udt_utils import _compile_codegen
+    from graphblas.core.operator.udt_codegen import _compile_codegen
 
     fn = _compile_codegen(
         "def _op(x, y):\n    return x + y\n",

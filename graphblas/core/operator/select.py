@@ -7,7 +7,7 @@ from .base import OpBase, ParameterizedUdf, TypedOpBase, _call_op
 from .indexunary import IndexUnaryOp, TypedBuiltinIndexUnaryOp
 
 if _has_numba:
-    from .base import _compile_udf_for_udt, _finalize_udt_op, _get_udt_wrapper
+    from .udf import _compile_udf_for_udt, _finalize_udt_op, _get_udt_wrapper
 
 
 _VALUE_OPS = {"valueeq", "valuene", "valuelt", "valuele", "valuegt", "valuege"}

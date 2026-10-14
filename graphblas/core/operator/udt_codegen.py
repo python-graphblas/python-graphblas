@@ -1,10 +1,19 @@
-"""Shared utilities for auto-generating UDT operator implementations.
+"""Code generation for the operators that compute on UDTs.
 
-Provides Numba wrapper generators and JIT C code generators for element-wise
-operations on record UDTs (struct types) and array UDTs (e.g., FP64[3]).
+``core/udt.py`` decides which operand pairs an op takes and what type its
+result has; this module writes the code that computes it, for record UDTs
+(C structs) and array UDTs (such as ``FP64[3]``):
 
-Compilation is lazy: functions here are only called from ``_compile_udt``
-methods when an operator is first used with a particular UDT.
+- ``_udt_c_typedef``, a UDT's C struct, set when the UDT is registered;
+- under ``if _has_numba:``, the Numba cfuncs: ``compile_udt_binary_wrapper``,
+  ``compile_udt_unary_wrapper``, ``compile_udt_cast_wrapper`` and
+  ``fused_store_op``;
+- the JIT C definitions SuiteSparse compiles in place of a cfunc
+  (``set_jit_c_on_op``, ``set_jit_c_comparison_on_op``).
+
+``_compile_codegen`` compiles the generated Python, for this module,
+``operator.udf`` and the comparisons in ``operator.binary``. An op is compiled
+when it is first typed for a UDT.
 """
 
 import ast
@@ -17,6 +26,14 @@ import numpy as np
 
 from ... import backend
 from .. import _has_numba, ffi, lib
+from ..udt import (
+    BUILTIN_UDT_BINARY_OPS,
+    BUILTIN_UDT_UNARY_OPS,
+    _check_udt_pair,
+    _get_udt_info,
+    _iter_record_leaves,
+    _udt_op_types,
+)
 
 if _has_numba:
     import numba
@@ -84,21 +101,6 @@ def _compile_codegen(src, *, func_name, source_label, extra_ns=None):
     return namespace[func_name]
 
 
-BUILTIN_UDT_BINARY_OPS = {
-    "plus": "+",
-    "minus": "-",
-    "times": "*",
-    "truediv": "/",
-    "floordiv": "//",
-    "min": "min",
-    "max": "max",
-}
-
-BUILTIN_UDT_UNARY_OPS = {
-    "ainv": "-",
-    "abs": "abs",
-}
-
 # Ops that use function-call syntax rather than infix (e.g., min(a, b), not "a min b")
 _FUNC_BINARY_OPS = {"min", "max"}
 _FUNC_UNARY_OPS = {"abs"}
@@ -121,14 +123,11 @@ NP_TO_C_TYPES = {
     # JIT include chain pulls in GraphBLAS.h, so these names are in scope.
     # Plus, minus, times, truediv, ainv compile natively on _Complex; abs
     # uses cabs / cabsf (see _c_expr_unary). min, max, floordiv don't make
-    # sense on complex; ``_element_types`` rejects them before any codegen.
+    # sense on complex; ``udt._element_types`` rejects them before any codegen.
     np.dtype(np.complex64): "GxB_FC32_t",
     np.dtype(np.complex128): "GxB_FC64_t",
 }
 
-# Ops with no meaning on complex fields (no ordering for min/max, no integer
-# mod for floordiv); ``_element_types`` rejects them on both paths.
-_OPS_NOT_FOR_COMPLEX = frozenset({"min", "max", "floordiv"})
 
 # ``<type>_MIN`` spellings from <stdint.h>, keyed by itemsize. Signed integer
 # division traps on ``MIN / -1``; the generated C tests for it explicitly.
@@ -318,534 +317,6 @@ def _pick_c_type_name(python_name):
     if _is_valid_c_identifier(python_name):
         return python_name
     return f"_gbudt_{next(_synthetic_udt_counter)}"
-
-
-def _get_udt_info(dtype):
-    """Return ('record', field_names) or ('array', (base_dtype, flat_size)) or None."""
-    np_type = dtype.np_type
-    if np_type.names is not None:
-        return "record", np_type.names
-    if np_type.subdtype is not None:
-        base, shape = np_type.subdtype
-        return "array", (base, reduce(mul, shape))
-    return None
-
-
-def _check_udt_pair(op_name, dtype, dtype2, info_x, info_y):
-    """Raise ``KeyError`` if two UDT operands disagree on shape.
-
-    ``info_x`` and ``info_y`` are ``_get_udt_info`` results. When either is
-    ``None`` (one side is a scalar broadcast), no check fires. Without this
-    gate the generated wrapper code raises a cryptic Numba ``TypingError``
-    on the first field access, or, for array fields that do not broadcast,
-    fails inside the cfunc without telling the caller. Element dtypes may
-    differ; :func:`_udt_op_types` promotes them.
-    """
-    if info_x is None or info_y is None:
-        return
-    kind_x, detail_x = info_x
-    kind_y, detail_y = info_y
-    if kind_x != kind_y:
-        raise KeyError(
-            f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
-            f"cannot mix record and array UDTs in a single element-wise op."
-        )
-    if kind_x == "record":
-        if detail_x != detail_y:
-            raise KeyError(
-                f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
-                f"record UDTs must share field names, in the same order; got "
-                f"{list(detail_x)} vs {list(detail_y)}."
-            )
-        # Matching top-level names is not enough. The codegen reads both
-        # operands at the left one's leaf paths, so a field that is a
-        # sub-record on one side and a scalar on the other, or sub-records
-        # with different names, fails Numba's typing: a compile error
-        # reported for what is really the same shape disagreement the check
-        # above reports as a KeyError. The paths must also come in the same
-        # order, as the top-level names must, so that leaf ``i`` of one
-        # operand is leaf ``i`` of the other.
-        leaves_x = list(_iter_record_leaves(dtype.np_type))
-        leaves_y = list(_iter_record_leaves(dtype2.np_type))
-        if [py for py, _c, _d in leaves_x] != [py for py, _c, _d in leaves_y]:
-            raise KeyError(
-                f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
-                f"record UDTs must nest the same way, with the same field names in the "
-                f"same order at every level; got {[c for _py, c, _d in leaves_x]} vs "
-                f"{[c for _py, c, _d in leaves_y]}."
-            )
-        # Each field must also have the same shape in both (field dtypes may
-        # differ), as numpy requires before it promotes or compares two record
-        # dtypes. Shapes that do not broadcast would raise inside the cfunc,
-        # unseen, and leave whatever was in the output buffer. Shapes that do
-        # broadcast would work one way round only, since the arithmetic ops
-        # write into a field shaped like the left operand's: ``(3,)`` plus
-        # ``(1,)`` works, ``(1,)`` plus ``(3,)`` does not.
-        for (_py, c, leaf_x), (_py_y, _c_y, leaf_y) in zip(leaves_x, leaves_y, strict=True):
-            if leaf_x.shape != leaf_y.shape:
-                raise KeyError(
-                    f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
-                    f"record UDTs must have the same shape for each field; field {c} is "
-                    f"{leaf_x.shape} vs {leaf_y.shape}."
-                )
-        return
-    # Array UDTs broadcast as numpy arrays do, so ``(3, 1)`` with ``(1, 4)``
-    # gives ``(3, 4)``; the generated code reads each operand through a flat
-    # index map (``_array_operand_source``). Shapes such as ``(2, 3)`` with
-    # ``(3, 2)`` do not broadcast, as numpy refuses them.
-    (base_x, shape_x), (base_y, shape_y) = dtype.np_type.subdtype, dtype2.np_type.subdtype
-    try:
-        np.broadcast_shapes(shape_x, shape_y)
-    except ValueError:
-        raise KeyError(
-            f"binary.{op_name} does not work with ({dtype}, {dtype2}): array UDTs must "
-            f"have shapes that broadcast together; got {base_x}{list(shape_x)} vs "
-            f"{base_y}{list(shape_y)}."
-        ) from None
-
-
-def _corresponding_leaves(np_x, np_z):
-    """Return ``(reason, pairs)`` for putting an element of ``np_x`` into one of ``np_z``.
-
-    ``reason`` says why the two layouts do not correspond, or is ``None``, and
-    then ``pairs`` holds the base dtypes of each pair of leaves. Records must
-    line up as the operands of a lifted op do (:func:`_check_udt_pair`): the
-    same field names, order and nesting and the same shape for each field.
-    Arrays must have the same shape apart from leading axes of length 1;
-    operands broadcast, but a stored element keeps every value in its place.
-    numpy casts records by position whatever their names, and repeats or
-    drops elements of an array field of another length, which would put
-    values in places nobody chose.
-    """
-    if (np_x.names is None) != (np_z.names is None):
-        return "a record UDT and an array UDT do not correspond", None
-    if np_x.names is None:
-        if np_x.subdtype is None or np_z.subdtype is None:
-            return "only record and array UDTs cast", None
-        (base_x, shape_x), (base_z, shape_z) = np_x.subdtype, np_z.subdtype
-        if _strip_leading_ones(shape_x) != _strip_leading_ones(shape_z):
-            return "array UDTs must have the same shape, apart from leading axes of length 1", None
-        return None, [(base_x, base_z)]
-    leaves_x = list(_iter_record_leaves(np_x))
-    leaves_z = list(_iter_record_leaves(np_z))
-    if [py for py, _c, _d in leaves_x] != [py for py, _c, _d in leaves_z]:
-        return "records must have the same field names, in the same order, at every level", None
-    pairs = [(x, z) for (_, _, x), (_, _, z) in zip(leaves_x, leaves_z, strict=True)]
-    if any(x.shape != z.shape for x, z in pairs):
-        return "records must have the same shape for each field", None
-    return None, [(x.base, z.base) for x, z in pairs]
-
-
-def _udt_cast_error(dtype, to_dtype):
-    """Return why an element of UDT ``dtype`` cannot be stored as UDT ``to_dtype``, or ``None``.
-
-    The layouts must correspond (:func:`_corresponding_leaves`), and each pair
-    of elements must be built-in numbers, or the same type.
-    """
-    reason, pairs = _corresponding_leaves(dtype.np_type, to_dtype.np_type)
-    for x, z in pairs or ():
-        if x != z and not (x.kind in "biufc" and z.kind in "biufc"):
-            return f"elements of {x} do not cast to {z}"
-    return reason
-
-
-def _strip_leading_ones(shape):
-    i = 0
-    while i < len(shape) and shape[i] == 1:
-        i += 1
-    return shape[i:]
-
-
-def _builtin_dtype(np_type):
-    """Return the built-in ``DataType`` for ``np_type``, or ``None`` if it is not one."""
-    from ..dtypes import _registry
-
-    dt = _registry.get(np_type)
-    return None if dt is None or dt._is_udt else dt
-
-
-def _complex_op_error(op_name, dtype, dtype2):
-    return KeyError(
-        f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
-        f"this op is not defined on complex fields. Use ``binary.plus``, "
-        f"``minus``, ``times``, or ``truediv`` for complex element-wise "
-        f"arithmetic, or register a custom binary op."
-    )
-
-
-def _element_types(op_name, dtype, dtype2, elem_x, elem_y):
-    """Return ``(in_x, in_y, out)``, the numpy dtypes ``binary.{op_name}`` uses on one element.
-
-    They come from the op's typing on the built-in dtypes, so each element of an
-    array UDT, or each record leaf, is promoted as a Vector of that dtype would
-    be, and ``truediv`` on integers gives floats. ``in_x`` and ``in_y`` are the
-    types GraphBLAS casts the operands to before it applies the op. The
-    generated code casts to them too, because Numba promotes differently: it
-    adds uint64 and int64 in int64, where GraphBLAS uses float64. ``dtype`` and
-    ``dtype2`` are the operands, named in errors. Two elements that are not
-    both built-in dtypes (bytes, datetime, records inside an array field) have
-    no promotion rule, so they must be the same dtype, which the result keeps.
-    """
-    # ``min``/``max``/``floordiv`` have no defined semantics on complex
-    # operands (no ordering, no integer mod). Reject early with a clear
-    # message; otherwise Numba's cfunc compile blows up several frames
-    # down with ``NotImplementedError: No definition for lowering lt``.
-    if op_name in _OPS_NOT_FOR_COMPLEX and "c" in (elem_x.kind, elem_y.kind):
-        raise _complex_op_error(op_name, dtype, dtype2)
-    builtin_x = _builtin_dtype(elem_x)
-    builtin_y = _builtin_dtype(elem_y)
-    if builtin_x is None or builtin_y is None:
-        if elem_x == elem_y:
-            return elem_x, elem_y, elem_x
-        # Builds without complex dtypes (the vanilla backend) still lift complex
-        # fields, so promote them as the built-in typing does where it has them.
-        if "c" in (elem_x.kind, elem_y.kind) and {elem_x.kind, elem_y.kind} <= set("biufc"):
-            promoted = np.promote_types(elem_x, elem_y)
-            return promoted, promoted, promoted
-        raise KeyError(
-            f"binary.{op_name} does not work with ({dtype}, {dtype2}): elements of "
-            f"{elem_x} and {elem_y} have no common type."
-        )
-    from ... import binary
-    from .utils import get_typed_op
-
-    typed = get_typed_op(getattr(binary, op_name), builtin_x, builtin_y)
-    return typed.type.np_type, typed.type2.np_type, typed.return_type.np_type
-
-
-def _udt_op_types(op_name, dtype, dtype2):
-    """Return ``(ret_type, input_types)`` for ``binary.{op_name}`` on ``dtype`` and ``dtype2``.
-
-    At least one operand is a record or array UDT, and ``_check_udt_pair`` has
-    accepted the pair; the other may be a plain scalar type. Each element, or
-    record leaf, follows :func:`_element_types`, so the result never narrows:
-    an int64 array UDT plus ``0.5`` is ``FP64[3]``. ``ret_type`` is an
-    operand's own type when that holds the result, so same-type arithmetic
-    keeps its UDT. Otherwise it is the promoted layout, which is the UDT a user
-    registered with that layout if there is one, else an anonymous one.
-    ``input_types`` holds the ``(in_x, in_y)`` pair of each record leaf, in
-    leaf order, or the single pair for an array UDT's elements.
-    """
-    from ..dtypes import lookup_dtype
-
-    np_x, np_y = dtype.np_type, dtype2.np_type
-    if np_x.names is not None or np_y.names is not None:
-        leaves_x = list(_iter_record_leaves(np_x)) if np_x.names is not None else None
-        leaves_y = list(_iter_record_leaves(np_y)) if np_y.names is not None else None
-        input_types = []
-        result_leaves = []
-        for i, (_py, _c, leaf) in enumerate(leaves_x or leaves_y):
-            elem_x = np_x if leaves_x is None else leaves_x[i][2].base
-            elem_y = np_y if leaves_y is None else leaves_y[i][2].base
-            in_x, in_y, elem = _element_types(op_name, dtype, dtype2, elem_x, elem_y)
-            input_types.append((in_x, in_y))
-            result_leaves.append(np.dtype((elem, leaf.shape)) if leaf.shape else elem)
-        for operand, leaves in [(dtype, leaves_x), (dtype2, leaves_y)]:
-            if leaves is not None and all(
-                result_leaf == leaf
-                for result_leaf, (_py, _c, leaf) in zip(result_leaves, leaves, strict=True)
-            ):
-                return operand, input_types
-        records = [np_type for np_type in (np_x, np_y) if np_type.names is not None]
-        return lookup_dtype(_promoted_record(records, iter(result_leaves))), input_types
-    base_x, shape_x = np_x.subdtype or (np_x, ())
-    base_y, shape_y = np_y.subdtype or (np_y, ())
-    in_x, in_y, elem = _element_types(op_name, dtype, dtype2, base_x, base_y)
-    result = np.dtype((elem, np.broadcast_shapes(shape_x, shape_y)))
-    for operand in (dtype, dtype2):
-        if operand.np_type == result:
-            return operand, [(in_x, in_y)]
-    return lookup_dtype(result), [(in_x, in_y)]
-
-
-def _promoted_record(records, result_leaves):
-    """Build a record laid out like ``records`` with ``result_leaves`` for its leaves.
-
-    ``records`` holds one or two record dtypes with the same field names and
-    nesting. The new record aligns its fields, at each level, if any of them
-    does there, so a C-compatible operand gives a C-compatible result.
-    """
-    first = records[0]
-    fields = []
-    for name in first.names:
-        field = first.fields[name][0]
-        if field.names is not None:
-            field = _promoted_record([r.fields[name][0] for r in records], result_leaves)
-        else:
-            field = next(result_leaves)
-        fields.append((name, field))
-    return np.dtype(fields, align=any(r.isalignedstruct for r in records))
-
-
-# The kinds of element a weak Python literal fits without changing kind, and
-# the dtype it takes otherwise: numpy 2's rules for Python scalars (NEP 50).
-_WEAK_LITERAL_FITS = {"b": "biufc", "i": "iufc", "f": "fc", "c": "c"}
-_WEAK_LITERAL_DEFAULT = {
-    "b": np.dtype(np.bool_),
-    "i": np.dtype(np.int64),
-    "f": np.dtype(np.float64),
-    "c": np.dtype(np.complex128),
-}
-
-
-@lru_cache
-def _int_bounds(elem):
-    info = np.iinfo(elem)
-    return info.min, info.max
-
-
-def _weak_literal_element(value, kind, elem):
-    """Return the dtype a Python literal of ``kind`` takes beside an element of ``elem``.
-
-    It is ``elem`` when that kind of element holds the literal (``1`` beside
-    int8, ``0.5`` beside float32), else the literal's default dtype (``0.5``
-    beside int8 is float64), and complex of ``elem``'s precision for a complex
-    literal beside a float. An int literal outside an integer element's range
-    raises ``OverflowError``, as numpy 2 does, rather than wrapping.
-    """
-    if elem.kind in _WEAK_LITERAL_FITS[kind]:
-        if kind == "i" and elem.kind in "iu":
-            lo, hi = _int_bounds(elem)
-            if not lo <= value <= hi:
-                raise OverflowError(f"Python integer {value} out of bounds for {elem}")
-        return elem
-    if kind == "c" and elem.kind == "f":
-        return np.result_type(elem, np.complex64)
-    rv = _WEAK_LITERAL_DEFAULT[kind]
-    if kind == "i":  # beside a bool, an int is INT64, and must fit it
-        lo, hi = _int_bounds(rv)
-        if not lo <= value <= hi:
-            raise OverflowError(f"Python integer {value} out of bounds for {rv}")
-    return rv
-
-
-def _weak_literal_leaf(values, kind, elem, *, exact=False):
-    """Return the one dtype Python numbers ``values`` of widest kind ``kind`` take beside ``elem``.
-
-    Each is typed by :func:`_weak_literal_element`, so an int out of an integer
-    ``elem``'s range raises ``OverflowError``. With ``exact``, for a comparison,
-    which keeps no result type, a fill value or truediv, such an int takes
-    int64, uint64 or float64, whichever holds the values (a comparison then
-    compares it as infinity: ``scalar._literal_operand``). Built-in dtypes and
-    UDT leaves both use this.
-    """
-    if exact and kind == "i" and elem.kind in "biu":
-        # The integer type an int would take: ``elem``, or INT64 beside a bool.
-        lo, hi = _int_bounds(elem if elem.kind != "b" else _WEAK_LITERAL_DEFAULT["i"])
-        for x in values:
-            if not lo <= x <= hi:
-                if all(-(2**63) <= x < 2**63 for x in values):
-                    return np.dtype(np.int64)
-                if all(0 <= x < 2**64 for x in values):
-                    return np.dtype(np.uint64)
-                return np.dtype(np.float64)
-    for x in values:
-        elem_type = _weak_literal_element(x, kind, elem)
-    return elem_type
-
-
-_LITERAL_KINDS = {bool: "b", int: "i", float: "f", complex: "c"}
-
-
-class _LiteralDoesNotFit(Exception):
-    """A tuple or list literal is not laid out like an element of the UDT."""
-
-
-def _as_python_number(value):
-    """Return a ``Fraction`` or ``Decimal`` as the int or float it stands for; anything else as is.
-
-    numpy would convert either into an integer field by truncating it (``Fraction(1, 2)``
-    becomes 0), so they are typed as the Python number they are worth instead.
-    """
-    from decimal import Decimal
-    from fractions import Fraction
-
-    if isinstance(value, (Fraction, Decimal)):
-        try:
-            return int(value) if value == int(value) else float(value)
-        except (OverflowError, ValueError):  # infinite or NaN
-            return float(value)
-    return value
-
-
-def _literal_leaf_values(value, shape):
-    """Return the Python numbers in literal ``value`` read as an array of ``shape``, or ``None``.
-
-    ``shape`` is ``()`` for a scalar leaf. A number fills any shape, as numpy
-    broadcasts it. A sequence that does not fill the shape, or holds anything
-    that is not a Python number, gives ``None``.
-    """
-    if shape:
-        arr = np.empty(shape, dtype=object)
-        try:
-            arr[...] = value
-        except (TypeError, ValueError):
-            return None
-        values = [_as_python_number(x) for x in arr.ravel().tolist()]
-    else:
-        values = [_as_python_number(value)]
-    return values if all(type(x) in _LITERAL_KINDS for x in values) else None
-
-
-def _weak_literal_udt(dtype, value, *, exact=False):
-    """Return the UDT a Python number, or a tuple or list of them, becomes beside UDT ``dtype``.
-
-    The literal is read as an element of ``dtype``: a number stands in every
-    leaf, a sequence fills an array UDT or an array field, and a tuple or list
-    fills a record by position, nested for a nested record. Each leaf then takes
-    the dtype numpy 2 gives a Python scalar beside that leaf's element
-    (:func:`_weak_literal_element`), of the widest kind among the leaf's
-    numbers, so the pair promotes as two UDTs do: ``int8_udt + 1`` and
-    ``int8_udt + (1, 2, 3)`` stay ``int8_udt``, while ``int8_udt * 2.5`` and
-    ``int8_udt + (0.5, 1.5, 2.5)`` give float64 elements. A leaf that is not a
-    number (bytes, datetime) takes the literal's default dtype and fails to
-    pair. With ``exact``, for ``eq`` and ``ne``, an int out of a leaf's range
-    takes a type that holds it instead of raising (:func:`_weak_literal_leaf`),
-    so ``int8_udt == 300`` is False. A sequence not laid out like an element
-    gives ``None``.
-    """
-    from ..dtypes import lookup_dtype
-
-    def leaf_dtype(leaf, part):
-        base, shape = leaf.subdtype or (leaf, ())
-        values = _literal_leaf_values(part, shape)
-        if values is None:
-            raise _LiteralDoesNotFit
-        kind = max((_LITERAL_KINDS[type(x)] for x in values), key="bifc".index)
-        if base.kind in "biufc":
-            elem = _weak_literal_leaf(values, kind, base, exact=exact)
-        else:
-            elem = _WEAK_LITERAL_DEFAULT[kind]
-        return np.dtype((elem, shape)) if shape else elem
-
-    def record_leaves(np_type, part):
-        if type(_as_python_number(part)) in _LITERAL_KINDS:
-            parts = [part] * len(np_type.names)
-        elif isinstance(part, (tuple, list)) and len(part) == len(np_type.names):
-            parts = part
-        else:
-            raise _LiteralDoesNotFit
-        for name, item in zip(np_type.names, parts, strict=True):
-            field = np_type.fields[name][0]
-            if field.names is not None:
-                yield from record_leaves(field, item)
-            else:
-                yield leaf_dtype(field, item)
-
-    np_type = dtype.np_type
-    try:
-        if np_type.names is not None:
-            literal_type = _promoted_record([np_type], record_leaves(np_type, value))
-        else:
-            literal_type = leaf_dtype(np_type, value)
-    except _LiteralDoesNotFit:
-        return None
-    return dtype if literal_type == np_type else lookup_dtype(literal_type)
-
-
-def _int_beyond_leaf(np_type, value):
-    """Return a Python int in literal ``value`` beyond its integer leaf's range, or ``None``.
-
-    ``value`` is laid out like an element of ``np_type``, as
-    :func:`_weak_literal_udt` reads it (a record's dict already a tuple). No
-    element equals a literal with such an int, whatever its other leaves.
-    """
-    if np_type.names is not None:
-        parts = value if isinstance(value, (tuple, list)) else [value] * len(np_type.names)
-        for name, part in zip(np_type.names, parts, strict=True):
-            found = _int_beyond_leaf(np_type.fields[name][0], part)
-            if found is not None:
-                return found
-        return None
-    base, shape = np_type.subdtype or (np_type, ())
-    if base.kind in "iu":
-        lo, hi = _int_bounds(base)
-        for x in _literal_leaf_values(value, shape) or ():
-            if type(x) is int and not lo <= x <= hi:
-                return x
-    return None
-
-
-def _array_literal_udt(dtype, value):
-    """Return the UDT a numpy array ``value`` is beside UDT ``dtype``, or ``None`` to convert it.
-
-    An array has a dtype, so it is strong, as numpy 2 treats it:
-    ``int8_udt + np.array([0.5, 1, 2])`` has float64 elements and
-    ``+ np.array([1, 2, 3])`` int64 ones. Its type is the array layout of its
-    dtype, in its own shape when that pairs with the UDT's and in the UDT's
-    shape when it broadcasts to that (``np.array([1])`` beside ``INT8[3]``).
-    A 0-d structured array or ``np.void`` beside a record is its record dtype.
-    Anything else, such as a numeric array beside a record, is converted into
-    the UDT.
-    """
-    from ..dtypes import lookup_dtype
-
-    np_type = dtype.np_type
-    if value.dtype.names is not None:
-        return lookup_dtype(value.dtype) if value.ndim == 0 else None
-    # A bool array converts as it is (a BOOL array UDT cannot be registered),
-    # and bool casts safely into every numeric element.
-    if np_type.names is not None or value.dtype.kind not in "iufc":
-        return None
-    shape = np_type.subdtype[1]
-    if _strip_leading_ones(value.shape) == _strip_leading_ones(shape):
-        shape = value.shape
-    else:
-        try:
-            np.broadcast_to(value, shape)
-        except ValueError:
-            return None
-    return lookup_dtype(np.dtype((value.dtype, shape)))
-
-
-def _leaf_dtypes(np_type):
-    """Yield the base dtype of each leaf of ``np_type``: a record's fields, an array's element."""
-    if np_type.names is not None:
-        for _py, _c, leaf in _iter_record_leaves(np_type):
-            yield leaf.base
-    else:
-        yield np_type.base
-
-
-def _casts_safely_into(literal_type, dtype):
-    """Whether each leaf of ``literal_type`` casts safely (``np.can_cast``) into UDT ``dtype``'s.
-
-    A scalar type fills every leaf; otherwise the layouts must correspond
-    (:func:`_corresponding_leaves`).
-    """
-    if literal_type == dtype:
-        return True
-    np_from, np_to = literal_type.np_type, dtype.np_type
-    if np_from.names is None and np_from.subdtype is None:
-        return all(np.can_cast(np_from, leaf, "safe") for leaf in _leaf_dtypes(np_to))
-    reason, pairs = _corresponding_leaves(np_from, np_to)
-    return reason is None and all(np.can_cast(x, z, "safe") for x, z in pairs)
-
-
-def _iter_record_leaves(np_type, python_prefix="", c_prefix=""):
-    """Yield ``(python_access, c_access, leaf_dtype)`` for each leaf in a record.
-
-    A non-nested record yields one entry per field, with paths like
-    ``"['a']"`` (Python) and ``"a"`` (C struct). A nested record recurses
-    into structured fields: a top-level field ``"outer"`` whose dtype is
-    itself a struct with field ``"inner_a"`` yields
-    ``("['outer']['inner_a']", "outer.inner_a", float64_dtype)``.
-
-    Only record-in-record nesting is recognised. Array-typed fields are
-    yielded as a single leaf, which the Numba path handles: the generated
-    expression operates on the whole sub-array and the wrapper slice-assigns
-    it back. The JIT path never sees such a record, because a subarray dtype
-    has no entry in ``NP_TO_C_TYPES`` and ``_udt_c_typedef`` bails out, so
-    the op keeps the cfunc for every call.
-    """
-    for name in np_type.names:
-        field_dtype = np_type.fields[name][0]
-        py_path = f"{python_prefix}[{name!r}]"
-        c_path = f"{c_prefix}{name}" if not c_prefix else f"{c_prefix}.{name}"
-        if field_dtype.names is not None:
-            yield from _iter_record_leaves(field_dtype, py_path, c_path)
-        else:
-            yield py_path, c_path, field_dtype
 
 
 def _udt_c_typedef(python_name, np_type):
@@ -1124,7 +595,7 @@ if _has_numba:
         ``leaf_paths`` is a sequence of Python access strings ``"['a']"`` or,
         for nested records, ``"['outer']['inner_a']"``. The generated function
         always returns a *flat* tuple of leaf values regardless of nesting
-        depth; the wrapper (in base.py) walks the same leaf paths when
+        depth; the wrapper (``udf._compose_wrapper_body``) walks the same leaf paths when
         writing the result back, so nested-record outputs land at the
         correct depth without nested tuple construction (which Numba can't
         ``setitem``-assign to a record field).
@@ -1291,14 +762,14 @@ if _has_numba:
 
         Handles two cases:
 
-        - Both sides are UDTs that pair (:func:`_check_udt_pair`): a
+        - Both sides are UDTs that pair (``udt._check_udt_pair``): a
           field-by-field (record) or element-by-element (array) op.
         - One side is a UDT and the other is a scalar type: the scalar is
           broadcast to all fields or elements (e.g., ``Point + int`` adds
           the int to every field).
 
         Each element is computed as the op computes it on the operands'
-        element dtypes (see :func:`_udt_op_types`).
+        element dtypes (see ``udt._udt_op_types``).
 
         ``out``, a UDT of the result's layout, makes the op store each element
         into that type instead, cast as a store casts (:func:`fused_store_op`).
@@ -1308,7 +779,7 @@ if _has_numba:
         common mistakes like passing two record UDTs with different field
         names.
         """
-        from .base import _get_udt_wrapper
+        from .udf import _get_udt_wrapper
 
         info_x = _get_udt_info(dtype)
         info_y = _get_udt_info(dtype2)
@@ -1333,7 +804,7 @@ if _has_numba:
             return None if in_dtype == elem.base else in_dtype
 
         if udt_dtype.np_type.names is not None:
-            from .base import _compile_udf_for_udt
+            from .udf import _compile_udf_for_udt
 
             # Use leaf paths so the same codegen handles nested-record UDTs
             # uniformly. A non-nested record's leaves are its top-level
@@ -1409,7 +880,7 @@ if _has_numba:
 
         Returns (wrapper_func, wrapper_sig).
         """
-        from .base import _input_operand
+        from .udf import _input_operand
 
         nt = numba.types
         ns = {"numba_func": func}
@@ -1500,7 +971,7 @@ if _has_numba:
     def compile_udt_cast_wrapper(dtype, to_dtype):
         """Compile a cfunc wrapper that stores an element of UDT ``dtype`` as UDT ``to_dtype``.
 
-        :func:`_udt_cast_error` has accepted the pair. Each element of an array
+        ``udt._udt_cast_error`` has accepted the pair. Each element of an array
         UDT, and each record leaf, converts by :func:`_cast_leaf_source`.
 
         Returns (wrapper_func, wrapper_sig).
@@ -1551,7 +1022,7 @@ if _has_numba:
         Returns (wrapper_func, wrapper_sig, ret_type).
         Raises KeyError if the dtype is not supported.
         """
-        from .base import _get_udt_wrapper, _resolve_udt_return_type
+        from .udf import _get_udt_wrapper, _resolve_udt_return_type
 
         info = _get_udt_info(dtype)
         if info is None:
@@ -1563,7 +1034,7 @@ if _has_numba:
 
         kind, _detail = info
         if kind == "record":
-            from .base import _compile_udf_for_udt
+            from .udf import _compile_udf_for_udt
 
             leaf_paths = [py for py, _c, _d in _iter_record_leaves(dtype.np_type)]
             func = _make_record_func(leaf_paths, 1, py_op)
@@ -1598,12 +1069,12 @@ if _has_numba:
 
         The returned op computes what ``typed_op`` computes, in the same type,
         and casts each element or leaf into ``out_type`` as it writes it, as a
-        store casts (``base._store_cast_op``). So a result goes into an object
+        store casts (``udt._store_cast_op``). So a result goes into an object
         of another UDT type in the one GraphBLAS call that computes it, with no
         temporary. Only the built-in ops that lift to UDTs have such a form;
-        ``base._store_cast_op`` has already accepted the pair of types.
+        ``udt._store_cast_op`` has already accepted the pair of types.
         """
-        from .base import _finalize_udt_op
+        from .udf import _finalize_udt_op
 
         parent = getattr(typed_op, "parent", None)
         if parent is None or parent._anonymous:
@@ -1897,7 +1368,7 @@ def _make_jit_c_definition(op_name, py_op, dtype, arity):
     Returns ``(c_name, c_defn)``, or ``None`` if the dtype can't be expressed
     in C (unsupported field types, or names that collide with C reserved words).
     An op not defined on the field types (``min`` on a complex field) never
-    gets here: ``_element_types`` rejects it when the op is typed.
+    gets here: ``udt._element_types`` rejects it when the op is typed.
     """
     np_type = dtype.np_type
     # Prefer the C name SuiteSparse already has for this type. ``GxB_JIT_C_NAME``

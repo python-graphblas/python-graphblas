@@ -7,8 +7,10 @@ from ..exceptions import check_status
 from . import NULL
 from .descriptor import lookup as descriptor_lookup
 from .expr import AmbiguousAssignOrExtract, Updater
+from .literals import _literal_store_dtype
 from .mask import Mask
 from .operator import UNKNOWN_OPCLASS, binary_from_string, find_opclass, get_typed_op
+from .udt import _fused_store_expr, _scalar_accum_op, _store_cast_op
 from .utils import _Pointer, libget, output_type
 
 _recorder = ContextVar("recorder")
@@ -160,94 +162,6 @@ def _expect_op_message(
 def _expect_op(self, op, values, *, within, **kwargs):
     if (message := _expect_op_message(self, op, values, within=within, **kwargs)) is not None:
         raise TypeError(message) from None
-
-
-def _store_cast_op(result_dtype, output_dtype):
-    """Return the UnaryOp that converts a result for an object of ``output_dtype``, or ``None``.
-
-    GraphBLAS casts between built-in types on store (C's casts, with a float
-    saturating into an integer type), but it cannot cast to or from a UDT;
-    left to GraphBLAS, that is a bare GrB_DOMAIN_MISMATCH or, for a single
-    element, bytes read as the wrong type. So when a UDT is involved, the
-    result is stored by applying the op returned here, which casts each
-    element or record leaf the way GraphBLAS casts built-in types, between
-    UDTs whose layouts correspond (``udt_utils._udt_cast_error``). Any other
-    pair raises ``DomainMismatch``. ``None`` means GraphBLAS stores the result
-    as it is. This is the one place that decides what may be stored where.
-    """
-    if result_dtype is output_dtype or not (result_dtype._is_udt or output_dtype._is_udt):
-        return None
-    from . import _has_numba
-
-    reason = "UDTs do not cast"
-    if _has_numba and result_dtype._is_udt and output_dtype._is_udt:
-        from .operator.udt_utils import _udt_cast_error
-
-        if (reason := _udt_cast_error(result_dtype, output_dtype)) is None:
-            from .operator.unary import _udt_cast_op
-
-            return _udt_cast_op(result_dtype, output_dtype)
-    elif _has_numba:
-        reason = "a UDT casts only to another UDT"
-    from ..exceptions import DomainMismatch
-
-    raise DomainMismatch(
-        f"cannot store a result of type {result_dtype} in an object of type "
-        f"{output_dtype}: {reason}. Use .new() for an object of the result's type, or "
-        "compute the result in the type you want to store."
-    )
-
-
-def _fused_store_expr(expr, output_dtype):
-    """Return ``expr`` computing straight into ``output_dtype``, or raise ``DomainMismatch``.
-
-    A result of another UDT type is stored by the op that computes it, which
-    casts each element as it writes it (``udt_utils.fused_store_op``), so no
-    temporary of the result's own type is made: data GraphBLAS works on is
-    often too large to hold twice. That works for an element-wise
-    computation by a built-in op that lifts to UDTs (``apply``,
-    ``ewise_mult``, ``ewise_union``). ``ewise_add`` copies an entry present in
-    only one input without the op, and a semiring or reduction would add in
-    the narrower type, so those and any other computation raise.
-    """
-    import copy
-
-    from .operator.udt_utils import fused_store_op
-
-    op, cfunc_name = expr.op, expr.cfunc_name
-    if op is not None and op.opclass == "Monoid":
-        # Element-wise, a Monoid is its BinaryOp.
-        op, cfunc_name = op.binaryop, cfunc_name.replace("_Monoid", "_BinaryOp")
-    fused = None
-    if any(k in cfunc_name for k in ("_apply", "eWiseMult", "eWiseUnion")):
-        fused = fused_store_op(op, output_dtype)
-    if fused is None:
-        from ..exceptions import DomainMismatch
-
-        method = "extraction" if expr.method_name == "__getitem__" else expr.method_name
-        what = method if op is None else f"{method} with {op.name}"
-        raise DomainMismatch(
-            f"cannot store a result of type {expr.dtype} in an object of type "
-            f"{output_dtype}: GraphBLAS cannot cast a UDT, and only a built-in op that lifts "
-            "to UDTs, in apply, ewise_mult or ewise_union, can write another type as it "
-            f"computes ({what} cannot), so this would need a temporary copy of the whole "
-            "result. Make it explicitly by storing the computed result, as in "
-            "`obj << expr.new()`, which casts it in one more pass."
-        )
-    rv = copy.copy(expr)
-    rv.op, rv.cfunc_name, rv.dtype = fused, cfunc_name, output_dtype
-    return rv
-
-
-def _scalar_accum_op(scalar, accum):
-    """Return the op to accumulate into ``scalar`` with, as ``scalar.ewise_add`` runs it.
-
-    ``__call__`` types ``accum`` on the object's dtype. For a UDT Scalar, that
-    would convert a literal into the UDT (``s += 0.5``), where a Vector
-    computes ``s + 0.5`` in its own type and casts as it stores; the untyped
-    op does the same here.
-    """
-    return accum.parent if scalar.dtype._is_udt else accum
 
 
 AmbiguousAssignOrExtract._expect_op = _expect_op
@@ -509,7 +423,7 @@ class BaseType:
                     # w << (v & v)
                     expr = expr._to_expr()
                 else:
-                    from .scalar import Scalar, _literal_store_dtype
+                    from .scalar import Scalar
 
                     if type(expr) is Scalar:
                         scalar = expr

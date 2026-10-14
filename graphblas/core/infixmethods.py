@@ -2,24 +2,10 @@ from .. import binary, unary
 from ..dtypes import BOOL
 from .infix import MatrixInfixExpr, ScalarInfixExpr, VectorInfixExpr
 from .matrix import Matrix, MatrixExpression, MatrixIndexExpr, TransposedMatrix
-from .operator import get_typed_op
-from .scalar import Scalar, ScalarExpression, ScalarIndexExpr, _ewise_add_needs_cast, _plus_zero
+from .scalar import Scalar, ScalarExpression, ScalarIndexExpr
+from .udt import _ewise_add_casts_udt, _plus_zero
 from .utils import output_type
 from .vector import Vector, VectorExpression, VectorIndexExpr
-
-
-def _ewise_add_casts_udt(left, right, op):
-    """Whether ``left.ewise_add(right, op)`` would need GraphBLAS to cast a UDT."""
-    try:
-        left_dtype, right_dtype = left.dtype, right.dtype
-    except TypeError:
-        # An infix operand that has no dtype here (``x & y`` of non-BOOL);
-        # ewise_add reports it as before.
-        return False
-    if not (left_dtype._is_udt or right_dtype._is_udt):
-        return False
-    typed_op = get_typed_op(op, left_dtype, right_dtype, kind="binary")
-    return _ewise_add_needs_cast(typed_op, left_dtype, right_dtype)
 
 
 def call_op(self, other, op, *, outer=False, union=False):

@@ -26,6 +26,10 @@ from ...exceptions import UdfParseError, check_status_carg
 from .. import _has_numba, _supports_udfs, ffi, lib
 from ..dtypes import _sample_values
 from ..expr import InfixExprBase
+
+# Imported unconditionally (plain dict, no numba): ``_compile_udt`` consults it
+# even when numba is absent.
+from ..udt import BUILTIN_UDT_BINARY_OPS as _BUILTIN_UDT_BINARY_OPS
 from .base import (
     _SS_OPERATORS,
     OpBase,
@@ -35,14 +39,10 @@ from .base import (
     _hasop,
 )
 
-# Imported unconditionally (plain dict, no numba): ``_compile_udt`` consults it
-# even when numba is absent.
-from .udt_utils import BUILTIN_UDT_BINARY_OPS as _BUILTIN_UDT_BINARY_OPS
-
 if _has_numba:
     import numba
 
-    from .base import (
+    from .udf import (
         _bool_to_int8,
         _compile_udf_for_udt,
         _finalize_udt_op,
@@ -64,12 +64,8 @@ if _has_numba:
         UDT. Mismatched-shape UDT pairs raise ``KeyError``. Returns
         ``(wrapper_func, wrapper_sig)``.
         """
-        from .udt_utils import (
-            _array_operand_source,
-            _check_udt_pair,
-            _get_udt_info,
-            _iter_record_leaves,
-        )
+        from ..udt import _check_udt_pair, _get_udt_info, _iter_record_leaves
+        from .udt_codegen import _array_operand_source
 
         info_x = _get_udt_info(dtype)
         info_y = _get_udt_info(dtype2)
@@ -387,7 +383,7 @@ def _pair_dtype(op, dtype, dtype2):
 
 
 if _has_numba:
-    from .udt_utils import (
+    from .udt_codegen import (
         _compile_codegen,
         _has_jit_set,
         _maybe_warn_jit_skipped,
@@ -693,7 +689,7 @@ class BinaryOp(OpBase):
             else:
                 # eq/ne return BOOL, not the UDT; the kernel is a chain of
                 # per-leaf scalar comparisons.
-                from .udt_utils import set_jit_c_comparison_on_op
+                from .udt_codegen import set_jit_c_comparison_on_op
 
                 op._jit_c_info = set_jit_c_comparison_on_op(
                     op.gb_obj,
