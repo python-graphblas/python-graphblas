@@ -325,7 +325,7 @@ class Vector(BaseType):
         # `v(mask)[i] << x`) falls back to the full assign path, leaving
         # mask/accum, coercion, and index errors unchanged. So does an int
         # beyond INT64, which that path types as the vector's dtype
-        # (``uint64_vec[i] = 2**63``; scalar._literal_store_dtype).
+        # (``uint64_vec[i] = 2**63``; literals._literal_store_dtype).
         if (
             not opts
             and type(expr) in (int, float, bool, complex)
