@@ -196,6 +196,41 @@ def test_from_networkx_rejects_array_weights(graph_cls):
 @pytest.mark.parametrize(
     "graph_cls", [nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph] if nx else []
 )
+def test_from_networkx_rejects_string_weights(graph_cls):
+    # String weights infer a 1-D <U array, so a shape test alone would let them
+    # through; only the dtype-kind half of the guard sends these to scipy, which
+    # rejects them the way it always has.
+    G = graph_cls()
+    G.add_edge(0, 1, weight="a")
+    G.add_edge(1, 2, weight="b")
+    with pytest.raises(ValueError, match="does not support dtype"):
+        gb.io.from_networkx(G)
+
+
+@pytest.mark.skipif("not nx")
+def test_from_networkx_unsupported_dtype_is_valueerror(monkeypatch):
+    # scipy < 1.15 builds a string-dtype coo array happily and only fails converting
+    # it to csr, and networkx re-raises that failure as a NetworkXError blaming the
+    # sparse format. from_networkx restates it as the ValueError newer scipy raises
+    # directly, which is what the caller can act on; monkeypatching the fallback
+    # exercises the old behavior on any scipy.
+    import graphblas.io._networkx as _gnx
+
+    def _raise_networkx_error(*args, **kwargs):
+        raise nx.NetworkXError("Unknown sparse matrix format: csr")
+
+    monkeypatch.setattr(_gnx, "_from_networkx_via_scipy", _raise_networkx_error)
+    G = nx.Graph()
+    G.add_edge(0, 1, weight="a")
+    G.add_edge(1, 2, weight="b")
+    with pytest.raises(ValueError, match="does not support dtype"):
+        gb.io.from_networkx(G)
+
+
+@pytest.mark.skipif("not nx or not ss")
+@pytest.mark.parametrize(
+    "graph_cls", [nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph] if nx else []
+)
 def test_from_networkx_matches_scipy(graph_cls):
     # Both simple graphs and multigraphs now build the coo directly (no scipy
     # round-trip); the result must reproduce nx.to_scipy_sparse_array exactly,
@@ -458,6 +493,24 @@ def test_matrix_market_bad_engine():
     mm_out.seek(0)
     with pytest.raises(ValueError, match="Bad engine value"):
         gb.io.mmread(mm_out, engine="bad_engine")
+
+
+@pytest.mark.skipif("not ss")
+@pytest.mark.skipif("fmm is not None")
+def test_matrix_market_fmm_engine_unavailable():
+    # Naming the deprecated engine warns before anything else, so the caller hears
+    # about the deprecation even when the install that would satisfy it is missing.
+    A = gb.Matrix.from_coo([0, 0, 3, 5], [1, 4, 0, 2], [1, 0, 2, -1], nrows=7, ncols=6)
+    with (
+        pytest.warns(DeprecationWarning, match="fast_matrix_market is no longer maintained"),
+        pytest.raises(ImportError, match="required to write Matrix Market files"),
+    ):
+        gb.io.mmwrite(BytesIO(), A, engine="fmm")
+    with (
+        pytest.warns(DeprecationWarning, match="fast_matrix_market is no longer maintained"),
+        pytest.raises(ImportError, match="required to read Matrix Market files"),
+    ):
+        gb.io.mmread(BytesIO(), engine="fast_matrix_market")
 
 
 @pytest.mark.skipif("not ss")
