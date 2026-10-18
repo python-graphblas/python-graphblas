@@ -117,7 +117,7 @@ jobs:
         # We may be able to support pypy if anybody asks for it
         # 3.9.16 0_73_pypy
         run: |
-          choices=(3.11 3.12 3.13 3.14)
+          choices=(3.11 3.12 3.13 3.14 3.15)
           selected=${choices[$((RANDOM % ${#choices[@]}))]}
           echo "selected: $selected (from: ${choices[*]})"
           echo "selected=$selected" >> "$GITHUB_OUTPUT"
