@@ -3005,3 +3005,32 @@ def test_subarray_dtypes():
         assert full1.isequal(full2, check_dtype=True)
         full2 = Vector.ss.import_bitmap(values=a, bitmap=[True, True, True])
         assert full1.isequal(full2, check_dtype=True)
+
+
+def test_subarray_dtype_values_shape():
+    # Each of these has one entry per index but not two numbers per entry. Building
+    # from too few numbers read past the end of the array. (The dtype's name is
+    # whichever another test gave this anonymous dtype.)
+    match = r"values must have shape \(2, 2\) for dtype \S+, not \(2,"
+    for values in [np.ones(2), [1.0, 2.0], np.ones((2, 1)), np.arange(6.0).reshape(2, 3)]:
+        with pytest.raises(ValueError, match=match):
+            Vector.from_coo([0, 1], values, "FP64[2]")
+        v = Vector("FP64[2]", 3)
+        with pytest.raises(ValueError, match=match):
+            v.build([0, 1], values)
+    with pytest.raises(ValueError, match=r"shape \(3, 2\) for dtype \S+, not \(3, 1\)"):
+        Vector.from_dense(np.ones((3, 1)), dtype="FP64[2]")
+    v = Vector("FP64[2]", 3)
+    with pytest.raises(ValueError, match="shape mismatch"):
+        v[[0, 1]] = np.ones((2, 1))
+    with pytest.raises(ValueError, match=r"shape \(2,\) for dtype FP64, not \(2, 0\)"):
+        Vector.from_coo([0, 1], np.ones((2, 0)), "FP64")
+    # A record is one element, so a float fills each field, and a 2d array is too many
+    rec = dtypes.register_anonymous(np.dtype([("vs_x", np.float64), ("vs_y", np.int32)]))
+    v = Vector.from_coo([0, 1], np.ones(2), rec)
+    assert v.to_coo()[1].tolist() == [(1.0, 1), (1.0, 1)]
+    with pytest.raises(ValueError, match=r"shape \(2,\) for dtype"):
+        Vector.from_coo([0, 1], np.arange(4.0).reshape(2, 2), rec)
+    # A scalar fills whole elements
+    v = Vector.from_coo([0, 1, 2], 1.5, "FP64[2]")
+    assert v.to_coo()[1].tolist() == [[1.5, 1.5]] * 3
