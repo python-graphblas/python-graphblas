@@ -55,6 +55,9 @@ SAMPLED_DEPS = ("scipy", "pandas", "awkward", "numba", "networkx", "sparse", "py
 # of these drifts, the matching rule in `apply_constraints` needs another look.
 # Each entry is (dep, version pin, field, expected constraint).
 DOCUMENTED_METADATA = [
+    ("networkx", "3.7", "constrains", "numpy >=1.25"),
+    ("networkx", "3.7", "constrains", "scipy >=1.11.2"),
+    ("networkx", "3.7", "constrains", "pandas >=2.0"),
     ("networkx", "3.6", "constrains", "numpy >=1.25"),
     ("networkx", "3.6", "constrains", "scipy >=1.11.2"),
     ("networkx", "3.6", "constrains", "pandas >=2.0"),

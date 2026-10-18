@@ -99,12 +99,12 @@ AWKWARD_VERSIONS = {
         "3.11": ["2.0", "2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "2.9", ""],
         "3.12": ["2.4", "2.5", "2.6", "2.7", "2.8", "2.9", ""],
     },
-    "2.x": ["2.6", "2.7", "2.8", "2.9", "2.10", "2.11", "2.12", "2.13", ""],
+    "2.x": ["2.6", "2.7", "2.8", "2.9", "2.10", "2.11", "2.12", "2.13", "2.14", ""],
 }
 
 NUMBA_VERSIONS = {
     "1.x": ["0.57", "0.58", "0.59", "0.60", "0.61", ""],
-    "2.x": ["0.62", "0.63", "0.64", "0.65", "0.66", "0.67", ""],
+    "2.x": ["0.62", "0.63", "0.64", "0.65", "0.66", "0.67", "0.68", ""],
 }
 
 # Oldest numba that supports each Python.
@@ -130,14 +130,16 @@ NUMBA_MAX_NUMPY = {
     "0.65": (2, 5),
     "0.66": (2, 5),
     "0.67": (2, 6),
+    "0.68": (2, 6),
 }
 
 # Deps that only depend on Python version (not numpy)
+# networkx 3.7 requires Python >=3.12, so py3.11 stops at 3.6.
 NETWORKX_VERSIONS = {
     "3.11": ["2.8", "3.0", "3.1", "3.2", "3.3", "3.4", "3.5", "3.6", ""],
-    "3.12": ["3.2", "3.3", "3.4", "3.5", "3.6", ""],
-    "3.13": ["3.4", "3.5", "3.6", ""],
-    "3.14": ["3.6", ""],
+    "3.12": ["3.2", "3.3", "3.4", "3.5", "3.6", "3.7", ""],
+    "3.13": ["3.4", "3.5", "3.6", "3.7", ""],
+    "3.14": ["3.6", "3.7", ""],
 }
 
 PYYAML_VERSIONS = {
@@ -200,6 +202,7 @@ PSG_VERSIONS_NP2 = [
     "10.4.0.0",
     "10.4.1.0",
     "10.5.0.0",
+    "10.5.1.1",
 ]
 
 # Oldest psg release that installs on a given Python, by where psg comes from.
@@ -388,14 +391,14 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
 
     # --- networkx / numpy, scipy, pandas floors ---
 
-    # conda-forge networkx 3.5 and 3.6 declare `constrains: numpy >=1.25, scipy >=1.11.2,
+    # conda-forge networkx 3.5 through 3.7 declare `constrains: numpy >=1.25, scipy >=1.11.2,
     # pandas >=2.0`. conda enforces those against our pins, and since networkx is pinned too
     # the solve fails outright instead of backing off. Older pins are safe because a pin like
     # "3.4" can resolve down to 3.4.0, whose floors (numpy >=1.22, scipy >=1.9, pandas >=1.4)
     # sit at or below everything in our pools. Unpinned networkx is latest, so it gets the
     # 3.5+ floors. Compare scipy at the minor level: the "1.11" pin resolves to 1.11.4, which
     # clears the 1.11.2 floor.
-    # MAINT: 2026-08-04 conda-forge networkx 3.6.1 constrains numpy >=1.25, scipy >=1.11.2
+    # MAINT: 2026-10-18 conda-forge networkx 3.6.1 and 3.7 constrain numpy >=1.25, scipy >=1.11.2
     if _ver(v["networkx"]) >= (3, 5) and (
         _ver(v["numpy"]) < (1, 25) or _ver(v["scipy"]) < (1, 11) or _ver(v["pandas"]) < (2, 0)
     ):
