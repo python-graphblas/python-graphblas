@@ -4441,6 +4441,8 @@ def test_subarray_dtypes():
         assert Full1.isequal(Full2, check_dtype=True)
 
 
+# Without SuiteSparse, building a UDT uses dup_op=binary.any, which needs Numba.
+@pytest.mark.skipif("not suitesparse and not supports_udfs")
 def test_subarray_dtype_values_shape():
     # Each of these has one entry per index but not two numbers per entry. Building
     # from too few numbers read past the end of the array. (The dtype's name is
