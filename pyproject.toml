@@ -232,7 +232,7 @@ skip_empty = true
 exclude_lines = ["pragma: no cover", "raise AssertionError", "raise NotImplementedError"]
 
 [tool.codespell]
-ignore-words-list = "coo,ba"
+ignore-words-list = "bu,coo,ba"
 
 [tool.ruff]
 # https://github.com/charliermarsh/ruff/
