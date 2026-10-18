@@ -2,7 +2,7 @@ from contextvars import ContextVar
 
 from .. import backend, config
 from .. import replace as replace_singleton
-from ..dtypes import BOOL
+from ..dtypes import BOOL, lookup_dtype
 from ..exceptions import check_status
 from . import NULL, ffi, lib
 from .descriptor import lookup as descriptor_lookup
@@ -48,8 +48,6 @@ def _assign_literal(output, value, mask, replace):
     ``value`` takes the dtype the full path gives its Scalar, and GraphBLAS casts
     it to ``output``'s dtype, as the full path's assign does.
     """
-    from ..dtypes import lookup_dtype
-
     vdtype = lookup_dtype(type(value), value)
     cvalue = ffi.new(f"{vdtype.c_type}*")
     cvalue[0] = value  # cffi coercion, identical to the Scalar.value setter
