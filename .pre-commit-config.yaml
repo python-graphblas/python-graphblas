@@ -11,7 +11,9 @@ ci:
   autoupdate_commit_msg: "chore: update pre-commit hooks"
   autofix_commit_msg: "style: pre-commit fixes"
   # pysentry downloads advisory databases at run time, and pre-commit.ci
-  # runs hooks without network access, so it can only run locally.
+  # runs hooks without network access, so it runs locally and in security.yml.
+  # zizmor does run on pre-commit.ci, offline, which skips its online audits;
+  # security.yml runs those.
   skip: [pylint, no-commit-to-branch, pysentry]
 fail_fast: false
 default_language_version:
@@ -146,6 +148,10 @@ repos:
     rev: v1.7.12
     hooks:
       - id: actionlint
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.31.1
+    hooks:
+      - id: zizmor
   - repo: https://github.com/python-jsonschema/check-jsonschema
     rev: 0.38.2
     hooks:
@@ -156,15 +162,22 @@ repos:
     rev: v1.38.0
     hooks:
       - id: yamllint
-  #  - repo: https://github.com/woodruffw/zizmor-pre-commit
-  #    rev: v1.14.2
-  #    hooks:
-  #      - id: zizmor
   - repo: https://github.com/pysentry/pysentry-pre-commit
     rev: v0.5.0
     hooks:
       - id: pysentry
-        args: ["--format=human", "--fail-on=low", "--sources=pypa,osv,pypi"]
+        # Run when pyproject.toml or this file changes rather than at every commit, where
+        # it fails offline. security.yml also runs it weekly.
+        always_run: false
+        files: ^(pyproject\.toml|\.pre-commit-config\.yaml)$
+        # Audit the floors in pyproject.toml. Without `--direct-only`, pysentry resolves the
+        # newest versions with uv (which the hook installs), and no longer sees a floor that
+        # allows a vulnerable release.
+        args:
+          - --format=human
+          - --fail-on=low
+          - --sources=pypa,osv,pypi
+          - --direct-only
   - repo: meta
     hooks:
       - id: check-hooks-apply
