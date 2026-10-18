@@ -445,15 +445,12 @@ print("done")
 """
 
 
-@pytest.mark.slow
-@pytest.mark.skipif("empty is None")
-def test_import_with_libc_allocator():
-    # With ``memory_manager="c"`` GraphBLAS frees with libc's ``free``, so not
-    # even the copy that ``take_ownership=False`` makes may come from NumPy
+def _run_probe(source, **env):
+    """Run ``source`` in a new process that imports this tree's graphblas, and check it ends."""
     repo_root = Path(__file__).resolve().parents[2]
-    env = dict(os.environ, PYTHONPATH=str(repo_root), PYTHONMALLOC="debug")
+    env = dict(os.environ, PYTHONPATH=str(repo_root), PYTHONUNBUFFERED="1", **env)
     result = subprocess.run(
-        [sys.executable, "-c", _LIBC_ALLOCATOR_PROBE],
+        [sys.executable, "-c", source],
         capture_output=True,
         text=True,
         check=False,
@@ -466,38 +463,60 @@ def test_import_with_libc_allocator():
     assert result.stdout.splitlines()[-1] == "done", report
 
 
+@pytest.mark.slow
+@pytest.mark.skipif("empty is None")
+def test_import_with_libc_allocator():
+    # With ``memory_manager="c"`` GraphBLAS frees with libc's ``free``, so not
+    # even the copy that ``take_ownership=False`` makes may come from NumPy
+    _run_probe(_LIBC_ALLOCATOR_PROBE, PYTHONMALLOC="debug")
+
+
+# Run in a subprocess: a regression frees an array twice, which aborts the
+# process instead of failing the test.
+_ONE_ARRAY_TWICE_PROBE = """
+import numpy as np
+
+import graphblas as gb
+from graphblas import Matrix
+
+print("package: " + gb.__file__)
+a = np.array([0, 2], np.uint64)
+A = Matrix.ss.import_csr(
+    nrows=1, ncols=3, indptr=a, col_indices=a, values=[1.0, 2.0], take_ownership=True
+)
+assert A.isequal(Matrix.from_coo([0, 0], [0, 2], [1.0, 2.0], nrows=1, ncols=3))
+assert not a.flags.owndata  # taken once, copied once
+
+a = np.array([0, 2], np.uint64)
+A = Matrix.ss.import_hypercsr(
+    nrows=3,
+    ncols=3,
+    indptr=[0, 1, 2],
+    rows=a,
+    col_indices=a,
+    values=[1.0, 2.0],
+    take_ownership=True,
+)
+assert A.isequal(Matrix.from_coo([0, 2], [0, 2], [1.0, 2.0], nrows=3, ncols=3))
+
+a = np.array([0, 2], np.uint64)
+A = Matrix.ss.import_hypercsc(
+    nrows=3,
+    ncols=3,
+    indptr=[0, 1, 2],
+    cols=a,
+    row_indices=a,
+    values=[1.0, 2.0],
+    take_ownership=True,
+)
+assert A.isequal(Matrix.from_coo([0, 2], [0, 2], [1.0, 2.0], nrows=3, ncols=3))
+del A
+print("done")
+"""
+
+
 def test_take_ownership_of_one_array_twice():
     # GraphBLAS frees every buffer it takes, so an array given as two arguments
     # has to be copied for one of them. Only an index array given as the values
     # was, and an index array given twice was freed twice, crashing the process.
-    a = np.array([0, 2], np.uint64)
-    A = Matrix.ss.import_csr(
-        nrows=1, ncols=3, indptr=a, col_indices=a, values=[1.0, 2.0], take_ownership=True
-    )
-    assert A.isequal(Matrix.from_coo([0, 0], [0, 2], [1.0, 2.0], nrows=1, ncols=3))
-    assert not a.flags.owndata  # taken once, copied once
-
-    a = np.array([0, 2], np.uint64)
-    A = Matrix.ss.import_hypercsr(
-        nrows=3,
-        ncols=3,
-        indptr=[0, 1, 2],
-        rows=a,
-        col_indices=a,
-        values=[1.0, 2.0],
-        take_ownership=True,
-    )
-    assert A.isequal(Matrix.from_coo([0, 2], [0, 2], [1.0, 2.0], nrows=3, ncols=3))
-
-    a = np.array([0, 2], np.uint64)
-    A = Matrix.ss.import_hypercsc(
-        nrows=3,
-        ncols=3,
-        indptr=[0, 1, 2],
-        cols=a,
-        row_indices=a,
-        values=[1.0, 2.0],
-        take_ownership=True,
-    )
-    assert A.isequal(Matrix.from_coo([0, 2], [0, 2], [1.0, 2.0], nrows=3, ncols=3))
-    del A
+    _run_probe(_ONE_ARRAY_TWICE_PROBE)
