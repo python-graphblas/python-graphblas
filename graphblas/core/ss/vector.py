@@ -879,7 +879,8 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (uint64 for indices)
-                - own its own data
+                - own its own data, allocated by NumPy's default memory handler
+                  (GraphBLAS can't free memory from a custom one)
                 - be writeable
             If all of these conditions are not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
@@ -1063,7 +1064,8 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (bool for bitmap)
-                - own its own data
+                - own its own data, allocated by NumPy's default memory handler
+                  (GraphBLAS can't free memory from a custom one)
                 - be writeable
             If all of these conditions are not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
@@ -1243,7 +1245,8 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (bool for bitmap)
-                - own its own data
+                - own its own data, allocated by NumPy's default memory handler
+                  (GraphBLAS can't free memory from a custom one)
                 - be writeable
             If all of these conditions are not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
