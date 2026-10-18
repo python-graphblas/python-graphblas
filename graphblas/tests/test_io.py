@@ -238,6 +238,13 @@ def test_from_networkx_undirected_selfloop_dtype():
         [0, 1, 1, 1, 2], [1, 0, 1, 2, 1], [True, True, True, False, False]
     )
     assert M.isequal(expected, check_dtype=True)
+    # Nor is an unsigned numpy weight negated: -np.uint8(1) wraps to 255, so beside
+    # an int weight (the values infer int64) the self-loop summed to 257.
+    G = nx.Graph()
+    G.add_weighted_edges_from([(0, 1, 2), (1, 1, np.uint8(1))])
+    M = gb.io.from_networkx(G)
+    expected = gb.Matrix.from_coo([0, 1, 1], [1, 0, 1], [2, 2, 1])
+    assert M.isequal(expected, check_dtype=True)
 
 
 @pytest.mark.skipif("not nx")
