@@ -9,6 +9,9 @@ on:
         required: false
         default: false
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
