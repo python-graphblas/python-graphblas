@@ -14,6 +14,7 @@ from ..operator import get_typed_op
 from ..scalar import Scalar, _as_scalar, _scalar_index
 from ..utils import (
     _CArray,
+    _distinct_buffers,
     _MatrixArray,
     _Pointer,
     get_order,
@@ -1325,8 +1326,7 @@ class ss:
         values, dtype = values_to_numpy_buffer(
             values, dtype, copy=copy, ownable=True, subarray_after=1
         )
-        if col_indices is values:
-            values = np.copy(values)
+        indptr, col_indices, values = _distinct_buffers(indptr, col_indices, values)
         Ap = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indptr))
         Aj = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", col_indices))
         Ax = ffi_new("void**", ffi.from_buffer("void*", values))
@@ -1515,8 +1515,7 @@ class ss:
         values, dtype = values_to_numpy_buffer(
             values, dtype, copy=copy, ownable=True, subarray_after=1
         )
-        if row_indices is values:
-            values = np.copy(values)
+        indptr, row_indices, values = _distinct_buffers(indptr, row_indices, values)
         Ap = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indptr))
         Ai = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", row_indices))
         Ax = ffi_new("void**", ffi.from_buffer("void*", values))
@@ -1722,8 +1721,7 @@ class ss:
         )
         if not is_iso and values.ndim == 0:
             is_iso = True
-        if col_indices is values:
-            values = np.copy(values)
+        indptr, rows, col_indices, values = _distinct_buffers(indptr, rows, col_indices, values)
         Ap = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indptr))
         Ah = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", rows))
         Aj = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", col_indices))
@@ -1944,8 +1942,7 @@ class ss:
         values, dtype = values_to_numpy_buffer(
             values, dtype, copy=copy, ownable=True, subarray_after=1
         )
-        if row_indices is values:
-            values = np.copy(values)
+        indptr, cols, row_indices, values = _distinct_buffers(indptr, cols, row_indices, values)
         if not is_iso and values.ndim == 0:
             is_iso = True
         Ap = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indptr))
@@ -2151,8 +2148,7 @@ class ss:
         values, dtype = values_to_numpy_buffer(
             values, dtype, copy=copy, ownable=True, order="C", subarray_after=2
         )
-        if bitmap is values:
-            values = np.copy(values)
+        bitmap, values = _distinct_buffers(bitmap, values)
         if method == "import":
             nrows, ncols = get_shape(nrows, ncols, dtype, bitmap=bitmap, values=values)
         else:
@@ -2344,8 +2340,7 @@ class ss:
         values, dtype = values_to_numpy_buffer(
             values, dtype, copy=copy, ownable=True, order="F", subarray_after=2
         )
-        if bitmap is values:
-            values = np.copy(values)
+        bitmap, values = _distinct_buffers(bitmap, values)
         if method == "import":
             nrows, ncols = get_shape(nrows, ncols, dtype, bitmap=bitmap, values=values)
         else:
