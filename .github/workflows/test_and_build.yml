@@ -17,6 +17,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 # concurrency:
 #   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
 #   cancel-in-progress: true
@@ -143,15 +146,20 @@ jobs:
           # on every run that still uses the old one.
           auto-activate: false
       - name: Update env
+        env:
+          # Step outputs reach the script through the environment, not ``${{ }}``, so
+          # bash never parses them as code (zizmor's template-injection audit).
+          PYVER: ${{ steps.pyver.outputs.selected }}
+          SOURCETYPE: ${{ steps.sourcetype.outputs.selected }}
         run: |
           # Pick random compatible dependency versions using the version picker script.
           # See scripts/ci_pick_versions.py for version pools and constraint logic.
-          pyver=$(python -c "v='${{ steps.pyver.outputs.selected }}'.split('.');print(f'{v[0]}.{v[1]}')")
+          pyver=$(python -c "import os; v=os.environ['PYVER'].split('.');print(f'{v[0]}.{v[1]}')")
           # Assign first, then eval. `eval "$(cmd)"` reports eval's status, not cmd's, and
           # this step's shell has no `-e`, so a picker that exits non-zero (a pool table it
           # rejects, say) would leave every *ver variable unset and quietly install the
           # latest of everything: a green run that tested nothing it claims to have tested.
-          if ! picks=$(python scripts/ci_pick_versions.py --python "$pyver" --source ${{ steps.sourcetype.outputs.selected }}) ; then
+          if ! picks=$(python scripts/ci_pick_versions.py --python "$pyver" --source "$SOURCETYPE") ; then
             echo "::error::ci_pick_versions.py failed; refusing to install unpinned dependencies"
             exit 1
           fi
@@ -160,7 +168,7 @@ jobs:
           # Set up psg conda package variable (conda-forge installs via conda, others via pip).
           # For conda-forge, psg must always be installed; an empty psgver just means "latest".
           psg=""
-          if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
+          if [[ $SOURCETYPE == "conda-forge" ]] ; then
             psg=python-suitesparse-graphblas${psgver}
           fi
 
@@ -216,6 +224,11 @@ jobs:
           # python-suitesparse-graphblas pins the same pair in
           # .github/workflows/test.yml, and asks for python-freethreading on the
           # matrix entries that want the other ABI.
+          if [[ $PYVER == *pypy* ]] ; then
+            interpreter=pypy
+          else
+            interpreter="python=$PYVER python-gil"
+          fi
           $(command -v mamba || command -v conda) install -c nodefaults \
             packaging pip pytest coverage pytest-randomly cffi donfig tomli c-compiler make \
             pyyaml${yamlver} ${sparse} pandas${pdver} scipy${spver} numpy${npver} ${awkward} \
@@ -224,29 +237,30 @@ jobs:
             ${{ matrix.slowtask == 'notebooks' && '"matplotlib${mplver}" nbconvert jupyter "ipython>=7" drawsvg' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
             ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4"' || '' }} \
-            ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'pypy' || '' }} \
-            ${{ !contains(steps.pyver.outputs.selected, 'pypy') && format('python={0} python-gil', steps.pyver.outputs.selected) || '' }} \
+            ${interpreter} \
             ${{ matrix.os == 'windows-latest' && 'cmake' || 'm4' }} \
             # ${{ matrix.os != 'windows-latest' && 'pytest-forked' || '' }}  # to investigate crashes
       - name: Build extension module
+        env:
+          SOURCETYPE: ${{ steps.sourcetype.outputs.selected }}
         run: |
           # ``python -m pip`` ensures the conda env's interpreter drives the
           # install, not a system ``pip`` on PATH.
-          if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" ]]; then
+          if [[ $SOURCETYPE == "wheel" ]]; then
               # Add --pre if installing a pre-release
               python -m pip install --no-deps --only-binary ":all:" suitesparse-graphblas${psgver}
 
               # Add the below line to the conda install command above if installing from test.pypi.org
               # ${{ steps.sourcetype.outputs.selected == 'wheel' && 'setuptools setuptools-git-versioning wheel cython' || '' }} \
               # python -m pip install --no-deps --only-binary ":all:" --index-url https://test.pypi.org/simple/ "suitesparse-graphblas>=7.4.3"
-          elif [[ ${{ steps.sourcetype.outputs.selected }} == "source" ]]; then
+          elif [[ $SOURCETYPE == "source" ]]; then
               # Add --pre if installing a pre-release
               python -m pip install --no-deps --no-binary suitesparse-graphblas suitesparse-graphblas${psgver}
 
               # Add the below line to the conda install command above if installing from test.pypi.org
               # ${{ steps.sourcetype.outputs.selected == 'source' && 'setuptools setuptools-git-versioning wheel cython' || '' }} \
               # python -m pip install --no-deps --no-build-isolation --no-binary suitesparse-graphblas --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
-          elif [[ ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
+          elif [[ $SOURCETYPE == "upstream" ]]; then
               python -m pip install --no-deps git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
           fi
           python -m pip install --no-deps -e .
