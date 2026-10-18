@@ -6,6 +6,11 @@ from ..dtypes import _INDEX, lookup_dtype
 from . import ffi, lib
 from .dtypes import _nats_in_leaf_units, _view_if_same_layout
 
+try:
+    from suitesparse_graphblas.utils import can_unclaim_buffer, empty
+except ImportError:  # MAINT 2026-10-18: suitesparse-graphblas < 10.5.1.1 has neither
+    can_unclaim_buffer = empty = None
+
 _NP2 = np.__version__.startswith("2.")
 
 
@@ -89,9 +94,35 @@ def ints_to_numpy_buffer(array, dtype, *, name="array", copy=False, ownable=Fals
         raise ValueError(f"{name} must be integers, not {array.dtype.name}")
     # https://numpy.org/doc/stable/release/2.0.0-notes.html#new-copy-keyword-meaning-for-array-and-asarray-constructors
     array = np.array(array, dtype, copy=copy or _NP2 and None, order=order)
-    if ownable and (not array.flags.owndata or not array.flags.writeable):
-        array = array.copy(order)
+    if ownable:
+        array = _ownable(array, order)
     return array
+
+
+def _ownable(array, order):
+    """Return ``array``, or a copy of it if GraphBLAS can't take ownership of its data.
+
+    GraphBLAS frees the data it owns with its own allocator, and ``owndata`` can't
+    say which allocator made an array: one from a custom NumPy memory handler
+    (NEP 49) owns its data too, and the process aborts when GraphBLAS frees it.
+    """
+    if can_unclaim_buffer is None:
+        # Older suitesparse-graphblas can't tell, so assume NumPy's default allocator
+        ownable = array.flags.owndata and array.flags.writeable
+    else:
+        ownable = can_unclaim_buffer(array)
+    return array if ownable else _ownable_copy(array, order)
+
+
+def _ownable_copy(array, order):
+    """Copy ``array`` into memory GraphBLAS can take ownership of."""
+    if empty is None:
+        return array.copy(order)
+    # A NumPy copy may be no better: a custom memory handler may be in effect, or
+    # GraphBLAS may use libc's allocator (``memory_manager="c"``)
+    buf = empty(array.shape, array.dtype, order)
+    np.copyto(buf, array)
+    return buf
 
 
 def _get_subdtype(dtype):
@@ -142,8 +173,8 @@ def values_to_numpy_buffer(
         array = _view_if_same_layout(array, dtype.np_type)
         if subarray_after is not None and array.ndim > subarray_after:
             dtype = lookup_dtype(np.dtype((dtype.np_type, array.shape[subarray_after:])))
-    if ownable and (not array.flags.owndata or not array.flags.writeable):
-        array = array.copy(order)
+    if ownable:
+        array = _ownable(array, order)
     return array, dtype
 
 
