@@ -10,8 +10,8 @@
 # scripts/audit_pypi_versions.py and scripts/audit_conda_versions.py ask the same
 # questions automatically, and also check the pools and tables in ci_pick_versions.py
 # against what is published. The "Audit dependency versions" workflow runs both weekly.
-conda search 'flake8-bugbear[channel=conda-forge]>=26.9.9'
-conda search 'flake8-simplify[channel=conda-forge]>=0.30.0'
+conda search 'flake8-bugbear[channel=conda-forge]>=26.9.30'
+conda search 'flake8-simplify[channel=conda-forge]>=0.31.1'
 conda search 'numpy[channel=conda-forge]>=2.5'
 conda search 'pandas[channel=conda-forge]>=3.0'
 conda search 'scipy[channel=conda-forge]>=1.18'
