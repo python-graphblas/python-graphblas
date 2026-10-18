@@ -4457,6 +4457,31 @@ def test_subarray_dtypes():
         assert Full1.isequal(Full2, check_dtype=True)
 
 
+def test_subarray_dtype_values_shape():
+    # Each of these has one entry per index but not two numbers per entry. Building
+    # from too few numbers read past the end of the array. (The dtype's name is
+    # whichever another test gave this anonymous dtype.)
+    match = r"values must have shape \(2, 2\) for dtype \S+, not \(2,"
+    for values in [np.ones(2), [1.0, 2.0], np.ones((2, 1)), np.arange(6.0).reshape(2, 3)]:
+        with pytest.raises(ValueError, match=match):
+            Matrix.from_coo([0, 1], [0, 1], values, "FP64[2]")
+        A = Matrix("FP64[2]", 2, 2)
+        with pytest.raises(ValueError, match=match):
+            A.build([0, 1], [0, 1], values)
+        with pytest.raises(ValueError, match=match):
+            Matrix.from_csr([0, 1, 2], [0, 1], values, "FP64[2]")
+        with pytest.raises(ValueError, match=match):
+            Matrix.from_csc([0, 1, 2], [0, 1], values, "FP64[2]")
+    with pytest.raises(ValueError, match=r"shape \(2, 2, 2\) for dtype \S+, not \(2, 2, 1\)"):
+        Matrix.from_dense(np.ones((2, 2, 1)), dtype="FP64[2]")
+    # A scalar fills whole elements
+    expected = [[1.5, 1.5]] * 2
+    A = Matrix.from_coo([0, 1], [0, 1], 1.5, "FP64[2]")
+    assert A.to_coo()[2].tolist() == expected
+    A = Matrix.from_csr([0, 1, 2], [0, 1], 1.5, "FP64[2]")
+    assert A.to_coo()[2].tolist() == expected
+
+
 def test_power(A):
     expected = A.dup()
     for i in range(1, 50):

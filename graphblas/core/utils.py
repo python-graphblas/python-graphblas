@@ -190,6 +190,20 @@ def values_to_numpy_buffer(
     return array, dtype
 
 
+def check_element_shape(values, dtype, ndim):
+    """Raise unless ``values`` is an ``ndim``-d array of whole ``dtype`` elements.
+
+    ``values_to_numpy_buffer`` converts to the scalar type of a sub-array dtype, so each
+    element's shape must trail the ``ndim`` leading dimensions. GraphBLAS reads whole
+    elements, so a wrong shape reads the wrong numbers or reads past the end of the array.
+    """
+    if values.shape[ndim:] != dtype.np_type.shape:
+        raise ValueError(
+            f"values must have shape {values.shape[:ndim] + dtype.np_type.shape} "
+            f"for dtype {dtype}, not {values.shape}"
+        )
+
+
 def normalize_values(self, values, dtype, shape=None, is_iso=False):
     """Expand and/or update dtype of values array."""
     if dtype is not None:

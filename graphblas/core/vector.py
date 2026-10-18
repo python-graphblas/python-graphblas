@@ -39,6 +39,7 @@ from .udt import (
 from .utils import (
     _CArray,
     _Pointer,
+    check_element_shape,
     class_property,
     ints_to_numpy_buffer,
     normalize_values,
@@ -546,6 +547,7 @@ class Vector(BaseType):
             raise ValueError(
                 f"`indices` and `values` lengths must match: {indices.size} != {values.size}"
             )
+        check_element_shape(values, self.dtype, 1)
         if clear:
             self.clear()
         if size is not None:
@@ -744,7 +746,8 @@ class Vector(BaseType):
             if backend == "suitesparse":
                 w.ss.build_scalar(indices, values.tolist())
             else:
-                w.build(indices, np.broadcast_to(values, indices.size), dup_op=binary.any)
+                values = np.broadcast_to(values, (indices.size, *dtype.np_type.shape))
+                w.build(indices, values, dup_op=binary.any)
         else:
             # This needs to be the original data to get proper error messages
             w.build(indices, values, dup_op=dup_op)
@@ -897,6 +900,7 @@ class Vector(BaseType):
             raise ValueError("A >1d array is required to create a dense Vector with subdtype")
         if values.ndim > 1 and dtype.np_type.subdtype is None:
             raise ValueError(f"values array must be 1d to create dense Vector with dtype {dtype}")
+        check_element_shape(values, dtype, 1)
         if backend == "suitesparse":
             rv = cls.ss.import_full(values, dtype=dtype, name=name)
         else:
