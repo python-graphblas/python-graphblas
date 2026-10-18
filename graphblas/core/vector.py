@@ -40,6 +40,7 @@ from .udt import (
 from .utils import (
     _CArray,
     _Pointer,
+    _repeated_value,
     check_element_shape,
     class_property,
     ints_to_numpy_buffer,
@@ -806,6 +807,8 @@ class Vector(BaseType):
             Vector indices.
         values : list or np.ndarray or scalar, default 1.0
             List of values. If a scalar is provided, all values will be set to this single value.
+            A 1-d array that repeats one value with stride 0, as ``np.broadcast_to(x, n)``
+            makes, is stored once (iso) as a scalar is, unless ``dup_op`` is given.
         dtype :
             Data type of the Vector. If not provided, the values will be inspected
             to choose an appropriate dtype.
@@ -831,6 +834,14 @@ class Vector(BaseType):
 
         """
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
+        # n copies of one value (as from np.broadcast_to) build iso. Unlike a
+        # scalar value, they must still number nvals, and duplicates still raise.
+        repeated = None
+        if dup_op is None and backend == "suitesparse":
+            repeated = _repeated_value(values, dtype)
+        if repeated is not None:
+            n = values.size
+            values = repeated
         values, dtype = values_to_numpy_buffer(values, dtype, subarray_after=1)
         # Compute size if not provided
         if size is None:
@@ -839,7 +850,15 @@ class Vector(BaseType):
             size = int(indices.max()) + 1
         # Create the new vector
         w = cls(dtype, size, name=name)
-        if values.ndim == 0:
+        if repeated is not None:
+            if indices.size != n:
+                raise ValueError(
+                    f"`indices` and `values` lengths must match: {indices.size} != {n}"
+                )
+            w.ss.build_scalar(indices, values.tolist())
+            if w._nvals < n:
+                raise ValueError("Duplicate indices found, must provide `dup_op` BinaryOp")
+        elif values.ndim == 0:
             if dup_op is not None:
                 raise ValueError(
                     "dup_op must be None if values is a scalar so that all "
