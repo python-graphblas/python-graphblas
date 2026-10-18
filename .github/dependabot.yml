@@ -4,3 +4,12 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Wait a week after a release before proposing it, so a compromised or
+    # broken release has time to be noticed and yanked.
+    cooldown:
+      default-days: 7
+    # One PR per week for all action bumps instead of one PR per action.
+    groups:
+      github-actions:
+        patterns:
+          - "*"
