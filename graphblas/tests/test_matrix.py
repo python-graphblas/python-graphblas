@@ -2118,12 +2118,16 @@ def test_ss_import_export(A, do_iso, methods):
         assert A5.isequal(A)
         assert A5.ss.is_iso is do_iso
     d["bitmap"] = np.concatenate([d["bitmap"], d["bitmap"]], axis=0)
+    if not do_iso:
+        # Values for the whole bitmap; GraphBLAS reads them all
+        d["values"] = np.concatenate([d["values"], d["values"]], axis=0)
     B5b = Matrix.ss.import_any(**d)
     if in_method == "import":
         # B5b == [A, A] (i.e, get 2d shape from bitmap first if possible)
         assert B5b.nvals == 2 * A.nvals
         assert B5b.nrows == 2 * A.nrows
         assert B5b.ncols == A.ncols
+        assert B5b[7:, :].new().isequal(A)
     else:
         A5.ss.pack_any(**d)
         assert A5.isequal(A)
@@ -4466,6 +4470,59 @@ def test_subarray_dtype_values_shape():
     assert A.to_coo()[2].tolist() == expected
     A = Matrix.from_csr([0, 1, 2], [0, 1], 1.5, "FP64[2]")
     assert A.to_coo()[2].tolist() == expected
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_ss_import_values_size():
+    # GraphBLAS compares the byte size of imported values with the number of entries,
+    # not the bytes they need, so it read past the end of each of these
+    match = "have 3 or more elements of dtype FP64, not 1"
+    with pytest.raises(ValueError, match=match):
+        Matrix.ss.import_csr(
+            nrows=2, ncols=2, indptr=[0, 1, 3], col_indices=[0, 0, 1], values=np.ones(1)
+        )
+    A = Matrix(float, 2, 2)
+    with pytest.raises(ValueError, match=match):
+        A.ss.pack_csc(indptr=[0, 1, 3], row_indices=[0, 0, 1], values=np.ones(1))
+    with pytest.raises(ValueError, match=match):
+        Matrix.ss.import_hypercsr(
+            nrows=3, ncols=3, rows=[0, 2], indptr=[0, 1, 3], col_indices=[0, 0, 1], values=[1.0]
+        )
+    with pytest.raises(ValueError, match="have 4 or more elements of dtype FP64, not 3"):
+        Matrix.ss.import_fullr(values=np.ones(3), nrows=2, ncols=2)
+    with pytest.raises(ValueError, match="have 4 or more elements of dtype FP64, not 2"):
+        Matrix.ss.import_bitmapc(bitmap=np.ones((2, 2), bool), values=np.ones(2), nrows=2, ncols=2)
+    # The dtype's name is whichever another test gave this anonymous dtype
+    match = r"have 2 or more elements of dtype \S+, not 1"
+    with pytest.raises(ValueError, match=match):
+        Matrix.ss.import_hypercsc(
+            nrows=3,
+            ncols=3,
+            cols=[0, 2],
+            indptr=[0, 1, 2],
+            row_indices=[0, 1],
+            values=np.ones(2),
+            dtype="FP64[2]",
+        )
+    with pytest.raises(ValueError, match=match):
+        Matrix.from_dcsr([0, 1], [0, 1, 2], [0, 1], np.ones(2), "FP64[2]")
+    with pytest.raises(ValueError, match=r"have 4 or more elements of dtype \S+, not 2"):
+        Matrix.ss.import_fullc(values=np.ones((2, 2, 1)), dtype="FP64[2]")
+    # One element is enough for iso
+    A = Matrix.ss.import_fullr(values=[7.0], nrows=2, ncols=2, is_iso=True)
+    assert A.ss.is_iso
+    assert A.to_coo()[2].tolist() == [7.0] * 4
+    A = Matrix.ss.import_csr(
+        nrows=2,
+        ncols=2,
+        indptr=[0, 1, 2],
+        col_indices=[0, 1],
+        values=[1.0, 2.0],
+        dtype="FP64[2]",
+        is_iso=True,
+    )
+    assert A.ss.is_iso
+    assert A.to_coo()[2].tolist() == [[1.0, 2.0]] * 2
 
 
 def test_power(A):
