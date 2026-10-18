@@ -466,3 +466,40 @@ def test_import_with_libc_allocator():
     lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
     assert lines.get("package") == str(repo_root / "graphblas" / "__init__.py"), report
     assert result.stdout.splitlines()[-1] == "done", report
+
+
+def test_take_ownership_of_one_array_twice():
+    # GraphBLAS frees every buffer it takes, so an array given as two arguments
+    # has to be copied for one of them. Only an index array given as the values
+    # was, and an index array given twice was freed twice, crashing the process.
+    a = np.array([0, 2], np.uint64)
+    A = Matrix.ss.import_csr(
+        nrows=1, ncols=3, indptr=a, col_indices=a, values=[1.0, 2.0], take_ownership=True
+    )
+    assert A.isequal(Matrix.from_coo([0, 0], [0, 2], [1.0, 2.0], nrows=1, ncols=3))
+    assert not a.flags.owndata  # taken once, copied once
+
+    a = np.array([0, 2], np.uint64)
+    A = Matrix.ss.import_hypercsr(
+        nrows=3,
+        ncols=3,
+        indptr=[0, 1, 2],
+        rows=a,
+        col_indices=a,
+        values=[1.0, 2.0],
+        take_ownership=True,
+    )
+    assert A.isequal(Matrix.from_coo([0, 2], [0, 2], [1.0, 2.0], nrows=3, ncols=3))
+
+    a = np.array([0, 2], np.uint64)
+    A = Matrix.ss.import_hypercsc(
+        nrows=3,
+        ncols=3,
+        indptr=[0, 1, 2],
+        cols=a,
+        row_indices=a,
+        values=[1.0, 2.0],
+        take_ownership=True,
+    )
+    assert A.isequal(Matrix.from_coo([0, 2], [0, 2], [1.0, 2.0], nrows=3, ncols=3))
+    del A

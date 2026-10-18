@@ -125,6 +125,17 @@ def _ownable_copy(array, order):
     return buf
 
 
+def _distinct_buffers(*arrays):
+    """Copy each array given more than once, since GraphBLAS frees every buffer it takes."""
+    rv = []
+    for array in arrays:
+        if any(array is prev for prev in rv):
+            order = "F" if array.flags.f_contiguous and not array.flags.c_contiguous else "C"
+            array = _ownable_copy(array, order)
+        rv.append(array)
+    return rv
+
+
 def _get_subdtype(dtype):
     while dtype.subdtype is not None:
         dtype = dtype.subdtype[0]
