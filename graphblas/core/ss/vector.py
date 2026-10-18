@@ -14,6 +14,7 @@ from ..operator import get_typed_op
 from ..scalar import Scalar, _as_scalar
 from ..utils import (
     _CArray,
+    _distinct_buffers,
     _MatrixArray,
     ints_to_numpy_buffer,
     normalize_chunks,
@@ -982,8 +983,7 @@ class ss:
         values, dtype = values_to_numpy_buffer(
             values, dtype, copy=copy, ownable=True, subarray_after=1
         )
-        if indices is values:
-            values = np.copy(values)
+        indices, values = _distinct_buffers(indices, values)
         vi = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indices))
         vx = ffi_new("void**", ffi.from_buffer("void*", values))
         if nvals is None:
@@ -1164,8 +1164,7 @@ class ss:
         values, dtype = values_to_numpy_buffer(
             values, dtype, copy=copy, ownable=True, subarray_after=1
         )
-        if bitmap is values:
-            values = np.copy(values)
+        bitmap, values = _distinct_buffers(bitmap, values)
         vhandle = ffi_new("GrB_Vector*")
         vb = ffi_new("int8_t**", ffi.from_buffer("int8_t*", bitmap))
         vx = ffi_new("void**", ffi.from_buffer("void*", values))
