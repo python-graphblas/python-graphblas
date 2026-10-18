@@ -105,7 +105,7 @@ jobs:
       KMP_DUPLICATE_LIB_OK: ${{ contains(matrix.os, 'macos') && 'TRUE' || 'FALSE' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -130,7 +130,7 @@ jobs:
           echo "selected: $selected (from: ${choices[*]})"
           echo "selected=$selected" >> "$GITHUB_OUTPUT"
       - name: Setup conda
-        uses: conda-incubator/setup-miniconda@v3
+        uses: conda-incubator/setup-miniconda@be893c923ea9cf1cf7cd510fbdde27c7e18cbdcb # v4.1.0
         id: setup_conda
         with:
           auto-update-conda: true
@@ -139,7 +139,9 @@ jobs:
           conda-remove-defaults: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'false' || 'true' }}
           channel-priority: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'flexible' || 'strict' }}
           activate-environment: graphblas
-          auto-activate-base: false
+          # setup-miniconda deprecated ``auto-activate-base`` for this name, and warns
+          # on every run that still uses the old one.
+          auto-activate: false
       - name: Update env
         run: |
           # Pick random compatible dependency versions using the version picker script.
@@ -369,7 +371,7 @@ jobs:
           coverage xml
           coverage report --show-missing
       - name: codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           # Codecov takes tokenless uploads only from forks. A PR from a branch of this
           # repository, or a push to main, is refused with "Token required because
