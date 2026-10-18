@@ -204,6 +204,22 @@ def check_element_shape(values, dtype, ndim):
         )
 
 
+def check_values_size(values, dtype, count, is_iso, *, indptr=None):
+    """Raise unless ``values`` holds ``count`` elements of ``dtype``, or one if ``is_iso``.
+
+    With ``indptr``, the count is ``indptr[count]``, as GraphBLAS reads it. GraphBLAS
+    imports compare the byte size of the values with the number of entries, not with
+    the bytes those entries need, so a short array gets through and is read past its end.
+    """
+    if is_iso:
+        count = 1
+    elif indptr is not None:
+        # GraphBLAS rejects an indptr this short itself
+        count = int(indptr[count]) if count < indptr.size else 0
+    if (have := values.nbytes // dtype.np_type.itemsize) < count:
+        raise ValueError(f"values must have {count} or more elements of dtype {dtype}, not {have}")
+
+
 def normalize_values(self, values, dtype, shape=None, is_iso=False):
     """Expand and/or update dtype of values array."""
     if dtype is not None:
