@@ -24,7 +24,7 @@ import sys
 #
 # When updating versions here, also update scripts/check_versions.sh
 #
-# To add a Python version (3.15, say): add it to `choices` in the "RNG for Python
+# To add a Python version (3.16, say): add it to `choices` in the "RNG for Python
 # version" step of test_and_build.yml, give it a row in every table keyed by Python
 # below (`check_python_pools` fails the run if you miss one), and revisit the floors
 # in `apply_constraints`. Those floors are written as `_ver(pyver) >= (3, N)`, so a
@@ -32,12 +32,14 @@ import sys
 # enough to keep CI honest, but usually still too loose to install, so check each dep.
 # ---------------------------------------------------------------------------
 
-# numpy 2.5 requires Python >=3.12, so py3.11 stops at 2.4.
+# numpy 2.5 requires Python >=3.12, so py3.11 stops at 2.4. conda-forge's first py3.15
+# builds are numpy 2.5.2, which the "2.5" pin resolves to.
 NUMPY_VERSIONS = {
     "3.11": ["1.24", "1.25", "1.26", "2.0", "2.1", "2.2", "2.3", "2.4", ""],
     "3.12": ["1.26", "2.0", "2.1", "2.2", "2.3", "2.4", "2.5", ""],
     "3.13": ["2.1", "2.2", "2.3", "2.4", "2.5", ""],
     "3.14": ["2.3", "2.4", "2.5", ""],
+    "3.15": ["2.5", ""],
 }
 
 # Deps that depend on numpy version (1.x vs 2.x path).
@@ -100,7 +102,13 @@ NUMBA_VERSIONS = {
 }
 
 # Oldest numba that supports each Python.
-NUMBA_MIN_PYTHON = {"3.11": (0, 57), "3.12": (0, 59), "3.13": (0, 61), "3.14": (0, 63)}
+NUMBA_MIN_PYTHON = {
+    "3.11": (0, 57),
+    "3.12": (0, 59),
+    "3.13": (0, 61),
+    "3.14": (0, 63),
+    "3.15": (0, 68),
+}
 
 # The numpy ceiling each numba pin declares. numba caps `numpy <X` and refuses to import
 # against anything newer. conda-forge carries that cap in `constrains` rather than
@@ -132,6 +140,7 @@ NETWORKX_VERSIONS = {
     "3.12": ["3.2", "3.3", "3.4", "3.5", "3.6", "3.7", ""],
     "3.13": ["3.4", "3.5", "3.6", "3.7", ""],
     "3.14": ["3.6", "3.7", ""],
+    "3.15": ["3.6", "3.7", ""],
 }
 
 PYYAML_VERSIONS = {
@@ -139,6 +148,7 @@ PYYAML_VERSIONS = {
     "3.12": ["6.0", ""],
     "3.13": ["6.0", ""],
     "3.14": ["6.0", ""],
+    "3.15": ["6.0", ""],
 }
 
 # sparse is noarch and caps neither Python nor numpy: every release here declares numba
@@ -155,6 +165,7 @@ SPARSE_VERSIONS = {
     "3.12": ["0.14", "0.15", "0.16", "0.17", "0.18", "0.19", ""],
     "3.13": ["0.14", "0.15", "0.16", "0.17", "0.18", "0.19", ""],
     "3.14": ["0.14", "0.15", "0.16", "0.17", "0.18", "0.19", ""],
+    "3.15": ["0.14", "0.15", "0.16", "0.17", "0.18", "0.19", ""],
 }
 
 # PSG versions to pair with numpy 1.x (only reachable on py3.11/py3.12, since
@@ -206,9 +217,14 @@ PSG_VERSIONS_NP2 = [
 # can't reach back as far. "source" builds the sdist, and the sdists before 10.3.1.0
 # predate psg's py3.14 support (they still declare requires-python >=3.9), so hold
 # them to the wheel floor rather than test a build psg never claimed works.
-# MAINT: 2026-09-11 checked conda-forge build strings and PyPI wheel tags for psg 9-10
+#
+# py3.15 starts at 10.5.1.1 everywhere: it is psg's first release with py315 builds on
+# conda-forge and cp315 wheels on PyPI, and its sdist is the first from after psg added
+# Python 3.15 support.
+# MAINT: 2026-10-18 checked conda-forge build strings and PyPI wheel tags for psg 9-10
 PSG_MIN_PYTHON = {
     "3.14": {"conda-forge": "10.0.1.1", "wheel": "10.3.1.0", "source": "10.3.1.0"},
+    "3.15": {"conda-forge": "10.5.1.1", "wheel": "10.5.1.1", "source": "10.5.1.1"},
 }
 
 
@@ -315,8 +331,10 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
 
     # --- scipy / Python version availability ---
 
-    # scipy <1.14 has no py3.13 builds; scipy <1.16 has no py3.14 builds
-    if _ver(pyver) >= (3, 14) and v["scipy"] not in ("", "NA") and _ver(v["scipy"]) < (1, 16):
+    # scipy <1.14 has no py3.13 builds, <1.16 none for py3.14, and <1.18 none for py3.15
+    if _ver(pyver) >= (3, 15) and v["scipy"] not in ("", "NA") and _ver(v["scipy"]) < (1, 18):
+        v["scipy"] = _pick_scipy(pyver, npver, scipy_pool, floor=(1, 18))
+    elif _ver(pyver) >= (3, 14) and v["scipy"] not in ("", "NA") and _ver(v["scipy"]) < (1, 16):
         v["scipy"] = _pick_scipy(pyver, npver, scipy_pool, floor=(1, 16))
     elif _ver(pyver) >= (3, 13) and v["scipy"] == "1.13":
         v["scipy"] = _pick_scipy(pyver, npver, scipy_pool, floor=(1, 14))
@@ -327,8 +345,10 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
 
     # --- pandas constraints ---
 
-    # pandas <2.3 has no py3.14 builds
-    if _ver(pyver) >= (3, 14) and v["pandas"] == "2.2":
+    # pandas <2.3 has no py3.14 builds, and <3.0 none for py3.15
+    if _ver(pyver) >= (3, 15) and v["pandas"] not in ("", "NA") and _ver(v["pandas"]) < (3, 0):
+        v["pandas"] = random.choice(["3.0", ""])
+    elif _ver(pyver) >= (3, 14) and v["pandas"] == "2.2":
         v["pandas"] = random.choice(["2.3", "3.0", ""])
 
     # pandas 3.0 requires scipy >=1.14.1. It also requires numba >=0.60, which needs no
@@ -362,8 +382,12 @@ def apply_constraints(v, pyver, scipy_pool, numba_pool):
 
     # --- awkward / Python version availability ---
 
-    # awkward <2.7 has no py3.13 builds; awkward <2.8 has no py3.14 builds
-    if _ver(pyver) >= (3, 14) and v["awkward"] not in ("", "NA") and _ver(v["awkward"]) < (2, 8):
+    # awkward <2.7 has no py3.13 builds, <2.8 none for py3.14, and <2.13 none for py3.15
+    # (awkward is noarch, but each release pins one awkward-cpp, and awkward-cpp 56 is the
+    # first with py315 builds)
+    if _ver(pyver) >= (3, 15) and v["awkward"] not in ("", "NA") and _ver(v["awkward"]) < (2, 13):
+        v["awkward"] = random.choice([a for a in AWKWARD_VERSIONS["2.x"] if _ver(a) >= (2, 13)])
+    elif _ver(pyver) >= (3, 14) and v["awkward"] not in ("", "NA") and _ver(v["awkward"]) < (2, 8):
         v["awkward"] = random.choice(["2.8", "2.9", ""])
     elif _ver(pyver) >= (3, 13) and v["awkward"] == "2.6":
         v["awkward"] = random.choice(["2.7", "2.8", "2.9", ""])
@@ -677,8 +701,10 @@ def validate(v, pyver, source_type=None):
         errors.append(f"scipy {v['scipy']} requires numpy <{cap}, got {v['numpy'] or 'latest'}")
 
     # scipy Python availability
-    if _ver(pyver) >= (3, 14) and v["scipy"] not in ("", "NA") and _ver(v["scipy"]) < (1, 16):
-        errors.append(f"scipy {v['scipy']} has no py{pyver} build")
+    if _ver(pyver) >= (3, 15) and v["scipy"] not in ("", "NA") and _ver(v["scipy"]) < (1, 18):
+        errors.append(f"scipy {v['scipy']} has no py{pyver} build (needs >=1.18)")
+    elif _ver(pyver) >= (3, 14) and v["scipy"] not in ("", "NA") and _ver(v["scipy"]) < (1, 16):
+        errors.append(f"scipy {v['scipy']} has no py{pyver} build (needs >=1.16)")
     elif _ver(pyver) >= (3, 13) and v["scipy"] == "1.13":
         errors.append(f"scipy 1.13 has no py{pyver} build")
     if v["scipy"] and _ver(pyver) < (floor := SCIPY_MIN_PYTHON.get(v["scipy"], (0,))):
@@ -686,7 +712,9 @@ def validate(v, pyver, source_type=None):
         errors.append(f"scipy {v['scipy']} requires Python >={need}, has no py{pyver} build")
 
     # pandas Python availability
-    if _ver(pyver) >= (3, 14) and v["pandas"] == "2.2":
+    if _ver(pyver) >= (3, 15) and v["pandas"] not in ("", "NA") and _ver(v["pandas"]) < (3, 0):
+        errors.append(f"pandas {v['pandas']} has no py{pyver} build")
+    elif _ver(pyver) >= (3, 14) and v["pandas"] == "2.2":
         errors.append(f"pandas 2.2 has no py{pyver} build")
 
     # pandas 3.0 requirements (numba >=0.60 is unreachable; see `apply_constraints`)
@@ -703,8 +731,10 @@ def validate(v, pyver, source_type=None):
         errors.append(f"pandas {v['pandas']} constrains scipy >=1.10.0, got {v['scipy']}")
 
     # awkward Python availability
-    if _ver(pyver) >= (3, 14) and v["awkward"] not in ("", "NA") and _ver(v["awkward"]) < (2, 8):
-        errors.append(f"awkward {v['awkward']} has no py{pyver} build")
+    if _ver(pyver) >= (3, 15) and v["awkward"] not in ("", "NA") and _ver(v["awkward"]) < (2, 13):
+        errors.append(f"awkward {v['awkward']} has no py{pyver} build (needs >=2.13)")
+    elif _ver(pyver) >= (3, 14) and v["awkward"] not in ("", "NA") and _ver(v["awkward"]) < (2, 8):
+        errors.append(f"awkward {v['awkward']} has no py{pyver} build (needs >=2.8)")
     elif _ver(pyver) >= (3, 13) and v["awkward"] == "2.6":
         errors.append(f"awkward 2.6 has no py{pyver} build")
 
