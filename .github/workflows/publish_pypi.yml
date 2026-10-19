@@ -37,12 +37,21 @@ jobs:
           if-no-files-found: error
       - name: Check with twine
         run: python -m twine check --strict dist/*
-      # TODO: publish with Trusted Publishing instead of a token. That needs a trusted
-      # publisher registered for this repository on PyPI, which this file cannot check,
-      # and a release is the wrong time to find out it is missing.
+
+  publish:
+    needs: build_and_deploy
+    if: startsWith(github.ref, 'refs/tags/') && github.repository == 'python-graphblas/python-graphblas'
+    runs-on: ubuntu-latest
+    # The trusted publisher registered on PyPI names this environment, which also asks a
+    # maintainer to approve the upload.
+    environment: pypi
+    permissions:
+      # Only this job can mint the OIDC token that PyPI exchanges for upload rights.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: releases
+          path: dist
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
-        if: startsWith(github.ref, 'refs/tags/') && github.repository == 'python-graphblas/python-graphblas'
-        with:
-          user: __token__
-          password: ${{ secrets.PYPI_TOKEN }} # zizmor: ignore[use-trusted-publishing]
