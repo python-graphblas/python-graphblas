@@ -426,6 +426,28 @@ def test_take_ownership_asks_suitesparse_graphblas(monkeypatch):
     assert d["values"].flags.owndata
 
 
+def test_take_ownership_without_can_unclaim_buffer(monkeypatch):
+    # suitesparse-graphblas < 10.5.1.1 has neither function. GraphBLAS then takes an
+    # array that owns its data and is writeable, and gets a NumPy copy of any other.
+    monkeypatch.setattr(gb.core.utils, "can_unclaim_buffer", None)
+    monkeypatch.setattr(gb.core.utils, "empty", None)
+    v = Vector.from_coo([1, 3], [10, 20], size=5)
+    d = v.ss.export("sparse")
+    d["indices"].flags.writeable = False
+    values = np.array([10, 20, 0, 0])
+    w = Vector.ss.import_sparse(take_ownership=True, **dict(d, values=values[:2]))
+    assert w.isequal(v)
+    assert d["indices"].flags.owndata
+    values[:] = 0  # w has a copy of the view
+    assert w.isequal(v)
+
+    d = v.ss.export("sparse")
+    w = Vector.ss.import_sparse(take_ownership=True, **d)
+    assert w.isequal(v)
+    assert not d["indices"].flags.owndata
+    assert not d["values"].flags.owndata
+
+
 # Run in a subprocess: GraphBLAS is initialized once per process, and this needs
 # it initialized with libc's allocator before python-graphblas starts.
 _LIBC_ALLOCATOR_PROBE = """
