@@ -387,13 +387,24 @@ C_RS = (0.5, 2.1)
 # / 43 ms at 8 / 1 threads, and (3000, 2e7) -> (6e6, 1e4) at 7.7e6 took 21 / 106 ms
 # (2026-10-20); without this term a radix chain looked cheaper than one transpose at 1 thread.
 C_RS_ROW = (4.0, 21.0)
-C_REBUILD = (9.0, 60.0)
+# Into mostly empty rows (more than 4 row positions per expected nonempty row) a reshape is
+# cheap: 7.1 / 25 ms for 1e7 entries into 9.5e6 of 1e8 rows (skew), 8.6 / 30 into 2.3e6 of
+# 1e10 (Zipf). The output is hypersparse, and its hash of the rows, 5-10x the reshape, is built
+# later and only when something needs it: a wait, or row lookups in P @ M (C_PERM_ROW); a
+# transpose or a reshape does not. (C_RS_ROW was measured with a wait; for rows that fill, the
+# next step pays about that much.)
+C_RS_HYPER_ROW = (0.25, 0.5)
+# A transpose into hypersparse rows: 7.8 / 57 ns per entry for Zipf into 1e10 rows, 10.6 / 57
+# for hyper into 2.7e11, far above the T_TABLE values for 1e7 rows (measured 2026-10-20).
+C_T_HYPER = (9.0, 55.0)
+# REBUILD measured 11-17 / 75-85 ns per entry (NELL-2, skew, Zipf; 2026-10-20)
+C_REBUILD = (14.0, 75.0)
 C_PERM_ENTRY = (0.6, 2.0)
-# Per nonempty row of P @ M: about 6 ns at 8 threads when the rows come from a reshape (13 ms
-# for 1e6 rows of 10 in a chain on 1000^3, measured 2026-10-20); rows that are mostly empty
+# Per nonempty row of P @ M: about 8 / 45 ns at 8 / 1 threads when the rows come from a reshape
+# (u7: 15 / 69 ms for 1e6 rows of 10 in a chain, measured 2026-10-20); rows that are mostly empty
 # (hypersparse storage, about one entry each) pay a hash lookup per row: 31 ns (s1, case H)
 # to 61 ns (skew (1e5, 1e3, 10) rows (j, i)).
-C_PERM_ROW = {"sparse": (6.0, 2.0), "hyper": (50.0, 185.0)}
+C_PERM_ROW = {"sparse": (8.0, 45.0), "hyper": (50.0, 185.0)}
 # Building P (numpy, one thread): per row of a full P (cached when it fits the cache), and
 # per nonempty row of a P built from the nonempty rows (unravel, ravel and an unsorted build).
 C_PBUILD_FULL = 13.0
@@ -429,7 +440,10 @@ def t_cost(out_rows, ti):
 
 def rs_cost(shape, seq, q, nnz, ti):
     """A reshape moving the split of ``seq`` to ``q``: per entry and per output row."""
-    return C_RS[ti] * nnz + C_RS_ROW[ti] * expected_rows(prod(shape, seq[:q]), nnz) + C_STEP
+    nrows = prod(shape, seq[:q])
+    R = expected_rows(nrows, nnz)
+    per_row = C_RS_HYPER_ROW[ti] if nrows > 4 * R else C_RS_ROW[ti]
+    return C_RS[ti] * nnz + per_row * R + C_STEP
 
 
 def rebuild_cost(nnz, ti):
@@ -446,12 +460,13 @@ def _neighbors(state, shape, nnz, ti, hyper1, allow_perm, total_ok):
     # A transpose with an empty group is a reshape (RS covers it).
     if 0 < p < n:
         out_rows = prod(shape, seq[p:])
-        cost = t_cost(out_rows, ti) * nnz
+        hyper_out = out_rows > 16 * expected_rows(out_rows, nnz)
+        cost = (C_T_HYPER[ti] if hyper_out else t_cost(out_rows, ti)) * nnz
         threads = None
         # A transpose into many rows is slower at 4 or 8 threads than at 2, which runs
         # SuiteSparse's non-atomic method and is 1.2-1.8x faster than 1 thread
         # (~/git/GraphBLAS/mres/transpose_thread_scaling); price 2 threads too.
-        if ti == 0 and out_rows >= 1e5:
+        if ti == 0 and out_rows >= 1e5 and not hyper_out:
             cost2 = C_T_TWO_THREADS * t_cost(out_rows, 1) * nnz
             if cost2 < cost:
                 cost = cost2
