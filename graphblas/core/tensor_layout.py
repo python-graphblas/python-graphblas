@@ -25,10 +25,11 @@ from typing import NamedTuple
 import numpy as np
 
 from .. import semiring as _semiring
-from ..dtypes import BOOL, lookup_dtype
+from ..dtypes import BOOL, UINT32, UINT64, lookup_dtype
 from ..exceptions import _error_code_lookup
 from . import NULL, ffi, lib
 from .matrix import Matrix
+from .vector import Vector
 
 # GraphBLAS dimensions go up to GrB_INDEX_MAX + 1 = 2^60.
 MAX_GROUP = 2**60
@@ -397,8 +398,11 @@ C_RS_HYPER_ROW = (0.25, 0.5)
 # A transpose into hypersparse rows: 7.8 / 57 ns per entry for Zipf into 1e10 rows, 10.6 / 57
 # for hyper into 2.7e11, far above the T_TABLE values for 1e7 rows (measured 2026-10-20).
 C_T_HYPER = (9.0, 55.0)
-# REBUILD measured 11-17 / 75-85 ns per entry (NELL-2, skew, Zipf; 2026-10-20)
+# REBUILD measured 11-17 / 75-85 ns per entry (NELL-2, skew, Zipf; 2026-10-20), most of it the
+# builder's sort; when the new keys arrive sorted (the same axis order, a split move) the
+# builder skips it: 5.9 / 9.9 ns (bench/wishlist_probes/bigsplit)
 C_REBUILD = (14.0, 75.0)
+C_REBUILD_SORTED = (6.0, 10.0)
 C_PERM_ENTRY = (0.6, 2.0)
 # Per nonempty row of P @ M: about 8 / 45 ns at 8 / 1 threads when the rows come from a reshape
 # (u7: 15 / 69 ms for 1e6 rows of 10 in a chain, measured 2026-10-20); rows that are mostly empty
@@ -408,6 +412,12 @@ C_PERM_ROW = {"sparse": (8.0, 45.0), "hyper": (50.0, 185.0)}
 # Building P (numpy, one thread): per row of a full P (cached when it fits the cache), and
 # per nonempty row of a P built from the nonempty rows (unravel, ravel and an unsorted build).
 C_PBUILD_FULL = 13.0
+# PERM_C: the new column indices through a cached map (GraphBLAS gather) or computed (numpy),
+# per entry, then each row's sort, per entry and log2 of the entries per row (1e7 entries,
+# measured 2026-10-20: 10 per row 7.2 / 35 ms + 12 / 95; 1e4 per row 38 / 47 ms + 46 / 346)
+C_PERM_C_MAP = (0.7, 3.5)
+C_PERM_C_ARITH = (3.5, 4.5)
+C_PERM_C_SORT = (0.35, 2.8)
 C_PBUILD_ROW = (25.0, 70.0)
 T_TABLE = [
     (1e3, 0.52, 1.82),
@@ -446,17 +456,20 @@ def rs_cost(shape, seq, q, nnz, ti):
     return C_RS[ti] * nnz + per_row * R + C_STEP
 
 
-def rebuild_cost(nnz, ti):
-    return C_REBUILD[ti] * nnz + C_REBUILD_FIXED
+def rebuild_cost(nnz, ti, *, sorted_keys=False):
+    return (C_REBUILD_SORTED if sorted_keys else C_REBUILD)[ti] * nnz + C_REBUILD_FIXED
 
 
 def _neighbors(state, shape, nnz, ti, hyper1, allow_perm, total_ok):
     seq, p = state
     n = len(seq)
-    if total_ok:
-        for q in range(n + 1):
-            if q != p and _valid_split(shape, seq, q):
+    for q in range(n + 1):
+        if q != p and _valid_split(shape, seq, q):
+            if total_ok:
                 yield ("RS", q), (seq, q), rs_cost(shape, seq, q, nnz, ti)
+            else:
+                # Reshape refuses totals past 2^60; a REBUILD keeps the order (no sort)
+                yield ("REBUILD", (seq, q)), (seq, q), rebuild_cost(nnz, ti, sorted_keys=True)
     # A transpose with an empty group is a reshape (RS covers it).
     if 0 < p < n:
         out_rows = prod(shape, seq[p:])
@@ -490,6 +503,16 @@ def _neighbors(state, shape, nnz, ti, hyper1, allow_perm, total_ok):
         for perm in itertools.permutations(seq[:p]):
             if perm != seq[:p]:
                 yield ("PERM_R", perm), (perm + seq[p:], p), cost
+    if n - p >= 2:
+        # Values untouched, so any dtype; the sort of each row is priced in, although a
+        # following transpose would skip it
+        ncols = prod(shape, seq[p:])
+        per_row = nnz / max(expected_rows(prod(shape, seq[:p]), nnz), 1.0)
+        gather = C_PERM_C_MAP if _col_map_ok(ncols, nnz) else C_PERM_C_ARITH
+        cost = (gather[ti] + C_PERM_C_SORT[ti] * math.log2(max(2.0, per_row))) * nnz + C_STEP
+        for perm in itertools.permutations(seq[p:]):
+            if perm != seq[p:]:
+                yield ("PERM_C", perm), (seq[:p] + perm, p), cost
 
 
 def expected_rows(nrows, nnz):
@@ -511,8 +534,9 @@ def plan(shape, src, targets, nnz, nthreads, *, hyper1=False, allow_perm=True):
     key = (shape, src, targets, ti, hyper1, allow_perm, int(nnz).bit_length())
     if (rv := _plan_cache.get(key)) is not None:
         return rv
-    fallback = min(targets)
-    rebuild = rebuild_cost(nnz, ti)
+    # Prefer a target in the source's axis order: its REBUILD needs no sort
+    fallback = min(targets, key=lambda t: (t[0] != src[0], t))
+    rebuild = rebuild_cost(nnz, ti, sorted_keys=fallback[0] == src[0])
     rv = (rebuild, [("REBUILD", fallback)], fallback)
     if len(shape) <= MAX_PLANNED_NDIM and nnz > 0:
         total_ok = math.prod(shape) < MAX_GROUP
@@ -544,12 +568,15 @@ def plan(shape, src, targets, nnz, nthreads, *, hyper1=False, allow_perm=True):
 
 def _perm_semiring(M):
     # P has one entry per row, so the monoid never combines two values; pick a factory kernel
-    # (DESIGN.md 7.2). An iso M stays iso only with any_second (plus_second drops it).
-    if M.ss.is_iso:
-        return _semiring.any_second
-    if M.dtype == BOOL:
+    # (DESIGN.md 7.2). min_second is one for the 32- and 64-bit integer and floating types, and
+    # it keeps an iso M iso; SuiteSparse 10 compiled out any_second, and plus_second is generic
+    # for UINT32 / UINT64 and drops iso (bench/wishlist_probes/burble_semiring, burble_iso).
+    # BOOL and the 8- and 16-bit integers have no factory SECOND kernel; complex has no min.
+    if M.dtype.name in {"FC32", "FC64"}:
+        return _semiring.any_second if M.ss.is_iso else _semiring.plus_second
+    if M.dtype == BOOL and not M.ss.is_iso:
         return _semiring.lor_second
-    return _semiring.plus_second
+    return _semiring.min_second
 
 
 def _perm_matrix(shape, old_rows, new_rows, M):
@@ -581,6 +608,66 @@ def perm_rows(M, shape, old_rows, new_rows):
     out = new_matrix(M.dtype, M._nrows, M._ncols)
     out << P.mxm(M, _perm_semiring(M))
     return out
+
+
+def _col_map(shape, old_cols, new_cols, ncols):
+    """``g`` with ``g[old_col] = new_col`` for a reordering of the column group's axes: a full
+    Vector of 32- or 64-bit indices, shape-only and cached.
+    """
+    key = ("Q", tuple(shape[a] for a in old_cols), old_cols, new_cols)
+    if (g := _matrix_cache.get(key)) is not None:
+        return g
+    co = {}
+    unravel(np.arange(ncols, dtype=np.int64), shape, old_cols, co)
+    dtype = UINT32 if ncols <= 2**32 else UINT64
+    g = Vector.from_dense(ravel(co, shape, new_cols).astype(dtype.np_type), dtype=dtype)
+    _matrix_cache.put(key, g, ncols)
+    return g
+
+
+def _col_map_ok(ncols, nnz):
+    # Past about 2^17 columns the map no longer sits in cache and computing the new indices
+    # costs the same (3.4-3.7 ns per entry at 8 threads, measured 2026-10-20)
+    return ncols <= min(2**17, max(4 * nnz, 4096))
+
+
+def perm_cols(M, shape, state, new_cols):
+    """Reorder the axes of ``M``'s column group (``state``'s) to ``new_cols``, in place: the
+    column indices go through the map inside the Container and the rows are marked jumbled, so
+    SuiteSparse sorts each row only when something needs it (a transpose does not). The map is
+    one-to-one, so the new indices within a row stay distinct. Values are not touched.
+    """
+    seq, p = state
+    old_cols = seq[p:]
+    if M._nvals == 0:
+        return M
+    if M.ss.format not in {"csr", "hypercsr"}:
+        # Bitmap or full storage has no column index array
+        return rebuild(M, shape, state, (seq[:p] + new_cols, p))
+    ncols = M._ncols
+    use_map = _col_map_ok(ncols, M._nvals)  # (M reads as empty while unloaded)
+    with _Unloaded(M) as cont:
+        if use_map:
+            # Gather through the cached map in GraphBLAS (parallel)
+            g = _col_map(shape, old_cols, new_cols, ncols)
+            n = ffi.new("GrB_Index*")
+            _check(lib.GrB_Vector_size(n, cont.i), "GrB_Vector_size")
+            w = Vector(g.dtype, n[0])
+            _check(
+                lib.GxB_Vector_extract_Vector(w.gb_obj[0], NULL, NULL, g.gb_obj[0], cont.i, NULL),
+                "GxB_Vector_extract_Vector",
+            )
+            _check(lib.GrB_Vector_free(ffi.new("GrB_Vector*", cont.i)), "GrB_Vector_free")
+            cont.i = w.gb_obj[0]
+            w.gb_obj[0] = NULL
+        else:
+            # A column group far wider than the data: compute the new indices (numpy)
+            with _VectorArray(cont.i) as iv:
+                co = {}
+                unravel(iv.array.astype(np.int64), shape, old_cols, co)
+                iv.array[:] = ravel(co, shape, new_cols)
+        cont.jumbled = True
+    return M
 
 
 def rebuild(M, shape, src, dst):
@@ -635,6 +722,9 @@ def execute(M, shape, state, path):
         elif kind == "PERM_R":
             M = perm_rows(M, shape, seq[:p], edge[1])
             state = (edge[1] + seq[p:], p)
+        elif kind == "PERM_C":
+            M = perm_cols(M if owned else M.dup(), shape, state, edge[1])
+            state = (seq[:p] + edge[1], p)
         else:
             M = rebuild(M, shape, state, edge[1])
             state = edge[1]
