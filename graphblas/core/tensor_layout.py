@@ -540,12 +540,15 @@ def plan(shape, src, targets, nnz, nthreads, *, hyper1=False, allow_perm=True):
     key = (shape, src, targets, ti, hyper1, allow_perm, int(nnz).bit_length())
     if (rv := _plan_cache.get(key)) is not None:
         return rv
-    # Prefer a target in the source's axis order: its REBUILD needs no sort
+    # Past 2^60 positions in total, prefer a target in the source's axis order: its REBUILD
+    # needs no sort. Below, such a target is reached by reshapes, which cost less still in a
+    # chain (the sorted REBUILD's price would undercut RS's, measured with a wait: u6 tdot1 at
+    # 1 thread took a REBUILD, 33 ms against 24)
+    total_ok = math.prod(shape) < MAX_GROUP
     fallback = min(targets, key=lambda t: (t[0] != src[0], t))
-    rebuild = rebuild_cost(nnz, ti, sorted_keys=fallback[0] == src[0])
+    rebuild = rebuild_cost(nnz, ti, sorted_keys=fallback[0] == src[0] and not total_ok)
     rv = (rebuild, [("REBUILD", fallback)], fallback)
     if len(shape) <= MAX_PLANNED_NDIM and nnz > 0:
-        total_ok = math.prod(shape) < MAX_GROUP
         # Nodes are (state, whether its rows come straight from a reshape)
         node = (src, False)
         best = {node: 0.0}
