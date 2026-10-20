@@ -2150,3 +2150,21 @@ def test_wide_column_group_paths(nthreads):
         Y, yv, yp = random_tensor(yshape, rng, density=0.7)
         R = (X * Y).new(nthreads=nthreads)
         check(R, *np_bcast("mult", xv, xp, yv, yp, np.multiply), approx=True)
+
+
+def test_transpose_thread_choices():
+    """Into many rows a direct transpose wins at 1 thread (radix chains pay a reshape per
+    output row) and runs on 2 threads when that beats the 8-thread price.
+    """
+    shape = (1000, 1000, 1000)
+    src = ((2, 0, 1), 1)  # (k | i,j)
+    dst = frozenset([((0, 1, 2), 2)])  # (i,j | k): a transpose into 1e6 rows
+    _, path1, _ = tl.plan(shape, src, dst, 10**7, 1)
+    assert path1 == [("T", None)]
+    _, path8, _ = tl.plan(shape, src, dst, 10**7, 8)
+    assert [e[0] for e in path8] == ["RS", "T", "RS", "T", "RS"]
+    # A wide transpose with no cheap chain (2-d): 2 threads
+    _, path, _ = tl.plan((1000, 10**6), ((0, 1), 1), frozenset([((1, 0), 1)]), 10**7, 8)
+    assert path == [("T", 2)]
+    M = Matrix.from_coo([0, 1], [5, 3], [1.0, 2.0], nrows=2, ncols=6)
+    assert tl.transpose(M, nthreads=2).isequal(M.T.new())
