@@ -1478,3 +1478,107 @@ def test_broadcast_mult_strategies(layout, monkeypatch):
     monkeypatch.setattr(tl, "density", lambda M: True)
     Y, yv, yp = random_tensor((4, 1), rng, density=0.7)
     check((X * Y).new(), *np_bcast("mult", xv, xp, yv, yp, np.multiply), approx=True)
+
+
+# --------------------------------------------------------------------------------------------
+# Phase 2a.4: matmul
+
+
+def np_matmul(xv, xp, yv, yp):
+    v = np.matmul(xv, yv)
+    p = np.matmul(xp.astype(np.int64), yp.astype(np.int64)) > 0
+    return np.where(p, v, 0), p
+
+
+MATMUL_SHAPES = [
+    ((3, 4), (4, 5)),
+    ((4,), (4, 5)),
+    ((3, 4), (4,)),
+    ((4,), (4,)),
+    ((2, 3, 4), (2, 4, 5)),
+    ((2, 3, 4), (4, 5)),
+    ((3, 4), (2, 4, 5)),
+    ((2, 1, 3, 4), (5, 4, 6)),
+    ((2, 3, 4), (4,)),
+    ((5,), (2, 5, 3)),
+    ((7, 2, 3), (7, 3, 2)),
+    ((2, 3, 2, 4), (3, 4, 2)),
+]
+
+
+@pytest.mark.parametrize(("xshape", "yshape"), MATMUL_SHAPES)
+@pytest.mark.parametrize("nthreads", [1, 8])
+def test_matmul(xshape, yshape, nthreads):
+    rng = np.random.default_rng(45)
+    for lx in [None, all_layouts(len(xshape))[-1]]:
+        X, xv, xp = random_tensor(xshape, rng, layout=lx, density=0.5)
+        Y, yv, yp = random_tensor(yshape, rng, density=0.5)
+        R = X.matmul(Y).new(nthreads=nthreads)
+        check(R, *np_matmul(xv, xp, yv, yp), approx=True)
+        check((X @ Y).new(nthreads=nthreads), *np_matmul(xv, xp, yv, yp), approx=True)
+
+
+def test_matmul_semirings_operands_and_errors(monkeypatch):
+    rng = np.random.default_rng(46)
+    X, xv, xp = random_tensor((3, 2, 4), rng, density=0.6)
+    Y, yv, yp = random_tensor((3, 4, 5), rng, density=0.6)
+    # min_plus by brute force
+    R = gb.semiring.min_plus(X @ Y).new()
+    big = np.where(xp, xv, np.inf)[..., :, None] + np.where(yp, yv, np.inf)[:, None, :, :]
+    ev = big.min(axis=2)
+    check(R, np.where(np.isfinite(ev), ev, 0), np.isfinite(ev), approx=True)
+    # Matrix and ndarray operands on either side
+    A = Matrix.from_coo([0, 1, 3], [1, 0, 4], [1.0, 2.0, 3.0], nrows=4, ncols=5)
+    av, ap = A.to_dense(0.0), A.to_dense(0.0) != 0
+    check((X @ A).new(), *np_matmul(xv, xp, av, ap), approx=True)
+    B = Matrix.from_coo([0, 1], [1, 0], [1.0, 2.0], nrows=2, ncols=2)
+    bv, bp = B.to_dense(0.0), B.to_dense(0.0) != 0
+    check((B @ X).new(), *np_matmul(bv, bp, xv, xp), approx=True)
+    d = rng.random((4, 3))
+    check((X @ d).new(), *np_matmul(xv, xp, d, np.ones_like(d, bool)), approx=True)
+    # The embedding falls back to a rebuild when it cannot change the indices in place
+    monkeypatch.setattr(tl, "embed_block_diagonal", lambda *args: False)
+    check(X.matmul(Y).new(nthreads=8), *np_matmul(xv, xp, yv, yp), approx=True)
+    monkeypatch.undo()
+    with pytest.raises(DimensionMismatch, match="last axis"):
+        X @ Tensor(float, 5, 2)
+    with pytest.raises(DimensionMismatch, match="batch"):
+        X @ Tensor(float, 2, 4, 2)
+    with pytest.raises(ValueError, match="0-d"):
+        X.matmul(Tensor(float))
+    with pytest.raises(TypeError):
+        X.matmul(Y, binary.plus)
+    assert "matmul" in repr(X.matmul(Y))
+
+
+def test_embed_block_diagonal():
+    rng = np.random.default_rng(47)
+    for rows_per_block, nblocks, K, fmt in [
+        (3, 4, 5, "sparse"),
+        (100, 10, 50, "hypersparse"),
+        (3, 4, 2**20, "hypersparse"),
+    ]:
+        n = 40
+        r = rng.integers(0, rows_per_block * nblocks, n)
+        c = rng.integers(0, K, n)
+        lin = np.unique(r.astype(np.int64) * K + c)
+        r, c = lin // K, lin % K
+        M = Matrix.from_coo(r, c, np.arange(r.size, dtype=float), nrows=r.max() + 1, ncols=K)
+        M.resize(rows_per_block * nblocks, K)
+        M.ss.config["sparsity_control"] = fmt
+        assert tl.embed_block_diagonal(M, rows_per_block, nblocks)
+        ref = Matrix.from_coo(
+            r,
+            c + (r // rows_per_block) * K,
+            np.arange(r.size, dtype=float),
+            nrows=rows_per_block * nblocks,
+            ncols=nblocks * K,
+        )
+        assert M.isequal(ref)
+    # bitmap storage has no column index array
+    M = Matrix.from_dense(np.ones((4, 3)))
+    assert not tl.embed_block_diagonal(M, 2, 2)
+    E = Matrix(float, 4, 3)
+    E.ss.config["sparsity_control"] = "sparse"
+    assert tl.embed_block_diagonal(E, 2, 2)
+    assert E.shape == (4, 6)
