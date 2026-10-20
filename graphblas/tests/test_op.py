@@ -7023,6 +7023,9 @@ def test_udt_ret_dtype_rejects_a_return_it_cannot_hold():
     assert flat[FP64, FP64].return_type is nested
     binary_rejects(lambda x, y: (x, y, x + y), arr2, "tuple of length 3, which cannot be written")
     binary_rejects(lambda x, y: (x, y), FP64, "tuple of length 2, which cannot be written")
+    binary_rejects(
+        lambda x, y: x if x > y else None, FP64, "returned a value that can be None, which cannot"
+    )
 
     def unary_rejects(func, ret_dtype, operand, match):
         op_ = UnaryOp.register_anonymous(func, is_udt=True, ret_dtype=ret_dtype)
@@ -7034,9 +7037,11 @@ def test_udt_ret_dtype_rejects_a_return_it_cannot_hold():
     unary_rejects(lambda x: x, arr3, rec2, "record with fields")
     unary_rejects(lambda x: x, rec2, arr3, "returned an array, which cannot be written")
 
-    # What a declared type can hold still works: one value per field, a
-    # scalar that fills an array element, and a scalar cast to the declared type.
+    # What a declared type can hold still works: one value per field, a value of
+    # the declared record type, a scalar that fills an array element, and a scalar
+    # cast to the declared type.
     ok = BinaryOp.register_anonymous(lambda x, y: (x, y), is_udt=True, ret_dtype=rec2)
+    same = UnaryOp.register_anonymous(lambda x: x, is_udt=True, ret_dtype=rec2)
     fill = BinaryOp.register_anonymous(lambda x, y: x + y, is_udt=True, ret_dtype=arr2)
     cast = BinaryOp.register_anonymous(lambda x, y: x + y, is_udt=True, ret_dtype=INT64)
     w = Vector(FP64, size=1)
@@ -7044,6 +7049,9 @@ def test_udt_ret_dtype_rejects_a_return_it_cannot_hold():
     u = Vector(FP64, size=1)
     u[0] = 1.0
     assert tuple(w.ewise_mult(u, ok).new()[0].new().value.tolist()) == (3.0, 1.0)
+    r = Vector(rec2, size=1)
+    r[0] = (1.0, 2.0)
+    assert tuple(r.apply(same).new()[0].new().value.tolist()) == (1.0, 2.0)
     np.testing.assert_array_equal(w.ewise_mult(u, fill).new()[0].new().value, [4.0, 4.0])
     assert w.ewise_mult(u, cast).new()[0].new().value == 4
 
