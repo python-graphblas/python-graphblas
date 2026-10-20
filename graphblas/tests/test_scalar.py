@@ -754,6 +754,8 @@ def test_udt_eq_without_numba_matches_binary_eq(monkeypatch):
         (r, a),
         (t, Scalar.from_value(b"ab", dtypes.register_anonymous(np.dtype("S7")))),
         (t, 1),
+        # A number for a bytes field does not compare.
+        (Scalar.from_value((b"ab", 1), np.dtype([("tx", "S2"), ("tn", np.int8)])), (1, 1)),
     ]
 
     def compare_all():

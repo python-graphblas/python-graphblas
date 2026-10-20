@@ -303,6 +303,40 @@ def _promoted_record(records, result_leaves):
     return np.dtype(fields, align=any(r.isalignedstruct for r in records))
 
 
+def _value_kind(np_type):
+    """What a leaf of ``np_type`` holds, as ``eq`` compares it: a number, text, or its own kind."""
+    if np_type.kind in "biufc":
+        return "number"
+    return "text" if np_type.kind in "SU" else np_type.kind
+
+
+def _check_leaves_compare(op_name, dtype, dtype2):
+    """Raise ``KeyError`` unless each pair of leaves that ``eq`` compares holds one kind of value.
+
+    Text, a date, a duration and a number compare only with their own kind, as
+    ``plus`` finds no common type for any other pair. ``dtype`` and ``dtype2``
+    already pair (:func:`_check_udt_pair`); a side that is not a record stands
+    in every leaf of the other.
+    """
+
+    def leaves(np_type):
+        if np_type.names is not None:
+            return [leaf.base for _py, _c, leaf in _iter_record_leaves(np_type)]
+        return [np_type.base]
+
+    xs, ys = leaves(dtype.np_type), leaves(dtype2.np_type)
+    if len(xs) == 1:
+        xs = xs * len(ys)
+    if len(ys) == 1:
+        ys = ys * len(xs)
+    for x, y in zip(xs, ys, strict=True):
+        if _value_kind(x) != _value_kind(y):
+            raise KeyError(
+                f"binary.{op_name} does not work with ({dtype}, {dtype2}): elements of "
+                f"{x} and {y} do not compare."
+            )
+
+
 # Storing a value of one type in an object of another.
 
 
@@ -679,6 +713,7 @@ def _udt_eq_without_numba(scalar, other):
     # field names, array shapes that do not broadcast, a record and an array).
     info = _get_udt_info(scalar.dtype), _get_udt_info(other.dtype)
     _check_udt_pair("eq", scalar.dtype, other.dtype, *info)
+    _check_leaves_compare("eq", scalar.dtype, other.dtype)
     return _leaves_equal(scalar.value, scalar.dtype.np_type, other.value, other.dtype.np_type)
 
 

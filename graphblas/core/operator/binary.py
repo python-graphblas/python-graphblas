@@ -65,13 +65,19 @@ if _has_numba:
         neither a record nor an array (bytes, say) compares only with its
         own type, as one value. Returns ``(wrapper_func, wrapper_sig)``.
         """
-        from ..udt import _check_udt_pair, _get_udt_info, _iter_record_leaves
+        from ..udt import (
+            _check_leaves_compare,
+            _check_udt_pair,
+            _get_udt_info,
+            _iter_record_leaves,
+        )
         from .udt_codegen import _array_operand_source
 
         info_x = _get_udt_info(dtype)
         info_y = _get_udt_info(dtype2)
         op_name = "eq" if is_eq else "ne"
         _check_udt_pair(op_name, dtype, dtype2, info_x, info_y)
+        _check_leaves_compare(op_name, dtype, dtype2)
 
         nt = numba.types
         cmp_op = "==" if is_eq else "!="
