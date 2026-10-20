@@ -1490,6 +1490,13 @@ def _expand(t, shape):
     return Tensor._from_M(M, shape, layout)
 
 
+def _lift_rank(t, ndim):
+    """``t`` with leading size-1 axes added up to ``ndim`` axes (metadata only)."""
+    if t.ndim == ndim:
+        return t
+    return t.expand_dims(tuple(range(ndim - t.ndim)))
+
+
 def _one_term_monoid(dtype):
     # Diagonal scaling sums one term per output, so any monoid gives the same value; pick one
     # with factory kernels for the output type.
@@ -1501,6 +1508,11 @@ def _one_term_monoid(dtype):
 
 
 def _bcast_recipe(updater, method, a, b, op, untyped_op, extra, shape):
+    # Give both operands the result's rank first. A lower-rank operand whose missing leading
+    # axes are all size 1 repeats once (broadcast factor 1) yet has fewer axes than the
+    # result, so "covers the result" must also mean "has its axes".
+    a = _lift_rank(a, len(shape))
+    b = _lift_rank(b, len(shape))
     if method == "ewise_mult":
         _bcast_mult(updater, a, b, op, untyped_op, shape)
     else:
