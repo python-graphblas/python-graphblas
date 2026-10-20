@@ -4819,6 +4819,37 @@ def test_matrix_subclass_repr():
     assert A.T._repr_html_() == B.T._repr_html_()
 
 
+@pytest.mark.skipif("not suitesparse")
+def test_subclass_error_text():
+    # An error's text comes from GrB_<type name>_error, and a subclass has none of its own:
+    # it said "Unable to get the error string for type SubMatrix", asking for a bug report.
+    class SubMatrix(Matrix):
+        pass
+
+    class SubVector(Vector):
+        pass
+
+    class Context:  # a user's class that shares a GraphBLAS type's name
+        pass
+
+    class ContextVector(Context, Vector):
+        pass
+
+    for base, sub, shape in [
+        (Matrix, SubMatrix, (2, 3)),
+        (Vector, SubVector, (3,)),
+        (Vector, ContextVector, (3,)),
+    ]:
+        texts = []
+        for cls in [base, sub]:
+            x = cls(int, *shape)
+            x.ss.export(give_ownership=True)  # leaves no GraphBLAS object, so clear fails
+            with pytest.raises(gb.exceptions.NullPointer) as exc_info:
+                x.clear()
+            texts.append(str(exc_info.value))
+        assert texts[0] == texts[1], texts
+
+
 def test_transpose_hint():
     # A.transpose() should point at the .T property rather than fail with a
     # bare "no attribute" message; transpose is not a method here.
