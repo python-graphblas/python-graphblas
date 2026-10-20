@@ -497,6 +497,8 @@ def test_multi_infix_vector():
         v1.ewise_mult(v2 | v3)
     with pytest.raises(TypeError, match="Automatic computation"):
         (v1 | v2).ewise_mult(v3)
+    with pytest.raises(TypeError, match="Automatic computation"):
+        (v1 | v2) + v3
 
 
 @autocompute
