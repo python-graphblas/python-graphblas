@@ -341,13 +341,18 @@ def _corresponding_leaves(np_x, np_z):
 def _udt_cast_error(dtype, to_dtype):
     """Return why an element of UDT ``dtype`` cannot be stored as UDT ``to_dtype``, or ``None``.
 
-    The layouts must correspond (:func:`_corresponding_leaves`), and each pair
-    of elements must be built-in numbers, or the same type.
+    The layouts must correspond (:func:`_corresponding_leaves`), each pair of
+    elements must be built-in numbers, or the same type, and none float16,
+    which the Numba code that casts cannot compute on.
     """
     reason, pairs = _corresponding_leaves(dtype.np_type, to_dtype.np_type)
     for x, z in pairs or ():
         if x != z and not (x.kind in "biufc" and z.kind in "biufc"):
             return f"elements of {x} do not cast to {z}"
+    if reason is None:
+        for udt in (dtype, to_dtype):
+            if _has_half_leaf(udt.np_type):
+                return f"Numba cannot compute on float16, which {udt} holds"
     return reason
 
 
@@ -743,6 +748,32 @@ def _leaf_arrays(arr):
     else:
         for name in arr.dtype.names:
             yield from _leaf_arrays(arr[name])
+
+
+@lru_cache
+def _has_half_leaf(np_type):
+    """Whether ``np_type`` has a float16 leaf: a record field, an array's element, or itself."""
+    if np_type.subdtype is not None:
+        return _has_half_leaf(np_type.subdtype[0])
+    if np_type.names is not None:
+        return any(_has_half_leaf(np_type.fields[name][0]) for name in np_type.names)
+    return np_type.kind == "f" and np_type.itemsize == 2
+
+
+def _refuse_half(op, *dtypes):
+    """Raise ``KeyError`` if a UDT among ``dtypes`` has a float16 leaf, which ``op`` cannot take.
+
+    Numba has a float16 type but no code for it: compiling an op on one raises
+    a bare ``NotImplementedError``. So such an op is refused up front, as an op
+    that does not take a type is.
+    """
+    for dtype in dtypes:
+        if dtype is not None and dtype._is_udt and _has_half_leaf(dtype.np_type):
+            names = ", ".join(str(d) for d in dtypes if d is not None)
+            raise KeyError(
+                f"{op._modname}.{op.name} does not work with ({names}): Numba cannot "
+                f"compute on float16, which {dtype} holds."
+            )
 
 
 @lru_cache

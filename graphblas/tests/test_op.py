@@ -4798,6 +4798,13 @@ def test_udt_sequence_and_array_literals_type_like_numbers():
     assert result[0].new().value.tolist() == (1.5, (3, 4.5))
     assert (n == (np.float64(1), (2, 3.5))).new()[0].new().value
     assert not (n == (np.float64(1.5), (2, 3.5))).new()[0].new().value
+    # Numba cannot compute on float16, so a float16 leaf is refused by name.
+    for expr in [
+        lambda: binary.plus(n, (np.float16(0.5), (1, 1))),
+        lambda: n == (np.float16(1), (2, 3.5)),
+    ]:
+        with pytest.raises(KeyError, match="Numba cannot compute on float16"):
+            expr()
     result = binary.plus(n, (1, np.float64(1.5))).new()  # one number for the nested record
     assert result.dtype.np_type["sq_in"]["sq_b"] == np.float64
     assert result[0].new().value.tolist() == (2, (3.5, 5.0))
@@ -5924,6 +5931,28 @@ def test_udt_eq_compares_a_udt_that_is_neither_record_nor_array():
     assert h == gb.Scalar.from_value(1.5, half)
     assert h == 1.5
     assert gb.Scalar.from_value(np.nan, half) != gb.Scalar.from_value(np.nan, half)
+    # Numba cannot compute on float16, so an op on it is refused by name, for a
+    # record with a float16 field too; a Scalar's == compares in numpy.
+    halves = Vector(half, size=1)
+    halves[0] = 1.5
+    half_rec = dtypes.register_anonymous(np.dtype([("eqo_h", np.float16)]), "_EqOpaqueHalfRec")
+    assert gb.Scalar.from_value((1.5,), half_rec) == (1.5,)
+    for expr in [
+        lambda: halves == halves,
+        lambda: halves.isequal(halves),
+        lambda: binary.plus(Vector(half_rec, size=1), (1.0,)),
+        lambda: -Vector(half_rec, size=1),
+    ]:
+        with pytest.raises(KeyError, match="Numba cannot compute on float16"):
+            expr()
+    # A store cast is Numba code too, so it raises the DomainMismatch of a store that cannot cast.
+    single_rec = dtypes.register_anonymous(np.dtype([("eqo_h", np.float32)]), "_EqOpaqueSingleRec")
+    for expr in [
+        lambda: Vector(single_rec, size=1) << Vector(half_rec, size=1),
+        lambda: Vector(half_rec, size=1).dup(dtype=single_rec),
+    ]:
+        with pytest.raises(DomainMismatch, match="Numba cannot compute on float16"):
+            expr()
     dates = dtypes.register_anonymous(np.dtype("M8[s]"), "_EqOpaqueDates")
     d = Vector(dates, size=2)
     d[0] = np.datetime64("NaT", "s")
