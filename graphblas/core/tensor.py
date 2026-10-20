@@ -32,7 +32,7 @@ from . import automethods, lib
 from . import tensor_layout as tl
 from . import utils
 from .base import BaseExpression, BaseType
-from .expr import Updater
+from .expr import InfixExprBase, Updater
 from .mask import StructuralMask, ValueMask
 from .matrix import Matrix, TransposedMatrix
 from .operator import get_semiring, get_typed_op
@@ -126,6 +126,33 @@ def _compute(x, within):
             )
         return x._get_value()
     return x
+
+
+def _as_tensor(x, within):
+    """``x`` as a Tensor when it is Tensor-like: a Tensor, a Matrix (2-d) or Vector (1-d), an
+    expression of one (computed with autocompute), or a numpy array (full). None otherwise.
+
+    A Matrix held by row is used without a copy; a Vector, a Matrix held by column and an
+    ndarray are copied once.
+    """
+    typ = output_type(x)
+    if typ is Tensor:
+        return _compute(x, within)
+    if typ in {Matrix, Vector, TransposedMatrix}:
+        if type(x) not in {Matrix, Vector, TransposedMatrix}:
+            if not config.get("autocompute"):
+                raise TypeError(
+                    f"{within} needs a {typ.__name__}, not an expression; use `.new()` "
+                    "first.\n\nHint: use `graphblas.config.set(autocompute=True)` to enable "
+                    "automatic computation of expressions."
+                )
+            x = x.new()
+        if type(x) is Vector:
+            return Tensor.from_vector(x)
+        return Tensor.from_matrix(x, copy=False)
+    if typ is np.ndarray:
+        return Tensor.from_dense(x)
+    return None
 
 
 def _mask_arg(x):
@@ -437,6 +464,39 @@ class Tensor(BaseType):
         M = tl.steal_vector_as_row(v.dup())
         return cls._from_M(M, (v._size,), Layout((), (0,)), name=name)
 
+    @classmethod
+    def from_dense(cls, values, missing_value=None, *, dtype=None, layout=None, name=None):
+        """A Tensor from a numpy array (or array-like): every position is present, except
+        those equal to ``missing_value`` when it is given (as ``Matrix.from_dense``).
+        """
+        _check_backend()
+        values = np.asarray(values)
+        shape = values.shape
+        if layout is None:
+            lay = tl.default_layout(shape, values.size)
+        else:
+            lay = tl.as_layout(layout, shape)
+        nrows, ncols = tl.prod(shape, lay.rows), tl.prod(shape, lay.cols)
+        arr = np.transpose(values, lay.rows + lay.cols).reshape(nrows, ncols)
+        M = Matrix.from_dense(arr, missing_value, dtype=dtype)
+        if not tl.is_by_row(M):
+            # A by-column global format, or an n x 1 array (SuiteSparse keeps those by column)
+            M.ss.config["format"] = "by_row"
+        return cls._from_M(M, shape, lay, pinned=layout is not None, name=name)
+
+    def to_dense(self, fill_value=None, dtype=None):
+        """A numpy array; raises if an entry is missing and ``fill_value`` is not given."""
+        M, lay = self._M, self._layout
+        identity = tuple(range(self.ndim))
+        if lay.seq != identity:
+            targets = frozenset(
+                (identity, p)
+                for p in range(self.ndim + 1)
+                if tl._valid_split(self._shape, identity, p)
+            )
+            M, lay = tl.relayout(M, self._shape, lay, targets)
+        return M.to_dense(fill_value, dtype).reshape(self._shape)
+
     def _named(self, name):
         if name is not None:
             self.name = name
@@ -623,17 +683,68 @@ class Tensor(BaseType):
         return self._view(tuple(self._shape[a] for a in keep), Layout(rows, cols))
 
     # Element-wise operations
-    def ewise_add(self, other, op=monoid.plus):
-        """Element-wise ``op`` on the union of entries (same shape; no broadcasting yet)."""
-        return _ewise_expr(self, "ewise_add", other, op)
+    def ewise_add(self, other, op=monoid.plus, *, allow_expansion=False):
+        """Element-wise ``op`` on the union of entries.
+
+        Shapes broadcast as in numpy. A position present in only one operand takes its value,
+        so a broadcast operand is replicated over the broadcast axes; that raises when it would
+        replicate more than ``graphblas.config["tensor_max_expansion"]`` entries unless
+        ``allow_expansion=True``.
+        """
+        return _ewise_expr(self, "ewise_add", other, op, allow_expansion=allow_expansion)
 
     def ewise_mult(self, other, op=binary.times):
-        """Element-wise ``op`` on the intersection of entries (same shape)."""
+        """Element-wise ``op`` on the intersection of entries (numpy broadcasting).
+
+        When one operand covers the whole result shape the other is applied as a diagonal
+        scaling, without replicating it.
+        """
         return _ewise_expr(self, "ewise_mult", other, op)
 
-    def ewise_union(self, other, op, left_default, right_default):
-        """Element-wise ``op`` on the union, with defaults for a missing side (same shape)."""
-        return _ewise_expr(self, "ewise_union", other, op, left_default, right_default)
+    def ewise_union(self, other, op, left_default, right_default, *, allow_expansion=False):
+        """Element-wise ``op`` on the union, with defaults for a missing side (numpy
+        broadcasting, replicated as for ``ewise_add``).
+        """
+        return _ewise_expr(
+            self,
+            "ewise_union",
+            other,
+            op,
+            left_default,
+            right_default,
+            allow_expansion=allow_expansion,
+        )
+
+    # Hooks for `op(X | Y)`, `op(X & Y)` and `semiring(X @ Y)` (operator._call_op)
+    def _ewise_add(self, other, op=monoid.plus, is_infix=False):
+        return self.ewise_add(other, op)
+
+    def _ewise_mult(self, other, op=binary.times, is_infix=False):
+        return self.ewise_mult(other, op)
+
+    def _ewise_union(self, other, op, left_default, right_default, is_infix=False):
+        return self.ewise_union(other, op, left_default, right_default)
+
+    def select(self, op, thunk=None):
+        """Keep the entries whose values pass ``op`` (a value selector such as
+        ``select.valuegt``); index-based selectors are not supported yet.
+        """
+        if not getattr(op, "name", "").startswith("value"):
+            raise NotImplementedError(
+                "Tensor.select supports value selectors (select.value*) only; index-based "
+                "selectors would need logical coordinates"
+            )
+        probe = self._M.select(op, thunk)
+        return TensorExpression(
+            "select",
+            _select_recipe,
+            [self],
+            (self, probe.op, thunk),
+            dtype=probe.dtype,
+            shape=self._shape,
+            op=probe.op,
+            expr_repr="{0.name}.select({op})",
+        )
 
     def apply(self, op, right=None, *, left=None):
         """Apply ``op`` to every stored value (with a scalar ``left`` or ``right`` for a
@@ -725,17 +836,18 @@ class Tensor(BaseType):
 
 
 def _ewise_infix(left, right, op, kind):
-    if _is_tensor_like(left) and _is_tensor_like(right):
-        left = _compute(left, "infix operator")
+    ltensor = _as_tensor(left, "infix operator")
+    rtensor = _as_tensor(right, "infix operator")
+    if ltensor is not None and rtensor is not None:
         if kind == "add":
-            return left.ewise_add(right, op)
+            return ltensor.ewise_add(rtensor, op)
         if kind == "union":
-            return left.ewise_union(right, op, False, False)
-        return left.ewise_mult(right, op)
-    if _is_tensor_like(left) and _is_scalar_like(right):
-        return _compute(left, "infix operator").apply(op, right=right)
-    if _is_scalar_like(left) and _is_tensor_like(right):
-        return _compute(right, "infix operator").apply(op, left=left)
+            return ltensor.ewise_union(rtensor, op, False, False)
+        return ltensor.ewise_mult(rtensor, op)
+    if ltensor is not None and _is_scalar_like(right):
+        return ltensor.apply(op, right=right)
+    if _is_scalar_like(left) and rtensor is not None:
+        return rtensor.apply(op, left=left)
     return NotImplemented
 
 
@@ -758,11 +870,24 @@ def _make_infix(op, kind):
     return forward, reflected, inplace
 
 
+# As for Matrix: `+` is the union, `-` the union with 0 for a missing side, and the others
+# (comparisons included) the intersection.
 _INFIX = {
     "add": (binary.plus, "add"),
     "sub": (binary.minus, "union"),
     "mul": (binary.times, "mult"),
     "truediv": (binary.truediv, "mult"),
+    "floordiv": (binary.floordiv, "mult"),
+    "mod": (binary.numpy.mod, "mult"),
+    "pow": (binary.pow, "mult"),
+}
+_COMPARISONS = {
+    "eq": binary.eq,
+    "ne": binary.ne,
+    "lt": binary.lt,
+    "le": binary.le,
+    "gt": binary.gt,
+    "ge": binary.ge,
 }
 
 
@@ -847,16 +972,105 @@ class TensorExpression(BaseExpression):
         return self._get_value().isequal(other, check_dtype=check_dtype)
 
 
-for _name, (_op, _kind) in _INFIX.items():
-    _fwd, _ref, _inp = _make_infix(_op, _kind)
-    for _cls in (Tensor, TensorExpression):
+class _TensorInfixExpr(InfixExprBase):
+    """``X | Y``, ``X & Y`` or ``X @ Y`` waiting for an operator, as in ``binary.plus(X | Y)``
+    or ``semiring.min_plus(X @ Y)``; ``.new()`` uses the default operator.
+    """
+
+    __slots__ = ()
+    output_type = TensorExpression
+
+    def __init__(self, left, right):
+        # Matrix, Vector and ndarray operands follow Tensor rules once they meet a Tensor
+        left = _as_tensor(left, self._infix)
+        right = _as_tensor(right, self._infix)
+        if left is None or right is None:
+            raise TypeError(f"Bad types for `{self._infix}`: {type(left)}, {type(right)}")
+        super().__init__(left, right)
+
+    @property
+    def shape(self):
+        return self._to_expr().shape
+
+    @property
+    def ndim(self):
+        return len(self.shape)
+
+    def new(self, dtype=None, *, mask=None, layout=None, name=None, **opts):
+        return self._to_expr().new(dtype, mask=mask, layout=layout, name=name, **opts)
+
+    def __repr__(self):
+        return f"gb.Tensor infix expression\n{self._format_expr()}"
+
+
+class TensorEwiseAddExpr(_TensorInfixExpr):
+    __slots__ = ()
+    method_name = "ewise_add"
+    _infix = "|"
+
+
+class TensorEwiseMultExpr(_TensorInfixExpr):
+    __slots__ = ()
+    method_name = "ewise_mult"
+    _infix = "&"
+
+
+class TensorMatMulExpr(_TensorInfixExpr):
+    __slots__ = ()
+    method_name = "matmul"
+    _infix = "@"
+
+
+def _infix_or(self, other):
+    return TensorEwiseAddExpr(self, other)
+
+
+def _infix_ror(self, other):
+    return TensorEwiseAddExpr(other, self)
+
+
+def _infix_and(self, other):
+    return TensorEwiseMultExpr(self, other)
+
+
+def _infix_rand(self, other):
+    return TensorEwiseMultExpr(other, self)
+
+
+def _infix_matmul(self, other):
+    return TensorMatMulExpr(self, other)
+
+
+def _infix_rmatmul(self, other):
+    return TensorMatMulExpr(other, self)
+
+
+for _cls in (Tensor, TensorExpression):
+    for _name, (_op, _kind) in _INFIX.items():
+        _fwd, _ref, _inp = _make_infix(_op, _kind)
         setattr(_cls, f"__{_name}__", _fwd)
         setattr(_cls, f"__r{_name}__", _ref)
-    setattr(Tensor, f"__i{_name}__", _inp)
+        if _cls is Tensor:
+            setattr(_cls, f"__i{_name}__", _inp)
+    for _name, _op in _COMPARISONS.items():
+        # Set after the class body, as for Matrix, so Tensors stay hashable
+        setattr(_cls, f"__{_name}__", _make_infix(_op, "mult")[0])
+    _cls.__or__ = _infix_or
+    _cls.__ror__ = _infix_ror
+    _cls.__and__ = _infix_and
+    _cls.__rand__ = _infix_rand
+    _cls.__matmul__ = _infix_matmul
+    _cls.__rmatmul__ = _infix_rmatmul
+    # numpy defers `ndarray op T` to the Tensor's reflected operator
+    _cls.__array_ufunc__ = None
 del _name, _op, _kind, _fwd, _ref, _inp, _cls
 
 utils._output_types[Tensor] = Tensor
 utils._output_types[TensorExpression] = Tensor
+for _cls in (TensorEwiseAddExpr, TensorEwiseMultExpr, TensorMatMulExpr):
+    utils._output_types[_cls] = Tensor
+del _cls
+utils._tensor_types.add(Tensor)
 
 
 class _TensorSS:
@@ -1057,13 +1271,21 @@ def _in_layout(t, layout, nthreads):
 # Element-wise
 
 
-def _ewise_expr(self, method, other, op, left_default=None, right_default=None):
-    other = self._expect_type(other, Tensor, within=method, argname="other", op=op)
-    if self._shape != other._shape:
-        raise DimensionMismatch(
-            f"Tensor shapes must match in {method} (broadcasting is not implemented yet): "
-            f"{self._shape} and {other._shape}"
-        )
+def _ewise_expr(
+    self, method, other, op, left_default=None, right_default=None, *, allow_expansion=False
+):
+    if (tensor := _as_tensor(other, method)) is None:
+        self._expect_type(other, Tensor, within=method, argname="other", op=op)
+    other = tensor
+    shape = self._shape
+    if other._shape != shape:
+        try:
+            shape = tuple(int(n) for n in np.broadcast_shapes(self._shape, other._shape))
+        except ValueError:
+            raise DimensionMismatch(
+                f"Tensor shapes {self._shape} and {other._shape} do not broadcast in {method}"
+            ) from None
+    untyped_op = op
     extra = ()
     if method == "ewise_union":
         temp_op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
@@ -1084,16 +1306,215 @@ def _ewise_expr(self, method, other, op, left_default=None, right_default=None):
     else:
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method, argname="op")
+    expr_repr = "{0.name}.%s({1.name}, op={op})" % method  # noqa: UP031
+    if shape == self._shape == other._shape:
+        return TensorExpression(
+            method,
+            _ewise_recipe,
+            [self, other],
+            (method, self, other, op, extra),
+            dtype=op.return_type,
+            shape=shape,
+            op=op,
+            expr_repr=expr_repr,
+        )
+    _check_expansion(method, (self, other), shape, allow_expansion)
     return TensorExpression(
         method,
-        _ewise_recipe,
+        _bcast_recipe,
         [self, other],
-        (method, self, other, op, extra),
+        (method, self, other, op, untyped_op, extra, shape),
         dtype=op.return_type,
-        shape=self._shape,
+        shape=shape,
         op=op,
-        expr_repr="{0.name}.%s({1.name}, op={op})" % method,  # noqa: UP031
+        expr_repr=expr_repr,
     )
+
+
+# ---------------------------------------------------------------------------------------------
+# Broadcasting (DESIGN.md 5.4, 7.2): numpy shape rules with missing-value semantics. The
+# intersection (ewise_mult, comparisons) scales by a diagonal and never replicates when one
+# operand covers the whole result shape; the union replicates the broadcast operand, as numpy
+# would, behind an O(1) size guard (review F1).
+
+
+def _broadcast_factor(tshape, shape):
+    """How many times an operand of ``tshape`` repeats to fill ``shape``."""
+    off = len(shape) - len(tshape)
+    factor = math.prod(shape[:off])
+    for a, n in enumerate(tshape):
+        if n == 1:
+            factor *= shape[a + off]
+    return factor
+
+
+def _check_expansion(method, operands, shape, allow):
+    sizes = [(_broadcast_factor(t._shape, shape), t._M._nvals) for t in operands]
+    if method == "ewise_mult":
+        if any(f == 1 for f, _ in sizes):
+            return  # one operand covers the result: diagonal scaling, no replication
+        replicated = min(f * n for f, n in sizes)
+    else:
+        replicated = sum(f * n for f, n in sizes if f > 1)
+    limit = config.get("tensor_max_expansion", 10**9)
+    if replicated > limit and not allow:
+        raise ValueError(
+            f"{method} of shapes {operands[0]._shape} and {operands[1]._shape} would replicate "
+            f"{replicated} entries to broadcast (the limit is {limit}). numpy semantics fill "
+            "every broadcast position; use ewise_mult for the intersection, pass "
+            "allow_expansion=True, or raise `graphblas.config` option tensor_max_expansion."
+        )
+
+
+def _squeezed(t, shape):
+    """``t`` without its broadcast size-1 axes, and the output axis of each remaining axis."""
+    off = len(shape) - t.ndim
+    drop = [a for a, n in enumerate(t._shape) if n == 1 and shape[a + off] != 1]
+    keep = [a + off for a in range(t.ndim) if a not in drop]
+    return (t.squeeze(drop) if drop else t), keep
+
+
+def _expand(t, shape):
+    """``t`` replicated over its broadcast axes to ``shape``, as a Tensor (kron with ones)."""
+    if t._shape == shape:
+        return t
+    ts, out_of = _squeezed(t, shape)
+    bcast = tuple(o for o in range(len(shape)) if o not in out_of)
+    rows = bcast + tuple(out_of[a] for a in ts._layout.rows)
+    cols = tuple(out_of[a] for a in ts._layout.cols)
+    layout = tl.as_layout((rows, cols), shape)
+    reps = tl.prod(shape, bcast)
+    nrows, ncols = tl.prod(shape, rows), tl.prod(shape, cols)
+    if reps == 1:
+        return Tensor._from_M(ts._M, shape, layout, store=ts._store)
+    ones = Matrix.from_scalar(True, reps, 1)
+    M = tl.new_matrix(t.dtype, nrows, ncols)
+    # kron(ones, M)[(b, r), c] = M[r, c]: the broadcast axes lead the rows
+    M << ones.kronecker(ts._M, binary.second)
+    return Tensor._from_M(M, shape, layout)
+
+
+def _one_term_monoid(dtype):
+    # Diagonal scaling sums one term per output, so any monoid gives the same value; pick one
+    # with factory kernels for the output type.
+    if dtype == BOOL:
+        return monoid.lor
+    if dtype._is_udt:
+        return monoid.any
+    return monoid.plus
+
+
+def _bcast_recipe(updater, method, a, b, op, untyped_op, extra, shape):
+    if method == "ewise_mult":
+        _bcast_mult(updater, a, b, op, untyped_op, shape)
+    else:
+        _ewise_recipe(updater, method, _expand(a, shape), _expand(b, shape), op, extra)
+
+
+def _bcast_mult(updater, a, b, op, untyped_op, shape):
+    fa = _broadcast_factor(a._shape, shape)
+    fb = _broadcast_factor(b._shape, shape)
+    if fa > 1 and fb > 1:
+        # Both broadcast (an outer product, for example): replicate the cheaper one
+        if fa * a._M._nvals <= fb * b._M._nvals:
+            a = _expand(a, shape)
+        else:
+            b = _expand(b, shape)
+        fa = _broadcast_factor(a._shape, shape)
+    if fa == 1:
+        big, small, big_left = a, b, True
+    else:
+        big, small, big_left = b, a, False
+    nthreads = updater.opts.get("nthreads")
+    ts, F = _squeezed(small, shape)
+    if ts._M._nvals == 0:
+        L = big._layout
+        empty = tl.new_matrix(op.return_type, tl.prod(shape, L.rows), tl.prod(shape, L.cols))
+        _store(updater, empty, shape, L, fresh=True)
+        return
+    if not F:
+        # The small side is one value
+        value = ts._M[0, 0].new()
+        if big_left:
+            src = big._M.apply(op, right=value)
+        else:
+            src = big._M.apply(op, left=value)
+        _store(updater, src, shape, big._layout)
+        return
+    flip = getattr(untyped_op, "commutes_to", None)
+    # M @ diag(v) multiplies (big, small); diag(v) @ M multiplies (small, big)
+    col_op = untyped_op if big_left else flip
+    row_op = flip if big_left else untyped_op
+    if hasattr(untyped_op, "binaryop"):  # a Monoid
+        col_op = row_op = untyped_op.binaryop
+    Fset = set(F)
+    M, L = big._M, big._layout
+    group = side = None
+    for g, gop, name in [(L.cols, col_op, "cols"), (L.rows, row_op, "rows")]:
+        if gop is not None and Fset == set(g):
+            group, side = g, name
+            break
+    if group is None:
+        for g, gop, name in [(L.cols, col_op, "cols"), (L.rows, row_op, "rows")]:
+            if (
+                gop is not None
+                and Fset < set(g)
+                and _selector_ok(tl.prod(shape, g), M._nvals)
+                and not tl.density(M)
+            ):
+                group, side = g, name
+                break
+    if group is None:
+        # Relayout so the small side's axes are exactly one group
+        rest = tuple(o for o in range(len(shape)) if o not in Fset)
+        targets = set()
+        orders = itertools.permutations(F) if len(shape) <= tl.MAX_PLANNED_NDIM else [tuple(F)]
+        for f in orders:
+            for r in itertools.permutations(rest) if len(shape) <= 5 else [rest]:
+                if col_op is not None and tl._valid_split(shape, r + f, len(r)):
+                    targets.add((r + f, len(r)))
+                if row_op is not None and tl._valid_split(shape, f + r, len(f)):
+                    targets.add((f + r, len(f)))
+        if not targets:
+            # No diagonal side works (an operator with no flipped form): replicate instead
+            _ewise_recipe(
+                updater,
+                "ewise_mult",
+                _expand(a, shape) if big is b else a,
+                _expand(b, shape) if big is a else b,
+                op,
+                (),
+            )
+            return
+        M, L = tl.relayout(M, shape, L, frozenset(targets), nthreads=nthreads)
+        if set(L.cols) == Fset and col_op is not None:
+            group, side = L.cols, "cols"
+        else:
+            group, side = L.rows, "rows"
+    # The small side as a Vector over `group` (expanded over the group's other axes)
+    inv = {o: i for i, o in enumerate(F)}
+    sub = tuple(o for o in group if o in Fset)
+    vM, _ = tl.relayout(
+        ts._M, ts._shape, ts._layout, Layout((), tuple(inv[o] for o in sub)), nthreads=nthreads
+    )
+    v = vM[0, :].new()
+    if len(sub) < len(group):
+        St = tl.selector(
+            tuple(shape[o] for o in group),
+            tuple(i for i, o in enumerate(group) if o in Fset),
+            transposed=True,
+        )
+        e = Vector(v.dtype, St._nrows)
+        e << St.mxv(v, semiring.lor_second if v.dtype == BOOL else semiring.plus_second)
+        v = e
+    D = v.diag()
+    if side == "cols":
+        sr = get_semiring(_one_term_monoid(op.return_type), col_op)
+        src = M.mxm(D, sr)
+    else:
+        sr = get_semiring(_one_term_monoid(op.return_type), row_op)
+        src = D.mxm(M, sr)
+    _store(updater, src, shape, L)
 
 
 def _ewise_recipe(updater, method, a, b, op, extra):
@@ -1112,6 +1533,12 @@ def _ewise_recipe(updater, method, a, b, op, extra):
     else:
         src = A.ewise_union(B, op, *extra)
     _store(updater, src, a._shape, L)
+
+
+def _select_recipe(updater, a, op, thunk):
+    L = _choose_layout(updater, (a,), a._M._nvals)
+    A = _in_layout(a, L, updater.opts.get("nthreads"))
+    _store(updater, A.select(op, thunk), a._shape, L)
 
 
 def _apply_recipe(updater, a, op, right, left):
