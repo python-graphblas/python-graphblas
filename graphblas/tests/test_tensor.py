@@ -572,6 +572,19 @@ def test_flip_orientation_and_helpers():
     assert tl.selector((2, 3), (1,)) is S
     St = tl.selector((2, 3), (0,), transposed=True)
     assert St.shape == (6, 2)
+    # The shape-only cache is bounded by total entries
+    lru = tl._LRU(10, maxweight=100)
+    lru.put("a", 1, 60)
+    lru.put("b", 2, 30)
+    assert lru.get("a") == 1
+    lru.put("c", 3, 30)  # over the budget: drops "b", the least recently used
+    assert lru.get("b") is None
+    assert lru.weight == 90
+    lru.put("d", 4, 101)  # heavier than the whole budget: not kept
+    assert lru.get("d") is None
+    lru.put("a", 5, 10)
+    assert lru.get("a") == 5
+    assert lru.weight == 40
 
 
 # --------------------------------------------------------------------------------------------
