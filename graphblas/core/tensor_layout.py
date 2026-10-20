@@ -383,12 +383,17 @@ def clear_caches():
 # rank plans; they are not predictions (they run 1.3-2x low).
 
 C_RS = (0.5, 2.1)
+# Plus per nonempty output row of a reshape: 1000 x 1e6 -> 1e6 x 1000 at 1e7 entries took 8.7
+# / 43 ms at 8 / 1 threads, and (3000, 2e7) -> (6e6, 1e4) at 7.7e6 took 21 / 106 ms
+# (2026-10-20); without this term a radix chain looked cheaper than one transpose at 1 thread.
+C_RS_ROW = (4.0, 21.0)
 C_REBUILD = (9.0, 60.0)
 C_PERM_ENTRY = (0.6, 2.0)
-# Per nonempty row of P @ M: dense row ranges cost about nothing; rows that are mostly
-# empty (hypersparse storage, about one entry each) pay a hash lookup per row: 31 ns (s1,
-# case H) to 61 ns (skew (1e5, 1e3, 10) rows (j, i), measured 2026-10-20) at 8 threads.
-C_PERM_ROW = {"sparse": (1.0, 0.0), "hyper": (50.0, 185.0)}
+# Per nonempty row of P @ M: about 6 ns at 8 threads when the rows come from a reshape (13 ms
+# for 1e6 rows of 10 in a chain on 1000^3, measured 2026-10-20); rows that are mostly empty
+# (hypersparse storage, about one entry each) pay a hash lookup per row: 31 ns (s1, case H)
+# to 61 ns (skew (1e5, 1e3, 10) rows (j, i)).
+C_PERM_ROW = {"sparse": (6.0, 2.0), "hyper": (50.0, 185.0)}
 # Building P (numpy, one thread): per row of a full P (cached when it fits the cache), and
 # per nonempty row of a P built from the nonempty rows (unravel, ravel and an unsorted build).
 C_PBUILD_FULL = 13.0
@@ -406,6 +411,11 @@ C_STEP = 10_000.0
 C_REBUILD_FIXED = 40_000.0
 
 
+# A 2-thread transpose into many rows vs 1 thread: uniform 1e3 x 1e6 58 vs 97 ms, FROSTT Uber
+# 9.2 vs 11.5 ms (measured 2026-10-20)
+C_T_TWO_THREADS = 0.6
+
+
 def t_cost(out_rows, ti):
     """Transpose cost per entry, log-linear in the number of output rows."""
     if out_rows <= T_TABLE[0][0]:
@@ -417,6 +427,11 @@ def t_cost(out_rows, ti):
     return T_TABLE[-1][1 + ti]
 
 
+def rs_cost(shape, seq, q, nnz, ti):
+    """A reshape moving the split of ``seq`` to ``q``: per entry and per output row."""
+    return C_RS[ti] * nnz + C_RS_ROW[ti] * expected_rows(prod(shape, seq[:q]), nnz) + C_STEP
+
+
 def rebuild_cost(nnz, ti):
     return C_REBUILD[ti] * nnz + C_REBUILD_FIXED
 
@@ -425,22 +440,23 @@ def _neighbors(state, shape, nnz, ti, hyper1, allow_perm, total_ok):
     seq, p = state
     n = len(seq)
     if total_ok:
-        rs = C_RS[ti] * nnz + C_STEP
         for q in range(n + 1):
             if q != p and _valid_split(shape, seq, q):
-                yield ("RS", q), (seq, q), rs
+                yield ("RS", q), (seq, q), rs_cost(shape, seq, q, nnz, ti)
     # A transpose with an empty group is a reshape (RS covers it).
     if 0 < p < n:
         out_rows = prod(shape, seq[p:])
         cost = t_cost(out_rows, ti) * nnz
-        single = False
-        # A wide transpose can be faster on one thread (DESIGN.md 3.2); price that too.
+        threads = None
+        # A transpose into many rows is slower at 4 or 8 threads than at 2, which runs
+        # SuiteSparse's non-atomic method and is 1.2-1.8x faster than 1 thread
+        # (~/git/GraphBLAS/mres/transpose_thread_scaling); price 2 threads too.
         if ti == 0 and out_rows >= 1e5:
-            cost1 = t_cost(out_rows, 1) * nnz
-            if cost1 < cost:
-                cost = cost1
-                single = True
-        yield ("T", single), (seq[p:] + seq[:p], n - p), cost + C_STEP
+            cost2 = C_T_TWO_THREADS * t_cost(out_rows, 1) * nnz
+            if cost2 < cost:
+                cost = cost2
+                threads = 2
+        yield ("T", threads), (seq[p:] + seq[:p], n - p), cost + C_STEP
     if allow_perm and p >= 2:
         nrows = prod(shape, seq[:p])
         R = expected_rows(nrows, nnz)
@@ -472,7 +488,7 @@ def plan(shape, src, targets, nnz, nthreads, *, hyper1=False, allow_perm=True):
     """Cheapest edge sequence from state ``src`` to any state in ``targets`` (a frozenset).
 
     Returns ``(cost_ns, path, final_state)``. A path is a list of edges: ``("RS", q)``,
-    ``("T", single_thread)``, ``("PERM_R", new_row_seq)`` or ``("REBUILD", state)``.
+    ``("T", nthreads or None)``, ``("PERM_R", new_row_seq)`` or ``("REBUILD", state)``.
     """
     if src in targets:
         return 0.0, [], src
@@ -563,10 +579,10 @@ def rebuild(M, shape, src, dst):
     return from_coo(rows, cols, v, M.dtype, prod(shape, seq[:p]), prod(shape, seq[p:]))
 
 
-def transpose(M, *, single_thread=False):
+def transpose(M, *, nthreads=None):
     out = new_matrix(M.dtype, M._ncols, M._nrows)
-    if single_thread:
-        out(nthreads=1) << M.T
+    if nthreads:
+        out(nthreads=nthreads) << M.T
     else:
         out << M.T
     return out
@@ -599,7 +615,7 @@ def execute(M, shape, state, path):
             state = (seq, q)
             owned = True
         elif kind == "T":
-            M = transpose(M, single_thread=edge[1])
+            M = transpose(M, nthreads=edge[1])
             state = (seq[p:] + seq[:p], len(seq) - p)
         elif kind == "PERM_R":
             M = perm_rows(M, shape, seq[:p], edge[1])
