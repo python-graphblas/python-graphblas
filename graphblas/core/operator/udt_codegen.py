@@ -405,8 +405,6 @@ def _c_aligned_version(np_type):
     would emit, we need to rebuild the inner as ``align=True`` first, then
     use that rebuilt type as the outer's field type.
     """
-    if np_type.names is None:
-        return np_type
     fields = []
     for name in np_type.names:
         f = np_type.fields[name][0]
@@ -1334,7 +1332,7 @@ def _c_float_floordiv_stmt(target, lhs, rhs, field_dtype):
     )
 
 
-def _c_expr_unary(py_op, operand, field_dtype=None):
+def _c_expr_unary(py_op, operand, field_dtype):
     """Return a C expression for a unary op: e.g., ``-(x->a)``.
 
     ``field_dtype`` is only consulted for ``abs``:
@@ -1349,13 +1347,12 @@ def _c_expr_unary(py_op, operand, field_dtype=None):
       ``abs`` of signed int wraps on INT_MIN, both matching the cfunc.
     """
     if py_op == "abs":
-        if field_dtype is not None:
-            if field_dtype.kind == "f":
-                fn = "fabsf" if field_dtype.itemsize == 4 else "fabs"
-                return f"{fn}({operand})"
-            if field_dtype.kind == "c":
-                fn = "cabsf" if field_dtype.itemsize == 8 else "cabs"
-                return f"{fn}({operand})"
+        if field_dtype.kind == "f":
+            fn = "fabsf" if field_dtype.itemsize == 4 else "fabs"
+            return f"{fn}({operand})"
+        if field_dtype.kind == "c":
+            fn = "cabsf" if field_dtype.itemsize == 8 else "cabs"
+            return f"{fn}({operand})"
         return f"(({operand}) < 0 ? -({operand}) : ({operand}))"
     if py_op == "-":
         return f"-({operand})"
@@ -1468,11 +1465,9 @@ def _make_jit_c_comparison_definition(op_name, dtype, *, is_eq):
             f"_Bool r = {int(is_eq)} ; for (int64_t i = 0 ; i < {size} ; i++) "
             f"{{ r {accumulate} ((x->v[i]) {op} (y->v[i])) ; }} *z = r ;"
         )
-    elif np_type.names is not None:
+    else:
         terms = [f"((x->{c}) {op} (y->{c}))" for _py, c, _d in _iter_record_leaves(np_type)]
         body = f"*z = {join.join(terms) if terms else int(is_eq)} ;"
-    else:
-        return None
     params = f"_Bool *z, const {type_name} *x, const {type_name} *y"
     return c_name, f"void {c_name} ({params}) {{ {body} }}"
 
@@ -1513,12 +1508,11 @@ def set_jit_c_comparison_on_op(gb_obj, op_name, dtype, set_string_func, *, is_eq
 
     Sibling of :func:`set_jit_c_on_op` for the structurally different
     comparison kernel (BOOL output, chained leaf comparisons). Returns
-    ``(c_name, c_defn)`` on success, ``None`` when JIT isn't available or
-    the dtype can't be expressed in C; callers cache the returned strings
-    on the op for introspection (see ``TypedUserBinaryOp.jit_c_source``).
+    ``(c_name, c_defn)`` on success, ``None`` when the dtype can't be
+    expressed in C; callers cache the returned strings on the op for
+    introspection (see ``TypedUserBinaryOp.jit_c_source``). Callers check
+    ``_has_jit_set`` first, as for :func:`set_jit_c_on_op`.
     """
-    if not _has_jit_set:
-        return None
     result = _make_jit_c_comparison_definition(op_name, dtype, is_eq=is_eq)
     if result is None:
         return None
@@ -1529,13 +1523,12 @@ def set_jit_c_comparison_on_op(gb_obj, op_name, dtype, set_string_func, *, is_eq
 def set_jit_c_on_op(gb_obj, op_name, py_op, dtype, set_string_func, arity=2):
     """Generate and set JIT C name+definition on a GrB operator, if possible.
 
-    Returns ``(c_name, c_defn)`` when the JIT setters are available and the
-    dtype is expressible in C, ``None`` otherwise. Callers may cache the
-    returned strings for introspection (see ``TypedUserUnaryOp.jit_c_source``
-    and ``TypedUserBinaryOp.jit_c_source``).
+    Returns ``(c_name, c_defn)`` when the dtype is expressible in C, ``None``
+    otherwise. Callers may cache the returned strings for introspection (see
+    ``TypedUserUnaryOp.jit_c_source`` and ``TypedUserBinaryOp.jit_c_source``).
+    Callers check ``_has_jit_set`` first: without it, SuiteSparse has no
+    ``set_string_func`` to pass.
     """
-    if not _has_jit_set:
-        return None
     result = _make_jit_c_definition(op_name, py_op, dtype, arity)
     if result is None:
         return None

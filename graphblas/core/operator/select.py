@@ -67,10 +67,7 @@ def _value_select_in_own_type(op, dtype, thunk, given):
         if value != value:  # NaN: only ``!=`` holds, for every element
             new_name, new_value = name, nan
         else:
-            try:
-                near = ftype(value)
-            except OverflowError:  # an int too large for any float
-                near = ftype(math.copysign(math.inf, value))
+            near = ftype(value)
             above = near if float(near) >= value else np.nextafter(near, ftype(math.inf))
             below = near if float(near) <= value else np.nextafter(near, ftype(-math.inf))
             new_name = name
