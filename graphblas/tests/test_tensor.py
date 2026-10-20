@@ -2069,7 +2069,7 @@ def test_default_split_follows_nonempty_rows(monkeypatch):
     T = Tensor.from_coo(np.unravel_index(lin, (40, 50, 60)), 1.0, shape=(40, 50, 60))
     assert T.layout == Layout((0,), (1, 2))
     T._check_invariants()
-    # Shuffled input is built at the widest split and settled: the same layouts
+    # Shuffled input is judged by a sample of its row keys (then settled): the same layouts
     order = rng.permutation(lin.size)
     shuffled = [c[order] for c in np.unravel_index(lin, (40, 50, 60))]
     T = Tensor.from_coo(shuffled, 1.0, shape=(40, 50, 60))
