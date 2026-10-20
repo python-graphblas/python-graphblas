@@ -2050,6 +2050,17 @@ def test_udt_return_type_errors():
     with pytest.raises(UdfParseError, match="tuple of length 3.*expected 2"):
         op_three[udt]
 
+    # Neither a scalar, nor a tuple, nor an array that fits an array UDT input.
+    def _nothing(x, y):  # pragma: no cover (numba; raises before execution)
+        return None
+
+    def _array(x, y):  # pragma: no cover (numba; raises before execution)
+        return np.zeros(2)
+
+    for func in [_nothing, _array]:
+        with pytest.raises(UdfParseError, match="returned an unsupported type"):
+            BinaryOp.register_anonymous(func, is_udt=True)[udt]
+
 
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
@@ -2066,6 +2077,19 @@ def test_udt_return_type_errors_array_udt():
     op = BinaryOp.register_anonymous(_bad_tuple, is_udt=True)
     with pytest.raises(UdfParseError, match="array UDTs of shape.*numpy array"):
         op[audt]
+
+    # A UDT that is neither a record nor an array takes no tuple either, and no
+    # built-in op lifts to it.
+    raw = dtypes.register_anonymous(np.dtype("S8"), "_RetErrBytesUDT")
+
+    def _pair(x, y):  # pragma: no cover (numba; raises before execution)
+        return (1, 2)
+
+    with pytest.raises(UdfParseError, match="returned an unsupported type"):
+        BinaryOp.register_anonymous(_pair, is_udt=True)[raw]
+    for lifted in [binary.plus, unary.ainv]:
+        with pytest.raises(KeyError, match="require a record dtype .* or an array dtype"):
+            lifted[raw]
 
 
 @pytest.fixture(scope="module")
@@ -5761,6 +5785,27 @@ def test_udt_eq_compile_failure_is_a_udfparseerror():
     # A number beside the bytes field is an int64 there, which pairs no better.
     with pytest.raises(KeyError, match=r"elements of \|S4 and int64 have no common type"):
         v + 1
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_numba_error_summary_is_never_empty():
+    """A Numba error's one-line summary falls back to its first line, then to a sentence.
+
+    The summary is Numba's diagnostic line when one is there, with the
+    signature from the line below when the diagnostic ends in a colon. A
+    message without one gives its first non-empty line, and an empty message
+    a fixed sentence, so a UdfParseError always says something.
+    """
+    from graphblas.core.operator.udf import _summarize_numba_typing_error as summarize
+
+    line = "No implementation of function f found for signature:"
+    colored = f"\x1b[1m{line}\x1b[0m"
+    assert summarize(ValueError(f"{colored}\n\n >>> f(int64)")) == f"{line} >>> f(int64)"
+    assert summarize(ValueError(f"Failed in nopython mode\n{colored}\n\n")) == line
+    assert summarize(ValueError("\n  \nSomething else went wrong\nat line 2")) == (
+        "Something else went wrong"
+    )
+    assert summarize(ValueError("")) == "Numba could not compile the function for these input types"
 
 
 @pytest.mark.skipif("not supports_udfs")
