@@ -4774,9 +4774,15 @@ def test_abc_mixin_subclass():
 
     class SizedMatrix(Matrix, collections.abc.Sized):
         def __len__(self):
-            return 1
+            return self.nvals
 
     assert issubclass(SizedMatrix, collections.abc.Sized)
+    A = SizedMatrix(int, 2, 3)
+    assert isinstance(A, collections.abc.Sized)
+    assert len(A) == 0
+    A[0, 1] = 5
+    A[1, 2] = 6
+    assert len(A) == 2
 
 
 def test_transpose_hint():
