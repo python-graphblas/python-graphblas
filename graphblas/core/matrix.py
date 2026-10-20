@@ -600,14 +600,18 @@ class Matrix(BaseType):
     def nrows(self):
         """Number of rows in the Matrix."""
         scalar = _scalar_index("s_nrows")
-        call("GrB_Matrix_nrows", [_Pointer(scalar), self])
+        # TransposedMatrix shares this, and reports against its Matrix (no error function)
+        matrix = self._matrix if self._is_transposed else self
+        call("GrB_Matrix_nrows", [_Pointer(scalar, exc_arg=matrix), self])
         return scalar.gb_obj[0]
 
     @property
     def ncols(self):
         """Number of columns in the Matrix."""
         scalar = _scalar_index("s_ncols")
-        call("GrB_Matrix_ncols", [_Pointer(scalar), self])
+        # TransposedMatrix shares this, and reports against its Matrix (no error function)
+        matrix = self._matrix if self._is_transposed else self
+        call("GrB_Matrix_ncols", [_Pointer(scalar, exc_arg=matrix), self])
         return scalar.gb_obj[0]
 
     @property
@@ -619,7 +623,9 @@ class Matrix(BaseType):
     def nvals(self):
         """Number of non-empty values in the Matrix."""
         scalar = _scalar_index("s_nvals")
-        call("GrB_Matrix_nvals", [_Pointer(scalar), self])
+        # TransposedMatrix shares this, and reports against its Matrix (no error function)
+        matrix = self._matrix if self._is_transposed else self
+        call("GrB_Matrix_nvals", [_Pointer(scalar, exc_arg=matrix), self])
         return scalar.gb_obj[0]
 
     @property

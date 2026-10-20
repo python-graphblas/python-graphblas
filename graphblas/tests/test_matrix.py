@@ -252,6 +252,30 @@ def test_nvals(A):
     assert A.nvals == 12
 
 
+@pytest.mark.skipif("not suitesparse")
+def test_nvals_and_shape_raise_the_graphblas_error():
+    # export(give_ownership=True) leaves no GraphBLAS object, so these calls fail. Each
+    # count lands in a C scalar, and the error was an EmptyObject about that scalar; it
+    # is now the one checking the object itself gives (``_nvals``). A.T reports against
+    # A, since there is no error function for a TransposedMatrix.
+    A = Matrix.from_coo([0], [1], [1.5], nrows=2, ncols=3)
+    v = Vector.from_coo([0], [1.5], size=3)
+    A.ss.export(give_ownership=True)
+    v.ss.export(give_ownership=True)
+    matrix_names = ["nrows", "ncols", "nvals"]
+    for obj, ref, names in [
+        (A, A, matrix_names),
+        (A.T, A, matrix_names),
+        (v, v, ["size", "nvals"]),
+    ]:
+        with pytest.raises(NullPointer) as expected:
+            ref._nvals
+        for name in names:
+            with pytest.raises(NullPointer) as got:
+                getattr(obj, name)
+            assert str(got.value) == str(expected.value), name
+
+
 def test_build(A):
     assert A.nvals == 12
     A.clear()

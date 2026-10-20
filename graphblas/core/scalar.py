@@ -387,7 +387,8 @@ class Scalar(BaseType):
         else:
             scalar = Scalar(self.dtype, is_cscalar=True, name="s_temp")
             dtype_name = "UDT" if is_udt else self.dtype.name
-            call(f"GrB_Scalar_extractElement_{dtype_name}", [_Pointer(scalar), self])
+            out = _Pointer(scalar, exc_arg=self)
+            call(f"GrB_Scalar_extractElement_{dtype_name}", [out, self])
         if is_udt:
             return _element_value(self.dtype, scalar.gb_obj)
         return scalar.gb_obj[0]
@@ -422,7 +423,7 @@ class Scalar(BaseType):
         if self._is_cscalar:
             return 0 if self._empty else 1
         scalar = _scalar_index("s_nvals")
-        call("GrB_Scalar_nvals", [_Pointer(scalar), self])
+        call("GrB_Scalar_nvals", [_Pointer(scalar, exc_arg=self), self])
         return scalar.gb_obj[0]
 
     @property
