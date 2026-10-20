@@ -1146,8 +1146,7 @@ def _reduce_recipe(updater, a, op, axes, keepdims, cast):
     elif not axes:
         _store(updater, M, shape, layout, share=a)
         return
-    nthreads = _nthreads(updater)
-    M, lay = _reduce_matrix(M, shape, layout, set(axes), op, nthreads)
+    M, lay = _reduce_matrix(M, shape, layout, set(axes), op, updater.opts)
     if keepdims:
         out_shape = tuple(1 if x in axes else n for x, n in enumerate(shape))
         out_layout = _insert_unit_axes(lay, axes)
@@ -1161,21 +1160,26 @@ def _reduce_recipe(updater, a, op, axes, keepdims, cast):
 
 
 def _healthy(M, shape, layout):
-    """Move the split of a result with an empty group (an n x 1 or 1 x n Matrix of an n-d
-    result) to the default split, by one cheap reshape (review F4).
+    """Move an empty column group (an n x 1 Matrix, held as n rows of one entry at most) to
+    the default split, by one reshape (review F4).
+
+    An empty row group is left alone: one row holding every entry costs 12 bytes per entry
+    like a Vector, and SuiteSparse runs ewise, apply and selector products on it as fast as
+    on a square Matrix (measured at 1e6 entries), so a reshape there would only add time.
     """
     ndim = len(shape)
-    if ndim < 2 or (layout.rows and layout.cols):
+    if ndim == 0 or layout.cols or math.prod(shape) >= tl.MAX_GROUP:
         return M, layout
     seq = layout.seq
     nvals = M._nvals
-    if math.prod(shape) >= tl.MAX_GROUP:
-        return M, layout
-    p = 1
-    for q in range(ndim - 1, 0, -1):
-        if tl.prod(shape, seq[:q]) * 4 <= nvals:
-            p = q
-            break
+    if ndim == 1:
+        p = 0
+    else:
+        p = 1
+        for q in range(ndim - 1, 0, -1):
+            if tl.prod(shape, seq[:q]) * 4 <= nvals:
+                p = q
+                break
     if not tl._valid_split(shape, seq, p):
         return M, layout
     if nvals == 0:
@@ -1195,7 +1199,7 @@ def _vector_to_row(v):
     return tl.steal_vector_as_row(v)
 
 
-def _reduce_matrix(M, shape, layout, A, op, nthreads):
+def _reduce_matrix(M, shape, layout, A, op, opts):
     """Reduce the axes ``A`` of ``M`` (stored in ``layout``); return the result Matrix and
     its layout over the kept axes (with their original numbers).
     """
@@ -1203,7 +1207,7 @@ def _reduce_matrix(M, shape, layout, A, op, nthreads):
     dtype = op.return_type
     if len(A) == ndim:
         s = Scalar(dtype)
-        s(nthreads=nthreads) << M.reduce_scalar(op)
+        s(**opts) << M.reduce_scalar(op)
         out = tl.new_matrix(dtype, 1, 1)
         if not s._is_empty:
             out[0, 0] = s
@@ -1211,8 +1215,8 @@ def _reduce_matrix(M, shape, layout, A, op, nthreads):
     nvals = M._nvals
     if M.dtype._is_udt or tl.density(M):
         return _reduce_rebuild(M, shape, layout, A, op)
-    sr_first = get_semiring(op, binary.first)
-    sr_second = get_semiring(op, binary.second)
+    # Pass on only the descriptor options the user gave: building one costs microseconds.
+    nthreads = opts.get("nthreads") or tl._nthreads()
     A = set(A)
     while A:
         rows, cols = layout
@@ -1220,7 +1224,7 @@ def _reduce_matrix(M, shape, layout, A, op, nthreads):
         if Ac:
             if Ac == set(cols):
                 v = Vector(dtype, M._nrows)
-                v(nthreads=nthreads) << M.reduce_rowwise(op)
+                v(**opts) << M.reduce_rowwise(op)
                 M = _vector_to_row(v)
                 layout = Layout((), rows)
             else:
@@ -1230,7 +1234,7 @@ def _reduce_matrix(M, shape, layout, A, op, nthreads):
                 kept = tuple(i for i, x in enumerate(cols) if x not in Ac)
                 St = tl.selector(gshape, kept, transposed=True)
                 out = tl.new_matrix(dtype, M._nrows, St._ncols)
-                out(nthreads=nthreads) << M.mxm(St, sr_first)
+                out(**opts) << M.mxm(St, get_semiring(op, binary.first))
                 M = out
                 layout = Layout(rows, tuple(cols[i] for i in kept))
             A -= Ac
@@ -1255,7 +1259,7 @@ def _reduce_matrix(M, shape, layout, A, op, nthreads):
                 layout = Layout(seq[:q], seq[q:])
                 continue
             v = Vector(dtype, M._ncols)
-            v(nthreads=1 if wide else nthreads) << M.reduce_columnwise(op)
+            v(**(dict(opts, nthreads=1) if wide else opts)) << M.reduce_columnwise(op)
             M = _vector_to_row(v)
             layout = Layout((), cols)
         else:
@@ -1265,7 +1269,7 @@ def _reduce_matrix(M, shape, layout, A, op, nthreads):
             kept = tuple(i for i, x in enumerate(rows) if x not in Ar)
             S = tl.selector(gshape, kept)
             out = tl.new_matrix(dtype, S._nrows, M._ncols)
-            out(nthreads=nthreads) << S.mxm(M, sr_second)
+            out(**opts) << S.mxm(M, get_semiring(op, binary.second))
             M = out
             layout = Layout(tuple(rows[i] for i in kept), cols)
         A -= Ar

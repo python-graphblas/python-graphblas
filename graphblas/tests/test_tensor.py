@@ -51,7 +51,8 @@ def check(T, values, present, *, approx=False):
     assert T.nvals == present.sum()
     coords, vals = T.to_coo()
     got = np.zeros(values.shape, bool)
-    got[coords] = True
+    # An empty coords tuple indexes the one element of a 0-d array, entry or not
+    got[coords] = vals.size > 0
     np.testing.assert_array_equal(got, present)
     if approx:
         np.testing.assert_allclose(vals, values[present], rtol=1e-12, atol=1e-12)
@@ -1121,7 +1122,53 @@ def test_reduce_target_layout():
     D(binary.plus) << T.sum(1)
     ev, ep = np_reduce("plus", values, present, 1)
     check(D, np.where(dp, dv, 0) + ev, dp | ep, approx=True)
-    # The healthy split: an n-d result is not left as one row
-    R = T.sum(1, keepdims=True).new()
-    assert R.layout.rows
+    # A result is not left as an n x 1 Matrix (review F4); one row is fine
+    R = T.sum(2, keepdims=True).new()
     assert R.layout.cols
+    check(R, *np_reduce("plus", values, present, 2, keepdims=True), approx=True)
+    U = T.relayout(((0, 1, 2), ()))
+    R = U.sum(1, keepdims=True).new()
+    assert R.layout.cols
+    check(R, *np_reduce("plus", values, present, 1, keepdims=True), approx=True)
+    R = U.sum((0, 2), keepdims=True).new()
+    assert R.layout.cols
+    check(R, *np_reduce("plus", values, present, (0, 2), keepdims=True), approx=True)
+
+
+def test_udt_relayout():
+    """UDT data moves by reshape, transpose and REBUILD only (no P @ M semiring)."""
+    udt = dtypes.register_anonymous(np.dtype([("tensor_a", "<i4"), ("tensor_b", "<f8")]))
+    rng = np.random.default_rng(28)
+    shape = (3, 4, 5)
+    present = rng.random(shape) < 0.3
+    coords = np.nonzero(present)
+    vals = np.zeros(present.sum(), dtype=udt.np_type)
+    vals["tensor_a"] = np.arange(vals.size)
+    vals["tensor_b"] = rng.random(vals.size)
+    T = Tensor.from_coo(coords, vals, udt, shape=shape)
+    assert T.dtype == udt
+    for dst in all_layouts(3):
+        U = T.relayout(dst)
+        U._check_invariants()
+        got_coords, got = U.to_coo()
+        for a, b in zip(got_coords, coords, strict=True):
+            np.testing.assert_array_equal(a, b)
+        np.testing.assert_array_equal(got, vals)
+    V = T.permute_dims((2, 1, 0))
+    got_coords, got = V.to_coo(sort=False)
+    assert got.size == vals.size
+
+
+@pytest.mark.parametrize("layout", [((0, 1), (2,)), ((2,), (0, 1)), ((1,), (2, 0))])
+def test_size_zero_axes(layout):
+    rng = np.random.default_rng(29)
+    shape = (3, 0, 4)
+    T, values, present = random_tensor(shape, rng, layout=layout)
+    assert T.nvals == 0
+    for dst in all_layouts(3)[::4]:
+        check(T.relayout(dst), values, present)
+    check((T + T).new(), values, present)
+    for axis in [0, 1, 2, (0, 2), None]:
+        R = T.sum(axis).new()
+        ev, ep = np_reduce("plus", values, present, axis if axis is not None else (0, 1, 2))
+        check(R, ev, ep)
