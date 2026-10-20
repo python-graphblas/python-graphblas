@@ -279,6 +279,46 @@ def test_udt_scalar_nested_array_roundtrip():
     np.testing.assert_array_equal(got, val)
 
 
+def test_udt_nat_duration_in_another_unit_stays_nat():
+    """A NaT duration stored into a duration of another unit is NaT, not a number.
+
+    numpy before 2.3 converts a NaT ``timedelta64`` scalar into another unit as
+    the integer it is stored as: NaT ms became 9223372036854774 s, and NaT
+    minutes 0 s. A date or an array of durations was not affected.
+    """
+    seconds = dtypes.register_anonymous(np.dtype("m8[s]"), "_NatSeconds")
+    rec = dtypes.register_anonymous(np.dtype([("nat_d", "m8[s]"), ("nat_n", np.int8)]), "_NatRec")
+    days = dtypes.register_anonymous(np.dtype([("nat_t", "M8[D]"), ("nat_n", np.int8)]))
+    for unit in ["ns", "ms", "m", "D"]:
+        nat = np.timedelta64("NaT", unit)
+        assert np.isnat(Scalar.from_value(nat, seconds).value)
+        s = Scalar(seconds)
+        s.value = nat
+        assert np.isnat(s.value)
+        v = Vector(seconds, size=2)
+        v[0] = nat
+        assert np.isnat(v[0].new().value)
+        v[:] = nat
+        assert np.isnat(v.to_coo()[1]).all()
+        r = Vector(rec, size=2)
+        r[0] = (nat, 1)
+        r[1] = {"nat_d": nat, "nat_n": 1}
+        assert np.isnat(r.to_coo()[1]["nat_d"]).all()
+        # Off SuiteSparse, ``build`` uses ``binary.any`` as its ``dup_op``, which a
+        # UDT gets only by compiling it with Numba.
+        if suitesparse or gb.core._supports_udfs:
+            v = Vector.from_coo([0, 1], [nat, nat], dtype=seconds)
+            assert np.isnat(v.to_coo()[1]).all()
+            r = Vector.from_coo([0, 1], [(nat, 1), (nat, 2)], dtype=rec)
+            assert np.isnat(r.to_coo()[1]["nat_d"]).all()
+        r = Vector(days, size=1)
+        r[0] = (np.datetime64("NaT", unit), 1)
+        assert np.isnat(r[0].new().value["nat_t"])
+    # Only NaT changes how it converts; a value converts as numpy converts it.
+    assert Scalar.from_value(np.timedelta64(5000, "ms"), seconds).value == np.timedelta64(5, "s")
+    assert Scalar.from_value(np.timedelta64(2, "m"), seconds).value == np.timedelta64(120, "s")
+
+
 def test_nvals(s):
     assert s.nvals == 1
     s.clear()
