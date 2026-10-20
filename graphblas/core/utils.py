@@ -8,7 +8,8 @@ from .dtypes import _nats_in_leaf_units, _view_if_same_layout
 
 try:
     from suitesparse_graphblas.utils import can_unclaim_buffer, empty
-except ImportError:  # MAINT 2026-10-18: suitesparse-graphblas < 10.5.1.1 has neither
+except ImportError:  # pragma: no cover (import)
+    # MAINT 2026-10-18: suitesparse-graphblas < 10.5.1.1 has neither
     can_unclaim_buffer = empty = None
 
 _NP2 = np.__version__.startswith("2.")

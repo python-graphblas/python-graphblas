@@ -17,7 +17,8 @@ if backend != "suitesparse":
 
 try:
     from suitesparse_graphblas.utils import can_unclaim_buffer, empty
-except ImportError:  # suitesparse-graphblas < 10.5.1.1
+except ImportError:  # pragma: no cover (import)
+    # suitesparse-graphblas < 10.5.1.1
     can_unclaim_buffer = empty = None
 
 
@@ -360,7 +361,9 @@ def _libc_arena():
     k = lib.GxB_NARENAS - 1
     initialized = ffi.new("int*")
     assert lib.GxB_arena_initialized(initialized, k) == lib.GrB_SUCCESS
-    if not initialized[0]:
+    # GxB_arena_init refuses an arena that is already initialized, which it is
+    # only if the test runs again in the same process
+    if not initialized[0]:  # pragma: no branch (safety)
         libc = ctypes.CDLL(None)
         funcs = [
             ffi.cast(sig, ctypes.cast(getattr(libc, name), ctypes.c_void_p).value)
