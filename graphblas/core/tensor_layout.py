@@ -25,7 +25,7 @@ from typing import NamedTuple
 import numpy as np
 
 from .. import semiring as _semiring
-from ..dtypes import BOOL
+from ..dtypes import BOOL, lookup_dtype
 from ..exceptions import _error_code_lookup
 from . import NULL, ffi, lib
 from .matrix import Matrix
@@ -282,6 +282,41 @@ def nonempty_row_ids(M):
         return np.flatnonzero(np.diff(arr))
     r = M.to_coo(columns=False, values=False)[0].view(np.int64)
     return r[np.r_[True, r[1:] != r[:-1]]] if r.size else r
+
+
+def count_nonempty_rows(M):
+    """The exact number of nonempty rows: O(1) for hypersparse, O(nrows) for sparse."""
+    fmt = M.ss.format
+    if fmt == "hypercsr":
+        return nonempty_rows(M)
+    if fmt == "csr":
+        with _Unloaded(M) as cont, _VectorArray(cont.p) as v:
+            return 0 if v.array is None else int(np.count_nonzero(np.diff(v.array)))
+    return M._nrows
+
+
+def rows_selector(M, shape, group, kept_pos, weights=None):
+    """``S`` with ``S @ M`` reducing the axes of the row ``group`` not in ``kept_pos``, built
+    over the nonempty rows of ``M`` only, so its size follows the data rather than the
+    group's positions (a hypersparse row group). ``weights`` (a dense array and a presence
+    mask over one axis of the group, as ``(values, present, position)``) gives each row its
+    weight instead of 1 (TTV).
+    """
+    h = nonempty_row_ids(M)
+    gshape = tuple(shape[a] for a in group)
+    co = {}
+    unravel(h, gshape, tuple(range(len(gshape))), co)
+    values = True
+    if weights is not None:
+        w, present, pos = weights
+        keep = present[co[pos]]
+        if not keep.all():
+            h = h[keep]
+            co = {k: c[keep] for k, c in co.items()}
+        values = w[co[pos]]
+    dst = ravel(co, gshape, kept_pos, n=h.size)
+    dtype = BOOL if weights is None else lookup_dtype(values.dtype)
+    return from_coo(dst, h, values, dtype, prod(gshape, kept_pos), prod(shape, group))
 
 
 def steal_vector_as_row(v):
