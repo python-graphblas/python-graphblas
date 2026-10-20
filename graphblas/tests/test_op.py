@@ -6660,7 +6660,7 @@ def test_builtin_udfs_are_disk_cached():
         numba_func = getattr(binary, name)._numba_func
         assert not isinstance(numba_func._cache, NullCache), name
 
-    def _uncached_probe(x, y):
+    def _uncached_probe(x, y):  # pragma: no cover (numba)
         return x + y
 
     user_op = BinaryOp.register_anonymous(_uncached_probe)
