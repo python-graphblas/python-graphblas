@@ -1195,8 +1195,6 @@ def test_complex_truediv_udt_jit_matches_cfunc_at_extremes():
     if not _has_jit_set:
         pytest.skip("jit_c_source introspection requires SuiteSparse:GraphBLAS >= 9")
     _require_jit_on()
-    if numba is None:
-        pytest.skip("numba required for the cfunc baseline")
 
     udt = dtypes.register_anonymous(
         np.dtype([("cxd_s", np.complex64), ("cxd_d", np.complex128)], align=True), "_CxDivJit"
@@ -1249,8 +1247,6 @@ def test_complex_times_udt_jit_matches_cfunc_with_infinities():
     if not _has_jit_set:
         pytest.skip("jit_c_source introspection requires SuiteSparse:GraphBLAS >= 9")
     _require_jit_on()
-    if numba is None:
-        pytest.skip("numba required for the cfunc baseline")
 
     rec = dtypes.register_anonymous(
         np.dtype([("cxt_s", np.complex64), ("cxt_d", np.complex128)], align=True), "_CxTimesJit"
