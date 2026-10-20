@@ -170,8 +170,8 @@ def _resolve_udt_return_type(numba_ret_type, *dtypes):
             leaf_dtypes = [leaf for _py, _c, leaf in _leaves(d)]
             try:
                 expected = [lookup_dtype(t).numba_type for t in leaf_dtypes]
-            except (ValueError, TypeError):
-                continue
+            except (ValueError, TypeError):  # pragma: no cover (safety)
+                continue  # no record UDT has such a leaf: a void field fails to register
             if all(et == tt for et, tt in zip(expected, numba_ret_type.types, strict=True)):
                 return d
         # No perfect match; fall back to the first arity-compatible UDT.
@@ -447,7 +447,8 @@ def _run_udf_probe(numba_func, arg_dtypes):
     args = [_udf_probe_value(d) for d in arg_dtypes]
     try:
         return (numba_func(*args),)
-    except NumbaError as exc:
+    except NumbaError as exc:  # pragma: no cover (safety)
+        # The wrapper's operands have these types, so it would fail to compile too.
         raise UdfParseError(_summarize_numba_typing_error(exc)) from exc
     except Exception:
         return None
@@ -536,7 +537,9 @@ def _check_udf_fills_output(numba_func, numba_ret_type, return_type, zkind, arg_
         # The tuple is flat over the leaves, one element per leaf.
         leaves = list(_iter_record_leaves(return_type.np_type))
         if len(numba_ret_type.types) != len(leaves):
-            return  # a wrong field count, not a wrong shape
+            # _resolve_udt_return_type matched the record to the tuple's length,
+            # so this would be a wrong field count, not a wrong shape.
+            return  # pragma: no cover (safety)
         slots = [
             (path, numba_ret_type.types[i], leaf.shape, i)
             for i, (path, _c, leaf) in enumerate(leaves)

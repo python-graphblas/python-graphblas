@@ -1493,7 +1493,9 @@ def udt_op_path(request):
         demoted = path == "jit" and gb.ss.config["jit_c_control"] != "on"
         gb.ss.config["jit_c_control"] = previous
         if demoted:
-            pytest.fail("SuiteSparse demoted jit_c_control; the JIT path did not run")
+            pytest.fail(  # pragma: no cover (only on failure)
+                "SuiteSparse demoted jit_c_control; the JIT path did not run"
+            )
 
 
 def _udt_vectors(udt, xs, ys=None):
@@ -4141,7 +4143,7 @@ def test_udt_array_ops_on_large_elements():
         T = dtypes.register_anonymous(np.dtype((np.float64, (64, 64))), "_LoopBig")
     except InvalidValue:
         if sys.platform != "win32":
-            raise
+            raise  # pragma: no cover (only on failure)
         # SuiteSparse:GraphBLAS built by MSVC (no variable-length arrays) refuses a
         # UDT larger than 1024 bytes (GB_VLA_MAXSIZE); this one is 32768.
         pytest.skip("SuiteSparse:GraphBLAS limits a UDT to 1024 bytes on Windows")
@@ -4365,10 +4367,10 @@ def test_udt_user_op_named_like_a_lifted_op():
     """
     udt = dtypes.register_anonymous(np.dtype((np.int64, (2, 3))), "_NamedLikeLifted")
 
-    def scaled_plus(x, y):
+    def scaled_plus(x, y):  # pragma: no cover (numba)
         return x * 10 + y
 
-    def difference(x, y):
+    def difference(x, y):  # pragma: no cover (numba)
         return x - y
 
     plus_like = BinaryOp.register_anonymous(scaled_plus, "plus", is_udt=True)
