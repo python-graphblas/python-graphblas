@@ -21,6 +21,7 @@ from graphblas.exceptions import (
     IndexOutOfBound,
     InvalidObject,
     InvalidValue,
+    NullPointer,
     OutputNotEmpty,
     UdfParseError,
 )
@@ -232,6 +233,18 @@ def test_update_with_a_literal_keeps_the_full_path_errors():
     u = Vector(dtypes.UINT64, 2)
     u << 2**64 - 1  # beyond INT64: typed as the target's dtype by the full path
     assert u.get(0) == 2**64 - 1
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_update_with_a_literal_raises_graphblas_errors():
+    # export(give_ownership=True) leaves no GraphBLAS object behind, so the assign
+    # itself fails, and the fast path raises what the full path does
+    v = Vector(int, 3)
+    v.ss.export(give_ownership=True)
+    with pytest.raises(NullPointer):
+        v(Vector(bool, 3).S) << 1
+    with pytest.raises(NullPointer), gb.Recorder():
+        v(Vector(bool, 3).S) << 1
 
 
 def test_from_coo_default_values():
