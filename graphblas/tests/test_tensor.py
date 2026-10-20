@@ -1582,3 +1582,203 @@ def test_embed_block_diagonal():
     E.ss.config["sparsity_control"] = "sparse"
     assert tl.embed_block_diagonal(E, 2, 2)
     assert E.shape == (4, 6)
+
+
+# --------------------------------------------------------------------------------------------
+# Phase 2a.5: einsum, mttkrp, unfold, TTV
+
+
+def np_einsum(sub, *models):
+    vals = [m[1] for m in models]
+    patterns = [m[2].astype(np.int64) for m in models]
+    p = np.einsum(sub, *patterns) > 0
+    return np.where(p, np.einsum(sub, *vals), 0), p
+
+
+EINSUM_CASES = [
+    ("ijk,jr,kr->ir", [(3, 4, 5), (4, 2), (5, 2)]),
+    ("ijk,ir,kr->jr", [(3, 4, 5), (3, 2), (5, 2)]),
+    ("ijk,ir,jr->kr", [(3, 4, 5), (3, 2), (4, 2)]),
+    ("ijk,jr,kr->ri", [(3, 4, 5), (4, 2), (5, 2)]),
+    ("ijk,rj,kr->ir", [(3, 4, 5), (2, 4), (5, 2)]),
+    ("ijkl,jr,kr,lr->ir", [(2, 3, 4, 5), (3, 2), (4, 2), (5, 2)]),
+    ("ijkl,ir,jr,kr->lr", [(2, 3, 4, 5), (2, 2), (3, 2), (4, 2)]),
+    ("ijk,kl->ijl", [(3, 4, 5), (5, 6)]),
+    ("ijk,jl->ilk", [(3, 4, 5), (4, 6)]),
+    ("ijk,il->ljk", [(3, 4, 5), (3, 2)]),
+    ("ijk,k->ij", [(3, 4, 5), (5,)]),
+    ("ijk,j->ik", [(3, 4, 5), (4,)]),
+    ("ijk->kji", [(3, 4, 5)]),
+    ("ijk->i", [(3, 4, 5)]),
+    ("ijk->", [(3, 4, 5)]),
+    ("ijk", [(3, 4, 5)]),
+    ("ijk,jk->i", [(3, 4, 5), (4, 5)]),
+    ("ijk,jkr->ir", [(3, 4, 5), (4, 5, 2)]),
+    ("bij,bjk->bik", [(3, 4, 2), (3, 2, 5)]),
+    ("bij,bjk->kib", [(3, 4, 2), (3, 2, 5)]),
+    ("ij,kl->ijkl", [(2, 3), (2, 2)]),
+    ("ijk,ijk->ijk", [(3, 4, 5), (3, 4, 5)]),
+    ("ijk,jk->ijk", [(3, 4, 5), (4, 5)]),
+    ("ijk,ijk->", [(3, 4, 5), (3, 4, 5)]),
+    ("ij,jk,kl->il", [(3, 4), (4, 5), (5, 2)]),
+    ("ijk,jl,km->ilm", [(3, 4, 5), (4, 2), (5, 3)]),
+]
+
+
+@pytest.mark.parametrize(("sub", "shapes"), EINSUM_CASES)
+def test_einsum(sub, shapes):
+    rng = np.random.default_rng(48)
+    for trial in range(2):
+        models = []
+        for k, shape in enumerate(shapes):
+            layout = all_layouts(len(shape))[-1] if trial and k == 0 else None
+            models.append(random_tensor(shape, rng, layout=layout, density=0.6))
+        R = gb.core.tensor.einsum(sub, *[m[0] for m in models]).new()
+        check(R, *np_einsum(sub, *models), approx=True)
+
+
+def test_einsum_operands_semirings_and_errors(monkeypatch):
+    from graphblas.core import tensor as tensor_mod
+
+    einsum = tensor_mod.einsum
+    rng = np.random.default_rng(49)
+    X, xv, xp = random_tensor((3, 4, 5), rng, density=0.6)
+    B = rng.random((4, 2))
+    C = Matrix.from_dense(rng.random((5, 2)))
+    ones2 = np.ones((4, 2), bool), np.ones((5, 2), bool)
+    R = einsum("ijk,jr,kr->ir", X, B, C).new()
+    check(
+        R,
+        *np_einsum("ijk,jr,kr->ir", (X, xv, xp), (B, B, ones2[0]), (C, C.to_dense(), ones2[1])),
+        approx=True,
+    )
+    # min_plus by brute force for a plain contraction
+    Y, yv, yp = random_tensor((5, 2), rng, density=0.6)
+    R = einsum("ijk,kl->ijl", X, Y, op=gb.semiring.min_plus).new()
+    big = np.where(xp, xv, np.inf)[..., None] + np.where(yp, yv, np.inf)[None, None]
+    ev = big.min(axis=2)
+    check(R, np.where(np.isfinite(ev), ev, 0), np.isfinite(ev), approx=True)
+    # mask on the result
+    Mk, _, mp = random_tensor((3, 4, 2), rng, dtype=dtypes.BOOL, density=0.5)
+    ev, ep = np_einsum("ijk,kl->ijl", (X, xv, xp), (Y, yv, yp))
+    check(
+        einsum("ijk,kl->ijl", X, Y).new(mask=Mk.S), np.where(mp & ep, ev, 0), mp & ep, approx=True
+    )
+    # MTTKRP goes to Tensor.mttkrp, never the Khatri-Rao product
+    called = []
+    orig = Tensor.mttkrp
+    monkeypatch.setattr(Tensor, "mttkrp", lambda *a, **k: called.append(1) or orig(*a, **k))
+    einsum("ijk,jr,kr->ir", X, B, C).new()
+    assert called
+    monkeypatch.undo()
+    # without opt_einsum the greedy path is used
+    monkeypatch.setitem(__import__("sys").modules, "opt_einsum", None)
+    A1, a1v, a1p = random_tensor((3, 4), rng)
+    A2, a2v, a2p = random_tensor((4, 5), rng)
+    A3, a3v, a3p = random_tensor((5, 2), rng)
+    R = einsum("ij,jk,kl->il", A1, A2, A3).new()
+    check(
+        R, *np_einsum("ij,jk,kl->il", (A1, a1v, a1p), (A2, a2v, a2p), (A3, a3v, a3p)), approx=True
+    )
+    monkeypatch.undo()
+    with pytest.raises(NotImplementedError, match="diagonal"):
+        einsum("iik->k", Tensor(float, 3, 3, 4))
+    with pytest.raises(NotImplementedError, match=r"\.\.\."):
+        einsum("...k->k", X)
+    with pytest.raises(ValueError, match="terms"):
+        einsum("ijk,jr->ir", X)
+    with pytest.raises(DimensionMismatch, match="sizes"):
+        einsum("ijk,jr->ir", X, Tensor(float, 5, 2))
+    with pytest.raises(ValueError, match="does not match"):
+        einsum("ij->i", X)
+    with pytest.raises(ValueError, match="output"):
+        einsum("ijk->iq", X)
+    with pytest.raises(TypeError):
+        einsum("ijk->i", X, op=binary.plus)
+    with pytest.raises(TypeError, match="Tensor-like"):
+        einsum("ijk->i", "x")
+    assert "einsum" in repr(einsum("ijk->i", X))
+
+
+@pytest.mark.parametrize("mode", [0, 1, 2])
+def test_mttkrp(mode):
+    rng = np.random.default_rng(50)
+    X, xv, xp = random_tensor((3, 4, 5), rng, density=0.5)
+    factors = [rng.random((n, 3)) for n in X.shape]
+    factors[1] = Matrix.from_dense(factors[1])
+    dense = [f if isinstance(f, np.ndarray) else f.to_dense() for f in factors]
+    letters = "ijk"
+    sub = letters + "," + ",".join(c + "r" for k, c in enumerate(letters) if k != mode)
+    sub += "->" + letters[mode] + "r"
+    models = [(X, xv, xp)] + [
+        (None, dense[k], np.ones_like(dense[k], bool)) for k in range(3) if k != mode
+    ]
+    check(X.mttkrp(factors, mode).new(), *np_einsum(sub, *models), approx=True)
+    with pytest.raises(ValueError, match="factors"):
+        X.mttkrp(factors[:2], mode)
+    bad = list(factors)
+    bad[(mode + 1) % 3] = rng.random((7, 3))
+    with pytest.raises(DimensionMismatch, match="rows"):
+        X.mttkrp(bad, mode)
+    bad[(mode + 1) % 3] = rng.random((X.shape[(mode + 1) % 3], 2))
+    with pytest.raises(DimensionMismatch, match="ranks"):
+        X.mttkrp(bad, mode)
+    with pytest.raises(TypeError, match="factor"):
+        X.mttkrp(["x", "y", "z"], mode)
+
+
+def test_unfold():
+    rng = np.random.default_rng(51)
+    X, xv, _ = random_tensor((3, 4, 5), rng, layout=((2,), (1, 0)))
+    for mode in range(3):
+        M = X.unfold(mode)
+        np.testing.assert_allclose(
+            M.to_dense(0.0), np.moveaxis(xv, mode, 0).reshape(xv.shape[mode], -1)
+        )
+        M = X.unfold(mode, order="F")
+        np.testing.assert_allclose(
+            M.to_dense(0.0), np.moveaxis(xv, mode, 0).reshape(xv.shape[mode], -1, order="F")
+        )
+    assert X.unfold(2) is not X.ss.matrix
+    with pytest.raises(ValueError, match="order"):
+        X.unfold(0, order="X")
+
+
+@pytest.mark.parametrize("layout", all_layouts(3)[::2])
+def test_ttv(layout):
+    rng = np.random.default_rng(52)
+    X, xv, xp = random_tensor((3, 4, 5), rng, layout=layout, density=0.5)
+    for axis in range(3):
+        w, wv, wp = random_tensor((X.shape[axis],), rng, density=0.8)
+        rest = "ijk".replace("ijk"[axis], "")
+        sub = f"ijk,{'ijk'[axis]}->{rest}"
+        check(
+            X.tensordot(w, ([axis], [0])).new(),
+            *np_einsum(sub, (X, xv, xp), (w, wv, wp)),
+            approx=True,
+        )
+        sub2 = f"{'ijk'[axis]},ijk->{rest}"
+        check(
+            w.tensordot(X, ([0], [axis])).new(),
+            *np_einsum(sub2, (w, wv, wp), (X, xv, xp)),
+            approx=True,
+        )
+        # a non-commutative multiply: sum of (x - w) over the present pairs
+        R = X.tensordot(w, ([axis], [0]), op=gb.semiring.plus_minus).new()
+        diff = np.moveaxis(xv, axis, -1) - wv
+        both = np.moveaxis(xp, axis, -1) & wp
+        check(R, np.where(both, diff, 0).sum(-1), both.any(-1), approx=True)
+        R = w.tensordot(X, ([0], [axis]), op=gb.semiring.plus_minus).new()
+        check(R, np.where(both, -diff, 0).sum(-1), both.any(-1), approx=True)
+        # Vector and ndarray operands
+        v = Vector.from_dense(wv)
+        check(
+            X.tensordot(v, ([axis], [0])).new(),
+            *np_einsum(sub, (X, xv, xp), (v, wv, np.ones_like(wp))),
+            approx=True,
+        )
+        check(
+            X.tensordot(wv, ([axis], [0])).new(),
+            *np_einsum(sub, (X, xv, xp), (v, wv, np.ones_like(wp))),
+            approx=True,
+        )
