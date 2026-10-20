@@ -6704,6 +6704,34 @@ def test_builtin_udf_types_precede_compilation():
     assert int(lines["compiled after"]) == 1, report
 
 
+@pytest.mark.skipif("not supports_udfs")
+def test_builtin_udf_builds_one_dtype_when_indexed():
+    # conftest builds every dtype of binary.floordiv before the tests run, so
+    # build a new op from the same function, as _initialize does
+    floordiv = BinaryOp._build("floordiv", operator.binary._floordiv, anonymous=True, cache=True)
+    assert floordiv.types[INT64] == INT64
+    assert floordiv.types[BOOL] == INT8
+    assert not floordiv._typed_ops
+    typed = floordiv[INT64]
+    assert floordiv._typed_ops == {INT64: typed}
+    assert floordiv[INT64] is typed
+    v = Vector.from_coo([0, 1, 2], [7, -7, 7])
+    w = Vector.from_coo([0, 1, 2], [2, 2, -2])
+    assert v.ewise_mult(w, typed).new().isequal(Vector.from_coo([0, 1, 2], [3, -4, -4]))
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_builtin_udf_types_without_typing_only(monkeypatch):
+    # A Numba whose typing internals moved compiles every dtype up front instead,
+    # and must advertise the same types
+    func = operator.binary._floordiv
+    deferred = BinaryOp._build("floordiv", func, anonymous=True, cache=True)
+    monkeypatch.setattr(operator.binary, "_HAS_TYPING_ONLY", False)
+    eager = BinaryOp._build("floordiv", func, anonymous=True, cache=True)
+    assert eager.types == deferred.types
+    assert eager._typed_ops.keys() == eager.types.keys()
+
+
 _DEFERRED_COMMUTES_PROBE = """
 import graphblas as gb
 
