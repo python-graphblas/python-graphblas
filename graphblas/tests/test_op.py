@@ -4569,6 +4569,8 @@ def test_udt_literal_converts_only_when_exact():
         np.dtype([("ex_v", np.int8, (2,)), ("ex_w", np.int8)]), "_ExactNested"
     )
     text = dtypes.register_anonymous(np.dtype([("ex_s", "S4"), ("ex_n", np.int8)]), "_ExactText")
+    bare = dtypes.register_anonymous(np.dtype("S3"), "_ExactBareText")
+    seconds = dtypes.register_anonymous(np.dtype("m8[s]"), "_ExactBareSeconds")
     v = Vector(arr, size=3)
     v[0] = [1, 2, 3]
     w = Vector(arr, size=3)
@@ -4581,8 +4583,14 @@ def test_udt_literal_converts_only_when_exact():
     n[0] = ([1, 2], 3)
     t = Vector(text, size=1)
     t[0] = (b"ab", 1)
+    b = Vector(bare, size=1)
+    b[0] = b"0.5"
+    d = Vector(seconds, size=1)
+    d[0] = np.timedelta64(5, "s")
+    cut_text = np.array((b"abcdef", 1), dtype=[("ex_s", "S6"), ("ex_n", np.int64)])[()]
     udf = BinaryOp.register_anonymous(lambda x, y: x + y, "_exact_plus", is_udt=True)
     second = BinaryOp.register_anonymous(lambda x, y: y, "_exact_second", is_udt=True)
+    same = BinaryOp.register_anonymous(lambda x, y: x == y, "_exact_same", is_udt=True)
     # Literals of the UDT's type convert, a float rounding into a float32 field.
     assert v.apply(udf, right=(1, 2, 3)).new()[0].new().value.tolist() == [2, 4, 6]
     assert v.apply(udf, right=[True, 2, 3]).new().dtype == arr
@@ -4614,6 +4622,13 @@ def test_udt_literal_converts_only_when_exact():
         (lambda: f.apply(udf, right=np.complex128(1 + 2j)), "_ExactF32"),
         (lambda: f.apply(udf, right=np.float64(1e300)), "_ExactF32: it is typed as FP64,"),
         (lambda: n.apply(second, right=([1, 2.5], 3)), "_ExactNested"),
+        # A number does not become text exactly (0.5 would be b"0.5"), nor a string
+        # cut short, nor a duration in a coarser unit (5 ms is 0 s).
+        (lambda: t.apply(second, right=(1.5, 1)), "_ExactText"),
+        (lambda: b.apply(same, right=0.5), "_ExactBareText: it is typed as FP64,"),
+        (lambda: b.apply(same, right=np.True_), "_ExactBareText: it is typed as BOOL,"),
+        (lambda: t.apply(second, right=cut_text), "_ExactText"),
+        (lambda: d.apply(same, right=np.timedelta64(5, "ms")), "_ExactBareSeconds"),
     ]:
         with pytest.raises(ValueError, match=re.escape(f"does not fit {typed_as}")):
             expr()
@@ -4634,6 +4649,16 @@ def test_udt_literal_converts_only_when_exact():
             expr()
     with pytest.warns(DeprecationWarning, match="does not fit _ExactText"):
         assert t.apply(second, right=text_literal).new()[0].new().value.tolist() == (b"cd", 2)
+    with pytest.warns(DeprecationWarning, match="does not fit _ExactBareSeconds"):
+        assert d.apply(same, right=np.timedelta64(5000, "ms")).new()[0].new().value
+    with pytest.warns(DeprecationWarning, match="does not fit _ExactBareSeconds"):
+        # NaT stays NaT in any unit, and equals nothing.
+        assert not d.apply(same, right=np.timedelta64("NaT", "ms")).new()[0].new().value
+    # Text for a text leaf converts, bytes or str.
+    for literal in [b"cd", "cd"]:
+        assert t.apply(second, right=(literal, 1)).new()[0].new().value.tolist() == (b"cd", 1)
+    for literal in [b"0.5", "0.5"]:
+        assert b.apply(same, right=literal).new()[0].new().value
     with pytest.raises(OverflowError, match="300 out of bounds for int8"):
         v.apply(udf, right=(1, 2, 300))
     # Defaults that fit still work, and fill in for the missing side.

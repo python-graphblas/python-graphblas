@@ -14,6 +14,7 @@ a UDT without fitting it is deprecated in :func:`_refuse_unless_exact` (MAINT).
 """
 
 import math
+import numbers
 import struct
 import warnings
 from functools import lru_cache
@@ -350,7 +351,10 @@ def _converts_exactly(dtype, value):
     """Whether converting ``value`` into UDT ``dtype`` keeps every number in it.
 
     A float may round to a narrower float, as numpy 2 rounds a Python number
-    beside float32, but may not become infinite or lose an imaginary part.
+    beside float32, but may not become infinite or lose an imaginary part. A
+    leaf that holds no number (bytes, a date, a duration) keeps a value only
+    if it converts back to it: not a number (``1.5`` would become ``b"1.5"``),
+    a string cut short, or a duration in a coarser unit (5 ms is 0 s).
     """
     np_type = dtype.np_type
     try:
@@ -375,6 +379,9 @@ def _converts_exactly(dtype, value):
     ):
         kind = converted_leaf.dtype.kind
         if kind not in "biufc":
+            for x, y in zip(given_leaf.ravel().tolist(), converted_leaf.ravel(), strict=True):
+                if _is_number(x) or not _converts_back(x, y):
+                    return False
             continue
         for x, y in zip(given_leaf.ravel().tolist(), converted_leaf.ravel().tolist(), strict=True):
             if kind in "fc":
@@ -384,6 +391,26 @@ def _converts_exactly(dtype, value):
             elif x != y:
                 return False
     return True
+
+
+def _is_number(x):
+    """A Python or numpy number or bool; not a timedelta, which numpy counts as an integer."""
+    return isinstance(x, (numbers.Number, np.bool_)) and not isinstance(x, np.timedelta64)
+
+
+def _converts_back(given, converted):
+    """Whether ``converted``, ``given`` as text, a date or a duration, converts back to ``given``.
+
+    numpy compares dates and durations across units exactly, so 0 s is not 5 ms.
+    """
+    given = np.asarray(given)
+    try:
+        back = np.asarray(converted).astype(given.dtype)
+    except (TypeError, ValueError):
+        return False
+    if given.dtype.kind in "mM" and np.isnat(given):
+        return bool(np.isnat(back))
+    return bool(np.all(back == given))
 
 
 def _object_layout(np_type):
