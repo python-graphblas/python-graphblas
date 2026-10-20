@@ -2084,11 +2084,16 @@ def test_default_split_follows_nonempty_rows():
     T = Tensor.from_coo((i2, j2, k2), 1.0, shape=shape)
     assert T.layout == Layout((0,), (1, 2))
     T._check_invariants()
-    # A large sample-checked case (more entries than the sample size)
-    big = (300, 400, 50)
-    lin = np.unique(rng.integers(0, 300 * 400 * 50, 200_000))
-    T = Tensor.from_coo(np.unravel_index(lin, big), 1.0, shape=big)
-    assert T.layout == Layout((0, 1), (2,))  # about 1.7 entries per (i, j) row, sparse rows
+    # Large sample-checked cases (more entries than the sample size). About 2 entries per
+    # (i, j) row: thin rows are kept only when (0|1,2)'s column group would be wider than the
+    # data (400 * 2000 positions for 2e5 entries), not when it is narrower (400 * 50).
+    for big, expected in [
+        ((300, 400, 2000), Layout((0, 1), (2,))),
+        ((300, 400, 50), Layout((0,), (1, 2))),
+    ]:
+        lin = np.unique(rng.integers(0, math.prod(big), 200_000))
+        T = Tensor.from_coo(np.unravel_index(lin, big), 1.0, shape=big)
+        assert T.layout == expected
     # 4-d moves the split one axis at a time
     coords = [rng.integers(0, n, 40) for n in (5, 6, 7, 8)]
     lin = np.unique(np.ravel_multi_index(coords, (5, 6, 7, 8)))
@@ -2247,3 +2252,27 @@ def test_extract_filter_path():
         (slice(None), [1, 4000], slice(10, 20)),
     ]:
         check(X[key].new(), np_outer_index(dense, key), np_outer_index(present, key))
+    # Keys that index only axes of a hypersparse row group pick rows from h (when its rows
+    # hold enough entries to beat the filter): ranges, steps, integers, an empty result
+    shape = (300, 400, 50)
+    ij = rng.choice(300 * 400, 600, replace=False)
+    k = np.concatenate([rng.choice(50, 20, replace=False) for _ in range(600)])
+    coords = (np.repeat(ij // 400, 20), np.repeat(ij % 400, 20), k)
+    vals = np.round(rng.random(k.size) * 10 - 5, 1)
+    X = Tensor.from_coo(coords, vals, shape=shape, layout=((0, 1), (2,)))
+    assert X.ss.format == "hypercsr"
+    xv = np.zeros(shape)
+    xp = np.zeros(shape, bool)
+    xv[coords] = vals
+    xp[coords] = True
+    for key in [
+        (slice(None), slice(40, 80), slice(None)),
+        (slice(10, 200, 3), slice(None, None, -7), slice(None)),
+        (slice(None), 37, slice(None)),
+        (12, slice(100, 300), slice(None)),
+        (5, 6, slice(None)),
+        (slice(0, 0), slice(None), slice(None)),
+    ]:
+        for nthreads in (8, 1):
+            R = X[key].new(nthreads=nthreads)
+            check(R, np_outer_index(xv, key), np_outer_index(xp, key))
