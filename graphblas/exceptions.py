@@ -162,9 +162,28 @@ def check_status(response_code, args):
         arg = arg._exc_arg
     if type(arg) is _Pointer:
         arg = arg.val
-    type_name = type(arg).__name__
+    type_name = _error_type_name(type(arg))
     carg = arg._carg
     return check_status_carg(response_code, type_name, carg)
+
+
+def _error_type_name(cls):
+    """The type name whose ``GrB_<name>_error`` reports on objects of ``cls``.
+
+    A subclass of Matrix or Vector has no error function of its own, so it uses that of
+    the nearest base class that has one. Only the classes of graphblas.core count, which
+    is where every such type is: another class, such as a user's mixin, may share a
+    GraphBLAS type's name. Any other class keeps its own name.
+    """
+    for base in cls.__mro__:
+        if not base.__module__.startswith("graphblas.core."):
+            continue
+        try:
+            _libget(f"GrB_{base.__name__}_error")
+        except AttributeError:
+            continue
+        return base.__name__
+    return cls.__name__
 
 
 def check_status_carg(response_code, type_name, carg):
