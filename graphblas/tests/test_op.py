@@ -4967,12 +4967,18 @@ def test_udt_store_casts_each_element_as_builtin_types_do():
         C << A.power(3)
     C << A.power(1)
     assert C.to_coo()[2].tolist() == [first]
-    # A semiring whose result is another type (int truediv is float) stores that
-    # type as it is.
-    P = Matrix.from_coo([0], [0], [[[1, -1], [2, 4], [-8, 3]]], dtype=i8s, nrows=1, ncols=1)
-    Q = Matrix(f64s, nrows=1, ncols=1)
-    Q << P.power(2, semiring.plus_truediv)
-    assert Q.isequal(semiring.plus_truediv(P @ P).new())
+    # A semiring whose result is another type (int truediv is float) gives that
+    # type, which stores as it is, and each later product takes the semiring
+    # typed for its operands, so the powers are those of a float64 copy, as for
+    # built-in types.
+    P = Matrix(i8s, nrows=2, ncols=2)
+    P[0, 0] = np.full((3, 2), 2)
+    P[0, 1] = np.full((3, 2), 1)
+    P[1, 1] = [[4, 2], [1, -1], [3, 5]]
+    Q = Matrix(f64s, nrows=2, ncols=2)
+    for n in [1, 2, 3, 4, 5]:
+        Q << P.power(n, semiring.plus_truediv)
+        assert Q.isequal(P.dup(dtype=f64s).power(n, semiring.plus_truediv).new()), n
     # Leading axes of length 1 do not change the layout.
     lead = dtypes.register_anonymous(np.dtype((np.float32, (1, 3, 2))), "_StoreCastLead")
     u = Vector(lead, size=3)

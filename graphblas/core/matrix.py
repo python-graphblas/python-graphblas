@@ -111,6 +111,15 @@ def _reposition(updater, indices, chunk):
 
 def _power(updater, A, n, op):
     opts = updater.opts
+
+    def times(left, right):
+        # ``op`` is typed for A, and GraphBLAS casts a built-in operand of another
+        # type to it, but not a UDT: an int8 UDT squares to float64 under truediv.
+        # So a product of UDT operands of other types takes ``op`` typed for them.
+        if A.dtype._is_udt and (left.dtype != op.type or right.dtype != op.type2):
+            return get_typed_op(op.parent, left.dtype, right.dtype, kind="semiring")(left @ right)
+        return op(left @ right)
+
     if n == 0:
         v = Vector.from_scalar(op.binaryop.monoid.identity, A._nrows, A.dtype, name="v_diag")
         updater << v.diag(name="M_diag")
@@ -123,7 +132,7 @@ def _power(updater, A, n, op):
     ):
         # The last product is stored by mxm, which cannot cast a UDT as it writes;
         # raise before computing the others.
-        expr = op(A @ A)
+        expr = times(A, A)
         if _store_cast_op(expr.dtype, out_dtype) is not None:
             _fused_store_expr(expr, out_dtype)
     # Use repeated squaring: compute A^2, A^4, A^8, etc., and combine terms as needed.
@@ -158,14 +167,14 @@ def _power(updater, A, n, op):
                     result = square.dup(name="Power", **opts)
             elif n == 0:
                 # All done! No more terms to compute
-                updater << op(result @ square)
+                updater << times(result, square)
                 return
             elif result is A:
                 # Now we need to create a new matrix for the intermediate result
-                result = op(result @ square).new(name="Power", **opts)
+                result = times(result, square).new(name="Power", **opts)
             else:
                 # Main branch: multiply `square` into `result`
-                result(**opts) << op(result @ square)
+                result(**opts) << times(result, square)
         n, bit = divmod(n, 2)
         if square_expr is not None:
             # We need to perform another squaring, so evaluate current `square_expr` first
@@ -177,10 +186,10 @@ def _power(updater, A, n, op):
                 square << square_expr
         if square is None:
             # First iteration! Create expression for first square
-            square_expr = op(A @ A)
+            square_expr = times(A, A)
         else:
             # Expression for repeated squaring
-            square_expr = op(square @ square)
+            square_expr = times(square, square)
 
 
 class Matrix(BaseType):
