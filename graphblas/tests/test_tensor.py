@@ -424,11 +424,69 @@ def test_relayout_plans_match_spike():
     for tgt, kinds in expected.items():
         _, path, _ = tl.plan(shape, src, frozenset([(tgt, 2)]), 10**7, 8)
         assert [e[0] for e in path] == kinds, (tgt, path)
-    # Hypersparse case H (about 1 entry per row): REBUILD
+    # Hypersparse case H (about 1 entry per row): no P @ M, whose rows pay a hash lookup each;
+    # REBUILD (27 / 141 ms at 8 / 1 threads) or a PERM_C chain (25 / 104 ms)
     _, path, _ = tl.plan(
         (2**19,) * 3, ((0, 1, 2), 1), frozenset([((1, 0, 2), 2)]), 10**6, 8, hyper1=True
     )
-    assert path[0][0] == "REBUILD"
+    assert "PERM_R" not in [e[0] for e in path]
+
+
+def test_perm_cols_paths():
+    """PERM_C reorders the column group's axes in the Container: through a cached map, by
+    computing the indices (a column group far wider than the data), by REBUILD for full
+    storage; any dtype, iso values, an empty Matrix; the input is never changed.
+    """
+    rng = np.random.default_rng(66)
+    udt = dtypes.register_anonymous(np.dtype([("tensor_a", "<i4"), ("tensor_b", "<f8")]))
+    cases = [((6, 7, 8), 0.3), ((5, 2**20, 2**20), None), ((3, 4, 5), 1.0), ((3, 4, 5), 0.0)]
+    for shape, density in cases:
+        if density is None:
+            coords = [rng.integers(0, n, 400) for n in shape]
+            lin = np.unique(np.ravel_multi_index(coords, shape))
+            coords = np.unravel_index(lin, shape)
+        else:
+            coords = np.nonzero(rng.random(shape) < density)
+        n = coords[0].size
+        udt_vals = np.zeros(n, dtype=udt.np_type)
+        udt_vals["tensor_a"] = np.arange(n)
+        for vals, dtype in [(rng.random(n), None), (1, "INT8"), (udt_vals, udt)]:
+            T = Tensor.from_coo(coords, vals, dtype, shape=shape, layout=((0,), (1, 2)))
+            M = T.ss.matrix
+            before = M.dup()
+            for path in [[("PERM_C", (2, 1))], [("RS", 1), ("PERM_C", (2, 1))]]:
+                R, state = tl.execute(M, shape, ((0, 1, 2), 1), path)
+                assert state == ((0, 2, 1), 1)
+                U = Tensor.from_coo(coords, vals, dtype, shape=shape, layout=((0,), (2, 1)))
+                assert R.isequal(U.ss.matrix), (shape, dtype, path)
+                assert M.isequal(before)
+            assert tl._col_map_ok(M.ncols, M.nvals) == (density is not None)
+    # The planner takes PERM_C where it replaces T PERM_R T: rows of about 10 entries
+    shape = (10**6, 10, 100)
+    _, path, _ = tl.plan(shape, ((0, 1, 2), 1), frozenset([((0, 2, 1), 1)]), 10**7, 8)
+    assert path == [("PERM_C", (2, 1))]
+
+
+def test_big_total_split_move():
+    """Past 2^60 positions in total reshape is unavailable; a split move is a REBUILD whose keys
+    arrive sorted, priced as such, and chains use it.
+    """
+    shape = (2**21, 2**21, 2**20)
+    src, dst = ((0, 1, 2), 1), ((0, 1, 2), 2)
+    cost, path, _ = tl.plan(shape, src, frozenset([dst]), 10**7, 8)
+    assert path == [("REBUILD", dst)]
+    assert cost == tl.rebuild_cost(10**7, 0, sorted_keys=True)
+    assert cost < tl.rebuild_cost(10**7, 0)
+    rng = np.random.default_rng(67)
+    coords = [rng.integers(0, n, 300) for n in shape]
+    T = Tensor.from_coo(coords, rng.random(300), shape=shape, layout=((0,), (1, 2)))
+    coords, vals = T.to_coo()
+    for layout in [((0, 1), (2,)), ((2,), (0, 1)), ((1, 0), (2,))]:
+        _, path, _ = tl.plan(shape, src, frozenset([Layout(*layout).state]), 10**7, 8)
+        M, state = tl.execute(T.ss.matrix, shape, src, path)
+        ref = Tensor.from_coo(coords, vals, shape=shape, layout=layout)
+        assert state == ref.layout.state
+        assert M.isequal(ref.ss.matrix), (layout, path)
 
 
 def test_relayout_hypersparse():
