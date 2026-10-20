@@ -173,15 +173,18 @@ def test_ss_iso_value_of_an_empty_iso_vector():
     # As for Matrix: an empty Vector SuiteSparse marks iso has an empty iso_value.
     u = Vector.from_coo([], 7, size=3)
     w = Vector.from_coo([1], [1.0], size=3).select("==", 2).new()
+    x = Vector(int, 3)
     assert u.ss.is_iso
-    for v in [u, w]:
+    assert not x.ss.is_iso
+    for v in [u, w, x]:
         if v.ss.is_iso:
             value = v.ss.iso_value
             assert isinstance(value, Scalar)
             assert value.dtype == v.dtype
             assert value.is_empty
-    with pytest.raises(ValueError, match="not iso"):
-        Vector(int, 3).ss.iso_value
+        else:
+            with pytest.raises(ValueError, match="not iso"):
+                v.ss.iso_value
 
 
 def test_from_coo_default_values():
