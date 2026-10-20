@@ -269,6 +269,21 @@ def nonempty_rows(M):
     return n[0]
 
 
+def nonempty_row_ids(M):
+    """The ids of the nonempty rows of ``M``, sorted, as int64: from the Container's ``h``
+    (hypersparse) or ``p`` (sparse) in O(rows), without looking at the entries.
+    """
+    fmt = M.ss.format
+    if fmt in {"hypercsr", "csr"}:
+        with _Unloaded(M) as cont, _VectorArray(cont.h if fmt == "hypercsr" else cont.p) as v:
+            arr = np.empty(0, np.int64) if v.array is None else v.array.astype(np.int64)
+        if fmt == "hypercsr":
+            return arr
+        return np.flatnonzero(np.diff(arr))
+    r = M.to_coo(columns=False, values=False)[0].view(np.int64)
+    return r[np.r_[True, r[1:] != r[:-1]]] if r.size else r
+
+
 def steal_vector_as_row(v):
     """Turn a Vector (n x 1 by column) into a (1 x n) Matrix held by row, O(1). ``v`` is
     left empty and must not be used again.
@@ -335,7 +350,14 @@ def clear_caches():
 C_RS = (0.5, 2.1)
 C_REBUILD = (9.0, 60.0)
 C_PERM_ENTRY = (0.6, 2.0)
-C_PERM_ROW = {"sparse": (1.0, 0.0), "hyper": (30.0, 185.0)}
+# Per nonempty row of P @ M: dense row ranges cost about nothing; rows that are mostly
+# empty (hypersparse storage, about one entry each) pay a hash lookup per row: 31 ns (s1,
+# case H) to 61 ns (skew (1e5, 1e3, 10) rows (j, i), measured 2026-10-20) at 8 threads.
+C_PERM_ROW = {"sparse": (1.0, 0.0), "hyper": (50.0, 185.0)}
+# Building P (numpy, one thread): per row of a full P (cached when it fits the cache), and
+# per nonempty row of a P built from the nonempty rows (unravel, ravel and an unsorted build).
+C_PBUILD_FULL = 13.0
+C_PBUILD_ROW = (25.0, 70.0)
 T_TABLE = [
     (1e3, 0.52, 1.82),
     (1e4, 0.73, 2.65),
@@ -386,8 +408,15 @@ def _neighbors(state, shape, nnz, ti, hyper1, allow_perm, total_ok):
         yield ("T", single), (seq[p:] + seq[:p], n - p), cost + C_STEP
     if allow_perm and p >= 2:
         nrows = prod(shape, seq[:p])
-        kind = "hyper" if nrows > 16 * nnz else "sparse"
-        cost = C_PERM_ENTRY[ti] * nnz + C_PERM_ROW[kind][ti] * min(nrows, nnz)
+        R = expected_rows(nrows, nnz)
+        kind = "hyper" if nrows > 4 * R else "sparse"
+        cost = C_PERM_ENTRY[ti] * nnz + C_PERM_ROW[kind][ti] * R
+        # P itself: shape-only and cached when its rows are few; else built per call
+        if nrows <= max(4 * nnz, 4096):
+            if nrows > _matrix_cache.maxweight:
+                cost += C_PBUILD_FULL * nrows
+        else:
+            cost += C_PBUILD_ROW[ti] * R
         if hyper1:
             # About one entry per row: P @ M pays a hash lookup per row (DESIGN.md 3.1).
             cost = max(cost, C_REBUILD[ti] * nnz)
@@ -395,6 +424,13 @@ def _neighbors(state, shape, nnz, ti, hyper1, allow_perm, total_ok):
         for perm in itertools.permutations(seq[:p]):
             if perm != seq[:p]:
                 yield ("PERM_R", perm), (perm + seq[p:], p), cost
+
+
+def expected_rows(nrows, nnz):
+    """Expected nonempty rows when ``nnz`` entries fall uniformly into ``nrows`` rows."""
+    if nrows <= 0 or nnz <= 0:
+        return 0.0
+    return nrows * -math.expm1(-nnz / nrows)
 
 
 def plan(shape, src, targets, nnz, nthreads, *, hyper1=False, allow_perm=True):
@@ -466,8 +502,8 @@ def _perm_matrix(shape, old_rows, new_rows, M):
         P = from_coo(newr, oldr, True, BOOL, nrows, nrows)
         _matrix_cache.put(key, P, nrows)
         return P
-    # Few nonempty rows: build P from those only (not cacheable).
-    oldr = np.unique(M.to_coo(columns=False, values=False, sort=False)[0].view(np.int64))
+    # Many more rows than entries: build P from the nonempty rows only (not cacheable)
+    oldr = nonempty_row_ids(M)
     co = {}
     unravel(oldr, shape, old_rows, co)
     newr = ravel(co, shape, new_rows)
