@@ -1777,13 +1777,23 @@ def _reduce_recipe(updater, a, op, axes, keepdims, cast):
 # MIN_HYPER_ROW_ENTRIES when they would be hypersparse (NELL-2's hold 228 each).
 MIN_ROW_ENTRIES = 1.5
 MIN_HYPER_ROW_ENTRIES = 32
+FULL_ROW_ENTRIES = 4
 _SPLIT_SAMPLE = 2**16
 
 
-def _rows_ok(nvals, nonempty, positions):
-    """Whether rows of ``nvals`` entries over ``nonempty`` of ``positions`` rows are worth it."""
+def _rows_ok(nvals, nonempty, positions, narrower_cols):
+    """Whether rows of ``nvals`` entries over ``nonempty`` of ``positions`` rows are worth it.
+
+    Thin sparse rows (under FULL_ROW_ENTRIES each) cost about 2x in ewise (u6, 1.6 per row:
+    X + Y 3.9 ms vs 1.5), so they pay off only when the alternative, one axis fewer in the
+    rows, has a column group of more positions than entries (repro case 1: 2.6x).
+    """
     hyper = nonempty * 16 < positions  # SuiteSparse's default hyper switch is 1/16
-    return nvals >= (MIN_HYPER_ROW_ENTRIES if hyper else MIN_ROW_ENTRIES) * nonempty
+    if hyper:
+        return nvals >= MIN_HYPER_ROW_ENTRIES * nonempty
+    if nvals >= FULL_ROW_ENTRIES * nonempty:
+        return True
+    return nvals >= MIN_ROW_ENTRIES * nonempty and narrower_cols > nvals
 
 
 def _data_split_layout(coords, shape, n):
@@ -1805,16 +1815,18 @@ def _data_split_layout(coords, shape, n):
         if not tl._valid_split(shape, seq, p):
             continue
         positions = tl.prod(shape, seq[:p])
-        if positions * MIN_ROW_ENTRIES <= n:
+        if positions * FULL_ROW_ENTRIES <= n:
             return Layout(seq[:p], seq[p:]), None, False  # full enough even if all nonempty
+        narrower_cols = tl.prod(shape, seq[p - 1 :])
         if sample is not None:
             low = _sampled_nonempty_rows(coords, shape, seq[:p], n, sample)
-            if not _rows_ok(n, low, positions):
+            if not _rows_ok(n, low, positions, narrower_cols):
                 continue
         keys = tl.ravel(coords, shape, seq[:p], n=n)
         if not np.all(keys[1:] >= keys[:-1]):
             return Layout(seq[:p], seq[p:]), keys, True
-        if _rows_ok(n, int(np.count_nonzero(keys[1:] != keys[:-1])) + 1, positions):
+        nonempty = int(np.count_nonzero(keys[1:] != keys[:-1])) + 1
+        if _rows_ok(n, nonempty, positions, narrower_cols):
             return Layout(seq[:p], seq[p:]), keys, False
     for p in range(1, ndim):
         if tl._valid_split(shape, seq, p):
@@ -1847,7 +1859,9 @@ def _settle_split(M, shape, layout):
     """
     seq, p = layout.state
     nvals = M._nvals
-    while p > 1 and not _rows_ok(nvals, tl.count_nonempty_rows(M), tl.prod(shape, seq[:p])):
+    while p > 1 and not _rows_ok(
+        nvals, tl.count_nonempty_rows(M), tl.prod(shape, seq[:p]), tl.prod(shape, seq[p - 1 :])
+    ):
         q = p - 1
         if not tl._valid_split(shape, seq, q):
             break
@@ -2307,7 +2321,9 @@ def _ttv(updater, x, w, axis, op, x_left):
         # One pass with no data movement; the planner's relayout estimates run low, so do
         # not let them compete (round 1: relayout + mxm 56 ms vs vxm 36 ms)
         options.append((0.0, "mxv", p))
-    elif layout.rows == (axis,) and wx_op is not None:
+    elif layout.rows == (axis,) and wx_op is not None and M._ncols <= 4 * max(nv, 1):
+        # vxm writes into the whole column group: fine up to a few times the data (round 1
+        # repro: 2.6x, 36 ms vs 56), slow into a hypersparse one (hyper 2^38: 87 ms vs 23)
         options.append((0.0, "vxm", p))
     for q in range(n + 1) if not options else ():
         if not tl._valid_split(x._shape, seq, q):
@@ -2316,7 +2332,7 @@ def _ttv(updater, x, w, axis, op, x_left):
         rows, cols = seq[:q], seq[q:]
         if cols == (axis,) and xw_op is not None:
             options.append((move + C_MXV[ti] * nv, "mxv", q))
-        elif rows == (axis,) and wx_op is not None:
+        elif rows == (axis,) and wx_op is not None and tl.prod(x._shape, cols) <= 4 * nv:
             options.append((move + C_VXM[ti] * nv, "vxm", q))
         elif q == p and axis in rows and len(rows) > 1 and wx_op is not None:
             options.append((_row_selector_cost(M, tl.prod(x._shape, rows), ti), "rowsel", q))
@@ -2820,18 +2836,45 @@ def _extract_recipe(updater, t, sel, keys):
     shape = tuple(len(sel[a]) for a in kept)
     ridx = _group_index(t._shape, rows, sel, keys)
     cidx = _group_index(t._shape, cols, sel, keys)
+    listed = None
     if ridx is not None and cidx is not None:
         listed = sum(x.size for x in (ridx, cidx) if isinstance(x, np.ndarray))
         if not listed:
             _store(updater, t._M[ridx, cidx], shape, layout)
             return
-        ti = _ti(_nthreads(updater))
-        indexed = sum(1 for k in keys if not (isinstance(k, slice) and k == slice(None)))
-        nv = t._M._nvals
-        extract = C_X_ROW[ti] * tl.nonempty_rows(t._M) + C_X_LIST[ti] * listed
-        if extract <= (C_FILTER[ti] + C_FILTER_AXIS[ti] * indexed) * nv:
-            _store(updater, t._M[ridx, cidx], shape, layout)
-            return
+    ti = _ti(_nthreads(updater))
+    axes = [a for a in range(t.ndim) if not (isinstance(keys[a], slice) and keys[a] == slice(None))]
+    nv = t._M._nvals
+    options = [((C_FILTER[ti] + C_FILTER_AXIS[ti] * len(axes)) * nv, "filter")]
+    if listed is not None:
+        options.append((C_X_ROW[ti] * tl.nonempty_rows(t._M) + C_X_LIST[ti] * listed, "extract"))
+    if (
+        nv
+        and t._M.ss.format == "hypercsr"
+        and not t.dtype._is_udt
+        and all(a in rows and (isinstance(keys[a], slice) or isinstance(sel[a], int)) for a in axes)
+    ):
+        # Pick rows among the nonempty ones (h) of a hypersparse row group: sized by the data
+        # (NELL-2's (0,1|2), j in a range: the extract listed 1.1e7 rows, the filter read 7.7e7
+        # entries). Numpy work per nonempty row, then P @ M over the kept ones.
+        frac = math.prod(
+            1 / t._shape[a] if isinstance(sel[a], int) else sel[a].size / t._shape[a] for a in axes
+        )
+        hrows = tl.nonempty_rows(t._M)
+        cost = (
+            tl.C_PBUILD_ROW[ti] * hrows
+            + tl.C_PERM_ROW["hyper"][ti] * frac * hrows
+            + tl.C_PERM_ENTRY[ti] * frac * nv
+        )
+        options.append((cost, "rows"))
+    _, how = min(options)
+    if how == "extract":
+        _store(updater, t._M[ridx, cidx], shape, layout)
+        return
+    if how == "rows":
+        S = _hyper_rows_pick(t, sel, keys, renum, shape, layout)
+        _store(updater, S.mxm(t._M, tl._perm_semiring(t._M)).new(), shape, layout, fresh=True)
+        return
     # Filter the stored coordinates: cheaper than listing many indices (a slab of a wide
     # column group), and the only way past _MAX_LISTED positions
     r, c, vals = t._M.to_coo(sort=False)
@@ -2864,6 +2907,36 @@ def _extract_recipe(updater, t, sel, keys):
     cc = tl.ravel(out, shape, layout.cols, n=n)
     M = tl.from_coo(rr, cc, vals, t.dtype, tl.prod(shape, layout.rows), tl.prod(shape, layout.cols))
     _store(updater, M, shape, layout, fresh=True)
+
+
+def _hyper_rows_pick(t, sel, keys, renum, shape, layout):
+    """``S`` with ``S @ t._M`` extracting ``t[keys]`` when the keys index only axes of the row
+    group: built over the nonempty rows, mapping each kept one to its row in the result.
+    """
+    rows = t._layout.rows
+    h = tl.nonempty_row_ids(t._M)
+    co = {}
+    tl.unravel(h, tuple(t._shape[a] for a in rows), tuple(range(len(rows))), co)
+    keep = np.ones(h.size, bool)
+    positions = {}
+    for i, a in enumerate(rows):
+        s = sel[a]
+        if isinstance(s, int):
+            keep &= co[i] == s
+        elif not (isinstance(keys[a], slice) and keys[a] == slice(None)):
+            pos = np.full(t._shape[a], -1, np.int64)
+            pos[s] = np.arange(s.size)
+            positions[a] = pos
+            keep &= pos[co[i]] >= 0
+    n = int(np.count_nonzero(keep))
+    out = {}
+    for i, a in enumerate(rows):
+        if a in renum:
+            c = co[i][keep]
+            out[renum[a]] = positions[a][c] if a in positions else c
+    dst = tl.ravel(out, shape, layout.rows, n=n)
+    nrows = tl.prod(shape, layout.rows)
+    return tl.from_coo(dst, h[keep], True, BOOL, nrows, t._M._nrows)
 
 
 def _axis_coords(r, c, shape, rows, cols, axis):
