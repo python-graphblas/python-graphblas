@@ -4448,9 +4448,23 @@ def test_udt_ewise_add_needs_operands_of_the_result_type():
     A[0, 0] = [1, 2, 3]
     B = Matrix(fp32s, nrows=1, ncols=2)
     B[0, 1] = [0.5, 0.5, 0.5]
-    for expr in [lambda: v.ewise_add(w), lambda: w.ewise_add(v), lambda: binary.plus(v | w)]:
+    for expr in [
+        lambda: v.ewise_add(w),
+        lambda: w.ewise_add(v),
+        lambda: binary.plus(v | w),
+        lambda: A.ewise_add(B),
+        lambda: A.ewise_add(w[:2].new()),
+    ]:
         with pytest.raises(DomainMismatch, match="ewise_add cannot use .* converted copies"):
             expr()
+    with pytest.raises(DimensionMismatch, match="Matrix shapes must match"):
+        A.ewise_add(Matrix(fp32s, nrows=2, ncols=2))
+    # A Scalar converts only for an op that lifts to UDTs, so ``first`` raises too.
+    s2 = gb.Scalar.from_value([0.5, 0.5, 0.5], dtype=fp32s)
+    result = s.ewise_union(s2, monoid.plus, 0, 0).new()  # a Monoid lifts as its BinaryOp
+    np.testing.assert_array_equal(result.value, [1.5, 2.5, 3.5])
+    with pytest.raises(DomainMismatch, match="ewise_add cannot use binary.first"):
+        s.ewise_add(s2, binary.first)
     # Infix ``+`` takes the union with each operand's zero for a missing value
     # instead, as ``-`` takes 0.
     for left, right in [(v, w), (w, v)]:
@@ -4913,6 +4927,11 @@ def test_udt_store_casts_each_element_as_builtin_types_do():
         C << A.mxm(A, semiring.plus_times)
     with pytest.raises(DomainMismatch, match="would need a temporary copy"):
         w << v.ewise_add(v, binary.plus)
+    # Only a built-in op that lifts to UDTs can, so not first or a user's op.
+    udf = BinaryOp.register_anonymous(lambda x, y: x, "_store_cast_first", is_udt=True)
+    for not_lifted in [binary.first, udf]:
+        with pytest.raises(DomainMismatch, match="would need a temporary copy"):
+            w << v.ewise_mult(v, not_lifted)
     with pytest.raises(DomainMismatch, match="extraction cannot"):
         w << v[[0, 1, 2]]
     # The computed result, stored as an existing object, casts in one pass.
@@ -4922,6 +4941,12 @@ def test_udt_store_casts_each_element_as_builtin_types_do():
         C << A.power(3)
     C << A.power(1)
     assert C.to_coo()[2].tolist() == [first]
+    # A semiring whose result is another type (int truediv is float) stores that
+    # type as it is.
+    P = Matrix.from_coo([0], [0], [[[1, -1], [2, 4], [-8, 3]]], dtype=i8s, nrows=1, ncols=1)
+    Q = Matrix(f64s, nrows=1, ncols=1)
+    Q << P.power(2, semiring.plus_truediv)
+    assert Q.isequal(semiring.plus_truediv(P @ P).new())
     # Leading axes of length 1 do not change the layout.
     lead = dtypes.register_anonymous(np.dtype((np.float32, (1, 3, 2))), "_StoreCastLead")
     u = Vector(lead, size=3)
@@ -4934,6 +4959,17 @@ def test_udt_store_casts_each_element_as_builtin_types_do():
     renamed = np.dtype([(f"sr{i}", dst) for i, (_src, dst) in enumerate(pairs)])
     with pytest.raises(DomainMismatch, match="same field names"):
         Vector(dtypes.register_anonymous(renamed), size=7) << x
+    # A record field keeps its shape, and one that is not a number casts only to
+    # its own type, as for array UDTs and built-in types.
+    narrow = dtypes.register_anonymous(np.dtype([("sf_v", np.int8, (2,)), ("sf_s", "S4")]))
+    wide = dtypes.register_anonymous(np.dtype([("sf_v", np.int8, (3,)), ("sf_s", "S4")]))
+    longer = dtypes.register_anonymous(np.dtype([("sf_v", np.int8, (2,)), ("sf_s", "S8")]))
+    y = Vector(narrow, size=1)
+    y[0] = ([1, 2], b"ab")
+    with pytest.raises(DomainMismatch, match="same shape for each field"):
+        Vector(wide, size=1) << y
+    with pytest.raises(DomainMismatch, match=r"elements of \|S4 do not cast to \|S8"):
+        Vector(longer, size=1) << y
     raw = Vector(dtypes.register_anonymous(np.dtype("S48"), "_StoreCastBytes"), size=3)
     with pytest.raises(DomainMismatch, match="only record and array UDTs cast"):
         raw << v
@@ -4944,6 +4980,18 @@ def test_udt_store_casts_each_element_as_builtin_types_do():
     ]:
         with pytest.raises(DomainMismatch, match="a UDT casts only to another UDT"):
             expr()
+
+
+def test_udt_store_casts_need_numba(monkeypatch):
+    """Without Numba no UDT cast compiles, so every store across types with a UDT raises."""
+    i8s = dtypes.register_anonymous(np.dtype((np.int8, (2,))), "_NoNumbaCastI8")
+    f64s = dtypes.register_anonymous(np.dtype((np.float64, (2,))), "_NoNumbaCastF64")
+    v = Vector(i8s, size=1)
+    v[0] = [1, 2]
+    monkeypatch.setattr(gb.core.udt, "_has_numba", False)
+    for out in [Vector(f64s, size=1), Vector(dtypes.FP64, size=1)]:
+        with pytest.raises(DomainMismatch, match=r"_NoNumbaCastI8 in an object .*: UDTs do not"):
+            out << v
 
 
 @pytest.mark.skipif("not supports_udfs")
@@ -4964,6 +5012,8 @@ def test_udt_extracted_element_of_another_type_is_cast():
     s = gb.Scalar(i16s)
     s << v[0]
     assert s.value.tolist() == [1, -300]
+    s << A[1, 2]
+    assert s.value.tolist() == [2, -32768]  # saturates
     assert v[0].new(dtype=i16s).value.tolist() == [1, -300]
     assert A.T[2, 1].new(dtype=i16s).value.tolist() == [2, -32768]  # saturates
     w = Vector(i16s, size=3)
@@ -5023,6 +5073,7 @@ def test_udt_fused_store_matches_compute_then_cast():
         (lambda: f * f, i16s),
         (lambda: f.ewise_mult(f, monoid.plus), i16s),
         (lambda: r * 1.5, rec_i),
+        (lambda: r.apply(binary.minus, left=gb.Scalar.from_value(0.5)), rec_i),
         (lambda: r.apply(unary.abs), rec_i),
     ]
     mask = Vector.from_coo([0, 2], [True, True], size=4)
@@ -5433,6 +5484,10 @@ def test_udt_store_casts_reach_every_store_path():
         s = gb.Scalar(f8s)
         s << v.reduce(aggregator)
         np.testing.assert_array_equal(s.value, expected)
+    # A Scalar expression assigned to many elements is computed, then cast.
+    u = Vector(f8s, size=3)
+    u[[0, 2]] << unary.ainv(gb.Scalar.from_value([1, 2, 3], dtype=i8s))
+    assert u.to_coo()[1].tolist() == [[-1, -2, -3]] * 2
     with pytest.raises(DomainMismatch, match="a UDT casts only to another UDT"):
         gb.Scalar(FP64) << v.reduce(agg.sum)
     w = Vector(f8s, size=3)
