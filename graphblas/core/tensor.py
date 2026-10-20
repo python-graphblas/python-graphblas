@@ -28,7 +28,7 @@ import numpy as np
 from .. import backend, binary, config, monoid, semiring
 from ..dtypes import BOOL, FP64, lookup_dtype, unify
 from ..exceptions import DimensionMismatch, IndexOutOfBound
-from . import automethods, lib
+from . import _has_numba, automethods, lib
 from . import tensor_layout as tl
 from . import utils
 from .base import BaseExpression, BaseType
@@ -862,6 +862,8 @@ class Tensor(BaseType):
         ``mode`` is ignored). For 3-d mode 0 this is ``einsum('ijk,jr,kr->ir', X, B, C)``,
         computed as one TTM and then one product per remaining axis against an (I_n R x R)
         embedding of its factor, never materializing the Khatri-Rao product (DESIGN.md 3.7).
+        With Numba installed, a 3-d FP64 tensor with full FP64 factors and ``plus_times``
+        takes a kernel over the stored arrays instead, in the layout it is stored in.
         """
         return _mttkrp_expr(self, factors, mode, op)
 
@@ -2471,6 +2473,68 @@ def _mttkrp_expr(self, factors, mode, op):
     )
 
 
+# The kernels compile per R on first use (about 0.3 s each), so small tensors keep the products
+_MTTKRP_KERNEL_MIN_NNZ = 2**16
+
+
+def _mttkrp_numba(x, mats, mode, nthreads, *, layout=None):
+    """MTTKRP of a 3-d FP64 tensor with full FP64 factors and plus_times by a Numba kernel over
+    the stored arrays (``tensor_numba``) in ``layout`` (default: as stored), as a Matrix; or
+    None to use the GraphBLAS products: no Numba, another rank, type or semiring, sparse
+    factors, bitmap / full storage, or per-thread buffers too large for this layout.
+    """
+    if not _has_numba or x.ndim != 3 or x._M._nvals < max(_MTTKRP_KERNEL_MIN_NNZ, 1):
+        return None
+    layout = x._layout if layout is None else layout
+    if len(layout.rows) not in {1, 2} or x.dtype != FP64:
+        return None
+    F = {}
+    for ax, M in mats.items():
+        if M.dtype != FP64 or M._nvals != M._nrows * M._ncols:
+            return None
+        F[ax] = np.ascontiguousarray(M.to_dense(fill_value=0.0))
+    X = _in_layout(x, layout, nthreads)
+    if X.ss.format not in {"csr", "hypercsr"}:
+        return None
+    from . import tensor_numba
+
+    order = (*layout.rows, *layout.cols)
+    Fs = [F.get(ax) for ax in order]
+    R = next(f.shape[1] for f in Fs if f is not None)
+    Fs = [np.empty((0, R)) if f is None else f for f in Fs]
+    nnz = X._nvals
+    with (
+        tl._Unloaded(X) as cont,
+        tl._VectorArray(cont.p) as p,
+        tl._VectorArray(cont.h) as h,
+        tl._VectorArray(cont.i) as ci,
+        tl._VectorArray(cont.x, np.float64) as xv,
+    ):
+        hh = np.empty(0, np.int64) if h.array is None else h.array
+        rv = tensor_numba.mttkrp3(
+            (p.array, hh, ci.array, xv.array, bool(cont.iso)),
+            tuple(x._shape[a] for a in layout.rows),
+            tuple(x._shape[a] for a in layout.cols),
+            order.index(mode), Fs, x._shape[mode], nthreads,
+            # Per-thread output buffers up to about the data's size
+            max_buffer=max(R * nnz, 2**22),
+        )  # fmt: skip
+    if rv is None:
+        return None
+    out, touched = rv
+    if touched.all():
+        return Matrix.from_dense(out)
+    # The reached rows only, each full: hypersparse arrays handed over (a build of 7e6
+    # entries took 35 ms on hyper, against 12 for the kernel)
+    rows = np.flatnonzero(touched)
+    n = rows.size
+    return Matrix.ss.import_hypercsr(
+        nrows=out.shape[0], ncols=R, rows=rows, indptr=np.arange(0, (n + 1) * R, R),
+        col_indices=np.tile(np.arange(R), n), values=out[rows].ravel(), sorted_cols=True,
+        take_ownership=True,
+    )  # fmt: skip
+
+
 def _krp_embedding(F, R):
     """W with ``W[j * R + r, r] = F[j, r]``: one product with it sums over j for each r."""
     j, r, v = F.to_coo()
@@ -2481,6 +2545,11 @@ def _krp_embedding(F, R):
 
 def _mttkrp_recipe(updater, x, mats, mode, R, op):
     nthreads = updater.opts.get("nthreads")
+    kernel = op.name == "plus_times" and op.return_type == FP64
+    if kernel and (T := _mttkrp_numba(x, mats, mode, nthreads or _nthreads(updater))) is not None:
+        # In the stored layout: no relayout
+        _store(updater, T, (x._shape[mode], R), Layout((0,), (1,)), fresh=True)
+        return
     # Any order of the other axes works; take the one whose layout is cheapest to reach
     others = [a for a in range(x.ndim) if a != mode]
     best = None
@@ -2494,8 +2563,14 @@ def _mttkrp_recipe(updater, x, mats, mode, R, op):
     others = list(best[1])
     last = others[-1]
     rest = tuple(others[:-1])
+    dst = tl.as_layout(((mode, *rest), (last,)), x._shape)
+    T = _mttkrp_numba(x, mats, mode, nthreads or _nthreads(updater), layout=dst) if kernel else None
+    if T is not None:
+        # Relayout, then the kernel that owns its output rows
+        _store(updater, T, (x._shape[mode], R), Layout((0,), (1,)), fresh=True)
+        return
+    X = _in_layout(x, dst, nthreads)
     # 1. TTM over the last axis: (mode, rest | last) @ F_last -> (mode, rest | r)
-    X = _in_layout(x, tl.as_layout(((mode, *rest), (last,)), x._shape), nthreads)
     T = tl.new_matrix(op.return_type, X._nrows, R)
     T(**updater.opts) << X.mxm(mats[last], op)
     # 2. Each remaining axis: move it next to r, then one product with its embedding

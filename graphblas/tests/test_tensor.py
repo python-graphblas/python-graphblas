@@ -1,6 +1,10 @@
 import gc
 import itertools
 import math
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -1783,6 +1787,131 @@ def test_mttkrp(mode):
         X.mttkrp(bad, mode)
     with pytest.raises(TypeError, match="factor"):
         X.mttkrp(["x", "y", "z"], mode)
+
+
+def _mttkrp_model(xv, xp, dense, mode):
+    letters = "ijk"
+    sub = letters + "," + ",".join(c + "r" for k, c in enumerate(letters) if k != mode)
+    sub += "->" + letters[mode] + "r"
+    models = [(None, xv, xp)] + [
+        (None, dense[k], np.ones_like(dense[k], bool)) for k in range(3) if k != mode
+    ]
+    return np_einsum(sub, *models)
+
+
+@pytest.mark.parametrize("nthreads", [1, 8])
+def test_mttkrp_kernel_paths(nthreads, monkeypatch):
+    """The Numba MTTKRP kernels read every 3-d layout in place, for every mode (owned output
+    rows, or per-chunk buffers), hypersparse rows and iso values; they hand over to the
+    relayout and then to the GraphBLAS products where they cannot run.
+    """
+    pytest.importorskip("numba")
+    from graphblas.core import tensor, tensor_numba
+
+    calls = []
+    orig = tensor_numba.mttkrp3
+
+    def spy(*args, **kwargs):
+        rv = orig(*args, **kwargs)
+        calls.append(rv is not None)
+        return rv
+
+    monkeypatch.setattr(tensor_numba, "mttkrp3", spy)
+    monkeypatch.setattr(tensor, "_MTTKRP_KERNEL_MIN_NNZ", 0)
+    rng = np.random.default_rng(68)
+    shape = (20, 25, 30)
+    dense = [rng.random((n, 3)) for n in shape]
+    factors = [Matrix.from_dense(d) for d in dense]
+    for layout in all_layouts(3):
+        if not layout.rows or not layout.cols:
+            continue
+        for iso in [False, True]:
+            # Empty slices along every axis, so some output rows are absent
+            X, xv, xp = random_tensor(shape, rng, density=0.02, layout=layout, iso=iso)
+            assert X.ss.format in {"csr", "hypercsr"}
+            for mode in range(3):
+                calls.clear()
+                R = X.mttkrp(factors, mode).new(nthreads=nthreads)
+                check(R, *_mttkrp_model(xv, xp, dense, mode), approx=True)
+                assert calls == [True], (layout, mode)
+    # Hypersparse rows: (i, j | k) with few fibers
+    X, xv, xp = _hyper_rows_tensor(rng, (40, 50, 6), 60)
+    dense = [rng.random((n, 3)) for n in X.shape]
+    factors = [Matrix.from_dense(d) for d in dense]
+    for mode in range(3):
+        calls.clear()
+        check(
+            X.mttkrp(factors, mode).new(nthreads=nthreads),
+            *_mttkrp_model(xv, xp, dense, mode),
+            approx=True,
+        )
+        assert calls == [True]
+    # Buffers too large in the stored layout: relayout, then the kernel that owns its rows
+    monkeypatch.setattr(tensor_numba, "mttkrp3", lambda *a, **k: spy(*a, **dict(k, max_buffer=0)))
+    for mode in [1, 2]:
+        calls.clear()
+        check(
+            X.mttkrp(factors, mode).new(nthreads=nthreads),
+            *_mttkrp_model(xv, xp, dense, mode),
+            approx=True,
+        )
+        assert calls == [False, True]
+    monkeypatch.setattr(tensor_numba, "mttkrp3", spy)
+    # The GraphBLAS products: no Numba, a sparse factor, another dtype or semiring
+    X, xv, xp = random_tensor(shape, rng, density=0.02)
+    dense = [rng.random((n, 3)) for n in shape]
+    factors = [Matrix.from_dense(d) for d in dense]
+    calls.clear()
+    with monkeypatch.context() as m:
+        m.setattr(tensor, "_has_numba", False)
+        check(X.mttkrp(factors, 0).new(), *_mttkrp_model(xv, xp, dense, 0), approx=True)
+    sparse = list(factors)
+    sparse[1] = factors[1].dup()
+    del sparse[1][0, 0]
+    dense_sparse = [d.copy() for d in dense]
+    dense_sparse[1][0, 0] = 0
+    R = X.mttkrp(sparse, 0).new()
+    assert R.isclose(X.mttkrp(dense_sparse, 0).new())  # same values, by the products
+    Xi, xiv, xip = random_tensor(shape, rng, density=0.02, dtype=dtypes.INT64)
+    check(Xi.mttkrp(factors, 0).new(), *_mttkrp_model(xiv, xip, dense, 0), approx=True)
+    R = X.mttkrp(factors, 0, op=gb.semiring.max_times).new()
+    assert R.dtype == dtypes.FP64
+    assert calls == [True]  # only the dense reference above
+
+
+def test_mttkrp_without_numba():
+    """With Numba blocked, the Tensor imports and MTTKRP runs the GraphBLAS products."""
+    script = """
+import sys
+sys.modules["numba"] = None
+import numpy as np
+import graphblas as gb
+from graphblas.core import _has_numba
+from graphblas.core.tensor import Tensor
+print("package:", gb.__file__)
+rng = np.random.default_rng(0)
+xv = np.where(rng.random((6, 7, 8)) < 0.3, rng.random((6, 7, 8)), 0)
+X = Tensor.from_coo(np.nonzero(xv), xv[xv != 0], shape=xv.shape)
+F = [rng.random((n, 3)) for n in xv.shape]
+got = X.mttkrp(F, 1).new().to_dense(fill_value=0)
+expected = np.einsum("ijk,ir,kr->jr", xv, F[0], F[2])
+print("has_numba:", _has_numba, "numba_module:", "graphblas.core.tensor_numba" in sys.modules)
+print("max_err:", float(np.abs(got - expected).max()))
+"""
+    repo_root = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=dict(os.environ, PYTHONPATH=str(repo_root)),
+    )
+    report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert result.returncode == 0, report
+    lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
+    assert lines["package"] == str(repo_root / "graphblas" / "__init__.py"), report
+    assert lines["has_numba"] == "False numba_module: False", report
+    assert float(lines["max_err"]) < 1e-12, report
 
 
 def test_unfold():
