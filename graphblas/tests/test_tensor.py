@@ -1,0 +1,1127 @@
+import gc
+import itertools
+import math
+
+import numpy as np
+import pytest
+
+import graphblas as gb
+from graphblas import Matrix, Scalar, Vector, backend, binary, dtypes, monoid
+from graphblas.core import tensor_layout as tl
+from graphblas.core.tensor import Layout, Tensor, TensorExpression
+from graphblas.exceptions import DimensionMismatch, IndexOutOfBound
+
+if backend != "suitesparse":
+    pytest.skip("Tensor needs the suitesparse backend", allow_module_level=True)
+
+
+def all_layouts(ndim):
+    return [
+        Layout(seq[:p], seq[p:])
+        for seq in itertools.permutations(range(ndim))
+        for p in range(ndim + 1)
+    ]
+
+
+def random_tensor(shape, rng, *, density=0.3, dtype=dtypes.FP64, layout=None, iso=False):
+    """A Tensor and its numpy model: dense values plus a boolean "present" array."""
+    present = rng.random(shape) < density
+    if dtype == dtypes.BOOL:
+        values = rng.random(shape) < 0.5
+    elif dtype == dtypes.INT64:
+        values = rng.integers(-5, 6, shape)
+    else:
+        values = np.round(rng.random(shape) * 10 - 5, 1)
+    if iso:
+        values = np.full(shape, values.flat[0] if values.size else 1, dtype=values.dtype)
+    values = np.where(present, values, 0).astype(dtype.np_type)
+    coords = np.nonzero(present)
+    vals = values[present]
+    if iso:
+        vals = vals[0] if vals.size else values.dtype.type(1)
+    T = Tensor.from_coo(coords, vals, dtype, shape=shape, layout=layout)
+    return T, values, present
+
+
+def check(T, values, present, *, approx=False):
+    """Compare a Tensor with its numpy model, entry by entry."""
+    assert type(T) is Tensor
+    T._check_invariants()
+    assert T.shape == values.shape
+    assert T.nvals == present.sum()
+    coords, vals = T.to_coo()
+    got = np.zeros(values.shape, bool)
+    got[coords] = True
+    np.testing.assert_array_equal(got, present)
+    if approx:
+        np.testing.assert_allclose(vals, values[present], rtol=1e-12, atol=1e-12)
+    else:
+        np.testing.assert_array_equal(vals, values[present])
+
+
+def model_update(cv, cp, zv, zp, *, mask=None, accum=None, replace=False):
+    """GraphBLAS C<mask, replace> accum= Z on numpy models."""
+    if accum is not None:
+        both = cp & zp
+        tv = np.where(zp, zv, cv).astype(np.result_type(cv, zv))
+        tv[both] = accum(cv[both], zv[both])
+        tp = cp | zp
+    else:
+        tv, tp = zv, zp
+    if mask is None:
+        return tv, tp
+    rp = np.where(mask, tp, False if replace else cp)
+    rv = np.where(mask, tv, cv)
+    return np.where(rp, rv, 0), rp
+
+
+# --------------------------------------------------------------------------------------------
+# M1: data model
+
+
+def test_layout_validation():
+    assert tl.as_layout(((0, 1), (2,)), (2, 3, 4)) == Layout((0, 1), (2,))
+    assert tl.as_layout([[2], [0, 1]], (2, 3, 4)) == Layout((2,), (0, 1))
+    with pytest.raises(ValueError, match="partition"):
+        tl.as_layout(((0, 1), (1,)), (2, 3, 4))
+    with pytest.raises(ValueError, match="partition"):
+        tl.as_layout(((0,), (2,)), (2, 3, 4))
+    with pytest.raises(TypeError, match="pair"):
+        tl.as_layout("01|2", (2, 3, 4))
+    with pytest.raises(ValueError, match="2\\*\\*60"):
+        tl.as_layout(((0, 1, 2), (3,)), (2**21, 2**21, 2**21, 2))
+    assert tl.as_layout(((0, 1), (2,)), (2**30, 2**30, 2**40))
+    assert Layout((0, 1), (2,))._short() == "(0,1|2)"
+    assert Layout((), ())._short() == "(|)"
+
+
+def test_default_layout():
+    assert tl.default_layout(()) == Layout((), ())
+    assert tl.default_layout((5,)) == Layout((), (0,))
+    assert tl.default_layout((5, 6)) == Layout((0,), (1,))
+    assert tl.default_layout((10, 20, 30)) == Layout((0, 1), (2,))
+    # DESIGN.md 7.6: cases D, H and Uber
+    assert tl.default_layout((1000, 1000, 1000), 10**7) == Layout((0, 1), (2,))
+    assert tl.default_layout((2**19,) * 3, 10**6) == Layout((0,), (1, 2))
+    assert tl.default_layout((183, 24, 1140, 1717), 3_309_490) == Layout((0, 1), (2, 3))
+    # Every split of (2**29,)*4 has a group past 2**60 except the middle one
+    assert tl.default_layout((2**29,) * 4, 10) == Layout((0, 1), (2, 3))
+    with pytest.raises(ValueError, match="no split"):
+        tl.default_layout((2**61, 2, 2), 10)
+
+
+def test_new():
+    T = Tensor(dtypes.FP64, 3, 4, 5)
+    U = Tensor(float, (3, 4, 5), name="U")
+    for X in [T, U]:
+        X._check_invariants()
+        assert X.shape == (3, 4, 5)
+        assert X.ndim == 3
+        assert X.size == 60
+        assert X.nvals == 0
+        assert X.dtype == dtypes.FP64
+        assert X.layout == Layout((0, 1), (2,))
+        assert not X.layout_pinned
+    assert U.name == "U"
+    V = Tensor(int, 2, 3, layout=((1,), (0,)))
+    assert V.layout == Layout((1,), (0,))
+    assert V.layout_pinned
+    assert V.dtype == dtypes.INT64
+    Z = Tensor(bool)
+    assert Z.shape == ()
+    assert Z.ndim == 0
+    assert Z.size == 1
+    Z._check_invariants()
+    E = Tensor(float, 3, 0, 2)
+    assert E.size == 0
+    E._check_invariants()
+    with pytest.raises(ValueError, match="negative"):
+        Tensor(float, 3, -1)
+    with pytest.raises(TypeError, match="shape"):
+        Tensor(float, 3, "x")
+
+
+def test_from_coo_forms():
+    i = np.array([0, 1, 2, 2])
+    j = np.array([1, 0, 3, 3])
+    k = np.array([4, 2, 0, 1])
+    vals = np.array([1.5, 2.5, 3.5, 4.5])
+    A = Tensor.from_coo((i, j, k), vals, shape=(3, 4, 5))
+    B = Tensor.from_coo(np.stack([i, j, k]), vals, shape=(3, 4, 5))
+    C = Tensor.from_coo([list(i), list(j), list(k)], list(vals))
+    for X in [A, B, C]:
+        X._check_invariants()
+        assert X.isequal(A, check_dtype=True)
+    assert C.shape == (3, 4, 5)
+    coords, v = A.to_coo()
+    np.testing.assert_array_equal(coords[0], i)
+    np.testing.assert_array_equal(coords[2], k)
+    np.testing.assert_array_equal(v, vals)
+    assert all(c.dtype == np.int64 for c in coords)
+    # Scalar values are stored once (iso)
+    D = Tensor.from_coo((i, j, k), 7, shape=(3, 4, 5))
+    assert D.ss.is_iso
+    assert D.dtype == dtypes.INT64
+    assert D.to_coo()[1].tolist() == [7] * 4
+    # dtype and layout
+    E = Tensor.from_coo((i, j, k), vals, dtypes.FP32, shape=(3, 4, 5), layout=((2,), (0, 1)))
+    assert E.dtype == dtypes.FP32
+    assert E.layout == Layout((2,), (0, 1))
+    assert E.layout_pinned
+    assert E.isequal(A)
+    # duplicates
+    F = Tensor.from_coo(([0, 0], [1, 1], [2, 2]), [1.0, 2.0], dup_op=binary.plus)
+    assert F.nvals == 1
+    assert F.to_coo()[1].tolist() == [3.0]
+    with pytest.raises(ValueError, match="dup_op"):
+        Tensor.from_coo(([0, 0], [1, 1], [2, 2]), [1.0, 2.0])
+
+
+def test_from_coo_errors_and_edges():
+    with pytest.raises(IndexOutOfBound, match="axis 1"):
+        # Raveled, (0, 4, 0) would land on (1, 0, 0) silently
+        Tensor.from_coo(([0], [4], [0]), [1.0], shape=(2, 4, 3))
+    with pytest.raises(IndexOutOfBound, match="axis 0"):
+        Tensor.from_coo(([-1], [0], [0]), [1.0], shape=(2, 4, 3))
+    with pytest.raises(ValueError, match="same length"):
+        Tensor.from_coo(([0, 1], [0], [0]), [1.0], shape=(2, 4, 3))
+    with pytest.raises(ValueError, match="infer shape"):
+        Tensor.from_coo(([], [], []), [])
+    with pytest.raises(ValueError, match="axes"):
+        Tensor.from_coo(([0], [0]), [1.0], shape=(2, 4, 3))
+    with pytest.raises(TypeError, match="integers"):
+        Tensor.from_coo(([0.5], [0], [0]), [1.0], shape=(2, 4, 3))
+    with pytest.raises(ValueError, match="1-d"):
+        Tensor.from_coo(np.zeros((2, 2, 2), int), [1.0], shape=(2, 4, 3))
+    E = Tensor.from_coo(([], [], []), [], dtypes.FP64, shape=(2, 3, 4))
+    assert E.nvals == 0
+    E._check_invariants()
+    # 0-d and 1-d
+    Z = Tensor.from_coo((), 5.0)
+    assert Z.shape == ()
+    assert Z.to_scalar().value == 5.0
+    coords, v = Z.to_coo()
+    assert coords == ()
+    assert v.tolist() == [5.0]
+    v = Tensor.from_coo(([3, 1],), [1, 2], shape=(6,))
+    assert v.layout == Layout((), (0,))
+    w = v.to_vector()
+    assert w.isequal(Vector.from_coo([1, 3], [2, 1], size=6))
+    # Size-1 axes and an n x 1 stored Matrix (held by row, unlike SuiteSparse's default)
+    U = Tensor.from_coo(([0, 1], [0, 2], [0, 0]), [1.0, 2.0], shape=(2, 3, 1))
+    U._check_invariants()
+    U = Tensor.from_coo(
+        ([0, 1], [0, 2], [0, 0]), [1.0, 2.0], shape=(2, 3, 1), layout=((0, 1), (2,))
+    )
+    U._check_invariants()
+    assert U.ss.matrix.shape == (6, 1)
+
+
+@pytest.mark.parametrize("layout", all_layouts(3))
+def test_to_coo_order(layout):
+    rng = np.random.default_rng(1)
+    T, values, present = random_tensor((3, 4, 5), rng, layout=layout)
+    check(T, values, present)
+    # sort=False returns stored order without moving data
+    coords, vals = T.to_coo(sort=False)
+    got = np.zeros(values.shape, values.dtype)
+    got[coords] = vals
+    np.testing.assert_array_equal(got, values)
+    assert T.to_coo(values=False)[1] is None
+    assert T.to_coo(indices=False)[0] is None
+
+
+def test_from_matrix_and_back():
+    A = Matrix.from_coo([0, 1, 2], [1, 2, 0], [1.0, 2.0, 3.0], nrows=3, ncols=4)
+    T = Tensor.from_matrix(A)
+    T._check_invariants()
+    assert T.shape == (3, 4)
+    assert T.layout == Layout((0,), (1,))
+    assert T.to_matrix().isequal(A)
+    # A held by column is stored as its transpose held by row, with no transpose
+    B = A.dup()
+    B.ss.config["format"] = "by_col"
+    TB = Tensor.from_matrix(B)
+    TB._check_invariants()
+    assert TB.layout == Layout((1,), (0,))
+    assert TB.isequal(T)
+    assert TB.to_matrix().isequal(A)
+    assert B.ss.orientation == "columnwise"  # the user's Matrix is untouched
+    # A.T
+    TT = Tensor.from_matrix(A.T, name="TT")
+    TT._check_invariants()
+    assert TT.name == "TT"
+    assert TT.shape == (4, 3)
+    assert TT.to_matrix().isequal(A.T.new())
+    # copy=False shares, and the Tensor copies before changing it
+    C = A.dup()
+    TC = Tensor.from_matrix(C, copy=False)
+    assert TC.ss.matrix is C
+    TC << TC * 10
+    assert C.isequal(A)
+    TC2 = Tensor.from_matrix(C, copy=False)
+    TC2(TC2.S, accum=binary.plus) << TC2
+    assert C.isequal(A)
+    assert TC2.to_matrix().isequal((A * 2).new())
+    with pytest.raises(TypeError, match="Matrix"):
+        Tensor.from_matrix(Vector(float, 3))
+    with pytest.raises(TypeError, match="Vector"):
+        Tensor.from_vector(A)
+    v = Vector.from_coo([0, 4], [1.0, 2.0], size=6)
+    Tv = Tensor.from_vector(v)
+    Tv._check_invariants()
+    assert Tv.to_vector().isequal(v)
+    assert v.nvals == 2
+
+
+def test_to_matrix_rows():
+    rng = np.random.default_rng(2)
+    T, values, present = random_tensor((3, 4, 5), rng, layout=((2,), (0, 1)))
+    M = T.to_matrix()  # stored grouping
+    assert M.shape == (5, 12)
+    assert M is not T.ss.matrix
+    M2 = T.to_matrix(copy=False)
+    assert M2 is T.ss.matrix
+    for rows in [(0,), (1,), (2,), (0, 1), (1, 0), (2, 0), (0, 1, 2), ()]:
+        cols = tuple(a for a in range(3) if a not in rows)
+        A = T.to_matrix(rows)
+        rshape = tuple(values.shape[a] for a in rows)
+        cshape = tuple(values.shape[a] for a in cols)
+        dense = values.transpose(rows + cols).reshape(math.prod(rshape), math.prod(cshape))
+        pattern = present.transpose(rows + cols).reshape(dense.shape)
+        r, c, v = A.to_coo()
+        np.testing.assert_array_equal(v, dense[r, c])
+        assert A.nvals == pattern.sum()
+    T2 = Tensor.from_coo(([0, 1], [1, 0]), [1.0, 2.0], shape=(2, 2), layout=((1,), (0,)))
+    assert T2.to_matrix().isequal(Matrix.from_coo([0, 1], [1, 0], [1.0, 2.0]))
+    with pytest.raises(ValueError, match="1-d"):
+        T.to_vector()
+    with pytest.raises(ValueError, match="0-d"):
+        T.to_scalar()
+
+
+def test_repr():
+    T = Tensor.from_coo(([0, 1, 2], [1, 0, 3], [4, 2, 0]), [1.0, 2.0, 3.0], name="X")
+    r = repr(T)
+    assert '"X"' in r
+    assert "layout (0|1,2)" in r
+    assert "(0, 1, 4): 1.0" in r
+    assert "storage order" in repr(T.permute_dims((2, 0, 1)))
+    assert "StructuralMask" in repr(T.S)
+    big = Tensor.from_coo((np.arange(20), np.arange(20)), 1.0)
+    assert "..." in repr(big)
+    assert "TensorExpression" in repr(T + T)
+    assert "X.ewise_add(X" in repr(T + T)
+    assert repr(Tensor(float, 2, 3))
+
+
+def test_dup_and_clear():
+    rng = np.random.default_rng(3)
+    T, values, present = random_tensor((3, 4, 5), rng)
+    D = T.dup()
+    check(D, values, present)
+    assert D.ss.matrix is T.ss.matrix  # copy-on-write
+    D2 = T.dup(dtypes.INT64, layout=((1,), (2, 0)), name="D2")
+    assert D2.dtype == dtypes.INT64
+    assert D2.layout == Layout((1,), (2, 0))
+    assert D2.layout_pinned
+    check(D2, values.astype(np.int64), present)
+    E = T.dup(clear=True)
+    assert E.nvals == 0
+    assert E.shape == T.shape
+    D.clear()
+    assert D.nvals == 0
+    check(T, values, present)
+
+
+def test_vanilla_check(monkeypatch):
+    from graphblas.core import tensor
+
+    monkeypatch.setattr(tensor, "backend", "suitesparse-vanilla")
+    with pytest.raises(NotImplementedError, match="suitesparse"):
+        Tensor(float, 2, 3)
+
+
+def test_by_col_global_format():
+    """Every stored Matrix stays held by row when the global format is by column (F6)."""
+    rng = np.random.default_rng(4)
+    prev = gb.ss.config["format"]
+    gb.ss.config["format"] = "by_col"
+    try:
+        T, values, present = random_tensor((3, 4, 5), rng)
+        assert T.ss.format.endswith("r")
+        check(T, values, present)
+        for layout in all_layouts(3)[::5]:
+            U = T.relayout(layout)
+            check(U, values, present)
+        U, uvals, upres = random_tensor((3, 4, 5), rng, layout=((2,), (1, 0)))
+        S = (T + U).new()
+        check(S, np.where(present, values, 0) + np.where(upres, uvals, 0), present | upres)
+        R = T.reduce(axis=(0, 2)).new()
+        check(R, values.sum(axis=(0, 2)), present.any(axis=(0, 2)), approx=True)
+        R = T.reduce(axis=1).new()
+        check(R, values.sum(axis=1), present.any(axis=1), approx=True)
+        Z = T.sum().new()
+        Z._check_invariants()
+        v = Vector.from_coo([0, 2], [1.0, 2.0], size=3)
+        Tv = Tensor.from_vector(v)
+        Tv._check_invariants()
+        assert Tv.to_vector().isequal(v)
+    finally:
+        gb.ss.config["format"] = prev
+
+
+# --------------------------------------------------------------------------------------------
+# M2: relayout
+
+
+def _rebuild_reference(T, layout):
+    coords, vals = T.to_coo()
+    return Tensor.from_coo(coords, vals, T.dtype, shape=T.shape, layout=layout)
+
+
+@pytest.mark.parametrize("shape", [(3, 4, 5), (1, 7, 2), (50, 1, 40)])
+def test_relayout_all_pairs(shape):
+    """Every planned relayout between all 24 x 24 3-d states equals a REBUILD."""
+    rng = np.random.default_rng(5)
+    present = rng.random(shape) < 0.3
+    coords = np.nonzero(present)
+    vals = rng.random(present.sum())
+    states = all_layouts(3)
+    for src in states:
+        T = Tensor.from_coo(coords, vals, shape=shape, layout=src)
+        for dst in states:
+            # Price as if large so the plans use the real primitives (not REBUILD), at both
+            # thread counts, as the s12 spike did.
+            for nthreads in [8, 1]:
+                _, path, final = tl.plan(shape, src.state, frozenset([dst.state]), 10**7, nthreads)
+                assert final == dst.state
+                M, state = tl.execute(T.ss.matrix, shape, src.state, path)
+                assert state == dst.state
+                ref = Tensor.from_coo(coords, vals, shape=shape, layout=dst)
+                assert M.isequal(ref.ss.matrix), (src, dst, path)
+                assert tl.is_by_row(M)
+            # And through the public API, with the real nnz
+            U = T.relayout(dst)
+            U._check_invariants()
+            assert U.layout == dst
+            assert U.layout_pinned
+            assert U.ss.matrix.isequal(ref.ss.matrix)
+
+
+def test_relayout_plans_match_spike():
+    """The planner finds the measured best chains of s1c/s12 for 1000^3, 1e7 nnz."""
+    shape = (1000, 1000, 1000)
+    src = ((0, 1, 2), 2)
+    expected = {
+        (1, 0, 2): ["PERM_R"],
+        (2, 0, 1): ["T", "RS"],
+        (1, 2, 0): ["T", "RS", "T", "RS"],
+        (2, 1, 0): ["PERM_R", "T", "RS"],
+        (0, 2, 1): ["T", "RS", "PERM_R"],
+    }
+    for tgt, kinds in expected.items():
+        _, path, _ = tl.plan(shape, src, frozenset([(tgt, 2)]), 10**7, 8)
+        assert [e[0] for e in path] == kinds, (tgt, path)
+    # Hypersparse case H (about 1 entry per row): REBUILD
+    _, path, _ = tl.plan(
+        (2**19,) * 3, ((0, 1, 2), 1), frozenset([((1, 0, 2), 2)]), 10**6, 8, hyper1=True
+    )
+    assert path[0][0] == "REBUILD"
+
+
+def test_relayout_hypersparse():
+    rng = np.random.default_rng(6)
+    shape = (2**19,) * 3
+    n = 2000
+    coords = [rng.integers(0, 2**19, n) for _ in range(3)]
+    lin = np.unique(np.ravel_multi_index(coords, shape))
+    coords = np.unravel_index(lin, shape)
+    vals = rng.random(lin.size)
+    T = Tensor.from_coo(coords, vals, shape=shape)
+    assert T.layout == Layout((0,), (1, 2))
+    for dst in all_layouts(3):
+        if not all(math.prod(shape[a] for a in g) <= 2**60 for g in dst):
+            continue
+        U = T.relayout(dst)
+        U._check_invariants()
+        ref = Tensor.from_coo(coords, vals, shape=shape, layout=dst)
+        assert U.ss.matrix.isequal(ref.ss.matrix), dst
+    # The planner with the hypersparse density class and real primitives
+    src = T.layout.state
+    for dst in all_layouts(3)[::3]:
+        if not all(math.prod(shape[a] for a in g) <= 2**60 for g in dst):
+            continue
+        _, path, _ = tl.plan(shape, src, frozenset([dst.state]), 10**6, 8, hyper1=True)
+        M, state = tl.execute(T.ss.matrix, shape, src, path)
+        assert state == dst.state
+        assert M.isequal(Tensor.from_coo(coords, vals, shape=shape, layout=dst).ss.matrix)
+
+
+def test_relayout_4d_and_big():
+    rng = np.random.default_rng(7)
+    shape = (3, 1, 4, 5)
+    T, values, present = random_tensor(shape, rng)
+    states = all_layouts(4)
+    for i in rng.choice(len(states), 40, replace=False):
+        src = states[i]
+        S = T.relayout(src)
+        for j in rng.choice(len(states), 5, replace=False):
+            dst = states[j]
+            _, path, _ = tl.plan(shape, src.state, frozenset([dst.state]), 10**7, 8)
+            M, state = tl.execute(S.ss.matrix, shape, src.state, path)
+            assert state == dst.state
+            assert M.isequal(_rebuild_reference(T, dst).ss.matrix), (src, dst, path)
+        check(S, values, present)
+    # Total size past 2**60: no reshape edges; groups past 2**60 are not states (F13)
+    shape = (2**19,) * 4
+    n = 300
+    coords = [rng.integers(0, 2**19, n) for _ in range(4)]
+    T = Tensor.from_coo(coords, 1.0, shape=shape)
+    assert T.layout == Layout((0,), (1, 2, 3))
+    for dst in [Layout((2, 3), (0, 1)), Layout((1, 0), (3, 2)), Layout((0, 1, 2), (3,))]:
+        U = T.relayout(dst)
+        U._check_invariants()
+        assert U.isequal(T)
+        assert U.ss.is_iso
+    with pytest.raises(ValueError, match="2\\*\\*60"):
+        T.relayout(((0, 1, 2, 3), ()))
+
+
+def test_relayout_6d_rebuilds():
+    rng = np.random.default_rng(8)
+    T, values, present = random_tensor((2, 3, 1, 2, 2, 3), rng)
+    _, path, _ = tl.plan(T.shape, T.layout.state, frozenset([((5, 4, 3, 2, 1, 0), 3)]), 10**7, 8)
+    assert [e[0] for e in path] == ["REBUILD"]
+    U = T.relayout(((5, 4, 3), (2, 1, 0)))
+    check(U, values, present)
+
+
+@pytest.mark.parametrize("dtype", [dtypes.BOOL, dtypes.INT64, dtypes.FP64, dtypes.FC64])
+@pytest.mark.parametrize("iso", [False, True])
+def test_relayout_dtypes_iso(dtype, iso):
+    rng = np.random.default_rng(9)
+    shape = (4, 5, 6)
+    present = rng.random(shape) < 0.4
+    coords = np.nonzero(present)
+    if iso:
+        vals = dtype.np_type.type(1)
+    else:
+        vals = (rng.random(present.sum()) * 10).astype(dtype.np_type)
+    T = Tensor.from_coo(coords, vals, dtype, shape=shape)
+    assert T.ss.is_iso == iso
+    for dst in all_layouts(3):
+        # Large pricing exercises PERM_R (P @ M) for every dtype
+        _, path, _ = tl.plan(shape, T.layout.state, frozenset([dst.state]), 10**7, 8)
+        M, _ = tl.execute(T.ss.matrix, shape, T.layout.state, path)
+        assert M.isequal(_rebuild_reference(T, dst).ss.matrix, check_dtype=True)
+        assert M.ss.is_iso == iso, (dst, path)
+        U = T.relayout(dst)
+        assert U.ss.is_iso == iso
+        assert U.isequal(T, check_dtype=True)
+
+
+def test_relayout_fast_path_and_cache():
+    rng = np.random.default_rng(10)
+    T, values, present = random_tensor((3, 4, 5), rng)
+    U = T.relayout(T.layout)
+    assert U.ss.matrix is T.ss.matrix
+    tl.clear_caches()
+    dst = Layout((2,), (1, 0))
+    T.relayout(dst)
+    n = len(tl._plan_cache.data)
+    assert n >= 1
+    T.relayout(dst)
+    assert len(tl._plan_cache.data) == n
+    # inplace
+    V = T.dup()
+    V.relayout(dst, inplace=True)
+    assert V.layout == dst
+    assert V.layout_pinned
+    check(V, values, present)
+    check(T, values, present)
+    # Shape-only matrices are cached; empty tensors move without data
+    E = Tensor(float, 3, 4, 5)
+    F = E.relayout(dst)
+    F._check_invariants()
+    assert F.nvals == 0
+
+
+def test_flip_orientation_and_helpers():
+    A = Matrix.from_coo([0, 1, 2], [1, 2, 0], [1.0, 2.0, 3.0], nrows=3, ncols=5)
+    for fmt in ["sparse", "hypersparse", "bitmap"]:
+        B = A.dup()
+        B.ss.config["format"] = "by_col"
+        B.ss.config["sparsity_control"] = fmt
+        tl.flip_orientation(B)
+        assert tl.is_by_row(B)
+        assert B.shape == (5, 3)
+        assert B.isequal(A.T.new())
+    H = Matrix.from_coo([0, 2**40], [1, 2], [1.0, 2.0], nrows=2**41, ncols=4)
+    assert H.ss.format == "hypercsr"
+    assert tl.nonempty_rows(H) == 2
+    assert tl.nonempty_rows(A) == 3
+    v = Vector.from_coo([1, 3], [1.0, 2.0], size=5)
+    M = tl.steal_vector_as_row(v.dup())
+    assert M.shape == (1, 5)
+    assert tl.is_by_row(M)
+    S = tl.selector((2, 3), (1,))
+    assert S.shape == (3, 6)
+    assert S.isequal(Matrix.from_coo([0, 1, 2, 0, 1, 2], [0, 1, 2, 3, 4, 5], True))
+    assert tl.selector((2, 3), (1,)) is S
+    St = tl.selector((2, 3), (0,), transposed=True)
+    assert St.shape == (6, 2)
+
+
+# --------------------------------------------------------------------------------------------
+# M3: shape operations and copy-on-write
+
+
+@pytest.mark.parametrize("layout", all_layouts(3)[::3])
+def test_shape_ops(layout):
+    rng = np.random.default_rng(11)
+    T, values, present = random_tensor((2, 3, 4), rng, layout=layout)
+    for axes in itertools.permutations(range(3)):
+        P = T.permute_dims(axes)
+        assert P.ss.matrix is T.ss.matrix
+        check(P, values.transpose(axes), present.transpose(axes))
+    check(T.permute_dims((-1, 0, 1)), values.transpose(2, 0, 1), present.transpose(2, 0, 1))
+    check(T.T, values.T, present.T)
+    check(T.mT, np.swapaxes(values, -1, -2), np.swapaxes(present, -1, -2))
+    for axis in [0, 1, 2, 3, -1, -4, (0, 2), (1, -1)]:
+        E = T.expand_dims(axis)
+        assert E.ss.matrix is T.ss.matrix
+        check(E, np.expand_dims(values, axis), np.expand_dims(present, axis))
+    E = T.expand_dims((0, 3))
+    check(E.squeeze(), values, present)
+    check(E.squeeze(0), values[None, ...].reshape(2, 3, 1, 4), present.reshape(2, 3, 1, 4))
+    check(E.squeeze((0, 3)), values, present)
+    with pytest.raises(ValueError, match="squeeze"):
+        T.squeeze(0)
+    with pytest.raises(ValueError, match="permutation"):
+        T.permute_dims((0, 0, 1))
+    with pytest.raises(ValueError, match="out of bounds"):
+        T.permute_dims((0, 1, 3))
+    with pytest.raises(ValueError, match="repeated"):
+        T.expand_dims((0, 0))
+    with pytest.raises(TypeError, match="int"):
+        T.expand_dims("x")
+
+
+def test_shape_ops_small_ndim():
+    Z = Tensor.from_coo((), 3.0)
+    assert Z.T.shape == ()
+    with pytest.raises(ValueError, match="mT"):
+        Z.mT
+    E = Z.expand_dims(0).expand_dims(0)
+    assert E.shape == (1, 1)
+    assert E.squeeze().to_scalar().value == 3.0
+    v = Tensor.from_coo(([1, 3],), [1.0, 2.0], shape=(4,))
+    check(v.T, np.array([0, 1, 0, 2.0]), np.array([False, True, False, True]))
+    M = v.expand_dims(1)
+    assert M.shape == (4, 1)
+    M._check_invariants()
+    assert M.to_matrix().isequal(Matrix.from_coo([1, 3], [0, 0], [1.0, 2.0], nrows=4, ncols=1))
+
+
+def test_copy_on_write():
+    rng = np.random.default_rng(12)
+    T, values, present = random_tensor((2, 3, 4), rng)
+    V = T.permute_dims((2, 0, 1))
+    vv, vp = values.transpose(2, 0, 1), present.transpose(2, 0, 1)
+    assert len(T._store.owners) == 2
+    # Mutating in place (mask without replace keeps old values) copies first
+    T(T.S, accum=binary.plus) << T
+    check(T, values * 2, present)
+    check(V, vv, vp)
+    assert T.ss.matrix is not V.ss.matrix
+    # The view can be written too
+    W = V.T
+    wv, wp = vv.T, vp.T
+    V << V * 3
+    check(V, vv * 3, vp)
+    check(W, wv, wp)
+    # Replacing (<< without mask) detaches without copying
+    X = W.mT
+    xv, xp = np.swapaxes(wv, -1, -2), np.swapaxes(wp, -1, -2)
+    W << W + W
+    check(W, wv * 2, wp)
+    check(X, xv, xp)
+    # clear and relayout(inplace=True)
+    Y = X.dup()
+    Z = Y.T
+    Y.clear()
+    assert Y.nvals == 0
+    check(Z, xv.T, xp.T)
+    Z2 = Z.permute_dims((0, 1, 2))
+    Z.relayout(((2,), (0, 1)), inplace=True)
+    assert Z2.ss.matrix is not Z.ss.matrix
+    check(Z, xv.T, xp.T)
+    check(Z2, xv.T, xp.T)
+    # A Matrix handed out without copying keeps its values when the Tensor changes
+    M = Z2.to_matrix(copy=False)
+    M0 = M.dup()
+    Z2(Z2.S) << 1.0
+    assert M.isequal(M0)
+    check(Z2, np.where(xp.T, 1.0, 0), xp.T)
+    M2 = Z2.ss.matrix
+    M2c = M2.dup()
+    Z2(Z2.S, accum=binary.plus) << Z2
+    assert M2.isequal(M2c)
+    check(Z2, np.where(xp.T, 2.0, 0), xp.T)
+
+
+def test_copy_on_write_weak_owners():
+    rng = np.random.default_rng(13)
+    T, values, present = random_tensor((2, 3, 4), rng)
+    V = T.T
+    del V
+    gc.collect()
+    assert len(T._store.owners) == 1
+    M = T._M
+    # No other owner left, so an in-place update does not copy
+    T(T.S, accum=binary.plus) << T
+    assert T._M is M
+    check(T, values * 2, present)
+    # Assigning a Tensor shares it
+    U = Tensor(float, 2, 3, 4)
+    U << T
+    assert U.ss.matrix is T.ss.matrix
+    U(U.S, accum=binary.times) << U
+    check(U, values * values * 4, present)
+    check(T, values * 2, present)
+    T << T
+    check(T, values * 2, present)
+
+
+# --------------------------------------------------------------------------------------------
+# M4: expressions, <<, masks, accumulators
+
+
+def test_expression_basics():
+    rng = np.random.default_rng(14)
+    T, values, present = random_tensor((2, 3, 4), rng)
+    expr = T + T
+    assert type(expr) is TensorExpression
+    assert expr.shape == (2, 3, 4)
+    assert expr.ndim == 3
+    assert expr.size == 24
+    assert expr.dtype == dtypes.FP64
+    if not gb.config.get("autocompute"):
+        with pytest.raises(TypeError, match="new"):
+            expr.nvals
+    with gb.config.set(autocompute=True):
+        e2 = T + T
+        assert e2.nvals == present.sum()
+        assert e2.layout == T.layout
+        check(e2.new(), values * 2, present)
+        assert e2.isequal(T * 2)
+        assert e2.to_coo()[1].tolist() == (values * 2)[present].tolist()
+        check((e2 * 2).new(), values * 4, present)
+    R = expr.new(name="R")
+    assert R.name == "R"
+    check(R, values * 2, present)
+    R = expr.new(dtypes.INT64)
+    assert R.dtype == dtypes.INT64
+    check(R, (values * 2).astype(np.int64), present)
+    R = expr.new(layout=((2,), (0, 1)))
+    assert R.layout == Layout((2,), (0, 1))
+    assert R.layout_pinned
+    check(R, values * 2, present)
+    R = expr.dup()
+    check(R, values * 2, present)
+
+
+@pytest.mark.parametrize("target_layout", [None, ((2,), (0, 1)), ((0, 1), (2,))])
+@pytest.mark.parametrize("mask_layout", [((1,), (2, 0)), ((0, 1), (2,))])
+def test_masks_and_accum(target_layout, mask_layout):
+    rng = np.random.default_rng(15)
+    shape = (3, 4, 5)
+    A, av, ap = random_tensor(shape, rng, layout=((2, 0), (1,)))
+    B, bv, bp = random_tensor(shape, rng)
+    Mk, mv, mp = random_tensor(shape, rng, dtype=dtypes.BOOL, density=0.5, layout=mask_layout)
+    zv = np.where(ap, av, 0) + np.where(bp, bv, 0)
+    zp = ap | bp
+    masks = {
+        "S": (Mk.S, mp),
+        "V": (Mk.V, mp & mv),
+        "~S": (~Mk.S, ~mp),
+        "~V": (~Mk.V, ~(mp & mv)),
+        "bare": (Mk, mp & mv),
+    }
+    for (mname, (mask, mpos)), accum, replace in itertools.product(
+        masks.items(), [None, binary.plus, binary.minus], [False, True]
+    ):
+        label = (mname, accum, replace)
+        C, cv, cp = random_tensor(shape, rng, layout=target_layout)
+        C(mask, accum=accum, replace=replace) << A + B
+        np_accum = None if accum is None else {"plus": np.add, "minus": np.subtract}[accum.name]
+        ev, ep = model_update(cv, cp, zv, zp, mask=mpos, accum=np_accum, replace=replace)
+        check(C, ev, ep, approx=True)
+        if target_layout is not None:
+            assert C.layout == target_layout, label
+    # .new(mask=)
+    for mask, mpos in masks.values():
+        R = (A + B).new(mask=mask)
+        check(R, np.where(mpos & zp, zv, 0), mpos & zp, approx=True)
+    # accum without mask
+    C, cv, cp = random_tensor(shape, rng, layout=target_layout)
+    C(binary.plus) << A + B
+    ev, ep = model_update(cv, cp, zv, zp, accum=np.add)
+    check(C, ev, ep, approx=True)
+
+
+def test_update_layout_rules():
+    rng = np.random.default_rng(16)
+    shape = (3, 4, 5)
+    A, av, ap = random_tensor(shape, rng, layout=((2,), (0, 1)))
+    # Unpinned target adopts the result's layout; pinned keeps its own (F3)
+    C = Tensor(float, shape)
+    C << A * 2
+    assert C.layout == A.layout
+    assert not C.layout_pinned
+    P = Tensor(float, shape, layout=((1, 0), (2,)))
+    P << A * 2
+    assert P.layout == Layout((1, 0), (2,))
+    check(P, av * 2, ap)
+    # A mask without replace keeps the target's layout (old values survive)
+    D = random_tensor(shape, rng)[0]
+    D0 = D.layout
+    D(A.S) << A * 2
+    assert D.layout == D0
+    # With replace on an unpinned target, nothing old survives: the smaller side moves
+    E = random_tensor(shape, rng)[0]
+    E(A.S, replace=True) << A * 2
+    check(E, av * 2, ap)
+    # Mask shape and type errors
+    with pytest.raises(DimensionMismatch):
+        C(Tensor(bool, 3, 4, 6).S) << A * 2
+    with pytest.raises(TypeError, match="Tensor mask"):
+        C(Matrix(bool, 3, 4).S) << A * 2
+    with pytest.raises(TypeError, match="boolean"):
+        C(A) << A * 2
+    with pytest.raises(DimensionMismatch):
+        Tensor(float, 3, 4) << A * 2
+    with pytest.raises(TypeError, match="from_matrix"):
+        C << Matrix(float, 3, 4)
+    with pytest.raises(TypeError, match="input_mask"):
+        C(input_mask=A.S) << A * 2
+
+
+def test_assign_scalar_and_tensor():
+    rng = np.random.default_rng(17)
+    shape = (2, 3, 4)
+    A, av, ap = random_tensor(shape, rng)
+    C = Tensor(float, shape, layout=((2,), (0, 1)))
+    C(A.S) << 7
+    check(C, np.where(ap, 7.0, 0), ap)
+    C(~A.S) << Scalar.from_value(1.5)
+    check(C, np.where(ap, 7.0, 1.5), np.ones(shape, bool))
+    C << 2
+    check(C, np.full(shape, 2.0), np.ones(shape, bool))
+    assert C.layout == Layout((2,), (0, 1))
+    C(binary.plus) << 1
+    check(C, np.full(shape, 3.0), np.ones(shape, bool))
+    # Tensor of another dtype casts
+    Ti = Tensor(int, shape)
+    Ti << A
+    assert Ti.dtype == dtypes.INT64
+    check(Ti, av.astype(np.int64), ap)
+    # A pinned target relays the assigned Tensor
+    P = Tensor(float, shape, layout=((1,), (2, 0)))
+    P << A
+    assert P.layout == Layout((1,), (2, 0))
+    check(P, av, ap)
+    P(A.S, binary.plus) << A
+    check(P, av * 2, ap)
+
+
+def test_in_place_infix():
+    rng = np.random.default_rng(18)
+    A, av, ap = random_tensor((2, 3, 4), rng)
+    B, bv, bp = random_tensor((2, 3, 4), rng, layout=((1, 2), (0,)))
+    C = A.dup()
+    C += B
+    check(C, np.where(ap, av, 0) + np.where(bp, bv, 0), ap | bp, approx=True)
+    C = A.dup()
+    C *= B
+    check(C, np.where(ap & bp, av * bv, 0), ap & bp, approx=True)
+    C = A.dup()
+    C -= 1
+    check(C, np.where(ap, av - 1, 0), ap, approx=True)
+    with pytest.raises(TypeError):
+        C += Matrix(float, 2, 3)
+    expr = A + B
+    with pytest.raises(TypeError, match="new"):
+        expr += B
+    with pytest.raises(TypeError):
+        A + "x"
+
+
+# --------------------------------------------------------------------------------------------
+# M5: element-wise, same shape
+
+EWISE_OPS = {
+    "plus": (binary.plus, np.add),
+    "times": (binary.times, np.multiply),
+    "minus": (binary.minus, np.subtract),
+    "first": (binary.first, lambda x, y: x),
+    "second": (binary.second, lambda x, y: y),
+    "truediv": (binary.truediv, np.true_divide),
+    "lor": (binary.lor, np.logical_or),
+}
+
+
+def _np_op(name, x, y, dtype):
+    if name == "truediv":
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.true_divide(x, y)
+    if name == "lor":
+        return np.logical_or(x != 0, y != 0)
+    if dtype == dtypes.BOOL and name in {"plus", "times", "minus"}:
+        return {"plus": np.logical_or, "times": np.logical_and, "minus": np.not_equal}[name](x, y)
+    return EWISE_OPS[name][1](x, y)
+
+
+@pytest.mark.parametrize("dtype", [dtypes.FP64, dtypes.INT64, dtypes.BOOL])
+@pytest.mark.parametrize("opname", list(EWISE_OPS))
+def test_ewise(dtype, opname):
+    rng = np.random.default_rng(19)
+    shape = (3, 4, 5)
+    op = EWISE_OPS[opname][0]
+    if dtype == dtypes.BOOL and opname == "truediv":
+        return
+    layouts = [((0, 1), (2,)), ((2,), (1, 0)), ((1,), (0, 2))]
+    for la, lb in [(layouts[0], layouts[0]), (layouts[0], layouts[1]), (layouts[2], layouts[0])]:
+        A, av, ap = random_tensor(shape, rng, dtype=dtype, layout=la)
+        B, bv, bp = random_tensor(shape, rng, dtype=dtype, layout=lb)
+        for (X, xv, xp), (Y, yv, yp) in [((A, av, ap), (B, bv, bp)), ((B, bv, bp), (A, av, ap))]:
+            both = xp & yp
+            with np.errstate(divide="ignore", invalid="ignore"):
+                zv = np.where(both, _np_op(opname, xv, yv, dtype), 0)
+            # ewise_mult: intersection
+            R = X.ewise_mult(Y, op).new()
+            ev = zv.astype(R.dtype.np_type)
+            check(R, np.where(both, ev, 0), both, approx=R.dtype != dtypes.BOOL)
+            # ewise_add: union, the present side passes through
+            R = X.ewise_add(Y, op).new()
+            uv = np.where(both, zv, np.where(xp, xv, yv)).astype(R.dtype.np_type)
+            check(R, np.where(xp | yp, uv, 0), xp | yp, approx=R.dtype != dtypes.BOOL)
+            if dtype != dtypes.BOOL:
+                # ewise_union with defaults 0 (-1 on the right)
+                R = X.ewise_union(Y, op, 0, -1).new()
+                xx = np.where(xp, xv, 0)
+                yy = np.where(yp, yv, -1)
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    wv = _np_op(opname, xx, yy, dtype)
+                check(R, np.where(xp | yp, wv, 0).astype(R.dtype.np_type), xp | yp, approx=True)
+
+
+def test_ewise_infix_and_scalars():
+    rng = np.random.default_rng(20)
+    shape = (2, 3, 4)
+    A, av, ap = random_tensor(shape, rng, layout=((2,), (0, 1)))
+    B, bv, bp = random_tensor(shape, rng)
+    a0, b0 = np.where(ap, av, 0), np.where(bp, bv, 0)
+    check((A + B).new(), a0 + b0, ap | bp, approx=True)
+    check((A - B).new(), a0 - b0, ap | bp, approx=True)
+    check((A * B).new(), np.where(ap & bp, av * bv, 0), ap & bp, approx=True)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        dv = np.where(ap & bp, av / bv, 0)
+    R = (A / B).new()
+    np.testing.assert_allclose(R.to_coo()[1], dv[ap & bp])
+    check((A * 2).new(), np.where(ap, av * 2, 0), ap)
+    check((2 * A).new(), np.where(ap, av * 2, 0), ap)
+    check((A - 1).new(), np.where(ap, av - 1, 0), ap, approx=True)
+    check((1 - A).new(), np.where(ap, 1 - av, 0), ap, approx=True)
+    check((A + Scalar.from_value(1.0)).new(), np.where(ap, av + 1, 0), ap, approx=True)
+    check(A.apply(gb.unary.abs).new(), np.abs(a0), ap)
+    check(A.apply(binary.minus, left=10).new(), np.where(ap, 10 - av, 0), ap, approx=True)
+    with pytest.raises(DimensionMismatch, match="broadcasting"):
+        A + Tensor(float, 2, 3)
+    with pytest.raises(TypeError):
+        A.ewise_add(Matrix(float, 2, 3))
+    with pytest.raises(TypeError):
+        A.ewise_add(B, gb.semiring.plus_times)
+    if not gb.config.get("autocompute"):
+        with pytest.raises(TypeError, match="autocompute"):
+            (A + B) + A
+    # An operand that is the target itself
+    C = A.dup()
+    C << C + B
+    check(C, a0 + b0, ap | bp, approx=True)
+    C = A.dup()
+    C(C.S) << C * C
+    check(C, np.where(ap, av * av, 0), ap, approx=True)
+
+
+@pytest.mark.parametrize("opname", ["times", "first", "plus", "second"])
+def test_ewise_iso(opname):
+    """Iso inputs give iso results exactly when the same Matrix op does (F7)."""
+    rng = np.random.default_rng(21)
+    shape = (3, 4, 5)
+    op = EWISE_OPS[opname][0]
+    A = random_tensor(shape, rng, iso=True)[0]
+    B = random_tensor(shape, rng, iso=True, layout=((2,), (0, 1)))[0]
+    assert A.ss.is_iso
+    assert B.ss.is_iso
+    for method in ["ewise_mult", "ewise_add"]:
+        R = getattr(A, method)(B, op).new(layout=A.layout)
+        ref = getattr(A.ss.matrix, method)(B.relayout(A.layout).ss.matrix, op).new()
+        assert R.ss.is_iso == ref.ss.is_iso, method
+        assert R.ss.matrix.isequal(ref)
+    S = (A * 3).new()
+    assert S.ss.is_iso
+
+
+# --------------------------------------------------------------------------------------------
+# M6: reductions
+
+NP_REDUCE = {
+    "plus": (np.add, 0),
+    "times": (np.multiply, 1),
+    "max": (np.maximum, -np.inf),
+    "min": (np.minimum, np.inf),
+}
+
+
+def np_reduce(name, values, present, axes, keepdims=False):
+    ufunc, ident = NP_REDUCE[name]
+    vals = np.where(present, values.astype(float), ident)
+    out = ufunc.reduce(vals, axis=axes, keepdims=keepdims)
+    pattern = np.logical_or.reduce(present, axis=axes, keepdims=keepdims)
+    return np.where(pattern, out, 0), pattern
+
+
+AXES_3D = [0, 1, 2, (0, 1), (0, 2), (1, 2), (2, 0), None, -1, ()]
+
+
+@pytest.mark.parametrize("layout", all_layouts(3))
+def test_reduce_all_layouts(layout):
+    rng = np.random.default_rng(22)
+    shape = (3, 4, 5)
+    T, values, present = random_tensor(shape, rng, layout=layout, density=0.2)
+    for axis in AXES_3D:
+        axes = tuple(range(3)) if axis is None else axis
+        for keepdims in [False, True]:
+            R = T.reduce(monoid.plus, axis, keepdims=keepdims).new()
+            ev, ep = np_reduce("plus", values, present, axes, keepdims)
+            check(R, ev, ep, approx=True)
+    for name in ["max", "min", "times"]:
+        R = T.reduce(getattr(monoid, name), axis=(0, 2)).new()
+        ev, ep = np_reduce(name, values, present, (0, 2))
+        check(R, ev, ep, approx=True)
+
+
+@pytest.mark.parametrize("dtype", [dtypes.INT64, dtypes.BOOL])
+def test_reduce_dtypes(dtype):
+    rng = np.random.default_rng(23)
+    shape = (2, 3, 4)
+    T, values, present = random_tensor(shape, rng, dtype=dtype, layout=((1,), (2, 0)))
+    for axis in [0, 1, 2, (0, 2), None]:
+        axes = tuple(range(3)) if axis is None else axis
+        if dtype == dtypes.BOOL:
+            R = T.any(axis).new()
+            ep = np.logical_or.reduce(present, axis=axes)
+            ev = np.logical_or.reduce(present & values, axis=axes)
+            check(R, ev & ep, ep)
+            R = T.all(axis).new()
+            ev = np.logical_and.reduce(~present | values, axis=axes)
+            check(R, ev & ep, ep)
+            R = T.reduce(monoid.lor, axis).new()
+            assert R.dtype == dtypes.BOOL
+        else:
+            for name, meth in [("plus", "sum"), ("times", "prod"), ("max", "max"), ("min", "min")]:
+                R = getattr(T, meth)(axis).new()
+                assert R.dtype == dtypes.INT64
+                ev, ep = np_reduce(name, values, present, axes)
+                check(R, ev.astype(np.int64), ep)
+            R = T.any(axis).new()
+            assert R.dtype == dtypes.BOOL
+            ep = np.logical_or.reduce(present, axis=axes)
+            ev = np.logical_or.reduce(present & (values != 0), axis=axes)
+            check(R, ev & ep, ep)
+
+
+def test_reduce_scalar():
+    rng = np.random.default_rng(24)
+    T, values, present = random_tensor((3, 4, 5), rng, layout=((2,), (0, 1)))
+    s = T.reduce_scalar().new()
+    assert s.value == pytest.approx(values[present].sum())
+    s = T.reduce_scalar(monoid.max).new()
+    assert s.value == values[present].max()
+    s = Scalar(float)
+    s << T.reduce_scalar(monoid.min)
+    assert s.value == values[present].min()
+    E = Tensor(float, 2, 3)
+    assert E.reduce_scalar().new().is_empty
+    assert E.reduce_scalar(allow_empty=False).new().value == 0
+    Z = T.sum().new()
+    assert Z.shape == ()
+    assert Z.to_scalar().value == pytest.approx(values[present].sum())
+    Z = E.sum().new()
+    assert Z.nvals == 0
+    with pytest.raises(TypeError):
+        T.reduce(binary.minus)
+    with pytest.raises(ValueError, match="repeated"):
+        T.reduce(axis=(0, 0))
+    with pytest.raises(ValueError, match="out of bounds"):
+        T.reduce(axis=3)
+    assert "reduce" in repr(T.reduce(axis=1))
+
+
+def test_reduce_4d():
+    rng = np.random.default_rng(25)
+    shape = (2, 3, 1, 4)
+    for layout in [((0, 1), (2, 3)), ((3, 1), (0, 2)), ((2,), (3, 0, 1)), ((0, 1, 2, 3), ())]:
+        T, values, present = random_tensor(shape, rng, layout=layout)
+        for axis in [0, 1, 3, (0, 1), (1, 3), (0, 2, 3), (0, 1, 3)]:
+            R = T.sum(axis).new()
+            ev, ep = np_reduce("plus", values, present, axis)
+            check(R, ev, ep, approx=True)
+
+
+def test_reduce_strategies(monkeypatch):
+    rng = np.random.default_rng(26)
+    # Wide columnwise reduction: one column axis moves into the rows, then a selector
+    shape = (2, 400, 300)
+    T, values, present = random_tensor(shape, rng, layout=((0,), (1, 2)), density=0.01)
+    R = T.sum(0).new(nthreads=4)
+    check(R, *np_reduce("plus", values, present, 0), approx=True)
+    R = T.sum(0).new(nthreads=1)
+    check(R, *np_reduce("plus", values, present, 0), approx=True)
+    # Hypersparse rows with about one entry each: REBUILD with the monoid as dup_op
+    monkeypatch.setattr(tl, "density", lambda M: True)
+    T, values, present = random_tensor((3, 4, 5), rng, layout=((0, 1), (2,)))
+    for axis in [0, 1, 2, (0, 1), (1, 2), (0, 2)]:
+        R = T.reduce(monoid.max, axis).new()
+        check(R, *np_reduce("max", values, present, axis))
+    monkeypatch.undo()
+    # Groups much larger than the data use REBUILD too
+    shape = (2**20, 2**20, 3)
+    coords = [rng.integers(0, 2**20, 50), rng.integers(0, 2**20, 50), rng.integers(0, 3, 50)]
+    T = Tensor.from_coo(coords, np.ones(50), shape=shape, layout=((2,), (0, 1)), dup_op=binary.plus)
+    R = T.sum(0).new()
+    lin = np.ravel_multi_index((coords[1], coords[2]), (2**20, 3))
+    assert R.nvals == np.unique(lin).size
+    assert R.to_coo()[1].sum() == pytest.approx(50.0)
+    R._check_invariants()
+    R = T.sum((0, 1)).new()
+    assert R.to_coo()[1].sum() == pytest.approx(50.0)
+
+
+def test_reduce_target_layout():
+    rng = np.random.default_rng(27)
+    T, values, present = random_tensor((3, 4, 5), rng)
+    C = Tensor(float, 3, 5, layout=((1,), (0,)))
+    C << T.sum(1)
+    assert C.layout == Layout((1,), (0,))
+    check(C, *np_reduce("plus", values, present, 1), approx=True)
+    D, dv, dp = random_tensor((3, 5), rng)
+    D(binary.plus) << T.sum(1)
+    ev, ep = np_reduce("plus", values, present, 1)
+    check(D, np.where(dp, dv, 0) + ev, dp | ep, approx=True)
+    # The healthy split: an n-d result is not left as one row
+    R = T.sum(1, keepdims=True).new()
+    assert R.layout.rows
+    assert R.layout.cols
