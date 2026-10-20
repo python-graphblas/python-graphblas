@@ -1907,3 +1907,14 @@ def test_dense_and_matrices():
     E = Tensor(float, 2, 0, 4).to_matrices()
     assert len(E) == 2
     assert E[0].shape == (0, 4)
+
+
+def test_scalar_comparisons_and_pow():
+    rng = np.random.default_rng(56)
+    X, xv, xp = random_tensor((3, 4, 5), rng)
+    check((X > 0).new(), np.where(xp, xv > 0, False), xp)
+    check((0 < X).new(), np.where(xp, xv > 0, False), xp)
+    check((X == 1).new(), np.where(xp, xv == 1, False), xp)
+    check((X**2).new(), np.where(xp, xv**2, 0), xp, approx=True)
+    check((2**X).new(), np.where(xp, 2.0**xv, 0), xp, approx=True)
+    assert hash(X) == hash(X)  # comparisons do not make Tensors unhashable
