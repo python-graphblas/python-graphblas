@@ -4558,7 +4558,9 @@ def test_udt_literal_converts_only_when_exact():
     float64; a numpy value is strong and must cast safely. A Monoid in
     ``apply`` is typed as its BinaryOp, so its literal promotes instead.
     """
+    import datetime
     import re
+    import warnings
 
     arr = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_ExactArr")
     rec = dtypes.register_anonymous(
@@ -4571,6 +4573,9 @@ def test_udt_literal_converts_only_when_exact():
     text = dtypes.register_anonymous(np.dtype([("ex_s", "S4"), ("ex_n", np.int8)]), "_ExactText")
     bare = dtypes.register_anonymous(np.dtype("S3"), "_ExactBareText")
     seconds = dtypes.register_anonymous(np.dtype("m8[s]"), "_ExactBareSeconds")
+    dates = dtypes.register_anonymous(
+        np.dtype([("ex_d", "M8[s]"), ("ex_m", np.int8)]), "_ExactDate"
+    )
     v = Vector(arr, size=3)
     v[0] = [1, 2, 3]
     w = Vector(arr, size=3)
@@ -4588,6 +4593,8 @@ def test_udt_literal_converts_only_when_exact():
     d = Vector(seconds, size=1)
     d[0] = np.timedelta64(5, "s")
     cut_text = np.array((b"abcdef", 1), dtype=[("ex_s", "S6"), ("ex_n", np.int64)])[()]
+    when = Vector(dates, size=1)
+    when[0] = (np.datetime64(0, "s"), 1)
     udf = BinaryOp.register_anonymous(lambda x, y: x + y, "_exact_plus", is_udt=True)
     second = BinaryOp.register_anonymous(lambda x, y: y, "_exact_second", is_udt=True)
     same = BinaryOp.register_anonymous(lambda x, y: x == y, "_exact_same", is_udt=True)
@@ -4599,6 +4606,8 @@ def test_udt_literal_converts_only_when_exact():
     assert r.apply(second, right=(1, 0.1)).new()[0].new().value.tolist() == (1, np.float32(0.1))
     assert r.apply(second, right={"ex_i": 2, "ex_f": 0.5}).new()[0].new().value.tolist() == (2, 0.5)
     assert r.apply(second, right=np.int8(2)).new()[0].new().value.tolist() == (2, 2.0)
+    # A numpy number in a record is strong, as alone: np.int16 fits the int16 field.
+    assert r.apply(second, right=(np.int16(2), 0.5)).new()[0].new().value.tolist() == (2, 0.5)
     # A sequence holding numpy values is strong, as the array numpy makes of it
     # (int64, or int32 on Windows with numpy 1).
     made = np.asarray((np.int8(1), 2, 3)).dtype
@@ -4610,6 +4619,18 @@ def test_udt_literal_converts_only_when_exact():
         (lambda: v.apply(udf, left=np.array([0.5, 1, 1])), "_ExactArr"),
         (lambda: v.apply(udf, right=(np.float64(0.5), 1, 1)), "_ExactArr"),
         (lambda: r.apply(second, left=(0.5, 1)), "_ExactRec"),
+        (lambda: r.apply(second, right=(np.float64(1.5), 1)), "_ExactRec"),
+        (lambda: r.apply(second, right={"ex_i": np.float64(1.5), "ex_f": 1}), "_ExactRec"),
+        (lambda: n.apply(second, right=((np.float64(1.5), 2), 3)), "_ExactNested"),
+        # Text or a date in a record is typed too, so the number beside it is checked,
+        # and text longer than its field does not fit.
+        (lambda: t.apply(second, right=(b"ab", 1.5)), "_ExactText"),
+        (lambda: t.apply(second, right=(b"ab", np.float64(1.5))), "_ExactText"),
+        (lambda: t.apply(second, right=(b"abcdef", 1)), "_ExactText"),
+        (lambda: when.apply(second, right=(np.datetime64(0, "s"), 1.5)), "_ExactDate"),
+        (lambda: when.apply(second, right=(datetime.date(1970, 1, 1), 1.5)), "_ExactDate"),
+        (lambda: when.apply(second, right=("1970-01-01", 1.5)), "_ExactDate"),
+        (lambda: when.apply(second, right=(np.datetime64(5, "ms"), 1)), "_ExactDate"),
         (lambda: v.ewise_union(w, udf, 0.5, 0), "_ExactArr"),
         (lambda: v.ewise_union(w, udf, 0, 0.5), "_ExactArr"),
         (
@@ -4642,6 +4663,7 @@ def test_udt_literal_converts_only_when_exact():
         (lambda: v.apply(udf, right=np.int64(1)), "_ExactArr: it is typed as INT64,"),
         (lambda: v.apply(udf, right=(np.int8(1), 2, 3)), "_ExactArr"),
         (lambda: r.apply(second, right=np.int32(2)), "_ExactRec: it is typed as INT32,"),
+        (lambda: r.apply(second, right=(np.int64(2), 0.5)), "_ExactRec"),
         (lambda: n.apply(second, right=([1, 2.0], 3)), "_ExactNested"),
         (lambda: t.apply(second, right=text_literal), "_ExactText"),
     ]:
@@ -4657,6 +4679,20 @@ def test_udt_literal_converts_only_when_exact():
     # Text for a text leaf converts, bytes or str.
     for literal in [b"cd", "cd"]:
         assert t.apply(second, right=(literal, 1)).new()[0].new().value.tolist() == (b"cd", 1)
+    assert t.apply(second, right=(b"c", 1)).new()[0].new().value.tolist() == (b"c", 1)
+    # Text or a date that converts into its field and back fits it, with no warning:
+    # trailing NULs, a finer date that is whole seconds, NaT.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert t.apply(second, right=(b"ab\0\0\0", 1)).new()[0].new().value.tolist() == (b"ab", 1)
+        fine = when.apply(second, right=(np.datetime64(5000, "ms"), 1)).new()[0].new().value
+        assert fine["ex_d"] == np.datetime64(5, "s")
+        nat = when.apply(second, right=(np.datetime64("NaT", "ms"), 1)).new()[0].new().value
+        assert np.isnat(nat["ex_d"])
+    assert (t == (b"ab", 1)).new()[0].new().value
+    assert not (t == (b"ab", 1.5)).new()[0].new().value
+    assert (when == (np.datetime64(0, "s"), 1)).new()[0].new().value
+    assert not (when == (np.datetime64(0, "s"), 1.5)).new()[0].new().value
     for literal in [b"0.5", "0.5"]:
         assert b.apply(same, right=literal).new()[0].new().value
     with pytest.raises(OverflowError, match="300 out of bounds for int8"):
@@ -4756,6 +4792,34 @@ def test_udt_sequence_and_array_literals_type_like_numbers():
         dtype=[("sq_a", np.int8), ("sq_in", [("sq_b", np.float64), ("sq_c", np.int8)])],
     )
     assert (n + strong).new()[0].new().value.tolist() == (2, (2.5, 4.5))
+    # A numpy number in a record literal keeps its dtype, as a 0-d array does.
+    result = binary.plus(n, (np.float64(0.5), (1, 1))).new()
+    assert result.dtype.np_type["sq_a"] == np.float64
+    assert result[0].new().value.tolist() == (1.5, (3, 4.5))
+    assert (n == (np.float64(1), (2, 3.5))).new()[0].new().value
+    assert not (n == (np.float64(1.5), (2, 3.5))).new()[0].new().value
+    result = binary.plus(n, (1, np.float64(1.5))).new()  # one number for the nested record
+    assert result.dtype.np_type["sq_in"]["sq_b"] == np.float64
+    assert result[0].new().value.tolist() == (2, (3.5, 5.0))
+    # Text or a duration that converts into its field and back takes the field's type,
+    # so a lifted op pairs the record with itself; one that does not keeps its own.
+    text = dtypes.register_anonymous(np.dtype([("sq_tx", "S4"), ("sq_tn", np.int8)]), "_SeqText")
+    tv = Vector(text, size=1)
+    tv[0] = (b"ab", 1)
+    assert binary.plus(tv, (b"ab", 1)).new()[0].new().value.tolist() == (b"abab", 2)
+    assert tv.apply(binary.max, right=(b"ac", 0)).new()[0].new().value.tolist() == (b"ac", 1)
+    assert tv.apply(binary.min, right=(b"ac", 0)).new()[0].new().value.tolist() == (b"ab", 0)
+    assert not (tv == (b"ab", 300)).new()[0].new().value  # 300 is no int8
+    secs = dtypes.register_anonymous(
+        np.dtype([("sq_sd", "m8[s]"), ("sq_sn", np.int8)]), "_SeqSeconds"
+    )
+    sv = Vector(secs, size=1)
+    sv[0] = (np.timedelta64(10, "s"), 1)
+    for delta, total in [(np.timedelta64(5, "m"), 310), (np.timedelta64(5000, "ms"), 15)]:
+        result = binary.plus(sv, (delta, 1)).new()
+        assert result[0].new().value["sq_sd"] == np.timedelta64(total, "s")
+    with pytest.raises(KeyError, match="no common type"):
+        binary.plus(sv, (np.timedelta64(5, "ms"), 1))  # 5 ms is no whole number of seconds
     first = dtypes.register_anonymous(
         np.dtype([("sq_fin", [("sq_fb", np.int8), ("sq_fc", np.float32)]), ("sq_fa", np.int16)])
     )

@@ -13,6 +13,7 @@ The module also types a literal stored into an object
 a UDT without fitting it is deprecated in :func:`_refuse_unless_exact` (MAINT).
 """
 
+import datetime
 import math
 import numbers
 import struct
@@ -107,10 +108,9 @@ def _literal_operand(dtype, value, op):
                 if is_comparison and not isinstance(value, (np.generic, np.ndarray)):
                     np_type = dtype.np_type
                     parts = _dict_to_record(np_type, value) if isinstance(value, dict) else value
-                    beyond = _int_beyond_leaf(np_type, parts)
-                    if beyond is not None:
-                        # As infinity in every leaf, it still equals no element.
-                        value = math.inf if beyond > 0 else -math.inf
+                    if _int_beyond_leaf(np_type, parts) is not None:
+                        # As infinity in its leaf, it still equals no element.
+                        value = _beyond_as_infinity(np_type, parts)
                         literal_type = _literal_type(dtype, value)
                 return value, literal_type
     _check_literal_fits(dtype, value)
@@ -398,16 +398,29 @@ def _is_number(x):
     return isinstance(x, (numbers.Number, np.bool_)) and not isinstance(x, np.timedelta64)
 
 
+def _keeps_value(value, dtype):
+    """Whether ``value`` converts into ``dtype`` and back unchanged (:func:`_converts_back`)."""
+    try:
+        converted = np.array(value, dtype=dtype)[()]
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return _converts_back(value, converted)
+
+
 def _converts_back(given, converted):
     """Whether ``converted``, ``given`` as text, a date or a duration, converts back to ``given``.
 
     numpy compares dates and durations across units exactly, so 0 s is not 5 ms.
+    A date given as text is compared as a date.
     """
-    given = np.asarray(given)
+    given, converted = np.asarray(given), np.asarray(converted)
     try:
-        back = np.asarray(converted).astype(given.dtype)
-    except (TypeError, ValueError):
-        return False
+        back = converted.astype(given.dtype)
+    except (TypeError, ValueError, RuntimeError):
+        try:
+            back, given = converted, given.astype(converted.dtype)
+        except (TypeError, ValueError, RuntimeError):
+            return False
     if given.dtype.kind in "mM" and np.isnat(given):
         return bool(np.isnat(back))
     return bool(np.all(back == given))
@@ -514,12 +527,13 @@ def _as_python_number(value):
     return value
 
 
-def _literal_leaf_values(value, shape):
+def _literal_leaf_values(value, shape, *, numpy_scalars=False):
     """Return the Python numbers in literal ``value`` read as an array of ``shape``, or ``None``.
 
     ``shape`` is ``()`` for a scalar leaf. A number fills any shape, as numpy
     broadcasts it. A sequence that does not fill the shape, or holds anything
-    that is not a Python number, gives ``None``.
+    that is not a Python number (or, with ``numpy_scalars``, a numpy number or
+    bool), gives ``None``.
     """
     if shape:
         arr = np.empty(shape, dtype=object)
@@ -530,7 +544,10 @@ def _literal_leaf_values(value, shape):
         values = [_as_python_number(x) for x in arr.ravel().tolist()]
     else:
         values = [_as_python_number(value)]
-    return values if all(type(x) in _LITERAL_KINDS for x in values) else None
+    numpy_types = (np.number, np.bool_) if numpy_scalars else ()
+    if all(type(x) in _LITERAL_KINDS or isinstance(x, numpy_types) for x in values):
+        return values
+    return None
 
 
 def _weak_literal_udt(dtype, value, *, exact=False):
@@ -547,24 +564,54 @@ def _weak_literal_udt(dtype, value, *, exact=False):
     number (bytes, datetime) takes the literal's default dtype and fails to
     pair. With ``exact``, for ``eq`` and ``ne``, an int out of a leaf's range
     takes a type that holds it instead of raising (:func:`_weak_literal_leaf`),
-    so ``int8_udt == 300`` is False. A sequence not laid out like an element
-    gives ``None``.
+    so ``int8_udt == 300`` is False. In a record, a numpy number or bool is
+    strong, as beside a built-in type: ``int8_record + (np.float64(1.5), 1)``
+    has a float64 field. (A sequence for an array UDT is the array numpy makes
+    of it instead: :func:`_literal_type`.) A sequence not laid out like an
+    element gives ``None``.
     """
 
-    def leaf_dtype(leaf, part):
+    def leaf_dtype(leaf, part, *, in_record=False):
         base, shape = leaf.subdtype or (leaf, ())
-        values = _literal_leaf_values(part, shape)
+        if in_record and not shape and base.kind in "SUMm":
+            # Text or a date in such a field is typed too, so the number fields
+            # beside it are. It takes the field's own type when it converts into
+            # the field and back unchanged, so ops pair the field with itself;
+            # otherwise its own type, which does not fit: text as the field's
+            # kind at its own length, a numpy date or duration in its unit.
+            # Other dates (datetime, str) take the field's type.
+            if isinstance(part, (str, bytes)) and base.kind in "SU":
+                own = np.dtype(f"{base.kind}{max(len(part), 1)}")
+            elif isinstance(part, (np.datetime64, np.timedelta64)):
+                own = part.dtype
+                if own.kind != base.kind:
+                    return own
+            elif isinstance(part, (str, bytes, datetime.date, datetime.timedelta)):
+                return base
+            else:
+                own = None
+            if own is not None:
+                return base if _keeps_value(part, base) else own
+        values = _literal_leaf_values(part, shape, numpy_scalars=in_record)
         if values is None:
             raise _LiteralDoesNotFit
-        kind = max((_LITERAL_KINDS[type(x)] for x in values), key="bifc".index)
-        if base.kind in "biufc":
-            elem = _weak_literal_leaf(values, kind, base, exact=exact)
-        else:
-            elem = _WEAK_LITERAL_DEFAULT[kind]
+        weak = [x for x in values if type(x) in _LITERAL_KINDS]
+        strong = [x.dtype for x in values if type(x) not in _LITERAL_KINDS]
+        elem = None
+        if weak:
+            kind = max((_LITERAL_KINDS[type(x)] for x in weak), key="bifc".index)
+            if base.kind in "biufc":
+                elem = _weak_literal_leaf(weak, kind, base, exact=exact)
+            else:
+                elem = _WEAK_LITERAL_DEFAULT[kind]
+        if strong:
+            elem = np.result_type(*strong, *([] if elem is None else [elem]))
         return np.dtype((elem, shape)) if shape else elem
 
     def record_leaves(np_type, part):
-        if type(_as_python_number(part)) in _LITERAL_KINDS:
+        if type(_as_python_number(part)) in _LITERAL_KINDS or isinstance(
+            part, (np.number, np.bool_)
+        ):
             parts = [part] * len(np_type.names)
         elif isinstance(part, (tuple, list)) and len(part) == len(np_type.names):
             parts = part
@@ -575,7 +622,7 @@ def _weak_literal_udt(dtype, value, *, exact=False):
             if field.names is not None:
                 yield from record_leaves(field, item)
             else:
-                yield leaf_dtype(field, item)
+                yield leaf_dtype(field, item, in_record=True)
 
     np_type = dtype.np_type
     try:
@@ -609,6 +656,31 @@ def _int_beyond_leaf(np_type, value):
             if type(x) is int and not lo <= x <= hi:
                 return x
     return None
+
+
+def _beyond_as_infinity(np_type, value):
+    """Return literal ``value`` with each int beyond its integer leaf's range as infinity.
+
+    ``value`` is laid out as :func:`_int_beyond_leaf` reads it. Infinity of the
+    int's sign equals no element, as the int does; every other value is kept,
+    so a text leaf still pairs with its field.
+    """
+    if np_type.names is not None:
+        parts = value if isinstance(value, (tuple, list)) else [value] * len(np_type.names)
+        return tuple(
+            _beyond_as_infinity(np_type.fields[name][0], part)
+            for name, part in zip(np_type.names, parts, strict=True)
+        )
+    base, shape = np_type.subdtype or (np_type, ())
+    values = _literal_leaf_values(value, shape) if base.kind in "iu" else None
+    if values is None:
+        return value
+    lo, hi = _int_bounds(base)
+    values = [
+        (math.inf if x > 0 else -math.inf) if type(x) is int and not lo <= x <= hi else x
+        for x in values
+    ]
+    return np.array(values, dtype=object).reshape(shape).tolist() if shape else values[0]
 
 
 def _array_literal_udt(dtype, value):
