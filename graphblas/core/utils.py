@@ -70,6 +70,9 @@ _output_types = {
     type: type,
 }
 _output_types.update((k, k) for k in set(np.sctypeDict.values()))
+# Output types that follow Tensor rules (core/tensor.py registers them). Infix operators and
+# named ops on Matrix, Vector and Scalar defer to these, so core modules need not import them.
+_tensor_types = set()
 
 
 def _warn_from_caller(message, category):

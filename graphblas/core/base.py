@@ -11,7 +11,7 @@ from .literals import _literal_store_dtype
 from .mask import Mask, _check_mask
 from .operator import UNKNOWN_OPCLASS, binary_from_string, find_opclass, get_typed_op
 from .udt import _fused_store_expr, _scalar_accum_op, _store_cast_op
-from .utils import _Pointer, libget, output_type
+from .utils import _Pointer, _tensor_types, libget, output_type
 
 _recorder = ContextVar("recorder")
 _prev_recorder = None
@@ -141,6 +141,14 @@ def _expect_type_message(
         expected = ", ".join(typ.__name__ for typ in types)
     else:
         expected = types.__name__
+    if output_type(x) in _tensor_types and output_type(self) not in _tensor_types:
+        # Methods keep Matrix and Vector rules (only infix operators defer to Tensor rules)
+        extra_message = f"{extra_message}\n\n" if extra_message else ""
+        extra_message += (
+            f"Hint: {type(self).__name__} methods do not take Tensor operands. Use the Tensor "
+            f"method (Tensor rules apply), or `Tensor.from_matrix` / `Tensor.from_vector`, "
+            "or convert the Tensor with `T.to_matrix()` / `T.to_vector()`."
+        )
     if extra_message:
         extra_message = f"\n{extra_message}"
     op, opclass = find_opclass(op)
@@ -306,6 +314,11 @@ class BaseType:
             raise TypeError("mask and input_mask arguments cannot both be given")
         else:
             mask = _check_mask(mask)
+            if output_type(mask.parent) in _tensor_types and type(self) not in _tensor_types:
+                raise TypeError(
+                    f"A Tensor mask cannot be used with a {type(self).__name__} output; "
+                    "use `T.to_matrix()` or `T.to_vector()` to make a mask of the right type"
+                )
         if accum_arg is not None:
             if accum is not None:
                 raise TypeError("Got multiple values for argument 'accum'")
@@ -480,6 +493,15 @@ class BaseType:
                 from .infix import InfixExprBase
                 from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
+                if expr is NotImplemented or output_type(expr) in _tensor_types:
+                    # NotImplemented comes from an in-place operator (`A += T`) whose infix
+                    # deferred to a Tensor operand.
+                    raise TypeError(
+                        f"A Tensor or Tensor expression cannot be assigned to a "
+                        f"{type(self).__name__}, and in-place operators with a Tensor operand "
+                        "are not supported; use `T.to_matrix()` / `T.to_vector()`, or compute "
+                        "into a Tensor"
+                    )
                 if type(expr) is TransposedMatrix and type(self) is Matrix:
                     if (cast_op := _store_cast_op(expr.dtype, self.dtype)) is not None:
                         # C << A.T of another UDT type: the cast reads A transposed.

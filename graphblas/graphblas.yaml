@@ -1,2 +1,4 @@
 autocompute: True
 mapnumpy: True
+# Tensor: largest number of entries an implicit broadcast may replicate (ewise_add / union)
+tensor_max_expansion: 1000000000

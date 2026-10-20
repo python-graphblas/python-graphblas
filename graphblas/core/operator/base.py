@@ -7,7 +7,7 @@ from ...dtypes import BOOL, UINT64, _supports_complex, lookup_dtype
 from ...exceptions import UdfParseError
 from .. import _has_numba, _supports_udfs, ffi, lib
 from ..expr import InfixExprBase
-from ..utils import output_type
+from ..utils import _tensor_types, output_type
 
 if _has_numba:
     from numba import NumbaError
@@ -162,11 +162,15 @@ def _call_op(op, left, right=None, thunk=None, **kwargs):
     from ..matrix import Matrix, TransposedMatrix
     from ..vector import Vector
 
-    if (left_type := output_type(left)) in {Vector, Matrix, TransposedMatrix}:
+    if (left_type := output_type(left)) in {Vector, Matrix, TransposedMatrix} or (
+        left_type in _tensor_types
+    ):
         if thunk is not None:
             return left.select(op, thunk=thunk, **kwargs)
         return left.apply(op, right=right, **kwargs)
-    if (right_type := output_type(right)) in {Vector, Matrix, TransposedMatrix}:
+    if (right_type := output_type(right)) in {Vector, Matrix, TransposedMatrix} or (
+        right_type in _tensor_types
+    ):
         return right.apply(op, left=left, **kwargs)
 
     from ..scalar import Scalar, _as_scalar

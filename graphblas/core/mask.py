@@ -209,6 +209,14 @@ def _check_mask(mask, output=None, strict_kind=False):
         else:
             raise TypeError(f"Invalid mask: {type(mask)}")
     if output is not None:
+        if (
+            utils.output_type(mask.parent) in utils._tensor_types
+            and utils.output_type(output) not in utils._tensor_types
+        ):
+            raise TypeError(
+                f"A Tensor mask cannot be used with a {type(output).__name__} output; "
+                "use `T.to_matrix()` or `T.to_vector()` to make a mask of the right type"
+            )
         if output.ndim == 1 and mask.parent.ndim != 1:
             raise TypeError(f"Mask object must be type Vector; got {type(mask.parent)}")
         # A full-tensor op (ewise, mxm, apply, extract, ...) into a Matrix needs

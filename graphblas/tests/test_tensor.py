@@ -863,8 +863,10 @@ def test_in_place_infix():
     C = A.dup()
     C -= 1
     check(C, np.where(ap, av - 1, 0), ap, approx=True)
-    with pytest.raises(TypeError):
+    with pytest.raises(DimensionMismatch):
         C += Matrix(float, 2, 3)
+    C += Matrix(float, 3, 4)  # a Matrix operand broadcasts over the leading axis
+    check(C, np.where(ap, av - 1, 0), ap, approx=True)
     expr = A + B
     with pytest.raises(TypeError, match="new"):
         expr += B
@@ -951,10 +953,12 @@ def test_ewise_infix_and_scalars():
     check((A + Scalar.from_value(1.0)).new(), np.where(ap, av + 1, 0), ap, approx=True)
     check(A.apply(gb.unary.abs).new(), np.abs(a0), ap)
     check(A.apply(binary.minus, left=10).new(), np.where(ap, 10 - av, 0), ap, approx=True)
-    with pytest.raises(DimensionMismatch, match="broadcasting"):
+    with pytest.raises(DimensionMismatch, match="broadcast"):
         A + Tensor(float, 2, 3)
-    with pytest.raises(TypeError):
+    with pytest.raises(DimensionMismatch, match="broadcast"):
         A.ewise_add(Matrix(float, 2, 3))
+    with pytest.raises(TypeError):
+        A.ewise_add("x")
     with pytest.raises(TypeError):
         A.ewise_add(B, gb.semiring.plus_times)
     if not gb.config.get("autocompute"):
@@ -1255,3 +1259,222 @@ def test_tensordot_semirings_masks_and_errors():
         X.tensordot(Y, ([2], [0], [1]))
     with pytest.raises(TypeError):
         X.tensordot(Y, 1, op=binary.plus)
+
+
+# --------------------------------------------------------------------------------------------
+# Phase 2a.1: core hooks (Matrix, Vector, Scalar and operators meet a Tensor)
+
+
+def test_core_hooks():
+    rng = np.random.default_rng(40)
+    X, xv, xp = random_tensor((3, 4, 5), rng)
+    A = Matrix.from_coo([0, 1, 3], [1, 2, 4], [1.0, 2.0, 3.0], nrows=4, ncols=5)
+    av, ap = A.to_dense(0.0), A.to_dense(0.0) != 0
+    # Infix with a Matrix on the left defers to Tensor rules (broadcast over the first axis)
+    R = (A + X).new()
+    assert type(R) is Tensor
+    check(R, *np_bcast("add", av, ap, xv, xp, np.add), approx=True)
+    check((A * X).new(), *np_bcast("mult", av, ap, xv, xp, np.multiply), approx=True)
+    check((A - X).new(), *np_bcast("union", av, ap, xv, xp, np.subtract), approx=True)
+    check((A < X).new(), *np_bcast("mult", av, ap, xv, xp, np.less))
+    check((X >= A).new(), *np_bcast("mult", xv, xp, av, ap, np.greater_equal))
+    check(binary.plus(A | X).new(), *np_bcast("add", av, ap, xv, xp, np.add), approx=True)
+    check(binary.minus(X & A).new(), *np_bcast("mult", xv, xp, av, ap, np.subtract))
+    v = Vector.from_coo([0, 2], [2.0, 3.0], size=5)
+    vv, vp = v.to_dense(0.0), v.to_dense(0.0) != 0
+    check((v * X).new(), *np_bcast("mult", vv, vp, xv, xp, np.multiply), approx=True)
+    check((X / v).new(), *np_bcast("mult", xv, xp, vv, vp, np.true_divide), approx=True)
+    # In-place Matrix ops and Matrix methods keep Matrix rules and raise clearly
+    with pytest.raises(TypeError, match="(?i)in-place"):
+        A += X
+    with pytest.raises(TypeError, match="(?i)in-place"):
+        A |= X
+    with pytest.raises(TypeError, match="Tensor mask"):
+        A(X.S) << A
+    with pytest.raises(TypeError, match="Matrix methods do not take Tensor"):
+        A.ewise_add(X)
+    with pytest.raises(TypeError, match="cannot be assigned"):
+        A << X
+    with pytest.raises(TypeError):
+        Scalar.from_value(1.0) & X
+    # Named operators on a Tensor
+    check(gb.unary.abs(X).new(), np.abs(xv), xp)
+    check(binary.plus(X, 1).new(), np.where(xp, xv + 1, 0), xp, approx=True)
+    check(binary.minus(1, X).new(), np.where(xp, 1 - xv, 0), xp, approx=True)
+    assert gb.agg.sum(X).new().value == pytest.approx(xv[xp].sum())
+    with pytest.raises(ValueError, match="reduce"):
+        gb.agg.sum(X, rowwise=True)
+    check(gb.select.valuegt(X, 0).new(), np.where(xp & (xv > 0), xv, 0), xp & (xv > 0))
+    with pytest.raises(NotImplementedError, match="value"):
+        gb.select.tril(X)
+    assert "infix" in repr(X | X)
+    assert (X | X).shape == X.shape
+
+
+# --------------------------------------------------------------------------------------------
+# Phase 2a.2 / 2a.3: Matrix, Vector and ndarray operands; broadcasting
+
+
+def np_bcast(kind, xv, xp, yv, yp, ufunc, left_default=0, right_default=0):
+    """Numpy broadcasting with presence: mult = intersection, add = union passing values
+    through, union = union with defaults.
+    """
+    xv, yv = np.broadcast_arrays(xv, yv)
+    xp, yp = np.broadcast_arrays(xp, yp)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        if kind == "mult":
+            present = xp & yp
+            vals = ufunc(xv, yv)
+        elif kind == "add":
+            present = xp | yp
+            vals = np.where(xp & yp, ufunc(xv, yv), np.where(xp, xv, yv))
+        else:
+            present = xp | yp
+            vals = ufunc(np.where(xp, xv, left_default), np.where(yp, yv, right_default))
+    return np.where(present, vals, 0), present
+
+
+BCAST_SHAPES = [
+    ((3, 4, 5), (5,)),
+    ((3, 4, 5), (4, 5)),
+    ((3, 4, 5), (4, 1)),
+    ((3, 4, 5), (3, 1, 1)),
+    ((3, 4, 5), (3, 1, 5)),
+    ((3, 4, 5), (1, 1, 1)),
+    ((3, 1, 5), (1, 4, 1)),
+    ((3, 1, 5), (4, 1)),
+    ((2, 1, 3, 1), (4, 1, 5)),
+    ((2, 3, 4, 5), (3, 1, 5)),
+]
+
+
+@pytest.mark.parametrize(("xshape", "yshape"), BCAST_SHAPES)
+def test_broadcast(xshape, yshape):
+    rng = np.random.default_rng(41)
+    ops = [
+        (binary.times, np.multiply),
+        (binary.minus, np.subtract),
+        (binary.lt, np.less),
+        (binary.first, lambda x, y: x),
+        (binary.truediv, np.true_divide),
+    ]
+    xlayouts = all_layouts(len(xshape))[:: max(1, len(all_layouts(len(xshape))) // 5)]
+    for i, lx in enumerate(xlayouts):
+        X, xv, xp = random_tensor(xshape, rng, layout=lx, density=0.5)
+        Y, yv, yp = random_tensor(yshape, rng, density=0.6)
+        for op, ufunc in ops:
+            for (A, av, ap), (B, bv, bp) in [
+                ((X, xv, xp), (Y, yv, yp)),
+                ((Y, yv, yp), (X, xv, xp)),
+            ]:
+                R = A.ewise_mult(B, op).new()
+                check(R, *np_bcast("mult", av, ap, bv, bp, ufunc), approx=R.dtype != dtypes.BOOL)
+                if i == 0 and op in (binary.times, binary.minus):
+                    R = A.ewise_add(B, op).new()
+                    check(R, *np_bcast("add", av, ap, bv, bp, ufunc), approx=True)
+                    R = A.ewise_union(B, op, 1, -1).new()
+                    check(R, *np_bcast("union", av, ap, bv, bp, ufunc, 1, -1), approx=True)
+        # infix and comparisons
+        check((X * Y).new(), *np_bcast("mult", xv, xp, yv, yp, np.multiply), approx=True)
+        check((Y + X).new(), *np_bcast("add", yv, yp, xv, xp, np.add), approx=True)
+        check((X == Y).new(), *np_bcast("mult", xv, xp, yv, yp, np.equal))
+        check((Y != X).new(), *np_bcast("mult", yv, yp, xv, xp, np.not_equal))
+        check((X > Y).new(), *np_bcast("mult", xv, xp, yv, yp, np.greater))
+
+
+def test_broadcast_operands_and_dtypes():
+    rng = np.random.default_rng(42)
+    X, xv, xp = random_tensor((3, 4, 5), rng, dtype=dtypes.INT64)
+    B, bv, bp = random_tensor((4, 5), rng, dtype=dtypes.BOOL, density=0.7)
+    check((X * B).new(), *np_bcast("mult", xv, xp, bv.astype(np.int64), bp, np.multiply))
+    check(X.ewise_mult(B, binary.first).new(), *np_bcast("mult", xv, xp, bv, bp, lambda x, y: x))
+    # ndarray operands are full Tensors
+    d = rng.random((4, 5))
+    check(
+        (X * d).new(), *np_bcast("mult", xv, xp, d, np.ones_like(d, bool), np.multiply), approx=True
+    )
+    check(
+        (d - X).new(),
+        *np_bcast("union", d, np.ones_like(d, bool), xv, xp, np.subtract),
+        approx=True,
+    )
+    check(
+        X.ewise_mult(d[0]).new(),
+        *np_bcast("mult", xv, xp, d[0], np.ones(5, bool), np.multiply),
+        approx=True,
+    )
+    # an empty broadcast operand, a one-value operand, iso
+    E = Tensor(float, 4, 1)
+    assert (X * E).new().nvals == 0
+    one = Tensor.from_coo(([0], [0], [0]), [2.0], shape=(1, 1, 1))
+    check((X * one).new(), np.where(xp, xv * 2.0, 0), xp)
+    Xi, xiv, xip = random_tensor((3, 4, 5), rng, iso=True)
+    Vi = Tensor.from_coo(([0, 3],), 1.0, shape=(5,))
+    R = (Xi * Vi).new()
+    check(
+        R,
+        *np_bcast(
+            "mult",
+            xiv,
+            xip,
+            np.array([1.0, 0, 0, 1, 0]),
+            np.array([1, 0, 0, 1, 0], bool),
+            np.multiply,
+        ),
+    )
+    with pytest.raises(DimensionMismatch, match="broadcast"):
+        X + Tensor(float, 3, 4)
+
+
+def test_broadcast_guard():
+    rng = np.random.default_rng(43)
+    X, xv, xp = random_tensor((3, 4, 5), rng)
+    v = Tensor.from_coo(([0, 2],), [1.0, 2.0], shape=(5,))
+    with gb.config.set(tensor_max_expansion=10):
+        with pytest.raises(ValueError, match="replicate 24 entries"):
+            X + v
+        with pytest.raises(ValueError, match="allow_expansion"):
+            X.ewise_union(v, binary.minus, 0, 0)
+        R = X.ewise_add(v, allow_expansion=True).new()
+        check(
+            R,
+            *np_bcast(
+                "add", xv, xp, np.array([1.0, 0, 2, 0, 0]), np.array([1, 0, 1, 0, 0], bool), np.add
+            ),
+        )
+        # the intersection with a full operand never replicates
+        check(
+            (X * v).new(),
+            *np_bcast(
+                "mult",
+                xv,
+                xp,
+                np.array([1.0, 0, 2, 0, 0]),
+                np.array([1, 0, 1, 0, 0], bool),
+                np.multiply,
+            ),
+        )
+    # both broadcasting: the cheaper side (b, 2 entries x 3) is replicated
+    a = Tensor.from_coo(([0, 1, 2], [0, 0, 0]), 1.0, shape=(3, 1))
+    b = Tensor.from_coo(([0, 0], [1, 3]), 1.0, shape=(1, 5))
+    with gb.config.set(tensor_max_expansion=5), pytest.raises(ValueError, match="replicate 6"):
+        a * b
+    R = (a * b).new()
+    assert R.shape == (3, 5)
+    assert R.nvals == 6
+
+
+@pytest.mark.parametrize("layout", all_layouts(3)[::2])
+def test_broadcast_mult_strategies(layout, monkeypatch):
+    """Exact group, part of a group (expanded through a selector) and relayout paths."""
+    rng = np.random.default_rng(44)
+    X, xv, xp = random_tensor((3, 4, 5), rng, layout=layout, density=0.5)
+    for yshape in [(5,), (4, 1), (3, 1, 1), (4, 5), (3, 1, 5), (3, 4, 1)]:
+        Y, yv, yp = random_tensor(yshape, rng, density=0.7)
+        for op, ufunc in [(binary.minus, np.subtract), (gb.binary.atan2, np.arctan2)]:
+            check(X.ewise_mult(Y, op).new(), *np_bcast("mult", xv, xp, yv, yp, ufunc), approx=True)
+            check(Y.ewise_mult(X, op).new(), *np_bcast("mult", yv, yp, xv, xp, ufunc), approx=True)
+    # hypersparse rows: no selector expansion
+    monkeypatch.setattr(tl, "density", lambda M: True)
+    Y, yv, yp = random_tensor((4, 1), rng, density=0.7)
+    check((X * Y).new(), *np_bcast("mult", xv, xp, yv, yp, np.multiply), approx=True)
