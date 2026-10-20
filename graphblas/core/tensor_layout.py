@@ -285,31 +285,42 @@ def steal_vector_as_row(v):
 
 
 class _LRU:
-    def __init__(self, maxsize):
+    """Least recently used entries are dropped past ``maxsize`` items or ``maxweight``."""
+
+    def __init__(self, maxsize, maxweight=math.inf):
         self.maxsize = maxsize
+        self.maxweight = maxweight
+        self.weight = 0
         self.data = OrderedDict()
 
     def get(self, key):
-        val = self.data.get(key)
-        if val is not None:
-            self.data.move_to_end(key)
-        return val
-
-    def put(self, key, val):
-        self.data[key] = val
+        item = self.data.get(key)
+        if item is None:
+            return None
         self.data.move_to_end(key)
-        while len(self.data) > self.maxsize:
-            self.data.popitem(last=False)
+        return item[0]
+
+    def put(self, key, val, weight=0):
+        if weight > self.maxweight:
+            return
+        if (old := self.data.pop(key, None)) is not None:
+            self.weight -= old[1]
+        self.data[key] = (val, weight)
+        self.weight += weight
+        while len(self.data) > self.maxsize or self.weight > self.maxweight:
+            _, (_, w) = self.data.popitem(last=False)
+            self.weight -= w
 
     def clear(self):
         self.data.clear()
+        self.weight = 0
 
 
 _plan_cache = _LRU(4096)
 # Permutation and selector matrices depend only on the shape, so they are reused across calls.
-# They hold about one entry per row of a group, so cap what one cached matrix may hold.
-_matrix_cache = _LRU(32)
-_MAX_CACHED_ENTRIES = 2**24
+# They hold one entry per position of a group (about 12 bytes each), so the cache is bounded
+# by its total entries: 2**25 is about 400 MB.
+_matrix_cache = _LRU(64, maxweight=2**25)
 
 
 def clear_caches():
@@ -453,8 +464,7 @@ def _perm_matrix(shape, old_rows, new_rows, M):
         unravel(newr, shape, new_rows, co)
         oldr = ravel(co, shape, old_rows)
         P = from_coo(newr, oldr, True, BOOL, nrows, nrows)
-        if nrows <= _MAX_CACHED_ENTRIES:
-            _matrix_cache.put(key, P)
+        _matrix_cache.put(key, P, nrows)
         return P
     # Few nonempty rows: build P from those only (not cacheable).
     oldr = np.unique(M.to_coo(columns=False, values=False, sort=False)[0].view(np.int64))
@@ -619,6 +629,5 @@ def selector(group_shape, kept, *, transposed=False):
         S = from_coo(src, dst, True, BOOL, n, nkept)
     else:
         S = from_coo(dst, src, True, BOOL, nkept, n)
-    if n <= _MAX_CACHED_ENTRIES:
-        _matrix_cache.put(key, S)
+    _matrix_cache.put(key, S, n)
     return S
