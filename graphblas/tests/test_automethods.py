@@ -289,7 +289,7 @@ def _coverage(label):
     return _generated_coverage(*expr_classes)
 
 
-def _fix_hint(label, names):
+def _fix_hint(label, names):  # pragma: no cover (only on failure)
     _concrete, expr_classes = _REGISTRY[label]
     expr_names = " / ".join(c.__name__ for c in dict.fromkeys(expr_classes))
     return (
