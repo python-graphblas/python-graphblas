@@ -2084,13 +2084,36 @@ def _ttv(updater, x, w, axis, op, x_left):
         return True
     if not _selector_ok(tl.prod(x._shape, group), x._M._nvals) or tl.density(x._M):
         return False
-    # Scale by w along `axis` (a diagonal over the group), then reduce `axis` with a selector
-    wb = w.expand_dims(tuple(a for a in range(x.ndim) if a != axis))
-    scaled = Tensor(op.return_type, x._shape)
-    a, b = (x, wb) if x_left else (wb, x)
-    _bcast_mult(scaled(**updater.opts), a, b, mult, mult, x._shape)
-    M, lay = _reduce_matrix(scaled._M, x._shape, scaled._layout, {axis}, op.monoid, updater.opts)
-    _store(updater, M, shape, _renumber(lay, renum), fresh=True)
+    # A weighted selector: S[kept, g] = w[axis coordinate of g] over the positions g of the
+    # group, so one product sums w-weighted entries over `axis` (DESIGN.md 3.3)
+    gshape = tuple(x._shape[g] for g in group)
+    pos = group.index(axis)
+    e = Vector(w.dtype, tl.prod(x._shape, group))
+    wv = _in_layout(w, Layout((), (0,)), nthreads)[0, :].new()
+    St = tl.selector(gshape, (pos,), transposed=True)
+    e << St.mxv(wv, semiring.lor_second if wv.dtype == BOOL else semiring.plus_second)
+    kept_pos = tuple(i for i in range(len(group)) if i != pos)
+    flip = getattr(mult, "commutes_to", None)
+    if group is rows:
+        S = tl.selector(gshape, kept_pos)
+        Sw = tl.new_matrix(e.dtype, S._nrows, S._ncols)
+        Sw << S.mxm(e.diag(), semiring.any_second)
+        # Sw is the left operand, so the multiply sees (w, x)
+        mop = flip if x_left else mult
+        if mop is None:
+            return False
+        src = Sw.mxm(x._M, get_semiring(op.monoid, mop))
+        out = Layout(tuple(renum[a] for a in rows if a != axis), tuple(renum[a] for a in cols))
+    else:
+        S = tl.selector(gshape, kept_pos, transposed=True)
+        Sw = tl.new_matrix(e.dtype, S._nrows, S._ncols)
+        Sw << e.diag().mxm(S, semiring.any_first)
+        mop = mult if x_left else flip
+        if mop is None:
+            return False
+        src = x._M.mxm(Sw, get_semiring(op.monoid, mop))
+        out = Layout(tuple(renum[a] for a in rows), tuple(renum[a] for a in cols if a != axis))
+    _store(updater, src, shape, out)
     return True
 
 
@@ -2158,10 +2181,20 @@ def _krp_embedding(F, R):
 
 
 def _mttkrp_recipe(updater, x, mats, mode, R, op):
+    nthreads = updater.opts.get("nthreads")
+    # Any order of the other axes works; take the one whose layout is cheapest to reach
     others = [a for a in range(x.ndim) if a != mode]
+    best = None
+    for order in itertools.permutations(others) if len(others) <= 4 else [tuple(others)]:
+        dst = Layout((mode, *order[:-1]), (order[-1],))
+        if not tl._valid_split(x._shape, dst.seq, len(dst.rows)):
+            continue
+        cost = tl.relayout_cost(x._shape, x._layout, dst, x._M._nvals, _nthreads(updater))
+        if best is None or cost < best[0]:
+            best = (cost, order)
+    others = list(best[1])
     last = others[-1]
     rest = tuple(others[:-1])
-    nthreads = updater.opts.get("nthreads")
     # 1. TTM over the last axis: (mode, rest | last) @ F_last -> (mode, rest | r)
     X = _in_layout(x, tl.as_layout(((mode, *rest), (last,)), x._shape), nthreads)
     T = tl.new_matrix(op.return_type, X._nrows, R)
