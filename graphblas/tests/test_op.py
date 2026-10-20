@@ -4524,12 +4524,23 @@ def test_udt_literal_converts_only_when_exact():
     rec = dtypes.register_anonymous(
         np.dtype([("ex_i", np.int16), ("ex_f", np.float32)], align=True), "_ExactRec"
     )
+    floats = dtypes.register_anonymous(np.dtype((np.float32, (2,))), "_ExactF32")
+    nested = dtypes.register_anonymous(
+        np.dtype([("ex_v", np.int8, (2,)), ("ex_w", np.int8)]), "_ExactNested"
+    )
+    text = dtypes.register_anonymous(np.dtype([("ex_s", "S4"), ("ex_n", np.int8)]), "_ExactText")
     v = Vector(arr, size=3)
     v[0] = [1, 2, 3]
     w = Vector(arr, size=3)
     w[1] = [4, 5, 6]
     r = Vector(rec, size=1)
     r[0] = (1, 1.5)
+    f = Vector(floats, size=1)
+    f[0] = [1, 2]
+    n = Vector(nested, size=1)
+    n[0] = ([1, 2], 3)
+    t = Vector(text, size=1)
+    t[0] = (b"ab", 1)
     udf = BinaryOp.register_anonymous(lambda x, y: x + y, "_exact_plus", is_udt=True)
     second = BinaryOp.register_anonymous(lambda x, y: y, "_exact_second", is_udt=True)
     # Literals of the UDT's type convert, a float rounding into a float32 field.
@@ -4557,20 +4568,32 @@ def test_udt_literal_converts_only_when_exact():
             lambda: gb.Scalar.from_value([1, 2, 3], arr).ewise_union(gb.Scalar(arr), udf, 0, 0.5),
             "_ExactArr",
         ),
+        # Converting would lose a number: an imaginary part, a finite float that
+        # float32 makes infinite, or a fraction in an array field of a record.
+        (lambda: f.apply(udf, right=1 + 2j), "_ExactF32"),
+        (lambda: f.apply(udf, right=np.complex128(1 + 2j)), "_ExactF32"),
+        (lambda: f.apply(udf, right=np.float64(1e300)), "_ExactF32: it is typed as FP64,"),
+        (lambda: n.apply(second, right=([1, 2.5], 3)), "_ExactNested"),
     ]:
         with pytest.raises(ValueError, match=re.escape(f"does not fit {typed_as}")):
             expr()
     # One that does not fit by type but converts exactly still converts, as it
-    # did on main, with a DeprecationWarning.
+    # did on main, with a DeprecationWarning. A field that is not a number, such
+    # as bytes, is converted as it is.
+    text_literal = np.array((b"cd", 2), dtype=[("ex_s", "S4"), ("ex_n", np.int64)])[()]
     for expr, typed_as in [
         (lambda: v.apply(udf, right=[2.0, 2.0, 2.0]), "_ExactArr"),
         (lambda: v.apply(udf, right=np.ones(3, dtype=np.int64)), "_ExactArr"),
         (lambda: v.apply(udf, right=np.int64(1)), "_ExactArr: it is typed as INT64,"),
         (lambda: v.apply(udf, right=(np.int8(1), 2, 3)), "_ExactArr"),
         (lambda: r.apply(second, right=np.int32(2)), "_ExactRec: it is typed as INT32,"),
+        (lambda: n.apply(second, right=([1, 2.0], 3)), "_ExactNested"),
+        (lambda: t.apply(second, right=text_literal), "_ExactText"),
     ]:
         with pytest.warns(DeprecationWarning, match=re.escape(f"does not fit {typed_as}")):
             expr()
+    with pytest.warns(DeprecationWarning, match="does not fit _ExactText"):
+        assert t.apply(second, right=text_literal).new()[0].new().value.tolist() == (b"cd", 2)
     with pytest.raises(OverflowError, match="300 out of bounds for int8"):
         v.apply(udf, right=(1, 2, 300))
     # Defaults that fit still work, and fill in for the missing side.
@@ -4668,6 +4691,12 @@ def test_udt_sequence_and_array_literals_type_like_numbers():
         dtype=[("sq_a", np.int8), ("sq_in", [("sq_b", np.float64), ("sq_c", np.int8)])],
     )
     assert (n + strong).new()[0].new().value.tolist() == (2, (2.5, 4.5))
+    first = dtypes.register_anonymous(
+        np.dtype([("sq_fin", [("sq_fb", np.int8), ("sq_fc", np.float32)]), ("sq_fa", np.int16)])
+    )
+    m = Vector(first, size=1)
+    m[0] = ((2, 3.5), 1)
+    assert binary.plus(m, ((0.5, 1), 1)).new()[0].new().value.tolist() == ((2.5, 4.5), 2)
     # eq and ne take the literal as it is, like numpy, instead of raising.
     assert (v == (0.5, 4, 5)).new().isequal(Vector.from_coo([0, 1], [False, False]))
     assert (v == (2, 4, 5)).new().isequal(Vector.from_coo([0, 1], [True, False]))
@@ -5351,9 +5380,32 @@ def test_udt_literal_rules_edge_cases():
         result = (v + value).new()
         assert result.dtype == i8s
         assert result[0].new().value.tolist() == [3, 4, 5]
+    # An infinite or NaN Decimal is the float it stands for.
+    for value in [Decimal("Infinity"), Decimal("NaN")]:
+        result = (v + value).new()
+        assert result.dtype.np_type == np.dtype((np.float64, (3,)))
+        np.testing.assert_array_equal(result[0].new().value, [float(value)] * 3)
     udf = BinaryOp.register_anonymous(lambda x, y: x + y, "_edge_plus", is_udt=True)
     with pytest.raises(ValueError, match=r"Fraction\(1, 2\) does not fit _EdgeI8"):
         v.apply(udf, right=Fraction(1, 2))
+    # A literal not laid out like an element (ragged, too long or too short for
+    # a field, not broadcastable), or not a number, has no type of its own, so
+    # it is converted into the UDT, and numpy says why it cannot be.
+    rec = dtypes.register_anonymous(
+        np.dtype([("edge_v", np.float64, (3,)), ("edge_n", np.int8)]), "_EdgeRec"
+    )
+    r = Vector(rec, size=1)
+    r[0] = ([1, 2, 3], 4)
+    for expr, reason in [
+        (lambda: binary.plus(v, [1, [2, 3]]), "with a sequence"),
+        (lambda: v + np.array([1, 2]), "could not broadcast"),
+        (lambda: v + "abc", "invalid literal"),
+        (lambda: v.apply(udf, right="abc"), "invalid literal"),
+        (lambda: binary.plus(r, (1, 2, 3)), "tuple of length 3"),
+        (lambda: binary.plus(r, ((1, 2), 3)), "could not broadcast"),
+    ]:
+        with pytest.raises(ValueError, match=reason):
+            expr()
     c = Vector(c8s, size=1)
     c[0] = [1, 2, 3]
     assert c.apply(binary.plus, right=(1 + 2j, 0, 0)).new()[0].new().value[0] == 2 + 2j
@@ -5538,6 +5590,8 @@ def test_udt_isequal_is_array_equal_and_eq_broadcasts():
     assert not u.isequal(gb.Scalar.from_value([1.0], f1))
     assert u.isequal((1, 1, 1))
     assert u.isequal(np.ones((1, 3), dtype=np.int8))
+    with pytest.raises(ValueError, match="with a sequence"):  # ragged: it has no shape
+        u.isequal([1, [1, 1]])
     assert gb.Scalar.from_value([5], f1).isequal(5)
     # A literal is compared as given, not converted into the UDT first.
     assert zeros != 0.5
@@ -5649,6 +5703,9 @@ def test_udt_eq_compile_failure_is_a_udfparseerror():
         binary.eq(v & w).new()
     with pytest.raises(KeyError, match=r"elements of \|S4 and float64 have no common type"):
         binary.plus(v & w).new()
+    # A number beside the bytes field is an int64 there, which pairs no better.
+    with pytest.raises(KeyError, match=r"elements of \|S4 and int64 have no common type"):
+        v + 1
 
 
 @pytest.mark.skipif("not supports_udfs")
