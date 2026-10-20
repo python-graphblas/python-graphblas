@@ -125,7 +125,7 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
     if isinstance(op, TypedOpBase):
         return op
 
-    if _Aggregator is not None:
+    if _Aggregator is not None:  # pragma: no branch (safety)
         if isinstance(op, _Aggregator):
             # agg._any_dtype basically serves the same purpose as op._custom_dtype
             if op._any_dtype is not None and op._any_dtype is not True:
