@@ -348,7 +348,58 @@ class Tensor(BaseType):
         return super().__call__(*args, mask=mask, accum=accum, replace=replace, **opts)
 
     def __getitem__(self, keys):
-        raise NotImplementedError("Tensor indexing is not implemented yet")
+        """Extract with outer (orthogonal) indexing, as GraphBLAS extract does: ints drop
+        their axis; slices, lists and int arrays keep it (``T[[0, 1], [0, 1]]`` is 2 x 2,
+        not numpy's two elements). ``...`` fills in full slices. Returns a TensorExpression
+        (an all-int key gives a 0-d Tensor).
+        """
+        return _extract_expr(self, keys)
+
+    def __setitem__(self, keys, value):
+        raise NotImplementedError("Tensor assignment by index is not implemented yet")
+
+    @classmethod
+    def from_matrices(cls, mats, axis=0, *, name=None):
+        """Stack equally shaped Matrices along a new ``axis`` (0, 1 or 2) into a 3-d Tensor.
+
+        The data is one vertical concatenation (``ss.concat``); ``axis`` only chooses which
+        logical axis the stacking is.
+        """
+        _check_backend()
+        mats = [
+            m.new() if type(m) is TransposedMatrix else _compute(m, "from_matrices") for m in mats
+        ]
+        mats = [m.to_matrix() if type(m) is Tensor else m for m in mats]
+        if not mats or any(type(m) is not Matrix for m in mats):
+            raise TypeError("from_matrices needs a non-empty sequence of Matrices")
+        nrows, ncols = mats[0].shape
+        if any(m.shape != (nrows, ncols) for m in mats):
+            raise DimensionMismatch("from_matrices: the Matrices must have the same shape")
+        axis = _normalize_axis(axis, 3)
+        dtype = mats[0].dtype
+        for m in mats[1:]:
+            dtype = unify(dtype, m.dtype)
+        M = tl.new_matrix(dtype, len(mats) * nrows, ncols)
+        M.ss.concat([[m] for m in mats])
+        r_ax, c_ax = (a for a in range(3) if a != axis)
+        shape = [0, 0, 0]
+        shape[axis], shape[r_ax], shape[c_ax] = len(mats), nrows, ncols
+        return cls._from_M(M, tuple(shape), Layout((axis, r_ax), (c_ax,)), name=name)
+
+    def to_matrices(self, axis=0):
+        """The Matrices of a 3-d Tensor along ``axis`` (the other two axes in order)."""
+        if self.ndim != 3:
+            raise ValueError(f"to_matrices needs a 3-d Tensor; this one has shape {self._shape}")
+        axis = _normalize_axis(axis, 3)
+        r_ax, c_ax = (a for a in range(3) if a != axis)
+        target = tl.as_layout(((axis, r_ax), (c_ax,)), self._shape)
+        M, _ = tl.relayout(self._M, self._shape, self._layout, target)
+        n, nrows = self._shape[axis], self._shape[r_ax]
+        if n == 0:
+            return []
+        if nrows == 0 or M._ncols == 0:
+            return [Matrix(self.dtype, nrows, M._ncols) for _ in range(n)]
+        return [row[0] for row in M.ss.split((nrows, M._ncols))]
 
     def __repr__(self, mask=None):
         return _format_tensor(self, mask)
@@ -2344,6 +2395,132 @@ def _batched_contract_expr(a, b, op, a_axes, b_axes, a_batch, b_batch):
 def _batched_contract_recipe(updater, a, b, op, a_axes, b_axes, a_batch, b_batch):
     src, layout, shape = _contract(updater, a, b, op, a_axes, b_axes, a_batch, b_batch)
     _store(updater, src, shape, layout)
+
+
+# ---------------------------------------------------------------------------------------------
+# Indexing (outer semantics)
+
+
+def _axis_index(index, size, axis):
+    """An int (axis dropped) or a sorted-or-not int64 array of coordinates (axis kept)."""
+    if isinstance(index, (int, np.integer)):
+        i = int(index)
+        if not -size <= i < size:
+            raise IndexOutOfBound(f"index {i} is out of bounds for axis {axis} of size {size}")
+        return i + size if i < 0 else i
+    if isinstance(index, slice):
+        return np.arange(*index.indices(size), dtype=np.int64)
+    arr = np.asarray(index)
+    if arr.dtype == bool:
+        raise TypeError("boolean indices are not supported for Tensor")
+    if arr.ndim != 1 or (arr.size and not np.issubdtype(arr.dtype, np.integer)):
+        raise TypeError(f"bad index for axis {axis}: {index!r}")
+    arr = arr.astype(np.int64)
+    if arr.size and (arr.min() < -size or arr.max() >= size):
+        raise IndexOutOfBound(f"an index is out of bounds for axis {axis} of size {size}")
+    return np.where(arr < 0, arr + size, arr)
+
+
+def _extract_expr(self, keys):
+    keys = keys if isinstance(keys, tuple) else (keys,)
+    if any(k is None for k in keys):
+        raise NotImplementedError("None (a new axis) in a Tensor index; use expand_dims")
+    if (n_ellipsis := sum(k is Ellipsis for k in keys)) > 1:
+        raise IndexError("an index can only have a single ellipsis")
+    if n_ellipsis:
+        at = next(i for i, k in enumerate(keys) if k is Ellipsis)
+        keys = keys[:at] + (slice(None),) * (self.ndim - len(keys) + 1) + keys[at + 1 :]
+    if len(keys) > self.ndim:
+        raise IndexError(f"too many indices for a Tensor of {self.ndim} dimensions")
+    keys = keys + (slice(None),) * (self.ndim - len(keys))
+    sel = [_axis_index(k, n, a) for a, (k, n) in enumerate(zip(keys, self._shape, strict=True))]
+    shape = tuple(len(x) for x in sel if not isinstance(x, int))
+    return TensorExpression(
+        "extract",
+        _extract_recipe,
+        [self],
+        (self, sel, keys),
+        dtype=self.dtype,
+        shape=shape,
+        op=None,
+        expr_repr="{0.name}[...]",
+    )
+
+
+# Past this many listed positions per group, extraction filters the coordinates instead
+_MAX_LISTED = 2**26
+
+
+def _group_index(shape, axes, sel, keys):
+    """The rows (or columns) of one group to extract: ``slice(None)`` for all of them, a slice
+    when they are a contiguous range of raveled positions (a leading int or range with the
+    rest of the group whole), else an array of raveled positions.
+    """
+    full = [isinstance(keys[a], slice) and keys[a] == slice(None) for a in axes]
+    if all(full):
+        return slice(None)
+    # Contiguous: single positions, then one contiguous range, then whole axes
+    k = 0
+    while k < len(axes) and isinstance(sel[axes[k]], int):
+        k += 1
+    if k < len(axes):
+        x = sel[axes[k]]
+        contiguous = x.size > 0 and (x.size == 1 or bool(np.all(np.diff(x) == 1)))
+        tail_full = all(full[k + 1 :])
+    else:
+        contiguous, tail_full = True, True
+    if contiguous and tail_full:
+        start = 0
+        for a in axes[:k]:
+            start = start * shape[a] + sel[a]
+        tail = math.prod(shape[a] for a in axes[k + 1 :])
+        if k < len(axes):
+            x = sel[axes[k]]
+            start = (start * shape[axes[k]] + int(x[0])) * tail
+            return slice(start, start + x.size * tail)
+        return slice(start, start + 1)
+    lists = [np.array([s]) if isinstance(s, int) else s for s in (sel[a] for a in axes)]
+    if math.prod(len(x) for x in lists) > _MAX_LISTED:
+        return None
+    idx = np.zeros(1, np.int64)
+    for a, x in zip(axes, lists, strict=True):
+        idx = (idx[:, None] * shape[a] + x[None, :]).ravel()
+    return idx
+
+
+def _extract_recipe(updater, t, sel, keys):
+    rows, cols = t._layout
+    kept = [a for a in range(t.ndim) if not isinstance(sel[a], int)]
+    renum = {a: i for i, a in enumerate(kept)}
+    layout = Layout(
+        tuple(renum[a] for a in rows if a in renum), tuple(renum[a] for a in cols if a in renum)
+    )
+    shape = tuple(len(sel[a]) for a in kept)
+    ridx = _group_index(t._shape, rows, sel, keys)
+    cidx = _group_index(t._shape, cols, sel, keys)
+    if ridx is None or cidx is None:
+        # Too many positions to list: filter the coordinates instead
+        coords, vals = tl.coords_of(t._M, t._shape, t._layout.state)
+        keep = np.ones(vals.size, bool)
+        newc = {}
+        for a in range(t.ndim):
+            s = sel[a]
+            if isinstance(s, int):
+                keep &= coords[a] == s
+            else:
+                pos = np.full(t._shape[a], -1, np.int64)
+                pos[s] = np.arange(s.size)
+                newc[a] = pos[coords[a]]
+                keep &= newc[a] >= 0
+        out = [newc[a][keep] for a in kept]
+        r = tl.ravel(out, shape, [renum[a] for a in rows if a in renum], n=int(keep.sum()))
+        c = tl.ravel(out, shape, [renum[a] for a in cols if a in renum], n=int(keep.sum()))
+        M = tl.from_coo(
+            r, c, vals[keep], t.dtype, tl.prod(shape, layout.rows), tl.prod(shape, layout.cols)
+        )
+        _store(updater, M, shape, layout, fresh=True)
+        return
+    _store(updater, t._M[ridx, cidx], shape, layout)
 
 
 def _reduce_scalar_recipe(updater, a, op, allow_empty):

@@ -1782,3 +1782,128 @@ def test_ttv(layout):
             *np_einsum(sub, (X, xv, xp), (v, wv, np.ones_like(wp))),
             approx=True,
         )
+
+
+# --------------------------------------------------------------------------------------------
+# Phase 2a.6: indexing, from_dense/to_dense, from_matrices/to_matrices
+
+
+def np_outer_index(arr, key):
+    key = key if isinstance(key, tuple) else (key,)
+    if any(k is Ellipsis for k in key):
+        at = next(i for i, k in enumerate(key) if k is Ellipsis)
+        key = key[:at] + (slice(None),) * (arr.ndim - len(key) + 1) + key[at + 1 :]
+    key = key + (slice(None),) * (arr.ndim - len(key))
+    lists, drop = [], []
+    for a, k in enumerate(key):
+        if isinstance(k, (int, np.integer)):
+            lists.append([k % arr.shape[a]])
+            drop.append(a)
+        elif isinstance(k, slice):
+            lists.append(list(range(*k.indices(arr.shape[a]))))
+        else:
+            lists.append([i % arr.shape[a] for i in k])
+    out = arr[np.ix_(*lists)]
+    return out.reshape([n for a, n in enumerate(out.shape) if a not in drop])
+
+
+INDEX_KEYS = [
+    (1, slice(None), slice(None)),
+    (slice(None), 2, slice(None)),
+    (slice(None), slice(None), 3),
+    (slice(1, 3),),
+    (slice(None), slice(1, 3)),
+    (Ellipsis, slice(0, 5, 2)),
+    (1, 2, 3),
+    ([0, 2], slice(None), [4, 0]),
+    (-1, slice(None, None, -1)),
+    (slice(1, 2), 3, Ellipsis),
+    (np.array([2, 0]), np.array([1, 1, 3])),
+    2,
+]
+
+
+@pytest.mark.parametrize("layout", all_layouts(3)[::3])
+def test_indexing(layout, monkeypatch):
+    rng = np.random.default_rng(53)
+    X, xv, xp = random_tensor((3, 4, 5), rng, layout=layout)
+    for key in INDEX_KEYS:
+        R = X[key].new()
+        check(R, np_outer_index(xv, key), np_outer_index(xp, key))
+    # the coordinate filter used when the positions are too many to list
+    from graphblas.core import tensor as tensor_mod
+
+    monkeypatch.setattr(tensor_mod, "_MAX_LISTED", 0)
+    for key in INDEX_KEYS[7:11]:
+        check(X[key].new(), np_outer_index(xv, key), np_outer_index(xp, key))
+    monkeypatch.undo()
+    with pytest.raises(IndexOutOfBound):
+        X[3]
+    with pytest.raises(IndexOutOfBound):
+        X[:, [0, 4]]
+    with pytest.raises(IndexError, match="too many"):
+        X[0, 0, 0, 0]
+    with pytest.raises(IndexError, match="ellipsis"):
+        X[..., 0, ...]
+    with pytest.raises(NotImplementedError, match="expand_dims"):
+        X[None]
+    with pytest.raises(TypeError, match="boolean"):
+        X[np.array([True, False, True])]
+    with pytest.raises(NotImplementedError):
+        X[0] = 1
+
+
+def test_indexing_hypersparse_slab():
+    rng = np.random.default_rng(54)
+    shape = (2**19,) * 3
+    coords = [rng.integers(0, 2**19, 2000) for _ in range(3)]
+    coords[0][:50] = 7
+    lin = np.unique(np.ravel_multi_index(coords, shape))
+    coords = np.unravel_index(lin, shape)
+    T = Tensor.from_coo(coords, 1.0, shape=shape, layout=((0, 1), (2,)))
+    R = T[7].new()
+    assert R.shape == (2**19, 2**19)
+    assert R.nvals == int((coords[0] == 7).sum())
+    R = T[5:9, :, 100:2000].new()
+    keep = (coords[0] >= 5) & (coords[0] < 9) & (coords[2] >= 100) & (coords[2] < 2000)
+    assert R.nvals == int(keep.sum())
+
+
+def test_dense_and_matrices():
+    rng = np.random.default_rng(55)
+    d = rng.random((3, 4, 5))
+    for layout in [None, ((2,), (1, 0)), ((0, 1, 2), ())]:
+        T = Tensor.from_dense(d, layout=layout)
+        T._check_invariants()
+        assert T.nvals == d.size
+        np.testing.assert_array_equal(T.to_dense(), d)
+    d0 = np.where(d < 0.5, 0, d)
+    T = Tensor.from_dense(d0, missing_value=0)
+    check(T, d0, d0 != 0)
+    with pytest.raises(TypeError, match="fill_value"):
+        T.to_dense()
+    np.testing.assert_array_equal(T.to_dense(0), d0)
+    assert Tensor.from_dense(np.float64(3.0)).to_scalar().value == 3.0
+    mats = [Matrix.from_dense(rng.random((3, 4))) for _ in range(5)]
+    mats[1] = mats[1].T.new().T  # a TransposedMatrix
+    for axis in range(3):
+        T = Tensor.from_matrices(mats, axis=axis)
+        T._check_invariants()
+        ref = np.stack(
+            [m.new().to_dense() if hasattr(m, "_matrix") else m.to_dense() for m in mats], axis=axis
+        )
+        np.testing.assert_allclose(T.to_dense(), ref)
+        back = T.to_matrices(axis)
+        assert len(back) == 5
+        for b, m in zip(back, mats, strict=True):
+            assert b.isequal(m.new() if hasattr(m, "_matrix") else m)
+    with pytest.raises(TypeError, match="Matrices"):
+        Tensor.from_matrices([])
+    with pytest.raises(DimensionMismatch):
+        Tensor.from_matrices([Matrix(float, 2, 3), Matrix(float, 3, 2)])
+    with pytest.raises(ValueError, match="3-d"):
+        Tensor(float, 2, 3).to_matrices()
+    assert Tensor(float, 0, 3, 4).to_matrices() == []
+    E = Tensor(float, 2, 0, 4).to_matrices()
+    assert len(E) == 2
+    assert E[0].shape == (0, 4)
