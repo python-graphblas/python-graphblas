@@ -78,7 +78,10 @@ def _value_select_in_own_type(op, dtype, thunk, given):
         if value != value:  # NaN: only ``!=`` holds, for every element
             new_name, new_value = name, nan
         else:
-            near = ftype(value)
+            # A finite value too large for ftype is infinity there, which still
+            # compares right with every element, so numpy need not warn.
+            with np.errstate(over="ignore"):
+                near = ftype(value)
             above = near if float(near) >= value else np.nextafter(near, ftype(math.inf))
             below = near if float(near) <= value else np.nextafter(near, ftype(-math.inf))
             new_name = name

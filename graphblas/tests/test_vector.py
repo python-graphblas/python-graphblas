@@ -1760,6 +1760,18 @@ def test_select_value_thunk_of_another_type():
         equal = C.select(select.valueeq, np.complex128(2 + 1j)).new()
         assert equal.to_coo()[2].tolist() == [2 + 1j]
         assert C.select(select.valuene, np.int64(3)).new().nvals == 2
+    # A float64 too large for FP32 is compared as it is, without numpy's overflow warning.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        for op, thunk, kept in [
+            (select.valueeq, 1e300, []),
+            (select.valuene, 1e300, [0, 1, 2]),
+            (select.valuelt, 1e300, [0, 1]),
+            (select.valuegt, 1e300, []),
+            (select.valuegt, -1e300, [0, 1]),
+        ]:
+            selected = f32.select(op, np.float64(thunk)).new().to_coo()[0].tolist()
+            assert selected == kept, (op, thunk)
     with pytest.raises(EmptyObject):
         i8.select(select.valueeq, Scalar(dtypes.INT64)).new()
     A = Matrix.from_coo([0, 0, 1], [0, 1, 1], [1, 100, -5], dtype=dtypes.INT8)
