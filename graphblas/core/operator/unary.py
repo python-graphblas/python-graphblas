@@ -21,7 +21,7 @@ from ...dtypes import (
 from ...exceptions import UdfParseError, check_status_carg
 from .. import _has_numba, ffi, lib
 from ..dtypes import _sample_values
-from ..utils import output_type
+from ..utils import _tensor_types, output_type
 from .base import (
     _SS_OPERATORS,
     OpBase,
@@ -56,7 +56,7 @@ class TypedBuiltinUnaryOp(TypedOpBase):
         from ..matrix import Matrix, TransposedMatrix
         from ..vector import Vector
 
-        if (typ := output_type(val)) in {Vector, Matrix, TransposedMatrix}:
+        if (typ := output_type(val)) in {Vector, Matrix, TransposedMatrix} or typ in _tensor_types:
             return val.apply(self)
         from ..scalar import Scalar, _as_scalar
 
