@@ -2005,3 +2005,47 @@ def test_relayout_rejects_layout_of_another_rank():
     T = Tensor.from_coo(([0], [2]), [5.0], shape=(1, 4))
     with pytest.raises(ValueError, match="does not match"):
         tl.relayout(T.ss.matrix, (1, 1, 4), T.layout, Layout((0,), (1, 2)))
+
+
+# --------------------------------------------------------------------------------------------
+# Phase 2b: planner pricing and strategy choices
+
+
+def test_nonempty_row_ids_and_perm_pricing():
+    rng = np.random.default_rng(60)
+    r = np.array([1, 1, 5, 9, 9, 9])
+    c = np.array([0, 2, 1, 0, 1, 3])
+    for fmt in ["sparse", "hypersparse", "bitmap"]:
+        M = Matrix.from_coo(r, c, 1.0, nrows=12, ncols=4)
+        M.ss.config["sparsity_control"] = fmt
+        np.testing.assert_array_equal(tl.nonempty_row_ids(M), [1, 5, 9])
+        M2 = M.dup()
+        assert M2.isequal(M)
+    assert tl.nonempty_row_ids(Matrix(float, 5, 3)).size == 0
+    assert tl.expected_rows(100, 0) == 0
+    assert tl.expected_rows(10, 1000) == pytest.approx(10)
+    assert tl.expected_rows(10**8, 10**7) == pytest.approx(9.5e6, rel=0.01)
+    # skew (1e5, 1e3, 10) at 1e7, permuted (1, 0, 2): PERM_R over 1e8 rows of about one entry
+    # each once won on price (26 ms predicted) and took 3.5 s; it must cost more than a REBUILD
+    shape = (1000, 100_000, 10)
+    cost, path, _ = tl.plan(shape, ((1, 0, 2), 1), frozenset([((0, 1, 2), 1)]), 10**7, 8)
+    assert cost < tl.rebuild_cost(10**7, 0)
+    for state, edge in zip(_states_along(((1, 0, 2), 1), path), path, strict=True):
+        if edge[0] == "PERM_R":
+            assert tl.prod(shape, state[0][: state[1]]) <= 4 * 10**7, path
+    # A small version runs through the same plan and gives the REBUILD result
+    X, xv, xp = random_tensor((40, 300, 3), rng, density=0.05)
+    Xv = X.permute_dims((1, 0, 2))
+    check(
+        Xv.relayout(tl.default_layout(Xv.shape, X.nvals)),
+        xv.transpose(1, 0, 2),
+        xp.transpose(1, 0, 2),
+    )
+
+
+def _states_along(state, path):
+    out = []
+    for edge in path:
+        out.append(state)
+        state = tl._final_state(state, [edge])
+    return out
