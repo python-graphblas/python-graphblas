@@ -2049,3 +2049,104 @@ def _states_along(state, path):
         out.append(state)
         state = tl._final_state(state, [edge])
     return out
+
+
+def test_default_split_follows_nonempty_rows():
+    rng = np.random.default_rng(61)
+    # Every (i, j) row holds 5 entries: the rows are well filled, so (0,1|2)
+    shape = (10, 12, 50)
+    i, j = np.meshgrid(np.arange(10), np.arange(12), indexing="ij")
+    i, j = np.repeat(i.ravel(), 5), np.repeat(j.ravel(), 5)
+    k = np.concatenate([rng.choice(50, 5, replace=False) for _ in range(120)])
+    T = Tensor.from_coo((i, j, k), 1.0, shape=shape)
+    assert T.layout == Layout((0, 1), (2,))
+    T._check_invariants()
+    # About one entry per (i, j) row: (0|1,2)
+    coords = [rng.integers(0, n, 30) for n in (40, 50, 60)]
+    lin = np.unique(np.ravel_multi_index(coords, (40, 50, 60)))
+    T = Tensor.from_coo(np.unravel_index(lin, (40, 50, 60)), 1.0, shape=(40, 50, 60))
+    assert T.layout == Layout((0,), (1, 2))
+    T._check_invariants()
+    # 4-d moves the split one axis at a time
+    coords = [rng.integers(0, n, 40) for n in (5, 6, 7, 8)]
+    lin = np.unique(np.ravel_multi_index(coords, (5, 6, 7, 8)))
+    T = Tensor.from_coo(np.unravel_index(lin, (5, 6, 7, 8)), 1.0, shape=(5, 6, 7, 8))
+    T._check_invariants()
+    assert T.layout.seq == (0, 1, 2, 3)
+    np.testing.assert_array_equal(T.to_coo()[0][0], np.unravel_index(lin, (5, 6, 7, 8))[0])
+
+
+def _hyper_rows_tensor(rng, shape, n):
+    coords = [rng.integers(0, s, n) for s in shape]
+    lin = np.unique(np.ravel_multi_index(coords, shape))
+    coords = np.unravel_index(lin, shape)
+    vals = np.round(rng.random(lin.size) * 10 - 5, 1)
+    T = Tensor.from_coo(coords, vals, shape=shape, layout=((0, 1), (2,)))
+    T.ss.matrix.ss.config["sparsity_control"] = "hypersparse"
+    T._store.exported = False
+    values = np.zeros(shape)
+    present = np.zeros(shape, bool)
+    values[coords] = vals
+    present[coords] = True
+    return T, values, present
+
+
+def test_hypersparse_row_group_paths():
+    """Reductions, TTV and broadcasts over a hypersparse row group use selectors built from
+    its nonempty rows (sized by the data, not the group's positions).
+    """
+    rng = np.random.default_rng(62)
+    X, xv, xp = _hyper_rows_tensor(rng, (60, 70, 5), 150)
+    assert X.ss.format == "hypercsr"
+    for axis in [0, 1, (0, 2), (1, 2), 2, (0, 1)]:
+        check(X.sum(axis).new(), *np_reduce("plus", xv, xp, axis), approx=True)
+        check(X.reduce(monoid.max, axis).new(), *np_reduce("max", xv, xp, axis))
+    for axis in range(3):
+        w, wv, wp = random_tensor((X.shape[axis],), rng, density=0.7)
+        rest = "ijk".replace("ijk"[axis], "")
+        sub = f"ijk,{'ijk'[axis]}->{rest}"
+        check(
+            X.tensordot(w, ([axis], [0])).new(),
+            *np_einsum(sub, (X, xv, xp), (w, wv, wp)),
+            approx=True,
+        )
+        R = w.tensordot(X, ([0], [axis]), op=gb.semiring.plus_minus).new()
+        diff = np.moveaxis(xv, axis, -1) - wv
+        both = np.moveaxis(xp, axis, -1) & wp
+        check(R, np.where(both, -diff, 0).sum(-1), both.any(-1), approx=True)
+    for yshape in [(60, 1, 1), (70, 1), (60, 70, 1), (5,)]:
+        Y, yv, yp = random_tensor(yshape, rng, density=0.7)
+        check((X * Y).new(), *np_bcast("mult", xv, xp, yv, yp, np.multiply), approx=True)
+        check(
+            Y.ewise_mult(X, binary.minus).new(),
+            *np_bcast("mult", yv, yp, xv, xp, np.subtract),
+            approx=True,
+        )
+
+
+@pytest.mark.parametrize("nthreads", [1, 8])
+def test_wide_column_group_paths(nthreads):
+    """A column group far wider than the data: selector, split move or REBUILD, by cost."""
+    rng = np.random.default_rng(63)
+    shape = (3, 400, 500)
+    coords = [rng.integers(0, s, 300) for s in shape]
+    lin = np.unique(np.ravel_multi_index(coords, shape))
+    coords = np.unravel_index(lin, shape)
+    vals = rng.random(lin.size)
+    X = Tensor.from_coo(coords, vals, shape=shape, layout=((0,), (1, 2)))
+    xv = np.zeros(shape)
+    xp = np.zeros(shape, bool)
+    xv[coords] = vals
+    xp[coords] = True
+    for axis in [0, 1, 2, (1, 2), (0, 2)]:
+        check(X.sum(axis).new(nthreads=nthreads), *np_reduce("plus", xv, xp, axis), approx=True)
+    for axis in range(3):
+        w, wv, wp = random_tensor((shape[axis],), rng, density=0.7)
+        rest = "ijk".replace("ijk"[axis], "")
+        sub = f"ijk,{'ijk'[axis]}->{rest}"
+        R = X.tensordot(w, ([axis], [0])).new(nthreads=nthreads)
+        check(R, *np_einsum(sub, (X, xv, xp), (w, wv, wp)), approx=True)
+    for yshape in [(400, 1), (500,), (3, 1, 1)]:
+        Y, yv, yp = random_tensor(yshape, rng, density=0.7)
+        R = (X * Y).new(nthreads=nthreads)
+        check(R, *np_bcast("mult", xv, xp, yv, yp, np.multiply), approx=True)
