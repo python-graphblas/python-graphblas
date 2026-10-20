@@ -61,8 +61,9 @@ if _has_numba:
 
         Compares per-leaf with IEEE semantics (NaN compares unequal even
         to itself); scalar broadcasts to every leaf when paired with a
-        UDT. Mismatched-shape UDT pairs raise ``KeyError``. Returns
-        ``(wrapper_func, wrapper_sig)``.
+        UDT. Mismatched-shape UDT pairs raise ``KeyError``. A UDT that is
+        neither a record nor an array (bytes, say) compares only with its
+        own type, as one value. Returns ``(wrapper_func, wrapper_sig)``.
         """
         from ..udt import _check_udt_pair, _get_udt_info, _iter_record_leaves
         from .udt_codegen import _array_operand_source
@@ -72,14 +73,27 @@ if _has_numba:
         op_name = "eq" if is_eq else "ne"
         _check_udt_pair(op_name, dtype, dtype2, info_x, info_y)
 
+        nt = numba.types
+        cmp_op = "==" if is_eq else "!="
+        join = " and " if is_eq else " or "
+
+        if info_x is None and info_y is None:
+            # Bytes, a datetime, or a complex number where the backend has no
+            # complex types: an element is one value, compared as numpy compares
+            # it, as a record field of that type is. ``_check_udt_pair`` has made
+            # sure both are the one UDT.
+            ptr_type = nt.CPointer(dtype.numba_type)
+            wrapper = _compile_codegen(
+                f"def wrapper(z_ptr, x_ptr, y_ptr):\n    z_ptr[0] = x_ptr[0] {cmp_op} y_ptr[0]\n",
+                func_name="wrapper",
+                source_label=f"<gb-udt {op_name} {dtype.np_type}>",
+            )
+            return wrapper, nt.void(nt.CPointer(INT8.numba_type), ptr_type, ptr_type)
+
         x_is_scalar = info_x is None
         y_is_scalar = info_y is None
         udt_dtype = dtype2 if x_is_scalar else dtype
         udt_info = info_y if x_is_scalar else info_x
-
-        nt = numba.types
-        cmp_op = "==" if is_eq else "!="
-        join = " and " if is_eq else " or "
 
         if udt_info[0] == "array":
             # Array UDT: a scalar side is read through its pointer, with no

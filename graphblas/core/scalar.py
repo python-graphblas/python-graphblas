@@ -22,6 +22,7 @@ from .udt import (
     _element_shapes_differ,
     _element_value,
     _ewise_add_needs_cast,
+    _get_udt_info,
     _is_lifted_op,
     _literal_shape_differs,
     _scalar_ewise_add_converted,
@@ -1163,7 +1164,12 @@ def _scalar_eq(scalar, other):
                 with np.errstate(over="ignore"):
                     return (convert(scalar.value) == convert(value)).item()
             return (convert(scalar.value) == convert(value)).item()
-    if not _has_numba and (scalar.dtype._is_udt or (type(other) is Scalar and other.dtype._is_udt)):
+    udts = [scalar.dtype, other.dtype] if type(other) is Scalar else [scalar.dtype]
+    udts = [dtype for dtype in udts if dtype._is_udt]
+    if udts and (not _has_numba or any(_get_udt_info(dtype) is None for dtype in udts)):
+        # binary.eq needs Numba. A UDT that is neither a record nor an array (bytes,
+        # float16) holds one value, which numpy compares as binary.eq does, and with
+        # no Numba type for it (float16 has none) and no GraphBLAS call.
         return _udt_eq_without_numba(scalar, other)
     return bool(scalar.ewise_mult(other, binary.eq).new(name="s_eq").value)
 

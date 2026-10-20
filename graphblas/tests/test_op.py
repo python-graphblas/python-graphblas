@@ -5790,6 +5790,65 @@ def test_udt_eq_compile_failure_is_a_udfparseerror():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udt_eq_compares_a_udt_that_is_neither_record_nor_array():
+    """``==``, ``!=`` and ``isequal`` compare UDT elements of bytes or dates as numpy does.
+
+    Such a UDT holds one value per element, which ``binary.eq`` and
+    ``binary.ne`` compare as a record field of that type compares: bytes by
+    value, and NaT equal to nothing. Only two elements of the one type
+    compare; any other pair raises binary.eq's KeyError.
+    """
+    text = dtypes.register_anonymous(np.dtype("S4"), "_EqOpaqueBytes")
+    v = Vector(text, size=3)
+    v[0] = b"ab"
+    v[1] = b"cd"
+    w = Vector(text, size=3)
+    w[0] = b"ab"
+    w[1] = b"ce"
+    w[2] = b"x"
+    assert binary.eq(v & w).new().isequal(Vector.from_coo([0, 1], [True, False], size=3))
+    assert (v != w).new().isequal(Vector.from_coo([0, 1], [False, True], size=3))
+    assert (v == b"ab").new().isequal(Vector.from_coo([0, 1], [True, False], size=3))
+    assert v.isequal(v.dup())
+    assert not v.isequal(w)
+    A = Matrix(text, nrows=2, ncols=2)
+    A[0, 1] = b"ab"
+    A[1, 0] = b"cd"
+    B = A.dup()
+    assert A.isequal(B)
+    B[1, 0] = b"cc"
+    assert not A.isequal(B)
+    s = gb.Scalar.from_value(b"ab", text)
+    assert s == gb.Scalar.from_value(b"ab", text)
+    assert s != gb.Scalar.from_value(b"cd", text)
+    assert s == b"ab"
+    assert s != b"cd"
+    # A Scalar's == compares in numpy, so an element Numba has no type for compares too.
+    half = dtypes.register_anonymous(np.dtype(np.float16), "_EqOpaqueHalf")
+    h = gb.Scalar.from_value(1.5, half)
+    assert h == gb.Scalar.from_value(1.5, half)
+    assert h == 1.5
+    assert gb.Scalar.from_value(np.nan, half) != gb.Scalar.from_value(np.nan, half)
+    dates = dtypes.register_anonymous(np.dtype("M8[s]"), "_EqOpaqueDates")
+    d = Vector(dates, size=2)
+    d[0] = np.datetime64("NaT", "s")
+    d[1] = np.datetime64(0, "s")
+    assert (d == d).new().to_coo()[1].tolist() == [False, True]
+    # Nor with a record or an array UDT, for a Scalar as for a Vector.
+    pair = dtypes.register_anonymous(np.dtype((np.int8, (5,))), "_EqOpaqueArr5")
+    rec = dtypes.register_anonymous(np.dtype([("eqo_a", np.int8)]), "_EqOpaqueRec")
+    for expr in [
+        lambda: v == 1,
+        lambda: binary.eq(v & Vector.from_coo([0], [1], size=3)),
+        lambda: binary.eq(v & Vector(rec, size=3)),
+        lambda: gb.Scalar.from_value([1, 2, 3, 4, 5], pair) == h,
+        lambda: gb.Scalar.from_value((1,), rec) == s,
+    ]:
+        with pytest.raises(KeyError, match="pairs only with its own type"):
+            expr()
+
+
+@pytest.mark.skipif("not supports_udfs")
 def test_udt_numba_error_summary_is_never_empty():
     """A Numba error's one-line summary falls back to its first line, then to a sentence.
 
