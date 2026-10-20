@@ -25,6 +25,8 @@ from graphblas.core.expr import Updater
 from graphblas.core.recorder import Recorder
 from graphblas.core.scalar import Scalar
 
+suitesparse = gb.backend == "suitesparse"
+
 # Builtin dtypes to sweep. Complex is SuiteSparse-only, so gate it the same way
 # the dtype tests do; on the vanilla backend the parametrization simply omits it.
 BUILTIN_DTYPES = [
@@ -78,6 +80,14 @@ class _IndexLike:
 
     def __repr__(self):
         return f"_IndexLike({self.value})"
+
+
+def _given_away(obj):
+    """``obj`` after ``obj.ss.export(give_ownership=True)``, which leaves no GraphBLAS
+    object behind, so every C call on it fails (GrB_NULL_POINTER).
+    """
+    obj.ss.export(give_ownership=True)
+    return obj
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +233,20 @@ def test_get_pending_value():
     v = Vector(float, 100)
     v[3] = 2.25  # pending setElement in non-blocking mode
     _assert_get_equal(v.get(3), 2.25)
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_get_graphblas_error():
+    """An error from GraphBLAS is raised as the reference raises it, not read as a miss."""
+    v = _given_away(Vector.from_coo([0, 5], [1.5, 2.5], size=10))
+    A = _given_away(Matrix.from_coo([0, 1], [1, 2], [1.5, 2.5], nrows=5, ncols=7))
+    for fast, slow in [
+        (lambda: v.get(0, "d"), lambda: _get_vector_slow(v, 0, "d")),
+        (lambda: A.get(0, 1, "d"), lambda: _get_matrix_slow(A, 0, 1, "d")),
+    ]:
+        f, s = _capture(fast), _capture(slow)
+        assert f == s, f"fast={f} slow={s}"
+        assert f[:2] == ("exc", "NullPointer"), f
 
 
 # ---------------------------------------------------------------------------
@@ -391,6 +415,20 @@ def test_contains_pending_value():
     v[3] = 2.25
     assert (3 in v) is True
     assert (4 in v) is False
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_contains_graphblas_error():
+    """An error from GraphBLAS is raised as the reference raises it, not read as absent."""
+    v = _given_away(Vector.from_coo([0, 5], [1.5, 2.5], size=10))
+    A = _given_away(Matrix.from_coo([0, 1], [1, 2], [1.5, 2.5], nrows=5, ncols=7))
+    for fast, slow in [
+        (lambda: 0 in v, lambda: _contains_vector_slow(v, 0)),
+        (lambda: (0, 1) in A, lambda: _contains_matrix_slow(A, (0, 1))),
+    ]:
+        f, s = _capture(fast), _capture(slow)
+        assert f == s, f"fast={f} slow={s}"
+        assert f[:2] == ("exc", "NullPointer"), f
 
 
 # ---------------------------------------------------------------------------
@@ -611,6 +649,19 @@ def test_setitem_empty_vector():
     assert e.nvals == 1
 
 
+@pytest.mark.skipif("not suitesparse")
+def test_setitem_graphblas_error():
+    v = _given_away(Vector(dtypes.FP64, 10))
+    A = _given_away(Matrix(dtypes.FP64, 5, 7))
+    for fast, slow in [
+        (lambda: v.__setitem__(0, 1.5), lambda: _set_vector_slow(v, 0, 1.5)),
+        (lambda: A.__setitem__((0, 1), 1.5), lambda: _set_matrix_slow(A, (0, 1), 1.5)),
+    ]:
+        f, s = _capture(fast), _capture(slow)
+        assert f == s, f"fast={f} slow={s}"
+        assert f[:2] == ("exc", "NullPointer"), f
+
+
 # ---------------------------------------------------------------------------
 # ScalarIndexExpr.new()
 # ---------------------------------------------------------------------------
@@ -701,6 +752,22 @@ def test_scalarnew_recorder_fallback():
     with Recorder() as rec:
         assert v[0].new().value == 1.5
     assert "extractElement" in "".join(rec.data)
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_scalarnew_graphblas_error():
+    v = _given_away(Vector.from_coo([0, 5], [1.5, 2.5], size=10))
+    A = _given_away(Matrix.from_coo([0, 1], [1, 2], [1.5, 2.5], nrows=5, ncols=7))
+    for fast, slow in [
+        (v[0].new, lambda: _new_slow(v[0])),
+        (A[0, 1].new, lambda: _new_slow(A[0, 1])),
+        # Into a C scalar both take the full path, which reports against the input
+        (lambda: v[0].new(is_cscalar=True), lambda: _new_slow(v[0], is_cscalar=True)),
+        (lambda: A.T[1, 0].new(is_cscalar=True), lambda: _new_slow(A.T[1, 0], is_cscalar=True)),
+    ]:
+        f, s = _capture(fast), _capture(slow)
+        assert f == s, f"fast={f} slow={s}"
+        assert f[:2] == ("exc", "NullPointer"), f
 
 
 def test_scalarnew_autocompute_value_path():
@@ -841,6 +908,19 @@ def test_scalarvalue_pending_value():
     with gb.config.set(autocompute=True):
         assert v[3].value == 2.25
         assert float(v[3]) == 2.25
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_scalarvalue_graphblas_error():
+    """A value read, which extracts into a C scalar, raises what the GrB_Scalar read does."""
+    v = _given_away(Vector.from_coo([0, 5], [1.5, 2.5], size=10))
+    A = _given_away(Matrix.from_coo([0, 1], [1, 2], [1.5, 2.5], nrows=5, ncols=7))
+    with gb.config.set(autocompute=True):
+        for probe in [v[0], A[0, 1], A.T[1, 0]]:
+            got = _read_attr(probe, "value")
+            want = _capture(lambda: _new_slow(probe).value)  # noqa: B023
+            assert got == want, f"fast={got} slow={want}"
+            assert got[:2] == ("exc", "NullPointer"), got
 
 
 def test_scalarvalue_index_integral_only():
