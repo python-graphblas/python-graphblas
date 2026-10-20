@@ -2203,7 +2203,12 @@ def _mttkrp_recipe(updater, x, mats, mode, R, op):
     rows = (mode, *rest)
     for a in reversed(rest):
         rows = rows[:-1]
-        T.ss.reshape(tl.prod(x._shape, rows), x._shape[a] * R, inplace=True)
+        nrows, ncols = tl.prod(x._shape, rows), x._shape[a] * R
+        if nrows <= 2**31 and ncols <= 2**31:
+            T.ss.reshape(nrows, ncols, inplace=True)
+        else:
+            # SuiteSparse 10.5.1's in-place reshape cannot widen 32-bit indices
+            T = T.ss.reshape(nrows, ncols)
         out = tl.new_matrix(op.return_type, T._nrows, R)
         out(**updater.opts) << T.mxm(_krp_embedding(mats[a], R), op)
         T = out
