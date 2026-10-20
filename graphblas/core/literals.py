@@ -266,11 +266,8 @@ def _check_literal_fits(dtype, value):
     fits ``INT8[3]`` and ``np.int64(1)`` does not. ``Scalar.from_value`` then
     converts it, which changes no value. A literal that does not fit by type but
     converts exactly still converts, with a DeprecationWarning
-    (:func:`_refuse_unless_exact`). A ``dtype`` of ``None``, a built-in type,
-    takes any literal.
+    (:func:`_refuse_unless_exact`).
     """
-    if dtype is None:
-        return
     literal_type = _literal_type(dtype, value)
     if literal_type is not None and not _casts_safely_into(literal_type, dtype):
         _refuse_unless_exact(
