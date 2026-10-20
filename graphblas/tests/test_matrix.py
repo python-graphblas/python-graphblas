@@ -21,6 +21,7 @@ from graphblas.exceptions import (
     InvalidObject,
     InvalidValue,
     NotImplementedException,
+    NullPointer,
     OutputNotEmpty,
 )
 
@@ -318,6 +319,24 @@ def test_extract_element(A):
     s = A[1, 6].new(dtype=float)
     assert s.value == 4.0
     assert s.dtype == "FP64"
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_extract_element_raises_the_graphblas_error():
+    # export(give_ownership=True) leaves no GraphBLAS object, so the extract fails.
+    # Into a C scalar the error was an EmptyObject about the output, hiding this one.
+    # The text must match too: a TransposedMatrix has no error function of its own.
+    A = Matrix.from_coo([0], [1], [1.5], nrows=2, ncols=3)
+    v = Vector.from_coo([0], [1.5], size=3)
+    A.ss.export(give_ownership=True)
+    v.ss.export(give_ownership=True)
+    for expr in [A[0, 1], A.T[1, 0], v[0]]:
+        texts = []
+        for is_cscalar in [False, True]:
+            with pytest.raises(NullPointer) as exc_info:
+                expr.new(is_cscalar=is_cscalar)
+            texts.append(str(exc_info.value))
+        assert texts[0] == texts[1], (expr, texts)
 
 
 def test_set_element(A):
