@@ -2067,6 +2067,28 @@ def test_default_split_follows_nonempty_rows():
     T = Tensor.from_coo(np.unravel_index(lin, (40, 50, 60)), 1.0, shape=(40, 50, 60))
     assert T.layout == Layout((0,), (1, 2))
     T._check_invariants()
+    # Shuffled input is built at the widest split and settled: the same layouts
+    order = rng.permutation(lin.size)
+    shuffled = [c[order] for c in np.unravel_index(lin, (40, 50, 60))]
+    T = Tensor.from_coo(shuffled, 1.0, shape=(40, 50, 60))
+    assert T.layout == Layout((0,), (1, 2))
+    T._check_invariants()
+    order = rng.permutation(i.size)
+    T = Tensor.from_coo((i[order], j[order], k[order]), 1.0, shape=shape)
+    assert T.layout == Layout((0, 1), (2,))
+    # Hypersparse rows need more entries each: 4 per row over 1/20 of the rows is too few
+    shape = (40, 50, 100)
+    ij = rng.choice(2000, 100, replace=False)
+    i2, j2 = np.repeat(ij // 50, 4), np.repeat(ij % 50, 4)
+    k2 = np.concatenate([rng.choice(100, 4, replace=False) for _ in range(100)])
+    T = Tensor.from_coo((i2, j2, k2), 1.0, shape=shape)
+    assert T.layout == Layout((0,), (1, 2))
+    T._check_invariants()
+    # A large sample-checked case (more entries than the sample size)
+    big = (300, 400, 50)
+    lin = np.unique(rng.integers(0, 300 * 400 * 50, 200_000))
+    T = Tensor.from_coo(np.unravel_index(lin, big), 1.0, shape=big)
+    assert T.layout == Layout((0, 1), (2,))  # about 1.7 entries per (i, j) row, sparse rows
     # 4-d moves the split one axis at a time
     coords = [rng.integers(0, n, 40) for n in (5, 6, 7, 8)]
     lin = np.unique(np.ravel_multi_index(coords, (5, 6, 7, 8)))
