@@ -3210,10 +3210,13 @@ class Matrix(BaseType):
             desc = descriptor_lookup(**opts)  # noqa: F841 (keep desc in scope for context)
         if is_cscalar:
             dtype_name = "UDT" if dtype._is_udt else dtype.name
+            # Report an error against this Matrix (not a TransposedMatrix, which has no
+            # error function): the empty C scalar has no GraphBLAS object to ask.
+            out = _Pointer(result, exc_arg=self._matrix if self._is_transposed else self)
             if (
                 call(
                     f"GrB_Matrix_extractElement_{dtype_name}",
-                    [_Pointer(result), self, rowidx.index, colidx.index],
+                    [out, self, rowidx.index, colidx.index],
                 )
                 is not NoValue
             ):
