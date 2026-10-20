@@ -4805,6 +4805,24 @@ def test_udt_sequence_and_array_literals_type_like_numbers():
     ]:
         with pytest.raises(KeyError, match="Numba cannot compute on float16"):
             expr()
+    # A record's array field takes a sequence as an array UDT does: an array, or a
+    # sequence holding a numpy value, is the array numpy makes of it.
+    arr_rec = dtypes.register_anonymous(
+        np.dtype([("sq_av", np.int8, (3,)), ("sq_an", np.int8)]), "_SeqArrRec"
+    )
+    ar = Vector(arr_rec, size=1)
+    ar[0] = ([1, 2, 3], 4)
+    for literal in [(np.int8(1), 300, 3), np.array([1, 300, 3])]:
+        made = np.dtype((np.asarray(literal).dtype, (3,)))
+        assert binary.plus(v, literal).new().dtype.np_type == made
+        result = binary.plus(ar, (literal, 1)).new()
+        assert result.dtype.np_type["sq_av"] == made
+        assert result[0].new().value["sq_av"].tolist() == [2, 302, 6]
+    # A comparison keeps a Python int beyond int8 exact, there too: it equals nothing.
+    big = (np.int8(1), 2**70, 3)
+    for x, literal in [(ar, (big, 4)), (v, big)]:
+        assert not (x == literal).new()[0].new().value
+        assert (x != literal).new()[0].new().value
     result = binary.plus(n, (1, np.float64(1.5))).new()  # one number for the nested record
     assert result.dtype.np_type["sq_in"]["sq_b"] == np.float64
     assert result[0].new().value.tolist() == (2, (3.5, 5.0))
