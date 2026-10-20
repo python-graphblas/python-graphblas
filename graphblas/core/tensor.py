@@ -945,17 +945,24 @@ def _ewise_infix(left, right, op, kind):
     return NotImplemented
 
 
-def _make_infix(op, kind):
+def _binary_op(name):
+    # Looked up when used: without Numba some (floordiv) are UDFs and cannot be compiled
+    if name.startswith("numpy."):
+        return getattr(binary.numpy, name[6:])
+    return getattr(binary, name)
+
+
+def _make_infix(name, kind):
     def forward(self, other):
-        return _ewise_infix(self, other, op, kind)
+        return _ewise_infix(self, other, _binary_op(name), kind)
 
     def reflected(self, other):
-        return _ewise_infix(other, self, op, kind)
+        return _ewise_infix(other, self, _binary_op(name), kind)
 
     def inplace(self, other):
         if type(self) is not Tensor:
             raise TypeError(f"in-place operators are not supported for {type(self).__name__}")
-        expr = _ewise_infix(self, other, op, kind)
+        expr = _ewise_infix(self, other, _binary_op(name), kind)
         if expr is NotImplemented:
             raise TypeError(f"unsupported operand type for in-place op: {type(other)}")
         self << expr
@@ -967,22 +974,15 @@ def _make_infix(op, kind):
 # As for Matrix: `+` is the union, `-` the union with 0 for a missing side, and the others
 # (comparisons included) the intersection.
 _INFIX = {
-    "add": (binary.plus, "add"),
-    "sub": (binary.minus, "union"),
-    "mul": (binary.times, "mult"),
-    "truediv": (binary.truediv, "mult"),
-    "floordiv": (binary.floordiv, "mult"),
-    "mod": (binary.numpy.mod, "mult"),
-    "pow": (binary.pow, "mult"),
+    "add": ("plus", "add"),
+    "sub": ("minus", "union"),
+    "mul": ("times", "mult"),
+    "truediv": ("truediv", "mult"),
+    "floordiv": ("floordiv", "mult"),
+    "mod": ("numpy.mod", "mult"),
+    "pow": ("pow", "mult"),
 }
-_COMPARISONS = {
-    "eq": binary.eq,
-    "ne": binary.ne,
-    "lt": binary.lt,
-    "le": binary.le,
-    "gt": binary.gt,
-    "ge": binary.ge,
-}
+_COMPARISONS = ("eq", "ne", "lt", "le", "gt", "ge")
 
 
 class TensorExpression(BaseExpression):
@@ -1148,9 +1148,9 @@ for _cls in (Tensor, TensorExpression):
         setattr(_cls, f"__r{_name}__", _ref)
         if _cls is Tensor:
             setattr(_cls, f"__i{_name}__", _inp)
-    for _name, _op in _COMPARISONS.items():
+    for _name in _COMPARISONS:
         # Set after the class body, as for Matrix, so Tensors stay hashable
-        setattr(_cls, f"__{_name}__", _make_infix(_op, "mult")[0])
+        setattr(_cls, f"__{_name}__", _make_infix(_name, "mult")[0])
     _cls.__or__ = _infix_or
     _cls.__ror__ = _infix_ror
     _cls.__and__ = _infix_and
