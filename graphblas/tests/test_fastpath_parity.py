@@ -75,10 +75,10 @@ class _IndexLike:
     def __init__(self, value):
         self.value = value
 
-    def __index__(self):
+    def __index__(self):  # pragma: no cover (only on failure)
         return self.value
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover (only on failure)
         return f"_IndexLike({self.value})"
 
 
@@ -364,6 +364,8 @@ def test_contains_transposed_matrix():
         (np.array(1), np.array(2)),
         (1, np.array(2)),
         (_IndexLike(1), 2),
+        (0, slice(None)),
+        ([0, 1], 2),
     ],
 )
 def test_contains_matrix_bad_index(bad):
