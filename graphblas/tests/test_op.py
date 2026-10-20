@@ -6210,7 +6210,6 @@ def test_ops_have_ss():
                 mod.ss
 
 
-@pytest.mark.skipif("not supports_udfs")
 def test_compile_codegen_helper():
     """The ``_compile_codegen`` helper validates source and surfaces typos clearly.
 

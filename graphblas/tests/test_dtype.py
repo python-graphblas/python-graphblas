@@ -554,9 +554,8 @@ def test_udt_layouts_under_one_name_get_their_own_jit_c_names():
     assert small.jit_c_name == "_SameJitName"
     assert big.jit_c_name != small.jit_c_name
     assert big.jit_c_name in big.jit_c_definition
-    jit_c_control = gb.ss.config["jit_c_control"] if gb.backend == "suitesparse" else None
-    if jit_c_control is not None:
-        gb.ss.config["jit_c_control"] = "on"
+    jit_c_control = gb.ss.config["jit_c_control"]
+    gb.ss.config["jit_c_control"] = "on"
     try:
         for udt in [small, big]:
             shape = udt.np_type.shape
@@ -569,12 +568,10 @@ def test_udt_layouts_under_one_name_get_their_own_jit_c_names():
             values = [v[i].new().value.tolist() for i in range(3)]
             assert values == [one.tolist(), one.tolist(), two.tolist()]
     finally:
-        if jit_c_control is not None:
-            gb.ss.config["jit_c_control"] = jit_c_control
-    if gb.backend == "suitesparse":
-        # Nor may a typedef registered in C take a name a UDT already has.
-        with pytest.raises(ValueError, match="unavailable"):
-            dtypes.ss.register_new("_SameJitName", "typedef struct { int8_t q ; } _SameJitName ;")
+        gb.ss.config["jit_c_control"] = jit_c_control
+    # Nor may a typedef registered in C take a name a UDT already has.
+    with pytest.raises(ValueError, match="unavailable"):
+        dtypes.ss.register_new("_SameJitName", "typedef struct { int8_t q ; } _SameJitName ;")
 
 
 def test_dtype_to_from_string():
