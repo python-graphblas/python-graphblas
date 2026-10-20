@@ -559,6 +559,9 @@ def relayout(M, shape, src, targets, *, nthreads=None, allow_perm=None):
     """Move ``M`` from Layout ``src`` to a layout in ``targets`` (a Layout or a frozenset of
     states). Returns ``(M2, layout2)``; ``M2`` is ``M`` itself when no move is needed.
     """
+    if len(src.rows) + len(src.cols) != len(shape):
+        # A layout of another rank would leave axes without coordinates in a REBUILD
+        raise ValueError(f"layout {src} does not match a shape of {len(shape)} axes: {shape}")
     src_state = src.state
     if isinstance(targets, Layout):
         if targets == src:
