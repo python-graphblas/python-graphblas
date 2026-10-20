@@ -467,14 +467,15 @@ class Tensor(BaseType):
                     f"min {idx.min()}, max {idx.max()}"
                 )
         # Reshape works only below a total size of 2**60; past it keep the shape-based split
-        settle = layout is None and ndim >= 3 and n > 0 and math.prod(shape) < tl.MAX_GROUP
-        if settle:
-            lay = _widest_rows_layout(shape)
+        rows = settle = None
+        if layout is None and ndim >= 3 and n > 0:
+            lay, rows, settle = _data_split_layout(coords, shape, n)
         elif layout is None:
             lay = tl.default_layout(shape, n)
         else:
             lay = tl.as_layout(layout, shape)
-        rows = tl.ravel(coords, shape, lay.rows, n=n)
+        if rows is None:
+            rows = tl.ravel(coords, shape, lay.rows, n=n)
         cols = tl.ravel(coords, shape, lay.cols, n=n)
         M = tl.from_coo(
             rows,
@@ -1571,6 +1572,8 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
     options = []
     if (
         nv > 0
+        and not M.dtype._is_udt
+        and not ts.dtype._is_udt
         and ts._M._nvals == math.prod(ts._shape)
         and M.ss.format in {"csr", "hypercsr"}
         and not M.ss.is_iso
@@ -1765,29 +1768,86 @@ def _reduce_recipe(updater, a, op, axes, keepdims, cast):
     _store(updater, M, out_shape, out_layout, fresh=True)
 
 
-# The default split puts as many axes in the rows as the data fills: a row group indexes its
-# nonempty rows (h), so selectors and expansions over it follow the data, while a column
-# group costs per position (round 1: NELL-2's (0|1,2) has a 2.6e8-position column group).
-# Rows of fewer entries than this cost memory (h and p per row) and a hash lookup per row.
+# The default split puts as many axes in the rows as the data fills. A row group indexes its
+# nonempty rows (h), so selectors and expansions over it follow the data, while a column group
+# costs per position (round 1: NELL-2's (0|1,2) has a 2.6e8-position column group). But rows
+# cost too: a hypersparse row costs a hash lookup in ewise and mxm (about 19 / 130 ns at 8 / 1
+# threads: Zipf's (0,1|2), 4.3 entries per row, took 53 ms for X + Y against 9.6 in (0|1,2)), and
+# a sparse row about 3 / 16 ns. So rows must hold MIN_ROW_ENTRIES entries each, or
+# MIN_HYPER_ROW_ENTRIES when they would be hypersparse (NELL-2's hold 228 each).
 MIN_ROW_ENTRIES = 1.5
+MIN_HYPER_ROW_ENTRIES = 32
+_SPLIT_SAMPLE = 2**16
 
 
-def _widest_rows_layout(shape):
-    """Identity order with the largest valid split below ndim."""
-    seq = tuple(range(len(shape)))
-    for p in range(len(shape) - 1, 0, -1):
+def _rows_ok(nvals, nonempty, positions):
+    """Whether rows of ``nvals`` entries over ``nonempty`` of ``positions`` rows are worth it."""
+    hyper = nonempty * 16 < positions  # SuiteSparse's default hyper switch is 1/16
+    return nvals >= (MIN_HYPER_ROW_ENTRIES if hyper else MIN_ROW_ENTRIES) * nonempty
+
+
+def _data_split_layout(coords, shape, n):
+    """``(layout, row index or None, settle)``: identity order split at the largest p whose
+    rows hold enough entries each. A sample of the row keys rejects thin splits cheaply (its
+    distinct count can only err low, i.e. toward rows that look full). Otherwise sorted input
+    (C order, the common case) is judged exactly from its row keys, which the build then
+    reuses; unsorted input is built at that split and settled afterwards (``settle=True``).
+    """
+    ndim = len(shape)
+    seq = tuple(range(ndim))
+    if math.prod(shape) >= tl.MAX_GROUP:
+        # Reshape-based relayouts are unavailable; keep the shape-based rule
+        return tl.default_layout(shape, n), None, False
+    sample = None
+    if n > _SPLIT_SAMPLE:
+        sample = np.random.default_rng(0).integers(0, n, _SPLIT_SAMPLE)
+    for p in range(ndim - 1, 0, -1):
+        if not tl._valid_split(shape, seq, p):
+            continue
+        positions = tl.prod(shape, seq[:p])
+        if positions * MIN_ROW_ENTRIES <= n:
+            return Layout(seq[:p], seq[p:]), None, False  # full enough even if all nonempty
+        if sample is not None:
+            low = _sampled_nonempty_rows(coords, shape, seq[:p], n, sample)
+            if not _rows_ok(n, low, positions):
+                continue
+        keys = tl.ravel(coords, shape, seq[:p], n=n)
+        if not np.all(keys[1:] >= keys[:-1]):
+            return Layout(seq[:p], seq[p:]), keys, True
+        if _rows_ok(n, int(np.count_nonzero(keys[1:] != keys[:-1])) + 1, positions):
+            return Layout(seq[:p], seq[p:]), keys, False
+    for p in range(1, ndim):
         if tl._valid_split(shape, seq, p):
-            return Layout(seq[:p], seq[p:])
-    return tl.default_layout(shape)
+            return Layout(seq[:p], seq[p:]), None, False
+    return tl.default_layout(shape, n), None, False
+
+
+def _sampled_nonempty_rows(coords, shape, row_axes, n, sample):
+    """A low estimate of the distinct row keys: the distinct count d in a sample of s
+    entries, solving D * (1 - exp(-s / D)) = d (rows of equal size; skewed rows give less).
+    """
+    keys = tl.ravel([c[sample] for c in coords], shape, row_axes)
+    s = sample.size
+    d = np.unique(keys).size
+    if d >= s:
+        return n
+    lo, hi = float(d), float(n)
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        if mid * -math.expm1(-s / mid) < d:
+            lo = mid
+        else:
+            hi = mid
+    return lo
 
 
 def _settle_split(M, shape, layout):
-    """Move the split left (one reshape each) while the rows hold fewer than
-    MIN_ROW_ENTRIES entries per nonempty row, counted through the Container.
+    """Move the split left (one reshape each) while the rows are too thin (``_rows_ok``),
+    counted through the Container.
     """
     seq, p = layout.state
     nvals = M._nvals
-    while p > 1 and nvals < MIN_ROW_ENTRIES * tl.count_nonempty_rows(M):
+    while p > 1 and not _rows_ok(nvals, tl.count_nonempty_rows(M), tl.prod(shape, seq[:p])):
         q = p - 1
         if not tl._valid_split(shape, seq, q):
             break
