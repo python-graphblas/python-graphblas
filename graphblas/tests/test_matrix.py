@@ -4798,6 +4798,27 @@ def test_abc_mixin_subclass():
     assert len(A) == 2
 
 
+def test_matrix_subclass_repr():
+    # The repr is a Matrix's but for the type's name. It used to take the
+    # TransposedMatrix branch for any type that is not exactly Matrix.
+    class SubMatrix(Matrix):
+        pass
+
+    A = SubMatrix(int, 2, 3, name="A")
+    B = Matrix(int, 2, 3, name="A")
+    A[0, 1] = B[0, 1] = 5
+
+    def words(M):
+        return [word for word in repr(M).split() if set(word) != {"-"}]
+
+    for a, b in [(A, B), (A.S, B.S), (~A.V, ~B.V)]:
+        assert words(a) == [word.replace("gb.Matrix", "gb.SubMatrix") for word in words(b)]
+        assert a._repr_html_() == b._repr_html_().replace("gb.Matrix", "gb.SubMatrix")
+    assert type(A.T) is gb.core.matrix.TransposedMatrix
+    assert repr(A.T) == repr(B.T)
+    assert A.T._repr_html_() == B.T._repr_html_()
+
+
 def test_transpose_hint():
     # A.transpose() should point at the .T property rather than fail with a
     # bare "no attribute" message; transpose is not a method here.
