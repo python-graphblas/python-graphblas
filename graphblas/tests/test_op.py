@@ -4681,8 +4681,10 @@ def test_udt_literal_converts_only_when_exact():
         assert t.apply(second, right=text_literal).new()[0].new().value.tolist() == (b"cd", 2)
     with pytest.warns(DeprecationWarning, match="does not fit _ExactBareSeconds"):
         assert d.apply(same, right=np.timedelta64(5000, "ms")).new()[0].new().value
+    # NaT stays NaT in any unit, and equals nothing.
     with pytest.warns(DeprecationWarning, match="does not fit _ExactBareSeconds"):
-        # NaT stays NaT in any unit, and equals nothing.
+        assert np.isnat(d.apply(second, right=np.timedelta64("NaT", "ms")).new()[0].new().value)
+    with pytest.warns(DeprecationWarning, match="does not fit _ExactBareSeconds"):
         assert not d.apply(same, right=np.timedelta64("NaT", "ms")).new()[0].new().value
     # Text for a text leaf converts, bytes or str.
     for literal in [b"cd", "cd"]:
@@ -4697,6 +4699,8 @@ def test_udt_literal_converts_only_when_exact():
         assert fine["ex_d"] == np.datetime64(5, "s")
         nat = when.apply(second, right=(np.datetime64("NaT", "ms"), 1)).new()[0].new().value
         assert np.isnat(nat["ex_d"])
+        # A duration in a coarser unit casts safely, so it fits by type.
+        assert np.isnat(d.apply(second, right=np.timedelta64("NaT", "m")).new()[0].new().value)
     assert (t == (b"ab", 1)).new()[0].new().value
     assert not (t == (b"ab", 1.5)).new()[0].new().value
     assert (when == (np.datetime64(0, "s"), 1)).new()[0].new().value
@@ -4853,6 +4857,10 @@ def test_udt_sequence_and_array_literals_type_like_numbers():
         assert result[0].new().value["sq_sd"] == np.timedelta64(total, "s")
     with pytest.raises(KeyError, match="no common type"):
         binary.plus(sv, (np.timedelta64(5, "ms"), 1))  # 5 ms is no whole number of seconds
+    for nat in [np.timedelta64("NaT", "ms"), np.timedelta64("NaT", "m")]:
+        result = binary.plus(sv, (nat, 1)).new()  # NaT is NaT in seconds
+        assert result.dtype == secs
+        assert np.isnat(result[0].new().value["sq_sd"])
     first = dtypes.register_anonymous(
         np.dtype([("sq_fin", [("sq_fb", np.int8), ("sq_fc", np.float32)]), ("sq_fa", np.int16)])
     )

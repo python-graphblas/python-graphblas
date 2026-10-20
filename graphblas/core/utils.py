@@ -4,7 +4,7 @@ import numpy as np
 
 from ..dtypes import _INDEX, lookup_dtype
 from . import ffi, lib
-from .dtypes import _view_if_same_layout
+from .dtypes import _generic_nats, _view_if_same_layout
 
 _NP2 = np.__version__.startswith("2.")
 
@@ -121,7 +121,7 @@ def values_to_numpy_buffer(
         np_type = _get_subdtype(dtype.np_type)
         # https://numpy.org/doc/stable/release/2.0.0-notes.html#new-copy-keyword-meaning-for-array-and-asarray-constructors
         array = np.array(
-            _view_if_same_layout(array, np_type),
+            _generic_nats(_view_if_same_layout(array, np_type), np_type),
             np_type,
             copy=copy or _NP2 and None,
             order=order,

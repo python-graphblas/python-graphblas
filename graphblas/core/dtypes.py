@@ -660,6 +660,38 @@ def _view_if_same_layout(values, np_type):
     return values
 
 
+def _generic_nats(values, np_type):
+    """Return ``values`` with each NaT duration in it as a NaT of no unit, if ``np_type`` has one.
+
+    numpy before 2.3 converts a NaT ``timedelta64`` scalar, alone or in a tuple
+    or list, into another unit as the integer it is stored as: NaT ms into
+    ``timedelta64[s]`` is 9223372036854774 s, and NaT s into ``timedelta64[ms]``
+    is 0 ms. A NaT of no unit converts to NaT in every unit. An array of
+    durations, and a date, convert NaT correctly.
+    """
+    if not _has_duration_leaf(np_type):
+        return values
+    return _with_generic_nats(values)
+
+
+def _has_duration_leaf(np_type):
+    """Whether ``np_type`` has a timedelta64 leaf: a record field, an array's element, or itself."""
+    if np_type.subdtype is not None:
+        return _has_duration_leaf(np_type.subdtype[0])
+    if np_type.names is not None:
+        return any(_has_duration_leaf(np_type.fields[name][0]) for name in np_type.names)
+    return np_type.kind == "m"
+
+
+def _with_generic_nats(values):
+    if isinstance(values, np.timedelta64):
+        return np.timedelta64("NaT") if np.isnat(values) else values
+    if isinstance(values, (tuple, list)):
+        items = [_with_generic_nats(x) for x in values]
+        return items if isinstance(values, list) else tuple(items)
+    return values
+
+
 def _dtype_to_string(dtype):
     """Convert a dtype to a string that can be safely evaluated to recreate the dtype.
 
