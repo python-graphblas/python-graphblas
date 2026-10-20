@@ -140,5 +140,5 @@ def test_batched_mxm_loop_does_not_accumulate_matrices():
         # Without the fix this would be baseline + 50.
         assert live_matrices() <= baseline
     finally:
-        if was_enabled:
+        if was_enabled:  # pragma: no branch (safety)
             gc.enable()
