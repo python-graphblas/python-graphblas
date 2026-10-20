@@ -153,6 +153,16 @@ def _resolve_udt_return_type(numba_ret_type, *dtypes):
         return lookup_dtype(numba_ret_type)
     except (ValueError, TypeError):
         pass
+    for d in dtypes:
+        # Bytes and the like have a Numba type no DataType is registered for;
+        # an operand of that type, returned as it is, keeps its UDT.
+        if (
+            d._is_udt
+            and d.np_type.names is None
+            and d.np_type.subdtype is None
+            and d.numba_type == numba_ret_type
+        ):
+            return d
     if isinstance(numba_ret_type, numba.core.types.BaseTuple):
         n = len(numba_ret_type.types)
 

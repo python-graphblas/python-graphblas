@@ -2089,6 +2089,11 @@ def test_udt_return_type_errors_array_udt():
 
     with pytest.raises(UdfParseError, match="returned an unsupported type"):
         BinaryOp.register_anonymous(_pair, is_udt=True)[raw]
+    # An operand returned as it is keeps its type.
+    v = Vector(raw, size=2)
+    v[0] = b"abc"
+    first = BinaryOp.register_anonymous(lambda x, y: x, "_ret_err_first", is_udt=True)
+    assert v.apply(first, right=b"zz").new().to_coo()[1].tolist() == [b"abc"]
     for lifted in [binary.plus, unary.ainv]:
         with pytest.raises(KeyError, match="require a record dtype .* or an array dtype"):
             lifted[raw]
