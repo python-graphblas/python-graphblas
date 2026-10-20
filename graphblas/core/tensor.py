@@ -14,8 +14,8 @@ Tensors that share a stored Matrix copy it before one of them is changed in plac
 SuiteSparse:GraphBLAS 10 or later only. Import with ``from graphblas.core.tensor import Tensor``.
 
 Phase 1 covers the data model, relayout, the shape operations, same-shape element-wise
-operations and reductions. Broadcasting, indexing, contractions and Matrix/Vector operands
-are not implemented yet.
+operations, reductions and ``tensordot``. Broadcasting, indexing, ``matmul`` and ``einsum``
+(batch axes), and Matrix/Vector operands are not implemented yet.
 """
 
 import itertools
@@ -61,8 +61,7 @@ def _as_shape(shape):
     return shape
 
 
-def _normalize_axis(axis, ndim, *, extra=0):
-    n = ndim + extra
+def _normalize_axis(axis, n):
     try:
         axis = operator.index(axis)
     except TypeError:
@@ -143,10 +142,9 @@ def _mask_arg(x):
 
 
 class _Owners:
-    """The owners of one stored Matrix: Tensors that view it, and Matrices handed out with
-    ``copy=False``. Held weakly, so no ``__del__`` bookkeeping is needed. Keyed by ``id``
-    because a WeakSet compares its members with ``==``, which builds an expression for
-    Matrix (and will for Tensor).
+    """The Tensors that share one stored Matrix. Held weakly, so no ``__del__`` bookkeeping
+    is needed (review F2). Keyed by ``id`` because a WeakSet compares its members with
+    ``==``, which will build an expression once Tensor has comparison operators.
     """
 
     __slots__ = "_refs", "__weakref__"
@@ -1224,7 +1222,7 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
             out[0, 0] = s
         return out, Layout((), ())
     nvals = M._nvals
-    if M.dtype._is_udt or tl.density(M):
+    if M.dtype._is_udt:
         return _reduce_rebuild(M, shape, layout, A, op)
     # Pass on only the descriptor options the user gave: building one costs microseconds.
     nthreads = opts.get("nthreads") or tl._nthreads()
@@ -1240,7 +1238,7 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
                 layout = Layout((), rows)
             else:
                 gshape = tuple(shape[x] for x in cols)
-                if not _selector_ok(math.prod(gshape), nvals):
+                if not _selector_ok(math.prod(gshape), nvals) or tl.density(M):
                     return _reduce_rebuild(M, shape, layout, A, op)
                 kept = tuple(i for i, x in enumerate(cols) if x not in Ac)
                 St = tl.selector(gshape, kept, transposed=True)
@@ -1251,6 +1249,10 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
             A -= Ac
             continue
         Ar = A & set(rows)
+        # Rows with about one entry each: a selector or a columnwise scatter costs a hash
+        # lookup or a cache miss per entry; rebuilding with dup_op is 4-5x faster (s13).
+        if tl.density(M):
+            return _reduce_rebuild(M, shape, layout, A, op)
         if Ar == set(rows):
             ncols = tl.prod(shape, cols)
             wide = ncols >= 1e5
@@ -1259,11 +1261,13 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
                 and nthreads > 1
                 and len(cols) >= 2
                 and math.prod(shape) < tl.MAX_GROUP
-                and _selector_ok(tl.prod(shape, rows) * shape[cols[0]], nvals)
+                and 4 * tl.prod(shape, rows) * shape[cols[0]] <= nvals
             ):
                 # reduce_columnwise into many outputs scatters like a wide transpose and is
                 # slow with threads (DESIGN.md 3.2); move one column axis into the rows and
-                # reduce with a selector instead.
+                # reduce with a selector instead, when the selector is small next to the data
+                # (1000^3 / 1e7: 6.6 ms vs 55.6). A larger selector costs more than a
+                # single-threaded columnwise reduce (Uber: 32.8 ms vs 4.7).
                 q = len(rows) + 1
                 seq = layout.seq
                 M = M.ss.reshape(tl.prod(shape, seq[:q]), tl.prod(shape, seq[q:]))
@@ -1292,7 +1296,8 @@ def _reduce_rebuild(M, shape, layout, A, op):
     entry each (DESIGN.md 3.12), and the path for UDTs.
     """
     coords, values = tl.coords_of(M, shape, layout.state)
-    kept = [x for x in range(len(shape)) if x not in A]
+    # The layout may already lack axes reduced by earlier steps
+    kept = [x for x in sorted(layout.seq) if x not in A]
     kshape = tuple(shape[x] for x in kept)
     lay = tl.default_layout(kshape, values.size)
     rows = tuple(kept[i] for i in lay.rows)

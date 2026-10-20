@@ -1084,13 +1084,15 @@ def test_reduce_4d():
 
 def test_reduce_strategies(monkeypatch):
     rng = np.random.default_rng(26)
-    # Wide columnwise reduction: one column axis moves into the rows, then a selector
+    # Wide columnwise reduction: with enough data one column axis moves into the rows for a
+    # selector; with little, a single-threaded columnwise reduce
     shape = (2, 400, 300)
-    T, values, present = random_tensor(shape, rng, layout=((0,), (1, 2)), density=0.01)
-    R = T.sum(0).new(nthreads=4)
-    check(R, *np_reduce("plus", values, present, 0), approx=True)
-    R = T.sum(0).new(nthreads=1)
-    check(R, *np_reduce("plus", values, present, 0), approx=True)
+    for density in [0.05, 0.01]:
+        T, values, present = random_tensor(shape, rng, layout=((0,), (1, 2)), density=density)
+        R = T.sum(0).new(nthreads=4)
+        check(R, *np_reduce("plus", values, present, 0), approx=True)
+        R = T.sum(0).new(nthreads=1)
+        check(R, *np_reduce("plus", values, present, 0), approx=True)
     # Hypersparse rows with about one entry each: REBUILD with the monoid as dup_op
     monkeypatch.setattr(tl, "density", lambda M: True)
     T, values, present = random_tensor((3, 4, 5), rng, layout=((0, 1), (2,)))
