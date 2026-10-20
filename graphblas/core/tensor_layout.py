@@ -404,11 +404,13 @@ C_T_HYPER = (9.0, 55.0)
 C_REBUILD = (14.0, 75.0)
 C_REBUILD_SORTED = (6.0, 10.0)
 C_PERM_ENTRY = (0.6, 2.0)
-# Per nonempty row of P @ M: about 8 / 45 ns at 8 / 1 threads when the rows come from a reshape
-# (u7: 15 / 69 ms for 1e6 rows of 10 in a chain, measured 2026-10-20); rows that are mostly empty
+# Per nonempty row of P @ M: rows stored sparse (from a build or a transpose) cost 3-7 / 5-12 ns
+# at 8 / 1 threads; rows straight from a reshape are hypersparse with no hash of the rows yet,
+# which P @ M builds and looks up: 11 / 80 ns (u7 and u6, 1e6 rows, measured 2026-10-20). The
+# planner tracks which states come from a reshape. Rows that are mostly empty
 # (hypersparse storage, about one entry each) pay a hash lookup per row: 31 ns (s1, case H)
 # to 61 ns (skew (1e5, 1e3, 10) rows (j, i)).
-C_PERM_ROW = {"sparse": (8.0, 45.0), "hyper": (50.0, 185.0)}
+C_PERM_ROW = {"sparse": (6.0, 12.0), "reshaped": (11.0, 80.0), "hyper": (50.0, 185.0)}
 # Building P (numpy, one thread): per row of a full P (cached when it fits the cache), and
 # per nonempty row of a P built from the nonempty rows (unravel, ravel and an unsorted build).
 C_PBUILD_FULL = 13.0
@@ -460,16 +462,20 @@ def rebuild_cost(nnz, ti, *, sorted_keys=False):
     return (C_REBUILD_SORTED if sorted_keys else C_REBUILD)[ti] * nnz + C_REBUILD_FIXED
 
 
-def _neighbors(state, shape, nnz, ti, hyper1, allow_perm, total_ok):
+def _neighbors(state, shape, nnz, ti, hyper1, allow_perm, total_ok, reshaped=False):
+    """``(edge, next_state, cost, next_reshaped)`` for each edge out of ``state``;
+    ``reshaped`` says the state's rows come straight from a reshape (see C_PERM_ROW).
+    """
     seq, p = state
     n = len(seq)
     for q in range(n + 1):
         if q != p and _valid_split(shape, seq, q):
             if total_ok:
-                yield ("RS", q), (seq, q), rs_cost(shape, seq, q, nnz, ti)
+                yield ("RS", q), (seq, q), rs_cost(shape, seq, q, nnz, ti), True
             else:
                 # Reshape refuses totals past 2^60; a REBUILD keeps the order (no sort)
-                yield ("REBUILD", (seq, q)), (seq, q), rebuild_cost(nnz, ti, sorted_keys=True)
+                cost = rebuild_cost(nnz, ti, sorted_keys=True)
+                yield ("REBUILD", (seq, q)), (seq, q), cost, False
     # A transpose with an empty group is a reshape (RS covers it).
     if 0 < p < n:
         out_rows = prod(shape, seq[p:])
@@ -484,11 +490,11 @@ def _neighbors(state, shape, nnz, ti, hyper1, allow_perm, total_ok):
             if cost2 < cost:
                 cost = cost2
                 threads = 2
-        yield ("T", threads), (seq[p:] + seq[:p], n - p), cost + C_STEP
+        yield ("T", threads), (seq[p:] + seq[:p], n - p), cost + C_STEP, False
     if allow_perm and p >= 2:
         nrows = prod(shape, seq[:p])
         R = expected_rows(nrows, nnz)
-        kind = "hyper" if nrows > 4 * R else "sparse"
+        kind = "hyper" if nrows > 4 * R else "reshaped" if reshaped else "sparse"
         cost = C_PERM_ENTRY[ti] * nnz + C_PERM_ROW[kind][ti] * R
         # P itself: shape-only and cached when its rows are few; else built per call
         if nrows <= max(4 * nnz, 4096):
@@ -502,7 +508,7 @@ def _neighbors(state, shape, nnz, ti, hyper1, allow_perm, total_ok):
         cost += C_STEP
         for perm in itertools.permutations(seq[:p]):
             if perm != seq[:p]:
-                yield ("PERM_R", perm), (perm + seq[p:], p), cost
+                yield ("PERM_R", perm), (perm + seq[p:], p), cost, False
     if n - p >= 2:
         # Values untouched, so any dtype; the sort of each row is priced in, although a
         # following transpose would skip it
@@ -512,7 +518,7 @@ def _neighbors(state, shape, nnz, ti, hyper1, allow_perm, total_ok):
         cost = (gather[ti] + C_PERM_C_SORT[ti] * math.log2(max(2.0, per_row))) * nnz + C_STEP
         for perm in itertools.permutations(seq[p:]):
             if perm != seq[p:]:
-                yield ("PERM_C", perm), (seq[:p] + perm, p), cost
+                yield ("PERM_C", perm), (seq[:p] + perm, p), cost, reshaped
 
 
 def expected_rows(nrows, nnz):
@@ -540,24 +546,29 @@ def plan(shape, src, targets, nnz, nthreads, *, hyper1=False, allow_perm=True):
     rv = (rebuild, [("REBUILD", fallback)], fallback)
     if len(shape) <= MAX_PLANNED_NDIM and nnz > 0:
         total_ok = math.prod(shape) < MAX_GROUP
-        best = {src: 0.0}
+        # Nodes are (state, whether its rows come straight from a reshape)
+        node = (src, False)
+        best = {node: 0.0}
         counter = itertools.count()
-        heap = [(0.0, next(counter), src, ())]
+        heap = [(0.0, next(counter), node, ())]
         while heap:
-            cost, _, state, path = heapq.heappop(heap)
+            cost, _, node, path = heapq.heappop(heap)
+            state, reshaped = node
             if state in targets:
                 if cost <= rebuild:
                     rv = (cost, list(path), state)
                 else:
                     rv = (rebuild, [("REBUILD", state)], state)
                 break
-            if cost > best.get(state, math.inf) or cost > rebuild:
+            if cost > best.get(node, math.inf) or cost > rebuild:
                 continue
-            for edge, nxt, w in _neighbors(state, shape, nnz, ti, hyper1, allow_perm, total_ok):
+            for edge, nxt, w, flag in _neighbors(
+                state, shape, nnz, ti, hyper1, allow_perm, total_ok, reshaped
+            ):
                 nc = cost + w
-                if nc < best.get(nxt, math.inf):
-                    best[nxt] = nc
-                    heapq.heappush(heap, (nc, next(counter), nxt, (*path, edge)))
+                if nc < best.get((nxt, flag), math.inf):
+                    best[nxt, flag] = nc
+                    heapq.heappush(heap, (nc, next(counter), (nxt, flag), (*path, edge)))
     _plan_cache.put(key, rv)
     return rv
 
