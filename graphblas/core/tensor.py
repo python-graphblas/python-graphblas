@@ -1566,8 +1566,20 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
     nv = M._nvals
     ti = _ti(nthreads or tl._nthreads())
     seq, p = L.state
-    # Options: (cost, split, group side, expand from the nonempty rows)
+    # Options: (cost, split, group side, expand from the nonempty rows); split "gather" puts
+    # the small side's values on the stored entries, None relayouts
     options = []
+    if (
+        nv > 0
+        and ts._M._nvals == math.prod(ts._shape)
+        and M.ss.format in {"csr", "hypercsr"}
+        and not M.ss.is_iso
+    ):
+        need_rows = any(o in L.rows for o in F)
+        cost = (C_GATHER["rows" if need_rows else "cols"] + C_EWISE_SAME[ti]) * nv
+        if M.ss.format == "hypercsr":
+            cost += C_EWISE_HROW[ti] * tl.nonempty_rows(M)
+        options.append((cost, "gather", None, False))
     for q in range(len(seq) + 1):
         if not tl._valid_split(shape, seq, q):
             continue
@@ -1614,6 +1626,14 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
         )
         return
     _, q, side, from_rows = min(options, key=lambda o: o[0])
+    if q == "gather":
+        values = ts.to_dense().ravel()
+        W = tl.gather_operand(M, shape, L, tuple(F), values, ts.dtype)
+        if W is not None:
+            src = M.ewise_mult(W, op) if big_left else W.ewise_mult(M, op)
+            _store(updater, src, shape, L)
+            return
+        q = None
     if q is None:
         M, L = tl.relayout(M, shape, L, frozenset(targets), nthreads=nthreads)
         side = "cols" if set(L.cols) == Fset and col_op is not None else "rows"
@@ -1827,6 +1847,12 @@ C_HROW = (75.0, 255.0)  # per nonempty row: build from h, then a hash lookup per
 C_MXV = (0.66, 3.3)
 C_VXM = (4.6, 11.4)
 C_DIAG = (0.6, 2.1)
+# Broadcast by gathering the small side's values onto the stored entries (numpy, one thread):
+# per entry when only column coordinates are needed, more when row ids must be expanded; then
+# a same-pattern ewise_mult, which pays per row of a hypersparse row group too.
+C_GATHER = {"cols": 2.5, "rows": 4.5}
+C_EWISE_SAME = (0.9, 5.0)
+C_EWISE_HROW = (7.0, 48.0)
 
 
 def _ti(nthreads):
@@ -2714,6 +2740,16 @@ def _group_index(shape, axes, sel, keys):
     return idx
 
 
+# Extraction costs (ns, 8 / 1 threads, measured 2026-10-20): a GraphBLAS extract pays per
+# nonempty row and per listed index of each group (u7 X[:, :, k]: 1e6 rows, one index, 3.9 ms;
+# hyper (2^19)^3 X[:, :, k]: 4.5e5 rows, 2^19 indices, 8.6 ms); filtering the coordinates pays
+# per stored entry and per indexed axis (hyper 2.4 ms for 1e6 entries).
+C_X_ROW = (3.9, 19.0)
+C_X_LIST = (13.0, 74.0)
+C_FILTER = (2.4, 4.6)
+C_FILTER_AXIS = (1.0, 1.5)
+
+
 def _extract_recipe(updater, t, sel, keys):
     rows, cols = t._layout
     kept = [a for a in range(t.ndim) if not isinstance(sel[a], int)]
@@ -2724,29 +2760,57 @@ def _extract_recipe(updater, t, sel, keys):
     shape = tuple(len(sel[a]) for a in kept)
     ridx = _group_index(t._shape, rows, sel, keys)
     cidx = _group_index(t._shape, cols, sel, keys)
-    if ridx is None or cidx is None:
-        # Too many positions to list: filter the coordinates instead
-        coords, vals = tl.coords_of(t._M, t._shape, t._layout.state)
-        keep = np.ones(vals.size, bool)
-        newc = {}
-        for a in range(t.ndim):
-            s = sel[a]
-            if isinstance(s, int):
-                keep &= coords[a] == s
-            else:
-                pos = np.full(t._shape[a], -1, np.int64)
-                pos[s] = np.arange(s.size)
-                newc[a] = pos[coords[a]]
-                keep &= newc[a] >= 0
-        out = [newc[a][keep] for a in kept]
-        r = tl.ravel(out, shape, [renum[a] for a in rows if a in renum], n=int(keep.sum()))
-        c = tl.ravel(out, shape, [renum[a] for a in cols if a in renum], n=int(keep.sum()))
-        M = tl.from_coo(
-            r, c, vals[keep], t.dtype, tl.prod(shape, layout.rows), tl.prod(shape, layout.cols)
-        )
-        _store(updater, M, shape, layout, fresh=True)
-        return
-    _store(updater, t._M[ridx, cidx], shape, layout)
+    if ridx is not None and cidx is not None:
+        listed = sum(x.size for x in (ridx, cidx) if isinstance(x, np.ndarray))
+        if not listed:
+            _store(updater, t._M[ridx, cidx], shape, layout)
+            return
+        ti = _ti(_nthreads(updater))
+        indexed = sum(1 for k in keys if not (isinstance(k, slice) and k == slice(None)))
+        nv = t._M._nvals
+        extract = C_X_ROW[ti] * tl.nonempty_rows(t._M) + C_X_LIST[ti] * listed
+        if extract <= (C_FILTER[ti] + C_FILTER_AXIS[ti] * indexed) * nv:
+            _store(updater, t._M[ridx, cidx], shape, layout)
+            return
+    # Filter the stored coordinates: cheaper than listing many indices (a slab of a wide
+    # column group), and the only way past _MAX_LISTED positions
+    r, c, vals = t._M.to_coo(sort=False)
+    r, c = r.view(np.int64), c.view(np.int64)
+    keep = np.ones(vals.size, bool)
+    for a in range(t.ndim):
+        s = sel[a]
+        if isinstance(keys[a], slice) and keys[a] == slice(None):
+            continue
+        coord = _axis_coords(r, c, t._shape, rows, cols, a)
+        if isinstance(s, int):
+            keep &= coord == s
+        else:
+            pos = np.full(t._shape[a], -1, np.int64)
+            pos[s] = np.arange(s.size)
+            keep &= pos[coord] >= 0
+    r, c, vals = r[keep], c[keep], vals[keep]
+    n = vals.size
+    out = {}
+    for a in kept:
+        coord = _axis_coords(r, c, t._shape, rows, cols, a)
+        s = sel[a]
+        if isinstance(keys[a], slice) and keys[a] == slice(None):
+            out[renum[a]] = coord
+        else:
+            pos = np.full(t._shape[a], -1, np.int64)
+            pos[s] = np.arange(s.size)
+            out[renum[a]] = pos[coord]
+    rr = tl.ravel(out, shape, layout.rows, n=n)
+    cc = tl.ravel(out, shape, layout.cols, n=n)
+    M = tl.from_coo(rr, cc, vals, t.dtype, tl.prod(shape, layout.rows), tl.prod(shape, layout.cols))
+    _store(updater, M, shape, layout, fresh=True)
+
+
+def _axis_coords(r, c, shape, rows, cols, axis):
+    """Coordinates along ``axis`` of entries at linear rows ``r`` and columns ``c``."""
+    group, lin = (rows, r) if axis in rows else (cols, c)
+    stride = tl.prod(shape, group[group.index(axis) + 1 :])
+    return (lin // stride) % shape[axis]
 
 
 def _reduce_scalar_recipe(updater, a, op, allow_empty):
