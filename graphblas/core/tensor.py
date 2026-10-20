@@ -1778,9 +1778,9 @@ def _reduce_recipe(updater, a, op, axes, keepdims, cast):
 MIN_ROW_ENTRIES = 1.5
 MIN_HYPER_ROW_ENTRIES = 32
 FULL_ROW_ENTRIES = 4
-# The sampled check costs about 4 ms; the exact one about 1.1 ns per entry (ravel, order check
-# and count), so sample only past 2^23 entries
-_SPLIT_SAMPLE = 2**16
+# The sampled check costs about 0.3 ms; the exact one about 1.1 ns per entry (ravel, order
+# check and count), so sorted input is sampled only past 2^23 entries
+_SPLIT_SAMPLE = 2**14
 _SPLIT_SAMPLE_PAST = 2**23
 
 
@@ -1802,18 +1802,23 @@ def _rows_ok(nvals, nonempty, positions, narrower_cols):
 def _data_split_layout(coords, shape, n):
     """``(layout, row index or None, settle)``: identity order split at the largest p whose
     rows hold enough entries each. A sample of the row keys rejects thin splits cheaply (its
-    distinct count can only err low, i.e. toward rows that look full). Otherwise sorted input
-    (C order, the common case) is judged exactly from its row keys, which the build then
-    reuses; unsorted input is built at that split and settled afterwards (``settle=True``).
+    distinct count can only err low, i.e. toward rows that look full): always for large
+    input, and for unsorted input, whose exact count would need a sort. Sorted input (C
+    order, the common case) is judged exactly from its row keys, which the build then
+    reuses; unsorted input is built at the split the sample allows and settled afterwards
+    (``settle=True``).
     """
     ndim = len(shape)
     seq = tuple(range(ndim))
     if math.prod(shape) >= tl.MAX_GROUP:
         # Reshape-based relayouts are unavailable; keep the shape-based rule
         return tl.default_layout(shape, n), None, False
-    sample = None
-    if n > _SPLIT_SAMPLE_PAST:
-        sample = np.random.default_rng(0).integers(0, n, _SPLIT_SAMPLE)
+    sample = np.random.default_rng(0).integers(0, n, min(n, _SPLIT_SAMPLE))
+
+    def thin_by_sample(p, positions, narrower_cols):
+        low = _sampled_nonempty_rows(coords, shape, seq[:p], n, sample)
+        return not _rows_ok(n, low, positions, narrower_cols)
+
     for p in range(ndim - 1, 0, -1):
         if not tl._valid_split(shape, seq, p):
             continue
@@ -1821,12 +1826,13 @@ def _data_split_layout(coords, shape, n):
         if positions * FULL_ROW_ENTRIES <= n:
             return Layout(seq[:p], seq[p:]), None, False  # full enough even if all nonempty
         narrower_cols = tl.prod(shape, seq[p - 1 :])
-        if sample is not None:
-            low = _sampled_nonempty_rows(coords, shape, seq[:p], n, sample)
-            if not _rows_ok(n, low, positions, narrower_cols):
-                continue
+        large = n > _SPLIT_SAMPLE_PAST
+        if large and thin_by_sample(p, positions, narrower_cols):
+            continue
         keys = tl.ravel(coords, shape, seq[:p], n=n)
         if not np.all(keys[1:] >= keys[:-1]):
+            if not large and thin_by_sample(p, positions, narrower_cols):
+                continue
             return Layout(seq[:p], seq[p:]), keys, True
         nonempty = int(np.count_nonzero(keys[1:] != keys[:-1])) + 1
         if _rows_ok(n, nonempty, positions, narrower_cols):
@@ -1841,9 +1847,9 @@ def _sampled_nonempty_rows(coords, shape, row_axes, n, sample):
     """A low estimate of the distinct row keys: the distinct count d in a sample of s
     entries, solving D * (1 - exp(-s / D)) = d (rows of equal size; skewed rows give less).
     """
-    keys = tl.ravel([c[sample] for c in coords], shape, row_axes)
+    keys = np.sort(tl.ravel([c[sample] for c in coords], shape, row_axes))
     s = sample.size
-    d = np.unique(keys).size
+    d = int(np.count_nonzero(keys[1:] != keys[:-1])) + 1  # np.unique is 3x slower
     if d >= s:
         return n
     lo, hi = float(d), float(n)
