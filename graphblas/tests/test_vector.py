@@ -1683,6 +1683,9 @@ def test_select_value_thunk_of_another_type():
         (i8, select.valuegt, -300, [0, 1, 2, 3]),
         (i8, select.valuegt, np.nan, []),
         (i8, select.valuene, np.nan, [0, 1, 2, 3]),
+        (i8, select.valuelt, np.inf, [0, 1, 2, 3]),
+        (i8, select.valuege, np.inf, []),
+        (i8, select.valuele, -np.inf, []),
         (i8, indexunary.valueeq, np.float64(2.0), [2]),
         (i8, select.valueeq, Scalar.from_value(1.0), [1]),
         (i8, select.valuelt, Scalar.from_value(300, dtype=dtypes.INT64), [0, 1, 2, 3]),
@@ -1694,10 +1697,23 @@ def test_select_value_thunk_of_another_type():
         (f32, select.valueeq, np.float64(0.1), []),
         (f32, select.valuegt, np.float64(0.1), [0, 1]),
         (f32, select.valuene, np.float64(0.1), [0, 1, 2]),
+        (f32, select.valuelt, np.float64(np.nan), []),
+        (f32, select.valuene, np.float64(np.nan), [0, 1, 2]),
         # A Python float beside FP32 is FP32 (NEP 50), as numpy compares it.
         (f32, select.valueeq, 0.1, [0]),
     ]:
         assert x.select(op, thunk).new().to_coo()[0].tolist() == kept, (x.dtype, op, thunk)
+    if dtypes._supports_complex:
+        # A real value equals a complex one only when its imaginary part is 0.
+        for x, op, thunk, kept in [
+            (i8, select.valueeq, 1 + 0j, [1]),
+            (i8, select.valueeq, 1 + 2j, []),
+            (i8, select.valuene, 1 + 2j, [0, 1, 2, 3]),
+            (f32, select.valueeq, np.complex64(1), [1]),
+        ]:
+            assert x.select(op, thunk).new().to_coo()[0].tolist() == kept, (x.dtype, op, thunk)
+    with pytest.raises(EmptyObject):
+        i8.select(select.valueeq, Scalar(dtypes.INT64)).new()
     A = Matrix.from_coo([0, 0, 1], [0, 1, 1], [1, 100, -5], dtype=dtypes.INT8)
     assert A.select(select.valueeq, 1.0).new().to_coo()[2].tolist() == [1]
     assert A.select(select.valuelt, 300).new().nvals == 3
