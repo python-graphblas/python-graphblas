@@ -1618,6 +1618,45 @@ def test_packed_nested_record_layout_skips_jit():
     assert udt.jit_c_definition is None
 
 
+@pytest.mark.skipif("not supports_udfs")
+def test_record_layouts_c_cannot_declare_skip_jit():
+    """A record whose fields a C struct cannot lay out the same way skips the JIT.
+
+    Explicit offsets can give a record a C struct's size with a field
+    somewhere else, as can such a record nested in one whose own offsets
+    match. A nested record with an array field has no C struct here, so the
+    record holding it has none either. Each computes with the cfunc.
+    """
+    if _IS_SSGB7:
+        pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
+
+    # Same size as the C struct (8 bytes), but the int32 at offset 1, not 4.
+    offset = np.dtype(
+        {
+            "names": ["ol_a", "ol_b"],
+            "formats": [np.int8, np.int32],
+            "offsets": [0, 1],
+            "itemsize": 8,
+        }
+    )
+    outer = np.dtype([("ol_in", offset), ("ol_z", np.float64)])
+    with_array = np.dtype(
+        [("ol_x", np.float64), ("ol_rec", [("ol_v", np.float64, (2,)), ("ol_w", np.float64)])],
+        align=True,
+    )
+    for np_type, value, doubled in [
+        (offset, (1, 400), (2, 800)),
+        (outer, ((1, 400), 2.5), ((2, 800), 5.0)),
+        (with_array, (1.5, ([2, 3], 4)), (3.0, ([4, 6], 8))),
+    ]:
+        udt = dtypes.register_anonymous(np_type)
+        assert udt.jit_c_name is None
+        assert udt.jit_c_definition is None
+        v = gb.Vector(udt, 1)
+        v[0] = value
+        assert ((v + v).new().to_coo()[1] == np.array([doubled], dtype=np_type)).all()
+
+
 @pytest.mark.slow
 @pytest.mark.skipif("not supports_udfs")
 def test_nested_record_udt_jits():
