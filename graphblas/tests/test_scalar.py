@@ -11,7 +11,7 @@ import pytest
 import graphblas as gb
 from graphblas import backend, binary, dtypes, monoid, replace, select, unary
 from graphblas.core.ss import version_major as ss_version_major  # noqa: F401 (used in skipif)
-from graphblas.exceptions import EmptyObject
+from graphblas.exceptions import EmptyObject, NullPointer
 
 from .conftest import autocompute, compute, pypy
 
@@ -333,6 +333,24 @@ def test_nvals(s):
     assert s.nvals == 1
     s.clear()
     assert s.nvals == 0
+
+
+def test_nvals_raises_the_graphblas_error():
+    # No call leaves a Scalar without its GraphBLAS object, as ss.export(give_ownership=True)
+    # does a Matrix or Vector, so set it to NULL the way that does. The count lands in a C
+    # scalar, and the error was an EmptyObject about that scalar.
+    s = Scalar.from_value(1.5, is_cscalar=False)  # pragma: is_grbscalar
+    gb_obj = s.gb_obj[0]
+    s.gb_obj[0] = gb.core.NULL
+    try:
+        with pytest.raises(NullPointer) as expected:
+            s._nvals
+        with pytest.raises(NullPointer) as got:
+            s.nvals
+        assert str(got.value) == str(expected.value)
+    finally:
+        s.gb_obj[0] = gb_obj
+    assert s.value == 1.5
 
 
 def test_unsupported_ops(s):

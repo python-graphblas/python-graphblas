@@ -504,7 +504,7 @@ class Vector(BaseType):
     def size(self):
         """Size of the Vector."""
         scalar = _scalar_index("s_size")
-        call("GrB_Vector_size", [_Pointer(scalar), self])
+        call("GrB_Vector_size", [_Pointer(scalar, exc_arg=self), self])
         return scalar.gb_obj[0]
 
     @property
@@ -516,7 +516,7 @@ class Vector(BaseType):
     def nvals(self):
         """Number of non-empty values in the Vector."""
         scalar = _scalar_index("s_nvals")
-        call("GrB_Vector_nvals", [_Pointer(scalar), self])
+        call("GrB_Vector_nvals", [_Pointer(scalar, exc_arg=self), self])
         return scalar.gb_obj[0]
 
     @property
