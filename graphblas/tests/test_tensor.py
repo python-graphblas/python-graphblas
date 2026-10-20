@@ -2051,7 +2051,9 @@ def _states_along(state, path):
     return out
 
 
-def test_default_split_follows_nonempty_rows():
+def test_default_split_follows_nonempty_rows(monkeypatch):
+    from graphblas.core import tensor
+
     rng = np.random.default_rng(61)
     # Every (i, j) row holds 5 entries: the rows are well filled, so (0,1|2)
     shape = (10, 12, 50)
@@ -2084,16 +2086,18 @@ def test_default_split_follows_nonempty_rows():
     T = Tensor.from_coo((i2, j2, k2), 1.0, shape=shape)
     assert T.layout == Layout((0,), (1, 2))
     T._check_invariants()
-    # Large sample-checked cases (more entries than the sample size). About 2 entries per
-    # (i, j) row: thin rows are kept only when (0|1,2)'s column group would be wider than the
-    # data (400 * 2000 positions for 2e5 entries), not when it is narrower (400 * 50).
-    for big, expected in [
-        ((300, 400, 2000), Layout((0, 1), (2,))),
-        ((300, 400, 50), Layout((0,), (1, 2))),
-    ]:
-        lin = np.unique(rng.integers(0, math.prod(big), 200_000))
-        T = Tensor.from_coo(np.unravel_index(lin, big), 1.0, shape=big)
-        assert T.layout == expected
+    # About 2 entries per (i, j) row: thin rows are kept only when (0|1,2)'s column group
+    # would be wider than the data (400 * 2000 positions for 2e5 entries), not when it is
+    # narrower (400 * 50); exact, and with the sampled check first
+    for past in [2**23, 2**16]:
+        monkeypatch.setattr(tensor, "_SPLIT_SAMPLE_PAST", past)
+        for big, expected in [
+            ((300, 400, 2000), Layout((0, 1), (2,))),
+            ((300, 400, 50), Layout((0,), (1, 2))),
+        ]:
+            lin = np.unique(rng.integers(0, math.prod(big), 200_000))
+            T = Tensor.from_coo(np.unravel_index(lin, big), 1.0, shape=big)
+            assert T.layout == expected
     # 4-d moves the split one axis at a time
     coords = [rng.integers(0, n, 40) for n in (5, 6, 7, 8)]
     lin = np.unique(np.ravel_multi_index(coords, (5, 6, 7, 8)))

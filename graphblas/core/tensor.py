@@ -1778,7 +1778,10 @@ def _reduce_recipe(updater, a, op, axes, keepdims, cast):
 MIN_ROW_ENTRIES = 1.5
 MIN_HYPER_ROW_ENTRIES = 32
 FULL_ROW_ENTRIES = 4
+# The sampled check costs about 4 ms; the exact one about 1.1 ns per entry (ravel, order check
+# and count), so sample only past 2^23 entries
 _SPLIT_SAMPLE = 2**16
+_SPLIT_SAMPLE_PAST = 2**23
 
 
 def _rows_ok(nvals, nonempty, positions, narrower_cols):
@@ -1809,7 +1812,7 @@ def _data_split_layout(coords, shape, n):
         # Reshape-based relayouts are unavailable; keep the shape-based rule
         return tl.default_layout(shape, n), None, False
     sample = None
-    if n > _SPLIT_SAMPLE:
+    if n > _SPLIT_SAMPLE_PAST:
         sample = np.random.default_rng(0).integers(0, n, _SPLIT_SAMPLE)
     for p in range(ndim - 1, 0, -1):
         if not tl._valid_split(shape, seq, p):
@@ -2819,10 +2822,11 @@ def _group_index(shape, axes, sel, keys):
 # Extraction costs (ns, 8 / 1 threads, measured 2026-10-20): a GraphBLAS extract pays per
 # nonempty row and per listed index of each group (u7 X[:, :, k]: 1e6 rows, one index, 3.9 ms;
 # hyper (2^19)^3 X[:, :, k]: 4.5e5 rows, 2^19 indices, 8.6 ms); filtering the coordinates pays
-# per stored entry and per indexed axis (hyper 2.4 ms for 1e6 entries).
+# per stored entry and per indexed axis (hyper 2.4 ms for 1e6 entries; u6 X[:, :, k0:k1] at
+# 1 thread 8.4 ms for 1e6, where the extract took 3.6).
 C_X_ROW = (3.9, 19.0)
 C_X_LIST = (13.0, 74.0)
-C_FILTER = (2.4, 4.6)
+C_FILTER = (2.4, 7.0)
 C_FILTER_AXIS = (1.0, 1.5)
 
 
