@@ -1704,14 +1704,60 @@ def test_select_value_thunk_of_another_type():
     ]:
         assert x.select(op, thunk).new().to_coo()[0].tolist() == kept, (x.dtype, op, thunk)
     if dtypes._supports_complex:
-        # A real value equals a complex one only when its imaginary part is 0.
+        # A real value equals a complex one only when its imaginary part is 0, and
+        # a complex value equals a thunk of another type only when that converts
+        # exactly. Complex values have no order, so only valueeq and valuene apply.
+        fc32 = Vector.from_coo(
+            [0, 1, 2, 3, 4, 5, 6],
+            [1, 2 + 1j, 3, np.nan, np.complex64(0.1), np.inf, np.complex64(1 + 0.1j)],
+            dtype=dtypes.FC32,
+        )
+        fc64 = Vector.from_coo([0, 1, 2], [1, 2 + 1j, 0.1], dtype=dtypes.FC64)
+        # Compared exactly, as floats are: 2**53 + 1 is not the float it rounds to.
+        big32 = Vector.from_coo([0, 1], [2**53, 2**24], dtype=dtypes.FC32)
+        bigf32 = Vector.from_coo([0, 1], [2**53, 2**24], dtype=dtypes.FP32)
         for x, op, thunk, kept in [
             (i8, select.valueeq, 1 + 0j, [1]),
             (i8, select.valueeq, 1 + 2j, []),
             (i8, select.valuene, 1 + 2j, [0, 1, 2, 3]),
             (f32, select.valueeq, np.complex64(1), [1]),
+            (f32, select.valueeq, np.complex128(0.1), []),  # float32(0.1) is not 0.1
+            (f32, select.valuene, np.complex128(1 + 2j), [0, 1, 2]),
+            (fc32, select.valueeq, np.complex128(1), [0]),
+            (fc32, select.valueeq, np.complex128(2 + 1j), [1]),
+            (fc32, select.valueeq, np.complex64(2 + 1j), [1]),
+            (fc32, select.valueeq, 3, [2]),
+            (fc32, select.valuene, np.complex128(2 + 1j), [0, 2, 3, 4, 5, 6]),
+            (fc32, select.valueeq, np.float64(3), [2]),
+            (fc32, select.valueeq, np.int64(3), [2]),
+            (fc32, select.valuene, np.int64(3), [0, 1, 3, 4, 5, 6]),
+            (fc32, select.valueeq, np.complex64(0.1), [4]),
+            (fc32, select.valueeq, np.complex128(0.1), []),  # complex64(0.1) is not 0.1
+            (fc32, select.valuene, np.complex128(0.1), [0, 1, 2, 3, 4, 5, 6]),
+            (fc32, select.valueeq, np.complex128(complex(np.nan, 0)), []),
+            (fc32, select.valueeq, np.float64(np.inf), [5]),
+            (fc32, select.valueeq, np.complex128(1e300), []),  # inf as complex64, not 1e300
+            (fc32, select.valuene, np.complex128(1e300), [0, 1, 2, 3, 4, 5, 6]),
+            (fc32, select.valueeq, np.complex64(1 + 0.1j), [6]),
+            (fc32, select.valueeq, np.complex128(1 + 0.1j), []),  # in the imaginary part
+            (fc32, indexunary.valueeq, np.complex128(2 + 1j), [1]),
+            (fc32, select.valueeq, Scalar.from_value(np.complex128(2 + 1j)), [1]),
+            (big32, select.valueeq, np.int64(2**53), [0]),
+            (big32, select.valueeq, np.int64(2**53 + 1), []),
+            (bigf32, select.valueeq, np.int64(2**53 + 1), []),
+            (fc64, select.valueeq, np.complex128(2 + 1j), [1]),
+            (fc64, select.valueeq, np.complex64(0.1), []),  # complex64(0.1) is not 0.1
+            (fc64, select.valueeq, np.float64(0.1), [2]),
+            (fc64, select.valuene, np.int64(1), [1, 2]),
+            (fc64, select.valueeq, 1, [0]),
         ]:
             assert x.select(op, thunk).new().to_coo()[0].tolist() == kept, (x.dtype, op, thunk)
+        with pytest.raises(KeyError, match="valuelt does not work with FC64"):
+            fc32.select(select.valuelt, np.complex128(1))
+        C = Matrix.from_coo([0, 0, 1], [0, 1, 1], [1, 2 + 1j, 3], dtype=dtypes.FC32)
+        equal = C.select(select.valueeq, np.complex128(2 + 1j)).new()
+        assert equal.to_coo()[2].tolist() == [2 + 1j]
+        assert C.select(select.valuene, np.int64(3)).new().nvals == 2
     with pytest.raises(EmptyObject):
         i8.select(select.valueeq, Scalar(dtypes.INT64)).new()
     A = Matrix.from_coo([0, 0, 1], [0, 1, 1], [1, 100, -5], dtype=dtypes.INT8)

@@ -25,9 +25,11 @@ def _value_select_in_own_type(op, dtype, thunk, given):
     same elements: for integers, ``x < 2.5`` is ``x < 3``, and a thunk no
     element can equal, or that every element passes, selects nothing or
     everything; for floats, the thunk is rounded toward the side that keeps
-    the comparison exact. ``given`` is the thunk as the caller gave it, whose
-    value is exact where ``thunk`` may have rounded it (an int beyond 64 bits
-    is FP64). Other ops and types are returned unchanged.
+    the comparison exact; for complex numbers, which have no order, a thunk
+    that does not convert exactly equals no element. ``given`` is the thunk as
+    the caller gave it, whose value is exact where ``thunk`` may have rounded
+    it (an int beyond 64 bits is FP64). Other ops and types are returned
+    unchanged.
     """
     # MAINT 2026-10-07: works around the SuiteSparse:GraphBLAS bug above (seen in
     # 8.0.2 through 10.6.0; fix proposed in DrTimothyAldenDavis/GraphBLAS#463).
@@ -47,22 +49,31 @@ def _value_select_in_own_type(op, dtype, thunk, given):
     if (
         parent is not getattr(select, name)
         and parent is not getattr(indexunary, name)
-        or dtype.np_type.kind not in "biuf"
+        or dtype.np_type.kind not in "biufc"
         or thunk._is_empty
     ):
         return op, thunk
     value = given.value if type(given) is Scalar else given
     if isinstance(value, (np.generic, np.ndarray)):
         value = value.item()
-    if isinstance(value, complex):
+    np_type = dtype.np_type
+    if isinstance(value, complex) and np_type.kind != "c":
         if value.imag != 0:
             if name not in {"valueeq", "valuene"}:  # pragma: no cover (no complex order)
                 return op, thunk
             value = math.nan  # equal to nothing, as a complex number is to a real one
         else:
             value = value.real
-    np_type = dtype.np_type
-    if np_type.kind == "f":
+    if np_type.kind == "c":
+        # Only valueeq and valuene take complex values. The thunk is compared
+        # exactly, as for floats: one that does not convert exactly (2**53 + 1
+        # beside complex64, or a NaN part) equals no element, as NaN does.
+        with np.errstate(over="ignore", invalid="ignore"):
+            near = np_type.type(value)
+        real, imag = (value.real, value.imag) if isinstance(value, complex) else (value, 0)
+        exact = float(near.real) == real and float(near.imag) == imag
+        new_name, new_value = name, near if exact else np_type.type(complex(math.nan, math.nan))
+    elif np_type.kind == "f":
         nan, ftype = np_type.type(np.nan), np_type.type
         if value != value:  # NaN: only ``!=`` holds, for every element
             new_name, new_value = name, nan
