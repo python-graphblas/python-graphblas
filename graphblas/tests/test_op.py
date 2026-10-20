@@ -4631,6 +4631,7 @@ def test_udt_literal_converts_only_when_exact():
         (lambda: when.apply(second, right=(datetime.date(1970, 1, 1), 1.5)), "_ExactDate"),
         (lambda: when.apply(second, right=("1970-01-01", 1.5)), "_ExactDate"),
         (lambda: when.apply(second, right=(np.datetime64(5, "ms"), 1)), "_ExactDate"),
+        (lambda: when.apply(second, right=(np.timedelta64(5, "s"), 1)), "_ExactDate"),
         (lambda: v.ewise_union(w, udf, 0.5, 0), "_ExactArr"),
         (lambda: v.ewise_union(w, udf, 0, 0.5), "_ExactArr"),
         (
@@ -4666,6 +4667,7 @@ def test_udt_literal_converts_only_when_exact():
         (lambda: r.apply(second, right=(np.int64(2), 0.5)), "_ExactRec"),
         (lambda: n.apply(second, right=([1, 2.0], 3)), "_ExactNested"),
         (lambda: t.apply(second, right=text_literal), "_ExactText"),
+        (lambda: when.apply(second, right=("1970-01-01", 2.0)), "_ExactDate"),  # a date as text
     ]:
         with pytest.warns(DeprecationWarning, match=re.escape(f"does not fit {typed_as}")):
             expr()
