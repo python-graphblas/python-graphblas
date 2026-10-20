@@ -256,6 +256,9 @@ class UnaryOp(OpBase):
     def _compile_udt(self, dtype, dtype2):
         if dtype in self._udt_types:
             return self._udt_ops[dtype]
+        from ..udt import _refuse_half
+
+        _refuse_half(self, dtype)
         # See the matching note in ``BinaryOp._compile_udt``: plain-scalar
         # misses on UDT-dispatch-enabled ops get the legacy message.
         if not dtype._is_udt and self._numba_func is None:
