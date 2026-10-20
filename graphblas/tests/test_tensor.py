@@ -1945,3 +1945,63 @@ def test_mttkrp_large_dims():
     check(
         R, np.where(present[:, None], expected, 0), np.repeat(present[:, None], 8, 1), approx=True
     )
+
+
+def _small_tensor(shape, rng, layout=None):
+    """random_tensor, also for 0-d shapes."""
+    if shape:
+        return random_tensor(shape, rng, layout=layout, density=0.6)
+    if rng.random() < 0.8:
+        value = np.round(rng.random() * 10 - 5, 1)
+        return Tensor.from_coo((), value), np.array(value), np.array(True)
+    return Tensor(float), np.array(0.0), np.array(False)
+
+
+def _shapes_12(ndim):
+    return list(itertools.product((1, 2), repeat=ndim))
+
+
+@pytest.mark.parametrize("xndim", [1, 2, 3])
+def test_broadcast_sweep(xndim):
+    """Every shape pair over sizes {1, 2} (lower rank and 0-d too), both operand orders,
+    several layouts: a lower-rank operand whose missing axes are size 1 still covers the
+    result (broadcast factor 1) and once took the wrong code path.
+    """
+    rng = np.random.default_rng(58)
+    ops = [
+        ("mult", binary.times, np.multiply),
+        ("mult", binary.minus, np.subtract),
+        ("mult", binary.lt, np.less),
+        ("add", binary.plus, np.add),
+        ("union", binary.minus, np.subtract),
+    ]
+    for xshape in _shapes_12(xndim):
+        xlayouts = all_layouts(xndim)
+        for li in {0, len(xlayouts) // 2, len(xlayouts) - 1}:
+            X, xv, xp = _small_tensor(xshape, rng, layout=xlayouts[li])
+            for yndim in range(xndim + 1):
+                for yshape in _shapes_12(yndim):
+                    ylayouts = all_layouts(yndim)
+                    ylay = ylayouts[rng.integers(len(ylayouts))] if yndim else None
+                    Y, yv, yp = _small_tensor(yshape, rng, layout=ylay)
+                    for kind, op, ufunc in ops:
+                        for (A, av, ap), (B, bv, bp) in [
+                            ((X, xv, xp), (Y, yv, yp)),
+                            ((Y, yv, yp), (X, xv, xp)),
+                        ]:
+                            if kind == "mult":
+                                R = A.ewise_mult(B, op).new()
+                                ev, ep = np_bcast("mult", av, ap, bv, bp, ufunc)
+                            elif kind == "add":
+                                R = A.ewise_add(B, op).new()
+                                ev, ep = np_bcast("add", av, ap, bv, bp, ufunc)
+                            else:
+                                R = A.ewise_union(B, op, 1, -1).new()
+                                ev, ep = np_bcast("union", av, ap, bv, bp, ufunc, 1, -1)
+                            check(R, ev, ep, approx=R.dtype != dtypes.BOOL)
+
+
+def test_relayout_rejects_layout_of_another_rank():
+    T = Tensor.from_coo(([0], [2]), [5.0], shape=(1, 4))
+    with pytest.raises(ValueError, match="does not match"):
+        tl.relayout(T.ss.matrix, (1, 1, 4), T.layout, Layout((0,), (1, 2)))
