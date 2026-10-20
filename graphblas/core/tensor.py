@@ -41,7 +41,7 @@ from .tensor_layout import Layout
 from .utils import output_type
 from .vector import Vector
 
-__all__ = ["Layout", "Tensor", "TensorExpression"]
+__all__ = ["Layout", "Tensor", "TensorExpression", "einsum"]
 
 
 def _check_backend():
@@ -790,9 +790,39 @@ class Tensor(BaseType):
         ``axes`` is an int N (the last N axes of this Tensor with the first N of ``other``)
         or a pair of axis sequences. The result has this Tensor's free axes, then those of
         ``other``. ``op`` is the semiring; a position is present when at least one pair of
-        entries meets there. Batch axes (``matmul``) are not implemented yet.
+        entries meets there. ``other`` may be a Tensor, Matrix, Vector or ndarray.
+
+        A vector contracted over an axis inside one group of the stored layout (TTV) scales
+        by a diagonal and reduces with a selector, without moving the data (DESIGN.md 3.3).
         """
         return _tensordot_expr(self, other, axes, op)
+
+    def mttkrp(self, factors, mode, op=semiring.plus_times):
+        """Matricized tensor times Khatri-Rao product for ``mode``: an (I_mode x R) Tensor.
+
+        ``factors`` holds one (I_n x R) factor per axis (Matrix or ndarray; the entry for
+        ``mode`` is ignored). For 3-d mode 0 this is ``einsum('ijk,jr,kr->ir', X, B, C)``,
+        computed as one TTM and then one product per remaining axis against an (I_n R x R)
+        embedding of its factor, never materializing the Khatri-Rao product (DESIGN.md 3.7).
+        """
+        return _mttkrp_expr(self, factors, mode, op)
+
+    def unfold(self, mode, order="C"):
+        """The mode-``mode`` unfolding as a Matrix of shape (I_mode, prod(other sizes)).
+
+        ``order="C"`` (numpy and tensorly): the other axes in increasing order, the last
+        varying fastest, as ``np.moveaxis(X, mode, 0).reshape(I_mode, -1)``. ``order="F"``
+        (Kolda and Bader): the first of the other axes varies fastest.
+        """
+        mode = _normalize_axis(mode, self.ndim)
+        others = tuple(a for a in range(self.ndim) if a != mode)
+        if order in {"F", "f", "fortran"}:
+            others = others[::-1]
+        elif order not in {"C", "c"}:
+            raise ValueError(f"order must be 'C' or 'F', not {order!r}")
+        target = tl.as_layout(((mode,), others), self._shape)
+        M, _ = tl.relayout(self._M, self._shape, self._layout, target)
+        return M.dup() if M is self._M else M
 
     def reduce_scalar(self, op=monoid.plus, *, allow_empty=True):
         """Reduce all entries to a Scalar."""
@@ -1783,7 +1813,9 @@ def _tensordot_axes(axes, ndim_a, ndim_b):
 
 
 def _tensordot_expr(self, other, axes, op):
-    other = self._expect_type(other, Tensor, within="tensordot", argname="other", op=op)
+    if (tensor := _as_tensor(other, "tensordot")) is None:
+        self._expect_type(other, Tensor, within="tensordot", argname="other", op=op)
+    other = tensor
     a_axes, b_axes = _tensordot_axes(axes, self.ndim, other.ndim)
     for x, y in zip(a_axes, b_axes, strict=True):
         if self._shape[x] != other._shape[y]:
@@ -1975,13 +2007,343 @@ def _squeezed_batch(t, bshape):
     return (t.squeeze(drop) if drop else t), out
 
 
+def _ttv(updater, x, w, axis, op, x_left):
+    """TTV: ``x`` contracted with the 1-d ``w`` over ``axis``. Returns False when the general
+    contraction should be used instead (the axis is a whole group of its own).
+    """
+    rows, cols = x._layout
+    group = cols if axis in cols else rows
+    if len(group) < 2 and cols != (axis,):
+        return False
+    mult = op.binaryop
+    shape = tuple(n for a, n in enumerate(x._shape) if a != axis)
+    kept = [a for a in range(x.ndim) if a != axis]
+    renum = {a: i for i, a in enumerate(kept)}
+    nthreads = updater.opts.get("nthreads")
+    if cols == (axis,):
+        flip = mult if x_left else getattr(mult, "commutes_to", None)
+        if flip is None:
+            return False
+        sr = op if x_left else get_semiring(op.monoid, flip)
+        v = Vector(op.return_type, x._M._nrows)
+        wv = _in_layout(w, Layout((), (0,)), nthreads)[0, :].new()
+        v(**updater.opts) << x._M.mxv(wv, sr)
+        out = Layout((), tuple(renum[a] for a in rows))
+        _store(updater, tl.steal_vector_as_row(v), shape, out, fresh=True)
+        return True
+    if not _selector_ok(tl.prod(x._shape, group), x._M._nvals) or tl.density(x._M):
+        return False
+    # Scale by w along `axis` (a diagonal over the group), then reduce `axis` with a selector
+    wb = w.expand_dims(tuple(a for a in range(x.ndim) if a != axis))
+    scaled = Tensor(op.return_type, x._shape)
+    a, b = (x, wb) if x_left else (wb, x)
+    _bcast_mult(scaled(**updater.opts), a, b, mult, mult, x._shape)
+    M, lay = _reduce_matrix(scaled._M, x._shape, scaled._layout, {axis}, op.monoid, updater.opts)
+    _store(updater, M, shape, _renumber(lay, renum), fresh=True)
+    return True
+
+
 def _tensordot_recipe(updater, a, b, op, a_axes, b_axes):
+    if len(a_axes) == 1 and (b.ndim == 1 or a.ndim == 1) and a.ndim + b.ndim > 2:
+        x_left = b.ndim == 1
+        x, w, axis = (a, b, a_axes[0]) if x_left else (b, a, b_axes[0])
+        if _ttv(updater, x, w, axis, op, x_left):
+            return
     src, layout, shape = _contract(updater, a, b, op, a_axes, b_axes)
     if not layout.cols and layout.rows and _fixed_layout(updater) is None:
         M, layout = _healthy(_materialize(src), shape, layout)
         _store(updater, M, shape, layout, fresh=True)
     else:
         _store(updater, src, shape, layout)
+
+
+def _as_factor(F, nrows, within):
+    """A factor matrix (Matrix or ndarray) with ``nrows`` rows, as a Matrix."""
+    if isinstance(F, np.ndarray):
+        if F.ndim != 2:
+            raise ValueError(f"{within}: factors must be 2-d; got shape {F.shape}")
+        F = Matrix.from_dense(F)
+    elif output_type(F) is Tensor:
+        F = _compute(F, within).to_matrix()
+    elif type(F) is not Matrix:
+        raise TypeError(f"{within}: a factor must be a Matrix or ndarray, not {type(F)}")
+    if F._nrows != nrows:
+        raise DimensionMismatch(f"{within}: a factor has {F._nrows} rows; expected {nrows}")
+    return F
+
+
+def _mttkrp_expr(self, factors, mode, op):
+    mode = _normalize_axis(mode, self.ndim)
+    if self.ndim < 2:
+        raise ValueError("mttkrp needs at least 2 dimensions")
+    if len(factors) != self.ndim:
+        raise ValueError(f"mttkrp needs {self.ndim} factors (one per axis); got {len(factors)}")
+    others = [a for a in range(self.ndim) if a != mode]
+    mats = {a: _as_factor(factors[a], self._shape[a], "mttkrp") for a in others}
+    ranks = {M._ncols for M in mats.values()}
+    if len(ranks) != 1:
+        raise DimensionMismatch(f"mttkrp: factors have different ranks {sorted(ranks)}")
+    R = ranks.pop()
+    op = get_typed_op(op, self.dtype, mats[others[0]].dtype, kind="semiring")
+    self._expect_op(op, "Semiring", within="mttkrp", argname="op")
+    return TensorExpression(
+        "mttkrp",
+        _mttkrp_recipe,
+        [self],
+        (self, mats, mode, R, op),
+        dtype=op.return_type,
+        shape=(self._shape[mode], R),
+        op=op,
+        expr_repr="{0.name}.mttkrp(mode=%d, op={op})" % mode,  # noqa: UP031
+    )
+
+
+def _krp_embedding(F, R):
+    """W with ``W[j * R + r, r] = F[j, r]``: one product with it sums over j for each r."""
+    j, r, v = F.to_coo()
+    j = j.astype(np.int64)
+    r = r.astype(np.int64)
+    return tl.from_coo(j * R + r, r, v, F.dtype, F._nrows * R, R)
+
+
+def _mttkrp_recipe(updater, x, mats, mode, R, op):
+    others = [a for a in range(x.ndim) if a != mode]
+    last = others[-1]
+    rest = tuple(others[:-1])
+    nthreads = updater.opts.get("nthreads")
+    # 1. TTM over the last axis: (mode, rest | last) @ F_last -> (mode, rest | r)
+    X = _in_layout(x, tl.as_layout(((mode, *rest), (last,)), x._shape), nthreads)
+    T = tl.new_matrix(op.return_type, X._nrows, R)
+    T(**updater.opts) << X.mxm(mats[last], op)
+    # 2. Each remaining axis: move it next to r, then one product with its embedding
+    rows = (mode, *rest)
+    for a in reversed(rest):
+        rows = rows[:-1]
+        T.ss.reshape(tl.prod(x._shape, rows), x._shape[a] * R, inplace=True)
+        out = tl.new_matrix(op.return_type, T._nrows, R)
+        out(**updater.opts) << T.mxm(_krp_embedding(mats[a], R), op)
+        T = out
+    _store(updater, T, (x._shape[mode], R), Layout((0,), (1,)), fresh=True)
+
+
+# ---------------------------------------------------------------------------------------------
+# einsum
+
+
+def einsum(subscripts, *operands, op=semiring.plus_times, optimize="greedy"):
+    """Einstein summation over sparse Tensors with a semiring (numpy.einsum subscripts).
+
+    ``op``'s multiply combines the operands and its monoid sums over the contracted indices;
+    a result position is present when at least one term exists. Operands may be Tensors,
+    Matrices, Vectors or ndarrays. Each index appears at most once per operand (no
+    diagonals) and ``...`` is not supported. With three or more operands the pairwise order
+    comes from ``opt_einsum.contract_path`` when it is installed (else a greedy choice by
+    result size); the MTTKRP pattern (``'ijk,jr,kr->ir'``) goes to ``Tensor.mttkrp`` instead,
+    which never forms the Khatri-Rao product.
+    """
+    if "." in subscripts:
+        raise NotImplementedError("einsum: `...` is not supported")
+    subscripts = subscripts.replace(" ", "")
+    if "->" in subscripts:
+        inputs, output = subscripts.split("->")
+    else:
+        inputs, output = subscripts, None
+    terms = inputs.split(",")
+    if len(terms) != len(operands):
+        raise ValueError(f"einsum: {len(terms)} terms for {len(operands)} operands")
+    tensors = []
+    for term, x in zip(terms, operands, strict=True):
+        if (t := _as_tensor(x, "einsum")) is None:
+            raise TypeError(f"einsum operands must be Tensor-like, not {type(x)}")
+        if len(term) != t.ndim:
+            raise ValueError(f"einsum: term {term!r} does not match an operand of shape {t._shape}")
+        if len(set(term)) != len(term):
+            raise NotImplementedError(f"einsum: repeated index in {term!r} (a diagonal)")
+        tensors.append(t)
+    sizes = {}
+    for term, t in zip(terms, tensors, strict=True):
+        for c, n in zip(term, t._shape, strict=True):
+            if sizes.setdefault(c, n) != n:
+                raise DimensionMismatch(f"einsum: index {c!r} has sizes {sizes[c]} and {n}")
+    if output is None:
+        counts = {}
+        for term in terms:
+            for c in term:
+                counts[c] = counts.get(c, 0) + 1
+        output = "".join(sorted(c for c, k in counts.items() if k == 1))
+    if len(set(output)) != len(output) or any(c not in sizes for c in output):
+        raise ValueError(f"einsum: bad output {output!r}")
+    dtype = tensors[0].dtype
+    for t in tensors[1:]:
+        dtype = unify(dtype, t.dtype)
+    typed = get_typed_op(op, dtype, dtype, kind="semiring")
+    if typed.opclass != "Semiring":
+        raise TypeError(f"einsum needs a Semiring, not {typed.opclass}")
+    return TensorExpression(
+        "einsum",
+        _einsum_recipe,
+        tensors,
+        (terms, output, tensors, typed, optimize),
+        dtype=typed.return_type,
+        shape=tuple(sizes[c] for c in output),
+        op=typed,
+        expr_repr=f"einsum({subscripts!r}, ...)".replace("{", "{{").replace("}", "}}"),
+    )
+
+
+def _mttkrp_pattern(terms, output, tensors):
+    """``(index of X, factors, mode, rank first)`` when the einsum is an MTTKRP: one operand X
+    of 3+ axes, and 2-d factors that each pair one index of X with a common rank index r,
+    covering every index of X but the mode's, with output (mode, r) or (r, mode).
+    """
+    big = [i for i, t in enumerate(terms) if len(t) >= 3]
+    if len(terms) < 3 or len(output) != 2 or len(big) != 1:
+        return None
+    xi = big[0]
+    xterm = terms[xi]
+    mats = [None] * len(xterm)
+    ranks = set()
+    for i, term in enumerate(terms):
+        if i == xi:
+            continue
+        inside = [c for c in term if c in xterm]
+        if len(term) != 2 or len(inside) != 1:
+            return None
+        r = term[1] if term[0] == inside[0] else term[0]
+        ranks.add(r)
+        ax = xterm.index(inside[0])
+        if mats[ax] is not None:
+            return None
+        F = tensors[i].to_matrix()
+        mats[ax] = F if term[0] == inside[0] else F.T.new()
+    missing = [ax for ax, F in enumerate(mats) if F is None]
+    if len(ranks) != 1 or len(missing) != 1:
+        return None
+    r = ranks.pop()
+    mode = missing[0]
+    if set(output) != {xterm[mode], r}:
+        return None
+    return xi, mats, mode, output[0] == r
+
+
+def _einsum_recipe(updater, terms, output, tensors, op, optimize):
+    if (mt := _mttkrp_pattern(terms, output, tensors)) is not None:
+        xi, mats, mode, transposed = mt
+        R = tensors[xi].mttkrp(mats, mode, op).new(**updater.opts)
+        result, letters = R, (output[1] + output[0]) if transposed else output
+    else:
+        ops = list(zip(terms, tensors, strict=True))
+        path = _einsum_path(terms, output, tensors, optimize)
+        for i, j in path:
+            (ta, A), (tb, B) = ops[i], ops[j]
+            for k in sorted((i, j), reverse=True):
+                del ops[k]
+            keep = set(output).union(*(t for t, _ in ops))
+            ops.append(_einsum_pair(ta, A, tb, B, keep, op, updater.opts))
+        ((letters, result),) = ops
+        extra = [k for k, c in enumerate(letters) if c not in output]
+        if extra:
+            result = result.reduce(op.monoid, axis=tuple(extra)).new(**updater.opts)
+            letters = "".join(c for c in letters if c in output)
+    final = result.permute_dims(tuple(letters.index(c) for c in output))
+    _store(updater, final._M, final._shape, final._layout, share=final)
+
+
+def _einsum_path(terms, output, tensors, optimize):
+    n = len(terms)
+    if n == 1:
+        return []
+    if n > 2 and optimize:
+        try:
+            import opt_einsum
+        except ImportError:
+            pass
+        else:
+            sub = ",".join(terms) + "->" + output
+            shapes = [t._shape for t in tensors]
+            return [tuple(p) for p in opt_einsum.contract_path(sub, *shapes, shapes=True,
+                                                               optimize=optimize)[0]]  # fmt: skip
+    # Greedy: contract the pair with the smallest result (product of its kept index sizes)
+    path = []
+    cur = list(terms)
+    sizes = {}
+    for term, t in zip(terms, tensors, strict=True):
+        sizes.update(zip(term, t._shape, strict=True))
+    while len(cur) > 1:
+        best = None
+        for i, j in itertools.combinations(range(len(cur)), 2):
+            rest = set(output).union(*(cur[k] for k in range(len(cur)) if k not in (i, j)))
+            letters = (set(cur[i]) | set(cur[j])) & rest
+            cost = math.prod(sizes[c] for c in letters)
+            if best is None or cost < best[0]:
+                best = (cost, i, j, "".join(sorted(letters)))
+        _, i, j, letters = best
+        path.append((i, j))
+        cur = [cur[k] for k in range(len(cur)) if k not in (i, j)] + [letters]
+    return path
+
+
+def _einsum_pair(ta, A, tb, B, keep, op, opts):
+    """Contract one pair; returns (letters, Tensor)."""
+    # Indices that appear in only one operand and nowhere later are summed out first
+    only = tuple(k for k, c in enumerate(ta) if c not in tb and c not in keep)
+    if only:
+        A = A.reduce(op.monoid, axis=only).new(**opts)
+        ta = "".join(c for k, c in enumerate(ta) if k not in only)
+    only = tuple(k for k, c in enumerate(tb) if c not in ta and c not in keep)
+    if only:
+        B = B.reduce(op.monoid, axis=only).new(**opts)
+        tb = "".join(c for k, c in enumerate(tb) if k not in only)
+    shared = [c for c in ta if c in tb]
+    batch = [c for c in shared if c in keep]
+    contracted = [c for c in shared if c not in keep]
+    free_a = [c for c in ta if c not in tb]
+    free_b = [c for c in tb if c not in ta]
+    if contracted:
+        a_axes = tuple(ta.index(c) for c in contracted)
+        b_axes = tuple(tb.index(c) for c in contracted)
+        a_batch = tuple(ta.index(c) for c in batch)
+        b_batch = tuple(tb.index(c) for c in batch)
+        if batch:
+            R = _batched_contract_expr(A, B, op, a_axes, b_axes, a_batch, b_batch).new(**opts)
+        else:
+            R = A.tensordot(B, (a_axes, b_axes), op).new(**opts)
+        return "".join(batch + free_a + free_b), R
+    # No contraction: an element-wise product, broadcasting over the free indices
+    letters = batch + free_a + free_b
+    pa = A.permute_dims(tuple(ta.index(c) for c in batch + free_a))
+    pb = B.permute_dims(tuple(tb.index(c) for c in batch + free_b))
+    if free_b:
+        pa = pa.expand_dims(tuple(range(len(batch) + len(free_a), len(letters))))
+    if free_a:
+        pb = pb.expand_dims(tuple(range(len(batch), len(batch) + len(free_a))))
+    R = pa.ewise_mult(pb, op.binaryop).new(**opts)
+    return "".join(letters), R
+
+
+def _batched_contract_expr(a, b, op, a_axes, b_axes, a_batch, b_batch):
+    free_a = [x for x in range(a.ndim) if x not in a_axes and x not in a_batch]
+    free_b = [y for y in range(b.ndim) if y not in b_axes and y not in b_batch]
+    shape = (
+        tuple(a._shape[x] for x in a_batch)
+        + tuple(a._shape[x] for x in free_a)
+        + tuple(b._shape[y] for y in free_b)
+    )
+    return TensorExpression(
+        "contract",
+        _batched_contract_recipe,
+        [a, b],
+        (a, b, op, a_axes, b_axes, a_batch, b_batch),
+        dtype=op.return_type,
+        shape=shape,
+        op=op,
+        expr_repr="{0.name}.contract({1.name}, op={op})",
+    )
+
+
+def _batched_contract_recipe(updater, a, b, op, a_axes, b_axes, a_batch, b_batch):
+    src, layout, shape = _contract(updater, a, b, op, a_axes, b_axes, a_batch, b_batch)
+    _store(updater, src, shape, layout)
 
 
 def _reduce_scalar_recipe(updater, a, op, allow_empty):
