@@ -112,13 +112,28 @@ def _check_udt_pair(op_name, dtype, dtype2, info_x, info_y):
     ``info_x`` and ``info_y`` are ``_get_udt_info`` results. When either is
     ``None`` (a built-in scalar side broadcasts), no further check fires. A
     UDT that is neither a record nor an array (bytes, say) holds one value,
-    which pairs only with its own type, on either side. Without this gate the
-    generated wrapper code raises a cryptic Numba ``TypingError`` on the
-    first field access, or, for array fields that do not broadcast, fails
-    inside the cfunc without telling the caller. Element dtypes may differ;
+    which pairs only with its own type, on either side; for ``eq`` and ``ne``
+    only, text pairs with text of the same kind at another width, as numpy
+    and a record's text fields compare it. Without this gate the generated
+    wrapper code raises a cryptic Numba ``TypingError`` on the first field
+    access, or, for array fields that do not broadcast, fails inside the
+    cfunc without telling the caller. Element dtypes may differ;
     :func:`_udt_op_types` promotes them.
     """
-    if dtype != dtype2 and (info_x is None and dtype._is_udt or info_y is None and dtype2._is_udt):
+    texts = (
+        op_name in {"eq", "ne"}
+        and info_x is None
+        and info_y is None
+        and dtype._is_udt
+        and dtype2._is_udt
+        and dtype.np_type.kind == dtype2.np_type.kind
+        and dtype.np_type.kind in "SU"
+    )
+    if (
+        dtype != dtype2
+        and not texts
+        and (info_x is None and dtype._is_udt or info_y is None and dtype2._is_udt)
+    ):
         raise KeyError(
             f"binary.{op_name} does not work with ({dtype}, {dtype2}): a UDT that is "
             "neither a record nor an array pairs only with its own type."

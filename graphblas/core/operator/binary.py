@@ -87,14 +87,15 @@ if _has_numba:
             # Bytes, a datetime, or a complex number where the backend has no
             # complex types: an element is one value, compared as numpy compares
             # it, as a record field of that type is. ``_check_udt_pair`` has made
-            # sure both are the one UDT.
-            ptr_type = nt.CPointer(dtype.numba_type)
+            # sure both are the one UDT, or text of one kind.
             wrapper = _compile_codegen(
                 f"def wrapper(z_ptr, x_ptr, y_ptr):\n    z_ptr[0] = x_ptr[0] {cmp_op} y_ptr[0]\n",
                 func_name="wrapper",
-                source_label=f"<gb-udt {op_name} {dtype.np_type}>",
+                source_label=f"<gb-udt {op_name} {dtype.np_type} {dtype2.np_type}>",
             )
-            return wrapper, nt.void(nt.CPointer(INT8.numba_type), ptr_type, ptr_type)
+            x_ptr_type = nt.CPointer(dtype.numba_type)
+            y_ptr_type = nt.CPointer(dtype2.numba_type)
+            return wrapper, nt.void(nt.CPointer(INT8.numba_type), x_ptr_type, y_ptr_type)
 
         x_is_scalar = info_x is None
         y_is_scalar = info_y is None
