@@ -309,6 +309,22 @@ def test_from_networkx_matches_scipy(graph_cls):
 
 
 @pytest.mark.skipif("not nx")
+def test_from_networkx_rejects_bad_nodelist():
+    # The checks and messages of nx.to_scipy_sparse_array, without scipy. A missing
+    # node is reported before a duplicate.
+    G = nx.path_graph(3)
+    cases = [
+        ([], "nodelist has no nodes"),
+        ([0, 5], "Node 5 in nodelist is not in G"),
+        ([0, 0, 5], "Node 5 in nodelist is not in G"),
+        ([0, 1, 0], "nodelist contains duplicates."),
+    ]
+    for nodelist, message in cases:
+        with pytest.raises(nx.NetworkXError, match=message):
+            gb.io.from_networkx(G, nodelist=nodelist)
+
+
+@pytest.mark.skipif("not nx")
 def test_from_networkx_multigraph_is_scipy_free(monkeypatch):
     # A numeric-weight multigraph must ingest via the direct coo path, not the
     # scipy fallback, so networkx ingest no longer requires scipy for this case.
