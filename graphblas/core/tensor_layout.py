@@ -631,3 +631,105 @@ def selector(group_shape, kept, *, transposed=False):
         S = from_coo(dst, src, True, BOOL, nkept, n)
     _matrix_cache.put(key, S, n)
     return S
+
+
+# ---------------------------------------------------------------------------------------------
+# Block-diagonal embedding for batched contractions (DESIGN.md 3.6)
+
+_INDEX_NP = None
+
+
+def _index_dtypes():
+    global _INDEX_NP
+    if _INDEX_NP is None:
+        _INDEX_NP = [
+            (lib.GrB_UINT32, np.uint32),
+            (lib.GrB_UINT64, np.uint64),
+            (lib.GrB_INT32, np.int32),
+            (lib.GrB_INT64, np.int64),
+        ]
+    return _INDEX_NP
+
+
+class _VectorArray:
+    """The array inside one Container vector as a numpy view; loaded back on exit."""
+
+    def __init__(self, V):
+        self.V = V
+
+    def __enter__(self):
+        self._X = ffi.new("void**")
+        self._type = ffi.new("GrB_Type*")
+        self._n = ffi.new("uint64_t*")
+        self._size = ffi.new("uint64_t*")
+        self._handling = ffi.new("int*")
+        _check(
+            lib.GxB_Vector_unload(
+                self.V, self._X, self._type, self._n, self._size, self._handling, NULL
+            ),
+            "GxB_Vector_unload",
+        )
+        dtype = next((d for t, d in _index_dtypes() if t == self._type[0]), None)
+        self.handling = self._handling[0]
+        if dtype is None or self._n[0] == 0:
+            self.array = None
+        else:
+            buf = ffi.buffer(self._X[0], self._n[0] * np.dtype(dtype).itemsize)
+            self.array = np.frombuffer(buf, dtype)
+        return self
+
+    def __exit__(self, *exc):
+        self.array = None
+        _check(
+            lib.GxB_Vector_load(
+                self.V, self._X, self._type[0], self._n[0], self._size[0], self._handling[0], NULL
+            ),
+            "GxB_Vector_load",
+        )
+
+
+def embed_block_diagonal(M, rows_per_block, nblocks):
+    """In place: ``M`` (``nblocks * rows_per_block`` x K, held by row, owned by the caller)
+    becomes the block-diagonal (``nblocks * rows_per_block`` x ``nblocks * K``) Matrix whose
+    block b holds rows ``b * rows_per_block ...``: entry (r, c) moves to column
+    ``(r // rows_per_block) * K + c``.
+
+    Each row gains one constant, so sorted rows stay sorted, and the column indices are
+    changed in the Container's own array, keeping their integer width (``ss.unpack`` would
+    widen them to 64 bits for good, review F14). Returns False when that is not possible (the
+    new width does not fit, a read-only array, bitmap or full storage); then nothing changed.
+    """
+    K = M._ncols
+    new_ncols = nblocks * K
+    if M.ss.format not in {"csr", "hypercsr"}:
+        return False
+    with _Unloaded(M) as cont:
+        hyper = cont.format == lib.GxB_HYPERSPARSE
+        with _VectorArray(cont.i) as i_arr:
+            if i_arr.array is None or i_arr.handling != 0:
+                return _abort_embed(i_arr.array is None and M._nvals == 0, cont, new_ncols, M)
+            # SuiteSparse stores 32-bit indices only for dimensions below 2^31
+            if new_ncols > (2**31 if i_arr.array.dtype.itemsize == 4 else 2**60):
+                return False
+            with _VectorArray(cont.p) as p_arr:
+                counts = np.diff(p_arr.array.astype(np.int64))
+            if hyper:
+                with _VectorArray(cont.h) as h_arr:
+                    rows = h_arr.array.astype(np.int64)
+            else:
+                rows = np.arange(counts.size, dtype=np.int64)
+            offsets = np.repeat((rows // rows_per_block) * K, counts)
+            i_arr.array += offsets.astype(i_arr.array.dtype, copy=False)
+        cont.ncols = new_ncols
+        cont.ncols_nonempty = -1
+    M._ncols = new_ncols
+    return True
+
+
+def _abort_embed(empty, cont, new_ncols, M):
+    if empty:
+        cont.ncols = new_ncols
+        cont.ncols_nonempty = -1
+        M._ncols = new_ncols
+        return True
+    return False
