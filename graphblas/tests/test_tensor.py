@@ -2168,3 +2168,60 @@ def test_transpose_thread_choices():
     assert path == [("T", 2)]
     M = Matrix.from_coo([0, 1], [5, 3], [1.0, 2.0], nrows=2, ncols=6)
     assert tl.transpose(M, nthreads=2).isequal(M.T.new())
+
+
+def test_broadcast_gather_path():
+    """A full small operand along axes inside a wide group: its values are gathered onto the
+    stored entries, then one same-pattern ewise_mult.
+    """
+    rng = np.random.default_rng(64)
+    shape = (8, 300, 400)
+    coords = [rng.integers(0, s, 200) for s in shape]
+    lin = np.unique(np.ravel_multi_index(coords, shape))
+    coords = np.unravel_index(lin, shape)
+    vals = rng.random(lin.size)
+    xv = np.zeros(shape)
+    xp = np.zeros(shape, bool)
+    xv[coords] = vals
+    xp[coords] = True
+    for layout in [((0,), (1, 2)), ((0, 1), (2,)), ((2, 0), (1,))]:
+        X = Tensor.from_coo(coords, vals, shape=shape, layout=layout)
+        for yshape in [(300, 1), (400,), (8, 1, 1), (300, 400), (8, 300, 1)]:
+            yv = rng.integers(1, 5, yshape)
+            Y = Tensor.from_dense(yv)
+            yp = np.ones(yshape, bool)
+            check((X * Y).new(), *np_bcast("mult", xv, xp, yv, yp, np.multiply), approx=True)
+            R = Y.ewise_mult(X, binary.minus).new()
+            check(R, *np_bcast("mult", yv, yp, xv, xp, np.subtract), approx=True)
+    W = tl.gather_operand(X.ss.matrix, shape, X.layout, (1,), np.arange(300.0), dtypes.FP64)
+    assert W.nvals == X.nvals
+    assert (
+        tl.gather_operand(
+            Matrix(float, 3, 3), (3, 3), Layout((0,), (1,)), (0,), np.ones(3), dtypes.FP64
+        )
+        is None
+    )
+
+
+def test_extract_filter_path():
+    """A slab along an axis inside a wide column group filters the stored coordinates
+    instead of listing every column index (or both ways agree).
+    """
+    rng = np.random.default_rng(65)
+    shape = (6, 2**12, 2**10)
+    coords = [rng.integers(0, s, 300) for s in shape]
+    lin = np.unique(np.ravel_multi_index(coords, shape))
+    coords = np.unravel_index(lin, shape)
+    vals = rng.random(lin.size)
+    X = Tensor.from_coo(coords, vals, shape=shape, layout=((0,), (1, 2)))
+    dense = np.zeros(shape)
+    present = np.zeros(shape, bool)
+    dense[coords] = vals
+    present[coords] = True
+    for key in [
+        (slice(None), slice(None), 7),
+        (slice(None), 5, slice(None)),
+        (2, slice(None), [3, 9]),
+        (slice(None), [1, 4000], slice(10, 20)),
+    ]:
+        check(X[key].new(), np_outer_index(dense, key), np_outer_index(present, key))

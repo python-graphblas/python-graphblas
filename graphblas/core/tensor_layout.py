@@ -742,10 +742,13 @@ def _index_dtypes():
 
 
 class _VectorArray:
-    """The array inside one Container vector as a numpy view; loaded back on exit."""
+    """The array inside one Container vector as a numpy view; loaded back on exit. Index
+    arrays are recognized by their GraphBLAS type; for values, pass the numpy dtype.
+    """
 
-    def __init__(self, V):
+    def __init__(self, V, dtype=None):
         self.V = V
+        self._np_dtype = dtype
 
     def __enter__(self):
         self._X = ffi.new("void**")
@@ -759,7 +762,10 @@ class _VectorArray:
             ),
             "GxB_Vector_unload",
         )
-        dtype = next((d for t, d in _index_dtypes() if t == self._type[0]), None)
+        if self._np_dtype is not None:
+            dtype = self._np_dtype
+        else:
+            dtype = next((d for t, d in _index_dtypes() if t == self._type[0]), None)
         self.handling = self._handling[0]
         if dtype is None or self._n[0] == 0:
             self.array = None
@@ -776,6 +782,52 @@ class _VectorArray:
             ),
             "GxB_Vector_load",
         )
+
+
+def gather_operand(M, shape, layout, axes, values, dtype):
+    """A Matrix with ``M``'s pattern whose entry at logical coordinates x holds
+    ``values[ravel(x[axes])]`` (``values`` is a dense numpy array over ``axes``, raveled in
+    that order), or None when that is not possible (iso, bitmap or full storage).
+
+    The pattern is copied in GraphBLAS (parallel); the values are gathered with numpy into the
+    copy's own value array through the Container, O(nnz), with no data movement. A
+    broadcast multiply along axes inside a wide group then takes one same-pattern ewise_mult.
+    """
+    if M.ss.format not in {"csr", "hypercsr"} or M.ss.is_iso or M._nvals == 0:
+        return None
+    W = new_matrix(dtype, M._nrows, M._ncols)
+    W << M
+    if W.ss.is_iso or W.ss.format not in {"csr", "hypercsr"}:
+        return None
+    rows, cols = layout
+    need_rows = any(a in rows for a in axes)
+    with _Unloaded(W) as cont:
+        coords = {}
+        if need_rows:
+            with _VectorArray(cont.p) as pv:
+                counts = np.diff(pv.array.astype(np.int64))
+            if cont.format == lib.GxB_HYPERSPARSE:
+                with _VectorArray(cont.h) as hv:
+                    ids = hv.array.astype(np.int64)
+            else:
+                ids = np.arange(counts.size, dtype=np.int64)
+            r = np.repeat(ids, counts)
+            _coords_along(r, shape, rows, axes, coords)
+        with _VectorArray(cont.i) as iv:
+            _coords_along(iv.array, shape, cols, axes, coords)
+        idx = ravel(coords, shape, axes, n=M._nvals)
+        with _VectorArray(cont.x, dtype.np_type) as xv:
+            xv.array[:] = values[idx]
+    return W
+
+
+def _coords_along(linear, shape, group, axes, out):
+    """Fill ``out[a]`` for the ``axes`` in ``group`` from linear indices over the group."""
+    stride = 1
+    for a in reversed(group):
+        if a in axes:
+            out[a] = (linear // stride) % shape[a] if stride > 1 else linear % shape[a]
+        stride *= shape[a]
 
 
 def embed_block_diagonal(M, rows_per_block, nblocks):
