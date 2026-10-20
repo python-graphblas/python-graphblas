@@ -723,6 +723,8 @@ def test_udt_eq_without_numba_matches_binary_eq(monkeypatch):
     r = Scalar.from_value((1, 2.5), rec)
     a = Scalar.from_value([1, 1, 1], arr)
     f = Scalar.from_value([0.1, 0.1], f32)
+    text = dtypes.register_anonymous(np.dtype("S6"))
+    t = Scalar.from_value(b"ab", text)
     cases = [
         (r, (1, 2.5)),
         (r, (1, 2)),
@@ -737,6 +739,9 @@ def test_udt_eq_without_numba_matches_binary_eq(monkeypatch):
         (a, Scalar.from_value([1, 1, 1], arr)),
         (f, 0.1),
         (f, np.float64(0.1)),
+        (t, b"ab"),
+        (t, b"cd"),
+        (t, Scalar.from_value(b"ab", text)),
     ]
     # UDTs that binary.eq does not pair raise its KeyError both ways.
     other_names = dtypes.register_anonymous(
@@ -747,6 +752,8 @@ def test_udt_eq_without_numba_matches_binary_eq(monkeypatch):
         (r, Scalar.from_value((1, 2.5), other_names)),
         (a, Scalar.from_value([1, 1], arr2)),
         (r, a),
+        (t, Scalar.from_value(b"ab", dtypes.register_anonymous(np.dtype("S7")))),
+        (t, 1),
     ]
 
     def compare_all():

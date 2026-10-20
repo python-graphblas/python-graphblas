@@ -289,7 +289,9 @@ def _check_literal_fits(dtype, value):
         if isinstance(value, dict):
             value = _dict_to_record(np_type, value)
     else:
-        target = np.zeros(np_type.subdtype[1], dtype=np_type.subdtype[0])
+        # An array's elements, or the one value of a UDT that is neither (bytes).
+        base, shape = np_type.subdtype or (np_type, ())
+        target = np.zeros(shape, dtype=base)
     with warnings.catch_warnings():
         warnings.simplefilter("error", RuntimeWarning)
         try:
@@ -358,14 +360,14 @@ def _converts_exactly(dtype, value):
             given = np.zeros(1, dtype=_object_layout(np_type))
             converted = np.zeros(1, dtype=np_type)
         else:
-            base, shape = np_type.subdtype
+            base, shape = np_type.subdtype or (np_type, ())
             given = np.empty(shape, dtype=object)
             converted = np.zeros(shape, dtype=base)
-        given[:] = value
+        given[...] = value
         with warnings.catch_warnings():
             # numpy warns for some lossy conversions; the comparison below finds each.
             warnings.simplefilter("ignore")
-            converted[:] = _view_if_same_layout(value, converted.dtype)
+            converted[...] = _view_if_same_layout(value, converted.dtype)
     except (TypeError, ValueError, OverflowError):
         return False
     for given_leaf, converted_leaf in zip(

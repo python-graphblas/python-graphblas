@@ -1534,9 +1534,11 @@ def test_python_number_is_weak_beside_builtin_dtypes():
     if dtypes._supports_complex:
         assert (f32 + 1j).dtype == dtypes.FC32
     else:
-        # Without complex types, a complex number keeps its own type, which plus does not take.
-        with pytest.raises(KeyError, match="plus does not work with"):
-            f32 + 1j
+        # Without complex types, a complex number keeps its own type, which plus does not
+        # take, and which compares only with itself.
+        for expr in [lambda: f32 + 1j, lambda: f32 == 1j]:
+            with pytest.raises(KeyError, match="does not work with"):
+                expr()
     s8 = Scalar.from_value(100, dtype=dtypes.INT8)
     assert (s8 + 1).new().dtype == (1 + s8).new().dtype == dtypes.INT8
     assert (Scalar.from_value(0.5, dtype=dtypes.FP32) * 0.5).new().dtype == dtypes.FP32

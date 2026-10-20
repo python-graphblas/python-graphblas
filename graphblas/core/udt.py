@@ -110,12 +110,19 @@ def _check_udt_pair(op_name, dtype, dtype2, info_x, info_y):
     """Raise ``KeyError`` if two UDT operands disagree on shape.
 
     ``info_x`` and ``info_y`` are ``_get_udt_info`` results. When either is
-    ``None`` (one side is a scalar broadcast), no check fires. Without this
-    gate the generated wrapper code raises a cryptic Numba ``TypingError``
-    on the first field access, or, for array fields that do not broadcast,
-    fails inside the cfunc without telling the caller. Element dtypes may
-    differ; :func:`_udt_op_types` promotes them.
+    ``None`` (a built-in scalar side broadcasts), no further check fires. A
+    UDT that is neither a record nor an array (bytes, say) holds one value,
+    which pairs only with its own type, on either side. Without this gate the
+    generated wrapper code raises a cryptic Numba ``TypingError`` on the
+    first field access, or, for array fields that do not broadcast, fails
+    inside the cfunc without telling the caller. Element dtypes may differ;
+    :func:`_udt_op_types` promotes them.
     """
+    if dtype != dtype2 and (info_x is None and dtype._is_udt or info_y is None and dtype2._is_udt):
+        raise KeyError(
+            f"binary.{op_name} does not work with ({dtype}, {dtype2}): a UDT that is "
+            "neither a record nor an array pairs only with its own type."
+        )
     if info_x is None or info_y is None:
         return
     kind_x, detail_x = info_x
