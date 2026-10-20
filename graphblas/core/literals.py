@@ -103,15 +103,15 @@ def _literal_operand(dtype, value, op):
             # truediv gives float leaves whatever the int, so, as a comparison, it
             # types an int out of an integer leaf's range exactly instead of raising.
             exact = is_comparison or op.name == "truediv"
+            if is_comparison and not isinstance(value, (np.generic, np.ndarray)):
+                np_type = dtype.np_type
+                parts = _dict_to_record(np_type, value) if isinstance(value, dict) else value
+                if _int_beyond_leaf(np_type, parts) is not None:
+                    # As infinity in its leaf, it still equals no element, and it
+                    # stays out of an array numpy makes of numpy values beside it.
+                    value = _beyond_as_infinity(np_type, parts)
             literal_type = _literal_type(dtype, value, exact=exact)
             if literal_type is not None:
-                if is_comparison and not isinstance(value, (np.generic, np.ndarray)):
-                    np_type = dtype.np_type
-                    parts = _dict_to_record(np_type, value) if isinstance(value, dict) else value
-                    if _int_beyond_leaf(np_type, parts) is not None:
-                        # As infinity in its leaf, it still equals no element.
-                        value = _beyond_as_infinity(np_type, parts)
-                        literal_type = _literal_type(dtype, value)
                 return value, literal_type
     _check_literal_fits(dtype, value)
     return value, dtype
@@ -592,20 +592,29 @@ def _weak_literal_udt(dtype, value, *, exact=False):
                 own = None
             if own is not None:
                 return base if _keeps_value(part, base) else own
+        if in_record and shape and _holds_numpy_values(part):
+            # As for an array UDT, an array, or a sequence holding numpy values, is
+            # the array numpy makes of it (strong), in the field's shape.
+            try:
+                arr = np.asarray(part)
+                np.broadcast_to(arr, shape)
+            except (TypeError, ValueError):
+                raise _LiteralDoesNotFit from None
+            if arr.dtype.kind not in "biufc":
+                raise _LiteralDoesNotFit
+            return np.dtype((arr.dtype, shape))
         values = _literal_leaf_values(part, shape, numpy_scalars=in_record)
         if values is None:
             raise _LiteralDoesNotFit
-        weak = [x for x in values if type(x) in _LITERAL_KINDS]
-        strong = [x.dtype for x in values if type(x) not in _LITERAL_KINDS]
-        elem = None
-        if weak:
-            kind = max((_LITERAL_KINDS[type(x)] for x in weak), key="bifc".index)
+        if type(values[0]) not in _LITERAL_KINDS:
+            # A numpy number or bool is strong: its dtype, in every place of the field.
+            elem = values[0].dtype
+        else:
+            kind = max((_LITERAL_KINDS[type(x)] for x in values), key="bifc".index)
             if base.kind in "biufc":
-                elem = _weak_literal_leaf(weak, kind, base, exact=exact)
+                elem = _weak_literal_leaf(values, kind, base, exact=exact)
             else:
                 elem = _WEAK_LITERAL_DEFAULT[kind]
-        if strong:
-            elem = np.result_type(*strong, *([] if elem is None else [elem]))
         return np.dtype((elem, shape)) if shape else elem
 
     def record_leaves(np_type, part):
@@ -635,6 +644,19 @@ def _weak_literal_udt(dtype, value, *, exact=False):
     return dtype if literal_type == np_type else lookup_dtype(literal_type)
 
 
+def _holds_numpy_values(value):
+    """Whether ``value`` is a numpy array, or a sequence holding a numpy number or bool."""
+    if isinstance(value, np.ndarray):
+        return True
+    if not isinstance(value, (tuple, list)):
+        return False
+    try:
+        items = np.asarray(value, dtype=object).ravel().tolist()
+    except (TypeError, ValueError):  # ragged
+        return False
+    return any(isinstance(x, (np.number, np.bool_)) for x in items)
+
+
 def _int_beyond_leaf(np_type, value):
     """Return a Python int in literal ``value`` beyond its integer leaf's range, or ``None``.
 
@@ -644,6 +666,8 @@ def _int_beyond_leaf(np_type, value):
     """
     if np_type.names is not None:
         parts = value if isinstance(value, (tuple, list)) else [value] * len(np_type.names)
+        if len(parts) != len(np_type.names):
+            return None  # not laid out like an element; typing it reports that
         for name, part in zip(np_type.names, parts, strict=True):
             found = _int_beyond_leaf(np_type.fields[name][0], part)
             if found is not None:
@@ -652,7 +676,7 @@ def _int_beyond_leaf(np_type, value):
     base, shape = np_type.subdtype or (np_type, ())
     if base.kind in "iu":
         lo, hi = _int_bounds(base)
-        for x in _literal_leaf_values(value, shape) or ():
+        for x in _literal_leaf_values(value, shape, numpy_scalars=True) or ():
             if type(x) is int and not lo <= x <= hi:
                 return x
     return None
@@ -667,12 +691,14 @@ def _beyond_as_infinity(np_type, value):
     """
     if np_type.names is not None:
         parts = value if isinstance(value, (tuple, list)) else [value] * len(np_type.names)
+        if len(parts) != len(np_type.names):
+            return value
         return tuple(
             _beyond_as_infinity(np_type.fields[name][0], part)
             for name, part in zip(np_type.names, parts, strict=True)
         )
     base, shape = np_type.subdtype or (np_type, ())
-    values = _literal_leaf_values(value, shape) if base.kind in "iu" else None
+    values = _literal_leaf_values(value, shape, numpy_scalars=True) if base.kind in "iu" else None
     if values is None:
         return value
     lo, hi = _int_bounds(base)
