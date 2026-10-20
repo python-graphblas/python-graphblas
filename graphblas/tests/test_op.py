@@ -5884,13 +5884,13 @@ def test_udt_jit_kernel_only_for_a_same_type_result():
 
 
 @pytest.mark.skipif("not supports_udfs")
-def test_udt_eq_compile_failure_is_a_udfparseerror():
-    """``eq`` reports a pair the codegen cannot type as a UdfParseError, as ``plus`` does.
+def test_udt_eq_on_leaves_of_other_kinds_is_a_keyerror():
+    """``eq`` refuses leaves that hold different kinds of value with a KeyError, as ``plus`` does.
 
-    Its cfunc was compiled without the wrapper that turns Numba's errors into
-    a one-line UdfParseError, so a bytes field against a float field surfaced
-    as Numba's full TypingError. ``plus`` rejects the pair sooner: bytes and
-    float64 have no common dtype for the result field.
+    Text, a date, a duration and a number compare only with their own kind, so a
+    bytes field against a float field, or a number given for a bytes field, is
+    binary.eq's KeyError, as it is for ``plus``: bytes and float64 have no
+    common dtype for the result field.
     """
     text = dtypes.register_anonymous(np.dtype([("ueq_a", "S4"), ("ueq_b", np.float64)]), "_UeqS")
     num = dtypes.register_anonymous(
@@ -5900,13 +5900,26 @@ def test_udt_eq_compile_failure_is_a_udfparseerror():
     v[0] = (b"ab", 1.0)
     w = Vector(num, size=1)
     w[0] = (1.0, 1.0)
-    with pytest.raises(UdfParseError, match="binary.eq does not work with"):
-        binary.eq(v & w).new()
     with pytest.raises(KeyError, match=r"elements of \|S4 and float64 have no common type"):
         binary.plus(v & w).new()
     # A number beside the bytes field is an int64 there, which pairs no better.
     with pytest.raises(KeyError, match=r"elements of \|S4 and int64 have no common type"):
         v + 1
+    nested = dtypes.register_anonymous(
+        np.dtype([("ueq_x", "S2"), ("ueq_in", [("ueq_y", "S2"), ("ueq_n", np.int8)])]), "_UeqN"
+    )
+    n = Vector(nested, size=1)
+    n[0] = (b"x", (b"y", 1))
+    for expr in [
+        lambda: binary.eq(v & w),
+        lambda: v == 1,
+        lambda: v != (1.0, 1.0),
+        lambda: gb.Scalar.from_value((b"ab", 1.0), text) == (1.0, 1.0),
+        lambda: n == (b"x", np.float64(1)),
+    ]:
+        with pytest.raises(KeyError, match=r"elements of \|S\d and \w+ do not compare"):
+            expr()
+    assert (n == (b"x", (b"y", 1))).new()[0].new().value
 
 
 @pytest.mark.skipif("not supports_udfs")
