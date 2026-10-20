@@ -1827,7 +1827,6 @@ C_HROW = (75.0, 255.0)  # per nonempty row: build from h, then a hash lookup per
 C_MXV = (0.66, 3.3)
 C_VXM = (4.6, 11.4)
 C_DIAG = (0.6, 2.1)
-C_RS_ROW = (4.0, 21.0)  # per output row of a reshape into rows of under 4 entries each
 
 
 def _ti(nthreads):
@@ -1850,12 +1849,7 @@ def _row_selector_cost(M, positions, ti):
 
 
 def _rs_cost(shape, seq, q, nvals, ti):
-    """Cost of moving the split to q: more when the new rows hold under 4 entries each."""
-    R = tl.expected_rows(tl.prod(shape, seq[:q]), nvals)
-    cost = tl.C_RS[ti] * nvals + tl.C_STEP
-    if R and nvals < 4 * R:
-        cost += C_RS_ROW[ti] * R
-    return cost
+    return tl.rs_cost(shape, seq, q, nvals, ti)
 
 
 def _row_reducer(M, shape, rows, kept):
@@ -1939,7 +1933,11 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
                 layout = Layout(seq[:q], seq[q:])
                 continue
             v = Vector(dtype, M._ncols)
-            v(**(dict(opts, nthreads=1) if wide else opts)) << M.reduce_columnwise(op)
+            # Into many outputs, 2 threads scatter as fast as 1 or faster; 4 and 8 can be
+            # 3-4x slower (Uber 4.0 / 4.9 / 17 / 15 ms at 2 / 1 / 4 / 8 threads)
+            v(**(dict(opts, nthreads=min(2, nthreads)) if wide else opts)) << M.reduce_columnwise(
+                op
+            )
             M = _vector_to_row(v)
             layout = Layout((), cols)
         else:
