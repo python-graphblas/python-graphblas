@@ -466,7 +466,11 @@ class Tensor(BaseType):
                     f"index out of bounds along axis {axis} of size {shape[axis]}: "
                     f"min {idx.min()}, max {idx.max()}"
                 )
-        if layout is None:
+        # Reshape works only below a total size of 2**60; past it keep the shape-based split
+        settle = layout is None and ndim >= 3 and n > 0 and math.prod(shape) < tl.MAX_GROUP
+        if settle:
+            lay = _widest_rows_layout(shape)
+        elif layout is None:
             lay = tl.default_layout(shape, n)
         else:
             lay = tl.as_layout(layout, shape)
@@ -481,6 +485,8 @@ class Tensor(BaseType):
             tl.prod(shape, lay.cols),
             dup_op=dup_op,
         )
+        if settle:
+            M, lay = _settle_split(M, shape, lay)
         return cls._from_M(M, shape, lay, pinned=layout is not None, name=name)
 
     @classmethod
@@ -1557,48 +1563,64 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
         col_op = row_op = untyped_op.binaryop
     Fset = set(F)
     M, L = big._M, big._layout
-    group = side = None
-    for g, gop, name in [(L.cols, col_op, "cols"), (L.rows, row_op, "rows")]:
-        if gop is not None and Fset == set(g):
-            group, side = g, name
-            break
-    if group is None:
-        for g, gop, name in [(L.cols, col_op, "cols"), (L.rows, row_op, "rows")]:
-            if (
-                gop is not None
-                and Fset < set(g)
-                and _selector_ok(tl.prod(shape, g), M._nvals)
-                and not tl.density(M)
-            ):
-                group, side = g, name
-                break
-    if group is None:
-        # Relayout so the small side's axes are exactly one group
-        rest = tuple(o for o in range(len(shape)) if o not in Fset)
-        targets = set()
-        orders = itertools.permutations(F) if len(shape) <= tl.MAX_PLANNED_NDIM else [tuple(F)]
-        for f in orders:
-            for r in itertools.permutations(rest) if len(shape) <= 5 else [rest]:
-                if col_op is not None and tl._valid_split(shape, r + f, len(r)):
-                    targets.add((r + f, len(r)))
-                if row_op is not None and tl._valid_split(shape, f + r, len(f)):
-                    targets.add((f + r, len(f)))
-        if not targets:
-            # No diagonal side works (an operator with no flipped form): replicate instead
-            _ewise_recipe(
-                updater,
-                "ewise_mult",
-                _expand(a, shape) if big is b else a,
-                _expand(b, shape) if big is a else b,
-                op,
-                (),
-            )
-            return
+    nv = M._nvals
+    ti = _ti(nthreads or tl._nthreads())
+    seq, p = L.state
+    # Options: (cost, split, group side, expand from the nonempty rows)
+    options = []
+    for q in range(len(seq) + 1):
+        if not tl._valid_split(shape, seq, q):
+            continue
+        move = 0.0 if q == p else _rs_cost(shape, seq, q, nv, ti)
+        rows, cols = seq[:q], seq[q:]
+        if col_op is not None and Fset == set(cols):
+            options.append((move + C_DIAG[ti] * nv, q, "cols", False))
+        if row_op is not None and Fset == set(rows):
+            options.append((move + C_DIAG[ti] * nv, q, "rows", False))
+        if q != p:
+            continue
+        if row_op is not None and Fset < set(rows):
+            hyper = M.ss.format == "hypercsr"
+            if hyper:
+                cost = C_DIAG[ti] * nv + C_HROW[ti] * tl.nonempty_rows(M)
+            else:
+                cost = C_DIAG[ti] * nv + C_SEL_POS[ti] * tl.prod(shape, rows)
+            options.append((cost, q, "rows", hyper))
+        if col_op is not None and Fset < set(cols):
+            cost = C_DIAG[ti] * nv + C_SEL_POS[ti] * tl.prod(shape, cols)
+            options.append((cost, q, "cols", False))
+    # Or relayout so the small side's axes are exactly one group
+    rest = tuple(o for o in range(len(shape)) if o not in Fset)
+    targets = set()
+    orders = itertools.permutations(F) if len(shape) <= tl.MAX_PLANNED_NDIM else [tuple(F)]
+    for f in orders:
+        for r in itertools.permutations(rest) if len(shape) <= 5 else [rest]:
+            if col_op is not None and tl._valid_split(shape, r + f, len(r)):
+                targets.add((r + f, len(r)))
+            if row_op is not None and tl._valid_split(shape, f + r, len(f)):
+                targets.add((f + r, len(f)))
+    if targets:
+        cost = tl.plan(shape, L.state, frozenset(targets), nv, nthreads or tl._nthreads())[0]
+        options.append((cost + C_DIAG[ti] * nv, None, None, False))
+    if not options:
+        # No diagonal side works (an operator with no flipped form): replicate instead
+        _ewise_recipe(
+            updater,
+            "ewise_mult",
+            _expand(a, shape) if big is b else a,
+            _expand(b, shape) if big is a else b,
+            op,
+            (),
+        )
+        return
+    _, q, side, from_rows = min(options, key=lambda o: o[0])
+    if q is None:
         M, L = tl.relayout(M, shape, L, frozenset(targets), nthreads=nthreads)
-        if set(L.cols) == Fset and col_op is not None:
-            group, side = L.cols, "cols"
-        else:
-            group, side = L.rows, "rows"
+        side = "cols" if set(L.cols) == Fset and col_op is not None else "rows"
+    elif q != p:
+        M = M.ss.reshape(tl.prod(shape, seq[:q]), tl.prod(shape, seq[q:]))
+        L = Layout(seq[:q], seq[q:])
+    group = L.cols if side == "cols" else L.rows
     # The small side as a Vector over `group` (expanded over the group's other axes)
     inv = {o: i for i, o in enumerate(F)}
     sub = tuple(o for o in group if o in Fset)
@@ -1606,7 +1628,9 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
         ts._M, ts._shape, ts._layout, Layout((), tuple(inv[o] for o in sub)), nthreads=nthreads
     )
     v = vM[0, :].new()
-    if len(sub) < len(group):
+    if from_rows:
+        v = _expand_on_rows(M, shape, group, tuple(group.index(o) for o in sub), v)
+    elif len(sub) < len(group):
         St = tl.selector(
             tuple(shape[o] for o in group),
             tuple(i for i, o in enumerate(group) if o in Fset),
@@ -1623,6 +1647,24 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
         sr = get_semiring(_one_term_monoid(op.return_type), row_op)
         src = D.mxm(M, sr)
     _store(updater, src, shape, L)
+
+
+def _expand_on_rows(M, shape, rows, sub_pos, v):
+    """``v`` (over the row axes at ``sub_pos``) expanded onto the nonempty rows of ``M``: a
+    Vector over the row group with ``e[r] = v[coordinates of r]``, sized by the data.
+    """
+    h = tl.nonempty_row_ids(M)
+    gshape = tuple(shape[a] for a in rows)
+    co = {}
+    tl.unravel(h, gshape, tuple(range(len(gshape))), co)
+    vidx = tl.ravel(co, gshape, sub_pos, n=h.size)
+    idx, vals = v.to_coo()
+    dense = np.zeros(v._size, vals.dtype)
+    present = np.zeros(v._size, bool)
+    dense[idx] = vals
+    present[idx] = True
+    keep = present[vidx]
+    return Vector.from_coo(h[keep], dense[vidx[keep]], v.dtype, size=tl.prod(shape, rows))
 
 
 def _ewise_recipe(updater, method, a, b, op, extra):
@@ -1703,6 +1745,42 @@ def _reduce_recipe(updater, a, op, axes, keepdims, cast):
     _store(updater, M, out_shape, out_layout, fresh=True)
 
 
+# The default split puts as many axes in the rows as the data fills: a row group indexes its
+# nonempty rows (h), so selectors and expansions over it follow the data, while a column
+# group costs per position (round 1: NELL-2's (0|1,2) has a 2.6e8-position column group).
+# Rows of fewer entries than this cost memory (h and p per row) and a hash lookup per row.
+MIN_ROW_ENTRIES = 1.5
+
+
+def _widest_rows_layout(shape):
+    """Identity order with the largest valid split below ndim."""
+    seq = tuple(range(len(shape)))
+    for p in range(len(shape) - 1, 0, -1):
+        if tl._valid_split(shape, seq, p):
+            return Layout(seq[:p], seq[p:])
+    return tl.default_layout(shape)
+
+
+def _settle_split(M, shape, layout):
+    """Move the split left (one reshape each) while the rows hold fewer than
+    MIN_ROW_ENTRIES entries per nonempty row, counted through the Container.
+    """
+    seq, p = layout.state
+    nvals = M._nvals
+    while p > 1 and nvals < MIN_ROW_ENTRIES * tl.count_nonempty_rows(M):
+        q = p - 1
+        if not tl._valid_split(shape, seq, q):
+            break
+        nrows, ncols = tl.prod(shape, seq[:q]), tl.prod(shape, seq[q:])
+        if nrows <= 2**31 and ncols <= 2**31:
+            M.ss.reshape(nrows, ncols, inplace=True)
+        else:
+            # SuiteSparse 10.5.1's in-place reshape cannot widen 32-bit indices
+            M = M.ss.reshape(nrows, ncols)
+        p = q
+    return M, Layout(seq[:p], seq[p:])
+
+
 def _healthy(M, shape, layout):
     """Move an empty column group (an n x 1 Matrix, held as n rows of one entry at most) to
     the default split, by one reshape (review F4).
@@ -1739,6 +1817,54 @@ def _selector_ok(n, nvals):
     return n <= max(4 * nvals, 2**16)
 
 
+# Strategy costs in ns, (8 threads, 1 thread), measured 2026-10-20 on (3000, 2000, 10000) at
+# 7.7e6 entries. A shape-only selector costs per position of its group, whatever the data;
+# one built from the nonempty rows of a hypersparse row group costs per nonempty row.
+C_SEL_ENTRY = (0.7, 2.7)
+C_SEL_POS = (2.2, 12.0)
+C_SEL_BUILD = 15.0  # per position of a selector too big to cache (built with numpy per call)
+C_HROW = (75.0, 255.0)  # per nonempty row: build from h, then a hash lookup per row
+C_MXV = (0.66, 3.3)
+C_VXM = (4.6, 11.4)
+C_DIAG = (0.6, 2.1)
+C_RS_ROW = (4.0, 21.0)  # per output row of a reshape into rows of under 4 entries each
+
+
+def _ti(nthreads):
+    return 0 if nthreads > 1 else 1
+
+
+def _shape_selector_cost(nvals, positions, ti):
+    cost = C_SEL_ENTRY[ti] * nvals + C_SEL_POS[ti] * positions
+    if positions > tl._matrix_cache.maxweight:
+        cost += C_SEL_BUILD * positions
+    return cost
+
+
+def _row_selector_cost(M, positions, ti):
+    """Cost of a selector over M's row group: from the nonempty rows when M is hypersparse."""
+    nvals = M._nvals
+    if M.ss.format == "hypercsr":
+        return C_SEL_ENTRY[ti] * nvals + C_HROW[ti] * tl.nonempty_rows(M)
+    return _shape_selector_cost(nvals, positions, ti)
+
+
+def _rs_cost(shape, seq, q, nvals, ti):
+    """Cost of moving the split to q: more when the new rows hold under 4 entries each."""
+    R = tl.expected_rows(tl.prod(shape, seq[:q]), nvals)
+    cost = tl.C_RS[ti] * nvals + tl.C_STEP
+    if R and nvals < 4 * R:
+        cost += C_RS_ROW[ti] * R
+    return cost
+
+
+def _row_reducer(M, shape, rows, kept):
+    """S with S @ M reducing the row axes not in ``kept`` (positions in ``rows``)."""
+    if M.ss.format == "hypercsr":
+        return tl.rows_selector(M, shape, rows, kept)
+    return tl.selector(tuple(shape[x] for x in rows), kept)
+
+
 def _vector_to_row(v):
     return tl.steal_vector_as_row(v)
 
@@ -1761,6 +1887,7 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
         return _reduce_rebuild(M, shape, layout, A, op)
     # Pass on only the descriptor options the user gave: building one costs microseconds.
     nthreads = opts.get("nthreads") or tl._nthreads()
+    ti = _ti(nthreads)
     A = set(A)
     while A:
         rows, cols = layout
@@ -1773,7 +1900,10 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
                 layout = Layout((), rows)
             else:
                 gshape = tuple(shape[x] for x in cols)
-                if not _selector_ok(math.prod(gshape), nvals) or tl.density(M):
+                # A column group has no index of its nonempty columns, so the selector costs
+                # per position; past the data's own cost, rebuild with dup_op instead
+                nv = M._nvals
+                if _shape_selector_cost(nv, math.prod(gshape), ti) > tl.rebuild_cost(nv, ti):
                     return _reduce_rebuild(M, shape, layout, A, op)
                 kept = tuple(i for i, x in enumerate(cols) if x not in Ac)
                 St = tl.selector(gshape, kept, transposed=True)
@@ -1784,11 +1914,11 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
             A -= Ac
             continue
         Ar = A & set(rows)
-        # Rows with about one entry each: a selector or a columnwise scatter costs a hash
-        # lookup or a cache miss per entry; rebuilding with dup_op is 4-5x faster (s13).
-        if tl.density(M):
-            return _reduce_rebuild(M, shape, layout, A, op)
         if Ar == set(rows):
+            # Rows with about one entry each: a columnwise scatter costs a cache miss per
+            # entry; rebuilding with dup_op is 4-5x faster (s13).
+            if tl.density(M):
+                return _reduce_rebuild(M, shape, layout, A, op)
             ncols = tl.prod(shape, cols)
             wide = ncols >= 1e5
             if (
@@ -1813,11 +1943,11 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
             M = _vector_to_row(v)
             layout = Layout((), cols)
         else:
-            gshape = tuple(shape[x] for x in rows)
-            if not _selector_ok(math.prod(gshape), nvals):
+            nv = M._nvals
+            if _row_selector_cost(M, tl.prod(shape, rows), ti) > tl.rebuild_cost(nv, ti):
                 return _reduce_rebuild(M, shape, layout, A, op)
             kept = tuple(i for i, x in enumerate(rows) if x not in Ar)
-            S = tl.selector(gshape, kept)
+            S = _row_reducer(M, shape, rows, kept)
             out = tl.new_matrix(dtype, S._nrows, M._ncols)
             out(**opts) << S.mxm(M, get_semiring(op, binary.second))
             M = out
@@ -2071,59 +2201,107 @@ def _squeezed_batch(t, bshape):
 
 
 def _ttv(updater, x, w, axis, op, x_left):
-    """TTV: ``x`` contracted with the 1-d ``w`` over ``axis``. Returns False when the general
-    contraction should be used instead (the axis is a whole group of its own).
+    """TTV: ``x`` contracted with the 1-d ``w`` over ``axis``, by the cheapest of: one mxv
+    (``axis`` is the column group), one vxm (the row group), a weighted selector (``axis`` is
+    inside a group), each possibly after moving the split; or the general relayout and
+    mxm (returns False for that).
     """
-    rows, cols = x._layout
-    group = cols if axis in cols else rows
-    if len(group) < 2 and cols != (axis,):
-        return False
     mult = op.binaryop
-    shape = tuple(n for a, n in enumerate(x._shape) if a != axis)
-    kept = [a for a in range(x.ndim) if a != axis]
-    renum = {a: i for i, a in enumerate(kept)}
-    nthreads = updater.opts.get("nthreads")
-    if cols == (axis,):
-        flip = mult if x_left else getattr(mult, "commutes_to", None)
-        if flip is None:
-            return False
-        sr = op if x_left else get_semiring(op.monoid, flip)
-        v = Vector(op.return_type, x._M._nrows)
-        wv = _in_layout(w, Layout((), (0,)), nthreads)[0, :].new()
-        v(**updater.opts) << x._M.mxv(wv, sr)
-        out = Layout((), tuple(renum[a] for a in rows))
+    flip = getattr(mult, "commutes_to", None)
+    # (x, w) is the order the multiply must see: mxv and a column selector give (x, w), vxm
+    # and a row selector give (w, x)
+    xw_op = mult if x_left else flip
+    wx_op = flip if x_left else mult
+    M, layout = x._M, x._layout
+    seq, p = layout.state
+    n = len(seq)
+    nv = M._nvals
+    nthreads = _nthreads(updater)
+    ti = _ti(nthreads)
+    options = []  # (cost, kind, split)
+    if layout.cols == (axis,) and xw_op is not None:
+        # One pass with no data movement; the planner's relayout estimates run low, so do
+        # not let them compete (round 1: relayout + mxm 56 ms vs vxm 36 ms)
+        options.append((0.0, "mxv", p))
+    elif layout.rows == (axis,) and wx_op is not None:
+        options.append((0.0, "vxm", p))
+    for q in range(n + 1) if not options else ():
+        if not tl._valid_split(x._shape, seq, q):
+            continue
+        move = 0.0 if q == p else _rs_cost(x._shape, seq, q, nv, ti)
+        rows, cols = seq[:q], seq[q:]
+        if cols == (axis,) and xw_op is not None:
+            options.append((move + C_MXV[ti] * nv, "mxv", q))
+        elif rows == (axis,) and wx_op is not None:
+            options.append((move + C_VXM[ti] * nv, "vxm", q))
+        elif q == p and axis in rows and len(rows) > 1 and wx_op is not None:
+            options.append((_row_selector_cost(M, tl.prod(x._shape, rows), ti), "rowsel", q))
+        elif q == p and axis in cols and len(cols) > 1 and xw_op is not None:
+            cost = _shape_selector_cost(nv, tl.prod(x._shape, cols), ti) + C_DIAG[ti] * nv
+            options.append((cost, "colsel", q))
+    others = tuple(a for a in range(n) if a != axis)
+    targets = frozenset(
+        ((*o, axis), n - 1)
+        for o in (itertools.permutations(others) if n <= tl.MAX_PLANNED_NDIM else [others])
+        if tl._valid_split(x._shape, (*o, axis), n - 1)
+    )
+    if targets and (not options or options[0][0] > 0):
+        general = tl.plan(x._shape, layout.state, targets, nv, nthreads)[0] + C_MXV[ti] * nv
+        options.append((general, "general", None))
+    if not options:
+        return False
+    _, kind, q = min(options, key=lambda o: o[0])
+    if kind == "general":
+        return False
+    if q != p:
+        M = M.ss.reshape(tl.prod(x._shape, seq[:q]), tl.prod(x._shape, seq[q:]))
+    rows, cols = seq[:q], seq[q:]
+    shape = tuple(m for a, m in enumerate(x._shape) if a != axis)
+    renum = {a: i for i, a in enumerate(a for a in range(n) if a != axis)}
+    opt_nthreads = updater.opts.get("nthreads")
+    wv = _in_layout(w, Layout((), (0,)), opt_nthreads)[0, :].new()
+    if kind in {"mxv", "vxm"}:
+        v = Vector(op.return_type, M._nrows if kind == "mxv" else M._ncols)
+        if kind == "mxv":
+            sr = op if xw_op is mult else get_semiring(op.monoid, xw_op)
+            v(**updater.opts) << M.mxv(wv, sr)
+            out = Layout((), tuple(renum[a] for a in rows))
+        else:
+            sr = op if wx_op is mult else get_semiring(op.monoid, wx_op)
+            v(**updater.opts) << wv.vxm(M, sr)
+            out = Layout((), tuple(renum[a] for a in cols))
         _store(updater, tl.steal_vector_as_row(v), shape, out, fresh=True)
         return True
-    if not _selector_ok(tl.prod(x._shape, group), x._M._nvals) or tl.density(x._M):
-        return False
-    # A weighted selector: S[kept, g] = w[axis coordinate of g] over the positions g of the
-    # group, so one product sums w-weighted entries over `axis` (DESIGN.md 3.3)
+    group = rows if kind == "rowsel" else cols
     gshape = tuple(x._shape[g] for g in group)
     pos = group.index(axis)
-    e = Vector(w.dtype, tl.prod(x._shape, group))
-    wv = _in_layout(w, Layout((), (0,)), nthreads)[0, :].new()
-    St = tl.selector(gshape, (pos,), transposed=True)
-    e << St.mxv(wv, semiring.lor_second if wv.dtype == BOOL else semiring.plus_second)
     kept_pos = tuple(i for i in range(len(group)) if i != pos)
-    flip = getattr(mult, "commutes_to", None)
-    if group is rows:
-        S = tl.selector(gshape, kept_pos)
-        Sw = tl.new_matrix(e.dtype, S._nrows, S._ncols)
-        Sw << S.mxm(e.diag(), semiring.any_second)
-        # Sw is the left operand, so the multiply sees (w, x)
-        mop = flip if x_left else mult
-        if mop is None:
-            return False
-        src = Sw.mxm(x._M, get_semiring(op.monoid, mop))
+    if kind == "rowsel" and M.ss.format == "hypercsr":
+        # A weighted selector over the nonempty rows only: S[kept, r] = w[axis coordinate]
+        idx, vals = wv.to_coo()
+        dense = np.zeros(x._shape[axis], vals.dtype)
+        present = np.zeros(x._shape[axis], bool)
+        dense[idx] = vals
+        present[idx] = True
+        Sw = tl.rows_selector(M, x._shape, rows, kept_pos, weights=(dense, present, pos))
+    else:
+        # S[kept, g] = w[axis coordinate of g] over the positions g of the group
+        e = Vector(wv.dtype, tl.prod(x._shape, group))
+        St = tl.selector(gshape, (pos,), transposed=True)
+        e << St.mxv(wv, semiring.lor_second if wv.dtype == BOOL else semiring.plus_second)
+        if kind == "rowsel":
+            S = tl.selector(gshape, kept_pos)
+            Sw = tl.new_matrix(e.dtype, S._nrows, S._ncols)
+            Sw << S.mxm(e.diag(), semiring.any_second)
+        else:
+            S = tl.selector(gshape, kept_pos, transposed=True)
+            Sw = tl.new_matrix(e.dtype, S._nrows, S._ncols)
+            Sw << e.diag().mxm(S, semiring.any_first)
+    if kind == "rowsel":
+        src = Sw.mxm(M, get_semiring(op.monoid, wx_op))
         out = Layout(tuple(renum[a] for a in rows if a != axis), tuple(renum[a] for a in cols))
     else:
-        S = tl.selector(gshape, kept_pos, transposed=True)
-        Sw = tl.new_matrix(e.dtype, S._nrows, S._ncols)
-        Sw << e.diag().mxm(S, semiring.any_first)
-        mop = mult if x_left else flip
-        if mop is None:
-            return False
-        src = x._M.mxm(Sw, get_semiring(op.monoid, mop))
+        src = M.mxm(Sw, get_semiring(op.monoid, xw_op))
         out = Layout(tuple(renum[a] for a in rows), tuple(renum[a] for a in cols if a != axis))
     _store(updater, src, shape, out)
     return True
