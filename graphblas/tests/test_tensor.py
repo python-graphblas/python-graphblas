@@ -1172,3 +1172,71 @@ def test_size_zero_axes(layout):
         R = T.sum(axis).new()
         ev, ep = np_reduce("plus", values, present, axis if axis is not None else (0, 1, 2))
         check(R, ev, ep)
+
+
+# --------------------------------------------------------------------------------------------
+# M7: tensordot
+
+
+def np_tensordot(xv, xp, yv, yp, axes):
+    zv = np.tensordot(np.where(xp, xv, 0), np.where(yp, yv, 0), axes)
+    zp = np.tensordot(xp.astype(np.int64), yp.astype(np.int64), axes) > 0
+    return np.where(zp, zv, 0), zp
+
+
+@pytest.mark.parametrize(
+    ("xshape", "yshape", "axes"),
+    [
+        ((3, 4, 5), (5, 6), 1),
+        ((3, 4, 5), (4, 5, 2), 2),
+        ((3, 4, 5), (5, 6, 3), ([0, 2], [2, 0])),
+        ((3, 4, 5), (6, 4), ([-2], [-1])),
+        ((2, 3), (4,), 0),
+        ((3, 4, 5), (3, 4, 5), 3),
+        ((2, 3, 4, 5), (5, 4, 3), ([1, 2, 3], [2, 1, 0])),
+        ((4, 5), (5,), 1),
+        ((5,), (5, 4, 3), 1),
+    ],
+)
+def test_tensordot(xshape, yshape, axes):
+    rng = np.random.default_rng(30)
+    nx, ny = len(xshape), len(yshape)
+    for lx, ly in [(None, None), (all_layouts(nx)[-1], all_layouts(ny)[1])]:
+        X, xv, xp = random_tensor(xshape, rng, layout=lx, density=0.4)
+        Y, yv, yp = random_tensor(yshape, rng, layout=ly, density=0.4)
+        R = X.tensordot(Y, axes).new()
+        ev, ep = np_tensordot(xv, xp, yv, yp, axes)
+        check(R, ev, ep, approx=True)
+
+
+def test_tensordot_semirings_masks_and_errors():
+    rng = np.random.default_rng(31)
+    X, xv, xp = random_tensor((3, 4, 5), rng, layout=((2,), (0, 1)), density=0.5)
+    Y, yv, yp = random_tensor((5, 6), rng, density=0.5)
+    # min_plus by brute force
+    R = X.tensordot(Y, 1, op=gb.semiring.min_plus).new()
+    big = np.where(xp, xv, np.inf)[..., None] + np.where(yp, yv, np.inf)[None, None]
+    ev = big.min(axis=2)
+    ep = np.isfinite(ev)
+    check(R, np.where(ep, ev, 0), ep, approx=True)
+    # mask, accum and a pinned target
+    ev, ep = np_tensordot(xv, xp, yv, yp, 1)
+    C, cv, cp = random_tensor((3, 4, 6), rng, layout=((2, 1), (0,)))
+    Mk, _, mp = random_tensor((3, 4, 6), rng, dtype=dtypes.BOOL, density=0.5)
+    C(Mk.S, binary.plus) << X.tensordot(Y, 1)
+    rv, rp = model_update(cv, cp, ev, ep, mask=mp, accum=np.add)
+    check(C, rv, rp, approx=True)
+    assert C.layout == Layout((2, 1), (0,))
+    assert "tensordot" in repr(X.tensordot(Y, 1))
+    with pytest.raises(DimensionMismatch, match="contract"):
+        X.tensordot(Y, ([0], [0]))
+    with pytest.raises(ValueError, match="axes"):
+        X.tensordot(Y, 4)
+    with pytest.raises(ValueError, match="same number"):
+        X.tensordot(Y, ([0, 1], [0]))
+    with pytest.raises(ValueError, match="repeated"):
+        X.tensordot(Y, ([2, 2], [0, 0]))
+    with pytest.raises(ValueError, match="pair"):
+        X.tensordot(Y, ([2], [0], [1]))
+    with pytest.raises(TypeError):
+        X.tensordot(Y, 1, op=binary.plus)

@@ -25,7 +25,7 @@ import weakref
 
 import numpy as np
 
-from .. import backend, binary, config, monoid
+from .. import backend, binary, config, monoid, semiring
 from ..dtypes import BOOL, FP64, lookup_dtype, unify
 from ..exceptions import DimensionMismatch, IndexOutOfBound
 from . import automethods, lib
@@ -660,6 +660,17 @@ class Tensor(BaseType):
         A position whose fiber has no entries stays missing (it is not 0).
         """
         return _reduce_expr(self, op, axis, keepdims)
+
+    # Contractions
+    def tensordot(self, other, axes=2, op=semiring.plus_times):
+        """Contract ``axes`` of this Tensor with ``axes`` of ``other`` (numpy.tensordot).
+
+        ``axes`` is an int N (the last N axes of this Tensor with the first N of ``other``)
+        or a pair of axis sequences. The result has this Tensor's free axes, then those of
+        ``other``. ``op`` is the semiring; a position is present when at least one pair of
+        entries meets there. Batch axes (``matmul``) are not implemented yet.
+        """
+        return _tensordot_expr(self, other, axes, op)
 
     def reduce_scalar(self, op=monoid.plus, *, allow_empty=True):
         """Reduce all entries to a Scalar."""
@@ -1298,6 +1309,111 @@ def _reduce_rebuild(M, shape, layout, A, op):
         dup_op=op.binaryop,
     )
     return out, Layout(rows, cols)
+
+
+# ---------------------------------------------------------------------------------------------
+# Contractions (DESIGN.md 7.2: relayout so the contracted axes are exactly one group, then mxm)
+
+
+def _tensordot_axes(axes, ndim_a, ndim_b):
+    if isinstance(axes, (tuple, list)):
+        if len(axes) != 2:
+            raise ValueError("axes must be an int or a pair of axis sequences")
+        a_axes, b_axes = axes
+        a_axes = (a_axes,) if not isinstance(a_axes, (tuple, list)) else tuple(a_axes)
+        b_axes = (b_axes,) if not isinstance(b_axes, (tuple, list)) else tuple(b_axes)
+        if len(a_axes) != len(b_axes):
+            raise ValueError(f"axes {axes} must pair the same number of axes")
+        a_axes = tuple(_normalize_axis(x, ndim_a) for x in a_axes)
+        b_axes = tuple(_normalize_axis(x, ndim_b) for x in b_axes)
+        if len(set(a_axes)) != len(a_axes) or len(set(b_axes)) != len(b_axes):
+            raise ValueError(f"repeated axis in {axes}")
+        return a_axes, b_axes
+    n = operator.index(axes)
+    if not 0 <= n <= min(ndim_a, ndim_b):
+        raise ValueError(f"axes={n} must be in 0..{min(ndim_a, ndim_b)}")
+    return tuple(range(ndim_a - n, ndim_a)), tuple(range(n))
+
+
+def _tensordot_expr(self, other, axes, op):
+    other = self._expect_type(other, Tensor, within="tensordot", argname="other", op=op)
+    a_axes, b_axes = _tensordot_axes(axes, self.ndim, other.ndim)
+    for x, y in zip(a_axes, b_axes, strict=True):
+        if self._shape[x] != other._shape[y]:
+            raise DimensionMismatch(
+                f"axis {x} of size {self._shape[x]} cannot contract with axis {y} of size "
+                f"{other._shape[y]}"
+            )
+    op = get_typed_op(op, self.dtype, other.dtype, kind="semiring")
+    self._expect_op(op, "Semiring", within="tensordot", argname="op")
+    shape = tuple(n for x, n in enumerate(self._shape) if x not in a_axes) + tuple(
+        n for y, n in enumerate(other._shape) if y not in b_axes
+    )
+    return TensorExpression(
+        "tensordot",
+        _tensordot_recipe,
+        [self, other],
+        (self, other, op, a_axes, b_axes),
+        dtype=op.return_type,
+        shape=shape,
+        op=op,
+        expr_repr="{0.name}.tensordot({1.name}, axes=%s, op={op})"  # noqa: UP031
+        % repr((a_axes, b_axes)).replace("{", "{{").replace("}", "}}"),
+    )
+
+
+def _orders(axes):
+    # Any order of the free axes gives the same product (only the output layout differs),
+    # so offer them all to the planner when there are few.
+    if len(axes) <= 3:
+        return list(itertools.permutations(axes))
+    return [axes]
+
+
+def _tensordot_recipe(updater, a, b, op, a_axes, b_axes):
+    nthreads = _nthreads(updater)
+    free_a = tuple(x for x in range(a.ndim) if x not in a_axes)
+    free_b = tuple(y for y in range(b.ndim) if y not in b_axes)
+    k = len(a_axes)
+    na, nb = a._M._nvals, b._M._nvals
+    best = None
+    # The contracted axes must come in the same order in a's columns and b's rows; try each
+    # order and the free-axis orders, and take the cheapest pair of relayouts.
+    sigmas = itertools.permutations(range(k)) if k <= 3 else [tuple(range(k))]
+    for sigma in sigmas:
+        ca = tuple(a_axes[i] for i in sigma)
+        cb = tuple(b_axes[i] for i in sigma)
+        ta = frozenset(
+            (fa + ca, len(fa))
+            for fa in _orders(free_a)
+            if tl._valid_split(a._shape, fa + ca, len(fa))
+        )
+        tb = frozenset(
+            (cb + fb, k) for fb in _orders(free_b) if tl._valid_split(b._shape, cb + fb, k)
+        )
+        if not ta or not tb:
+            continue
+        cost_a, _, sa = tl.plan(a._shape, a._layout.state, ta, na, nthreads)
+        cost_b, _, sb = tl.plan(b._shape, b._layout.state, tb, nb, nthreads)
+        if best is None or cost_a + cost_b < best[0]:
+            best = (cost_a + cost_b, sa, sb)
+    if best is None:
+        raise ValueError("the contracted or free axes do not fit in a Matrix dimension (2**60)")
+    _, sa, sb = best
+    A = _in_layout(a, Layout.from_state(sa), updater.opts.get("nthreads"))
+    B = _in_layout(b, Layout.from_state(sb), updater.opts.get("nthreads"))
+    out_a = {x: i for i, x in enumerate(free_a)}
+    out_b = {y: len(free_a) + i for i, y in enumerate(free_b)}
+    layout = Layout(
+        tuple(out_a[x] for x in sa[0][: len(free_a)]), tuple(out_b[y] for y in sb[0][k:])
+    )
+    shape = tuple(a._shape[x] for x in free_a) + tuple(b._shape[y] for y in free_b)
+    src = A.mxm(B, op)
+    if not layout.cols and layout.rows and _fixed_layout(updater) is None:
+        M, layout = _healthy(_materialize(src), shape, layout)
+        _store(updater, M, shape, layout, fresh=True)
+    else:
+        _store(updater, src, shape, layout)
 
 
 def _reduce_scalar_recipe(updater, a, op, allow_empty):
