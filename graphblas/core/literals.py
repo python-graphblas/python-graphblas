@@ -229,13 +229,19 @@ def _literal_type(dtype, value, *, exact=False):
     out of a leaf's range takes a type that holds it. A numpy value is
     strong: its dtype, in the array layout of its shape for an array
     (:func:`_array_literal_udt`); a sequence holding numpy values is the
-    array numpy makes of it. Anything else has no type here, and
-    ``Scalar.from_value`` reports it.
+    array numpy makes of it. Text beside a UDT of text is typed as in a
+    record's text field: the UDT itself when it converts there and back
+    unchanged, else its own type at its own length, which does not fit.
+    Anything else has no type here, and ``Scalar.from_value`` reports it.
     """
     value = _as_python_number(value)
     np_type = dtype.np_type
     if isinstance(value, dict) and np_type.names is not None:
         value = _dict_to_record(np_type, value)
+    if np_type.names is None and np_type.kind in "SU" and isinstance(value, (str, bytes)):
+        if _keeps_value(value, np_type):
+            return dtype
+        return lookup_dtype(np.dtype(f"{np_type.kind}{max(len(value), 1)}"))
     if type(value) in _LITERAL_KINDS or isinstance(value, (tuple, list)):
         literal_type = _weak_literal_udt(dtype, value, exact=exact)
         if literal_type is not None or type(value) in _LITERAL_KINDS:

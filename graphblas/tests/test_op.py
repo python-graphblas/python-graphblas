@@ -4654,6 +4654,7 @@ def test_udt_literal_converts_only_when_exact():
         (lambda: t.apply(second, right=(1.5, 1)), "_ExactText"),
         (lambda: b.apply(same, right=0.5), "_ExactBareText: it is typed as FP64,"),
         (lambda: b.apply(same, right=np.True_), "_ExactBareText: it is typed as BOOL,"),
+        (lambda: b.apply(same, right=b"0.5000"), "_ExactBareText"),  # was cut to b"0.5"
         (lambda: t.apply(second, right=cut_text), "_ExactText"),
         (lambda: d.apply(same, right=np.timedelta64(5, "ms")), "_ExactBareSeconds"),
     ]:
@@ -5963,6 +5964,21 @@ def test_udt_eq_compares_a_udt_that_is_neither_record_nor_array():
     assert s != gb.Scalar.from_value(b"cd", text)
     assert s == b"ab"
     assert s != b"cd"
+    # Under eq and ne, text pairs with text of its kind at another width, as numpy
+    # compares it, so a literal longer than the element is unequal, not cut short.
+    wide = dtypes.register_anonymous(np.dtype("S6"), "_EqOpaqueWide")
+    u = Vector(wide, size=3)
+    u[0] = b"ab"
+    u[1] = b"cdefgh"
+    for left, right in [(v, u), (u, v)]:
+        assert binary.eq(left & right).new().to_coo()[1].tolist() == [True, False]
+        assert binary.ne(left & right).new().to_coo()[1].tolist() == [False, True]
+    four = Vector(text, size=1)
+    four[0] = b"abcd"
+    assert not (four == b"abcdef").new()[0].new().value
+    assert (four != b"abcdef").new()[0].new().value
+    assert gb.Scalar.from_value(b"abcd", text) != b"abcdef"
+    assert gb.Scalar.from_value(b"ab", text) == gb.Scalar.from_value(b"ab", wide)
     # A Scalar's == compares in numpy, so an element Numba has no type for compares too.
     half = dtypes.register_anonymous(np.dtype(np.float16), "_EqOpaqueHalf")
     h = gb.Scalar.from_value(1.5, half)
@@ -6003,6 +6019,7 @@ def test_udt_eq_compares_a_udt_that_is_neither_record_nor_array():
         lambda: v == 1,
         lambda: binary.eq(v & Vector.from_coo([0], [1], size=3)),
         lambda: binary.eq(v & Vector(rec, size=3)),
+        lambda: binary.eq(v & Vector(dtypes.register_anonymous(np.dtype("U4")), size=3)),
         lambda: gb.Scalar.from_value([1, 2, 3, 4, 5], pair) == h,
         lambda: gb.Scalar.from_value((1,), rec) == s,
     ]:
