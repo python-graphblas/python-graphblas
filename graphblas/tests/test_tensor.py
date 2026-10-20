@@ -1918,3 +1918,30 @@ def test_scalar_comparisons_and_pow():
     check((X**2).new(), np.where(xp, xv**2, 0), xp, approx=True)
     check((2**X).new(), np.where(xp, 2.0**xv, 0), xp, approx=True)
     assert hash(X) == hash(X)  # comparisons do not make Tensors unhashable
+
+
+def test_mttkrp_large_dims():
+    """An intermediate past 2**31 columns takes the copying reshape (SS 10.5.1 bug)."""
+    rng = np.random.default_rng(57)
+    shape = (3, 2**29, 5)
+    coords = [rng.integers(0, n, 40) for n in shape]
+    lin = np.unique(np.ravel_multi_index(coords, shape))
+    coords = np.unravel_index(lin, shape)
+    vals = rng.random(lin.size)
+    X = Tensor.from_coo(coords, vals, shape=shape)
+    # The same data with the used j relabeled 0..m-1, for numpy
+    uj, jinv = np.unique(coords[1], return_inverse=True)
+    xs = np.zeros((3, uj.size, 5))
+    xs[coords[0], jinv, coords[2]] = vals
+    bs = rng.random((uj.size, 8))
+    B = Matrix.from_coo(
+        np.repeat(uj, 8), np.tile(np.arange(8), uj.size), bs.ravel(), nrows=2**29, ncols=8
+    )
+    C = rng.random((5, 8))
+    R = X.mttkrp([None, B, C], 0).new()
+    expected = np.einsum("ijk,jr,kr->ir", xs, bs, C)
+    present = np.zeros(3, bool)
+    present[coords[0]] = True
+    check(
+        R, np.where(present[:, None], expected, 0), np.repeat(present[:, None], 8, 1), approx=True
+    )
