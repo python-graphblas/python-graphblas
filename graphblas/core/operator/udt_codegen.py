@@ -485,7 +485,7 @@ if _has_numba:
         return f"{x_expr} {py_op} {y_expr}"
 
     @numba.njit(error_model="numpy")
-    def _complex_times(x, y):
+    def _complex_times(x, y):  # pragma: no cover (numba)
         """Multiply two complex numbers by the textbook formula, as numpy does.
 
         Numba's own ``*`` is CPython's, which from Python 3.14 (Numba 0.68)
@@ -503,7 +503,7 @@ if _has_numba:
         return complex(ar * br - ai * bi, ar * bi + ai * br)
 
     @numba.njit(error_model="numpy")
-    def _complex_truediv(x, y):
+    def _complex_truediv(x, y):  # pragma: no cover (numba)
         """Divide two complex numbers by Smith's method, as the C kernel does.
 
         This is CPython's ``_Py_c_quot`` before Python 3.14 (scale by the
@@ -1195,7 +1195,7 @@ def _c_truediv_expr(lhs, rhs, field_dtype):
     Complex division is a statement (:func:`_c_complex_truediv_stmt`).
     """
     if not _is_float(field_dtype):
-        raise ValueError(f"no C expression divides {field_dtype}")
+        raise ValueError(f"no C expression divides {field_dtype}")  # pragma: no cover (safety)
     return f"({lhs}) / ({rhs})"
 
 
@@ -1356,7 +1356,7 @@ def _c_expr_unary(py_op, operand, field_dtype):
         return f"(({operand}) < 0 ? -({operand}) : ({operand}))"
     if py_op == "-":
         return f"-({operand})"
-    raise ValueError(f"Unknown unary C op: {py_op}")
+    raise ValueError(f"Unknown unary C op: {py_op}")  # pragma: no cover (safety)
 
 
 def _make_jit_c_definition(op_name, py_op, dtype, arity):

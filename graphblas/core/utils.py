@@ -64,7 +64,7 @@ def _warn_from_caller(message, category):
     tests = package / "tests"
     frame = sys._getframe(1)
     stacklevel = 2
-    while frame is not None:
+    while frame is not None:  # pragma: no branch (safety)
         filename = Path(frame.f_code.co_filename)
         if not filename.is_relative_to(package) or filename.is_relative_to(tests):
             break
