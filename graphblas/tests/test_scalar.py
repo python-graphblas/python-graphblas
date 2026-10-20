@@ -675,6 +675,9 @@ def test_ewise_mult_add(s):
         s.ewise_add(v)
     with pytest.raises(TypeError, match="Literal scalars also"):
         s.ewise_mult(v)
+    # A literal is typed beside a string op that names no BinaryOp, so the op reports it.
+    with pytest.raises(ValueError, match="Unknown binary string: 'plus_times'"):
+        s.ewise_mult(1, "plus_times")
 
 
 def test_select(s):

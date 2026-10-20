@@ -1533,12 +1533,23 @@ def test_python_number_is_weak_beside_builtin_dtypes():
     assert (f32 * 0.5).dtype == dtypes.FP32
     if dtypes._supports_complex:
         assert (f32 + 1j).dtype == dtypes.FC32
+    else:
+        # Without complex types, a complex number keeps its own type, which plus does not take.
+        with pytest.raises(KeyError, match="plus does not work with"):
+            f32 + 1j
     s8 = Scalar.from_value(100, dtype=dtypes.INT8)
     assert (s8 + 1).new().dtype == (1 + s8).new().dtype == dtypes.INT8
     assert (Scalar.from_value(0.5, dtype=dtypes.FP32) * 0.5).new().dtype == dtypes.FP32
     A = Matrix.from_coo([0], [0], [100], dtype=dtypes.INT8)
     assert (A * 2).dtype == dtypes.INT8
-    exprs = [lambda: i8 + 300, lambda: u8 + -1, lambda: s8 * 300]
+    # Beside a bool, an int is INT64, and must fit it, as in numpy's ``bools & 2**70``.
+    exprs = [
+        lambda: i8 + 300,
+        lambda: u8 + -1,
+        lambda: s8 * 300,
+        lambda: bools + 2**70,
+        lambda: bools.apply(binary.band, right=2**70),
+    ]
     if supports_udfs:  # integer floordiv is a Numba op
         exprs.append(lambda: i8 // 300)
     for expr in exprs:
@@ -1576,6 +1587,7 @@ def test_python_number_is_weak_beside_builtin_dtypes():
     w8 = Vector.from_coo([1], [1], dtype=dtypes.INT8, size=2)
     assert i8.ewise_union(w8, binary.plus, 0, 0).dtype == dtypes.INT8
     assert i8.ewise_union(w8, binary.plus, 0.5, 0).dtype == dtypes.FP64
+    assert i8.ewise_union(w8, "<", 0, 300).new().to_coo()[1].tolist() == [True, True]
     sparse = Vector.from_coo([0], [5], dtype=dtypes.INT8, size=2)
     assert sparse.to_dense(fill_value=0).dtype == np.int8
     assert sparse.to_dense(fill_value=300).tolist() == [5, 300]  # widened, not lost
@@ -1590,6 +1602,10 @@ def test_python_number_is_weak_beside_builtin_dtypes():
     if supports_udfs:
         above = indexunary.register_anonymous(lambda x, i, j, thunk: x > thunk)
         assert i8.apply(above, 300).new().to_coo()[1].tolist() == [False, False]
+        # A user's BinaryOp computes in the collection's type, as plus does.
+        plus = binary.register_anonymous(lambda x, y: x + y)
+        with pytest.raises(OverflowError, match="out of bounds"):
+            i8.apply(plus, right=300)
     # Typed scalars promote as numpy 2 promotes them, on numpy 1 too.
     assert dtypes.unify(dtypes.INT8, dtypes.INT64, is_right_scalar=True) == dtypes.INT64
 
