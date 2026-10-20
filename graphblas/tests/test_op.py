@@ -1,5 +1,6 @@
 import itertools
 import os
+import pickle
 import subprocess
 import sys
 from pathlib import Path
@@ -7132,3 +7133,26 @@ def test_udt_ret_dtype_survives_pickle(tmp_path):
     # versions without ret_dtype can still read.
     plain = UnaryOp.register_anonymous(_ret_dtype_pickle_udf, "_ret_dtype_plain", is_udt=True)
     assert len(plain.__reduce__()[1]) == 3
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_ret_dtype_named_op_reregisters_on_unpickle():
+    # A named op unpickled where its name is not registered is registered again,
+    # with its ret_dtype. The name is removed when done, since test_operator_types
+    # enumerates the operator namespaces.
+    five = dtypes.register_anonymous(np.dtype((np.float32, (5,))), "_RetPickle5")
+    twelve = dtypes.register_anonymous(np.dtype((np.float32, (12,))), "_RetPickle12")
+    name = "_ret_dtype_reregistered"
+    try:
+        named = UnaryOp.register_new(name, _ret_dtype_pickle_udf, is_udt=True, ret_dtype=five)
+        payload = pickle.dumps(named)
+        assert pickle.loads(payload) is named
+        delattr(unary, name)
+        vars(op).pop(name)
+        new = pickle.loads(payload)
+        assert new is not named
+        assert getattr(unary, name) is new
+        assert new[twelve].return_type is five
+    finally:
+        vars(unary).pop(name, None)
+        vars(op).pop(name, None)
