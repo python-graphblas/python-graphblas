@@ -562,3 +562,42 @@ def ttm(arrays, col_sizes, U, nrows_out, nthreads):
     if dense:
         return ("bitmap", Vflat, Bflat, nfib * R)
     return ("hyper", hout, np.arange(0, (nfib + 1) * R, R, dtype=np.uint64), cols, Vflat)
+
+
+@njit(parallel=True, cache=True)
+def lookup(p, h, ci, x, iso, rows, cols, vals, found):
+    """For each point k, the entry at (rows[k], cols[k]) of a sparse or hypersparse by-row
+    Matrix's arrays (columns sorted within rows): ``found[k]`` and ``vals[k]``. Binary
+    searches: the row in ``h`` (hypersparse), then the column in the row's segment.
+    """
+    for k in prange(rows.size):
+        r = np.int64(rows[k])
+        s = r
+        if h.size > 0:
+            lo = np.int64(0)
+            hi = np.int64(h.size)
+            while lo < hi:
+                mid = (lo + hi) // 2
+                if np.int64(h[mid]) < r:
+                    lo = mid + 1
+                else:
+                    hi = mid
+            if lo == h.size or np.int64(h[lo]) != r:
+                found[k] = False
+                continue
+            s = lo
+        c = np.int64(cols[k])
+        lo = np.int64(p[s])
+        end = np.int64(p[s + 1])
+        hi = end
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if np.int64(ci[mid]) < c:
+                lo = mid + 1
+            else:
+                hi = mid
+        if lo < end and np.int64(ci[lo]) == c:
+            found[k] = True
+            vals[k] = x[0] if iso else x[lo]
+        else:
+            found[k] = False
