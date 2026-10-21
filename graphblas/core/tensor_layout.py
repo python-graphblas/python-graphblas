@@ -277,6 +277,33 @@ def matrix_from_arrays(dtype, nrows, ncols, fmt, *, x, h=None, p=None, i=None, b
     return M
 
 
+def new_vector_handle(like):
+    """A new empty GrB_Vector handle (of the type of ``like``), to put in a Container slot
+    whose vector is taken out.
+    """
+    t = ffi.new("GrB_Type*")
+    _check(lib.GxB_Vector_type(t, like), "GxB_Vector_type")
+    v = ffi.new("GrB_Vector*")
+    _check(lib.GrB_Vector_new(v, t[0], 0), "GrB_Vector_new")
+    return v[0]
+
+
+def give_rows(M, h, nrows):
+    """Make the ``F``-row Matrix ``M`` hypersparse with ``nrows`` rows, its row f becoming
+    row ``h[f]`` (``h`` a GrB_Vector of F sorted row ids, taken over), in place.
+    """
+    if M.ss.format != "csr":
+        M.ss.config["sparsity_control"] = "sparse"  # (from bitmap or full: O(entries))
+    with _Unloaded(M) as cont:
+        old = ffi.new("GrB_Vector*", cont.h)
+        _check(lib.GrB_Vector_free(old), "GrB_Vector_free")
+        cont.h = h
+        cont.nrows = nrows
+        cont.format = lib.GxB_HYPERSPARSE
+    M._nrows = nrows
+    M.ss.config["sparsity_control"] = "auto"
+
+
 def flip_orientation(M):
     """In place, O(1): an (n x m) Matrix held by column becomes the (m x n) Matrix of its
     transpose held by row (or the reverse), sharing the same arrays (DESIGN.md 4.1, s8).

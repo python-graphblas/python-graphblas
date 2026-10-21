@@ -2368,6 +2368,60 @@ def test_ttm_kernel_paths(monkeypatch):
     assert calls == []
 
 
+def test_ttm_compacted(monkeypatch):
+    """Without the kernel, TTM in the stored order on hypersparse rows runs one product on the
+    rows compacted (h dropped, then given back): any dtype and semiring, as the product.
+    """
+    from graphblas.core import tensor
+
+    monkeypatch.setattr(tensor, "_has_numba", False)
+    calls = []
+    orig = tensor._ttm_compacted
+
+    def spy(*args, **kwargs):
+        rv = orig(*args, **kwargs)
+        calls.append(rv is not None)
+        return rv
+
+    monkeypatch.setattr(tensor, "_ttm_compacted", spy)
+    rng = np.random.default_rng(81)
+    shape = (60, 70, 30)
+    for iso, dtype in [(False, dtypes.FP64), (True, dtypes.FP64), (False, dtypes.INT64)]:
+        X, xv, xp = random_tensor(
+            shape, rng, density=0.004, layout=((0, 1), (2,)), iso=iso, dtype=dtype
+        )
+        assert X.ss.format == "hypercsr"
+        U = rng.random((30, 4))
+        for kb in [0, 1]:
+            calls.clear()
+            R = X.tensordot(Matrix.from_dense(U if kb == 0 else U.T), ([2], [kb])).new()
+            check(R, *_ttm_model(xv, xp, U, 2), approx=True)
+            assert calls == [True]
+    # A sparse factor and another semiring: the same as the product
+    Us = Matrix.from_dense(U)
+    del Us[3, 1]
+    for factor, op in [(Us, gb.semiring.plus_times), (Matrix.from_dense(U), gb.semiring.max_times)]:
+        got = X.tensordot(factor, ([2], [0]), op=op).new()
+        with monkeypatch.context() as m:
+            m.setattr(tensor, "_ttm_compacted", lambda *a, **k: None)
+            # (close: the two kernels sum in different orders)
+            assert got.isclose(X.tensordot(factor, ([2], [0]), op=op).new())
+    # Not for rows that are mostly nonempty, nor outside the stored order
+    Y, yv, yp = random_tensor((10, 11, 30), rng, density=0.1, layout=((0, 1), (2,)))
+    calls.clear()
+    check(
+        Y.tensordot(Matrix.from_dense(U), ([2], [0])).new(), *_ttm_model(yv, yp, U, 2), approx=True
+    )
+    calls.clear()
+    U1 = rng.random((70, 2))
+    check(
+        X.tensordot(Matrix.from_dense(U1), ([1], [0])).new(),
+        *_ttm_model(xv, xp, U1, 1),
+        approx=True,
+    )
+    assert calls == [False]
+
+
 def test_mttkrp_without_numba():
     """With Numba blocked, the Tensor imports and MTTKRP runs the GraphBLAS products."""
     script = """
