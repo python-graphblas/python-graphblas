@@ -2906,7 +2906,8 @@ def test_kernel_disk_cache(tmp_path):
 def test_kernel_disk_cache_guards(tmp_path, monkeypatch):
     """A cache file that is not the kernel's source (corrupt, tampered with, or a digest
     prefix collision) is neither run nor overwritten: the kernel compiles in memory. A failed
-    rename leaves no temporary file behind.
+    rename leaves no temporary file behind; one that failed because another process wrote the
+    same file first uses that file.
     """
     pytest.importorskip("numba")
     from graphblas.core import tensor_numba
@@ -2941,6 +2942,20 @@ def test_kernel_disk_cache_guards(tmp_path, monkeypatch):
     assert k(x) == 45
     assert type(k._cache).__name__ == "NullCache"
     assert list((tmp_path / "other").iterdir()) == []
+
+    # The Windows race: another process writes the file first, and our rename onto it fails
+    # (PermissionError while that process has it open). Its file is used, from the cache.
+    def raced(self, target):
+        Path(target).write_bytes(self.read_bytes())
+        raise PermissionError("the file is open in another process")
+
+    monkeypatch.setenv(tensor_numba._CACHE_ENV, str(tmp_path / "raced"))
+    with monkeypatch.context() as m:
+        m.setattr(Path, "replace", raced)
+        k = tensor_numba._compile(source + "\n")  # (a new digest)
+    assert k(x) == 45
+    assert type(k._cache).__name__ != "NullCache"
+    assert [p.suffix for p in (tmp_path / "raced").iterdir() if p.is_file()] == [".py"]
 
 
 @pytest.mark.parametrize("shape", [(9, 10, 11), (5, 6, 7, 8), (3, 4, 5, 4, 3)])
