@@ -42,6 +42,7 @@ from .udt import (
 from .utils import (
     _CArray,
     _Pointer,
+    check_element_shape,
     class_property,
     get_order,
     ints_to_numpy_buffer,
@@ -680,6 +681,7 @@ class Matrix(BaseType):
                 "`rows` and `columns` and `values` lengths must match: "
                 f"{rows.size}, {columns.size}, {values.size}"
             )
+        check_element_shape(values, self.dtype, 1)
         if clear:
             self.clear()
         if nrows is not None or ncols is not None:
@@ -927,7 +929,8 @@ class Matrix(BaseType):
             if backend == "suitesparse":
                 C.ss.build_scalar(rows, columns, values.tolist())
             else:
-                C.build(rows, columns, np.broadcast_to(values, rows.size), dup_op=binary.any)
+                values = np.broadcast_to(values, (rows.size, *dtype.np_type.shape))
+                C.build(rows, columns, values, dup_op=binary.any)
         else:
             # Add the data
             # This needs to be the original data to get proper error messages
@@ -1060,6 +1063,7 @@ class Matrix(BaseType):
                     f"expected {check_num}, got {ncols}"
                 )
         if values.ndim == 0:
+            values = np.broadcast_to(values, dtype.np_type.shape)  # One whole element
             if backend == "suitesparse":
                 # SuiteSparse GxB can handle iso-value
                 if fmt is _CSR_FORMAT:
@@ -1083,7 +1087,8 @@ class Matrix(BaseType):
                     dtype=dtype,
                     name=name,
                 )
-            values = np.broadcast_to(values, indices.size)
+            values = np.broadcast_to(values, (indices.size, *dtype.np_type.shape))
+        check_element_shape(values, dtype, 1)
         new_mat = ffi_new("GrB_Matrix*")
         rv = cls._from_obj(new_mat, dtype, nrows, ncols, name=name)
         if dtype._is_udt:
@@ -1476,6 +1481,7 @@ class Matrix(BaseType):
             raise ValueError("A >2d array is required to create a dense Matrix with subdtype")
         if values.ndim > 2 and dtype.np_type.subdtype is None:
             raise ValueError(f"values array must be 2d to create dense Matrix with dtype {dtype}")
+        check_element_shape(values, dtype, 2)
         if backend == "suitesparse":
             # Should we try to handle F-contiguous data w/o a copy?
             rv = cls.ss.import_fullr(values, dtype=dtype, name=name)
