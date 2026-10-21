@@ -12,6 +12,7 @@ extend-ignore =
 per-file-ignores =
     benchmarks/*.py:B015,B018,
     scripts/create_pickle.py:F403,F405,
+    scripts/tensor_bench/*.py:E402,
     graphblas/tests/*.py:T201,B043,
     graphblas/core/ss/matrix.py:SIM113,
     graphblas/**/__init__.py:F401,

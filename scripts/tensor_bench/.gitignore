@@ -1,0 +1,4 @@
+# The kit's default data, results and build directories (see paths.py)
+/data/
+/results/
+/build/
