@@ -206,6 +206,34 @@ def check_values(d):
     assert d["replace"] is gb.replace
 
 
+def binaryor(x, y):
+    return x | y  # pragma: no cover (numba)
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_named_monoid_reregisters_on_unpickle():
+    # A named monoid unpickled where its name is not registered is registered again, with
+    # its identity and is_idempotent. The name is removed when done, since
+    # test_operator_types enumerates the operator namespaces.
+    name = "_monoid_reregistered"
+    binop = gb.core.operator.BinaryOp.register_anonymous(binaryor)
+    try:
+        named = gb.core.operator.Monoid.register_new(name, binop, 0, is_idempotent=True)
+        payload = pickle.dumps(named)
+        assert pickle.loads(payload) is named
+        delattr(gb.monoid, name)
+        vars(gb.op).pop(name)
+        new = pickle.loads(payload)
+        assert new is not named
+        assert getattr(gb.monoid, name) is new
+        assert new.is_idempotent
+        assert new[int].identity == 0
+        assert gb.Vector.from_coo([0, 2], [3, 5]).reduce(new).new() == 7
+    finally:
+        vars(gb.monoid).pop(name, None)
+        vars(gb.op).pop(name, None)
+
+
 def unarypickle_par(x):
     def inner(y):
         return x + y  # pragma: no cover (numba)
