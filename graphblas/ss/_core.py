@@ -316,6 +316,13 @@ class About(Mapping):
             raise KeyError(key)
         raise _error_code_lookup[info](f"Failed to get info for {key}")  # pragma: no cover (safety)
 
+    def __setattr__(self, key, value):
+        # About never sets instance attributes, so any attribute write is a
+        # mistake that would otherwise create a dead attribute shadowing reads.
+        if key.lower() in self:
+            raise AttributeError(f"About option {key.lower()!r} is read-only")
+        raise AttributeError(f"Unknown About option {key!r}; known options are {sorted(self)}.")
+
     def __iter__(self):
         return iter(
             sorted(
