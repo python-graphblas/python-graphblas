@@ -3986,3 +3986,29 @@ def test_assign_views_duplicates_and_matrix_parity():
         T[0, 0, 0, 0] = 1.0
     with pytest.raises(IndexOutOfBound):
         T[2] = 1.0
+
+
+@pytest.mark.parametrize("max_listed", [None, 0])
+@pytest.mark.parametrize("ndim", [2, 3, 4])
+def test_extract_repeated_indices(ndim, max_listed, monkeypatch):
+    """Outer indexing with repeated indices repeats the entries (numpy's ``np.ix_``, and
+    Matrix), on every layout and storage, by SuiteSparse's extract or (``_MAX_LISTED`` 0) the
+    coordinate filter, which used to keep one of them.
+    """
+    from graphblas.core import tensor
+
+    if max_listed is not None:
+        monkeypatch.setattr(tensor, "_MAX_LISTED", max_listed)
+    rng = np.random.default_rng(500 + ndim)
+    for i, layout in enumerate(all_layouts(ndim)[:: 1 if ndim < 4 else 7]):
+        shape = tuple(int(n) for n in rng.integers(2, 6, ndim))
+        X, xv, xp = random_tensor(shape, rng, density=[0.05, 0.4, 1.0][i % 3], layout=layout)
+        keys = [
+            rng.integers(0, n, int(rng.integers(1, 5))) if rng.random() < 0.7 else slice(None)
+            for n in shape
+        ]
+        sel = np.ix_(*[np.arange(n)[k] for k, n in zip(keys, shape, strict=True)])
+        check(X[tuple(keys)].new(), xv[sel], xp[sel])
+    A = Matrix.from_dense(np.arange(1.0, 13.0).reshape(3, 4))
+    T = Tensor.from_matrix(A)
+    assert T[[2, 2, 0], [1, 1]].new().to_matrix().isequal(A[[2, 2, 0], [1, 1]].new())
