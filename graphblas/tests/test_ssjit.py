@@ -1638,7 +1638,6 @@ def test_record_layouts_c_cannot_declare_skip_jit():
     outer = np.dtype([("ol_in", offset), ("ol_z", np.float64)])
     with_array = np.dtype(
         [("ol_x", np.float64), ("ol_rec", [("ol_v", np.float64, (2,)), ("ol_w", np.float64)])],
-        align=True,
     )
     for np_type, value, doubled in [
         (offset, (1, 400), (2, 800)),
