@@ -2710,6 +2710,45 @@ def test_kernel_disk_cache_guards(tmp_path, monkeypatch):
     assert list((tmp_path / "other").iterdir()) == []
 
 
+@pytest.mark.parametrize("shape", [(9, 10, 11), (5, 6, 7, 8), (3, 4, 5, 4, 3)])
+def test_mttkrp_products_udt_first(shape, monkeypatch):
+    """Without the Numba kernel, the products' first step (a TTM over the last axis) runs
+    on the array-UDT engine when the JIT is on: every mode and a sample of layouts, iso
+    values, against numpy and the plain products; a sparse factor keeps the product.
+    """
+    if backend != "suitesparse":
+        pytest.skip("SuiteSparse only")
+    _require_jit_compile()
+    from graphblas.core import tensor
+
+    calls = _ttm_udt_spy(monkeypatch)
+    monkeypatch.setattr(tensor, "_has_numba", False)
+    rng = np.random.default_rng(70 + len(shape))
+    ndim = len(shape)
+    dense = [rng.random((n, 3)) for n in shape]
+    factors = [Matrix.from_dense(d) for d in dense]
+    layouts = all_layouts(ndim)[:: {3: 1, 4: 17, 5: 173}[ndim]]
+    for i, layout in enumerate(layouts):
+        X, xv, xp = random_tensor(shape, rng, density=0.05, layout=layout, iso=i % 4 == 0)
+        for mode in range(ndim):
+            calls.clear()
+            R = X.mttkrp(factors, mode).new()
+            check(R, *_mttkrp_model(xv, xp, dense, mode), approx=True)
+            assert calls, (layout, mode)
+            with monkeypatch.context() as m:
+                m.setattr(tensor, "_MTTKRP_UDT_FIRST", False)
+                calls.clear()
+                assert R.isclose(X.mttkrp(factors, mode).new(), rel_tol=1e-12)
+                assert calls == []
+    sparse = [f.dup() for f in factors]
+    for f in sparse:
+        del f[0, 0]
+    calls.clear()
+    sdense = [f.to_dense(fill_value=0.0) for f in sparse]
+    check(X.mttkrp(sparse, 0).new(), *_mttkrp_model(xv, xp, sdense, 0), approx=True)
+    assert calls == []
+
+
 def test_mttkrp_without_numba():
     """With Numba blocked, the Tensor imports and MTTKRP runs the GraphBLAS products."""
     script = """
