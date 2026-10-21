@@ -3,7 +3,7 @@ import warnings
 from ast import literal_eval
 
 import numpy as np
-from numpy import promote_types, result_type
+from numpy import promote_types
 
 from .. import backend, dtypes
 from ..core import NULL, _has_numba, ffi, lib
@@ -117,7 +117,7 @@ def _get_udt_c_type_info(datatype):
     word or isn't an identifier. Supports record UDTs (including nested
     records) and array UDTs (e.g., ``FP64[3]``).
     """
-    from .operator.udt_utils import _udt_c_typedef
+    from .operator.udt_codegen import _udt_c_typedef
 
     if datatype.np_type is None:
         return None
@@ -143,7 +143,12 @@ def _set_udt_jit_c_definition(datatype):
     Supports both record UDTs (``{'x': float, 'y': float}``) and array UDTs
     (``np.dtype((np.float64, (3,)))``).
     """
-    from .operator.udt_utils import _has_jit_set
+    from .operator.udt_codegen import (
+        _has_jit_set,
+        _jit_c_type_defs,
+        _synthetic_udt_counter,
+        _udt_c_typedef,
+    )
 
     if not _has_jit_set or not datatype._is_udt:
         return
@@ -151,6 +156,11 @@ def _set_udt_jit_c_definition(datatype):
     if info is None:
         return
     c_name, typedef = info
+    # A name already given to another layout (two UDTs registered under one
+    # name) gets a fresh one: SuiteSparse would share their JIT kernels.
+    while _jit_c_type_defs.setdefault(c_name, typedef) != typedef:
+        info = _udt_c_typedef(f"_gbudt_{next(_synthetic_udt_counter)}", datatype.np_type)
+        c_name, typedef = info
     lib.GrB_Type_set_String(datatype._carg, ffi.new("char[]", c_name.encode()), lib.GxB_JIT_C_NAME)
     lib.GrB_Type_set_String(
         datatype._carg, ffi.new("char[]", typedef.encode()), lib.GxB_JIT_C_DEFINITION
@@ -566,14 +576,15 @@ def unify(type1, type2, *, is_left_scalar=False, is_right_scalar=False):
     unify(INT8, UINT16) -> INT32
     unify(BOOL, UINT16) -> UINT16
     unify(FP32, INT32) -> FP64
+
+    ``is_left_scalar`` and ``is_right_scalar`` no longer change the result. A
+    Python number is typed before it gets here (``literals._literal_operand``), and
+    a typed scalar promotes as any operand does, as numpy 2 promotes it. They
+    used to stand the scalar in as a 0-d array of value 0, which numpy 1 typed
+    by value, so ``int8_vec + 300`` wrapped there.
     """
     if type1 is type2:
         return type1
-    if is_left_scalar:
-        if not is_right_scalar:
-            return lookup_dtype(result_type(np.array(0, type1.np_type), type2.np_type))
-    elif is_right_scalar:
-        return lookup_dtype(result_type(type1.np_type, np.array(0, type2.np_type)))
     return lookup_dtype(promote_types(type1.np_type, type2.np_type))
 
 
@@ -647,6 +658,43 @@ def _view_if_same_layout(values, np_type):
     ):
         return values.view(np_type)
     return values
+
+
+def _nats_in_leaf_units(values, np_type):
+    """Return ``values`` with each NaT duration in it in the unit of the leaf it fills.
+
+    numpy before 2.3 converts a NaT ``timedelta64`` scalar, alone or in a tuple
+    or list, into another unit as the integer it is stored as: NaT ms into
+    ``timedelta64[s]`` is 9223372036854774 s, and NaT s into ``timedelta64[ms]``
+    is 0 ms. Converting an array (``astype``) keeps NaT, as does a date, so each
+    NaT scalar is converted that way first. ``values`` holds elements of
+    ``np_type``: a list is a sequence of them, and a tuple is a record's fields
+    (or, for any other dtype, a sequence too).
+    """
+    if not _has_duration_leaf(np_type):
+        return values
+    while np_type.subdtype is not None:
+        np_type = np_type.subdtype[0]
+    if isinstance(values, list) or (isinstance(values, tuple) and np_type.names is None):
+        items = [_nats_in_leaf_units(x, np_type) for x in values]
+        return items if isinstance(values, list) else tuple(items)
+    if isinstance(values, tuple) and len(values) == len(np_type.names):
+        return tuple(
+            _nats_in_leaf_units(x, np_type.fields[name][0])
+            for x, name in zip(values, np_type.names, strict=True)
+        )
+    if np_type.kind == "m" and isinstance(values, np.timedelta64) and np.isnat(values):
+        return np.asarray(values).astype(np_type)[()]
+    return values
+
+
+def _has_duration_leaf(np_type):
+    """Whether ``np_type`` has a timedelta64 leaf: a record field, an array's element, or itself."""
+    if np_type.subdtype is not None:
+        return _has_duration_leaf(np_type.subdtype[0])
+    if np_type.names is not None:
+        return any(_has_duration_leaf(np_type.fields[name][0]) for name in np_type.names)
+    return np_type.kind == "m"
 
 
 def _dtype_to_string(dtype):

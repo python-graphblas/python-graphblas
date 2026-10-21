@@ -7,7 +7,137 @@ from .base import OpBase, ParameterizedUdf, TypedOpBase, _call_op
 from .indexunary import IndexUnaryOp, TypedBuiltinIndexUnaryOp
 
 if _has_numba:
-    from .base import _compile_udf_for_udt, _finalize_udt_op, _get_udt_wrapper
+    from .udf import _compile_udf_for_udt, _finalize_udt_op, _get_udt_wrapper
+
+
+_VALUE_OPS = {"valueeq", "valuene", "valuelt", "valuele", "valuegt", "valuege"}
+
+
+def _value_select_in_own_type(op, dtype, thunk, given):
+    """Return ``op`` and ``thunk`` for ``select`` on built-in ``dtype``, as a value op of ``dtype``.
+
+    SuiteSparse:GraphBLAS (8.0 to 10.5, at least) runs ``select`` with a value
+    op typed for another type than the input's by reading the thunk's bytes as
+    the input's type, where the spec casts both to the op's type: on an INT8
+    vector, ``valueeq`` with ``1.0`` compared with 0, and ``valuelt`` with
+    ``300`` compared with 44. ``apply`` with the same op is right. So the
+    comparison is made in the input's own type, with a thunk that selects the
+    same elements: for integers, ``x < 2.5`` is ``x < 3``, and a thunk no
+    element can equal, or that every element passes, selects nothing or
+    everything; for floats, the thunk is rounded toward the side that keeps
+    the comparison exact; for complex numbers, which have no order, a thunk
+    that does not convert exactly equals no element. ``given`` is the thunk as
+    the caller gave it, whose value is exact where ``thunk`` may have rounded
+    it (an int beyond 64 bits is FP64). Other ops and types are returned
+    unchanged.
+    """
+    # MAINT 2026-10-07: works around the SuiteSparse:GraphBLAS bug above (seen in
+    # 8.0.2 through 10.6.0; fix proposed in DrTimothyAldenDavis/GraphBLAS#463).
+    # Once every supported version has the fix, pass the typed op and thunk
+    # through and delete this function.
+    if op.type is dtype or dtype._is_udt or op.parent.name not in _VALUE_OPS:
+        return op, thunk
+    import math
+
+    import numpy as np
+
+    from ... import indexunary
+    from ..scalar import Scalar
+
+    parent = op.parent
+    name = parent.name
+    if (
+        parent is not getattr(select, name)
+        and parent is not getattr(indexunary, name)
+        or dtype.np_type.kind not in "biufc"
+        or thunk._is_empty
+    ):
+        return op, thunk
+    value = given.value if type(given) is Scalar else given
+    if isinstance(value, (np.generic, np.ndarray)):
+        value = value.item()
+    np_type = dtype.np_type
+    if isinstance(value, complex) and np_type.kind != "c":
+        if value.imag != 0:
+            if name not in {"valueeq", "valuene"}:  # pragma: no cover (no complex order)
+                return op, thunk
+            value = math.nan  # equal to nothing, as a complex number is to a real one
+        else:
+            value = value.real
+    if np_type.kind == "c":
+        # Only valueeq and valuene take complex values. The thunk is compared
+        # exactly, as for floats: one that does not convert exactly (2**53 + 1
+        # beside complex64, or a NaN part) equals no element, as NaN does.
+        with np.errstate(over="ignore", invalid="ignore"):
+            near = np_type.type(value)
+        real, imag = (value.real, value.imag) if isinstance(value, complex) else (value, 0)
+        exact = float(near.real) == real and float(near.imag) == imag
+        new_name, new_value = name, near if exact else np_type.type(complex(math.nan, math.nan))
+    elif np_type.kind == "f":
+        nan, ftype = np_type.type(np.nan), np_type.type
+        if value != value:  # NaN: only ``!=`` holds, for every element
+            new_name, new_value = name, nan
+        else:
+            # A finite value too large for ftype is infinity there, which still
+            # compares right with every element, so numpy need not warn.
+            with np.errstate(over="ignore"):
+                near = ftype(value)
+            above = near if float(near) >= value else np.nextafter(near, ftype(math.inf))
+            below = near if float(near) <= value else np.nextafter(near, ftype(-math.inf))
+            new_name = name
+            if name in {"valueeq", "valuene"}:
+                # No element equals NaN: == selects nothing and != everything.
+                new_value = near if float(near) == value else nan
+            else:
+                new_value = above if name in {"valuelt", "valuege"} else below
+    else:
+        if np_type.kind == "b":
+            lo, hi = 0, 1
+        else:
+            info = np.iinfo(np_type)
+            lo, hi = int(info.min), int(info.max)
+        keep_all, keep_none = ("valuege", lo), ("valuelt", lo)
+        if value != value:
+            new_name, new_value = keep_all if name == "valuene" else keep_none
+        elif name in {"valueeq", "valuene"}:
+            # An int is whole, and math.isfinite cannot take one too large for a float.
+            exact = type(value) is int or (math.isfinite(value) and value == math.floor(value))
+            if exact and lo <= value <= hi:
+                new_name, new_value = name, int(value)
+            else:
+                new_name, new_value = keep_all if name == "valuene" else keep_none
+        else:
+            # Integers: x < t is x < ceil(t), x <= t is x <= floor(t), and so on.
+            if type(value) is float and math.isinf(value):
+                bound = value
+            elif name in {"valuelt", "valuege"}:
+                bound = math.ceil(value)
+            else:
+                bound = math.floor(value)
+            passes_all = {
+                "valuelt": bound > hi,
+                "valuele": bound >= hi,
+                "valuegt": bound < lo,
+                "valuege": bound <= lo,
+            }[name]
+            passes_none = {
+                "valuelt": bound <= lo,
+                "valuele": bound < lo,
+                "valuegt": bound >= hi,
+                "valuege": bound > hi,
+            }[name]
+            if passes_all:
+                new_name, new_value = keep_all
+            elif passes_none:
+                new_name, new_value = keep_none
+            else:
+                new_name, new_value = name, int(bound)
+        if np_type.kind == "b":
+            new_value = bool(new_value)
+    module = select if isinstance(parent, SelectOp) else indexunary
+    new_op = getattr(module, new_name)[dtype]
+    new_thunk = Scalar.from_value(new_value, dtype, is_cscalar=thunk._is_cscalar, name="")
+    return new_op, new_thunk
 
 
 class TypedBuiltinSelectOp(TypedOpBase):
@@ -129,6 +259,9 @@ class SelectOp(OpBase):
         dtypes = (dtype, dtype2)
         if dtypes in self._udt_types:
             return self._udt_ops[dtypes]
+        from ..udt import _refuse_half
+
+        _refuse_half(self, dtype, dtype2)
         if self._numba_func is None:
             raise KeyError(f"{self.name} does not work with {dtypes} types")
 

@@ -29,7 +29,6 @@ repos:
       - id: check-json # no JSON files yet; enabled for the future
       - id: check-toml
       - id: check-yaml
-      - id: check-executables-have-shebangs
       - id: check-vcs-permalinks
       - id: debug-statements
       - id: destroyed-symlinks

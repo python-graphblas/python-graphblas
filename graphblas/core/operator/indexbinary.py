@@ -13,7 +13,7 @@ _has_idxbinop = hasattr(lib, "GxB_IndexBinaryOp_new")
 if _has_numba:
     import numba
 
-    from .base import (
+    from .udf import (
         _bool_to_int8,
         _compile_udf_for_udt,
         _get_udt_wrapper_indexbinary,
@@ -374,6 +374,9 @@ class IndexBinaryOp(OpBase):
         dtypes = (dtype, dtype2)
         if dtypes in self._udt_types:
             return self._udt_ops[dtypes]
+        from ..udt import _refuse_half
+
+        _refuse_half(self, dtype, dtype2)
         if self._numba_func is None:
             raise KeyError(f"{self.name} does not work with {dtypes} types")
 

@@ -7,8 +7,10 @@ from ..exceptions import check_status
 from . import NULL
 from .descriptor import lookup as descriptor_lookup
 from .expr import AmbiguousAssignOrExtract, Updater
+from .literals import _literal_store_dtype
 from .mask import Mask
 from .operator import UNKNOWN_OPCLASS, binary_from_string, find_opclass, get_typed_op
+from .udt import _fused_store_expr, _scalar_accum_op, _store_cast_op
 from .utils import _Pointer, libget, output_type
 
 _recorder = ContextVar("recorder")
@@ -341,7 +343,7 @@ class BaseType:
                 if expr._is_scalar and self._is_scalar:
                     # Extract element (s << v[1])
                     if accum is not None:
-                        self(**opts) << self.ewise_add(expr, accum)
+                        self(**opts) << self.ewise_add(expr, _scalar_accum_op(self, accum))
                         return
                     expr.parent._extract_element(
                         expr.resolved_indexes,
@@ -362,9 +364,13 @@ class BaseType:
                 expr = expr._extract_delayed()
             elif type(expr) is type(self):
                 # Simple assignment (w << v)
+                if (cast_op := _store_cast_op(expr.dtype, self.dtype)) is not None:
+                    expr = expr.apply(cast_op)
+                    self._update(expr, mask, accum, replace, input_mask, opts=opts)
+                    return
                 if self._is_scalar:
                     if accum is not None:
-                        self(**opts) << self.ewise_add(expr, accum)
+                        self(**opts) << self.ewise_add(expr, _scalar_accum_op(self, accum))
                         return
                     if opts:
                         # Ignore opts for now
@@ -386,7 +392,7 @@ class BaseType:
                     # s << (v @ v)
                     expr = expr._to_expr()
                 elif accum is not None:
-                    self(**opts) << self.ewise_add(expr, accum)
+                    self(**opts) << self.ewise_add(expr, _scalar_accum_op(self, accum))
                     return
                 else:
                     if opts:
@@ -399,16 +405,20 @@ class BaseType:
                 from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
                 if type(expr) is TransposedMatrix and type(self) is Matrix:
-                    # Transpose (C << A.T)
-                    expr = MatrixExpression(
-                        "transpose",
-                        "GrB_transpose",
-                        [expr],
-                        expr_repr="{0}",
-                        dtype=expr.dtype,
-                        nrows=expr._nrows,
-                        ncols=expr._ncols,
-                    )
+                    if (cast_op := _store_cast_op(expr.dtype, self.dtype)) is not None:
+                        # C << A.T of another UDT type: the cast reads A transposed.
+                        expr = expr.apply(cast_op)
+                    else:
+                        # Transpose (C << A.T)
+                        expr = MatrixExpression(
+                            "transpose",
+                            "GrB_transpose",
+                            [expr],
+                            expr_repr="{0}",
+                            dtype=expr.dtype,
+                            nrows=expr._nrows,
+                            ncols=expr._ncols,
+                        )
                 elif isinstance(expr, InfixExprBase):
                     # w << (v & v)
                     expr = expr._to_expr()
@@ -418,7 +428,7 @@ class BaseType:
                     if type(expr) is Scalar:
                         scalar = expr
                     else:
-                        dtype = self.dtype if self.dtype._is_udt else None
+                        dtype = _literal_store_dtype(self.dtype, expr)
                         try:
                             scalar = Scalar.from_value(expr, dtype, is_cscalar=None, name="")
                         except TypeError:
@@ -446,6 +456,21 @@ class BaseType:
 
         if input_mask is not None:
             raise TypeError("`input_mask` argument may only be used for extract")
+        # With an accumulator too: it is typed on this object's dtype, so the
+        # result still has to be that type. Before the Aggregator branch, which
+        # hands GraphBLAS the output as it is: agg.first on another UDT read its
+        # bytes as this object's type.
+        if (cast_op := _store_cast_op(expr.dtype, self.dtype)) is not None:
+            if self._is_scalar:
+                # One element: compute it in its own type, then cast it as it is
+                # stored, so the accumulator applies to the cast value.
+                result = expr.new(name="s_result", **opts)
+                self._update(result.apply(cast_op), mask, accum, replace, opts=opts)
+                return
+            if expr.cfunc_name is not None:
+                # A recipe (cfunc_name None) stores through ``<<`` itself, and
+                # each of its stores is checked there.
+                expr = _fused_store_expr(expr, self.dtype)
         if expr.op is not None and expr.op.opclass == "Aggregator":
             updater = self(mask=mask, accum=accum, replace=replace, **opts)
             expr.op._new(updater, expr)

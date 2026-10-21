@@ -30,6 +30,33 @@ When a data type is needed in an API call, a string or numpy or numba dtype may 
 instead of the actual data type object. Additionally, the Python builtin
 ``bool``, ``int``, and ``float`` may be used. ``int`` indicates INT64 and ``float`` indicates FP64.
 
+Python numbers in operations
+----------------------------
+
+A Python ``bool``, ``int``, ``float`` or ``complex`` used as an operand, such as
+the ``1`` in ``v + 1`` or ``v.apply(binary.times, right=0.5)``, is *weak*, as in
+numpy 2 (NEP 50). It takes the other operand's data type when that type's kind
+can hold it, and its own default type (BOOL, INT64, FP64 or FC64) when not. So
+with an INT8 vector ``v``, ``v + 1`` is INT8 and ``v * 0.5`` is FP64, while
+``v + 300`` raises ``OverflowError`` rather than wrapping, and ``v * 2`` wraps
+in INT8 as it does in numpy. An FP32 vector times ``0.5`` is FP32, plus ``1j``
+is FC32, and plus ``1e300`` is infinity, with a ``RuntimeWarning`` as in numpy. numpy scalars, 0-d arrays and ``Scalar`` objects keep their own
+type: ``v + np.int64(1)`` is INT64. python-graphblas applies this rule itself,
+so it does not depend on the installed version of numpy. User-defined types
+follow the same rule, field by field (see :doc:`udt`).
+
+A comparison has no result type to keep, so an integer outside the operand's
+range compares exactly, as in numpy: ``v < 300`` is True for every element, as
+is ``w < 2**63`` for an INT64 vector ``w``.
+Nor does ``v / 300`` raise, since its result is FP64 whatever the integer. An
+FP32 vector ``== 0.1`` compares in FP32, and ``== 1e300`` compares with
+infinity, with a ``RuntimeWarning`` as in numpy. The defaults of ``ewise_union``
+follow the rule, and so does the ``fill_value`` of ``to_dense``, except that a
+value that does not fit widens the result instead of raising. A literal given
+to a typed operator, such as ``binary.plus["INT64"]``, takes that operator's
+type, and a ``select`` or ``IndexUnaryOp`` thunk that is not compared with the
+values, such as a row index, keeps its own type.
+
 User-defined Types
 ------------------
 
