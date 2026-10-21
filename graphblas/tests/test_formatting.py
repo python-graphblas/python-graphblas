@@ -4610,8 +4610,8 @@ def test_infix_expr_repr_html(A, B, v):
         '    <td rowspan="2" class="gb-info-name-cell"><pre>A<sub>1</sub> & B<sub>1</sub>.T</pre></td>\n'
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
-        "    <td><pre>right_dtype</pre></td>\n"
         "    <td><pre>left_dtype</pre></td>\n"
+        "    <td><pre>right_dtype</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>1</td>\n"
@@ -4633,14 +4633,39 @@ def test_infix_expr_repr_html(A, B, v):
         '    <td rowspan="2" class="gb-info-name-cell"><pre>A<sub>1</sub> | A<sub>1</sub></pre></td>\n'
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
-        "    <td><pre>right_dtype</pre></td>\n"
         "    <td><pre>left_dtype</pre></td>\n"
+        "    <td><pre>right_dtype</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
         "    <td>INT64</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary></details></div>"
+    )
+    # Operands of two dtypes, so each dtype must sit under its own side's label
+    F = Matrix.from_coo([0], [1], [2.5], nrows=1, ncols=5, name="F")
+    html_printer(A | F, "A | F")
+    assert repr_html(A | F) == (
+        "<div>"
+        f"{CSS_STYLE}"
+        '<details class="gb-expr-details"><summary class="gb-expr-summary"><tt><b>gb.MatrixEwiseAddExpr</b></tt>&nbsp;<span class="expr-tooltip"><span class="tooltip-circle">?</span><span class="tooltip-text"><em>Do <code>op(expr)</code> to create a <tt>MatrixExpression</tt> for <tt>ewise_add</tt>.<br>For example: <code>plus(A<sub>1</sub> | F)</code></em></span></span><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>A<sub>1</sub> | F</pre></td>\n'
+        "    <td><pre>nrows</pre></td>\n"
+        "    <td><pre>ncols</pre></td>\n"
+        "    <td><pre>left_dtype</pre></td>\n"
+        "    <td><pre>right_dtype</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>1</td>\n"
+        "    <td>5</td>\n"
+        "    <td>INT64</td>\n"
+        "    <td>FP64</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -4656,8 +4681,8 @@ def test_infix_expr_repr_html(A, B, v):
         '    <td rowspan="2" class="gb-info-name-cell"><pre>A<sub>1</sub> @ B<sub>1</sub></pre></td>\n'
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
-        "    <td><pre>right_dtype</pre></td>\n"
         "    <td><pre>left_dtype</pre></td>\n"
+        "    <td><pre>right_dtype</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>1</td>\n"
@@ -4679,8 +4704,8 @@ def test_infix_expr_repr_html(A, B, v):
         '    <td rowspan="2" class="gb-info-name-cell"><pre>A<sub>1</sub>.T @ B<sub>1</sub>.T</pre></td>\n'
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
-        "    <td><pre>right_dtype</pre></td>\n"
         "    <td><pre>left_dtype</pre></td>\n"
+        "    <td><pre>right_dtype</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>5</td>\n"
@@ -4994,8 +5019,8 @@ def test_autocompute_html(A, B, v):
         '    <td rowspan="2" class="gb-info-name-cell"><pre>A<sub>1</sub> & A<sub>1</sub></pre></td>\n'
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
-        "    <td><pre>right_dtype</pre></td>\n"
         "    <td><pre>left_dtype</pre></td>\n"
+        "    <td><pre>right_dtype</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>1</td>\n"
