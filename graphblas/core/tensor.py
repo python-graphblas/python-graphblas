@@ -2075,10 +2075,20 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
         if M.ss.format == "hypercsr":
             cost += C_EWISE_HROW[ti] * tl.nonempty_rows(M)
         options.append((cost, "gather", None, False))
+
+    def hyper_rows(state):
+        # A reshape into hypersparse rows (more positions than SuiteSparse's 1/16 of nonempty
+        # ones) makes the diagonal product pay a hash lookup per nonempty row, as the gather's
+        # does: skew, hyper, Zipf, NIPS and Enron along a single last axis took 2-15x their
+        # estimate without this term (phase 9a census)
+        nrows = tl.prod(shape, state[0][: state[1]])
+        R = tl.expected_rows(nrows, nv)
+        return C_EWISE_HROW[ti] * R if nrows > 16 * R else 0.0
+
     for q in range(len(seq) + 1):
         if not tl._valid_split(shape, seq, q):
             continue
-        move = 0.0 if q == p else _rs_cost(shape, seq, q, nv, ti)
+        move = 0.0 if q == p else _rs_cost(shape, seq, q, nv, ti) + hyper_rows((seq, q))
         rows, cols = seq[:q], seq[q:]
         if col_op is not None and Fset == set(cols):
             options.append((move + C_DIAG[ti] * nv, q, "cols", False))
