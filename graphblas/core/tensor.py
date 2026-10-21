@@ -2997,10 +2997,11 @@ _TTM_KERNEL_MIN_NNZ = 2**16
 # benchmarks set this to force some):
 #   "udt"        one mxv with FP64[R] values (tensor_udt.ttm; JIT on, FP64 plus_times)
 #   "numba"      the Numba kernel (tensor_numba.ttm; FP64 plus_times)
-#   "compacted"  one product on the nonempty rows (_ttm_compacted; stored order, any op)
-#   "products"   one product after a relayout (_contract), which runs every TTM, so it is
-#                also what any list falls back to
-_TTM_ENGINES = ("udt", "numba", "compacted", "products")
+#   "products"   one product: in the stored order on hypersparse rows, on the nonempty rows
+#                compacted (_ttm_compacted, any type and semiring; NELL-2 mode 2: 1.6-1.7x
+#                over the plain product); else after a relayout (_contract). It runs every
+#                TTM, so it is also what any list falls back to
+_TTM_ENGINES = ("udt", "numba", "products")
 # Where both engines run, the UDT one is faster only in the stored order with a hypersparse
 # output and R up to 32 (NELL-2 mode 2: 77 / 139 / 329 ms against 92 / 174 / 354 at R = 8 /
 # 16 / 32, 1 thread; 14 / 24 / 55 against 18 / 31 / 62 at 8); slower with a bitmap output
@@ -3010,8 +3011,9 @@ _TTM_UDT_MAX_R = 32
 
 
 def _ttm_engines(updater, a, b, op, a_axes, b_axes):
-    """A TTM by the first engine of ``_TTM_ENGINES`` before "products" that runs here:
-    ``(src, layout, shape)``, or None for the products (``_contract``).
+    """A TTM by the first engine of ``_TTM_ENGINES`` before "products" that runs here, or by
+    the products on compacted rows: ``(src, layout, shape)``; None for the plain products
+    (``_contract``).
     """
     kernels = (
         len(a_axes) == 1
@@ -3028,20 +3030,20 @@ def _ttm_engines(updater, a, b, op, a_axes, b_axes):
     for engine in _TTM_ENGINES:
         if engine == "products":
             break
-        if engine == "compacted":
-            run = _ttm_compacted
-        elif not kernels:
+        if not kernels:
             continue
-        else:
-            run = _ttm_udt if engine == "udt" else _ttm_numba
+        run = _ttm_udt if engine == "udt" else _ttm_numba
         if (rv := run(updater, a, b, op, a_axes, b_axes)) is not None:
             if census.on:
                 census.note("ttm", engine, declined=declined, kernels=kernels, nvals=a._M._nvals)
             return rv
         declined.append(engine)
+    # The products, on the nonempty rows when they are few
+    rv = _ttm_compacted(updater, a, b, op, a_axes, b_axes)
     if census.on and len(a_axes) == 1 and b.ndim == 2:
-        census.note("ttm", "products", declined=declined, kernels=kernels, nvals=a._M._nvals)
-    return None
+        census.note("ttm", "products" if rv is None else "products, compacted rows",
+                    declined=declined, kernels=kernels, nvals=a._M._nvals)  # fmt: skip
+    return rv
 
 
 def _ttm_factor(b, kb):
