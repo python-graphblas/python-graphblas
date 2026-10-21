@@ -3686,3 +3686,24 @@ def test_reshape_errors():
         E.reshape(-1, 0)
     assert E.reshape(3, 0, 5).shape == (3, 0, 5)
     assert E.reshape(3, 0, copy=False).nvals == 0
+
+
+def test_user_guide_examples():
+    """Every example on the docs' Tensors page (``docs/user_guide/tensor.rst``) runs and
+    prints what the page shows.
+    """
+    import doctest
+
+    if backend != "suitesparse":
+        pytest.skip("SuiteSparse only")
+    pytest.importorskip("scipy")
+    path = Path(__file__).resolve().parents[2] / "docs" / "user_guide" / "tensor.rst"
+    if not path.exists():  # pragma: no cover (an installed package has no docs)
+        pytest.skip("no docs directory")
+    failed, attempted = doctest.testfile(
+        str(path),
+        module_relative=False,
+        optionflags=doctest.NORMALIZE_WHITESPACE | doctest.ELLIPSIS,
+    )
+    assert attempted >= 40
+    assert failed == 0
