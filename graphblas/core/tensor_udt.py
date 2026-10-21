@@ -214,7 +214,7 @@ def ttm(M, U, desc=None):
     doubles: full rows where ``M`` has a nonempty row, none elsewhere (bitmap, or full, when
     at least half the rows are nonempty, else hypersparse). ``M`` is an FP64 Matrix held by row,
     ``U`` a C-contiguous (ncols x R) float64 array that is taken over. None when the engine
-    is not available (no JIT).
+    is not available (no JIT), or when the product came back iso.
     """
     K, R = U.shape
     if (ops := semiring(R)) is None:
@@ -247,13 +247,16 @@ def ttm(M, U, desc=None):
 def _rows_from_vector(w, n, R):
     """The (n x R) FP64 Matrix whose row g holds the R doubles of ``w`` at g. ``w``'s values
     and indices move into it (O(1)); the hypersparse form adds a row pointer and the column
-    indices, the bitmap one the bitmap of every value. ``w`` is left empty.
+    indices, the bitmap one the bitmap of every value. ``w`` is left empty. None when ``w``
+    is iso.
     """
     M = tl.new_matrix(FP64, n, R)
     with _UnloadedVector(w, load=False) as cw:
         fmt, nvals = cw.format, cw.nvals
-        if cw.iso:  # pragma: no cover (an iso product of a full factor: not seen)
-            raise NotImplementedError("iso UDT product")
+        if cw.iso:
+            # SuiteSparse marks a product of one entry by one value iso (a 1 x 1 Matrix with
+            # one column in the factor): decline, and the products run instead
+            return None
         with tl._Unloaded(M) as cm:
             _retype(cw.x, FP64._carg, (nvals if fmt == lib.GxB_SPARSE else n) * R)
             cm.x, cw.x = cw.x, cm.x
