@@ -14,6 +14,8 @@ SuiteSparse assign or subassign on the stored Matrix, with the value and a regio
 to the region's matching layout.
 """
 
+import math
+
 import numpy as np
 
 from ..exceptions import DimensionMismatch
@@ -178,3 +180,237 @@ class TensorAssigner:
 
     def __bool__(self):
         raise TypeError(f"__bool__ not defined for objects of type {type(self)}.")
+
+
+# ---------------------------------------------------------------------------------------------
+# Gather: take, take_along_axis, vindex
+
+# The gather engines, tried in this order where each runs (all kept, to measure; tests force
+# some): "extract" (one SuiteSparse extract, for ``take``), "numba" (binary searches over the
+# stored arrays, per point), "graphblas" (the points as an iso pattern Matrix, intersected with
+# the stored Matrix by ``ewise_mult``), which runs every case.
+_GATHER_ENGINES = ("extract", "numba", "graphblas")
+
+
+def _index_array(index, size, axis, wraparound):
+    """An int64 array of coordinates along ``axis`` (an ndarray of any shape; a Scalar or int
+    is 0-d). Negatives count from the end once, unless ``wraparound`` is False; out of range
+    raises IndexError.
+    """
+    from .scalar import Scalar
+    from .tensor import _scalar_index
+
+    if isinstance(index, Scalar):
+        index = _scalar_index(index, axis)
+    arr = np.asarray(index)
+    if arr.dtype == bool:
+        raise TypeError("boolean indices are not supported for Tensor")
+    if arr.size and not np.issubdtype(arr.dtype, np.integer):
+        raise TypeError(f"indices must be integers; got {arr.dtype} (axis {axis})")
+    arr = arr.astype(np.int64)
+    if arr.size:
+        lo = -size if wraparound else 0
+        if arr.min() < lo or arr.max() >= size:
+            what = (
+                "out of bounds"
+                if arr.max() >= size or wraparound
+                else "negative (wraparound=False)"
+            )
+            raise IndexError(f"an index is {what} for axis {axis} of size {size}")
+    return np.where(arr < 0, arr + size, arr)
+
+
+def gather(t, coords, shape):
+    """The Tensor of ``shape`` whose position k (C order) holds ``t`` at the point
+    ``coords[a][k]`` (one flat int64 array per axis of ``t``), missing where ``t`` is.
+    """
+    from .tensor import Tensor
+
+    n = math.prod(shape)
+    if n == 0 or t._M._nvals == 0:
+        return Tensor(t.dtype, shape)
+    rows = tl.ravel(coords, t._shape, t._layout.rows, n=n)
+    cols = tl.ravel(coords, t._shape, t._layout.cols, n=n)
+    for engine in _GATHER_ENGINES:
+        if engine == "numba":
+            rv = _lookup_numba(t, rows, cols)
+        elif engine == "graphblas":
+            rv = _lookup_graphblas(t, rows, cols)
+        else:
+            continue
+        if rv is not None:
+            found, vals = rv
+            break
+    else:
+        found, vals = _lookup_graphblas(t, rows, cols)
+    pos = np.flatnonzero(found)
+    out = np.unravel_index(pos, shape) if shape else ()
+    return Tensor.from_coo(out, vals[pos], t.dtype, shape=shape)
+
+
+def _lookup_numba(t, rows, cols):
+    from . import _has_numba
+
+    M = t._M
+    if not _has_numba or M.dtype._is_udt:
+        return None
+    fmt = M.ss.format
+    np_type = M.dtype.np_type
+    with tl._Unloaded(M) as cont:
+        if fmt in {"bitmapr", "fullr"}:
+            k = rows * M._ncols + cols
+            with tl._VectorArray(cont.x, np_type) as x:
+                vals = x.array[0 if cont.iso else k].copy() if x.array is not None else None
+                vals = np.broadcast_to(vals, k.shape).copy() if cont.iso else vals
+            if fmt == "fullr":
+                return np.ones(k.size, bool), vals
+            with tl._VectorArray(cont.b, np.int8) as b:
+                return b.array[k].astype(bool), vals
+        if fmt not in {"csr", "hypercsr"}:
+            return None
+        from .tensor_numba import lookup
+
+        with (
+            tl._VectorArray(cont.p) as p,
+            tl._VectorArray(cont.h) as h,
+            tl._VectorArray(cont.i) as ci,
+            tl._VectorArray(cont.x, np_type) as x,
+        ):
+            vals = np.empty(rows.size, np_type)
+            found = np.zeros(rows.size, bool)
+            hh = h.array if h.array is not None else np.empty(0, np.int64)
+            lookup(p.array, hh, ci.array, x.array, bool(cont.iso), rows, cols, vals, found)
+    return found, vals
+
+
+def _lookup_graphblas(t, rows, cols):
+    """The points' entries by SuiteSparse: the distinct points as an iso pattern Matrix,
+    ``ewise_mult(first)`` with the stored Matrix, then each point's hit by binary search.
+    """
+    from .. import binary
+    from .matrix import Matrix
+
+    M = t._M
+    key = np.stack([rows, cols])
+    uniq, inverse = np.unique(key, axis=1, return_inverse=True)
+    P = Matrix.from_coo(uniq[0], uniq[1], True, nrows=M._nrows, ncols=M._ncols)
+    hit = M.ewise_mult(P, binary.first).new()
+    hr, hc, hv = hit.to_coo()
+    # Positions of the hits among the distinct points (both sorted by row, then column)
+    ukey = (
+        uniq[0].astype(np.uint64) * np.uint64(M._ncols) + uniq[1].astype(np.uint64)
+        if (M._nrows * M._ncols < 2**63)
+        else None
+    )
+    if ukey is not None:
+        at = np.searchsorted(
+            ukey, hr.astype(np.uint64) * np.uint64(M._ncols) + hc.astype(np.uint64)
+        )
+    else:  # pragma: no cover (more than 2^63 positions: match each hit by row and column)
+        at = np.array(
+            [
+                np.flatnonzero((uniq[0] == r) & (uniq[1] == c))[0]
+                for r, c in zip(hr, hc, strict=True)
+            ]
+        )
+    found_u = np.zeros(uniq.shape[1], bool)
+    vals_u = np.empty(uniq.shape[1], hv.dtype)
+    found_u[at] = True
+    vals_u[at] = hv
+    return found_u[inverse.ravel()], vals_u[inverse.ravel()]
+
+
+def take(t, indices, axis=None, *, wraparound=True):
+    """Numpy's ``take``: along ``axis`` (the flattened Tensor in C order when None) at
+    ``indices`` (any shape); the result's shape puts ``indices.shape`` in place of the axis.
+    """
+    from .tensor import _normalize_axis
+
+    if axis is None:
+        return take(t.reshape(-1), indices, 0, wraparound=wraparound)
+    axis = _normalize_axis(axis, t.ndim)
+    idx = _index_array(indices, t._shape[axis], axis, wraparound)
+    shape = t._shape[:axis] + idx.shape + t._shape[axis + 1 :]
+    if "extract" in _GATHER_ENGINES:
+        keys = (slice(None),) * axis + (idx.ravel(),)
+        out = t[keys].new()
+        return out.reshape(shape)
+    grids = np.meshgrid(*(np.arange(n) for n in shape), indexing="ij") if shape else []
+    coords = []
+    for a in range(t.ndim):
+        if a < axis:
+            coords.append(grids[a].ravel())
+        elif a == axis:
+            coords.append(
+                idx[tuple(grids[axis : axis + idx.ndim])].ravel()
+                if idx.ndim
+                else np.full(math.prod(shape), int(idx))
+            )
+        else:
+            coords.append(grids[a - 1 + idx.ndim].ravel())
+    return gather(t, coords, shape)
+
+
+def take_along_axis(t, indices, axis, *, wraparound=True):
+    """Numpy's ``take_along_axis``: ``indices`` has the Tensor's ndim and broadcasts against
+    it except along ``axis``; ``out[..., i, ...] = t[..., indices[..., i, ...], ...]``.
+    """
+    from .tensor import _normalize_axis
+
+    axis = _normalize_axis(axis, t.ndim)
+    arr = np.asarray(indices)
+    if arr.ndim != t.ndim:
+        raise ValueError(f"indices must have the Tensor's {t.ndim} dimensions; got {arr.ndim}")
+    idx = _index_array(arr, t._shape[axis], axis, wraparound)
+    tshape = list(t._shape)
+    tshape[axis] = 1
+    try:
+        shape = np.broadcast_shapes(tuple(tshape), idx.shape)
+    except ValueError:
+        raise ValueError(
+            f"indices of shape {idx.shape} do not broadcast against {t._shape} along the "
+            f"other axes"
+        ) from None
+    grids = np.meshgrid(*(np.arange(n) for n in shape), indexing="ij")
+    coords = [
+        np.broadcast_to(idx, shape).ravel() if a == axis else grids[a].ravel()
+        for a in range(t.ndim)
+    ]
+    return gather(t, coords, shape)
+
+
+def vindex(t, keys, *, wraparound=True):
+    """Vectorized (pointwise) integer indexing, numpy's advanced indexing: one int, Scalar or
+    integer array per axis, broadcast together; the result has their broadcast shape.
+    """
+    keys = keys if isinstance(keys, tuple) else (keys,)
+    if len(keys) != t.ndim:
+        raise IndexError(
+            f"vindex needs one index per axis ({t.ndim}); got {len(keys)} (slices are not "
+            "supported: use T[...] for outer indexing)"
+        )
+    if any(isinstance(k, slice) or k is Ellipsis or k is None for k in keys):
+        raise IndexError("vindex takes ints, Scalars and integer arrays only")
+    idx = [
+        _index_array(k, n, a, wraparound)
+        for a, (k, n) in enumerate(zip(keys, t._shape, strict=True))
+    ]
+    shape = np.broadcast_shapes(*(x.shape for x in idx))
+    coords = [np.broadcast_to(x, shape).ravel() for x in idx]
+    return gather(t, coords, shape)
+
+
+class VIndexer:
+    """``T.vindex[i0, i1, ...]``; ``T.vindex(wraparound=False)[...]`` refuses negatives."""
+
+    __slots__ = "t", "wraparound"
+
+    def __init__(self, t, wraparound=True):
+        self.t = t
+        self.wraparound = wraparound
+
+    def __call__(self, *, wraparound=True):
+        return VIndexer(self.t, wraparound)
+
+    def __getitem__(self, keys):
+        return vindex(self.t, keys, wraparound=self.wraparound)

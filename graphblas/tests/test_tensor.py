@@ -3988,6 +3988,83 @@ def test_assign_views_duplicates_and_matrix_parity():
         T[2] = 1.0
 
 
+def _gather_check(R, wv, wp):
+    """``R`` against numpy's result on the values (``wv``) and on the presence (``wp``)."""
+    check(R, np.where(wp, wv, 0), wp)
+
+
+@pytest.mark.parametrize("engines", [("extract", "numba", "graphblas"), ("numba",), ("graphblas",)])
+@pytest.mark.parametrize("ndim", [1, 2, 3, 4])
+def test_gather(ndim, engines, monkeypatch):
+    """``take``, ``take_along_axis`` and ``vindex`` against numpy, values and presence, with
+    each engine forced: every layout (sampled at 4-d), sparse, hypersparse, bitmap and full
+    storage, negatives, duplicates, empty and multi-d index arrays, broadcasting.
+    """
+    from graphblas.core import tensor_index
+
+    if "numba" in engines:
+        pytest.importorskip("numba")
+    monkeypatch.setattr(tensor_index, "_GATHER_ENGINES", engines)
+    rng = np.random.default_rng(400 + ndim)
+    layouts = all_layouts(ndim)[:: 1 if ndim < 4 else 9]
+    for i, layout in enumerate(layouts):
+        shape = tuple(int(n) for n in rng.integers(2, 6, ndim))
+        density = [0.05, 0.3, 0.8, 1.0][i % 4]
+        X, xv, xp = random_tensor(shape, rng, density=density, layout=layout, iso=i % 5 == 2)
+        for axis in [None, *range(ndim)]:
+            n = math.prod(shape) if axis is None else shape[axis]
+            for ishape in [(), (3,), (2, 3), (0,)]:
+                idx = rng.integers(-n, n, ishape)
+                _gather_check(X.take(idx, axis), np.take(xv, idx, axis), np.take(xp, idx, axis))
+        axis = int(rng.integers(0, ndim))
+        ishape = [1 if rng.random() < 0.3 else n for n in shape]
+        ishape[axis] = int(rng.integers(0, 4))
+        idx = rng.integers(-shape[axis], shape[axis], ishape)
+        wrapped = np.where(idx < 0, idx + shape[axis], idx)
+        _gather_check(
+            X.take_along_axis(idx, axis),
+            np.take_along_axis(xv, wrapped, axis),
+            np.take_along_axis(xp, wrapped, axis),
+        )
+        keys = []
+        for a, n in enumerate(shape):
+            r = rng.random()
+            if r < 0.2:
+                keys.append(int(rng.integers(-n, n)))
+            elif r < 0.3:
+                keys.append(gb.Scalar.from_value(int(rng.integers(0, n))))
+            else:
+                keys.append(rng.integers(-n, n, (2, 1, 3)[-(1 + a % 3) :]))
+        nkeys = tuple(k.value if isinstance(k, gb.Scalar) else k for k in keys)
+        _gather_check(X.vindex[tuple(keys)], xv[nkeys], xp[nkeys])
+
+
+def test_gather_errors_and_options():
+    X = Tensor.from_dense(np.arange(24.0).reshape(2, 3, 4))
+    with pytest.raises(IndexError, match="out of bounds"):
+        X.take([3], axis=1)
+    with pytest.raises(IndexError, match="out of bounds"):
+        X.vindex[0, 0, [4]]
+    assert X.take([-1], axis=1).shape == (2, 1, 4)
+    with pytest.raises(IndexError, match="negative"):
+        X.take([-1], axis=1, wraparound=False)
+    with pytest.raises(IndexError, match="negative"):
+        X.vindex(wraparound=False)[0, -1, 0]
+    with pytest.raises(IndexError, match="negative"):
+        X.take_along_axis(np.full((2, 3, 1), -1), 2, wraparound=False)
+    with pytest.raises(TypeError, match="boolean"):
+        X.take(np.array([True, False]), axis=0)
+    with pytest.raises(IndexError, match="one index per axis"):
+        X.vindex[[0, 1]]
+    with pytest.raises(IndexError, match="ints, Scalars"):
+        X.vindex[0, :, 1]
+    with pytest.raises(ValueError, match="dimensions"):
+        X.take_along_axis(np.zeros((2, 3), int), 1)
+    E = Tensor(dtypes.FP64, (2, 3))
+    assert E.vindex[[0, 1], [2, 0]].nvals == 0
+    assert X.vindex[1, 2, 3].to_dense() == 23.0
+
+
 @pytest.mark.parametrize("max_listed", [None, 0])
 @pytest.mark.parametrize("ndim", [2, 3, 4])
 def test_extract_repeated_indices(ndim, max_listed, monkeypatch):

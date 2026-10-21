@@ -993,6 +993,38 @@ class Tensor(BaseType):
             T = Tensor._from_M(T._M.dup(), T._shape, T._layout, pinned=T._pinned)
         return T
 
+    def take(self, indices, axis=None, *, wraparound=True):
+        """Numpy's ``take``: the entries at ``indices`` (any shape) along ``axis``, or of the
+        flattened Tensor (C order) when ``axis`` is None; the result's shape puts
+        ``indices.shape`` in place of the axis. A position that lands on a missing entry is
+        missing. Negative indices count from the end once (``wraparound=False``: they raise
+        IndexError); out of range raises IndexError.
+        """
+        from .tensor_index import take
+
+        return take(self, indices, axis, wraparound=wraparound)
+
+    def take_along_axis(self, indices, axis=-1, *, wraparound=True):
+        """Numpy's ``take_along_axis``: ``indices`` has the Tensor's ndim and broadcasts
+        against it except along ``axis``; ``out[..., i, ...] = T[..., indices[..., i, ...],
+        ...]``, missing where the Tensor is. Negatives as for ``take``.
+        """
+        from .tensor_index import take_along_axis
+
+        return take_along_axis(self, indices, axis, wraparound=wraparound)
+
+    @property
+    def vindex(self):
+        """Vectorized (pointwise) integer indexing, as numpy's advanced indexing (dask's and
+        zarr's ``vindex``): ``T.vindex[i0, i1, ...]`` with one int, Scalar or integer array per
+        axis, broadcast together; the result has their broadcast shape and is missing where
+        the Tensor is. ``T[...]`` stays outer indexing. ``T.vindex(wraparound=False)[...]``
+        refuses negative indices.
+        """
+        from .tensor_index import VIndexer
+
+        return VIndexer(self)
+
     def ravel(self):
         """The 1-d Tensor of all positions in C order: ``reshape(-1)``, a view where
         possible (numpy's ``ravel``).
