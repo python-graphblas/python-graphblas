@@ -100,11 +100,27 @@ def _valid_split(shape, seq, p):
     return prod(shape, seq[:p]) <= MAX_GROUP and prod(shape, seq[p:]) <= MAX_GROUP
 
 
+# Rows of at least this many entries each pay for a row group whatever their count (thinner
+# sparse rows cost about 2x in ewise: u6 at 1.6 per row, X + Y 3.9 ms against 1.5). The default
+# split, the split chosen from the data and _healthy's all use it.
+FULL_ROW_ENTRIES = 4
+
+
+def full_split(shape, seq, nnz):
+    """The largest p in ``1..len(seq)-1`` whose rows (``seq[:p]``) hold FULL_ROW_ENTRIES
+    entries each even if all are nonempty; else 1.
+    """
+    for q in range(len(seq) - 1, 0, -1):
+        if prod(shape, seq[:q]) * FULL_ROW_ENTRIES <= nnz:
+            return q
+    return 1
+
+
 def default_layout(shape, nnz=None):
     """The layout for new data: identity sequence, split by expected entries per row.
 
-    ``p`` is the largest split in ``1..ndim-1`` with ``prod(shape[:p]) <= nnz / 4`` (about four
-    entries per nonempty row), else 1; with no ``nnz`` (an empty Tensor) ``p = ndim - 1``.
+    ``p`` is ``full_split``: the largest split in ``1..ndim-1`` with ``prod(shape[:p]) <= nnz /
+    FULL_ROW_ENTRIES``, else 1; with no ``nnz`` (an empty Tensor) ``p = ndim - 1``.
     A 1-d Tensor is stored as one row (the bytes of a Vector); a 2-d one as the plain Matrix.
     """
     ndim = len(shape)
@@ -115,14 +131,7 @@ def default_layout(shape, nnz=None):
         return Layout((), (0,))
     if ndim == 2:
         return Layout((0,), (1,))
-    if nnz is None:
-        p = ndim - 1
-    else:
-        p = 1
-        for q in range(ndim - 1, 0, -1):
-            if prod(shape, seq[:q]) * 4 <= nnz:
-                p = q
-                break
+    p = ndim - 1 if nnz is None else full_split(shape, seq, nnz)
     if _valid_split(shape, seq, p):
         return Layout(seq[:p], seq[p:])
     for q in range(1, ndim):

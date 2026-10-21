@@ -2282,7 +2282,7 @@ def _reduce_recipe(updater, a, op, axes, keepdims, cast):
 # MIN_HYPER_ROW_ENTRIES when they would be hypersparse (NELL-2's hold 228 each).
 MIN_ROW_ENTRIES = 1.5
 MIN_HYPER_ROW_ENTRIES = 32
-FULL_ROW_ENTRIES = 4
+FULL_ROW_ENTRIES = tl.FULL_ROW_ENTRIES
 # The sampled check costs about 0.3 ms; the exact one about 1.1 ns per entry (ravel, order
 # check and count), so sorted input is sampled only past 2^23 entries
 _SPLIT_SAMPLE = 2**14
@@ -2418,14 +2418,7 @@ def _healthy(M, shape, layout):
         return M, layout
     seq = layout.seq
     nvals = M._nvals
-    if ndim == 1:
-        p = 0
-    else:
-        p = 1
-        for q in range(ndim - 1, 0, -1):
-            if tl.prod(shape, seq[:q]) * 4 <= nvals:
-                p = q
-                break
+    p = 0 if ndim == 1 else tl.full_split(shape, seq, nvals)
     if not tl._valid_split(shape, seq, p):
         return M, layout
     if census.on:
