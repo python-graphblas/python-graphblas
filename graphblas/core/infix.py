@@ -61,6 +61,18 @@ def _ewise_mult_to_expr(self):
     )
 
 
+def _is_literal(operand):
+    """Whether an operand of an infix expression is a literal, which only a Scalar takes."""
+    return output_type(operand) not in {Scalar, Vector, Matrix, TransposedMatrix}
+
+
+def _operand_name(operand, *, html=False):
+    if _is_literal(operand):
+        # As in `s & 1`; it shows its value, as an unnamed Scalar does
+        return repr(operand)
+    return operand._name_html if html else operand.name
+
+
 def _scalar_call_left(self, method_name, *args, **kwargs):
     if output_type(self.left) is Scalar:
         return getattr(self.left, method_name)(self.right, *args, **kwargs)
@@ -93,6 +105,14 @@ class ScalarInfixExpr(InfixExprBase):
     @property
     def is_grbscalar(self):
         return not self.is_cscalar
+
+    def _format_expr(self):
+        return f"{_operand_name(self.left)} {self._infix} {_operand_name(self.right)}"
+
+    def _format_expr_html(self):
+        left = _operand_name(self.left, html=True)
+        right = _operand_name(self.right, html=True)
+        return f"{left} {self._infix} {right}"
 
     __hash__ = None
 
