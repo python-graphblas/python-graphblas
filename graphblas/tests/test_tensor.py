@@ -3707,3 +3707,79 @@ def test_user_guide_examples():
     )
     assert attempted >= 40
     assert failed == 0
+
+
+def test_expression_methods():
+    """A TensorExpression offers the Tensor's methods on its computed value, as Matrix
+    expressions do: ``(X * X).sum()`` with autocompute on; without it, the TypeError that
+    says to call ``.new()``, as for Matrix.
+    """
+    from graphblas.core.tensor import TensorExpression
+
+    rng = np.random.default_rng(13)
+    X, _, _ = random_tensor((3, 4, 5), rng, density=0.4)
+    F = [rng.random((n, 2)) for n in X.shape]
+    calls = {
+        "to_dense": ((), {"fill_value": 0}),
+        "to_matrix": ((), {}),
+        "to_scipy_sparse": ((), {}),
+        "isclose": ((X * X,), {}),
+        "permute_dims": (((2, 0, 1),), {}),
+        "expand_dims": ((1,), {}),
+        "squeeze": ((), {}),
+        "reshape": ((12, 5), {}),
+        "ravel": ((), {}),
+        "flatten": ((), {}),
+        "ewise_add": ((X,), {}),
+        "ewise_mult": ((X,), {}),
+        "ewise_union": ((X, binary.plus, 0, 0), {}),
+        "apply": ((gb.unary.ainv,), {}),
+        "select": ((gb.select.valuegt, 1.0), {}),
+        "reduce": ((monoid.plus,), {"axis": 1}),
+        "reduce_scalar": ((monoid.max,), {}),
+        "sum": ((), {"axis": (0, 2)}),
+        "prod": ((), {}),
+        "min": ((), {"axis": 0}),
+        "max": ((), {}),
+        "any": ((), {}),
+        "all": ((), {}),
+        "tensordot": ((F[2], ([2], [0])), {}),
+        "matmul": ((Tensor.from_dense(rng.random((3, 5, 2))),), {}),
+        "mttkrp": ((F, 0), {}),
+        "unfold": ((1,), {}),
+    }
+
+    def value(rv):
+        if isinstance(rv, TensorExpression) or type(rv).__name__.endswith(("Expr", "Expression")):
+            rv = rv.new()
+        if isinstance(rv, Tensor):
+            return rv.to_dense(fill_value=0.0)
+        if isinstance(rv, Matrix):
+            return rv.to_dense(fill_value=0.0)
+        if hasattr(rv, "toarray"):
+            return rv.toarray()
+        return rv
+
+    E = X * X
+    D = E.new()
+    with gb.config.set(autocompute=True):
+        for name, (args, kwargs) in calls.items():
+            got = value(getattr(E, name)(*args, **kwargs))
+            want = value(getattr(D, name)(*args, **kwargs))
+            np.testing.assert_array_equal(got, want, err_msg=name)
+        np.testing.assert_array_equal(value(E.T), value(D.T))
+        np.testing.assert_array_equal(value(E.mT), value(D.mT))
+        np.testing.assert_array_equal(value(E[1, :, 2:]), value(D[1, :, 2:]))
+    assert E.to_scalar.__doc__ == Tensor.to_scalar.__doc__
+    with gb.config.set(autocompute=False):
+        for name, call in [
+            ("sum", E.sum),
+            ("to_dense", E.to_dense),
+            ("T", lambda: E.T),
+            ("__getitem__", lambda: E[0]),
+        ]:
+            with pytest.raises(TypeError, match=f"{name} not enabled .* Use `.new\\(\\)`"):
+                call()
+    A = Matrix.from_dense(np.eye(3))
+    with gb.config.set(autocompute=False), pytest.raises(TypeError, match="Use `.new"):
+        (A @ A).reduce_rowwise()  # (the same rule for Matrix)
