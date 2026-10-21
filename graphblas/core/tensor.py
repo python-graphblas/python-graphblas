@@ -18,6 +18,7 @@ operations, reductions and ``tensordot``. Broadcasting, indexing, ``matmul`` and
 (batch axes), and Matrix/Vector operands are not implemented yet.
 """
 
+import contextlib
 import itertools
 import math
 import operator
@@ -2478,41 +2479,42 @@ _MTTKRP_KERNEL_MIN_NNZ = 2**16
 
 
 def _mttkrp_numba(x, mats, mode, nthreads, *, layout=None):
-    """MTTKRP of a 3-d FP64 tensor with full FP64 factors and plus_times by a Numba kernel over
-    the stored arrays (``tensor_numba``) in ``layout`` (default: as stored), as a Matrix; or
-    None to use the GraphBLAS products: no Numba, another rank, type or semiring, sparse
-    factors, bitmap / full storage, or per-thread buffers too large for this layout.
+    """MTTKRP of an FP64 tensor of 3 or more axes with full FP64 factors and plus_times by a
+    Numba kernel over the stored arrays (``tensor_numba``) in ``layout`` (default: as stored),
+    as a Matrix; or None to use the GraphBLAS products: no Numba, fewer axes, another type or
+    semiring, sparse factors, an empty group, bitmap / full storage, or per-thread buffers too
+    large for this layout.
     """
-    if not _has_numba or x.ndim != 3 or x._M._nvals < max(_MTTKRP_KERNEL_MIN_NNZ, 1):
+    if not _has_numba or x.ndim < 3 or x._M._nvals < max(_MTTKRP_KERNEL_MIN_NNZ, 1):
         return None
     layout = x._layout if layout is None else layout
-    if len(layout.rows) not in {1, 2} or x.dtype != FP64:
+    if not layout.rows or not layout.cols or x.dtype != FP64:
         return None
-    F = {}
-    for ax, M in mats.items():
+    for M in mats.values():
         if M.dtype != FP64 or M._nvals != M._nrows * M._ncols:
             return None
-        F[ax] = np.ascontiguousarray(M.to_dense(fill_value=0.0))
     X = _in_layout(x, layout, nthreads)
     if X.ss.format not in {"csr", "hypercsr"}:
         return None
     from . import tensor_numba
 
     order = (*layout.rows, *layout.cols)
-    Fs = [F.get(ax) for ax in order]
-    R = next(f.shape[1] for f in Fs if f is not None)
-    Fs = [np.empty((0, R)) if f is None else f for f in Fs]
+    R = next(iter(mats.values()))._ncols
     nnz = X._nvals
-    with (
-        tl._Unloaded(X) as cont,
-        tl._VectorArray(cont.p) as p,
-        tl._VectorArray(cont.h) as h,
-        tl._VectorArray(cont.i) as ci,
-        tl._VectorArray(cont.x, np.float64) as xv,
-    ):
-        hh = np.empty(0, np.int64) if h.array is None else h.array
-        rv = tensor_numba.mttkrp3(
-            (p.array, hh, ci.array, xv.array, bool(cont.iso)),
+    with contextlib.ExitStack() as stack:
+        F = {}
+        views = {}
+        for ax, M in mats.items():
+            if (arr := views.get(id(M))) is None:
+                arr = views[id(M)] = _factor_array(M, stack)
+            F[ax] = arr
+        Fs = [F[ax] if ax != mode else np.empty((0, R)) for ax in order]
+        cont = stack.enter_context(tl._Unloaded(X))
+        p, h, ci = (stack.enter_context(tl._VectorArray(v)) for v in (cont.p, cont.h, cont.i))
+        xv = stack.enter_context(tl._VectorArray(cont.x, np.float64))
+        rv = tensor_numba.mttkrp_nd(
+            (p.array, np.empty(0, np.int64) if h.array is None else h.array, ci.array, xv.array,
+             bool(cont.iso)),
             tuple(x._shape[a] for a in layout.rows),
             tuple(x._shape[a] for a in layout.cols),
             order.index(mode), Fs, x._shape[mode], nthreads,
@@ -2523,7 +2525,7 @@ def _mttkrp_numba(x, mats, mode, nthreads, *, layout=None):
         return None
     out, touched = rv
     if touched.all():
-        return Matrix.from_dense(out)
+        return Matrix.ss.import_fullr(values=out, take_ownership=True)
     # The reached rows only, each full: hypersparse arrays handed over (a build of 7e6
     # entries took 35 ms on hyper, against 12 for the kernel)
     rows = np.flatnonzero(touched)
@@ -2533,6 +2535,80 @@ def _mttkrp_numba(x, mats, mode, nthreads, *, layout=None):
         col_indices=np.tile(np.arange(R), n), values=out[rows].ravel(), sorted_cols=True,
         take_ownership=True,
     )  # fmt: skip
+
+
+def _factor_array(M, stack):
+    """A full FP64 factor as an (n x R) array: a view of its values through the Container
+    while ``stack`` is open (Enron's 244268 x 64 factor is 125 MB to copy), else a copy.
+    """
+    nrows, ncols = M._nrows, M._ncols  # (M reads as empty while unloaded)
+    if M.ss.format == "fullr" and not M.ss.is_iso and nrows * ncols > 0:
+        cont = stack.enter_context(tl._Unloaded(M))
+        x = stack.enter_context(tl._VectorArray(cont.x, np.float64))
+        if x.array is not None and x.array.size == nrows * ncols:
+            return x.array.reshape(nrows, ncols)
+        # (not expected: a full Matrix holds nrows * ncols values)
+    return np.ascontiguousarray(M.to_dense(fill_value=0.0))
+
+
+# The products' intermediates cost about this much per (row x R) entry, ns at 8 / 1 threads
+# (Enron mode 1, R = 64: 0.92 s for a first intermediate of 567,936 rows; 26.9 s for 31.3e6)
+C_MTTKRP_INTER = (2.0, 13.0)
+
+
+def _mttkrp_order(x, mode, R, nthreads, *, products):
+    """The order of the axes other than ``mode`` for the layout ``(mode, *order[:-1] |
+    order[-1])``: by the cost to reach it, plus with ``products`` the size of the
+    intermediates the products make (one row per distinct ``(mode, *order[:-k])``, k = 1, 2,
+    ...), estimated from a sample of the entries. Relayout cost alone picked, for Enron mode 1
+    at 1 thread, a first intermediate 55x larger than at 8 threads (26.9 s against 0.92).
+    """
+    others = [a for a in range(x.ndim) if a != mode]
+    orders = list(itertools.permutations(others)) if len(others) <= 4 else [tuple(others)]
+    orders = [order for order in orders if tl._valid_split(x._shape, (mode, *order), len(order))]
+    nnz = x._M._nvals
+    fibers = {}
+    if products and len(orders) > 1 and nnz > 0:
+        groups = {(mode, *order[:k]) for order in orders for k in range(1, len(order))}
+        fibers = _sampled_fibers(x, groups)
+    ti = 0 if nthreads > 1 else 1
+    best = None
+    for order in orders:
+        dst = Layout((mode, *order[:-1]), (order[-1],))
+        cost = tl.relayout_cost(x._shape, x._layout, dst, nnz, nthreads)
+        for k in range(1, len(order)):
+            cost += C_MTTKRP_INTER[ti] * R * fibers.get((mode, *order[:k]), 0.0)
+        if best is None or cost < best[0]:
+            best = (cost, order)
+    return best[1]
+
+
+def _sampled_fibers(x, groups):
+    """Estimated distinct values of each group of axes among ``x``'s entries, from a sample of
+    2^14 stored entries (``_sampled_nonempty_rows``); uniform occupancy for bitmap or full
+    storage.
+    """
+    M = x._M
+    nnz = M._nvals
+    rows, cols = x._layout
+    if M.ss.format not in {"csr", "hypercsr"}:
+        return {g: tl.expected_rows(tl.prod(x._shape, g), nnz) for g in groups}
+    q = np.sort(np.random.default_rng(0).integers(0, nnz, min(nnz, _SPLIT_SAMPLE)))
+    with (
+        tl._Unloaded(M) as cont,
+        tl._VectorArray(cont.p) as p,
+        tl._VectorArray(cont.h) as h,
+        tl._VectorArray(cont.i) as ci,
+    ):
+        slot = np.searchsorted(p.array, q.astype(p.array.dtype), side="right") - 1
+        r = slot if h.array is None else h.array[slot]
+        c = ci.array[q]
+    coords = {}
+    tl.unravel(r.astype(np.int64), x._shape, rows, coords)
+    tl.unravel(c.astype(np.int64), x._shape, cols, coords)
+    coords = [coords[a] for a in range(x.ndim)]
+    sample = np.arange(q.size)
+    return {g: _sampled_nonempty_rows(coords, x._shape, g, nnz, sample) for g in groups}
 
 
 def _krp_embedding(F, R):
@@ -2550,25 +2626,21 @@ def _mttkrp_recipe(updater, x, mats, mode, R, op):
         # In the stored layout: no relayout
         _store(updater, T, (x._shape[mode], R), Layout((0,), (1,)), fresh=True)
         return
-    # Any order of the other axes works; take the one whose layout is cheapest to reach
-    others = [a for a in range(x.ndim) if a != mode]
-    best = None
-    for order in itertools.permutations(others) if len(others) <= 4 else [tuple(others)]:
-        dst = Layout((mode, *order[:-1]), (order[-1],))
-        if not tl._valid_split(x._shape, dst.seq, len(dst.rows)):
-            continue
-        cost = tl.relayout_cost(x._shape, x._layout, dst, x._M._nvals, _nthreads(updater))
-        if best is None or cost < best[0]:
-            best = (cost, order)
-    others = list(best[1])
+    # Any order of the other axes works. For the kernel, take the one whose layout is
+    # cheapest to reach
+    order = _mttkrp_order(x, mode, R, _nthreads(updater), products=False)
+    if kernel:
+        dst = tl.as_layout(((mode, *order[:-1]), (order[-1],)), x._shape)
+        T = _mttkrp_numba(x, mats, mode, nthreads or _nthreads(updater), layout=dst)
+        if T is not None:
+            # Relayout, then the kernel that owns its output rows
+            _store(updater, T, (x._shape[mode], R), Layout((0,), (1,)), fresh=True)
+            return
+    # For the products, count their intermediates too
+    others = list(_mttkrp_order(x, mode, R, _nthreads(updater), products=True))
     last = others[-1]
     rest = tuple(others[:-1])
     dst = tl.as_layout(((mode, *rest), (last,)), x._shape)
-    T = _mttkrp_numba(x, mats, mode, nthreads or _nthreads(updater), layout=dst) if kernel else None
-    if T is not None:
-        # Relayout, then the kernel that owns its output rows
-        _store(updater, T, (x._shape[mode], R), Layout((0,), (1,)), fresh=True)
-        return
     X = _in_layout(x, dst, nthreads)
     # 1. TTM over the last axis: (mode, rest | last) @ F_last -> (mode, rest | r)
     T = tl.new_matrix(op.return_type, X._nrows, R)
