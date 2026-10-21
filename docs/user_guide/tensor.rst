@@ -290,7 +290,8 @@ They compute at once and return a Tensor.
 
 ``vindex`` broadcasts its index arrays together, as numpy does. A negative index counts
 from the end, once; ``wraparound=False`` (``T.vindex(wraparound=False)[...]``) raises
-``IndexError`` for negative indices instead, and an index out of range always does.
+``IndexError`` for negative indices instead. An index out of range raises ``IndexError``,
+except that ``take`` has numpy's ``mode="wrap"`` and ``mode="clip"``.
 
 Input and output
 ----------------
