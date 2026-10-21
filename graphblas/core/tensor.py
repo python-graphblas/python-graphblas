@@ -2554,9 +2554,7 @@ def _tensordot_recipe(updater, a, b, op, a_axes, b_axes):
         x, w, axis = (a, b, a_axes[0]) if x_left else (b, a, b_axes[0])
         if _ttv(updater, x, w, axis, op, x_left):
             return
-    if (rv := _ttm_engines(updater, a, b, op, a_axes, b_axes)) is not None or (
-        rv := _ttm_compacted(updater, a, b, op, a_axes, b_axes)
-    ) is not None:
+    if (rv := _ttm_engines(updater, a, b, op, a_axes, b_axes)) is not None:
         src, layout, shape = rv
         _store(updater, src, shape, layout, fresh=True)
         return
@@ -2570,9 +2568,14 @@ def _tensordot_recipe(updater, a, b, op, a_axes, b_axes):
 
 # The TTM engines compile per R on first use, so small tensors keep the product
 _TTM_KERNEL_MIN_NNZ = 2**16
-# The TTM engines, tried in this order: "udt" (one mxv with FP64[R] values, JIT on) and
-# "numba" (tensor_numba.ttm). Tests and benchmarks may set it to force one.
-_TTM_ENGINES = ("udt", "numba")
+# The TTM engines, tried in this order where each runs (all are kept, to measure; tests and
+# benchmarks set this to force some):
+#   "udt"        one mxv with FP64[R] values (tensor_udt.ttm; JIT on, FP64 plus_times)
+#   "numba"      the Numba kernel (tensor_numba.ttm; FP64 plus_times)
+#   "compacted"  one product on the nonempty rows (_ttm_compacted; stored order, any op)
+#   "products"   one product after a relayout (_contract), which runs every TTM, so it is
+#                also what any list falls back to
+_TTM_ENGINES = ("udt", "numba", "compacted", "products")
 # Where both engines run, the UDT one is faster only in the stored order with a hypersparse
 # output and R up to 32 (NELL-2 mode 2: 77 / 139 / 329 ms against 92 / 174 / 354 at R = 8 /
 # 16 / 32, 1 thread; 14 / 24 / 55 against 18 / 31 / 62 at 8); slower with a bitmap output
@@ -2582,17 +2585,29 @@ _TTM_UDT_MAX_R = 32
 
 
 def _ttm_engines(updater, a, b, op, a_axes, b_axes):
-    """TTM of an FP64 tensor's axis with a full FP64 factor and ``plus_times`` by the first
-    engine of ``_TTM_ENGINES`` that runs here: ``(src, layout, shape)`` or None.
+    """A TTM by the first engine of ``_TTM_ENGINES`` before "products" that runs here:
+    ``(src, layout, shape)``, or None for the products (``_contract``).
     """
-    if len(a_axes) != 1 or b.ndim != 2 or a.ndim < 2:
-        return None
-    if op.name != "plus_times" or op.return_type != FP64 or a.dtype != FP64 or b.dtype != FP64:
-        return None
-    if a._M._nvals < max(_TTM_KERNEL_MIN_NNZ, 1) or b._M._nvals != math.prod(b._shape):
-        return None
+    kernels = (
+        len(a_axes) == 1
+        and b.ndim == 2
+        and a.ndim >= 2
+        and op.name == "plus_times"
+        and op.return_type == FP64
+        and a.dtype == FP64
+        and b.dtype == FP64
+        and a._M._nvals >= max(_TTM_KERNEL_MIN_NNZ, 1)
+        and b._M._nvals == math.prod(b._shape)
+    )
     for engine in _TTM_ENGINES:
-        run = _ttm_udt if engine == "udt" else _ttm_numba
+        if engine == "products":
+            break
+        if engine == "compacted":
+            run = _ttm_compacted
+        elif not kernels:
+            continue
+        else:
+            run = _ttm_udt if engine == "udt" else _ttm_numba
         if (rv := run(updater, a, b, op, a_axes, b_axes)) is not None:
             return rv
     return None
@@ -2941,24 +2956,34 @@ def _krp_embedding(F, R):
     return tl.from_coo(j * R + r, r, v, F.dtype, F._nrows * R, R)
 
 
-# Without the Numba kernel, the products' first step (a TTM over the last axis) runs on the
-# array-UDT engine (tensor_udt.ttm) when the JIT is on. Phase 5c, R = 16: NELL-2 mode 0
-# 702 -> 142 ms at 1 thread and 142 -> 29 at 8; u7 82-122 -> 38-77 at 1, the same at 8; NELL-2
-# modes 1 and 2 within 3% at 1 thread, 7-13% slower at 8 (load rising to 3.5).
-_MTTKRP_UDT_FIRST = True
+# The MTTKRP engines, tried in this order where each runs (all are kept, to measure; tests
+# and benchmarks set this to force some):
+#   "numba"     the Numba kernel (tensor_numba.mttkrp_nd; FP64 plus_times)
+#   "udt"       the products, their first step (a TTM over the last axis) by the array-UDT
+#               engine (tensor_udt.ttm; JIT on, FP64 plus_times, a full factor)
+#   "products"  the GraphBLAS products (two-mxm for 3-d), which run every MTTKRP, so they
+#               are also what any list falls back to
+# Phase 5c, "udt" against "products" (Numba off), R = 16: NELL-2 mode 0 702 -> 142 ms at 1
+# thread and 142 -> 29 at 8; u7 82-122 -> 38-77 at 1, the same at 8; NELL-2 modes 1 and 2
+# within 3% at 1 thread, 7-13% slower at 8 (load rising to 3.5).
+_MTTKRP_ENGINES = ("numba", "udt", "products")
 
 
 def _mttkrp_recipe(updater, x, mats, mode, R, op):
     nthreads = updater.opts.get("nthreads")
     kernel = op.name == "plus_times" and op.return_type == FP64
-    if kernel and (T := _mttkrp_numba(x, mats, mode, nthreads or _nthreads(updater))) is not None:
+    numba_kernel = kernel and "numba" in _MTTKRP_ENGINES
+    if (
+        numba_kernel
+        and (T := _mttkrp_numba(x, mats, mode, nthreads or _nthreads(updater))) is not None
+    ):
         # In the stored layout: no relayout
         _store(updater, T, (x._shape[mode], R), Layout((0,), (1,)), fresh=True)
         return
     # Any order of the other axes works. For the kernel, take the one whose layout is
     # cheapest to reach
     order = _mttkrp_order(x, mode, R, _nthreads(updater), products=False)
-    if kernel:
+    if numba_kernel:
         dst = tl.as_layout(((mode, *order[:-1]), (order[-1],)), x._shape)
         T = _mttkrp_numba(x, mats, mode, nthreads or _nthreads(updater), layout=dst)
         if T is not None:
@@ -2972,11 +2997,11 @@ def _mttkrp_recipe(updater, x, mats, mode, R, op):
     dst = tl.as_layout(((mode, *rest), (last,)), x._shape)
     X = _in_layout(x, dst, nthreads)
     # 1. TTM over the last axis: (mode, rest | last) @ F_last -> (mode, rest | r), by the
-    # UDT engine where it runs (see _MTTKRP_UDT_FIRST)
+    # UDT engine where it runs (see _MTTKRP_ENGINES)
     T = None
     if (
         kernel
-        and _MTTKRP_UDT_FIRST
+        and "udt" in _MTTKRP_ENGINES
         and x.dtype == FP64
         and mats[last]._nvals == mats[last]._nrows * R
     ):
