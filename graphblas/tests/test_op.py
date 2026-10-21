@@ -6353,6 +6353,45 @@ def test_udt_aggregators():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udt_monoid_identity_follows_each_field_type():
+    # A bool field counts as 0 or 1: min (logical and) starts from True, max from False.
+    flags = dtypes.register_anonymous(
+        np.dtype([("idf_flag", np.bool_), ("idf_count", np.int16)]), "_IdentityFlags"
+    )
+    assert monoid.min[flags].identity.value.tolist() == (True, np.iinfo(np.int16).max)
+    assert monoid.max[flags].identity.value.tolist() == (False, np.iinfo(np.int16).min)
+    v = Vector(flags, size=3)
+    v[0] = (True, 3)
+    v[1] = (False, 5)
+    assert v.reduce(agg.min).new().value.tolist() == (False, 3)
+    assert v.reduce(agg.max).new().value.tolist() == (True, 5)
+
+    # binary.min compares dates and text, but no identity is generated for them, so the
+    # monoid names the field, and the aggregator built on it does not work with the UDT.
+    for np_type, field in [
+        (np.dtype([("idf_when", "M8[s]"), ("idf_n", np.int32)]), "idf_when"),
+        (np.dtype([("idf_label", "S4"), ("idf_m", np.int32)]), "idf_label"),
+    ]:
+        udt = dtypes.register_anonymous(np_type)
+        with pytest.raises(KeyError, match=f"field '{field}' has unsupported dtype"):
+            monoid.min[udt]
+        with pytest.raises(KeyError, match="min does not work with"):
+            agg.min[udt]
+        assert udt not in agg.min
+
+    # Without an identity, a monoid on a user op cannot be made.
+    def add_pairs(x, y):  # pragma: no cover (numba)
+        return (x["idf_flag"] | y["idf_flag"], x["idf_count"] + y["idf_count"])
+
+    no_identity = Monoid.register_anonymous(
+        BinaryOp.register_anonymous(add_pairs, is_udt=True), None
+    )
+    with pytest.raises(KeyError, match="no identity value"):
+        no_identity[flags]
+    assert flags not in no_identity
+
+
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_lazy_registration():
     """``lazy=True`` must preserve ``is_udt`` so registration succeeds when fired.

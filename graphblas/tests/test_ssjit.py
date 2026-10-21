@@ -975,6 +975,8 @@ def test_udt_jit_c_source_introspection():
     # Monoid-based aggregator walks to its monoid; composite agg has no kernel.
     assert gb.agg.sum[udt].jit_c_source == plus_binop_src
     assert gb.agg.count[udt].jit_c_source is None
+    assert gb.agg.sum[udt].jit_c_name == "plus__IntrospectUDT"
+    assert gb.agg.count[udt].jit_c_name is None
 
 
 @pytest.mark.skipif("not supports_udfs")

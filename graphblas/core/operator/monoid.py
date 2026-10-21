@@ -62,7 +62,8 @@ def _scalar_identity(monoid_name, scalar_dtype):
         return scalar_dtype.type(0)
     if monoid_name == "times":
         return scalar_dtype.type(1)
-    if monoid_name not in {"min", "max"}:
+    # Only the names in ``_BUILTIN_UDT_MONOIDS`` get here.
+    if monoid_name not in {"min", "max"}:  # pragma: no cover (safety)
         return None
     # Not ``np.issubdtype(scalar_dtype, np.integer)``: numpy files timedelta64
     # under ``np.integer``, and ``np.iinfo`` rejects it.
@@ -591,7 +592,7 @@ class Monoid(OpBase):
         if _has_numba:
             for name in _BUILTIN_UDT_MONOIDS:
                 mon = getattr(monoid, name, None)
-                if mon is not None:
+                if mon is not None:  # pragma: no branch (safety)
                     mon._udt_types = {}
                     mon._udt_ops = {}
         cls._initialized = True
