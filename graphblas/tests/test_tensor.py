@@ -2232,6 +2232,7 @@ def _ttm_spy(monkeypatch):
 
     monkeypatch.setattr(tensor_numba, "ttm", spy)
     monkeypatch.setattr(tensor, "_TTM_KERNEL_MIN_NNZ", 0)
+    monkeypatch.setattr(tensor, "_TTM_ENGINES", ("numba",))
     return calls
 
 
@@ -2366,6 +2367,184 @@ def test_ttm_kernel_paths(monkeypatch):
         np.zeros((10, 11, 12, 3), bool),
     )
     assert calls == []
+
+
+def _ttm_udt_spy(monkeypatch, engines=("udt",)):
+    from graphblas.core import tensor, tensor_udt
+
+    calls = []
+    orig = tensor_udt.ttm
+
+    def spy(*args, **kwargs):
+        rv = orig(*args, **kwargs)
+        calls.append(None if rv is None else rv.ss.format)
+        return rv
+
+    monkeypatch.setattr(tensor_udt, "ttm", spy)
+    monkeypatch.setattr(tensor, "_TTM_KERNEL_MIN_NNZ", 0)
+    monkeypatch.setattr(tensor, "_TTM_ENGINES", engines)
+    return calls
+
+
+def _require_jit_compile():
+    from graphblas.core import tensor_udt
+
+    if not tensor_udt.jit_ready() or tensor_udt.semiring(2) is None:
+        pytest.skip("the UDT TTM engine needs the SuiteSparse JIT with a compiler")
+
+
+@pytest.mark.parametrize("nthreads", [1, 8])
+@pytest.mark.parametrize("shape", [(12, 13, 14), (6, 7, 8, 9), (4, 5, 6, 5, 4)])
+def test_ttm_udt_layouts(shape, nthreads, monkeypatch):
+    """The array-UDT TTM engine (one mxv with values of R doubles) for every mode and
+    layout (after a relayout where the axis is not the column group by itself), either side
+    of the factor, iso values, R = 1: 3-, 4- and 5-d against numpy.
+    """
+    if backend != "suitesparse":
+        pytest.skip("SuiteSparse only")
+    _require_jit_compile()
+    calls = _ttm_udt_spy(monkeypatch)
+    rng = np.random.default_rng(90 + len(shape))
+    ndim = len(shape)
+    layouts = all_layouts(ndim)
+    if ndim == 5:
+        layouts = layouts[::29]
+    for i, layout in enumerate(layouts):
+        X, xv, xp = random_tensor(shape, rng, density=0.03, layout=layout, iso=i % 5 == 0)
+        for mode in range(ndim):
+            U = rng.random((shape[mode], 1 if i % 7 == 3 else 3))
+            kb = (i + mode) % 2
+            F = Matrix.from_dense(U if kb == 0 else U.T)
+            calls.clear()
+            R = X.tensordot(F, ([mode], [kb])).new(nthreads=nthreads)
+            check(R, *_ttm_model(xv, xp, U, mode), approx=True)
+            assert calls, (layout, mode)
+            assert calls[0] in {"hypercsr", "bitmapr", "fullr"}
+
+
+def test_ttm_udt_paths(monkeypatch, capfd):
+    """UDT engine outputs in every storage, views and empty groups, an empty tensor, the
+    JIT kernel (burble), its type and ops made once per R, and JIT off.
+    """
+    if backend != "suitesparse":
+        pytest.skip("SuiteSparse only")
+    _require_jit_compile()
+    from graphblas.core import tensor_udt
+
+    calls = _ttm_udt_spy(monkeypatch)
+    rng = np.random.default_rng(95)
+    shape = (20, 30, 400)
+    for share, kind in [(1.0, "fullr"), (0.7, "bitmapr"), (0.2, "hypercsr")]:
+        ij = np.flatnonzero(rng.random(600) < share)
+        k = rng.integers(0, 400, (ij.size, 3))
+        lin = np.unique(
+            np.ravel_multi_index((np.repeat(ij // 30, 3), np.repeat(ij % 30, 3), k.ravel()), shape)
+        )
+        coords = np.unravel_index(lin, shape)
+        X = Tensor.from_coo(coords, rng.random(lin.size), shape=shape, layout=((0, 1), (2,)))
+        xv = np.zeros(shape)
+        xv[coords] = X.to_coo()[1]
+        U = rng.random((400, 5))
+        calls.clear()
+        R = X.tensordot(Matrix.from_dense(U), ([2], [0])).new()
+        check(R, *_ttm_model(xv, xv != 0, U, 2), approx=True)
+        assert calls == [kind]
+    # The product's kernel is the JIT one (a UDT product has no other but the generic one,
+    # which burble names)
+    import graphblas.core.tensor_udt as tu
+
+    M = X._M
+    for control, generic in [("on", False), ("off", True)]:
+        prev = gb.ss.config["jit_c_control"]
+        gb.ss.config["jit_c_control"] = control
+        capfd.readouterr()
+        gb.ss.config["burble"] = True
+        try:
+            tu.ttm(M, rng.random((400, 5)))
+        finally:
+            gb.ss.config["burble"] = False
+            gb.ss.config["jit_c_control"] = prev
+        out = capfd.readouterr().out
+        assert "GrB_mxv" in out
+        assert ("generic" in out) == generic, out
+    # The type and semiring of an R are made once
+    first = tensor_udt._SEMIRINGS[5]
+    X.tensordot(Matrix.from_dense(U), ([2], [0])).new()
+    assert tensor_udt._SEMIRINGS[5] is first
+    assert tensor_udt.semiring(5) is first
+    # Views, empty groups, an empty tensor
+    X, xv, xp = random_tensor((10, 11, 12, 13), rng, density=0.03, layout=((2, 0), (3, 1)))
+    V = X.permute_dims((3, 1, 0, 2))
+    for mode in range(4):
+        U = rng.random((V.shape[mode], 2))
+        expected = _ttm_model(xv.transpose(3, 1, 0, 2), xp.transpose(3, 1, 0, 2), U, mode)
+        check(V.tensordot(Matrix.from_dense(U), ([mode], [0])).new(), *expected, approx=True)
+    for layout in [((), (0, 1, 2, 3)), ((0, 1, 2, 3), ())]:
+        E, ev, ep = random_tensor((10, 11, 12, 13), rng, density=0.03, layout=layout)
+        for mode in range(4):
+            U = rng.random((E.shape[mode], 2))
+            check(
+                E.tensordot(Matrix.from_dense(U), ([mode], [0])).new(),
+                *_ttm_model(ev, ep, U, mode),
+                approx=True,
+            )
+    calls.clear()
+    Z = Tensor(dtypes.FP64, (5, 6, 7))
+    check(
+        Z.tensordot(rng.random((7, 2)), ([2], [0])).new(),
+        np.zeros((5, 6, 2)),
+        np.zeros((5, 6, 2), bool),
+    )
+    # JIT off: not this engine; the result is the same
+    X, xv, xp = random_tensor((10, 11, 12), rng, density=0.05, layout=((0, 1), (2,)))
+    U = rng.random((12, 3))
+    prev = gb.ss.config["jit_c_control"]
+    try:
+        gb.ss.config["jit_c_control"] = "off"
+        calls.clear()
+        check(X.tensordot(U, ([2], [0])).new(), *_ttm_model(xv, xp, U, 2), approx=True)
+        assert calls == []
+    finally:
+        gb.ss.config["jit_c_control"] = prev
+
+
+def test_ttm_engine_choice(monkeypatch):
+    """With both engines, the UDT one takes the stored order with a hypersparse output and
+    R <= _TTM_UDT_MAX_R; the Numba one the rest. Without Numba, the UDT one takes all.
+    """
+    if backend != "suitesparse":
+        pytest.skip("SuiteSparse only")
+    pytest.importorskip("numba")
+    _require_jit_compile()
+    from graphblas.core import tensor, tensor_numba
+
+    udt = _ttm_udt_spy(monkeypatch, engines=("udt", "numba"))
+    nb = []
+    orig = tensor_numba.ttm
+    monkeypatch.setattr(tensor_numba, "ttm", lambda *a, **k: nb.append(1) or orig(*a, **k))
+    rng = np.random.default_rng(97)
+    # Few fibers: hypersparse output
+    H, hv, hp = random_tensor((30, 40, 50), rng, density=0.002, layout=((0, 1), (2,)))
+    # Most fibers: bitmap output
+    B, bv, bp = random_tensor((10, 12, 50), rng, density=0.2, layout=((0, 1), (2,)))
+    cases = [
+        (H, hv, hp, 2, 4, "udt"),
+        (H, hv, hp, 2, tensor._TTM_UDT_MAX_R + 1, "numba"),
+        (H, hv, hp, 0, 4, "numba"),  # (a relayout)
+        (B, bv, bp, 2, 4, "numba"),
+    ]
+    for X, xv, xp, mode, R, engine in cases:
+        U = rng.random((X.shape[mode], R))
+        udt.clear()
+        nb.clear()
+        check(X.tensordot(U, ([mode], [0])).new(), *_ttm_model(xv, xp, U, mode), approx=True)
+        assert (bool(udt), bool(nb)) == (engine == "udt", engine == "numba"), (mode, R, engine)
+    monkeypatch.setattr(tensor, "_has_numba", False)
+    for X, xv, xp, mode, R, _ in cases:
+        U = rng.random((X.shape[mode], R))
+        udt.clear()
+        check(X.tensordot(U, ([mode], [0])).new(), *_ttm_model(xv, xp, U, mode), approx=True)
+        assert udt
 
 
 def test_ttm_compacted(monkeypatch):
