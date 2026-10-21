@@ -209,12 +209,8 @@ def _reshape(t, shape):
     M, _ = tl.relayout(t._M, t._shape, t._layout, targets)
     layout = tl.default_layout(shape, M._nvals)
     nrows, ncols = tl.prod(shape, layout.rows), tl.prod(shape, layout.cols)
-    if M is not t._M and nrows <= 2**31 and ncols <= 2**31:
-        M.ss.reshape(nrows, ncols, inplace=True)
-    else:
-        # (not the shared Matrix in place; SuiteSparse 10.5.1's in-place reshape cannot widen
-        # 32-bit indices)
-        M = M.ss.reshape(nrows, ncols)
+    # (never the shared Matrix in place)
+    M = M.ss.reshape(nrows, ncols) if M is t._M else tl.reshape_owned(M, nrows, ncols)
     return Tensor._from_M(M, shape, layout)
 
 
@@ -2408,12 +2404,7 @@ def _settle_split(M, shape, layout):
         q = p - 1
         if not tl._valid_split(shape, seq, q):
             break
-        nrows, ncols = tl.prod(shape, seq[:q]), tl.prod(shape, seq[q:])
-        if nrows <= 2**31 and ncols <= 2**31:
-            M.ss.reshape(nrows, ncols, inplace=True)
-        else:
-            # SuiteSparse 10.5.1's in-place reshape cannot widen 32-bit indices
-            M = M.ss.reshape(nrows, ncols)
+        M = tl.reshape_owned(M, tl.prod(shape, seq[:q]), tl.prod(shape, seq[q:]))
         p = q
     return M, Layout(seq[:p], seq[p:])
 
@@ -3470,12 +3461,7 @@ def _mttkrp_recipe(updater, x, mats, mode, R, op):
     rows = (mode, *rest)
     for a in reversed(rest):
         rows = rows[:-1]
-        nrows, ncols = tl.prod(x._shape, rows), x._shape[a] * R
-        if nrows <= 2**31 and ncols <= 2**31:
-            T.ss.reshape(nrows, ncols, inplace=True)
-        else:
-            # SuiteSparse 10.5.1's in-place reshape cannot widen 32-bit indices
-            T = T.ss.reshape(nrows, ncols)
+        T = tl.reshape_owned(T, tl.prod(x._shape, rows), x._shape[a] * R)
         out = tl.new_matrix(op.return_type, T._nrows, R)
         out(**updater.opts) << T.mxm(_krp_embedding(mats[a], R), op)
         T = out
