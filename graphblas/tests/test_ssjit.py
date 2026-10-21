@@ -519,22 +519,131 @@ def test_public_fix_jit_config_repairs_a_broken_compiler():
 
 
 @pytest.mark.skipif("_IS_SSGB7")
-def test_public_fix_jit_config_returns_none_without_env():
+def test_public_fix_jit_config_returns_none_without_env(monkeypatch):
     """With no ``CONDA_PREFIX`` and ``use_sysconfig=False``, the helper signals no-environment."""
-    if os.environ.get("CONDA_PREFIX"):
-        # Drop the env for this call only.
-        prev_env = os.environ.pop("CONDA_PREFIX")
-    else:
-        prev_env = None
+    monkeypatch.delenv("CONDA_PREFIX", raising=False)
     prev_cc = gb.ss.config["jit_c_compiler_name"]
     try:
         gb.ss.config["jit_c_compiler_name"] = "/nonexistent/path/to/cc"
         result = gb.ss.fix_jit_config(use_sysconfig=False)
         assert result is None
     finally:
-        if prev_env is not None:
-            os.environ["CONDA_PREFIX"] = prev_env
         gb.ss.config["jit_c_compiler_name"] = prev_cc
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_fix_jit_config_takes_the_compiler_from_sysconfig(monkeypatch):
+    """Without ``CONDA_PREFIX``, the compiler is the one Python was built with.
+
+    Driven through a stand-in config and ``sysconfig``, as for a pip-installed
+    Python, and with ``probe=False``, which repairs and enables without trying
+    a compile.
+    """
+    import sysconfig
+
+    from graphblas.core.ss import jit_config
+
+    monkeypatch.delenv("CONDA_PREFIX", raising=False)
+    monkeypatch.setattr(jit_config, "_jit_enabled_for_udt", None)
+    monkeypatch.setattr(jit_config, "_warned_no_jit_for", set())
+    probes = []
+    monkeypatch.setattr(jit_config, "_probe_jit", probes.append)
+    monkeypatch.setattr(sysconfig, "get_path", {"include": "/py/include"}.get)
+    baked = {
+        "jit_c_control": "run",
+        "jit_c_compiler_name": "/build/host/cc",
+        "jit_c_compiler_flags": "-O2",
+        "jit_c_libraries": "-lm",
+    }
+    for config_vars, expected in [
+        (
+            {"CC": "gcc -pthread", "CFLAGS": "-O3", "LIBS": "-ldl"},
+            {"jit_c_compiler_name": "gcc -pthread", "jit_c_compiler_flags": "-O3 -I/py/include"},
+        ),
+        # Without LIBS, the libraries SuiteSparse was built with stay.
+        ({"CC": "cc", "CFLAGS": "-O1"}, {"jit_c_compiler_name": "cc"}),
+    ]:
+        fake = dict(baked)
+        monkeypatch.setattr(jit_config, "_ss_config", lambda fake=fake: fake)
+        monkeypatch.setattr(sysconfig, "get_config_var", config_vars.get)
+        assert gb.ss.fix_jit_config(probe=False) is True
+        assert fake["jit_c_control"] == "on"
+        assert fake["jit_c_compiler_name"] == expected["jit_c_compiler_name"]
+        assert fake["jit_c_compiler_flags"].startswith(config_vars["CFLAGS"])
+        assert fake["jit_c_libraries"] == config_vars.get("LIBS", "-lm")
+    assert probes == []
+    # A Python that records no compiler (Windows) has none to offer.
+    fake = dict(baked)
+    monkeypatch.setattr(jit_config, "_ss_config", lambda: fake)
+    monkeypatch.setattr(sysconfig, "get_config_var", {"CFLAGS": "-O3"}.get)
+    assert gb.ss.fix_jit_config() is None
+    assert fake == baked
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_fix_jit_config_replaces_a_missing_sdk(monkeypatch, tmp_path):
+    """A baked-in ``-isysroot`` that does not exist here takes xcrun's SDK, or goes.
+
+    Without xcrun (Linux, or macOS without the command line tools) the flag is
+    dropped. Driven through a stand-in config, with the compiler taken from
+    a stand-in ``CONDA_PREFIX``.
+    """
+    import subprocess
+
+    from graphblas.core.ss import jit_config
+
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "cc").touch()
+    monkeypatch.setenv("CONDA_PREFIX", str(tmp_path))
+    monkeypatch.setattr(jit_config, "_jit_enabled_for_udt", None)
+    monkeypatch.setattr(jit_config, "_warned_no_jit_for", set())
+
+    def no_xcrun(*args, **kwargs):
+        raise FileNotFoundError("xcrun")
+
+    for check_output, flags in [
+        (
+            lambda *args, **kwargs: "/Library/SDKs/MacOSX.sdk\n",
+            "-O2 -isysroot /Library/SDKs/MacOSX.sdk -fPIC",
+        ),
+        (no_xcrun, "-O2 -fPIC"),
+    ]:
+        fake = {
+            "jit_c_control": "run",
+            "jit_c_compiler_name": "/build/host/bin/cc",
+            "jit_c_compiler_flags": "-O2 -isysroot /build/host/MacOSX.sdk -fPIC",
+        }
+        monkeypatch.setattr(jit_config, "_ss_config", lambda fake=fake: fake)
+        monkeypatch.setattr(subprocess, "check_output", check_output)
+        assert gb.ss.fix_jit_config(probe=False) is True
+        assert fake["jit_c_compiler_name"] == str(tmp_path / "bin" / "cc")
+        assert fake["jit_c_compiler_flags"].split() == flags.split()
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_auto_fix_jit_at_import_without_jit_options(monkeypatch):
+    """A SuiteSparse with no JIT options (7.x) is left as it is at import."""
+    from graphblas.core.ss import jit_config
+
+    fake = {"nthreads": 1}
+    monkeypatch.setattr(jit_config, "_ss_config", lambda: fake)
+    jit_config._auto_fix_jit_at_import()
+    assert fake == {"nthreads": 1}
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_compiling_c_source_reraises_an_error_the_control_does_not_explain(monkeypatch):
+    """A failure while the JIT stays on is not about compiling, so it is raised as it came."""
+    from graphblas.core.ss import jit_config
+    from graphblas.exceptions import NullPointer
+
+    fake = {"jit_c_control": "on"}
+    monkeypatch.setattr(jit_config, "_ss_config", lambda: fake)
+    monkeypatch.setattr(jit_config, "_jit_enabled_for_udt", True)
+    error = NullPointer("from SuiteSparse")
+    with pytest.raises(NullPointer) as info, jit_config._compiling_c_source("gb.unary.ss.op"):
+        raise error
+    assert info.value is error
 
 
 @pytest.fixture
