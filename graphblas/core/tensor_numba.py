@@ -25,6 +25,8 @@ import numba
 import numpy as np
 from numba import njit, prange
 
+from . import tensor_census as census
+
 _NCHUNKS = 64
 # Kernels are compiled per R and per layout: with R a constant the inner loops unroll and
 # vectorize, 1.7-1.9x faster than with R read at run time (u7 mode 0 4.3 vs 6.4 ms at 8
@@ -95,13 +97,19 @@ def _compile(source):
     )
     digest = hashlib.sha256(text.encode()).hexdigest()[:32]
     if (cache := _cache_dir()) is not None:
+        existed = census.on and (cache / f"k_{digest}.py").exists()
         try:
             kernel = _load_cached(cache / f"k_{digest}.py", f"_graphblas_kernel_{digest}", text)
         except Exception:
             # Any trouble with the file (a read-only or full disk): compile in memory instead
             kernel = None
         if kernel is not None:
+            if census.on:
+                census.note("kernel.cache", "disk: file found" if existed else "disk: written")
             return kernel
+    if census.on:
+        census.note("kernel.cache", "in memory" + (" (no cache directory)" if cache is None
+                    else " (file refused)"))  # fmt: skip
     ns = {}
     exec(text.replace("cache=True", "cache=False"), ns)  # noqa: S102 (our own source)
     return ns["kernel"]
@@ -316,6 +324,8 @@ def _kernel_source(R, P, Q, kind, mpos, owner, runs, colblock=False):
 
 def _kernel_for(R, P, Q, kind, mpos, owner, runs, colblock):
     key = ("mttkrp", R, P, Q, kind, mpos, owner, runs, colblock)
+    if census.on:
+        census.note("kernel.process", "hit" if key in _compiled else "compile", kernel="mttkrp")
     if (k := _compiled.get(key)) is None:
         k = _compiled[key] = _compile(_kernel_source(R, P, Q, kind, mpos, owner, runs, colblock))
     return k
@@ -534,6 +544,8 @@ def ttm(arrays, col_sizes, U, nrows_out, nthreads):
         # SuiteSparse would hold rows this full as a bitmap (u7: 999,956 of 1e6 fibers)
         dense = 2 * nfib >= nrows_out
         key = ("ttm", R, multi, dense)
+        if census.on:
+            census.note("kernel.process", "hit" if key in _compiled else "compile", kernel="ttm")
         if (k := _compiled.get(key)) is None:
             k = _compiled[key] = _compile(_ttm_source(R, multi, dense))
         # 1-d owners (a reshaped view would be copied when handed over: 114 ms for 265e6)
