@@ -1325,6 +1325,46 @@ class TensorExpression(BaseExpression):
     def isequal(self, other, *, check_dtype=False):
         return self._get_value().isequal(other, check_dtype=check_dtype)
 
+    @property
+    def T(self):
+        return self._get_value("T")
+
+    @property
+    def mT(self):
+        return self._get_value("mT")
+
+    def __getitem__(self, keys):
+        return self._get_value("__getitem__")(keys)
+
+
+def _computed(name):
+    """``TensorExpression.name``: the Tensor method on the computed value, as Matrix
+    expressions have their Matrix's methods: with ``gb.config.set(autocompute=True)``,
+    ``(X * X).sum()``; otherwise a TypeError that says to call ``.new()`` first.
+    """
+
+    def method(self, *args, **kwargs):
+        return self._get_value(name)(*args, **kwargs)
+
+    method.__name__ = method.__qualname__ = name
+    method.__doc__ = getattr(Tensor, name).__doc__
+    return method
+
+
+# (not ``dup``: an expression's ``dup`` is ``new``)
+for _name in (
+    # conversions
+    "to_dense", "to_matrix", "to_vector", "to_scalar", "to_matrices", "to_pydata_sparse",
+    "to_scipy_sparse", "isclose",
+    # shape operations
+    "permute_dims", "expand_dims", "squeeze", "reshape", "ravel", "flatten",
+    # operations
+    "ewise_add", "ewise_mult", "ewise_union", "apply", "select", "reduce", "reduce_scalar",
+    "sum", "prod", "min", "max", "any", "all", "tensordot", "matmul", "mttkrp", "unfold",
+):  # fmt: skip
+    setattr(TensorExpression, _name, _computed(_name))
+del _name
+
 
 class _TensorInfixExpr(InfixExprBase):
     """``X | Y``, ``X & Y`` or ``X @ Y`` waiting for an operator, as in ``binary.plus(X | Y)``
