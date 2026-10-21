@@ -35,6 +35,13 @@ DENSE_DIM = 1000  # 1e6 dense elements
 SCIPY_DIM = 10_000
 SCIPY_DENSITY = 0.01
 
+# Tensor (n-d) operands: a uniform 3-d tensor of ~1e6 entries in 200 x 300 x 400 (24e6
+# positions, density ~4%), and a 4-d one of ~5e5 entries for the n-d kernels.
+TENSOR_SHAPE = (200, 300, 400)
+TENSOR_NNZ = 1_000_000
+TENSOR4_SHAPE = (40, 50, 60, 70)
+TENSOR4_NNZ = 500_000
+
 
 # Builders
 
@@ -89,3 +96,30 @@ def make_scipy(dim=SCIPY_DIM, density=SCIPY_DENSITY, seed=4, fmt="csr"):
     import scipy.sparse as sp
 
     return sp.random(dim, dim, density=density, format=fmt, random_state=seed)
+
+
+def make_tensor_coo(shape=TENSOR_SHAPE, nnz=TENSOR_NNZ, seed=5):
+    """(coords, vals) for ~nnz distinct uniform positions of ``shape``, sorted in C order.
+
+    ``coords`` is a list of int64 arrays (one per axis); values are in [0.001, 1.001).
+    """
+    rng = np.random.default_rng(seed)
+    total = int(np.prod(shape))
+    lin = np.unique(rng.integers(0, total, nnz, dtype=np.int64))
+    coords = list(np.unravel_index(lin, shape))
+    return [c.astype(np.int64) for c in coords], rng.random(lin.size) + 1e-3
+
+
+def make_tensor(shape=TENSOR_SHAPE, nnz=TENSOR_NNZ, seed=5, layout=None):
+    """A uniform random Tensor (``make_tensor_coo``), materialized."""
+    from graphblas import Tensor
+
+    coords, vals = make_tensor_coo(shape, nnz, seed)
+    T = Tensor.from_coo(coords, vals, shape=shape, layout=layout)
+    T.wait()
+    return T
+
+
+def make_factor(n, rank, seed=6):
+    """Dense n x rank numpy factor for TTM / MTTKRP, values in [0.001, 1.001)."""
+    return np.random.default_rng(seed).random((n, rank)) + 1e-3
