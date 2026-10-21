@@ -689,20 +689,11 @@ class Scalar(BaseType):
                 self = op(self).new()
             if isinstance(other, ScalarEwiseAddExpr):
                 other = op(other).new()
+            if output_type(self) is not Scalar:  # A literal on the left, as in `op(1 | s)`
+                self = _literal_scalar(other, self, op, within=method_name, argname="left")
 
         if type(other) is not Scalar:
-            other, dtype = _literal_operand(self.dtype, other, op)
-            try:
-                other = Scalar.from_value(other, dtype, is_cscalar=False, name="")
-            except TypeError:
-                other = self._expect_type(
-                    other,
-                    Scalar,
-                    within=method_name,
-                    keyword_name="other",
-                    extra_message="Literal scalars also accepted.",
-                    op=op,
-                )
+            other = _literal_scalar(self, other, op, within=method_name, keyword_name="other")
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         if _ewise_add_needs_cast(op, self.dtype, other.dtype):
@@ -762,20 +753,11 @@ class Scalar(BaseType):
                 self = op(self).new()
             if isinstance(other, ScalarEwiseMultExpr):
                 other = op(other).new()
+            if output_type(self) is not Scalar:  # A literal on the left, as in `op(1 & s)`
+                self = _literal_scalar(other, self, op, within=method_name, argname="left")
 
         if type(other) is not Scalar:
-            other, dtype = _literal_operand(self.dtype, other, op)
-            try:
-                other = Scalar.from_value(other, dtype, is_cscalar=False, name="")
-            except TypeError:
-                other = self._expect_type(
-                    other,
-                    Scalar,
-                    within=method_name,
-                    keyword_name="other",
-                    extra_message="Literal scalars also accepted.",
-                    op=op,
-                )
+            other = _literal_scalar(self, other, op, within=method_name, keyword_name="other")
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
         return ScalarExpression(
@@ -837,22 +819,13 @@ class Scalar(BaseType):
                 self = op(self, left_default=left_default, right_default=right_default).new()
             if isinstance(other, ScalarEwiseAddExpr):
                 other = op(other, left_default=left_default, right_default=right_default).new()
+            if output_type(self) is not Scalar:  # A literal on the left, as in `op(1 | s)`
+                self = _literal_scalar(other, self, op, within=method_name, argname="left")
 
         right_dtype = self.dtype
         dtype = right_dtype if right_dtype._is_udt else None
         if type(other) is not Scalar:
-            other, literal_dtype = _literal_operand(right_dtype, other, op)
-            try:
-                other = Scalar.from_value(other, literal_dtype, is_cscalar=False, name="")
-            except TypeError:
-                other = self._expect_type(
-                    other,
-                    Scalar,
-                    within=method_name,
-                    keyword_name="other",
-                    extra_message="Literal scalars also accepted.",
-                    op=op,
-                )
+            other = _literal_scalar(self, other, op, within=method_name, keyword_name="other")
         else:
             # A typed Scalar keeps its dtype beside a lifted op, as it does for
             # Vector.ewise_union: ``s8 - sf`` is float, not ``sf`` cut to int8.
@@ -1184,6 +1157,27 @@ def _as_scalar(scalar, dtype=None, *, is_cscalar):
     if scalar._is_cscalar != is_cscalar or dtype is not None and scalar.dtype != dtype:
         return scalar.dup(dtype, is_cscalar=is_cscalar, name=scalar.name)
     return scalar
+
+
+def _literal_scalar(scalar, value, op, *, within, argname=None, keyword_name=None):
+    """Return literal ``value``, ``op``'s operand beside ``scalar`` on either side, as a Scalar.
+
+    It is typed as any literal operand is (``literals._literal_operand``). A value
+    that cannot be a Scalar raises TypeError, naming ``argname`` or ``keyword_name``.
+    """
+    value, dtype = _literal_operand(scalar.dtype, value, op)
+    try:
+        return Scalar.from_value(value, dtype, is_cscalar=False, name="")
+    except TypeError:
+        return scalar._expect_type(
+            value,
+            Scalar,
+            within=within,
+            argname=argname,
+            keyword_name=keyword_name,
+            extra_message="Literal scalars also accepted.",
+            op=op,
+        )
 
 
 def _union_default(obj, default, input_dtype, op, keyword_name):
