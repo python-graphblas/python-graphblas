@@ -1382,6 +1382,37 @@ def test_core_hooks():
     assert (X | X).shape == X.shape
 
 
+def test_isequal_from_matrix_and_vector():
+    """``A.isequal(T)`` and ``A.isclose(T)`` give what ``T.isequal(A)`` gives."""
+    A = Matrix.from_coo([0, 1, 1], [2, 0, 3], [1.0, 2.0, 3.0], nrows=2, ncols=4)
+    T = Tensor.from_matrix(A).relayout(((1,), (0,)))  # compared in another layout
+    for x, y in [(A, T), (T, A), (A.T, T.T)]:
+        assert x.isequal(y)
+        assert x.isclose(y)
+    T2 = T.dup()
+    T2[0, 2] = 1.0 + 1e-9
+    assert not A.isequal(T2)
+    assert A.isclose(T2)
+    assert not A.isclose(T2, rel_tol=1e-12)
+    del T2[1, 0]
+    assert not A.isclose(T2)
+    assert not A.isequal(Tensor.from_matrix(A).expand_dims(0))  # shapes differ
+    Ti = Tensor.from_matrix(A.dup(int))
+    assert A.isequal(Ti)
+    assert not A.isequal(Ti, check_dtype=True)
+    assert not A.isclose(Ti, check_dtype=True)
+    v = Vector.from_coo([1, 3], [2.0, -1.0], size=5)
+    V = Tensor.from_vector(v)
+    assert v.isequal(V)
+    assert v.isclose(V)
+    assert V.isequal(v)
+    assert not v.isequal(Tensor.from_vector((v * 2).new()))
+    assert not v.isequal(Tensor.from_matrix(A))
+    # Other Matrix methods still refuse a Tensor operand
+    with pytest.raises(TypeError, match="Matrix methods do not take Tensor"):
+        A.ewise_mult(T)
+
+
 # --------------------------------------------------------------------------------------------
 # Matrix, Vector and ndarray operands; broadcasting
 
