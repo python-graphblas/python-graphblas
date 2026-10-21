@@ -25,8 +25,9 @@ python report.py results/*.jsonl             # tables and the fingerprint check
 In an environment that already has python-graphblas's dependencies, `PYTHONPATH=/path/to/clone`
 instead of the `pip install` works too; the results record which `graphblas` was imported.
 
-`python run.py --datasets u7` takes about 10 minutes (most of it in pydata/sparse and scipy).
-`--libs graphblas` alone takes under a minute.
+`python run.py --datasets u7 --libs graphblas,pydata,scipy` took 13 minutes on an Apple M5 Pro,
+most of it in pydata/sparse (its MTTKRP alone takes 3 minutes); `--libs graphblas` alone takes
+under a minute.
 
 ## What runs
 
@@ -55,9 +56,9 @@ instead of the `pip install` works too; the results record which `graphblas` was
   export), `ewise` (add and multiply; the second operand also as a permuted view), `bcast`
   (multiply by a dense vector along each axis, and by a dense matrix), `reduce` (sum over
   every subset of axes), `permute` (every permutation, materialized), `ttv`, `ttm` (R = 16 and
-  64), `mttkrp` (R = 16 and 64 for the Tensor and SPLATT; 16 for the others), `contract`
-  (`'ijk,kl->ijl'` with a sparse matrix, `'ijk,jkl->il'` with a sparse tensor), `bmm`
-  (`'bij,bjk->bik'`), `slice` (the middle index and a 10% range of each axis).
+  64), `mttkrp` (R = 16 and 64 for the Tensor, SPLATT, TACO and Finch; 16 for the Python
+  libraries), `contract` (`'ijk,kl->ijl'` with a sparse matrix, `'ijk,jkl->il'` with a sparse
+  tensor), `bmm` (`'bij,bjk->bik'`), `slice` (the middle index and a 10% range of each axis).
 - **Threads** (`--threads`, default `min(8, cores),1`): multithreaded libraries (the Tensor,
   torch, Numba, SPLATT, TACO) run at each count; pydata/sparse and scipy are single-threaded.
 

@@ -233,7 +233,8 @@ def tables(rows, host):
     # GraphBLAS over the fastest other library, geometric mean per dataset
     ratios = defaultdict(list)
     for (g, ds, case, c), r in best.items():
-        if c[0] != "graphblas":
+        # export to COO is a copy for the Tensor and free for COO libraries: not a kernel
+        if c[0] != "graphblas" or case == "to_coo":
             continue
         others = [
             v["best_ms"]
@@ -248,7 +249,7 @@ def tables(rows, host):
     if ratios:
         print(
             f"\n### Speedup of graphblas over the fastest other library ({host}; "
-            "geometric mean, >1 = graphblas faster)\n"
+            "geometric mean, >1 = graphblas faster; export to COO left out)\n"
         )
         print("| dataset | threads | cases | geomean | min | max |")
         print("|---|---|---|---|---|---|")
