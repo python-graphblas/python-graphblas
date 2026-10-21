@@ -46,8 +46,6 @@ and the data sets are those named in `design.md`.
 - `pad`.
 - binsparse interchange; `graphblas.io` dispatching ndim > 2 to the Tensor methods.
 - An Array API namespace.
-- `Matrix.isequal(T)` and `Vector.isequal(T)` (the Tensor side accepts Matrices and
-  Vectors).
 - `Tensor.dtype` is a python-graphblas type, not a numpy dtype, so libraries that expect
   numpy dtypes (TensorLy, for example) need a small adapter.
 
@@ -99,9 +97,8 @@ and the data sets are those named in `design.md`.
    hand. Then fix the mispricings listed above, and finish the census on NELL-2 and Enron.
 5. **Performance:** TTM along non-stored modes (an in-place kernel, or opt-in per-mode copies);
    einsum's per-call overhead; keeping moved operands on the store.
-6. **API:** `pad`, more aggregators, index-based `select`, einsum diagonals, `isequal` from
-   the Matrix side, and the open questions (Vector and Tensor index arrays, `graphblas.io`
-   dispatch).
+6. **API:** `pad`, more aggregators, index-based `select`, einsum diagonals, and the open
+   questions (Vector and Tensor index arrays, `graphblas.io` dispatch).
 7. **When SuiteSparse 10.5.2 is the oldest supported version:** drop the 10.5.1 reshape
    workaround (`tensor_layout.reshape_owned`, marked `TODO(SuiteSparse 10.5.2)`).
 8. **Backports** to Matrix and Vector (`backport-candidates.md`).

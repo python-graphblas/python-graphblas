@@ -72,6 +72,8 @@ Construction
     (3, 2, 2)
     >>> Tensor.from_matrix(A).isequal(A)  # isequal and isclose take a Matrix, Vector or Scalar
     True
+    >>> A.isequal(Tensor.from_matrix(A))  # and a Matrix or Vector compares with a Tensor
+    True
 
 ``from_coo`` takes one index array per axis (the ``np.nonzero`` form) or an ``(ndim, nvals)``
 array, and ``layout=`` to choose the stored layout (kept by later updates). Conversions out
