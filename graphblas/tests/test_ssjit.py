@@ -1929,15 +1929,11 @@ def test_eq_ne_udt_cfunc_works_for_unrepresentable_dtypes():
 
 
 @pytest.mark.skipif("not supports_udfs")
-def test_udt_scalar_broadcast_skips_jit():
-    """Mixed UDT+scalar arithmetic and eq/ne stay on the cfunc path.
+def test_udt_scalar_broadcast_jit_routing():
+    """Mixed UDT and scalar arithmetic gets a C definition with a type for each of z, x
+    and y; eq/ne on a mixed pair, and ops that have no C form, keep the cfunc.
 
-    The JIT codegen helpers (``set_jit_c_on_op`` and
-    ``set_jit_c_comparison_on_op``) only run when ``dtype == dtype2``. A
-    mixed pair would need a per-side type in the C signature plus one C
-    name per (op, left_type, right_type) triple; for now we keep the
-    cfunc fallback for broadcast and skip JIT. This test pins that
-    routing so a future change doesn't accidentally regress it (either
+    This test pins that routing so a future change doesn't accidentally regress it (either
     direction is fine, but it should be a conscious decision).
     """
     if not _has_jit_set:
@@ -1951,12 +1947,188 @@ def test_udt_scalar_broadcast_skips_jit():
     # Same-type pairs do JIT.
     assert binary.plus[record, record].jit_c_source is not None
     assert binary.eq[record, record].jit_c_source is not None
-    # Mixed pairs do not JIT (cfunc handles broadcast correctly; this is
-    # the documented limit, not an oversight).
-    assert binary.plus[record, dtypes.INT64].jit_c_source is None
-    assert binary.plus[dtypes.INT64, record].jit_c_source is None
+    # Mixed arithmetic does, with the scalar read once for every leaf
+    assert binary.plus[record, dtypes.INT64].jit_c_source == (
+        "void plus_11__BcastJitUV_int64_t (_BcastJitUV *z, const _BcastJitUV *x, "
+        "const int64_t *y) { z->bcast_u = (x->bcast_u) + (((double) ((*y)))) ; "
+        "z->bcast_v = (x->bcast_v) + (((double) ((*y)))) ; }"
+    )
+    assert binary.plus[dtypes.INT64, record].jit_c_source is not None
+    # Comparisons on a mixed pair keep the cfunc
     assert binary.eq[record, dtypes.INT64].jit_c_source is None
     assert binary.ne[record, dtypes.FP64].jit_c_source is None
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_mixed_jit_c_source():
+    """The C definitions of lifted ops on a scalar and an array UDT, and the cases with no C
+    form (an array operand that broadcasts, integer truediv, an array leaf in a record).
+    """
+    if not _has_jit_set:
+        pytest.skip("requires SuiteSparse:GraphBLAS >= 9")
+    arr = dtypes.register_anonymous(np.dtype((np.float64, (13,))), "_MixedArr13")
+    # (the C name of whichever test registered this numpy type first: ``test_op`` has it too)
+    c = arr.jit_c_name
+    assert binary.times[dtypes.FP64, arr].jit_c_source == (
+        f"void times_6_double_{c} ({c} *z, const double *x, "
+        f"const {c} *y) {{ for (int64_t i = 0 ; i < 13 ; i++) "
+        "{ z->v[i] = ((*x)) * (y->v[i]) ; } }"
+    )
+    assert binary.times[dtypes.FP64, arr].jit_c_name == f"times_6_double_{c}"
+    assert binary.times[arr, dtypes.FP64].jit_c_name == f"times_{len(c)}_{c}_double"
+    # plus_times on these types: its monoid is the same-type plus
+    semi = gb.semiring.plus_times[dtypes.FP64, arr]
+    assert semi.jit_c_source == binary.times[dtypes.FP64, arr].jit_c_source
+    assert semi.monoid.jit_c_source is not None
+    # Operands converted to the type the op computes in, as the cfunc converts them
+    assert "(((double) ((*x)))) - (y->v[i])" in binary.minus[dtypes.INT32, arr].jit_c_source
+    arr_i8 = dtypes.register_anonymous(np.dtype((np.int8, (13,))), "_MixedArrI8")
+    assert "(((double) (x->v[i]))) + (y->v[i])" in binary.plus[arr_i8, arr].jit_c_source
+    # No C form: these keep the cfunc
+    arr1 = dtypes.register_anonymous(np.dtype((np.float64, (1,))), "_MixedArr1")
+    assert binary.plus[arr1, arr].jit_c_source is None  # (broadcasts)
+    assert binary.truediv[dtypes.INT64, arr_i8].jit_c_source is None
+    nested = dtypes.register_anonymous(
+        np.dtype([("mx_w", np.float64, (2,)), ("mx_c", np.int64)]), "_MixedArrLeaf"
+    )
+    assert binary.plus[nested, dtypes.INT64].jit_c_source is None
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_mixed_jit_c_name_is_its_own():
+    """A mixed op's C name is not a one-type op's on a UDT named like the pair, nor another
+    pair's. SuiteSparse finds a compiled kernel by its op's name, so the second op ran the
+    first's kernel: wrong values, or writes past the end of a smaller element.
+    """
+    if not _has_jit_set:
+        pytest.skip("requires SuiteSparse:GraphBLAS >= 9")
+    a = dtypes.register_anonymous(np.dtype((np.float64, (19,))), "_CnA")
+    b = dtypes.register_anonymous(np.dtype((np.int64, (19,))), "_CnB")
+    ab = dtypes.register_anonymous(np.dtype((np.int8, (19,))), f"{a.jit_c_name}_{b.jit_c_name}")
+    assert binary.plus[ab, ab].jit_c_name != binary.plus[a, b].jit_c_name
+    n = 50
+    vab = Vector.from_coo(np.arange(n), np.ones((n, 19), np.int8), dtype=ab)
+    va = Vector.from_coo(np.arange(n), np.full((n, 19), 1.5), dtype=a)
+    vb = Vector.from_coo(np.arange(n), np.full((n, 19), 10), dtype=b)
+    with _jit_mode("on"):
+        same = vab.ewise_mult(vab, binary.plus).new()
+        mixed = va.ewise_mult(vb, binary.plus).new()
+    assert (same.to_dense() == 2).all()
+    assert (mixed.to_dense() == 11.5).all()
+
+
+def _mixed_parity_cases():
+    rng = np.random.default_rng(17)
+    arr_f = dtypes.register_anonymous(np.dtype((np.float64, (5,))), "_MixedParF")
+    arr_i = dtypes.register_anonymous(np.dtype((np.int64, (5,))), "_MixedParI")
+    arr_c = dtypes.register_anonymous(np.dtype((np.complex128, (5,))), "_MixedParC")
+    rec = dtypes.register_anonymous(
+        np.dtype([("mp_a", np.float64), ("mp_b", np.int32)], align=True), "_MixedParRec"
+    )
+    n = 64
+    vf = rng.standard_normal((n, 5))
+    vf[0, :2] = [np.nan, np.inf]
+    vi = rng.integers(-9, 10, (n, 5))
+    vc = rng.standard_normal((n, 5)) + 1j * rng.standard_normal((n, 5))
+    vr = np.zeros(n, rec.np_type)
+    vr["mp_a"] = rng.standard_normal(n)
+    vr["mp_b"] = rng.integers(-9, 10, n)
+    sf = rng.standard_normal(n)
+    sf[1] = 0.0
+    si = rng.integers(-3, 4, n)
+    su = rng.integers(0, 2**63, n, dtype=np.uint64)
+    idx = np.arange(n)
+    u = {
+        "FP64[5]": Vector.from_coo(idx, vf, dtype=arr_f),
+        "INT64[5]": Vector.from_coo(idx, vi, dtype=arr_i),
+        "FC64[5]": Vector.from_coo(idx, vc, dtype=arr_c),
+        "record": Vector.from_coo(idx, vr, dtype=rec),
+    }
+    s = {
+        "FP64": Vector.from_coo(idx, sf),
+        "INT64": Vector.from_coo(idx, si),
+        "UINT64": Vector.from_coo(idx, su),
+    }
+    real_ops = ["plus", "minus", "times", "truediv", "floordiv", "min", "max"]
+    return (
+        [
+            ("FP64[5]", "FP64", real_ops),
+            ("FP64[5]", "INT64", real_ops),
+            ("INT64[5]", "UINT64", real_ops),  # (computed in FP64, as on built-in vectors)
+            ("INT64[5]", "INT64", ["plus", "minus", "times", "floordiv", "min", "max"]),
+            ("FC64[5]", "FP64", ["plus", "minus", "times", "truediv"]),
+            ("record", "FP64", real_ops),
+            ("record", "INT64", ["plus", "minus", "times", "min", "max"]),
+        ],
+        u,
+        s,
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_mixed_jit_cfunc_parity():
+    """A mixed op's C kernel and its Numba cfunc give the same bytes, the UDT on either side."""
+    if not _has_jit_set:
+        pytest.skip("requires SuiteSparse:GraphBLAS >= 9")
+    _require_jit_on()
+    cases, u, s = _mixed_parity_cases()
+    checked = 0
+    for ukey, skey, ops in cases:
+        for op in ops:
+            for left, right in [(u[ukey], s[skey]), (s[skey], u[ukey])]:
+                typed = getattr(binary, op)[left.dtype, right.dtype]
+                if typed.jit_c_source is None:
+                    continue
+                with _jit_mode("on"):
+                    jit = left.ewise_mult(right, getattr(binary, op)).new()
+                with _jit_mode("off"):
+                    cf = left.ewise_mult(right, getattr(binary, op)).new()
+                assert jit.dtype == cf.dtype
+                assert jit.nvals == cf.nvals
+                assert (
+                    jit.to_dense().tobytes() == cf.to_dense().tobytes()
+                ), f"binary.{op}[{left.dtype}, {right.dtype}]: JIT and cfunc disagree"
+                checked += 1
+    assert checked > 60
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_mixed_semiring_runs_jit(capfd):
+    """The scalar x array semiring compiles as one JIT kernel (burble), with the result of the
+    generic kernel.
+    """
+    if not _has_jit_set:
+        pytest.skip("requires SuiteSparse:GraphBLAS >= 9")
+    _require_jit_on()
+    arr = dtypes.register_anonymous(np.dtype((np.float64, (6,))), "_MixedSemi6")
+    rng = np.random.default_rng(23)
+    A = gb.Matrix.from_coo(
+        rng.integers(0, 30, 200),
+        rng.integers(0, 20, 200),
+        rng.random(200),
+        nrows=30,
+        ncols=20,
+        dup_op=binary.plus,
+    )
+    U = rng.random((20, 6))
+    u = Vector.from_coo(np.arange(20), U, dtype=arr)
+    semi = gb.semiring.plus_times[dtypes.FP64, arr]
+    capfd.readouterr()
+    with burble():
+        w = A.mxv(u, semi).new()
+        w.wait()
+    out = capfd.readouterr().out
+    assert "GrB_mxv" in out
+    assert "(jit: " in out
+    assert "generic" not in out
+    with _jit_mode("off"):
+        w_generic = A.mxv(u, semi).new()
+    idx, vals = w.to_coo()
+    gidx, gvals = w_generic.to_coo()
+    assert_array_equal(idx, gidx)
+    np.testing.assert_allclose(vals, gvals, rtol=1e-13)
+    np.testing.assert_allclose(vals, (A.to_dense(0) @ U)[idx], rtol=1e-13)
 
 
 def test_context_importable():
