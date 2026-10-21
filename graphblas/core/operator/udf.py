@@ -39,7 +39,7 @@ def _bool_to_int8(dtype):
     numba/numba#5395. Routing BOOL through INT8 sidesteps that; GraphBLAS
     coerces back at the cfunc boundary.
 
-    MAINT 2026-05-24: still hits on Numba 0.65. Re-test periodically and
+    MAINT 2026-10-18: still hits on Numba 0.68. Re-test periodically and
     drop the INT8 routing when upstream is fixed.
     """
     return INT8 if dtype == BOOL else dtype
@@ -306,7 +306,7 @@ def _input_operand(dtype, var):
     if dtype == BOOL:
         # Numba can't compile bool ptrs (numba/numba#5395); expose them
         # as int8 and cast on deref.
-        # MAINT 2026-05-24: still hits on Numba 0.65; re-test periodically.
+        # MAINT 2026-10-18: still hits on Numba 0.68; re-test periodically.
         return "", f"bool({var}_ptr[0])", nt.CPointer(INT8.numba_type)
     return "", f"{var}_ptr[0]", nt.CPointer(dtype.numba_type)
 
