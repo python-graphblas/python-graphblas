@@ -18,8 +18,16 @@ It needs the JIT: without it the ops cannot be created (the product would run Su
 generic kernel, about 2x slower than the other engines). So it raises the JIT control from
 SuiteSparse's default "run" to "on" as UDT auto-lift does, and is not used under an explicit
 "off". The type and ops of each R are made once per process.
+
+A compile can still fail with the control "on" (a compiler that stopped working, a full
+disk, an unwritable cache): SuiteSparse then returns ``GxB_JIT_ERROR`` rather than run the
+generic kernel, and drops the control to "load" (``GB_jitifyer.c``). ``run`` catches that:
+the control goes back to what it was before the engine raised it, a ``NoJITWarning`` says
+what happened, the engine stays off for the rest of the process, and the caller takes
+another engine.
 """
 
+import warnings
 from types import SimpleNamespace
 
 import numpy as np
@@ -30,16 +38,55 @@ from . import tensor_layout as tl
 
 # R -> (GrB_Type, GrB_Semiring), or None when they could not be made with the JIT on
 _SEMIRINGS = {}
+# After a failed compile: (the control before the engine raised it, the one SuiteSparse
+# left, the error); the engine is then off for the rest of the process
+_FAILURE = None
+
+
+def jit_control():
+    from .. import ss
+
+    return ss.config["jit_c_control"]
 
 
 def jit_ready():
     """Whether a kernel armed now will be JIT-compiled. As for UDT auto-lift
     (``jit_config._enable_jit_for_udt``), SuiteSparse's default "run" is raised to "on" when
-    a compiler works; an explicit "off", "pause" or "load" is honored.
+    a compiler works; an explicit "off", "pause" or "load" is honored. False after a failed
+    compile (``run``).
     """
     from .ss.jit_config import _enable_jit_for_udt
 
-    return _enable_jit_for_udt()
+    return _FAILURE is None and _enable_jit_for_udt()
+
+
+def run(before, func, *args, **kwargs):
+    """``func(*args, **kwargs)``: engine code that may JIT-compile, with ``before`` the JIT
+    control from before ``jit_ready``. None when a compile fails (see the module notes):
+    the control is set back to ``before``, and a ``NoJITWarning`` says so.
+    """
+    global _FAILURE
+    from ..exceptions import JitError, NoJITWarning, NullPointer
+
+    try:
+        return func(*args, **kwargs)
+    except (JitError, NullPointer) as exc:
+        # (an op made from a NULL function and C source reports a failed compile as either)
+        left = jit_control()
+        if left != before:
+            from .. import ss
+
+            ss.config["jit_c_control"] = before
+        _FAILURE = (before, left, exc)
+        warnings.warn(
+            f"The Tensor's array-UDT engine could not compile its kernels with the SuiteSparse "
+            f"JIT ({type(exc).__name__}: {exc}); it is off for the rest of this process, and "
+            f"another engine runs. jit_c_control is back to {before!r} (SuiteSparse had set "
+            f"{left!r}).",
+            NoJITWarning,
+            stacklevel=2,
+        )
+        return None
 
 
 def _binary_op(defn, ztype, xtype, ytype):
@@ -92,9 +139,9 @@ def semiring(R):
         sr = ffi.new("GrB_Semiring*")
         tl._check(lib.GrB_Semiring_new(sr, monoid[0], mult), "GrB_Semiring_new")
         rv = (t[0], sr[0])
-    except Exception:
-        rv = None
-    _SEMIRINGS[R] = rv
+    finally:
+        # (a failed compile raises, for ``run``; this R is not tried again)
+        _SEMIRINGS[R] = rv
     return rv
 
 
