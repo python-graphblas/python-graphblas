@@ -412,6 +412,23 @@ ignore = [
 ]
 "scripts/*.py" = ["INP001", "T201"] # Not a package; allow print
 "scripts/create_pickle.py" = ["F403", "F405"] # Allow `from foo import *`
+# The Tensor benchmark kit: scripts that print, assert on results, use os.path and short module
+# aliases (`import datasets as D`), and run fixed subprocesses and URLs
+"scripts/tensor_bench/**/*.py" = [
+  "INP001",
+  "T201",
+  "S101",
+  "S310",
+  "S603",
+  "S607",
+  "N812",
+  "PTH",
+  "C408",
+  "RUF005",
+  "PLW1510",
+  "PLW0108",
+  "PLC0415",
+]
 "docs/*.py" = ["INP001"] # Not a package
 
 
