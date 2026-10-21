@@ -191,8 +191,9 @@ def _mask_arg(x):
 
 class _Owners:
     """The Tensors that share one stored Matrix. Held weakly, so no ``__del__`` bookkeeping
-    is needed (review F2). Keyed by ``id`` because a WeakSet compares its members with
-    ``==``, which will build an expression once Tensor has comparison operators.
+    is needed (see "Copy-on-write views" in ai-notes/tensor/design.md). Keyed by ``id``
+    because a WeakSet compares its members with ``==``, which will build an expression once
+    Tensor has comparison operators.
     """
 
     __slots__ = "_refs", "__weakref__"
@@ -1850,7 +1851,8 @@ def _settle_split(M, shape, layout):
 
 def _healthy(M, shape, layout):
     """Move an empty column group (an n x 1 Matrix, held as n rows of one entry at most) to
-    the default split, by one reshape (review F4).
+    the default split, by one reshape (see "Choosing a default layout" in
+    ai-notes/tensor/design.md).
 
     An empty row group is left alone: one row holding every entry costs 12 bytes per entry
     like a Vector, and SuiteSparse runs ewise, apply and selector products on it as fast as
