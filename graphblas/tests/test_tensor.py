@@ -2422,6 +2422,75 @@ def test_ttm_compacted(monkeypatch):
     assert calls == [False]
 
 
+_KERNEL_CACHE_SCRIPT = """
+import sys
+import numpy as np
+import graphblas as gb
+from graphblas import Matrix
+from graphblas.core import tensor, tensor_numba
+from graphblas.core.tensor import Tensor
+print("package:", gb.__file__)
+tensor._TTM_KERNEL_MIN_NNZ = 0
+rng = np.random.default_rng(0)
+xv = np.where(rng.random((20, 30, 40)) < 0.01, rng.random((20, 30, 40)), 0)
+X = Tensor.from_coo(np.nonzero(xv), xv[xv != 0], shape=xv.shape)
+U = rng.random((40, 3))
+got = X.tensordot(Matrix.from_dense(U), ([2], [0])).new().to_dense(fill_value=0)
+print("max_err:", float(np.abs(got - np.tensordot(xv, U, ([2], [0]))).max()))
+k = next(iter(tensor_numba._compiled.values()))
+print("cache_hits:", sum(k.stats.cache_hits.values()))
+"""
+
+
+def _run_kernel_cache_script(cache):
+    repo_root = Path(__file__).resolve().parents[2]
+    env = dict(os.environ, PYTHONPATH=str(repo_root), GRAPHBLAS_KERNEL_CACHE=cache)
+    return subprocess.Popen(
+        [sys.executable, "-c", _KERNEL_CACHE_SCRIPT],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+    )
+
+
+def _kernel_cache_lines(proc):
+    out, err = proc.communicate(timeout=600)
+    assert proc.returncode == 0, f"stdout:\n{out}\nstderr:\n{err}"
+    lines = dict(line.split(": ", 1) for line in out.splitlines() if ": " in line)
+    assert float(lines["max_err"]) < 1e-12
+    return lines
+
+
+def test_kernel_disk_cache(tmp_path):
+    """Generated kernels go to files in the cache directory, so a second process loads the
+    compiled code from Numba's cache; two processes may fill one cache at once; a read-only or
+    disabled cache compiles in memory.
+    """
+    pytest.importorskip("numba")
+    cache = tmp_path / "kernels"
+    # Two processes at once on an empty cache: both work
+    procs = [_run_kernel_cache_script(str(cache)) for _ in range(2)]
+    for proc in procs:
+        _kernel_cache_lines(proc)
+    files = sorted(p.name for p in cache.glob("k_*.py"))
+    assert files
+    assert not list(cache.glob("*.tmp"))
+    # A later process loads the compiled code
+    assert int(_kernel_cache_lines(_run_kernel_cache_script(str(cache)))["cache_hits"]) > 0
+    # Read-only: compiles in memory, writes nothing
+    ro = tmp_path / "readonly"
+    ro.mkdir()
+    ro.chmod(0o555)
+    try:
+        assert int(_kernel_cache_lines(_run_kernel_cache_script(str(ro)))["cache_hits"]) == 0
+        assert not list(ro.iterdir())
+    finally:
+        ro.chmod(0o755)
+    # Disabled
+    assert int(_kernel_cache_lines(_run_kernel_cache_script(""))["cache_hits"]) == 0
+
+
 def test_mttkrp_without_numba():
     """With Numba blocked, the Tensor imports and MTTKRP runs the GraphBLAS products."""
     script = """

@@ -15,6 +15,12 @@ write the same output row. Otherwise each thread has its own output buffer, summ
 ``mttkrp_nd`` returns None when those buffers would be too large.
 """
 
+import hashlib
+import importlib.util
+import os
+import sys
+from pathlib import Path
+
 import numba
 import numpy as np
 from numba import njit, prange
@@ -25,6 +31,61 @@ _NCHUNKS = 64
 # threads, 22 vs 39 at 1; NELL-2 30 vs 49, 161 vs 301). About 0.2-0.4 s to compile each, once
 # per process.
 _compiled = {}
+# Generated kernels are written to files here, so Numba can cache their compiled code on disk:
+# a compile costs 0.2-0.6 s each, per process otherwise. Set the variable to "" to turn it off.
+_CACHE_ENV = "GRAPHBLAS_KERNEL_CACHE"
+
+
+def _cache_dir():
+    path = os.environ.get(_CACHE_ENV)
+    if path == "":
+        return None
+    if path is None:
+        base = os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache"
+        path = Path(base) / "python-graphblas" / "tensor-kernels"
+    path = Path(path)
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    return path if os.access(path, os.W_OK) else None
+
+
+def _compile(source):
+    """Compile generated kernel source (a function ``kernel``) with ``njit(parallel=True)``:
+    from a file named by its hash in the cache directory, with Numba's disk cache, else (no
+    writable directory, or any failure there) in memory. The file is written once, through a
+    temporary file and a rename, so concurrent processes see either nothing or all of it;
+    Numba's cache index checks its own version and the file's stamp. Bounds checks (tests)
+    are part of the source, so they get their own file.
+    """
+    check = ", boundscheck=True" if numba.config.BOUNDSCHECK else ""
+    text = "import numba\nimport numpy as np\nfrom numba import njit, prange\n\n" + source.replace(
+        "def kernel(", f"@njit(parallel=True, cache=True{check})\ndef kernel(", 1
+    )
+    digest = hashlib.sha256(text.encode()).hexdigest()[:32]
+    if (cache := _cache_dir()) is not None:
+        path = cache / f"k_{digest}.py"
+        name = f"_graphblas_kernel_{digest}"
+        try:
+            if not path.exists():
+                tmp = cache / f"k_{digest}.py.{os.getpid()}.tmp"
+                tmp.write_text(text)
+                tmp.replace(path)
+            spec = importlib.util.spec_from_file_location(name, path)
+            module = importlib.util.module_from_spec(spec)
+            # (registered: Numba imports the module by name when it loads cached code)
+            sys.modules[name] = module
+            spec.loader.exec_module(module)
+        except Exception:
+            # Any trouble with the file (a read-only or full disk, a stale module): compile in
+            # memory instead
+            sys.modules.pop(name, None)
+        else:
+            return module.kernel
+    ns = {}
+    exec(text.replace("cache=True", "cache=False"), ns)  # noqa: S102 (our own source)
+    return ns["kernel"]
 
 
 def _bins(p, starts, nbins):
@@ -237,10 +298,7 @@ def _kernel_source(R, P, Q, kind, mpos, owner, runs, colblock=False):
 def _kernel_for(R, P, Q, kind, mpos, owner, runs, colblock):
     key = ("mttkrp", R, P, Q, kind, mpos, owner, runs, colblock)
     if (k := _compiled.get(key)) is None:
-        ns = {"np": np, "numba": numba, "prange": prange}
-        source = _kernel_source(R, P, Q, kind, mpos, owner, runs, colblock)
-        exec(source, ns)  # noqa: S102 (our own source)
-        k = _compiled[key] = njit(parallel=True)(ns["kernel"])
+        k = _compiled[key] = _compile(_kernel_source(R, P, Q, kind, mpos, owner, runs, colblock))
     return k
 
 
@@ -352,7 +410,7 @@ def _sum_buffers(out, touched, total, any_touched):
 # TTM: the tensor times a matrix along the last column axis, read in place
 
 
-def _make_ttm(R, multi, dense):
+def _ttm_source(R, multi, dense):
     """The TTM kernel for R output columns. Each output fiber is a row of the stored Matrix
     (one column axis), or with ``multi`` a run of the row's entries sharing the leading
     column axes (entries are sorted by column); its R values are the sum of ``x * U[k, :]``
@@ -361,54 +419,56 @@ def _make_ttm(R, multi, dense):
     to ``V[f]``, f numbering the fibers from ``offs[s]`` for row slot s, with ``hout[f] = g``
     and the column indices ``cols[f * R + r] = r`` (hypersparse rows).
     """
+    return f"R = {R}\nmulti = {multi}\ndense = {dense}\n\n" + _TTM_KERNEL
 
-    def kernel(p, h, ci, x, iso, nlast, npre, U, offs, hout, cols, V, B, starts, bin_ptr, bins):
-        for bb in prange(bin_ptr.size - 1):
-            t = np.empty(R)
-            for cc in range(bin_ptr[bb], bin_ptr[bb + 1]):
-                c = bins[cc]
-                for s in range(starts[c], starts[c + 1]):
-                    q0 = p[s]
-                    q1 = p[s + 1]
-                    if q0 == q1:
-                        continue
-                    row = np.int64(h[s]) if h.size > 0 else np.int64(s)
-                    f = offs[s]
-                    q = q0
+
+_TTM_KERNEL = """\
+def kernel(p, h, ci, x, iso, nlast, npre, U, offs, hout, cols, V, B, starts, bin_ptr, bins):
+    for bb in prange(bin_ptr.size - 1):
+        t = np.empty(R)
+        for cc in range(bin_ptr[bb], bin_ptr[bb + 1]):
+            c = bins[cc]
+            for s in range(starts[c], starts[c + 1]):
+                q0 = p[s]
+                q1 = p[s + 1]
+                if q0 == q1:
+                    continue
+                row = np.int64(h[s]) if h.size > 0 else np.int64(s)
+                f = offs[s]
+                q = q0
+                while q < q1:
+                    base = 0
+                    lim = nlast
+                    pre = 0
+                    if multi:
+                        pre = np.int64(ci[q]) // nlast
+                        base = pre * nlast
+                        lim = base + nlast
+                    for r in range(R):
+                        t[r] = 0.0
                     while q < q1:
-                        base = 0
-                        lim = nlast
-                        pre = 0
-                        if multi:
-                            pre = np.int64(ci[q]) // nlast
-                            base = pre * nlast
-                            lim = base + nlast
+                        col = np.int64(ci[q])
+                        if multi and col >= lim:
+                            break
+                        xv = x[0] if iso else x[q]
+                        k = col - base
                         for r in range(R):
-                            t[r] = 0.0
-                        while q < q1:
-                            col = np.int64(ci[q])
-                            if multi and col >= lim:
-                                break
-                            xv = x[0] if iso else x[q]
-                            k = col - base
+                            t[r] += xv * U[k, r]
+                        q += 1
+                    g = row * npre + pre
+                    if dense:
+                        for r in range(R):
+                            V[g, r] = t[r]
+                        if B.shape[0] > 0:  # (no bitmap when every row exists)
                             for r in range(R):
-                                t[r] += xv * U[k, r]
-                            q += 1
-                        g = row * npre + pre
-                        if dense:
-                            for r in range(R):
-                                V[g, r] = t[r]
-                            if B.shape[0] > 0:  # (no bitmap when every row exists)
-                                for r in range(R):
-                                    B[g, r] = 1
-                        else:
-                            for r in range(R):
-                                V[f, r] = t[r]
-                                cols[f * R + r] = r
-                            hout[f] = g
-                        f += 1
-
-    return kernel
+                                B[g, r] = 1
+                    else:
+                        for r in range(R):
+                            V[f, r] = t[r]
+                            cols[f * R + r] = r
+                        hout[f] = g
+                    f += 1
+"""
 
 
 @njit(parallel=True, cache=True)
@@ -456,7 +516,7 @@ def ttm(arrays, col_sizes, U, nrows_out, nthreads):
         dense = 2 * nfib >= nrows_out
         key = ("ttm", R, multi, dense)
         if (k := _compiled.get(key)) is None:
-            k = _compiled[key] = njit(parallel=True)(_make_ttm(R, multi, dense))
+            k = _compiled[key] = _compile(_ttm_source(R, multi, dense))
         # 1-d owners (a reshaped view would be copied when handed over: 114 ms for 265e6)
         if dense:
             Vflat = np.empty(nrows_out * R)
