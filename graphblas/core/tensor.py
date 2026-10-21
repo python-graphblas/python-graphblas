@@ -2937,6 +2937,13 @@ def _krp_embedding(F, R):
     return tl.from_coo(j * R + r, r, v, F.dtype, F._nrows * R, R)
 
 
+# Without the Numba kernel, the products' first step (a TTM over the last axis) runs on the
+# array-UDT engine (tensor_udt.ttm) when the JIT is on. Phase 5c, R = 16: NELL-2 mode 0
+# 702 -> 142 ms at 1 thread and 142 -> 29 at 8; u7 82-122 -> 38-77 at 1, the same at 8; NELL-2
+# modes 1 and 2 within 3% at 1 thread, 7-13% slower at 8 (load rising to 3.5).
+_MTTKRP_UDT_FIRST = True
+
+
 def _mttkrp_recipe(updater, x, mats, mode, R, op):
     nthreads = updater.opts.get("nthreads")
     kernel = op.name == "plus_times" and op.return_type == FP64
@@ -2960,9 +2967,24 @@ def _mttkrp_recipe(updater, x, mats, mode, R, op):
     rest = tuple(others[:-1])
     dst = tl.as_layout(((mode, *rest), (last,)), x._shape)
     X = _in_layout(x, dst, nthreads)
-    # 1. TTM over the last axis: (mode, rest | last) @ F_last -> (mode, rest | r)
-    T = tl.new_matrix(op.return_type, X._nrows, R)
-    T(**updater.opts) << X.mxm(mats[last], op)
+    # 1. TTM over the last axis: (mode, rest | last) @ F_last -> (mode, rest | r), by the
+    # UDT engine where it runs (see _MTTKRP_UDT_FIRST)
+    T = None
+    if (
+        kernel
+        and _MTTKRP_UDT_FIRST
+        and x.dtype == FP64
+        and mats[last]._nvals == mats[last]._nrows * R
+    ):
+        from . import tensor_udt
+        from .descriptor import lookup
+
+        if X._nvals >= _TTM_KERNEL_MIN_NNZ and tensor_udt.jit_ready():
+            U = np.ascontiguousarray(mats[last].to_dense(fill_value=0.0), np.float64)
+            T = tensor_udt.ttm(X, U, lookup(**updater.opts))
+    if T is None:
+        T = tl.new_matrix(op.return_type, X._nrows, R)
+        T(**updater.opts) << X.mxm(mats[last], op)
     # 2. Each remaining axis: move it next to r, then one product with its embedding
     rows = (mode, *rest)
     for a in reversed(rest):
