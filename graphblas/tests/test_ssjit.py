@@ -715,6 +715,19 @@ def test_jit_udt_name_leaves_room_for_the_nul():
         dtypes.ss.register_new(name, f"typedef struct {{ int64_t a ; }} {name} ;")
 
 
+@pytest.mark.skipif("_IS_SSGB7")
+def test_jit_udt_name_and_typedef_are_checked():
+    """The name and the C typedef are checked before SuiteSparse is asked to compile them."""
+    with pytest.raises(ValueError, match="must be a valid Python identifier; got: 'chk-dash'"):
+        dtypes.ss.register_new("chk-dash", "typedef struct { int64_t a ; } chk_dash ;")
+    with pytest.raises(ValueError, match="must be same name as the typedef"):
+        dtypes.ss.register_new("chk_named", "typedef struct { int64_t a ; } chk_other ;")
+    with pytest.raises(ValueError, match="Only struct typedefs"):
+        dtypes.ss.register_new("chk_scalar", "typedef int64_t chk_scalar ;")
+    assert not hasattr(dtypes.ss, "chk_named")
+    assert not hasattr(dtypes.ss, "chk_scalar")
+
+
 def test_jit_unary(v):
     cdef = "void square (float *z, float *x) { (*z) = (*x) * (*x) ; } ;"
     if _IS_SSGB7:
