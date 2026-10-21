@@ -532,9 +532,11 @@ def rebuild_cost(nnz, ti, *, sorted_keys=False):
     return (C_REBUILD_SORTED if sorted_keys else C_REBUILD)[ti] * nnz + C_REBUILD_FIXED
 
 
-def _neighbors(state, shape, nnz, ti, hyper1, allow_perm, total_ok, reshaped=False):
+def _neighbors(state, shape, nnz, ti, hyper1, allow_perm, total_ok, reshaped=False,
+               src_cols=None):  # fmt: skip
     """``(edge, next_state, cost, next_reshaped)`` for each edge out of ``state``;
     ``reshaped`` says the state's rows come straight from a reshape (see C_PERM_ROW).
+    ``src_cols`` is ``(state, nonempty columns)`` measured on the data for its source state.
     """
     seq, p = state
     n = len(seq)
@@ -549,7 +551,13 @@ def _neighbors(state, shape, nnz, ti, hyper1, allow_perm, total_ok, reshaped=Fal
     # A transpose with an empty group is a reshape (RS covers it).
     if 0 < p < n:
         out_rows = prod(shape, seq[p:])
-        hyper_out = out_rows > 16 * expected_rows(out_rows, nnz)
+        if src_cols is not None and src_cols[0] == state and not reshaped:
+            # From the data itself: clustered data has far fewer nonempty columns than uniform
+            # (Enron's (2,3) group: 3.0e6 of 2.9e8 against 4.9e7 uniform), so its transpose
+            # goes into hypersparse rows at C_T_HYPER, 4.7x T_TABLE at 1 thread (phase 9b)
+            hyper_out = out_rows > 16 * src_cols[1]
+        else:
+            hyper_out = out_rows > 16 * expected_rows(out_rows, nnz)
         cost = (C_T_HYPER[ti] if hyper_out else t_cost(out_rows, ti)) * nnz
         threads = None
         # A transpose into many rows is slower at 4 or 8 threads than at 2, which runs
@@ -598,18 +606,21 @@ def expected_rows(nrows, nnz):
     return nrows * -math.expm1(-nnz / nrows)
 
 
-def plan(shape, src, targets, nnz, nthreads, *, hyper1=False, allow_perm=True):
+def plan(shape, src, targets, nnz, nthreads, *, hyper1=False, allow_perm=True, src_cols=None):
     """Cheapest edge sequence from state ``src`` to any state in ``targets`` (a frozenset).
 
     Returns ``(cost_ns, path, final_state)``. A path is a list of edges: ``("RS", q)``,
     ``("T", nthreads or None)``, ``("PERM_R", new_row_seq)``, ``("PERM_C", new_col_seq)`` or
     ``("REBUILD", state)``. ``allow_perm`` is which permutation edges may be used: True (both),
-    ``"rows"`` (PERM_R), ``"cols"`` (PERM_C) or False.
+    ``"rows"`` (PERM_R), ``"cols"`` (PERM_C) or False. ``src_cols`` is the source's number of
+    nonempty columns when it was measured (``sampled_nonempty_cols``); else the uniform
+    expectation stands in.
     """
     if src in targets:
         return 0.0, [], src
     ti = 0 if nthreads > 1 else 1
-    key = (shape, src, targets, ti, hyper1, allow_perm, int(nnz).bit_length())
+    hint = None if src_cols is None else int(src_cols).bit_length()
+    key = (shape, src, targets, ti, hyper1, allow_perm, int(nnz).bit_length(), hint)
     if (rv := _plan_cache.get(key)) is not None:
         if census.on:
             census.note("plan.cache", "hit")
@@ -642,8 +653,9 @@ def plan(shape, src, targets, nnz, nthreads, *, hyper1=False, allow_perm=True):
             if cost > best.get(node, math.inf) or cost > rebuild:
                 continue
             for edge, nxt, w, flag in _neighbors(
-                state, shape, nnz, ti, hyper1, allow_perm, total_ok, reshaped
-            ):
+                state, shape, nnz, ti, hyper1, allow_perm, total_ok, reshaped,
+                None if src_cols is None else (src, src_cols),
+            ):  # fmt: skip
                 nc = cost + w
                 if nc < best.get((nxt, flag), math.inf):
                     best[nxt, flag] = nc
@@ -902,8 +914,13 @@ def relayout(M, shape, src, targets, *, nthreads=None, allow_perm=None):
     if census.on and (want := census.force.get("relayout")) in _CENSUS_PERMS:
         allow_perm = _perms_value(_perms_set(allow_perm) - _CENSUS_PERMS[want])
     hyper1 = density(M)
+    # A transpose out of the source is the costliest step a plan can start with: price it on
+    # the data's own nonempty columns, sampled, when the data is large enough to matter
+    src_cols = None
+    if nvals >= _SAMPLE_COLS_PAST and len(src.rows) > 0 and len(src.cols) > 1:
+        src_cols = sampled_nonempty_cols(M)
     cost, path, _ = plan(shape, src_state, targets, nvals, nthreads, hyper1=hyper1,
-                         allow_perm=allow_perm)  # fmt: skip
+                         allow_perm=allow_perm, src_cols=src_cols)  # fmt: skip
     if census.on:
         if census.force.get("relayout") == "REBUILD" and path:
             fallback = min(targets, key=lambda t: (t[0] != src_state[0], t))
@@ -961,6 +978,38 @@ def _census_relayout(shape, src, targets, nvals, nthreads, hyper1, allow_perm, c
         nvals=nvals,
         ndim=len(shape),
     )
+
+
+# Below this many entries the uniform estimate does (a sample costs about 0.3 ms)
+_SAMPLE_COLS_PAST = 2**22
+_SAMPLE = 2**14
+
+
+def sampled_nonempty_cols(M):
+    """A low estimate of the nonempty columns of ``M`` (held by row, sparse or hypersparse),
+    from a sample of its column indices: the distinct count d in s of them, solving
+    D * (1 - exp(-s / D)) = d (equal columns; skewed ones give less). None for bitmap or full.
+    """
+    if M.ss.format not in {"csr", "hypercsr"}:
+        return None
+    n = M._nvals
+    with _Unloaded(M) as cont, _VectorArray(cont.i) as i_arr:
+        if i_arr.array is None:
+            return None
+        idx = np.random.default_rng(0).integers(0, n, min(n, _SAMPLE))
+        keys = np.sort(i_arr.array[idx])
+    s = keys.size
+    d = int(np.count_nonzero(keys[1:] != keys[:-1])) + 1
+    if d >= s:
+        return n
+    lo, hi = float(d), float(n)
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        if mid * -math.expm1(-s / mid) < d:
+            lo = mid
+        else:
+            hi = mid
+    return lo
 
 
 def _final_state(state, path):

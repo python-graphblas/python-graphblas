@@ -4373,3 +4373,37 @@ def test_relayout_allow_perm():
     for allow in [True, "rows", "cols", False]:
         M, L = tl.relayout(X._M, shape, X.layout, tl.Layout((0,), (1, 3, 2)), allow_perm=allow)
         check(Tensor._from_M(M, shape, L), xv, xp)
+
+
+def test_plan_prices_the_first_transpose_on_the_data(monkeypatch):
+    """A transpose out of the source is priced on its sampled nonempty columns: clustered data
+    (few columns nonempty) transposes into hypersparse rows (C_T_HYPER), which uniform data
+    of the same size would not; the plan changes and the result does not.
+    """
+    from graphblas.core import tensor_layout as tl
+
+    rng = np.random.default_rng(706)
+    M = Matrix.from_coo(rng.integers(0, 50, 20000), rng.integers(0, 10, 20000) * 997, 1.0,
+                        nrows=50, ncols=10**6)  # fmt: skip
+    est = tl.sampled_nonempty_cols(M)
+    assert 9 <= est <= 10
+    # Enron's (0,1|2,3) relayouts at 1 thread: uniform columns against measured ones
+    shape, nnz = (6066, 5699, 244268, 1176), 54_202_099
+    src, tgt = ((0, 1, 2, 3), 2), frozenset([((2, 3, 0, 1), 2)])
+    uniform = tl.plan(shape, src, tgt, nnz, 1)
+    measured = tl.plan(shape, src, tgt, nnz, 1, src_cols=3.0e6)
+    assert uniform[1] == [("T", None)]
+    # (the transpose at C_T_HYPER, 55 ns per entry against 14.5: another plan is cheaper)
+    assert measured[1] != uniform[1]
+    assert measured[0] > uniform[0]
+    # relayout samples the columns of large data, and the result is the same
+    seen = []
+    orig = tl.plan
+    monkeypatch.setattr(tl, "_SAMPLE_COLS_PAST", 0)
+    monkeypatch.setattr(tl, "plan", lambda *a, **k: seen.append(k.get("src_cols")) or orig(*a, **k))
+    X, xv, xp = random_tensor((5, 6, 7, 8), rng, density=0.05, layout=((0, 1), (2, 3)))
+    assert X.ss.format in {"csr", "hypercsr"}
+    M2, L2 = tl.relayout(X._M, X.shape, X.layout, tl.Layout((2, 3), (0, 1)))
+    assert seen
+    assert seen[-1] is not None
+    check(Tensor._from_M(M2, X.shape, L2), xv, xp)
