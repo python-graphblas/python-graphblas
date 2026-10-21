@@ -24,7 +24,7 @@ import numpy as np
 
 from ..dtypes import FP64, lookup_dtype
 from . import utils
-from .dtypes import _generic_nats, _view_if_same_layout
+from .dtypes import _nats_in_leaf_units, _view_if_same_layout
 from .operator import IndexUnaryOp, SelectOp, TypedOpBase, binary_from_string
 from .operator.binary import BinaryOp
 from .operator.monoid import Monoid
@@ -377,7 +377,7 @@ def _converts_exactly(dtype, value):
         with warnings.catch_warnings():
             # numpy warns for some lossy conversions; the comparison below finds each.
             warnings.simplefilter("ignore")
-            converted[...] = _generic_nats(
+            converted[...] = _nats_in_leaf_units(
                 _view_if_same_layout(value, converted.dtype), converted.dtype
             )
     except (TypeError, ValueError, OverflowError):
@@ -409,7 +409,7 @@ def _is_number(x):
 def _keeps_value(value, dtype):
     """Whether ``value`` converts into ``dtype`` and back unchanged (:func:`_converts_back`)."""
     try:
-        converted = np.array(_generic_nats(value, dtype), dtype=dtype)[()]
+        converted = np.array(_nats_in_leaf_units(value, dtype), dtype=dtype)[()]
     except (TypeError, ValueError, OverflowError):
         return False
     return _converts_back(value, converted)

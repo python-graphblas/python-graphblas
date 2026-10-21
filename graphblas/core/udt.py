@@ -31,7 +31,7 @@ import numpy as np
 
 from ..exceptions import DomainMismatch
 from . import _has_numba, ffi, utils
-from .dtypes import _generic_nats, _registry, _view_if_same_layout, lookup_dtype
+from .dtypes import _nats_in_leaf_units, _registry, _view_if_same_layout, lookup_dtype
 from .utils import output_type
 
 # The built-in ops that lift to UDTs, each with the Python operator or function
@@ -750,7 +750,7 @@ def _element_bytes(dtype, value):
             value = _dict_to_record(np_type, value)
     else:
         arr = np.zeros(np_type.subdtype[1], dtype=np_type.subdtype[0])
-    value = _generic_nats(_view_if_same_layout(value, arr.dtype), arr.dtype)
+    value = _nats_in_leaf_units(_view_if_same_layout(value, arr.dtype), arr.dtype)
     if _has_narrow_float_leaf(np_type) and np.geterr()["over"] == "warn":
         # A float too large for a float32 leaf is infinity, and numpy warns;
         # warn at the caller's line instead, as a built-in FP32 does, so the
