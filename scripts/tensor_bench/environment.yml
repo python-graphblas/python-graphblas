@@ -1,0 +1,33 @@
+# Conda environment for the Tensor benchmark kit (conda-forge only):
+#
+#   conda env create -f scripts/tensor_bench/environment.yml
+#   conda activate graphblas-tensor-bench
+#   python -m pip install --no-deps --no-build-isolation -e .   # python-graphblas from this clone
+#
+# The comparators (pydata/sparse, scipy, torch) and the demos' extra dependencies (tensorly,
+# pandas) are optional: run.py skips any library that does not import. The C compiler is for
+# the SuiteSparse JIT, which the Tensor's array-UDT engine needs and which the maintainers
+# benchmark with. SPLATT and TACO have their own build environment (compiled/).
+name: graphblas-tensor-bench
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python>=3.11
+  # python-graphblas and its required dependencies
+  - python-suitesparse-graphblas>=10.5
+  - donfig
+  - numpy
+  - pyyaml
+  # the Tensor's Numba kernels and the SuiteSparse JIT
+  - numba
+  - c-compiler
+  # comparators
+  - scipy>=1.15 # n-d coo_array
+  - sparse # pydata/sparse
+  - pytorch
+  # data loading, machine info, demos
+  - pandas
+  - psutil
+  - opt_einsum
+  - tensorly
