@@ -87,6 +87,125 @@ def _renumber(layout, mapping):
     return Layout(tuple(mapping[a] for a in layout.rows), tuple(mapping[a] for a in layout.cols))
 
 
+def _reshape_shape(shape, old_shape):
+    """The new shape of a reshape, with -1 resolved, checked against the old size."""
+    try:
+        shape = tuple(operator.index(n) for n in shape)
+    except TypeError:
+        raise TypeError(f"shape must be ints or a sequence of ints; got {shape!r}") from None
+    size = math.prod(old_shape)
+    unknown = [i for i, n in enumerate(shape) if n == -1]
+    if len(unknown) > 1:
+        raise ValueError("can only specify one unknown dimension (-1)")
+    if any(n < -1 for n in shape):
+        raise ValueError(f"negative dimensions are not allowed; got {shape}")
+    if unknown:
+        known = math.prod(n for n in shape if n != -1)
+        if known == 0 or size % known:
+            raise ValueError(f"cannot reshape a Tensor of size {size} into shape {shape}")
+        shape = tuple(size // known if n == -1 else n for n in shape)
+    if math.prod(shape) != size:
+        raise ValueError(f"cannot reshape a Tensor of size {size} into shape {shape}")
+    return shape
+
+
+def _reshape_chunks(old_shape, new_shape):
+    """The runs of a C-order reshape: ``[(old axes, new axes), ...]`` with the same size in
+    each, over the axes of size other than 1, in order. Sizes are positive.
+    """
+    old = [a for a, n in enumerate(old_shape) if n != 1]
+    new = [b for b, n in enumerate(new_shape) if n != 1]
+    chunks = []
+    i = j = 0
+    while i < len(old):
+        ia, jb = [old[i]], [new[j]]
+        pa, pb = old_shape[old[i]], new_shape[new[j]]
+        while pa != pb:
+            if pa < pb:
+                i += 1
+                ia.append(old[i])
+                pa *= old_shape[old[i]]
+            else:
+                j += 1
+                jb.append(new[j])
+                pb *= new_shape[new[j]]
+        chunks.append((ia, jb))
+        i += 1
+        j += 1
+    return chunks
+
+
+def _reshape_layout(old_shape, layout, new_shape):
+    """The layout of the reshape to ``new_shape`` that the stored Matrix of ``layout`` holds
+    as it is: each run of old axes (``_reshape_chunks``) lies within one group, in order,
+    and becomes the run's new axes there. None when some run does not. Sizes positive.
+    """
+    groups = []
+    for group in (layout.rows, layout.cols):
+        groups.append([a for a in group if old_shape[a] != 1])
+    out = ([], [])
+    for ia, jb in _reshape_chunks(old_shape, new_shape):
+        for g, group in enumerate(groups):
+            if ia[0] in group:
+                k = group.index(ia[0])
+                if group[k : k + len(ia)] != ia:
+                    return None
+                out[g].append((k, jb))
+                break
+    rows, cols = (tuple(b for _, jb in sorted(runs) for b in jb) for runs in out)
+    units = [b for b, n in enumerate(new_shape) if n == 1]
+    return _insert_unit_axes(Layout(rows, cols), units)
+
+
+def _reshape_targets(old_shape, new_shape):
+    """The layout states of ``old_shape`` whose stored Matrix holds the reshape: the runs as
+    blocks, in any order, split between them with both groups nonempty (a group of all the
+    axes stores the result as one row or column).
+    """
+    chunks = [ia for ia, _ in _reshape_chunks(old_shape, new_shape)]
+    units = [a for a, n in enumerate(old_shape) if n == 1]
+    orders = itertools.permutations(chunks) if len(chunks) <= 5 else [chunks]
+    targets = set()
+    for order in orders:
+        for k in range(1, len(order)):
+            rows = tuple(a for ia in order[:k] for a in ia)
+            cols = tuple(a for ia in order[k:] for a in ia)
+            state = _insert_unit_axes(Layout(rows, cols), units).state
+            if tl._valid_split(old_shape, *state):
+                targets.add(state)
+    return frozenset(targets)
+
+
+def _reshape(t, shape):
+    """``t.reshape(shape)`` (``shape`` resolved): a view when the layout holds it; else the
+    data moved once to a layout that does (the runs as blocks, split between two of them);
+    else, when the reshape is one run, the data in C order (a relayout to the identity
+    sequence) with the stored Matrix reshaped to the new shape's default split (DESIGN.md
+    5.3).
+    """
+    if math.prod(shape) == 0:
+        return Tensor(t.dtype, shape)
+    if (layout := _reshape_layout(t._shape, t._layout, shape)) is not None:
+        return t._view(shape, layout)
+    if targets := _reshape_targets(t._shape, shape):
+        M, src = tl.relayout(t._M, t._shape, t._layout, targets)
+        return Tensor._from_M(M, shape, _reshape_layout(t._shape, src, shape))
+    identity = tuple(range(t.ndim))
+    targets = frozenset(
+        (identity, p) for p in range(t.ndim + 1) if tl._valid_split(t._shape, identity, p)
+    )
+    M, _ = tl.relayout(t._M, t._shape, t._layout, targets)
+    layout = tl.default_layout(shape, M._nvals)
+    nrows, ncols = tl.prod(shape, layout.rows), tl.prod(shape, layout.cols)
+    if M is not t._M and nrows <= 2**31 and ncols <= 2**31:
+        M.ss.reshape(nrows, ncols, inplace=True)
+    else:
+        # (not the shared Matrix in place; SuiteSparse 10.5.1's in-place reshape cannot widen
+        # 32-bit indices)
+        M = M.ss.reshape(nrows, ncols)
+    return Tensor._from_M(M, shape, layout)
+
+
 def _insert_unit_axes(layout, unit_axes):
     """Add size-1 axes to a layout. They do not change the stored Matrix, so they may go
     anywhere; put each before the next larger axis so an identity sequence stays one.
@@ -821,6 +940,55 @@ class Tensor(BaseType):
         rows = tuple(new[a] for a in self._layout.rows if a in new)
         cols = tuple(new[a] for a in self._layout.cols if a in new)
         return self._view(tuple(self._shape[a] for a in keep), Layout(rows, cols))
+
+    def reshape(self, *shape, copy=None):
+        """The same entries in a new shape, in C order (numpy's and the Array API's
+        ``reshape``): ``T.reshape(2, -1)`` or ``T.reshape((2, -1))``; one size may be -1.
+
+        A reshape splits and fuses runs of axes. When each such run lies within one group of
+        the layout, in order, the stored Matrix holds the result as it is: the result is a
+        view in O(1), sharing the data copy-on-write as ``permute_dims`` does (size-1 axes
+        never matter). Otherwise the data moves once, by a planned relayout to a layout
+        where that holds, and the result has data of its own.
+
+        Parameters
+        ----------
+        shape : ints, or a tuple of ints
+        copy : bool, optional
+            True: the result has data of its own, copied now. False: raise ValueError where
+            the data would have to move. None (default): a view where possible. (A view
+            behaves as a copy either way: changing it, or this Tensor, copies the data
+            first.)
+        """
+        if len(shape) == 1 and not isinstance(shape[0], (int, np.integer)):
+            shape = shape[0]
+        shape = _reshape_shape(shape, self._shape)
+        if (
+            copy is False
+            and math.prod(shape) > 0
+            and not _reshape_layout(self._shape, self._layout, shape)
+        ):
+            raise ValueError(
+                f"reshape from {self._shape} to {shape} with copy=False: the layout "
+                f"{self._layout._short()} does not hold the result, so the data would move"
+            )
+        T = _reshape(self, shape)
+        if copy and T._M is self._M:
+            # (a copy of the stored Matrix: a view already behaves as one, copy-on-write)
+            T = Tensor._from_M(T._M.dup(), T._shape, T._layout, pinned=T._pinned)
+        return T
+
+    def ravel(self):
+        """The 1-d Tensor of all positions in C order: ``reshape(-1)``, a view where
+        possible (numpy's ``ravel``).
+        """
+        return self.reshape(-1)
+
+    def flatten(self):
+        """The 1-d Tensor of all positions in C order, with data of its own:
+        ``reshape(-1, copy=True)`` (numpy's ``flatten``).
+        """
+        return self.reshape(-1, copy=True)
 
     # Element-wise operations
     def ewise_add(self, other, op=monoid.plus, *, allow_expansion=False):
