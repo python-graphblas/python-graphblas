@@ -468,21 +468,35 @@ class Tensor(BaseType):
         return ValueMask(self)
 
     def __call__(self, *optional_mask_accum_replace, mask=None, accum=None, replace=False, **opts):
+        from .tensor_index import TensorUpdater
+
         args = [_mask_arg(arg) for arg in optional_mask_accum_replace]
         if mask is not None:
             mask = _mask_arg(mask)
-        return super().__call__(*args, mask=mask, accum=accum, replace=replace, **opts)
+        u = super().__call__(*args, mask=mask, accum=accum, replace=replace, **opts)
+        return TensorUpdater(self, opts=u.opts, **u.kwargs)
 
     def __getitem__(self, keys):
         """Extract with outer (orthogonal) indexing, as GraphBLAS extract does: ints drop
         their axis; slices, lists and int arrays keep it (``T[[0, 1], [0, 1]]`` is 2 x 2,
         not numpy's two elements). ``...`` fills in full slices. Returns a TensorExpression
-        (an all-int key gives a 0-d Tensor).
+        (an all-int key gives a 0-d Tensor), which also receives an assignment:
+        ``T[idx] << value``, ``T[idx](mask, accum, replace) << value`` (the mask has the
+        region's shape: GxB_subassign).
         """
         return _extract_expr(self, keys)
 
     def __setitem__(self, keys, value):
-        raise NotImplementedError("Tensor assignment by index is not implemented yet")
+        """``T[idx] = value``: assign as Matrix does (GraphBLAS assign), the value broadcast
+        to the region's shape (numpy rules); the region takes the value's structure, and a
+        scalar fills it. ``T(mask, accum, replace)[idx] = value`` masks over the whole Tensor
+        (GrB_assign).
+        """
+        self()._assign(keys, value, is_submask=False)
+
+    def __delitem__(self, keys):
+        """``del T[idx]``: delete the region's entries."""
+        del self()[keys]
 
     @classmethod
     def from_matrices(cls, mats, axis=0, *, name=None):
@@ -1335,6 +1349,29 @@ class TensorExpression(BaseExpression):
 
     def __getitem__(self, keys):
         return self._get_value("__getitem__")(keys)
+
+
+class TensorIndexExpr(TensorExpression):
+    """``T[idx]``: an extraction (``.new()``, or an operand), or the target of an assignment:
+    ``T[idx] << value`` and ``T[idx](mask, accum, replace) << value`` (the mask has the
+    region's shape: GxB_subassign).
+    """
+
+    __slots__ = ("_parent", "_keys")
+
+    def __lshift__(self, value):
+        self._parent()._assign(self._keys, value, is_submask=False)
+
+    def update(self, value):
+        self._parent()._assign(self._keys, value, is_submask=False)
+
+    def __call__(self, *args, **kwargs):
+        from .tensor_index import TensorAssigner
+
+        updater = self._parent(*args, **kwargs)
+        return TensorAssigner(
+            updater, self._keys, is_submask=updater.kwargs.get("mask") is not None
+        )
 
 
 def _computed(name):
@@ -3516,7 +3553,7 @@ def _extract_expr(self, keys):
     keys = tuple(_scalar_index(k, a) for a, k in enumerate(keys))
     sel = [_axis_index(k, n, a) for a, (k, n) in enumerate(zip(keys, self._shape, strict=True))]
     shape = tuple(len(x) for x in sel if not isinstance(x, int))
-    return TensorExpression(
+    expr = TensorIndexExpr(
         "extract",
         _extract_recipe,
         [self],
@@ -3526,6 +3563,9 @@ def _extract_expr(self, keys):
         op=None,
         expr_repr="{0.name}[...]",
     )
+    expr._parent = self
+    expr._keys = keys
+    return expr
 
 
 # Past this many listed positions per group, extraction filters the coordinates instead
