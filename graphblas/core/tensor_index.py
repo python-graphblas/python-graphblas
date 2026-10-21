@@ -19,6 +19,7 @@ import math
 import numpy as np
 
 from ..exceptions import DimensionMismatch
+from . import tensor_census as census
 from . import tensor_layout as tl
 from .expr import Updater
 from .tensor_layout import Layout
@@ -244,7 +245,10 @@ def gather(t, coords, shape):
             found, vals = rv
             break
     else:
+        engine = "graphblas"
         found, vals = _lookup_graphblas(t, rows, cols)
+    if census.on:
+        census.note("gather", engine, points=int(rows.size), format=t._M.ss.format)
     pos = np.flatnonzero(found)
     out = np.unravel_index(pos, shape) if shape else ()
     return Tensor.from_coo(out, vals[pos], t.dtype, shape=shape)
@@ -333,6 +337,8 @@ def take(t, indices, axis=None, *, mode="raise", wraparound=True):
     idx = _index_array(indices, t._shape[axis], axis, wraparound, mode)
     shape = t._shape[:axis] + idx.shape + t._shape[axis + 1 :]
     if "extract" in _GATHER_ENGINES:
+        if census.on:
+            census.note("gather", "extract", points=int(idx.size))
         keys = (slice(None),) * axis + (idx.ravel(),)
         out = t[keys].new()
         return out.reshape(shape)

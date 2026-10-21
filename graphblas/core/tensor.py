@@ -30,6 +30,7 @@ from .. import backend, binary, config, monoid, semiring
 from ..dtypes import BOOL, FP64, lookup_dtype, unify
 from ..exceptions import DimensionMismatch, IndexOutOfBound
 from . import _has_numba, automethods, lib
+from . import tensor_census as census
 from . import tensor_layout as tl
 from . import utils
 from .base import BaseExpression, BaseType
@@ -643,6 +644,8 @@ class Tensor(BaseType):
             lay, rows, settle = _data_split_layout(coords, shape, n)
         elif layout is None:
             lay = tl.default_layout(shape, n)
+            if census.on:
+                census.note("layout.default", "shape rule", ndim=ndim, nvals=n)
         else:
             lay = tl.as_layout(layout, shape)
         if rows is None:
@@ -658,7 +661,10 @@ class Tensor(BaseType):
             dup_op=dup_op,
         )
         if settle:
+            before = lay
             M, lay = _settle_split(M, shape, lay)
+            if census.on:
+                census.note("layout.settle", "moved" if lay != before else "kept", nvals=n)
         return cls._from_M(M, shape, lay, pinned=layout is not None, name=name)
 
     @classmethod
@@ -1807,6 +1813,8 @@ def _choose_layout(updater, operands, result_nvals):
     if mlayout is not None:
         layouts.add(mlayout)
     if len(layouts) == 1:
+        if census.on:
+            census.note("ewise.layout", "one layout")
         return layouts.pop()
     shape = operands[0]._shape
     nthreads = _nthreads(updater)
@@ -1818,6 +1826,7 @@ def _choose_layout(updater, operands, result_nvals):
     if mlayout is not None:
         candidates.append(mlayout)
     best = None
+    costs = []
     for L in candidates:
         cost = sum(tl.relayout_cost(shape, t._layout, L, t._M._nvals, nthreads) for t in ops)
         final = L if fixed is None else fixed
@@ -1825,8 +1834,14 @@ def _choose_layout(updater, operands, result_nvals):
             cost += tl.relayout_cost(shape, L, fixed, result_nvals, nthreads)
         if mlayout is not None:
             cost += tl.relayout_cost(shape, mlayout, final, mask.parent._M._nvals, nthreads)
+        costs.append(cost)
         if best is None or cost < best[0]:
             best = (cost, L)
+    if census.on:
+        labels = [f"operand {k}" for k in range(len(ops))]
+        labels += ["output"] * (fixed is not None) + ["mask"] * (mlayout is not None)
+        i = census.choose("ewise.layout", costs, labels, candidates.index(best[1]))
+        return candidates[i]
     return best[1]
 
 
@@ -1989,6 +2004,8 @@ def _bcast_recipe(updater, method, a, b, op, untyped_op, extra, shape):
     if method == "ewise_mult":
         _bcast_mult(updater, a, b, op, untyped_op, shape)
     else:
+        if census.on:
+            census.note("bcast", "union: replicate")
         _ewise_recipe(updater, method, _expand(a, shape), _expand(b, shape), op, extra)
 
 
@@ -2008,6 +2025,8 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
         big, small, big_left = b, a, False
     nthreads = updater.opts.get("nthreads")
     ts, F = _squeezed(small, shape)
+    if census.on and (ts._M._nvals == 0 or not F):
+        census.note("bcast", "empty operand" if ts._M._nvals == 0 else "one value: apply")
     if ts._M._nvals == 0:
         L = big._layout
         empty = tl.new_matrix(op.return_type, tl.prod(shape, L.rows), tl.prod(shape, L.cols))
@@ -2085,6 +2104,8 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
         options.append((cost + C_DIAG[ti] * nv, None, None, False))
     if not options:
         # No diagonal side works (an operator with no flipped form): replicate instead
+        if census.on:
+            census.note("bcast", "no diagonal side: replicate")
         _ewise_recipe(
             updater,
             "ewise_mult",
@@ -2094,7 +2115,25 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
             (),
         )
         return
-    _, q, side, from_rows = min(options, key=lambda o: o[0])
+    i = min(range(len(options)), key=lambda k: options[k][0])
+    if census.on:
+
+        def label(o):
+            if o[1] == "gather":
+                return "gather"
+            if o[1] is None:
+                return "relayout, diagonal"
+            inside = Fset != set(seq[: o[1]] if o[2] == "rows" else seq[o[1] :])
+            name = f"diagonal {o[2]}"
+            if o[3]:
+                name += ", nonempty rows"
+            elif inside:
+                name += ", selector-expanded"
+            return name + (", reshape" if o[1] != p else "")
+
+        i = census.choose("bcast", [o[0] for o in options], [label(o) for o in options], i,
+                          nvals=nv)  # fmt: skip
+    _, q, side, from_rows = options[i]
     if q == "gather":
         values = ts.to_dense().ravel()
         W = tl.gather_operand(M, shape, L, tuple(F), values, ts.dtype)
@@ -2278,18 +2317,30 @@ def _data_split_layout(coords, shape, n):
     seq = tuple(range(ndim))
     if math.prod(shape) >= tl.MAX_GROUP:
         # Reshape-based relayouts are unavailable; keep the shape-based rule
+        if census.on:
+            census.note("layout.default", "past 2^60: shape rule", ndim=ndim, nvals=n)
         return tl.default_layout(shape, n), None, False
     sample = np.random.default_rng(0).integers(0, n, min(n, _SPLIT_SAMPLE))
+    sampled_out = 0  # splits the sample rejected
 
     def thin_by_sample(p, positions, narrower_cols):
+        nonlocal sampled_out
         low = _sampled_nonempty_rows(coords, shape, seq[:p], n, sample)
-        return not _rows_ok(n, low, positions, narrower_cols)
+        thin = not _rows_ok(n, low, positions, narrower_cols)
+        sampled_out += thin
+        return thin
+
+    def chosen(choice, p):
+        if census.on:
+            census.note("layout.default", choice, ndim=ndim, nvals=n, split=p,
+                        sampled_out=sampled_out)  # fmt: skip
 
     for p in range(ndim - 1, 0, -1):
         if not tl._valid_split(shape, seq, p):
             continue
         positions = tl.prod(shape, seq[:p])
         if positions * FULL_ROW_ENTRIES <= n:
+            chosen("full enough by shape", p)
             return Layout(seq[:p], seq[p:]), None, False  # full enough even if all nonempty
         narrower_cols = tl.prod(shape, seq[p - 1 :])
         large = n > _SPLIT_SAMPLE_PAST
@@ -2299,13 +2350,17 @@ def _data_split_layout(coords, shape, n):
         if not np.all(keys[1:] >= keys[:-1]):
             if not large and thin_by_sample(p, positions, narrower_cols):
                 continue
+            chosen("unsorted: sampled, settled after", p)
             return Layout(seq[:p], seq[p:]), keys, True
         nonempty = int(np.count_nonzero(keys[1:] != keys[:-1])) + 1
         if _rows_ok(n, nonempty, positions, narrower_cols):
+            chosen("sorted: exact count", p)
             return Layout(seq[:p], seq[p:]), keys, False
     for p in range(1, ndim):
         if tl._valid_split(shape, seq, p):
+            chosen("no split full enough: p = 1", p)
             return Layout(seq[:p], seq[p:]), None, False
+    chosen("shape rule", None)
     return tl.default_layout(shape, n), None, False
 
 
@@ -2373,6 +2428,8 @@ def _healthy(M, shape, layout):
                 break
     if not tl._valid_split(shape, seq, p):
         return M, layout
+    if census.on:
+        census.note("layout.healthy", "reshaped an empty column group", ndim=ndim)
     if nvals == 0:
         M = tl.new_matrix(M.dtype, tl.prod(shape, seq[:p]), tl.prod(shape, seq[p:]))
     else:
@@ -2445,6 +2502,8 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
     ndim = len(shape)
     dtype = op.return_type
     if len(A) == ndim:
+        if census.on:
+            census.note("reduce", "all axes: reduce_scalar")
         s = Scalar(dtype)
         s(**opts) << M.reduce_scalar(op)
         out = tl.new_matrix(dtype, 1, 1)
@@ -2453,6 +2512,8 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
         return out, Layout((), ())
     nvals = M._nvals
     if M.dtype._is_udt:
+        if census.on:
+            census.note("reduce", "UDT: rebuild")
         return _reduce_rebuild(M, shape, layout, A, op)
     # Pass on only the descriptor options the user gave: building one costs microseconds.
     nthreads = opts.get("nthreads") or tl._nthreads()
@@ -2463,6 +2524,8 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
         Ac = A & set(cols)
         if Ac:
             if Ac == set(cols):
+                if census.on:
+                    census.note("reduce", "column group: reduce_rowwise", nvals=M._nvals)
                 v = Vector(dtype, M._nrows)
                 v(**opts) << M.reduce_rowwise(op)
                 M = _vector_to_row(v)
@@ -2472,7 +2535,12 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
                 # A column group has no index of its nonempty columns, so the selector costs
                 # per position; past the data's own cost, rebuild with dup_op instead
                 nv = M._nvals
-                if _shape_selector_cost(nv, math.prod(gshape), ti) > tl.rebuild_cost(nv, ti):
+                sel, reb = _shape_selector_cost(nv, math.prod(gshape), ti), tl.rebuild_cost(nv, ti)
+                if census.on:
+                    j = census.choose("reduce", [sel, reb], ["column selector", "rebuild"],
+                                      int(sel > reb), nvals=nv)  # fmt: skip
+                    sel, reb = (0, 1) if j == 0 else (1, 0)
+                if sel > reb:
                     return _reduce_rebuild(M, shape, layout, A, op)
                 kept = tuple(i for i, x in enumerate(cols) if x not in Ac)
                 St = tl.selector(gshape, kept, transposed=True)
@@ -2487,6 +2555,8 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
             # Rows with about one entry each: a columnwise scatter costs a cache miss per
             # entry; rebuilding with dup_op is 4-5x faster (s13).
             if tl.density(M):
+                if census.on:
+                    census.note("reduce", "row group, ~1 entry per row: rebuild", nvals=nvals)
                 return _reduce_rebuild(M, shape, layout, A, op)
             ncols = tl.prod(shape, cols)
             wide = ncols >= 1e5
@@ -2502,11 +2572,17 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
                 # reduce with a selector instead, when the selector is small next to the data
                 # (1000^3 / 1e7: 6.6 ms vs 55.6). A larger selector costs more than a
                 # single-threaded columnwise reduce (Uber: 32.8 ms vs 4.7).
+                if census.on:
+                    census.note("reduce", "row group, wide: reshape, then a selector",
+                                nvals=nvals)  # fmt: skip
                 q = len(rows) + 1
                 seq = layout.seq
                 M = M.ss.reshape(tl.prod(shape, seq[:q]), tl.prod(shape, seq[q:]))
                 layout = Layout(seq[:q], seq[q:])
                 continue
+            if census.on:
+                census.note("reduce", "row group: reduce_columnwise" + (", 2 threads" if wide
+                            and nthreads > 2 else ""), nvals=nvals)  # fmt: skip
             v = Vector(dtype, M._ncols)
             # Into many outputs, 2 threads scatter as fast as 1 or faster; 4 and 8 can be
             # 3-4x slower (Uber 4.0 / 4.9 / 17 / 15 ms at 2 / 1 / 4 / 8 threads)
@@ -2517,7 +2593,12 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
             layout = Layout((), cols)
         else:
             nv = M._nvals
-            if _row_selector_cost(M, tl.prod(shape, rows), ti) > tl.rebuild_cost(nv, ti):
+            sel, reb = _row_selector_cost(M, tl.prod(shape, rows), ti), tl.rebuild_cost(nv, ti)
+            if census.on:
+                j = census.choose("reduce", [sel, reb], ["row selector", "rebuild"],
+                                  int(sel > reb), nvals=nv)  # fmt: skip
+                sel, reb = (0, 1) if j == 0 else (1, 0)
+            if sel > reb:
                 return _reduce_rebuild(M, shape, layout, A, op)
             kept = tuple(i for i, x in enumerate(rows) if x not in Ar)
             S = _row_reducer(M, shape, rows, kept)
@@ -2678,6 +2759,9 @@ def _contract(updater, a, b, op, a_axes, b_axes, a_batch=(), b_batch=()):
         + tuple(a._shape[x] for x in free_a)
         + tuple(b._shape[y] for y in free_b)
     )
+    if census.on:
+        census.note("contract", "batched, block-diagonal" if nb else "one mxm",
+                    moved=[A is not a._M, B is not b._M], cost=best[0])  # fmt: skip
     if not nb:
         return A.mxm(B, op), layout, shape
     nblocks = tl.prod(a._shape, a_batch)
@@ -2689,6 +2773,8 @@ def _contract(updater, a, b, op, a_axes, b_axes, a_batch=(), b_batch=()):
         A.ss.config["sparsity_control"] = ["sparse", "hypersparse"]
     if not tl.embed_block_diagonal(A, rows_per_block, nblocks):
         # The new column indices need a wider integer type: rebuild instead
+        if census.on:
+            census.note("contract", "embedding by rebuild (wider indices)")
         r, c, v = A.to_coo()
         c = c + (r // rows_per_block) * K
         A = tl.from_coo(r, c, v, A.dtype, A._nrows, nblocks * K)
@@ -2828,8 +2914,14 @@ def _ttv(updater, x, w, axis, op, x_left):
         general = tl.plan(x._shape, layout.state, targets, nv, nthreads)[0] + C_MXV[ti] * nv
         options.append((general, "general", None))
     if not options:
+        if census.on:
+            census.note("ttv", "no option: general")
         return False
-    _, kind, q = min(options, key=lambda o: o[0])
+    i = min(range(len(options)), key=lambda k: options[k][0])
+    if census.on:
+        labels = [o[1] + (", reshape" if o[2] not in {None, p} else "") for o in options]
+        i = census.choose("ttv", [o[0] for o in options], labels, i, nvals=nv)
+    _, kind, q = options[i]
     if kind == "general":
         return False
     if q != p:
@@ -2937,6 +3029,7 @@ def _ttm_engines(updater, a, b, op, a_axes, b_axes):
         and a._M._nvals >= max(_TTM_KERNEL_MIN_NNZ, 1)
         and b._M._nvals == math.prod(b._shape)
     )
+    declined = []
     for engine in _TTM_ENGINES:
         if engine == "products":
             break
@@ -2947,7 +3040,12 @@ def _ttm_engines(updater, a, b, op, a_axes, b_axes):
         else:
             run = _ttm_udt if engine == "udt" else _ttm_numba
         if (rv := run(updater, a, b, op, a_axes, b_axes)) is not None:
+            if census.on:
+                census.note("ttm", engine, declined=declined, kernels=kernels, nvals=a._M._nvals)
             return rv
+        declined.append(engine)
+    if census.on and len(a_axes) == 1 and b.ndim == 2:
+        census.note("ttm", "products", declined=declined, kernels=kernels, nvals=a._M._nvals)
     return None
 
 
@@ -3316,6 +3414,8 @@ def _mttkrp_recipe(updater, x, mats, mode, R, op):
         and (T := _mttkrp_numba(x, mats, mode, nthreads or _nthreads(updater))) is not None
     ):
         # In the stored layout: no relayout
+        if census.on:
+            census.note("mttkrp", "numba, stored layout", nvals=x._M._nvals, ndim=x.ndim)
         _store(updater, T, (x._shape[mode], R), Layout((0,), (1,)), fresh=True)
         return
     # Any order of the other axes works. For the kernel, take the one whose layout is
@@ -3326,6 +3426,8 @@ def _mttkrp_recipe(updater, x, mats, mode, R, op):
         T = _mttkrp_numba(x, mats, mode, nthreads or _nthreads(updater), layout=dst)
         if T is not None:
             # Relayout, then the kernel that owns its output rows
+            if census.on:
+                census.note("mttkrp", "numba, after a relayout", nvals=x._M._nvals, ndim=x.ndim)
             _store(updater, T, (x._shape[mode], R), Layout((0,), (1,)), fresh=True)
             return
     # For the products, count their intermediates too
@@ -3350,6 +3452,9 @@ def _mttkrp_recipe(updater, x, mats, mode, R, op):
         if X._nvals >= _TTM_KERNEL_MIN_NNZ and tensor_udt.jit_ready():
             U = np.ascontiguousarray(mats[last].to_dense(fill_value=0.0), np.float64)
             T = tensor_udt.run(before, tensor_udt.ttm, X, U, lookup(**updater.opts))
+    if census.on:
+        census.note("mttkrp", "products" if T is None else "udt TTM, then products",
+                    nvals=x._M._nvals, ndim=x.ndim, numba_eligible=numba_kernel)  # fmt: skip
     if T is None:
         T = tl.new_matrix(op.return_type, X._nrows, R)
         T(**updater.opts) << X.mxm(mats[last], op)
@@ -3400,6 +3505,9 @@ def einsum(subscripts, *operands, op=semiring.plus_times, optimize="greedy"):
     except TypeError:  # an unhashable ``optimize`` (an explicit path): plan without the cache
         plan = _einsum_plan.__wrapped__(subscripts, shapes, optimize)
     terms, output, shape, mt, path, direct = plan
+    if census.on:
+        kind = "mttkrp" if mt is not None else "one contraction" if direct is not None else None
+        census.note("einsum", kind or f"{len(terms)} operands, pairwise", subscripts=subscripts)
     dtype = pre[0].dtype if type(pre[0]) is not np.ndarray else lookup_dtype(pre[0].dtype)
     for x in pre[1:]:
         dtype = unify(dtype, x.dtype if type(x) is not np.ndarray else lookup_dtype(x.dtype))
@@ -3819,6 +3927,8 @@ def _extract_recipe(updater, t, sel, keys):
     if ridx is not None and cidx is not None:
         listed = sum(x.size for x in (ridx, cidx) if isinstance(x, np.ndarray))
         if not listed:
+            if census.on:
+                census.note("extract", "slices: extract")
             _store(updater, t._M[ridx, cidx], shape, layout)
             return
     # Repeated indices repeat the entries, as for Matrix (SuiteSparse's extract does; the
@@ -3851,7 +3961,11 @@ def _extract_recipe(updater, t, sel, keys):
             + tl.C_PERM_ENTRY[ti] * frac * nv
         )
         options.append((cost, "rows"))
-    _, how = min(options)
+    i = min(range(len(options)), key=lambda k: options[k][0])
+    if census.on:
+        i = census.choose("extract", [o[0] for o in options], [o[1] for o in options], i,
+                          nvals=nv, repeated=bool(repeated))  # fmt: skip
+    _, how = options[i]
     if how == "extract":
         _store(updater, t._M[ridx, cidx], shape, layout)
         return
