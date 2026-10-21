@@ -15,6 +15,17 @@ Tensors that share a stored Matrix copy it before one of them is changed in plac
 **THIS API IS EXPERIMENTAL AND MAY CHANGE.** SuiteSparse:GraphBLAS 10 or later, with the
 suitesparse backend. ``gb.Tensor`` and ``gb.einsum``; the user guide's "Tensors" page
 covers the model, the operations and the engines.
+
+The operation families live in their own modules (tensor_shape, tensor_ewise, tensor_reduce,
+tensor_contract, tensor_engines, tensor_einsum, tensor_index), which this module imports at
+its end.
+
+Timings in the comments of these modules were measured on an Apple M5 Pro (6 performance and
+12 efficiency cores) with SuiteSparse:GraphBLAS 10.5.1, at 8 and 1 threads, written
+"8 / 1". The data they name: u6 and u7 are uniform random 1000^3 tensors with 1e6 and 1e7
+entries; skew is uniform (100000, 1000, 10) with 1e7; hyper is uniform (2^19)^3 with 1e6;
+Zipf is 100000^3 with 1e7 entries whose coordinates are Zipf-distributed (a = 1.5); NELL-2
+(77M entries), Uber (3.3M), NIPS (3.1M) and Enron (54M) are FROSTT tensors (frostt.io).
 """
 
 import itertools
@@ -454,7 +465,7 @@ class Tensor(BaseType):
             Inferred from the largest index along each axis if not given.
         layout : Layout or (rows, cols), optional
             The stored layout (pinned). The default is the identity axis order with the
-            split chosen for about four entries per nonempty row (DESIGN.md 7.6).
+            split chosen for about four entries per nonempty row.
         dup_op : BinaryOp, optional
             Combines values at repeated coordinates; repeated coordinates raise without it.
         name : str, optional
@@ -1069,7 +1080,7 @@ class Tensor(BaseType):
         entries meets there. ``other`` may be a Tensor, Matrix, Vector or ndarray.
 
         A vector contracted over an axis inside one group of the stored layout (TTV) scales
-        by a diagonal and reduces with a selector, without moving the data (DESIGN.md 3.3).
+        by a diagonal and reduces with a selector, without moving the data.
         """
         return _tensordot_expr(self, other, axes, op)
 
@@ -1079,7 +1090,7 @@ class Tensor(BaseType):
         ``factors`` holds one (I_n x R) factor per axis (Matrix or ndarray; the entry for
         ``mode`` is ignored). For 3-d mode 0 this is ``einsum('ijk,jr,kr->ir', X, B, C)``,
         computed as one TTM and then one product per remaining axis against an (I_n R x R)
-        embedding of its factor, never materializing the Khatri-Rao product (DESIGN.md 3.7).
+        embedding of its factor, never materializing the Khatri-Rao product.
         With Numba installed, a 3-d FP64 tensor with full FP64 factors and ``plus_times``
         takes a kernel over the stored arrays instead, in the layout it is stored in.
         """
@@ -1510,7 +1521,7 @@ class _TensorSS:
 
 
 # ---------------------------------------------------------------------------------------------
-# Storing a result: masks, accumulators and the output layout (DESIGN.md 6, 7.3, 7.4)
+# Storing a result: masks, accumulators and the output layout
 
 
 def _materialize(src):
@@ -1586,7 +1597,7 @@ def _store(updater, src, shape, layout, *, fresh=False, share=None):
         L = layout
         if mask is not None and mask.parent._layout != layout:
             mparent = mask.parent
-            # Move whichever is smaller, the result or the mask (DESIGN.md 7.3 rule 4).
+            # Move whichever is smaller, the result or the mask.
             if (
                 type(mparent) is Tensor
                 and isinstance(src, Matrix)
@@ -1677,7 +1688,7 @@ def _choose_layout(updater, operands, result_nvals):
         return layouts.pop()
     shape = operands[0]._shape
     nthreads = _nthreads(updater)
-    # Ties go to the larger operand's layout (DESIGN.md 7.3 rule 5).
+    # Ties go to the larger operand's layout.
     ops = sorted(operands, key=lambda t: -t._M._nvals)
     candidates = [t._layout for t in ops]
     if fixed is not None:
@@ -1712,7 +1723,7 @@ def _in_layout(t, layout, nthreads):
 
 # The default split puts as many axes in the rows as the data fills. A row group indexes its
 # nonempty rows (h), so selectors and expansions over it follow the data, while a column group
-# costs per position (round 1: NELL-2's (0|1,2) has a 2.6e8-position column group). But rows
+# costs per position (NELL-2's (0|1,2) has a 2.6e8-position column group). But rows
 # cost too: a hypersparse row costs a hash lookup in ewise and mxm (about 19 / 130 ns at 8 / 1
 # threads: Zipf's (0,1|2), 4.3 entries per row, took 53 ms for X + Y against 9.6 in (0|1,2)), and
 # a sparse row about 3 / 16 ns. So rows must hold MIN_ROW_ENTRIES entries each, or
@@ -1731,7 +1742,7 @@ def _rows_ok(nvals, nonempty, positions, narrower_cols):
 
     Thin sparse rows (under FULL_ROW_ENTRIES each) cost about 2x in ewise (u6, 1.6 per row:
     X + Y 3.9 ms vs 1.5), so they pay off only when the alternative, one axis fewer in the
-    rows, has a column group of more positions than entries (repro case 1: 2.6x).
+    rows, has a column group of more positions than entries (2.6x then).
     """
     hyper = nonempty * 16 < positions  # SuiteSparse's default hyper switch is 1/16
     if hyper:
@@ -1919,7 +1930,7 @@ _TTM_ENGINES = ("udt", "numba", "products")
 # (NELL-2 mode 2: 77 / 139 / 329 ms against 92 / 174 / 354 at R = 8 / 16 / 32, 1 thread;
 # 14 / 24 / 55 against 18 / 31 / 62 at 8); slower with a bitmap output
 # (u7: 25-86 against 27-77 ms at R = 16, 1 thread, and 1.4-1.8x slower at 8), at R = 64,
-# and after a relayout (NELL-2 modes 0 and 1: 1.6-1.8x slower). Phase 5c measurements.
+# and after a relayout (NELL-2 modes 0 and 1: 1.6-1.8x slower).
 _TTM_UDT_MAX_R = 32
 
 
@@ -1934,7 +1945,7 @@ _MTTKRP_KERNEL_MIN_NNZ = 2**16
 #               engine (tensor_udt.ttm; JIT on, FP64 plus_times, a full factor)
 #   "products"  the GraphBLAS products (two-mxm for 3-d), which run every MTTKRP, so they
 #               are also what any list falls back to
-# Phase 5c, "udt" against "products" (Numba off), R = 16: NELL-2 mode 0 702 -> 142 ms at 1
+# "udt" against "products" (Numba off), R = 16: NELL-2 mode 0 702 -> 142 ms at 1
 # thread and 142 -> 29 at 8; u7 82-122 -> 38-77 at 1, the same at 8; NELL-2 modes 1 and 2
 # within 3% at 1 thread, 7-13% slower at 8 (load rising to 3.5).
 _MTTKRP_ENGINES = ("numba", "udt", "products")

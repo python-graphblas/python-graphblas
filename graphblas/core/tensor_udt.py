@@ -1,4 +1,4 @@
-"""TTM by one SuiteSparse product with array-UDT values (DESIGN_phase5 1.2).
+"""TTM by one SuiteSparse product with array-UDT values.
 
 The factor's K rows become a full Vector of K values of a type of R doubles; one ``mxv`` of
 the stored Matrix (the contracted axis as its columns) with ``plus_times[FP64, FP64[R]]``
@@ -231,7 +231,7 @@ def ttm(M, U, desc=None):
             cont.jumbled = False
         if 2 * nonempty < n:
             # A sparse output, so the product does not leave a bitmap of n values to convert
-            # (DESIGN_phase5 1.6). The empty Vector is sparse already: nothing converts now.
+            # The empty Vector is sparse already: nothing converts now.
             # Otherwise the product's own bitmap or full result is kept: asking for bitmap here
             # would convert the empty Vector at once, allocating n values, and for a UDT that
             # conversion is a JIT kernel of its own (with a broken compiler, the call that
