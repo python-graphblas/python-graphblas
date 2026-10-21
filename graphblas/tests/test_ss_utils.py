@@ -286,8 +286,10 @@ def test_global_config():
         else:
             with pytest.raises(ValueError, match="Unable to set default value for"):
                 config[k] = None
-    # with pytest.raises(ValueError, match="Wrong number"):
-    #     config["memory_pool"] = [1, 2]  # No longer used
+    bitmap_switch = config["bitmap_switch"]
+    with pytest.raises(ValueError, match="Wrong number of elements when setting 'bitmap_switch'"):
+        config["bitmap_switch"] = [0.5, 0.5]
+    assert config["bitmap_switch"] == bitmap_switch
     assert "format" in repr(config)
 
 
