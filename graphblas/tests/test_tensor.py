@@ -2467,6 +2467,19 @@ def test_ttm_udt_layouts(shape, nthreads, monkeypatch):
             assert calls[0] in {"hypercsr", "bitmapr", "fullr"}
 
 
+def test_ttm_udt_declines_an_iso_product(monkeypatch):
+    """A tensor of one entry, contracted over an axis of size 1, gives SuiteSparse's product
+    one entry, which it marks iso: the array-UDT engine declines, and the products run.
+    """
+    _require_jit_compile()
+    calls = _ttm_udt_spy(monkeypatch, ("udt",))
+    X = Tensor.from_coo(([0], [0], [0]), [0.7], shape=(1, 1, 1))
+    U = np.array([[2.0, -1.0, 3.0]])
+    R = X.tensordot(U, ([1], [0])).new()
+    assert calls == [None]
+    check(R, 0.7 * U.reshape(1, 1, 3), np.ones((1, 1, 3), bool), approx=True)
+
+
 def test_ttm_udt_paths(monkeypatch, capfd):
     """UDT engine outputs in every storage, views and empty groups, an empty tensor, the
     JIT kernel (burble), its type and ops made once per R, and JIT off.
