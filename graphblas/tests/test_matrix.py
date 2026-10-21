@@ -4024,6 +4024,22 @@ def test_ss_serialize_udt_with_a_long_name():
     assert_same(A, Matrix.ss.deserialize(A.ss.serialize()))
 
 
+@pytest.mark.skipif("not suitesparse or not hasattr(lib, 'GxB_Serialized_get_String')")
+def test_ss_deserialize_integer_sizes_it_cannot_read():
+    # Byte 9 is in the blob's encoding word. There SuiteSparse 10 keeps the integer size of
+    # the column pointers, and refuses a size above what it knows, as from a later version;
+    # SuiteSparse 9 keeps a type code, which this makes invalid. The dtype name of this UDT
+    # does not resolve, so its GrB_NAME is read too: 9 refuses the blob when the dtype name
+    # is read, and 10 when GrB_NAME is.
+    udt = dtypes.register_anonymous(np.dtype([("isz_a", np.int64), ("isz_b", np.float64)]))
+    blob = Matrix(udt, nrows=3, ncols=3).ss.serialize()
+    blob[9] = (blob[9] & 0x0F) | 0x20
+    with pytest.raises(
+        InvalidObject, match="Matrix deserialize failed to get the (dtype name|size of name)"
+    ):
+        Matrix.ss.deserialize(blob)
+
+
 def test_reposition(A):
     rows, cols, values = A.to_coo()
     rows = rows.astype(int)
