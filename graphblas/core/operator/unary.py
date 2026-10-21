@@ -501,7 +501,7 @@ class UnaryOp(OpBase):
         if _has_numba:
             for op_name in _BUILTIN_UDT_UNARY_OPS:
                 unop = getattr(unary, op_name, None)
-                if unop is not None:
+                if unop is not None:  # pragma: no branch (safety)
                     unop._udt_types = {}
                     unop._udt_ops = {}
         cls._initialized = True
