@@ -511,6 +511,10 @@ class InfixExprBase:
             self._expr = getattr(self.left, self.method_name)(self.right)
         return self._expr
 
+    def _call_left(self, method_name, *args, **kwargs):
+        """Call the left operand's ``method_name`` with the right operand, as ``op(x & y)`` does."""
+        return getattr(self.left, method_name)(self.right, *args, **kwargs)
+
     def _get_value(self, attr=None, default=None):
         expr = self._to_expr()
         return expr._get_value(attr=attr, default=default)

@@ -1,6 +1,8 @@
+import numpy as np
 import pytest
 
-from graphblas import binary, monoid, op
+from graphblas import binary, dtypes, monoid, op
+from graphblas.core import _supports_udfs as supports_udfs  # noqa: F401 (used in skipif)
 from graphblas.exceptions import DimensionMismatch
 
 from .conftest import autocompute
@@ -119,6 +121,11 @@ def test_bad_ewise(s1, v1, A1, A2):
         (s1, A1.T),
         (A1, 1),
         (1, A1),
+        # A Scalar takes a literal, but not just any object, as `s1 + object()` does not
+        (s1, object()),
+        (object(), s1),
+        (s1, "x"),
+        (None, s1),
     ]:
         with pytest.raises(TypeError, match="Bad type for argument"):
             left | right
@@ -761,6 +768,100 @@ def test_multi_infix_scalar():
         v1.ewise_mult(v2 | v3)
     with pytest.raises(TypeError, match="Automatic computation"):
         (v1 | v2).ewise_mult(v3)
+
+
+def test_scalar_infix_literal_keeps_its_side():
+    # `op(2 & s)` applies op to 2 and s in that order, as `op(2, s)` does
+    s = Scalar.from_value(5, dtype=dtypes.INT8)
+    expr = 2 & s
+    assert expr.left == 2
+    assert expr.right is s
+    for binop, expected, dtype in [
+        (binary.minus, -3, dtypes.INT8),
+        (binary.rminus, 3, dtypes.INT8),
+        (binary.cdiv, 0, dtypes.INT8),
+        (binary.rdiv, 2, dtypes.INT8),
+        (binary.truediv, 0.4, dtypes.FP64),
+        (binary.first, 2, dtypes.INT8),
+        (binary.second, 5, dtypes.INT8),
+        (binary.pow, 32, dtypes.INT8),
+        (binary.lt, True, dtypes.BOOL),
+        (binary.gt, False, dtypes.BOOL),
+        (binary.isgt, 0, dtypes.INT8),
+    ]:
+        for expr in [2 & s, 2 | s]:
+            result = binop(expr).new()
+            assert result.value == expected
+            assert result.dtype == dtype
+            assert result.isequal(binop(2, s).new(), check_dtype=True)
+    # Each default goes with its side
+    empty = Scalar(dtypes.INT8)
+    assert binary.minus(2 | empty, left_default=0, right_default=10).new().value == -8
+    assert binary.minus(empty | 2, left_default=0, right_default=10).new().value == -2
+    assert binary.minus(2 | s, left_default=0, right_default=10).new().value == -3
+    # And so does each literal in a chain
+    assert binary.minus(1 & (2 & s)).new().value == 4
+    assert binary.minus((2 & s) & 1).new().value == -4
+    assert binary.minus(1 | (2 | s)).new().value == 4
+
+    # A Python literal is typed beside the Scalar as by `-` (weak), once the op is known
+    f32 = Scalar.from_value(2.5, dtype=dtypes.FP32)
+    t = Scalar.from_value(True)
+    for lit, x in [(2, s), (0.5, s), (0.5, f32), (2, f32), (2, t)]:
+        for expr in [lit & x, lit | x]:
+            assert binary.minus(expr).new().isequal((lit - x).new(), check_dtype=True)
+    assert binary.minus(0.5 & s).new().dtype == dtypes.FP64
+    assert binary.minus(0.5 & f32).new().dtype == dtypes.FP32
+    assert binary.first(False & t).new().dtype == dtypes.BOOL
+    assert binary.lt(False | t).new().value is True
+    # 300 does not fit INT8, which `-` reports, and `<` compares it as it is
+    with pytest.raises(OverflowError):
+        binary.minus(300 & s)
+    assert binary.lt(300 & s).new().value is False
+    assert binary.gt(300 | s).new().value is True
+
+    # BOOL `&` and `|` with a literal compute themselves, by LAND and LOR
+    for expr, expected in [
+        (t & True, True),
+        (False & t, False),
+        (t | False, True),
+        (False | t, True),
+    ]:
+        result = expr.new()
+        assert result.dtype == dtypes.BOOL
+        assert result.value is expected
+    with pytest.raises(TypeError, match="The argument dtypes are INT64 and BOOL"):
+        (1 & t).new()
+    with pytest.raises(TypeError, match="only valid for BOOL"):
+        (s | 2).new()
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_scalar_infix_literal_keeps_its_side_udt():
+    # The op types a literal beside a UDT, on the left as on the right: a lifted op as numpy
+    # would, and `first` as an element of the UDT, which 0.5 is not
+    udt = dtypes.register_anonymous(np.dtype((np.int8, (2,))), "_InfixLiteralI8")
+    s = Scalar.from_value([5, 7], udt)
+    result = binary.minus((1, 2) & s).new()
+    assert result.dtype == udt
+    np.testing.assert_array_equal(result.value, [-4, -5])
+    result = binary.minus(0.5 | s).new()
+    assert result.dtype.np_type == np.dtype((np.float64, (2,)))
+    np.testing.assert_array_equal(result.value, [-4.5, -6.5])
+    np.testing.assert_array_equal(binary.first([1, 2] & s).new().value, [1, 2])
+    with pytest.raises(ValueError, match="does not fit"):
+        binary.first(0.5 & s)
+    with pytest.raises(TypeError, match="Bad type for argument `left`"):
+        object() & s
+    # 1e300 overflows a float32 leaf: the op warns once, as `+` does, and `&` does not
+    f32s = Scalar.from_value(
+        [1, 2], dtypes.register_anonymous(np.dtype((np.float32, (2,))), "_InfixLiteralF32")
+    )
+    expr = f32s & (1e300, 1.0)  # the tests turn warnings into errors
+    with pytest.warns(RuntimeWarning, match="overflow") as record:
+        result = binary.plus(expr).new()
+    assert len(record) == 1
+    np.testing.assert_array_equal(result.value, [np.inf, 3])
 
 
 @autocompute
