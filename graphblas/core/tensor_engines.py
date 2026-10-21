@@ -99,7 +99,7 @@ def _ttm_udt(updater, a, b, op, a_axes, b_axes):
             or b._shape[1 - kb] > _t._TTM_UDT_MAX_R
             # A hypersparse output as SuiteSparse decides it (nonempty rows under its hyper
             # switch, 1/16): Uber's 14% of fibers, a sparse output, ran 1.4-1.5x faster with
-            # Numba (phase 9a census), NELL-2's 0.3% 1.24x faster with UDT
+            # Numba, NELL-2's 0.3% 1.24x faster with UDT
             or tl.count_nonempty_rows(a._M) >= tl._global_hyper_switch() * a._M._nrows
         )
     ):
@@ -128,7 +128,7 @@ def _ttm_numba(updater, a, b, op, a_axes, b_axes):
 
     The output is today's storage: hypersparse rows of R values, or full when every output
     fiber exists. (One mxm was 2.4-2.7x behind TACO in the stored order: its Gustavson saxpy
-    on hypersparse rows, then the output's row hash; DESIGN_phase5 1.1.)
+    on hypersparse rows, then the output's row hash.)
     """
     if not _t._has_numba or len(a_axes) != 1 or b.ndim != 2 or a.ndim < 2:
         return None
@@ -189,7 +189,7 @@ def _ttm_compacted(updater, a, b, op, a_axes, b_axes):
     the nonempty rows (h dropped through the Container) times the factor, then the result's
     rows given h back. On hypersparse rows SuiteSparse runs a Gustavson saxpy; on the same
     rows stored compactly its bitmap / full kernel, with no index per output entry (NELL-2
-    mode 2: 404-430 against 689-769 ms at 1 thread, DESIGN_phase5 1.1). Any type and
+    mode 2: 404-430 against 689-769 ms at 1 thread). Any type and
     semiring; ``(src, layout, shape)`` or None.
     """
     if len(a_axes) != 1 or b.ndim != 2 or a._layout.cols != a_axes or not a._layout.rows:
