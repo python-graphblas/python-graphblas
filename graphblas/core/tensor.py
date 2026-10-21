@@ -2692,6 +2692,10 @@ def _contract(updater, a, b, op, a_axes, b_axes, a_batch=(), b_batch=()):
         r, c, v = A.to_coo()
         c = c + (r // rows_per_block) * K
         A = tl.from_coo(r, c, v, A.dtype, A._nrows, nblocks * K)
+    # Then let SuiteSparse choose its format again: with few batches the embedded operand is
+    # dense enough to go bitmap, and its bitmap saxpy is 5x faster at 8 threads than the
+    # sparse saxpy's fine tasks (Higgs, 4 layers: x . A over the nodes, 88 -> 23 ms)
+    A.ss.config["sparsity_control"] = ["hypersparse", "sparse", "bitmap", "full"]
     return A.mxm(B, op), layout, shape
 
 
