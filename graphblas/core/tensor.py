@@ -2554,7 +2554,7 @@ def _tensordot_recipe(updater, a, b, op, a_axes, b_axes):
         x, w, axis = (a, b, a_axes[0]) if x_left else (b, a, b_axes[0])
         if _ttv(updater, x, w, axis, op, x_left):
             return
-    if (rv := _ttm_numba(updater, a, b, op, a_axes, b_axes)) is not None or (
+    if (rv := _ttm_engines(updater, a, b, op, a_axes, b_axes)) is not None or (
         rv := _ttm_compacted(updater, a, b, op, a_axes, b_axes)
     ) is not None:
         src, layout, shape = rv
@@ -2568,8 +2568,90 @@ def _tensordot_recipe(updater, a, b, op, a_axes, b_axes):
         _store(updater, src, shape, layout)
 
 
-# The TTM kernel compiles per R on first use, so small tensors keep the product
+# The TTM engines compile per R on first use, so small tensors keep the product
 _TTM_KERNEL_MIN_NNZ = 2**16
+# The TTM engines, tried in this order: "udt" (one mxv with FP64[R] values, JIT on) and
+# "numba" (tensor_numba.ttm). Tests and benchmarks may set it to force one.
+_TTM_ENGINES = ("udt", "numba")
+# Where both engines run, the UDT one is faster only in the stored order with a hypersparse
+# output and R up to 32 (NELL-2 mode 2: 77 / 139 / 329 ms against 92 / 174 / 354 at R = 8 /
+# 16 / 32, 1 thread; 14 / 24 / 55 against 18 / 31 / 62 at 8); slower with a bitmap output
+# (u7: 25-86 against 27-77 ms at R = 16, 1 thread, and 1.4-1.8x slower at 8), at R = 64,
+# and after a relayout (NELL-2 modes 0 and 1: 1.6-1.8x slower). Phase 5c measurements.
+_TTM_UDT_MAX_R = 32
+
+
+def _ttm_engines(updater, a, b, op, a_axes, b_axes):
+    """TTM of an FP64 tensor's axis with a full FP64 factor and ``plus_times`` by the first
+    engine of ``_TTM_ENGINES`` that runs here: ``(src, layout, shape)`` or None.
+    """
+    if len(a_axes) != 1 or b.ndim != 2 or a.ndim < 2:
+        return None
+    if op.name != "plus_times" or op.return_type != FP64 or a.dtype != FP64 or b.dtype != FP64:
+        return None
+    if a._M._nvals < max(_TTM_KERNEL_MIN_NNZ, 1) or b._M._nvals != math.prod(b._shape):
+        return None
+    for engine in _TTM_ENGINES:
+        run = _ttm_udt if engine == "udt" else _ttm_numba
+        if (rv := run(updater, a, b, op, a_axes, b_axes)) is not None:
+            return rv
+    return None
+
+
+def _ttm_factor(b, kb):
+    """The factor of a TTM as a dense C-contiguous (K x R) float64 array, K along its axis
+    ``kb`` (the contracted one); a new array.
+    """
+    Bm = b._M if b._layout.rows == (0,) else tl.transpose(b._M)  # (b's axis 0 | axis 1)
+    U = np.ascontiguousarray(Bm.to_dense(fill_value=0.0))
+    if kb == 1:
+        U = np.ascontiguousarray(U.T)
+    return U
+
+
+def _ttm_udt(updater, a, b, op, a_axes, b_axes):
+    """TTM by one ``mxv`` with FP64[R] values (``tensor_udt.ttm``), when the JIT is on:
+    ``(src, layout, shape)`` as from ``_contract``, or None. The contracted axis must be the
+    column group by itself, so each nonempty row is an output fiber; the tensor moves to the
+    cheapest layout that has it so. Where the Numba engine runs too, this one takes only
+    the cases it is faster on (see ``_TTM_UDT_MAX_R``).
+    """
+    from . import tensor_udt
+
+    if not tensor_udt.jit_ready():
+        return None
+    m, kb = a_axes[0], b_axes[0]
+    free_a = tuple(x for x in range(a.ndim) if x != m)
+    q = len(free_a)
+    targets = frozenset(
+        ((*perm, m), q)
+        for perm in (itertools.permutations(free_a) if q <= 4 else [free_a])
+        if tl._valid_split(a._shape, (*perm, m), q)
+    )
+    if not targets:
+        return None
+    nthreads = _nthreads(updater)
+    _, path, state = tl.plan(a._shape, a._layout.state, targets, a._M._nvals, nthreads)
+    if (
+        _has_numba
+        and "numba" in _TTM_ENGINES
+        and (
+            path
+            or b._shape[1 - kb] > _TTM_UDT_MAX_R
+            or 2 * tl.count_nonempty_rows(a._M) >= a._M._nrows
+        )
+    ):
+        return None  # (the Numba engine is faster here: see _TTM_UDT_MAX_R)
+    layout = Layout.from_state(state)
+    X = _in_layout(a, layout, updater.opts.get("nthreads"))
+    from .descriptor import lookup
+
+    src = tensor_udt.ttm(X, _ttm_factor(b, kb), lookup(**updater.opts))
+    if src is None:
+        return None
+    out = {x: i for i, x in enumerate(free_a)}
+    shape = (*(a._shape[x] for x in free_a), src._ncols)
+    return src, Layout(tuple(out[x] for x in layout.rows), (len(shape) - 1,)), shape
 
 
 def _ttm_numba(updater, a, b, op, a_axes, b_axes):
@@ -2607,11 +2689,7 @@ def _ttm_numba(updater, a, b, op, a_axes, b_axes):
         return None
     from . import tensor_numba
 
-    # The factor as a dense (K x R) array, K along the contracted axis
-    Bm = b._M if b._layout.rows == (0,) else tl.transpose(b._M)  # (b's axis 0 | axis 1)
-    U = np.ascontiguousarray(Bm.to_dense(fill_value=0.0))
-    if kb == 1:
-        U = np.ascontiguousarray(U.T)
+    U = _ttm_factor(b, kb)
     R = U.shape[1]
     out = {x: i for i, x in enumerate(free_a)}
     rows = tuple(out[x] for x in (*layout.rows, *layout.cols[:-1]))
