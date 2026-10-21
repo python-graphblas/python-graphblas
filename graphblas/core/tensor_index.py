@@ -18,10 +18,12 @@ import math
 
 import numpy as np
 
-from ..exceptions import DimensionMismatch
+from ..dtypes import BOOL
+from ..exceptions import DimensionMismatch, IndexOutOfBound
 from . import tensor_census as census
 from . import tensor_layout as tl
 from .expr import Updater
+from .scalar import Scalar
 from .tensor_layout import Layout
 
 
@@ -29,8 +31,6 @@ def _resolve(t, keys):
     """``(keys, sel)`` as extraction resolves them: one entry per axis, an int (axis dropped)
     or an int64 array of coordinates (negatives wrapped once).
     """
-    from .tensor import _axis_index, _scalar_index
-
     keys = keys if isinstance(keys, tuple) else (keys,)
     if any(k is None for k in keys):
         raise NotImplementedError("None (a new axis) in a Tensor index; use expand_dims")
@@ -85,7 +85,7 @@ def _region_value(value, shape, dtype):
 
 def assign(t, keys, value, *, mask=None, accum=None, replace=False, is_submask=False, opts=None):
     """``t[keys](...) << value`` (``is_submask``) or ``t(...)[keys] << value``, in place."""
-    from .tensor import Tensor, _as_tensor, _group_index
+    from .tensor import Tensor, _as_tensor
 
     opts = opts or {}
     keys, sel = _resolve(t, keys)
@@ -200,7 +200,6 @@ def _index_array(index, size, axis, wraparound, mode="raise"):
     ``"clip"`` wraps or clips (a negative clips to 0).
     """
     from .scalar import Scalar
-    from .tensor import _scalar_index
 
     if isinstance(index, Scalar):
         index = _scalar_index(index, axis)
@@ -421,3 +420,273 @@ class VIndexer:
 
     def __getitem__(self, keys):
         return vindex(self.t, keys, wraparound=self.wraparound)
+
+
+def _scalar_index(index, axis):
+    """A GraphBLAS Scalar indexes as the int it holds, as for Matrix (which refuses empty and
+    non-integer Scalars with TypeError too).
+    """
+    if type(index) is not Scalar:
+        return index
+    if not np.issubdtype(index.dtype.np_type, np.integer):
+        raise TypeError(
+            f"An integer is required for indexing.  Got: {index.dtype} (index for axis {axis})"
+        )
+    if index._is_empty:
+        raise TypeError(f"The index for axis {axis} is an empty Scalar")
+    return int(index.value)
+
+
+def _axis_index(index, size, axis):
+    """An int (axis dropped) or a sorted-or-not int64 array of coordinates (axis kept)."""
+    if isinstance(index, (int, np.integer)):
+        i = int(index)
+        if not -size <= i < size:
+            raise IndexOutOfBound(f"index {i} is out of bounds for axis {axis} of size {size}")
+        return i + size if i < 0 else i
+    if isinstance(index, slice):
+        return np.arange(*index.indices(size), dtype=np.int64)
+    arr = np.asarray(index)
+    if arr.dtype == bool:
+        raise TypeError("boolean indices are not supported for Tensor")
+    if arr.ndim != 1 or (arr.size and not np.issubdtype(arr.dtype, np.integer)):
+        raise TypeError(f"bad index for axis {axis}: {index!r}")
+    arr = arr.astype(np.int64)
+    if arr.size and (arr.min() < -size or arr.max() >= size):
+        raise IndexOutOfBound(f"an index is out of bounds for axis {axis} of size {size}")
+    return np.where(arr < 0, arr + size, arr)
+
+
+def _extract_expr(self, keys):
+    keys = keys if isinstance(keys, tuple) else (keys,)
+    if any(k is None for k in keys):
+        raise NotImplementedError("None (a new axis) in a Tensor index; use expand_dims")
+    if (n_ellipsis := sum(k is Ellipsis for k in keys)) > 1:
+        raise IndexError("an index can only have a single ellipsis")
+    if n_ellipsis:
+        at = next(i for i, k in enumerate(keys) if k is Ellipsis)
+        keys = keys[:at] + (slice(None),) * (self.ndim - len(keys) + 1) + keys[at + 1 :]
+    if len(keys) > self.ndim:
+        raise IndexError(f"too many indices for a Tensor of {self.ndim} dimensions")
+    keys = keys + (slice(None),) * (self.ndim - len(keys))
+    keys = tuple(_scalar_index(k, a) for a, k in enumerate(keys))
+    sel = [_axis_index(k, n, a) for a, (k, n) in enumerate(zip(keys, self._shape, strict=True))]
+    shape = tuple(len(x) for x in sel if not isinstance(x, int))
+    expr = TensorIndexExpr(
+        "extract",
+        _extract_recipe,
+        [self],
+        (self, sel, keys),
+        dtype=self.dtype,
+        shape=shape,
+        op=None,
+        expr_repr="{0.name}[...]",
+    )
+    expr._parent = self
+    expr._keys = keys
+    return expr
+
+
+def _group_index(shape, axes, sel, keys):
+    """The rows (or columns) of one group to extract: ``slice(None)`` for all of them, a slice
+    when they are a contiguous range of raveled positions (a leading int or range with the
+    rest of the group whole), else an array of raveled positions.
+    """
+    full = [isinstance(keys[a], slice) and keys[a] == slice(None) for a in axes]
+    if all(full):
+        return slice(None)
+    # Contiguous: single positions, then one contiguous range, then whole axes
+    k = 0
+    while k < len(axes) and isinstance(sel[axes[k]], int):
+        k += 1
+    if k < len(axes):
+        x = sel[axes[k]]
+        contiguous = x.size > 0 and (x.size == 1 or bool(np.all(np.diff(x) == 1)))
+        tail_full = all(full[k + 1 :])
+    else:
+        contiguous, tail_full = True, True
+    if contiguous and tail_full:
+        start = 0
+        for a in axes[:k]:
+            start = start * shape[a] + sel[a]
+        tail = math.prod(shape[a] for a in axes[k + 1 :])
+        if k < len(axes):
+            x = sel[axes[k]]
+            start = (start * shape[axes[k]] + int(x[0])) * tail
+            return slice(start, start + x.size * tail)
+        return slice(start, start + 1)
+    lists = [np.array([s]) if isinstance(s, int) else s for s in (sel[a] for a in axes)]
+    if math.prod(len(x) for x in lists) > _t._MAX_LISTED:
+        return None
+    idx = np.zeros(1, np.int64)
+    for a, x in zip(axes, lists, strict=True):
+        idx = (idx[:, None] * shape[a] + x[None, :]).ravel()
+    return idx
+
+
+# Extraction costs (ns, 8 / 1 threads, measured 2026-10-20): a GraphBLAS extract pays per
+# nonempty row and per listed index of each group (u7 X[:, :, k]: 1e6 rows, one index, 3.9 ms;
+# hyper (2^19)^3 X[:, :, k]: 4.5e5 rows, 2^19 indices, 8.6 ms); filtering the coordinates pays
+# per stored entry and per indexed axis (hyper 2.4 ms for 1e6 entries; u6 X[:, :, k0:k1] at
+# 1 thread 8.4 ms for 1e6, where the extract took 3.6).
+C_X_ROW = (3.9, 19.0)
+
+C_X_LIST = (13.0, 74.0)
+
+C_FILTER = (2.4, 7.0)
+
+C_FILTER_AXIS = (1.0, 1.5)
+
+
+def _extract_recipe(updater, t, sel, keys):
+    rows, cols = t._layout
+    kept = [a for a in range(t.ndim) if not isinstance(sel[a], int)]
+    renum = {a: i for i, a in enumerate(kept)}
+    layout = Layout(
+        tuple(renum[a] for a in rows if a in renum), tuple(renum[a] for a in cols if a in renum)
+    )
+    shape = tuple(len(sel[a]) for a in kept)
+    ridx = _group_index(t._shape, rows, sel, keys)
+    cidx = _group_index(t._shape, cols, sel, keys)
+    listed = None
+    if ridx is not None and cidx is not None:
+        listed = sum(x.size for x in (ridx, cidx) if isinstance(x, np.ndarray))
+        if not listed:
+            if census.on:
+                census.note("extract", "slices: extract")
+            _store(updater, t._M[ridx, cidx], shape, layout)
+            return
+    # Repeated indices repeat the entries, as for Matrix (SuiteSparse's extract does; the
+    # filter below expands them; the row pick takes slices and ints only)
+    repeated = {
+        a for a, s in enumerate(sel) if isinstance(s, np.ndarray) and np.unique(s).size != s.size
+    }
+    ti = _ti(_nthreads(updater))
+    axes = [a for a in range(t.ndim) if not (isinstance(keys[a], slice) and keys[a] == slice(None))]
+    nv = t._M._nvals
+    options = [((C_FILTER[ti] + C_FILTER_AXIS[ti] * len(axes)) * nv, "filter")]
+    if listed is not None:
+        options.append((C_X_ROW[ti] * tl.nonempty_rows(t._M) + C_X_LIST[ti] * listed, "extract"))
+    if (
+        nv
+        and t._M.ss.format == "hypercsr"
+        and not t.dtype._is_udt
+        and all(a in rows and (isinstance(keys[a], slice) or isinstance(sel[a], int)) for a in axes)
+    ):
+        # Pick rows among the nonempty ones (h) of a hypersparse row group: sized by the data
+        # (NELL-2's (0,1|2), j in a range: the extract listed 1.1e7 rows, the filter read 7.7e7
+        # entries). Numpy work per nonempty row, then P @ M over the kept ones.
+        frac = math.prod(
+            1 / t._shape[a] if isinstance(sel[a], int) else sel[a].size / t._shape[a] for a in axes
+        )
+        hrows = tl.nonempty_rows(t._M)
+        cost = (
+            tl.C_PBUILD_ROW[ti] * hrows
+            + tl.C_PERM_ROW["hyper"][ti] * frac * hrows
+            + tl.C_PERM_ENTRY[ti] * frac * nv
+        )
+        options.append((cost, "rows"))
+    i = min(range(len(options)), key=lambda k: options[k][0])
+    if census.on:
+        i = census.choose("extract", [o[0] for o in options], [o[1] for o in options], i,
+                          nvals=nv, repeated=bool(repeated))  # fmt: skip
+    _, how = options[i]
+    if how == "extract":
+        _store(updater, t._M[ridx, cidx], shape, layout)
+        return
+    if how == "rows":
+        S = _hyper_rows_pick(t, sel, keys, renum, shape, layout)
+        _store(updater, S.mxm(t._M, tl._perm_semiring(t._M)).new(), shape, layout, fresh=True)
+        return
+    # Filter the stored coordinates: cheaper than listing many indices (a slab of a wide
+    # column group), and the only way past _MAX_LISTED positions
+    r, c, vals = t._M.to_coo(sort=False)
+    r, c = r.view(np.int64), c.view(np.int64)
+    keep = np.ones(vals.size, bool)
+    for a in range(t.ndim):
+        s = sel[a]
+        if isinstance(keys[a], slice) and keys[a] == slice(None):
+            continue
+        coord = _axis_coords(r, c, t._shape, rows, cols, a)
+        if isinstance(s, int):
+            keep &= coord == s
+        else:
+            pos = np.full(t._shape[a], -1, np.int64)
+            pos[s] = np.arange(s.size)
+            keep &= pos[coord] >= 0
+    r, c, vals = r[keep], c[keep], vals[keep]
+    out = {}
+    for a in kept:
+        coord = _axis_coords(r, c, t._shape, rows, cols, a)
+        s = sel[a]
+        if isinstance(keys[a], slice) and keys[a] == slice(None):
+            out[renum[a]] = coord
+        elif a in repeated:
+            # Each entry once per position its coordinate is listed at
+            order = np.argsort(s, kind="stable")
+            ss = s[order]
+            left = np.searchsorted(ss, coord, "left")
+            count = np.searchsorted(ss, coord, "right") - left
+            rep = np.repeat(np.arange(coord.size), count)
+            offs = np.arange(rep.size) - np.repeat(np.cumsum(count) - count, count)
+            r, c, vals = r[rep], c[rep], vals[rep]
+            out = {k: v[rep] for k, v in out.items()}
+            out[renum[a]] = order[left[rep] + offs]
+        else:
+            pos = np.full(t._shape[a], -1, np.int64)
+            pos[s] = np.arange(s.size)
+            out[renum[a]] = pos[coord]
+    n = vals.size
+    rr = tl.ravel(out, shape, layout.rows, n=n)
+    cc = tl.ravel(out, shape, layout.cols, n=n)
+    M = tl.from_coo(rr, cc, vals, t.dtype, tl.prod(shape, layout.rows), tl.prod(shape, layout.cols))
+    _store(updater, M, shape, layout, fresh=True)
+
+
+def _hyper_rows_pick(t, sel, keys, renum, shape, layout):
+    """``S`` with ``S @ t._M`` extracting ``t[keys]`` when the keys index only axes of the row
+    group: built over the nonempty rows, mapping each kept one to its row in the result.
+    """
+    rows = t._layout.rows
+    h = tl.nonempty_row_ids(t._M)
+    co = {}
+    tl.unravel(h, tuple(t._shape[a] for a in rows), tuple(range(len(rows))), co)
+    keep = np.ones(h.size, bool)
+    positions = {}
+    for i, a in enumerate(rows):
+        s = sel[a]
+        if isinstance(s, int):
+            keep &= co[i] == s
+        elif not (isinstance(keys[a], slice) and keys[a] == slice(None)):
+            pos = np.full(t._shape[a], -1, np.int64)
+            pos[s] = np.arange(s.size)
+            positions[a] = pos
+            keep &= pos[co[i]] >= 0
+    n = int(np.count_nonzero(keep))
+    out = {}
+    for i, a in enumerate(rows):
+        if a in renum:
+            c = co[i][keep]
+            out[renum[a]] = positions[a][c] if a in positions else c
+    dst = tl.ravel(out, shape, layout.rows, n=n)
+    nrows = tl.prod(shape, layout.rows)
+    return tl.from_coo(dst, h[keep], True, BOOL, nrows, t._M._nrows)
+
+
+def _axis_coords(r, c, shape, rows, cols, axis):
+    """Coordinates along ``axis`` of entries at linear rows ``r`` and columns ``c``."""
+    group, lin = (rows, r) if axis in rows else (cols, c)
+    stride = tl.prod(shape, group[group.index(axis) + 1 :])
+    return (lin // stride) % shape[axis]
+
+
+# isort: off
+from . import tensor as _t  # noqa: E402 (knobs are set on the hub)
+from .tensor import (  # noqa: E402
+    TensorIndexExpr,
+    _nthreads,
+    _store,
+    _ti,
+)
+
+# isort: on
