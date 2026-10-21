@@ -6,16 +6,15 @@ that computes on ``.new()`` or ``T(mask, accum, replace) << expr``.
 
 A Tensor stores its entries in one Matrix held by row (``T.ss.matrix``) plus a ``Layout``:
 which axes are raveled (C order) into the rows and which into the columns. ``permute_dims``,
-``.T``, ``.mT``, ``expand_dims`` and ``squeeze`` only change the layout, in O(1); the data
-moves inside an operation when that operation needs it (``tensor_layout.relayout``).
+``.T``, ``.mT``, ``expand_dims``, ``squeeze``, and ``reshape`` where the layout holds the
+result, only change the layout, in O(1); the data moves inside an operation when that
+operation needs it (``tensor_layout.relayout``).
 Tensors that share a stored Matrix copy it before one of them is changed in place
 (copy-on-write), so a Tensor never sees another's writes.
 
-SuiteSparse:GraphBLAS 10 or later only. Import with ``from graphblas.core.tensor import Tensor``.
-
-Phase 1 covers the data model, relayout, the shape operations, same-shape element-wise
-operations, reductions and ``tensordot``. Broadcasting, indexing, ``matmul`` and ``einsum``
-(batch axes), and Matrix/Vector operands are not implemented yet.
+**THIS API IS EXPERIMENTAL AND MAY CHANGE.** SuiteSparse:GraphBLAS 10 or later, with the
+suitesparse backend. ``gb.Tensor`` and ``gb.einsum``; the user guide's "Tensors" page
+covers the model, the operations and the engines.
 """
 
 import contextlib
@@ -324,7 +323,9 @@ class _Store:
 
 
 class Tensor(BaseType):
-    """An n-dimensional sparse array (experimental).
+    """An n-dimensional sparse array.
+
+    **THIS API IS EXPERIMENTAL AND MAY CHANGE.** See the user guide's "Tensors" page.
 
     Parameters
     ----------
@@ -3205,6 +3206,8 @@ def _mttkrp_recipe(updater, x, mats, mode, R, op):
 
 def einsum(subscripts, *operands, op=semiring.plus_times, optimize="greedy"):
     """Einstein summation over sparse Tensors with a semiring (numpy.einsum subscripts).
+
+    **THIS API IS EXPERIMENTAL AND MAY CHANGE.**
 
     ``op``'s multiply combines the operands and its monoid sums over the contracted indices;
     a result position is present when at least one term exists. Operands may be Tensors,
