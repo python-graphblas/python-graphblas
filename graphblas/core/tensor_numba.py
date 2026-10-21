@@ -63,13 +63,29 @@ def _starts(p, nchunks, change=None):
 
 _ROWS, _PREFIX, _LAST = 0, 1, 2
 _FORCE_RUNS = None  # tests set True or False to cover both ways of reading column runs
+_FORCE_COLBLOCK = None  # likewise for column blocks against per-thread buffers
+_COLBLOCK_BYTES = 2**22  # a thread's buffer past this (4 MiB) leaves its cache
 
 
-def _kernel_source(R, P, Q, kind, mpos, owner, runs):
+def _col_blocks(p, ci, csz, nblocks):
+    """Column-index bounds of ``nblocks`` blocks of about equal entries, on boundaries of the
+    first column axis (quantiles of a sample of the column indices), in ci's dtype.
+    """
+    stride = int(np.prod(np.array(csz[1:], np.int64)))
+    nnz = int(p[-1])
+    sample = np.sort(ci[np.random.default_rng(0).integers(0, max(nnz, 1), 2**16)] // stride)
+    cuts = sample[(np.arange(1, nblocks) * sample.size) // nblocks] if nnz else []
+    k = np.unique(np.concatenate([[0], cuts, [int(csz[0])]]).astype(np.int64))
+    return (k * stride).astype(ci.dtype)
+
+
+def _kernel_source(R, P, Q, kind, mpos, owner, runs, colblock=False):
     """Python source of the kernel for P row axes and Q column axes, the mode being the row
     axis ``mpos`` (``_ROWS``), the column axis ``mpos`` other than the last (``_PREFIX``), or
     the last column axis (``_LAST``). ``owner``: the mode is the first row axis and chunks own
-    their output rows; otherwise each thread adds into its own buffer.
+    their output rows. ``colblock``: the mode is the first column axis, and each thread owns a
+    block of its values, so of the column indices: it reads every row, but only the entries
+    in its block (found by binary search). Otherwise each thread adds into its own buffer.
 
     The source is written out per axis, with R a literal, so Numba sees no loop over axes and
     no tuple of factors (a generic loop over both ran 2x slower than the 3-d kernels). Per
@@ -84,8 +100,9 @@ def _kernel_source(R, P, Q, kind, mpos, owner, runs):
     m = mpos if kind == _ROWS else P + mpos  # the mode's position in rows + columns
     row_w = [a for a in range(P) if a != m]  # row axes in w
     pre_f = [a for a in range(P, L) if a != m]  # prefix axes multiplied per run
-    o = "out[" if owner else "out[b, "  # then the output row, r
-    tt = "touched[" if owner else "touched[b, "
+    own = owner or colblock
+    o = "out[" if own else "out[b, "  # then the output row, r
+    tt = "touched[" if own else "touched[b, "
     lines = []
     add = lines.append
     args = ", ".join(f"F{a}" for a in range(N))
@@ -93,19 +110,34 @@ def _kernel_source(R, P, Q, kind, mpos, owner, runs):
     for a in range(N):
         add(f"    S{a} = S[{a}]")
     add("    for bb in prange(bin_ptr.size - 1):")
-    add("        b = numba.get_thread_id()" if not owner else "        b = 0")
+    add("        b = numba.get_thread_id()" if not own else "        b = 0")
     add(f"        w = np.empty({R})")
     add(f"        t = np.empty({R})")
     add(f"        u = np.empty({R})")
     add(f"        e = np.empty({R})")
     add("        last_i = -1")
-    add("        for cc in range(bin_ptr[bb], bin_ptr[bb + 1]):")
-    add("          c = bins[cc]")
-    add("          for s in range(starts[c], starts[c + 1]):")
-    add("            q0 = p[s]")
-    add("            q1 = p[s + 1]")
-    add("            if q0 == q1:")
-    add("                continue")
+    if colblock:
+        # bin_ptr holds the column-index bounds of the blocks, one per iteration
+        add("        lo = bin_ptr[bb]")
+        add("        hi = bin_ptr[bb + 1]")
+        add("        for cc in range(1):")
+        add("          for s in range(p.size - 1):")
+        add("            q0 = p[s]")
+        add("            q1 = p[s + 1]")
+        add("            if q0 == q1:")
+        add("                continue")
+        add("            q1 = q0 + np.searchsorted(ci[q0:q1], hi)")
+        add("            q0 = q0 + np.searchsorted(ci[q0:q1], lo)")
+        add("            if q0 == q1:")
+        add("                continue")
+    else:
+        add("        for cc in range(bin_ptr[bb], bin_ptr[bb + 1]):")
+        add("          c = bins[cc]")
+        add("          for s in range(starts[c], starts[c + 1]):")
+        add("            q0 = p[s]")
+        add("            q1 = p[s + 1]")
+        add("            if q0 == q1:")
+        add("                continue")
     add("            rem = h[s] if h.size > 0 else s")
     for a in range(P - 1, 0, -1):
         add(f"            i{a} = rem % S{a}")
@@ -202,11 +234,12 @@ def _kernel_source(R, P, Q, kind, mpos, owner, runs):
     return "\n".join(lines) + "\n"
 
 
-def _kernel_for(R, P, Q, kind, mpos, owner, runs):
-    key = ("mttkrp", R, P, Q, kind, mpos, owner, runs)
+def _kernel_for(R, P, Q, kind, mpos, owner, runs, colblock):
+    key = ("mttkrp", R, P, Q, kind, mpos, owner, runs, colblock)
     if (k := _compiled.get(key)) is None:
         ns = {"np": np, "numba": numba, "prange": prange}
-        exec(_kernel_source(R, P, Q, kind, mpos, owner, runs), ns)  # noqa: S102 (our own source)
+        source = _kernel_source(R, P, Q, kind, mpos, owner, runs, colblock)
+        exec(source, ns)  # noqa: S102 (our own source)
         k = _compiled[key] = njit(parallel=True)(ns["kernel"])
     return k
 
@@ -233,8 +266,29 @@ def mttkrp_nd(arrays, row_sizes, col_sizes, mode_pos, F, n_out, nthreads, max_bu
     else:
         kind, mpos = _LAST, mode_pos - P
     owner = kind == _ROWS and mpos == 0
-    nbuf = 1 if owner else nthreads
-    if not owner and nbuf * n_out * R > max_buffer:
+    # The first column axis: its values partition the column indices, so threads can own
+    # blocks of them instead of keeping buffers (each thread then binary-searches every row).
+    # Worth it when a thread's buffer leaves its cache and takes many updates per row:
+    # NELL-2 mode 2 (28818 rows, 2670 entries each) at 8 threads, R = 32 / 64: 114 / 150 ms
+    # against 140 / 409 with buffers; R = 16 (3.5 MiB buffers) 78 against 42. Enron mode 2
+    # (244268 rows, 222 each) gains nothing (R = 64: 133 against 148; R = 16: 65 against 46),
+    # u7 mode 2 loses (1e6 rows to search, 27 against 4.8 ms). And when the buffers would be
+    # too large altogether, instead of a relayout.
+    first_col = kind == _LAST and Q == 1 or kind == _PREFIX and mpos == 0
+    nnz = int(p[-1]) - int(p[0])
+    colblock = (
+        first_col
+        and nthreads > 1
+        and (
+            n_out * R * 8 > _COLBLOCK_BYTES
+            and nnz >= 1000 * n_out
+            or nthreads * n_out * R > max_buffer
+        )
+    )
+    if _FORCE_COLBLOCK is not None:
+        colblock = first_col and _FORCE_COLBLOCK
+    own = owner or colblock
+    if not own and nthreads * n_out * R > max_buffer:
         return None
     # Runs of equal leading column axes pay off when they hold several entries; expected
     # length under uniform occupancy, from the entries per row and the prefix positions
@@ -247,7 +301,7 @@ def mttkrp_nd(arrays, row_sizes, col_sizes, mode_pos, F, n_out, nthreads, max_bu
         runs = per_row >= 4 * max(distinct, 1.0)
     if _FORCE_RUNS is not None:
         runs = _FORCE_RUNS
-    k = _kernel_for(R, P, Q, kind, mpos, owner, runs)
+    k = _kernel_for(R, P, Q, kind, mpos, owner, runs, colblock)
     rsz = np.array(row_sizes, np.int64)
     csz = np.array(col_sizes, np.int64)
     if owner:
@@ -259,16 +313,19 @@ def mttkrp_nd(arrays, row_sizes, col_sizes, mode_pos, F, n_out, nthreads, max_bu
         starts = _starts(p, _NCHUNKS, change)
     else:
         starts = _starts(p, 8 * nthreads)
-    bin_ptr, bins = _bins(p, starts, nthreads)
-    out = np.zeros((n_out, R) if owner else (nbuf, n_out, R))
-    touched = np.zeros(n_out if owner else (nbuf, n_out), np.bool_)
+    if colblock:
+        bin_ptr, bins = _col_blocks(p, ci, csz, nthreads), starts[:0]
+    else:
+        bin_ptr, bins = _bins(p, starts, nthreads)
+    out = np.zeros((n_out, R) if own else (nthreads, n_out, R))
+    touched = np.zeros(n_out if own else (nthreads, n_out), np.bool_)
     prev = numba.get_num_threads()
     numba.set_num_threads(nthreads)
     try:
         k(p, h, ci, x, iso, np.concatenate([rsz, csz]), *F, out, touched, starts, bin_ptr, bins)
     finally:
         numba.set_num_threads(prev)
-    if owner:
+    if own:
         return out, touched
     total = np.empty((n_out, R))
     any_touched = np.empty(n_out, np.bool_)

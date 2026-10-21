@@ -1825,9 +1825,9 @@ def _kernel_spy(monkeypatch):
 @pytest.mark.parametrize("nthreads", [1, 8])
 @pytest.mark.parametrize("shape", [(20, 25, 30), (8, 9, 10, 11), (4, 5, 6, 5, 4)])
 def test_mttkrp_kernel_layouts(shape, nthreads, monkeypatch):
-    """The Numba MTTKRP kernel reads every layout in place, for every mode (owned output rows
-    or per-thread buffers; runs of column entries read both ways), iso values too: 3-, 4- and
-    5-d against numpy's einsum.
+    """The Numba MTTKRP kernel reads every layout in place, for every mode (owned output rows,
+    per-thread buffers, or blocks of the first column axis; runs of column entries read both
+    ways), iso values too: 3-, 4- and 5-d against numpy's einsum.
     """
     pytest.importorskip("numba")
     from graphblas.core import tensor_numba
@@ -1846,11 +1846,13 @@ def test_mttkrp_kernel_layouts(shape, nthreads, monkeypatch):
         assert X.ss.format in {"csr", "hypercsr"}
         for mode in range(ndim):
             for runs in [True, False] if len(layout.cols) > 1 else [None]:
-                monkeypatch.setattr(tensor_numba, "_FORCE_RUNS", runs)
-                calls.clear()
-                R = X.mttkrp(factors, mode).new(nthreads=nthreads)
-                check(R, *_mttkrp_model(xv, xp, dense, mode), approx=True)
-                assert calls == [True], (layout, mode, runs)
+                for colblock in [False, True] if mode == layout.cols[0] else [None]:
+                    monkeypatch.setattr(tensor_numba, "_FORCE_RUNS", runs)
+                    monkeypatch.setattr(tensor_numba, "_FORCE_COLBLOCK", colblock)
+                    calls.clear()
+                    R = X.mttkrp(factors, mode).new(nthreads=nthreads)
+                    check(R, *_mttkrp_model(xv, xp, dense, mode), approx=True)
+                    assert calls == [True], (layout, mode, runs, colblock)
 
 
 def test_mttkrp_kernel_paths(monkeypatch):
@@ -1891,12 +1893,14 @@ def test_mttkrp_kernel_paths(monkeypatch):
         R = Z.mttkrp([Matrix.from_dense(d) for d in zd], mode).new(nthreads=8)
         check(R, *_mttkrp_model(zv, zp, zd, mode), approx=True)
         assert calls == [True]
-    # Buffers too large in the stored layout: relayout, then the kernel that owns its rows
+    # Buffers too large in the stored layout: blocks of the first column axis (mode 2), else
+    # a relayout and then the kernel that owns its rows
     monkeypatch.setattr(tensor_numba, "mttkrp_nd", lambda *a, **k: spy(*a, **dict(k, max_buffer=0)))
     for mode in [1, 2, 3]:
         calls.clear()
-        check(X.mttkrp(factors, mode).new(), *_mttkrp_model(xv, xp, dense, mode), approx=True)
-        assert calls == [False, True]
+        R = X.mttkrp(factors, mode).new(nthreads=8)
+        check(R, *_mttkrp_model(xv, xp, dense, mode), approx=True)
+        assert calls == ([True] if mode == 2 else [False, True])
     monkeypatch.setattr(tensor_numba, "mttkrp_nd", spy)
     # The GraphBLAS products: no Numba, an empty tensor, a sparse factor, another dtype or
     # semiring; the kernel never runs
