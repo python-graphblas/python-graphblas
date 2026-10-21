@@ -2006,6 +2006,7 @@ from .tensor_reduce import (  # noqa: E402, F401 (also re-exports)
 )
 from .tensor_contract import (  # noqa: E402, F401 (also re-exports)
     _contract,
+    _orders,
     _matmul_expr,
     _tensordot_expr,
     _ttv,
