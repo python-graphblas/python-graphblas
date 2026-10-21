@@ -16,9 +16,9 @@ write the same output row. Otherwise each thread has its own output buffer, summ
 """
 
 import hashlib
-import importlib.util
 import os
 import sys
+import types
 from pathlib import Path
 
 import numba
@@ -51,13 +51,43 @@ def _cache_dir():
     return path if os.access(path, os.W_OK) else None
 
 
+def _load_cached(path, name, text):
+    """The kernel of ``text`` run as the module ``name`` from the file ``path``, which is
+    written first if missing; None if the file holds anything else (corrupt, tampered with, or
+    another kernel whose digest shares the prefix), which is then left as it is. The verified
+    ``text`` is what runs, not a second read of the file.
+    """
+    data = text.encode()
+    if path.exists():
+        if path.read_bytes() != data:
+            return None
+    else:
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        try:
+            tmp.write_bytes(data)
+            tmp.replace(path)
+        except OSError:
+            tmp.unlink(missing_ok=True)
+            raise
+    module = types.ModuleType(name)
+    module.__file__ = str(path)
+    # (registered: Numba imports the module by name when it loads cached code)
+    sys.modules[name] = module
+    try:
+        exec(compile(text, str(path), "exec"), module.__dict__)  # noqa: S102 (our own source)
+    except BaseException:
+        sys.modules.pop(name, None)
+        raise
+    return module.kernel
+
+
 def _compile(source):
     """Compile generated kernel source (a function ``kernel``) with ``njit(parallel=True)``:
     from a file named by its hash in the cache directory, with Numba's disk cache, else (no
-    writable directory, or any failure there) in memory. The file is written once, through a
-    temporary file and a rename, so concurrent processes see either nothing or all of it;
-    Numba's cache index checks its own version and the file's stamp. Bounds checks (tests)
-    are part of the source, so they get their own file.
+    writable directory, a file that is not this source, or any failure there) in memory. The
+    file is written once, through a temporary file and a rename, so concurrent processes see
+    either nothing or all of it; Numba's cache index checks its own version and the file's
+    stamp. Bounds checks (tests) are part of the source, so they get their own file.
     """
     check = ", boundscheck=True" if numba.config.BOUNDSCHECK else ""
     text = "import numba\nimport numpy as np\nfrom numba import njit, prange\n\n" + source.replace(
@@ -65,24 +95,13 @@ def _compile(source):
     )
     digest = hashlib.sha256(text.encode()).hexdigest()[:32]
     if (cache := _cache_dir()) is not None:
-        path = cache / f"k_{digest}.py"
-        name = f"_graphblas_kernel_{digest}"
         try:
-            if not path.exists():
-                tmp = cache / f"k_{digest}.py.{os.getpid()}.tmp"
-                tmp.write_text(text)
-                tmp.replace(path)
-            spec = importlib.util.spec_from_file_location(name, path)
-            module = importlib.util.module_from_spec(spec)
-            # (registered: Numba imports the module by name when it loads cached code)
-            sys.modules[name] = module
-            spec.loader.exec_module(module)
+            kernel = _load_cached(cache / f"k_{digest}.py", f"_graphblas_kernel_{digest}", text)
         except Exception:
-            # Any trouble with the file (a read-only or full disk, a stale module): compile in
-            # memory instead
-            sys.modules.pop(name, None)
-        else:
-            return module.kernel
+            # Any trouble with the file (a read-only or full disk): compile in memory instead
+            kernel = None
+        if kernel is not None:
+            return kernel
     ns = {}
     exec(text.replace("cache=True", "cache=False"), ns)  # noqa: S102 (our own source)
     return ns["kernel"]
