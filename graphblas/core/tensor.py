@@ -591,6 +591,82 @@ class Tensor(BaseType):
         tl.unravel(c.view(np.int64), self._shape, lay.cols, coords)
         return tuple(coords), v
 
+    @classmethod
+    def from_pydata_sparse(cls, s, *, dup_op=None, layout=None, name=None):
+        """Create a Tensor from a pydata/sparse array (COO, GCXS or DOK) of any rank.
+
+        Explicit zeros stay entries. The array's fill value must be 0: a Tensor has no fill
+        value. Values are copied once; a COO's coordinates are raveled into the Matrix's row
+        and column indices. A GCXS array (ndim >= 2) imports its arrays as they are, one copy
+        each, and the Tensor takes its layout: the compressed axes as rows, the others as
+        columns.
+
+        Parameters
+        ----------
+        s : sparse.SparseArray
+            See https://sparse.pydata.org
+        dup_op : BinaryOp, optional
+            Combines values at repeated coordinates (pydata's COO has none).
+        layout : Layout or (rows, cols), optional
+            The stored layout (pinned), as in ``from_coo``.
+        name : str, optional
+        """
+        _check_backend()
+        from .tensor_io import from_pydata_sparse
+
+        return from_pydata_sparse(cls, s, dup_op=dup_op, layout=layout, name=name)
+
+    def to_pydata_sparse(self, format="coo", *, compressed_axes=None):
+        """Create a pydata/sparse array with fill value 0.
+
+        Parameters
+        ----------
+        format : {"coo", "gcxs", "dok"}, default "coo"
+            "coo" is in C order, so a Tensor whose layout is not the identity axis order is
+            relaid out first. "gcxs" uses the Tensor's layout as it is when GCXS can hold it
+            (both groups nonempty and in increasing order), else the cheapest such layout.
+        compressed_axes : sequence of ints, optional
+            The axes GCXS compresses (the rows of a layout), for "gcxs".
+        """
+        from .tensor_io import to_pydata_sparse
+
+        return to_pydata_sparse(self, format, compressed_axes=compressed_axes)
+
+    @classmethod
+    def from_scipy_sparse(cls, A, *, dup_op=None, layout=None, name=None):
+        """Create a Tensor from a scipy.sparse array: an n-d ``coo_array``, or any 2-d format.
+
+        Explicit zeros stay entries; repeated coordinates add up as in scipy unless
+        ``dup_op`` says otherwise. A COO array's coordinates are raveled into the Matrix's row
+        and column indices and its values copied once. A canonical 2-d CSR or CSC array
+        imports its arrays (one copy each) into layout ``(0|1)`` or ``(1|0)``.
+
+        Parameters
+        ----------
+        A : scipy.sparse array or matrix
+        dup_op : BinaryOp, optional
+            Combines values at repeated coordinates; default ``plus`` (``lor`` for BOOL).
+        layout : Layout or (rows, cols), optional
+            The stored layout (pinned), as in ``from_coo``.
+        name : str, optional
+        """
+        _check_backend()
+        from .tensor_io import from_scipy_sparse
+
+        return from_scipy_sparse(cls, A, dup_op=dup_op, layout=layout, name=name)
+
+    def to_scipy_sparse(self, format="coo"):
+        """Create a scipy.sparse array (``coo_array`` for any rank but 0).
+
+        A COO array comes in the stored order with no relayout; it is in C order (marked
+        canonical) when the layout is the identity axis order. A 2-d Tensor may also give
+        the other scipy formats, as ``graphblas.io.to_scipy_sparse``: "csr" from layout
+        ``(0|1)`` and "csc" from ``(1|0)`` take the stored arrays (one copy).
+        """
+        from .tensor_io import to_scipy_sparse
+
+        return to_scipy_sparse(self, format)
+
     def to_matrix(self, rows=None, *, copy=True):
         """A Matrix with the axes ``rows`` (in that order) raveled into the rows and the other
         axes (in increasing order) into the columns, both in C order.
