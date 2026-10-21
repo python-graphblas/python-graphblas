@@ -200,6 +200,19 @@ def test_unaryop_udf_no_support():
         unary.register_new("plus_one", plus_one)
 
 
+@pytest.mark.skipif("supports_udfs")
+def test_unaryop_on_udt_needs_numba():
+    # identity and one apply to any UDT through a Numba function
+    udt = dtypes.register_anonymous(
+        np.dtype([("nn_a", np.int64), ("nn_b", np.float64)]), "_NoNumbaUnary"
+    )
+    v = Vector(udt, size=2)
+    v[0] = (1, 2.0)
+    for unop in [unary.identity, unary.one]:
+        with pytest.raises(KeyError, match=f"{unop.name} does not work with _NoNumbaUnary"):
+            v.apply(unop).new()
+
+
 @pytest.mark.skipif("not supports_udfs")
 def test_unaryop_udf():
     def plus_one(x):
