@@ -2478,7 +2478,9 @@ def _tensordot_recipe(updater, a, b, op, a_axes, b_axes):
         x, w, axis = (a, b, a_axes[0]) if x_left else (b, a, b_axes[0])
         if _ttv(updater, x, w, axis, op, x_left):
             return
-    if (rv := _ttm_numba(updater, a, b, op, a_axes, b_axes)) is not None:
+    if (rv := _ttm_numba(updater, a, b, op, a_axes, b_axes)) is not None or (
+        rv := _ttm_compacted(updater, a, b, op, a_axes, b_axes)
+    ) is not None:
         src, layout, shape = rv
         _store(updater, src, shape, layout, fresh=True)
         return
@@ -2561,6 +2563,38 @@ def _ttm_numba(updater, a, b, op, a_axes, b_axes):
             FP64, nrows, R, "hypercsr", x=V, h=hout, p=indptr, i=cols, nvals=V.size
         )
     return src, Layout(rows, (len(shape) - 1,)), shape
+
+
+def _ttm_compacted(updater, a, b, op, a_axes, b_axes):
+    """TTM in the stored order on a hypersparse tensor, by one product on its rows compacted:
+    the nonempty rows (h dropped through the Container) times the factor, then the result's
+    rows given h back. On hypersparse rows SuiteSparse runs a Gustavson saxpy; on the same
+    rows stored compactly its bitmap / full kernel, with no index per output entry (NELL-2
+    mode 2: 404-430 against 689-769 ms at 1 thread, DESIGN_phase5 1.1). Any type and
+    semiring; ``(src, layout, shape)`` or None.
+    """
+    if len(a_axes) != 1 or b.ndim != 2 or a._layout.cols != a_axes or not a._layout.rows:
+        return None
+    M = a._M
+    if M.ss.format != "hypercsr" or M._nvals == 0:
+        return None
+    nonempty = tl.count_nonempty_rows(M)
+    if 2 * nonempty > M._nrows:
+        return None  # (few rows to drop)
+    kb = b_axes[0]
+    Bm = b._M if b._layout.rows == (kb,) else tl.transpose(b._M)  # (b's axis kb | the other)
+    A = M.dup()
+    with tl._Unloaded(A) as cont:
+        h, cont.h = cont.h, tl.new_vector_handle(cont.h)
+        cont.nrows = nonempty
+        cont.format = lib.GxB_SPARSE
+    C = tl.new_matrix(op.return_type, nonempty, Bm._ncols)
+    C(**updater.opts) << A.mxm(Bm, op)
+    tl.give_rows(C, h, M._nrows)
+    free_a = tuple(x for x in range(a.ndim) if x != a_axes[0])
+    out = {x: i for i, x in enumerate(free_a)}
+    shape = (*(a._shape[x] for x in free_a), b._shape[1 - kb])
+    return C, Layout(tuple(out[x] for x in a._layout.rows), (len(shape) - 1,)), shape
 
 
 def _as_factor(F, nrows, within):
