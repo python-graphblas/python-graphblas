@@ -1,3 +1,5 @@
+import contextlib
+
 import numpy as np
 import pytest
 
@@ -79,6 +81,21 @@ def repr_printer(x, name="", indent=4):
 
 def html_printer(x, name="", indent=4):
     return _printer(repr_html(x), name, "repr_html", indent)
+
+
+@contextlib.contextmanager
+def display_options(*args):
+    """Set display options as ``pd.option_context`` does, with or without pandas.
+
+    The renderer reads pandas' display options when pandas is installed and its own
+    copy of their defaults otherwise. Setting both lets a test expect the same output
+    in either environment.
+    """
+    with pytest.MonkeyPatch.context() as mp:
+        for key, val in zip(args[::2], args[1::2], strict=True):
+            mp.setitem(formatting._DISPLAY_DEFAULTS, key.removeprefix("display."), val)
+        with pd.option_context(*args) if pd is not None else contextlib.nullcontext():
+            yield
 
 
 @pytest.fixture(autouse=True)
@@ -3584,6 +3601,534 @@ def test_sparse_matrix_repr():
         "17  1800  180    1\n"
         "18  1900  190    1"
     )
+
+
+def test_sparse_float_repr():
+    # A sparse float object whose nvals fit in display.max_rows is shown in COO form
+    # with a float column: every value gets the same number of decimals, less the
+    # trailing zeros they all share, and NaN shows as "NaN" where the dense grid shows
+    # "nan".
+    indices = [100, 161, 222, 283, 344, 405, 466]
+    values = [1.5, -2.25, 0.0, 100.0, np.nan, np.inf, -np.inf]
+    v = Vector.from_coo(indices, values, size=1000, name="v")
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size  dtype  format\n'
+        "gb.Vector      7  1000   FP64  sparse\n"
+        "-------------------------------------\n"
+        "   index     val\n"
+        "0    100    1.50\n"
+        "1    161   -2.25\n"
+        "2    222    0.00\n"
+        "3    283  100.00\n"
+        "4    344     NaN\n"
+        "5    405     inf\n"
+        "6    466    -inf"
+    )
+    html_printer(v, "v")
+    assert repr_html(v) == (
+        "<div>"
+        f"{CSS_STYLE}"
+        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Vector</pre></td>\n'
+        "    <td><pre>nvals</pre></td>\n"
+        "    <td><pre>size</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>7</td>\n"
+        "    <td>1000</td>\n"
+        "    <td>FP64</td>\n"
+        "    <td>sparse</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary><div>\n"
+        "<style scoped>\n"
+        "    .dataframe tbody tr th:only-of-type {\n"
+        "        vertical-align: middle;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe tbody tr th {\n"
+        "        vertical-align: top;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe thead th {\n"
+        "        text-align: right;\n"
+        "    }\n"
+        "</style>\n"
+        '<table border="1" class="dataframe">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        "      <th></th>\n"
+        "      <th>index</th>\n"
+        "      <th>val</th>\n"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        "    <tr>\n"
+        "      <th>0</th>\n"
+        "      <td>100</td>\n"
+        "      <td>1.50</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>1</th>\n"
+        "      <td>161</td>\n"
+        "      <td>-2.25</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>2</th>\n"
+        "      <td>222</td>\n"
+        "      <td>0.00</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>3</th>\n"
+        "      <td>283</td>\n"
+        "      <td>100.00</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>4</th>\n"
+        "      <td>344</td>\n"
+        "      <td>NaN</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>5</th>\n"
+        "      <td>405</td>\n"
+        "      <td>inf</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>6</th>\n"
+        "      <td>466</td>\n"
+        "      <td>-inf</td>\n"
+        "    </tr>\n"
+        "  </tbody>\n"
+        "</table>\n"
+        "</div></details></div>"
+    )
+    A = Matrix.from_coo(
+        [3, 104, 205, 306, 407, 508, 609],
+        [900, 811, 722, 633, 544, 455, 366],
+        values,
+        nrows=1000,
+        ncols=1000,
+        name="A",
+    )
+    repr_printer(A, "A")
+    assert repr(A) == (
+        '"A"        nvals  nrows  ncols  dtype    format\n'
+        "gb.Matrix      7   1000   1000   FP64  hypercsr\n"
+        "-----------------------------------------------\n"
+        "   row  col     val\n"
+        "0    3  900    1.50\n"
+        "1  104  811   -2.25\n"
+        "2  205  722    0.00\n"
+        "3  306  633  100.00\n"
+        "4  407  544     NaN\n"
+        "5  508  455     inf\n"
+        "6  609  366    -inf"
+    )
+    v = Vector.from_coo([100, 161, 222], [1.0, -2.0, 30.0], size=1000, name="v")
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size  dtype  format\n'
+        "gb.Vector      3  1000   FP64  sparse\n"
+        "-------------------------------------\n"
+        "   index   val\n"
+        "0    100   1.0\n"
+        "1    161  -2.0\n"
+        "2    222  30.0"
+    )
+    v = Vector.from_coo(
+        [100, 161, 222, 283], [0.1, 1 / 3, -2.5, np.nan], dtype="FP32", size=1000, name="v"
+    )
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size  dtype  format\n'
+        "gb.Vector      4  1000   FP32  sparse\n"
+        "-------------------------------------\n"
+        "   index       val\n"
+        "0    100  0.100000\n"
+        "1    161  0.333333\n"
+        "2    222 -2.500000\n"
+        "3    283       NaN"
+    )
+
+
+def test_sparse_float_repr_scientific():
+    # Scientific notation when a value is smaller than the precision shows, or when
+    # one is above 1e6 and the fixed-point column would be too wide.
+    v = Vector.from_coo([100, 161, 222], [1e-8, 2.5, -3.0], size=1000, name="v")
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size  dtype  format\n'
+        "gb.Vector      3  1000   FP64  sparse\n"
+        "-------------------------------------\n"
+        "   index           val\n"
+        "0    100  1.000000e-08\n"
+        "1    161  2.500000e+00\n"
+        "2    222 -3.000000e+00"
+    )
+    v = Vector.from_coo([100, 161, 222], [1.5e10, 2.0, -0.125], size=1000, name="v")
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size  dtype  format\n'
+        "gb.Vector      3  1000   FP64  sparse\n"
+        "-------------------------------------\n"
+        "   index           val\n"
+        "0    100  1.500000e+10\n"
+        "1    161  2.000000e+00\n"
+        "2    222 -1.250000e-01"
+    )
+    # Too wide for fixed point but not large: stays fixed point
+    v = Vector.from_coo([100, 161, 222], [123456.789, 0.5, -7.0], size=1000, name="v")
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size  dtype  format\n'
+        "gb.Vector      3  1000   FP64  sparse\n"
+        "-------------------------------------\n"
+        "   index         val\n"
+        "0    100  123456.789\n"
+        "1    161       0.500\n"
+        "2    222      -7.000"
+    )
+    v = Vector.from_coo(
+        [100, 161, 222, 283], [1e-3, 12345.678, -9.5e5, np.nan], size=1000, name="v"
+    )
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size  dtype  format\n'
+        "gb.Vector      4  1000   FP64  sparse\n"
+        "-------------------------------------\n"
+        "   index         val\n"
+        "0    100       0.001\n"
+        "1    161   12345.678\n"
+        "2    222 -950000.000\n"
+        "3    283         NaN"
+    )
+    v = Vector.from_coo([100, 161, 222], [1.23456, -0.5, 1e-4], size=1000, name="v")
+    with display_options("display.precision", 3):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      3  1000   FP64  sparse\n"
+            "-------------------------------------\n"
+            "   index        val\n"
+            "0    100  1.235e+00\n"
+            "1    161 -5.000e-01\n"
+            "2    222  1.000e-04"
+        )
+
+
+def test_sparse_complex_repr():
+    values = [
+        1 + 2j,
+        -1.5 - 0.25j,
+        3j,
+        complex(np.nan, 1),
+        complex(1, np.nan),
+        complex(np.nan, -2),
+        complex(np.nan, np.nan),
+        1 + 100j,
+    ]
+    v = Vector.from_coo([100, 161, 222, 283, 344, 405, 466, 527], values, size=1000, name="v")
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size  dtype  format\n'
+        "gb.Vector      8  1000   FC64  sparse\n"
+        "-------------------------------------\n"
+        "   index           val\n"
+        "0    100  1.00+  2.00j\n"
+        "1    161 -1.50-  0.25j\n"
+        "2    222  0.00+  3.00j\n"
+        "3    283   NaN+  1.00j\n"
+        "4    344  1.00+   NaNj\n"
+        "5    405   NaN-  2.00j\n"
+        "6    466   NaN+   NaNj\n"
+        "7    527  1.00+100.00j"
+    )
+    html_printer(v, "v")
+    assert repr_html(v) == (
+        "<div>"
+        f"{CSS_STYLE}"
+        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Vector</pre></td>\n'
+        "    <td><pre>nvals</pre></td>\n"
+        "    <td><pre>size</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>8</td>\n"
+        "    <td>1000</td>\n"
+        "    <td>FC64</td>\n"
+        "    <td>sparse</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary><div>\n"
+        "<style scoped>\n"
+        "    .dataframe tbody tr th:only-of-type {\n"
+        "        vertical-align: middle;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe tbody tr th {\n"
+        "        vertical-align: top;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe thead th {\n"
+        "        text-align: right;\n"
+        "    }\n"
+        "</style>\n"
+        '<table border="1" class="dataframe">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        "      <th></th>\n"
+        "      <th>index</th>\n"
+        "      <th>val</th>\n"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        "    <tr>\n"
+        "      <th>0</th>\n"
+        "      <td>100</td>\n"
+        "      <td>1.00+&nbsp;&nbsp;2.00j</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>1</th>\n"
+        "      <td>161</td>\n"
+        "      <td>-1.50-&nbsp;&nbsp;0.25j</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>2</th>\n"
+        "      <td>222</td>\n"
+        "      <td>0.00+&nbsp;&nbsp;3.00j</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>3</th>\n"
+        "      <td>283</td>\n"
+        "      <td>NaN+&nbsp;&nbsp;1.00j</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>4</th>\n"
+        "      <td>344</td>\n"
+        "      <td>1.00+&nbsp;&nbsp; NaNj</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>5</th>\n"
+        "      <td>405</td>\n"
+        "      <td>NaN-&nbsp;&nbsp;2.00j</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>6</th>\n"
+        "      <td>466</td>\n"
+        "      <td>NaN+&nbsp;&nbsp; NaNj</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>7</th>\n"
+        "      <td>527</td>\n"
+        "      <td>1.00+100.00j</td>\n"
+        "    </tr>\n"
+        "  </tbody>\n"
+        "</table>\n"
+        "</div></details></div>"
+    )
+    v = Vector.from_coo([100, 161], [1e-8 + 1j, 2 - 3j], size=1000, name="v")
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size  dtype  format\n'
+        "gb.Vector      2  1000   FC64  sparse\n"
+        "-------------------------------------\n"
+        "   index       val\n"
+        "0    100  0.0+1.0j\n"
+        "1    161  2.0-3.0j"
+    )
+    v = Vector.from_coo([100, 161], [0.1 + 0.2j, -1 - 1j], dtype="FC32", size=1000, name="v")
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size  dtype  format\n'
+        "gb.Vector      2  1000   FC32  sparse\n"
+        "-------------------------------------\n"
+        "   index       val\n"
+        "0    100  0.1+0.2j\n"
+        "1    161 -1.0-1.0j"
+    )
+
+
+def test_sparse_repr_chop_threshold():
+    # A value no larger than display.chop_threshold shows as zero. Whether the column
+    # uses scientific notation is decided from the values before they are chopped.
+    v = Vector.from_coo([100, 161, 222, 283], [1e-8, 0.5, -1e-9, np.nan], size=1000, name="v")
+    with display_options("display.chop_threshold", 1e-6):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      4  1000   FP64  sparse\n"
+            "-------------------------------------\n"
+            "   index           val\n"
+            "0    100  0.000000e+00\n"
+            "1    161  5.000000e-01\n"
+            "2    222  0.000000e+00\n"
+            "3    283           NaN"
+        )
+    v = Vector.from_coo([100, 161], [1.5, -0.25], size=1000, name="v")
+    with display_options("display.chop_threshold", 1e-6):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      2  1000   FP64  sparse\n"
+            "-------------------------------------\n"
+            "   index   val\n"
+            "0    100  1.50\n"
+            "1    161 -0.25"
+        )
+    # A complex value is compared by its magnitude, so a small part is not chopped
+    v = Vector.from_coo([100, 161], [1e-8 + 1j, 2 - 1e-9j], size=1000, name="v")
+    with display_options("display.chop_threshold", 1e-6):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      2  1000   FC64  sparse\n"
+            "-------------------------------------\n"
+            "   index       val\n"
+            "0    100  0.0+1.0j\n"
+            "1    161  2.0-0.0j"
+        )
+
+
+def test_repr_float_format():
+    # A float_format callable replaces the fixed-point and scientific formatting.
+    # A missing value is "NaN" in COO form; the dense grid already holds it as "nan".
+    v = Vector.from_coo([100, 161, 222], [1234.5, np.nan, -0.001], size=1000, name="v")
+    with display_options("display.float_format", "{:,.2f}".format):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      3  1000   FP64  sparse\n"
+            "-------------------------------------\n"
+            "   index      val\n"
+            "0    100 1,234.50\n"
+            "1    161      NaN\n"
+            "2    222    -0.00"
+        )
+    v = Vector.from_coo([0, 1, 3], [1234.5, np.nan, -0.001], size=4, name="v")
+    with display_options("display.float_format", "{:,.2f}".format):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      3     4   FP64  bitmap\n"
+            "-------------------------------------\n"
+            "index        0    1 2     3\n"
+            "value 1,234.50  nan   -0.00"
+        )
+    v = Vector.from_coo([100, 161], [1 + 2j, complex(np.nan, 1)], size=1000, name="v")
+    with display_options("display.float_format", "{:.2f}".format):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      2  1000   FC64  sparse\n"
+            "-------------------------------------\n"
+            "   index        val\n"
+            "0    100 1.00+2.00j\n"
+            "1    161        NaN"
+        )
+
+
+def test_sparse_bool_repr():
+    v = Vector.from_coo([100, 161, 222], [True, False, True], size=1000, name="v")
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size  dtype  format\n'
+        "gb.Vector      3  1000   BOOL  sparse\n"
+        "-------------------------------------\n"
+        "   index    val\n"
+        "0    100   True\n"
+        "1    161  False\n"
+        "2    222   True"
+    )
+
+
+def test_sparse_float_repr_truncated():
+    # Past display.max_rows the COO form ends in a "..." row, which makes every column
+    # an object column: each float is formatted on its own, and NaN shows as "NaN".
+    v = Vector.from_coo(
+        [100, 161, 222, 283, 344], [np.nan, 1.5, 2.0, 3.0, 4.0], size=1000, name="v"
+    )
+    with display_options("display.max_rows", 4, "display.min_rows", 2):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      5  1000   FP64  sparse\n"
+            "-------------------------------------\n"
+            "    index  val\n"
+            "0     100  NaN\n"
+            "1     161  1.5\n"
+            "...   ...  ..."
+        )
+        html_printer(v, "v")
+        assert repr_html(v) == (
+            "<div>"
+            f"{CSS_STYLE}"
+            '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+            '<table class="gb-info-table">\n'
+            "  <tr>\n"
+            '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Vector</pre></td>\n'
+            "    <td><pre>nvals</pre></td>\n"
+            "    <td><pre>size</pre></td>\n"
+            "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
+            "  </tr>\n"
+            "  <tr>\n"
+            "    <td>5</td>\n"
+            "    <td>1000</td>\n"
+            "    <td>FP64</td>\n"
+            "    <td>sparse</td>\n"
+            "  </tr>\n"
+            "</table>\n"
+            "</div>\n"
+            "</summary><div>\n"
+            "<style scoped>\n"
+            "    .dataframe tbody tr th:only-of-type {\n"
+            "        vertical-align: middle;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe tbody tr th {\n"
+            "        vertical-align: top;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe thead th {\n"
+            "        text-align: right;\n"
+            "    }\n"
+            "</style>\n"
+            '<table border="1" class="dataframe">\n'
+            "  <thead>\n"
+            '    <tr style="text-align: right;">\n'
+            "      <th></th>\n"
+            "      <th>index</th>\n"
+            "      <th>val</th>\n"
+            "    </tr>\n"
+            "  </thead>\n"
+            "  <tbody>\n"
+            "    <tr>\n"
+            "      <th>0</th>\n"
+            "      <td>100</td>\n"
+            "      <td>NaN</td>\n"
+            "    </tr>\n"
+            "    <tr>\n"
+            "      <th>1</th>\n"
+            "      <td>161</td>\n"
+            "      <td>1.5</td>\n"
+            "    </tr>\n"
+            "    <tr>\n"
+            "      <th>...</th>\n" + "      <td>...</td>\n" * 2 + "    </tr>\n"
+            "  </tbody>\n"
+            "</table>\n"
+            "</div></details></div>"
+        )
 
 
 def test_infix_expr_repr_html(A, B, v):
