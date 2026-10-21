@@ -457,13 +457,19 @@ def test_perm_cols_paths():
         for vals, dtype in [(rng.random(n), None), (1, "INT8"), (udt_vals, udt)]:
             T = Tensor.from_coo(coords, vals, dtype, shape=shape, layout=((0,), (1, 2)))
             M = T.ss.matrix
-            before = M.dup()
+            before = M.to_coo()
             for path in [[("PERM_C", (2, 1))], [("RS", 1), ("PERM_C", (2, 1))]]:
                 R, state = tl.execute(M, shape, ((0, 1, 2), 1), path)
                 assert state == ((0, 2, 1), 1)
                 U = Tensor.from_coo(coords, vals, dtype, shape=shape, layout=((0,), (2, 1)))
-                assert R.isequal(U.ss.matrix), (shape, dtype, path)
-                assert M.isequal(before)
+                # (compared as arrays: isequal on a UDT needs Numba)
+                r, c, v = R.to_coo()
+                r2, c2, v2 = U.ss.matrix.to_coo()
+                np.testing.assert_array_equal(r, r2)
+                np.testing.assert_array_equal(c, c2)
+                np.testing.assert_array_equal(v, v2)
+                for got, expected in zip(M.to_coo(), before, strict=True):
+                    np.testing.assert_array_equal(got, expected)
             assert tl._col_map_ok(M.ncols, M.nvals) == (density is not None)
     # The planner takes PERM_C where it replaces T PERM_R T: rows of about 10 entries
     shape = (10**6, 10, 100)
@@ -1790,93 +1796,163 @@ def test_mttkrp(mode):
 
 
 def _mttkrp_model(xv, xp, dense, mode):
-    letters = "ijk"
+    letters = "ijklm"[: xv.ndim]
     sub = letters + "," + ",".join(c + "r" for k, c in enumerate(letters) if k != mode)
     sub += "->" + letters[mode] + "r"
     models = [(None, xv, xp)] + [
-        (None, dense[k], np.ones_like(dense[k], bool)) for k in range(3) if k != mode
+        (None, dense[k], np.ones_like(dense[k], bool)) for k in range(xv.ndim) if k != mode
     ]
     return np_einsum(sub, *models)
 
 
-@pytest.mark.parametrize("nthreads", [1, 8])
-def test_mttkrp_kernel_paths(nthreads, monkeypatch):
-    """The Numba MTTKRP kernels read every 3-d layout in place, for every mode (owned output
-    rows, or per-chunk buffers), hypersparse rows and iso values; they hand over to the
-    relayout and then to the GraphBLAS products where they cannot run.
-    """
-    pytest.importorskip("numba")
+def _kernel_spy(monkeypatch):
+    """Record whether each call of the Numba MTTKRP kernel ran (True) or declined (False)."""
     from graphblas.core import tensor, tensor_numba
 
     calls = []
-    orig = tensor_numba.mttkrp3
+    orig = tensor_numba.mttkrp_nd
 
     def spy(*args, **kwargs):
         rv = orig(*args, **kwargs)
         calls.append(rv is not None)
         return rv
 
-    monkeypatch.setattr(tensor_numba, "mttkrp3", spy)
+    monkeypatch.setattr(tensor_numba, "mttkrp_nd", spy)
     monkeypatch.setattr(tensor, "_MTTKRP_KERNEL_MIN_NNZ", 0)
-    rng = np.random.default_rng(68)
-    shape = (20, 25, 30)
+    return calls, spy
+
+
+@pytest.mark.parametrize("nthreads", [1, 8])
+@pytest.mark.parametrize("shape", [(20, 25, 30), (8, 9, 10, 11), (4, 5, 6, 5, 4)])
+def test_mttkrp_kernel_layouts(shape, nthreads, monkeypatch):
+    """The Numba MTTKRP kernel reads every layout in place, for every mode (owned output rows
+    or per-thread buffers; runs of column entries read both ways), iso values too: 3-, 4- and
+    5-d against numpy's einsum.
+    """
+    pytest.importorskip("numba")
+    from graphblas.core import tensor_numba
+
+    calls, _ = _kernel_spy(monkeypatch)
+    rng = np.random.default_rng(68 + len(shape))
+    ndim = len(shape)
     dense = [rng.random((n, 3)) for n in shape]
     factors = [Matrix.from_dense(d) for d in dense]
-    for layout in all_layouts(3):
-        if not layout.rows or not layout.cols:
-            continue
-        for iso in [False, True]:
-            # Empty slices along every axis, so some output rows are absent
-            X, xv, xp = random_tensor(shape, rng, density=0.02, layout=layout, iso=iso)
-            assert X.ss.format in {"csr", "hypercsr"}
-            for mode in range(3):
+    layouts = [layout for layout in all_layouts(ndim) if layout.rows and layout.cols]
+    if ndim == 5:
+        layouts = layouts[::23]  # 21 of the 480, every split
+    for i, layout in enumerate(layouts):
+        # Empty slices along every axis, so some output rows are absent
+        X, xv, xp = random_tensor(shape, rng, density=0.02, layout=layout, iso=i % 4 == 0)
+        assert X.ss.format in {"csr", "hypercsr"}
+        for mode in range(ndim):
+            for runs in [True, False] if len(layout.cols) > 1 else [None]:
+                monkeypatch.setattr(tensor_numba, "_FORCE_RUNS", runs)
                 calls.clear()
                 R = X.mttkrp(factors, mode).new(nthreads=nthreads)
                 check(R, *_mttkrp_model(xv, xp, dense, mode), approx=True)
-                assert calls == [True], (layout, mode)
-    # Hypersparse rows: (i, j | k) with few fibers
-    X, xv, xp = _hyper_rows_tensor(rng, (40, 50, 6), 60)
-    dense = [rng.random((n, 3)) for n in X.shape]
-    factors = [Matrix.from_dense(d) for d in dense]
-    for mode in range(3):
-        calls.clear()
-        check(
-            X.mttkrp(factors, mode).new(nthreads=nthreads),
-            *_mttkrp_model(xv, xp, dense, mode),
-            approx=True,
-        )
-        assert calls == [True]
-    # Buffers too large in the stored layout: relayout, then the kernel that owns its rows
-    monkeypatch.setattr(tensor_numba, "mttkrp3", lambda *a, **k: spy(*a, **dict(k, max_buffer=0)))
-    for mode in [1, 2]:
-        calls.clear()
-        check(
-            X.mttkrp(factors, mode).new(nthreads=nthreads),
-            *_mttkrp_model(xv, xp, dense, mode),
-            approx=True,
-        )
-        assert calls == [False, True]
-    monkeypatch.setattr(tensor_numba, "mttkrp3", spy)
-    # The GraphBLAS products: no Numba, a sparse factor, another dtype or semiring
-    X, xv, xp = random_tensor(shape, rng, density=0.02)
+                assert calls == [True], (layout, mode, runs)
+
+
+def test_mttkrp_kernel_paths(monkeypatch):
+    """Views, R = 1, the relayout handover and the GraphBLAS fallbacks of the MTTKRP kernel."""
+    pytest.importorskip("numba")
+    from graphblas.core import tensor, tensor_numba
+
+    calls, spy = _kernel_spy(monkeypatch)
+    rng = np.random.default_rng(69)
+    shape = (8, 9, 10, 11)
+    X, xv, xp = random_tensor(shape, rng, density=0.02, layout=((0, 1), (2, 3)))
     dense = [rng.random((n, 3)) for n in shape]
     factors = [Matrix.from_dense(d) for d in dense]
+    # A permuted view: the kernel reads the same arrays in the view's layout
+    perm = (2, 0, 3, 1)
+    V = X.permute_dims(perm)
+    vv, vp = xv.transpose(perm), xp.transpose(perm)
+    vdense = [dense[a] for a in perm]
+    vfactors = [factors[a] for a in perm]
+    for mode in range(4):
+        calls.clear()
+        check(V.mttkrp(vfactors, mode).new(), *_mttkrp_model(vv, vp, vdense, mode), approx=True)
+        assert calls == [True]
+    # R = 1; one Matrix for two axes (unloaded once) and an ndarray factor
+    Y, yv, yp = random_tensor((8, 9, 9, 7), rng, density=0.03, layout=((0, 3), (1, 2)))
+    same = Matrix.from_dense(rng.random((9, 1)))
+    d1 = [rng.random((8, 1)), same.to_dense(), same.to_dense(), rng.random((7, 1))]
+    for mode in range(4):
+        calls.clear()
+        R = Y.mttkrp([Matrix.from_dense(d1[0]), same, same, d1[3]], mode).new()
+        check(R, *_mttkrp_model(yv, yp, d1, mode), approx=True)
+        assert calls == [True]
+    # Many more output rows than chunks: each chunk owns several, some of them absent
+    Z, zv, zp = random_tensor((600, 6, 7, 3), rng, density=0.01, layout=((0, 1), (2, 3)))
+    zd = [rng.random((n, 2)) for n in Z.shape]
+    for mode in [0, 2]:
+        calls.clear()
+        R = Z.mttkrp([Matrix.from_dense(d) for d in zd], mode).new(nthreads=8)
+        check(R, *_mttkrp_model(zv, zp, zd, mode), approx=True)
+        assert calls == [True]
+    # Buffers too large in the stored layout: relayout, then the kernel that owns its rows
+    monkeypatch.setattr(tensor_numba, "mttkrp_nd", lambda *a, **k: spy(*a, **dict(k, max_buffer=0)))
+    for mode in [1, 2, 3]:
+        calls.clear()
+        check(X.mttkrp(factors, mode).new(), *_mttkrp_model(xv, xp, dense, mode), approx=True)
+        assert calls == [False, True]
+    monkeypatch.setattr(tensor_numba, "mttkrp_nd", spy)
+    # The GraphBLAS products: no Numba, an empty tensor, a sparse factor, another dtype or
+    # semiring; the kernel never runs
     calls.clear()
     with monkeypatch.context() as m:
         m.setattr(tensor, "_has_numba", False)
         check(X.mttkrp(factors, 0).new(), *_mttkrp_model(xv, xp, dense, 0), approx=True)
+    E = Tensor.from_coo([np.empty(0, np.int64)] * 4, np.empty(0), shape=shape)
+    check(E.mttkrp(factors, 2).new(), np.zeros((10, 3)), np.zeros((10, 3), bool))
     sparse = list(factors)
     sparse[1] = factors[1].dup()
     del sparse[1][0, 0]
     dense_sparse = [d.copy() for d in dense]
     dense_sparse[1][0, 0] = 0
-    R = X.mttkrp(sparse, 0).new()
-    assert R.isclose(X.mttkrp(dense_sparse, 0).new())  # same values, by the products
-    Xi, xiv, xip = random_tensor(shape, rng, density=0.02, dtype=dtypes.INT64)
-    check(Xi.mttkrp(factors, 0).new(), *_mttkrp_model(xiv, xip, dense, 0), approx=True)
+    sparse_result = X.mttkrp(sparse, 0).new()
+    for dtype in [dtypes.INT64, dtypes.FP32]:
+        Xi, xiv, xip = random_tensor(shape, rng, density=0.02, dtype=dtype)
+        R = Xi.mttkrp(factors, 3).new()
+        check(R, *_mttkrp_model(xiv, xip, dense, 3), approx=True)
     R = X.mttkrp(factors, 0, op=gb.semiring.max_times).new()
     assert R.dtype == dtypes.FP64
-    assert calls == [True]  # only the dense reference above
+    assert calls == []
+    # The sparse factor's result matches the kernel's on the same values with zeros stored
+    assert sparse_result.isclose(X.mttkrp(dense_sparse, 0).new())
+    assert calls == [True]
+
+
+@pytest.mark.parametrize("shape", [(6, 7, 3000, 4), (6, 3000, 7, 4)])
+def test_mttkrp_products_order(shape, monkeypatch):
+    """Without the kernel, MTTKRP contracts the widest axis first: its intermediates have one
+    row per distinct (mode, rest) fiber, which the order choice now counts from a sample
+    (relayout cost alone picks the other order here).
+    """
+    from graphblas.core import tensor
+
+    rng = np.random.default_rng(70)
+    coords = [rng.integers(0, n, 30000) for n in shape]
+    lin = np.unique(np.ravel_multi_index(coords, shape))
+    coords = np.unravel_index(lin, shape)
+    vals = 1.0 + rng.random(lin.size)
+    X = Tensor.from_coo(coords, vals, shape=shape, layout=((0, 1), (2, 3)))
+    wide = int(np.argmax(shape))
+    for nthreads in [1, 8]:
+        assert tensor._mttkrp_order(X, 0, 64, nthreads, products=True)[-1] == wide
+    # The estimates are low, never high, and within 3x here
+    groups = {(0, 1), (0, 1, 2), (0, 1, 3), (0, 2, 3)}
+    est = tensor._sampled_fibers(X, groups)
+    for g in groups:
+        exact = np.unique(np.ravel_multi_index([coords[a] for a in g], [shape[a] for a in g]))
+        assert exact.size / 3 <= est[g] <= exact.size * 1.01, (g, est[g], exact.size)
+    xv = np.zeros(shape)
+    xv[coords] = vals
+    dense = [rng.random((n, 2)) for n in shape]
+    monkeypatch.setattr(tensor, "_has_numba", False)
+    R = X.mttkrp([Matrix.from_dense(d) for d in dense], 0).new(nthreads=1)
+    check(R, *_mttkrp_model(xv, xv != 0, dense, 0), approx=True)
 
 
 def test_mttkrp_without_numba():
@@ -1890,13 +1966,16 @@ from graphblas.core import _has_numba
 from graphblas.core.tensor import Tensor
 print("package:", gb.__file__)
 rng = np.random.default_rng(0)
-xv = np.where(rng.random((6, 7, 8)) < 0.3, rng.random((6, 7, 8)), 0)
-X = Tensor.from_coo(np.nonzero(xv), xv[xv != 0], shape=xv.shape)
-F = [rng.random((n, 3)) for n in xv.shape]
-got = X.mttkrp(F, 1).new().to_dense(fill_value=0)
-expected = np.einsum("ijk,ir,kr->jr", xv, F[0], F[2])
+err = 0.0
+for shape, sub in [((6, 7, 8), "ijk,ir,kr->jr"), ((5, 6, 7, 8), "ijkl,ir,kr,lr->jr")]:
+    xv = np.where(rng.random(shape) < 0.3, rng.random(shape), 0)
+    X = Tensor.from_coo(np.nonzero(xv), xv[xv != 0], shape=xv.shape)
+    F = [rng.random((n, 3)) for n in xv.shape]
+    got = X.mttkrp(F, 1).new().to_dense(fill_value=0)
+    expected = np.einsum(sub, xv, *[F[a] for a in range(len(shape)) if a != 1])
+    err = max(err, float(np.abs(got - expected).max()))
 print("has_numba:", _has_numba, "numba_module:", "graphblas.core.tensor_numba" in sys.modules)
-print("max_err:", float(np.abs(got - expected).max()))
+print("max_err:", err)
 """
     repo_root = Path(__file__).resolve().parents[2]
     result = subprocess.run(
