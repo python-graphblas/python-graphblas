@@ -192,10 +192,11 @@ class TensorAssigner:
 _GATHER_ENGINES = ("extract", "numba", "graphblas")
 
 
-def _index_array(index, size, axis, wraparound):
+def _index_array(index, size, axis, wraparound, mode="raise"):
     """An int64 array of coordinates along ``axis`` (an ndarray of any shape; a Scalar or int
-    is 0-d). Negatives count from the end once, unless ``wraparound`` is False; out of range
-    raises IndexError.
+    is 0-d). Negatives count from the end once, unless ``wraparound`` is False (they raise
+    IndexError); out of range raises IndexError, or with numpy's ``take`` modes ``"wrap"`` and
+    ``"clip"`` wraps or clips (a negative clips to 0).
     """
     from .scalar import Scalar
     from .tensor import _scalar_index
@@ -208,15 +209,16 @@ def _index_array(index, size, axis, wraparound):
     if arr.size and not np.issubdtype(arr.dtype, np.integer):
         raise TypeError(f"indices must be integers; got {arr.dtype} (axis {axis})")
     arr = arr.astype(np.int64)
-    if arr.size:
-        lo = -size if wraparound else 0
-        if arr.min() < lo or arr.max() >= size:
-            what = (
-                "out of bounds"
-                if arr.max() >= size or wraparound
-                else "negative (wraparound=False)"
-            )
-            raise IndexError(f"an index is {what} for axis {axis} of size {size}")
+    if not arr.size:
+        return arr
+    if not wraparound and arr.min() < 0:
+        raise IndexError(f"an index is negative (wraparound=False) for axis {axis} of size {size}")
+    if size and mode == "wrap":
+        return np.mod(arr, size)
+    if size and mode == "clip":
+        return np.clip(arr, 0, size - 1)
+    if arr.min() < -size or arr.max() >= size:
+        raise IndexError(f"an index is out of bounds for axis {axis} of size {size}")
     return np.where(arr < 0, arr + size, arr)
 
 
@@ -317,16 +319,18 @@ def _lookup_graphblas(t, rows, cols):
     return found_u[inverse], vals_u[inverse]
 
 
-def take(t, indices, axis=None, *, wraparound=True):
+def take(t, indices, axis=None, *, mode="raise", wraparound=True):
     """Numpy's ``take``: along ``axis`` (the flattened Tensor in C order when None) at
     ``indices`` (any shape); the result's shape puts ``indices.shape`` in place of the axis.
     """
     from .tensor import _normalize_axis
 
+    if mode not in {"raise", "wrap", "clip"}:
+        raise ValueError(f"mode must be 'raise', 'wrap' or 'clip'; got {mode!r}")
     if axis is None:
-        return take(t.reshape(-1), indices, 0, wraparound=wraparound)
+        return take(t.reshape(-1), indices, 0, mode=mode, wraparound=wraparound)
     axis = _normalize_axis(axis, t.ndim)
-    idx = _index_array(indices, t._shape[axis], axis, wraparound)
+    idx = _index_array(indices, t._shape[axis], axis, wraparound, mode)
     shape = t._shape[:axis] + idx.shape + t._shape[axis + 1 :]
     if "extract" in _GATHER_ENGINES:
         keys = (slice(None),) * axis + (idx.ravel(),)

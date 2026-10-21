@@ -1039,16 +1039,17 @@ class Tensor(BaseType):
             T = Tensor._from_M(T._M.dup(), T._shape, T._layout, pinned=T._pinned)
         return T
 
-    def take(self, indices, axis=None, *, wraparound=True):
+    def take(self, indices, axis=None, *, mode="raise", wraparound=True):
         """Numpy's ``take``: the entries at ``indices`` (any shape) along ``axis``, or of the
         flattened Tensor (C order) when ``axis`` is None; the result's shape puts
         ``indices.shape`` in place of the axis. A position that lands on a missing entry is
         missing. Negative indices count from the end once (``wraparound=False``: they raise
-        IndexError); out of range raises IndexError.
+        IndexError). ``mode`` is numpy's: out of range raises IndexError (``"raise"``), wraps
+        (``"wrap"``) or clips (``"clip"``, where a negative index clips to 0).
         """
         from .tensor_index import take
 
-        return take(self, indices, axis, wraparound=wraparound)
+        return take(self, indices, axis, mode=mode, wraparound=wraparound)
 
     def take_along_axis(self, indices, axis=-1, *, wraparound=True):
         """Numpy's ``take_along_axis``: ``indices`` has the Tensor's ndim and broadcasts
