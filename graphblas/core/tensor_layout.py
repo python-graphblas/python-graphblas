@@ -244,6 +244,39 @@ class _Unloaded:
         _check(rc, "GxB_load_Matrix_from_Container")
 
 
+def matrix_from_arrays(dtype, nrows, ncols, fmt, *, x, h=None, p=None, i=None, b=None, nvals):
+    """A by-row Matrix made of these arrays through the Container, which takes them over in
+    O(1) (no copy, no check: an import scans the values for iso, 210 ms for 265e6). ``fmt``
+    is "hypercsr" (h, p, i, x), "bitmapr" (b, x) or "fullr" (x); each array must come from an
+    allocator GraphBLAS can free (``numpy.empty`` by default) and is a read-only view after.
+    """
+    from suitesparse_graphblas.utils import give_buffer
+
+    M = new_matrix(dtype, nrows, ncols)
+    with _Unloaded(M) as cont:
+        for vec, arr in ((cont.p, p), (cont.h, h), (cont.i, i), (cont.b, b), (cont.x, x)):
+            if arr is None:
+                continue
+            arr = np.ascontiguousarray(arr)
+            gtype = dtype if vec == cont.x else lookup_dtype(arr.dtype)
+            with give_buffer(arr) as (ptr, nbytes, arena):
+                _check(
+                    lib.GxB_Vector_load(
+                        vec, ptr, gtype.gb_obj, arr.size, nbytes, lib.GrB_DEFAULT + arena, NULL
+                    ),
+                    "GxB_Vector_load",
+                )
+        cont.format = {
+            "hypercsr": lib.GxB_HYPERSPARSE, "bitmapr": lib.GxB_BITMAP, "fullr": lib.GxB_FULL
+        }[fmt]  # fmt: skip
+        cont.nvals = nvals
+        cont.nrows_nonempty = h.size if h is not None else -1
+        cont.ncols_nonempty = -1
+        cont.iso = False
+        cont.jumbled = False
+    return M
+
+
 def flip_orientation(M):
     """In place, O(1): an (n x m) Matrix held by column becomes the (m x n) Matrix of its
     transpose held by row (or the reverse), sharing the same arrays (DESIGN.md 4.1, s8).
