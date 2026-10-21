@@ -3724,7 +3724,7 @@ def _extract_recipe(updater, t, sel, keys):
             _store(updater, t._M[ridx, cidx], shape, layout)
             return
     # Repeated indices repeat the entries, as for Matrix (SuiteSparse's extract does; the
-    # filter below expands them; the row pick cannot)
+    # filter below expands them; the row pick takes slices and ints only)
     repeated = {
         a for a, s in enumerate(sel) if isinstance(s, np.ndarray) and np.unique(s).size != s.size
     }
@@ -3736,7 +3736,6 @@ def _extract_recipe(updater, t, sel, keys):
         options.append((C_X_ROW[ti] * tl.nonempty_rows(t._M) + C_X_LIST[ti] * listed, "extract"))
     if (
         nv
-        and not repeated
         and t._M.ss.format == "hypercsr"
         and not t.dtype._is_udt
         and all(a in rows and (isinstance(keys[a], slice) or isinstance(sel[a], int)) for a in axes)
