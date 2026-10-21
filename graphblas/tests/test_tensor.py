@@ -4259,3 +4259,39 @@ def test_einsum_last_contraction_on_target(monkeypatch):
     both = want[1] | vp
     cv = np.where(want[1], want[0], 0) + np.where(vp, vv, 0)
     check(C, np.where(both, cv, 0), both, approx=True)
+
+
+def test_census():
+    """The private census records decisions only while on, and ``force`` takes an offered
+    option (here the ewise layout of the smaller operand) without changing the result.
+    """
+    from graphblas.core import tensor_census as census
+
+    rng = np.random.default_rng(703)
+    X, xv, xp = random_tensor((4, 5, 6), rng, density=0.6, layout=((0, 1), (2,)))
+    Y, yv, yp = random_tensor((4, 5, 6), rng, density=0.2, layout=((2,), (0, 1)))
+    want = (np.where(xp & yp, xv * yv, 0), xp & yp)
+    assert not census.on
+    n0 = len(census.records)
+    (X * Y).new()
+    assert len(census.records) == n0  # off: nothing recorded
+    census.start()
+    try:
+        check((X * Y).new(), *want, approx=True)
+        recs = census.stop()
+        lay = [r for r in recs if r["point"] == "ewise.layout"]
+        assert lay
+        assert set(lay[0]["costs"]) == {"operand 0", "operand 1"}
+        other = next(k for k in lay[0]["costs"] if k != lay[0]["choice"])
+        census.start()
+        census.force["ewise.layout"] = other
+        R = (X * Y).new()
+        forced = [r for r in census.stop() if r["point"] == "ewise.layout"]
+        assert forced[0]["choice"] == other
+        assert forced[0]["forced"]
+        check(R, *want, approx=True)
+    finally:
+        census.stop()
+        census.force.clear()
+        census.records.clear()
+    assert not census.on
