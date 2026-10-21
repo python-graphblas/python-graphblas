@@ -5829,6 +5829,61 @@ def test_udt_one_field_repr():
     )
 
 
+def test_truncated_udt_repr():
+    # The rows and columns shown are read with extract and assign, which need no
+    # operator, so a UDT object too large to show whole also shows without Numba
+    udt = dtypes.register_anonymous(np.dtype([("tr_x", np.int16)]), "tr_rec")
+    v = Vector(udt, size=300, name="v")
+    v[:] = (1,)
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size   dtype      format\n'
+        "gb.Vector    300   300  tr_rec  full (iso)\n"
+        "------------------------------------------\n"
+        "index   0     1     2     3     4     5    ...   294   295   296   297   298   299\n"
+        "value  (1,)  (1,)  (1,)  (1,)  (1,)  (1,)  ...  (1,)  (1,)  (1,)  (1,)  (1,)  (1,)"
+    )
+    A = Matrix(udt, nrows=100, ncols=300, name="A")
+    A[0, :] = (2,)
+    A[99, 299] = (3,)
+    repr_printer(A, "A")
+    assert repr(A) == (
+        '"A"        nvals  nrows  ncols   dtype    format\n'
+        "gb.Matrix    301    100    300  tr_rec  hypercsr\n"
+        "------------------------------------------------\n"
+        "     0     1     2     3     4     5    ...   294   295   296   297   298   299\n"
+        "0   (2,)  (2,)  (2,)  (2,)  (2,)  (2,)  ...  (2,)  (2,)  (2,)  (2,)  (2,)  (2,)\n"
+        "1                                       ...                                    \n"
+        "2                                       ...                                    \n"
+        "3                                       ...                                    \n"
+        "4                                       ...                                    \n"
+        "..   ...   ...   ...   ...   ...   ...  ...   ...   ...   ...   ...   ...   ...\n"
+        "95                                      ...                                    \n"
+        "96                                      ...                                    \n"
+        "97                                      ...                                    \n"
+        "98                                      ...                                    \n"
+        "99                                      ...                                (3,)"
+    )
+    repr_printer(A.T, "A.T")
+    assert repr(A.T) == (
+        '"A.T"                nvals  nrows  ncols   dtype    format\n'
+        "gb.TransposedMatrix    301    300    100  tr_rec  hypercsc\n"
+        "----------------------------------------------------------\n"
+        "       0  1  2  3  4  5  6  7  8  9  10  ... 89 90 91 92 93 94 95 96 97 98    99\n"
+        "0    (2,)                                ...                                    \n"
+        "1    (2,)                                ...                                    \n"
+        "2    (2,)                                ...                                    \n"
+        "3    (2,)                                ...                                    \n"
+        "4    (2,)                                ...                                    \n"
+        "..    ... .. .. .. .. .. .. .. .. .. ..  ... .. .. .. .. .. .. .. .. .. ..   ...\n"
+        "295  (2,)                                ...                                    \n"
+        "296  (2,)                                ...                                    \n"
+        "297  (2,)                                ...                                    \n"
+        "298  (2,)                                ...                                    \n"
+        "299  (2,)                                ...                                (3,)"
+    )
+
+
 def test_empty():
     v = Vector(int, 0)
     repr_printer(v, "v")

@@ -8,7 +8,7 @@ import shutil
 
 import numpy as np
 
-from .. import backend, config, monoid, unary
+from .. import backend, config, unary
 from ..dtypes import BOOL
 from ..exceptions import OutOfMemory
 from .infix import _is_literal
@@ -175,22 +175,15 @@ def _update_matrix_array(arr, matrix, rows, row_offset, columns, column_offset, 
         if type(matrix) is TransposedMatrix:
             parent = matrix._matrix
             submatrix = Matrix(parent.dtype, parent._nrows, parent._ncols, name="")
-            if parent._nvals > 0:  # pragma: no branch
-                # Get val to support iso-valued matrices
-                val = parent.reduce_scalar(monoid.any, allow_empty=False).new(name="")
-                submatrix(parent.S)[columns, rows] = val
-                submatrix(submatrix.S)[...] = parent
+            submatrix[columns, rows] = parent[columns, rows].new(name="")
             if row_offset is not None or column_offset is not None:
                 submatrix = submatrix[column_offset:, row_offset:].new(name="")
             submatrix = submatrix.T
         else:
             if mask is None:
+                # Extract and assign need no operator, which a UDT lacks without Numba
                 submatrix = Matrix(matrix.dtype, matrix._nrows, matrix._ncols, name="")
-                # Get val to support iso-valued matrices
-                if matrix._nvals > 0:
-                    val = matrix.reduce_scalar(monoid.any).new(name="")
-                    submatrix(matrix.S)[rows, columns] = val
-                    submatrix(submatrix.S)[...] = matrix
+                submatrix[rows, columns] = matrix[rows, columns].new(name="")
             else:
                 submatrix = Matrix("UINT8", matrix._nrows, matrix._ncols, name="")
                 if mask.structure:
@@ -227,12 +220,9 @@ def _update_vector_array(arr, vector, columns, column_offset, *, mask=None):
                 subvector(vector.V)[...] = 0 if mask.complement else 1
     else:
         if mask is None:
+            # Extract and assign need no operator, which a UDT lacks without Numba
             subvector = Vector(vector.dtype, vector._size, name="")
-            # Get val to support iso-valued vectors
-            if vector._nvals > 0:
-                val = vector.reduce(monoid.any).new(name="")
-                subvector(vector.S)[columns] = val
-                subvector(subvector.S)[...] = vector
+            subvector[columns] = vector[columns].new(name="")
         else:
             subvector = Vector("UINT8", vector._size, name="")
             if mask.structure:
