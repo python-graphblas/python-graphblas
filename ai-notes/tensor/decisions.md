@@ -100,8 +100,10 @@ the API settles. `design.md` describes how the code implements these.
     `import graphblas` does not load any Tensor code.
 21. **Interop follows Tensor rules.** When a Matrix, Vector, Scalar or ndarray meets a Tensor
     in an infix expression, the result is a Tensor computed by Tensor rules. Matrix methods
-    called with a Tensor operand raise with a hint, because only infix defers. In-place
-    operators on a Matrix with a Tensor operand raise rather than rebind the name.
+    called with a Tensor operand raise with a hint, because only infix defers. The exceptions
+    are `isequal` and `isclose`, which defer to the Tensor, so `A.isequal(T)` and
+    `T.isequal(A)` agree. In-place operators on a Matrix with a Tensor operand raise rather
+    than rebind the name.
 22. **Tensor may go beyond Matrix and Vector.** It is a new type and can adopt better behavior.
     Features that Matrix and Vector could also have are listed in `backport-candidates.md`.
 23. **Core changes come in their own commits,** when they are justified and easy to review:

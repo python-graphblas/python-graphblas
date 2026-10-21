@@ -85,8 +85,9 @@ by running python-graphblas on this branch, unless the entry says otherwise. Sta
     - Status: candidate (testing).
 16. **`isequal` and `isclose` across kinds.**
     - Tensor: `T.isequal(A)` accepts a Matrix, Vector or Scalar of the same shape.
-    - Matrix and Vector: `A.isequal(T)` raises TypeError (checked).
-    - Status: candidate, for the Matrix and Vector side.
+    - Matrix and Vector: `A.isequal(T)` defers to the Tensor, but a Matrix and a Vector (or
+      a Scalar) still cannot be compared with each other: `A.isequal(v)` raises TypeError.
+    - Status: candidate, for comparisons between Matrix, Vector and Scalar.
 
 ## Already the same, nothing to backport
 
