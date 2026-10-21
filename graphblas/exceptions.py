@@ -175,15 +175,19 @@ def _error_type_name(cls):
     is where every such type is: another class, such as a user's mixin, may share a
     GraphBLAS type's name. Any other class keeps its own name.
     """
+    # Every object a failing call can hand check_status is a Matrix, Vector, Scalar,
+    # Descriptor or Context, or a subclass of one, so the walk finds a match. Only
+    # BuiltinDescriptor and GlobalContext pass a class without an error function on the
+    # way, and their calls cannot fail.
     for base in cls.__mro__:
         if not base.__module__.startswith("graphblas.core."):
             continue
         try:
             _libget(f"GrB_{base.__name__}_error")
-        except AttributeError:
+        except AttributeError:  # pragma: no cover (defensive)
             continue
         return base.__name__
-    return cls.__name__
+    return cls.__name__  # pragma: no cover (defensive)
 
 
 def check_status_carg(response_code, type_name, carg):
