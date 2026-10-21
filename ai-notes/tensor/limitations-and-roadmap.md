@@ -29,9 +29,11 @@ and the data sets are those named in `design.md`.
   test suite, u7, skew, hyper, Zipf, Uber, NIPS and part of Enron. Its later re-measurement
   finished only u7, because machine load spoiled the rest. For NELL-2, the TTM and MTTKRP
   engine choices rest on earlier forced-engine measurements, and only its slices were rerun
-  after the last changes. Uber's and NIPS's contraction and slice rows were not run.
-- **The independent oracles, the benchmark harness and the workload scripts** are not in the
-  repository (see `verification.md`), so the checks they made cannot be rerun from it yet.
+  after the last changes. Uber's and NIPS's contraction and slice rows were not run by the census
+  (Uber's slices were measured later, with the benchmark kit: see "Known performance gaps").
+- **The independent oracles** are not in the repository (see `verification.md`), so the
+  checks they made cannot be rerun from it yet. The benchmark harness and the workload scripts
+  are, in `scripts/tensor_bench/` (`benchmarks.md`).
 
 ## Missing features
 
@@ -57,6 +59,9 @@ and the data sets are those named in `design.md`.
   numbers are for a copy of the tensor already in that mode's order, built outside its timing
   (7.6 s on NELL-2). An in-place kernel for those modes, or opt-in per-mode copies, would
   close it.
+- **Slices of Uber (4-d, layout (0, 1, 2 | 3))** are 2.2-16x behind pydata/sparse and scipy at 1
+  thread, and 2.9-11x at 8 (`benchmarks.md`, the fresh-clone run). Each slab touches a few
+  entries in many rows of the stored Matrix.
 - **einsum's per-call overhead** shows at millisecond scale: about 45 us for one contraction,
   97 us for an MTTKRP through einsum, and 128 us for three operands.
 - **Moved operands are not kept.** A relayout made for one operation is dropped afterwards, so
@@ -87,8 +92,9 @@ and the data sets are those named in `design.md`.
 2. **CI on every platform** python-graphblas supports, with a SuiteSparse 10 job on each.
    This closes the Windows questions above, and runs the suite without Numba and with the JIT
    off there too.
-3. **Bring the verification into the repository:** the independent oracles as slow tests,
-   and the benchmark harness under `benchmarks/`, so that anyone can rerun them.
+3. **Bring the rest of the verification into the repository:** the independent oracles, as
+   slow tests, so that anyone can rerun them (the benchmark kit is in `scripts/tensor_bench/`,
+   and asv benchmarks for the Tensor in `benchmarks/tensor_ops.py`).
 4. **Refit the cost constants** on x86, and with a script driven by the census instead of by
    hand. Then fix the mispricings listed above, and finish the census on NELL-2 and Enron.
 5. **Performance:** TTM along non-stored modes (an in-place kernel, or opt-in per-mode copies);
