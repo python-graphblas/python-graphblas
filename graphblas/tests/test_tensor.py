@@ -2540,7 +2540,7 @@ gb.ss.config["jit_c_control"] = sys.argv[1]
 tensor._TTM_KERNEL_MIN_NNZ = 0
 rng = np.random.default_rng(0)
 shape = (30, 40, 50)
-xv = np.where(rng.random(shape) < 0.002, rng.random(shape), 0)
+xv = np.where(rng.random(shape) < 0.0005, rng.random(shape), 0)  # (fibers under 1/16)
 X = Tensor.from_coo(np.nonzero(xv), xv[xv != 0], shape=shape, layout=((0, 1), (2,)))
 U = rng.random((50, 11))
 expected = np.tensordot(xv, U, ([2], [0]))
@@ -2745,8 +2745,9 @@ def test_udt_engine_new_kernel_jit_failure(case, tmp_path):
 
 
 def test_ttm_engine_choice(monkeypatch):
-    """With both engines, the UDT one takes the stored order with a hypersparse output and
-    R <= _TTM_UDT_MAX_R; the Numba one the rest. Without Numba, the UDT one takes all.
+    """With both engines, the UDT one takes the stored order with a hypersparse output (fibers
+    under SuiteSparse's hyper switch) and R <= _TTM_UDT_MAX_R; the Numba one the rest. Without
+    Numba, the UDT one takes all.
     """
     if backend != "suitesparse":
         pytest.skip("SuiteSparse only")
@@ -2759,14 +2760,19 @@ def test_ttm_engine_choice(monkeypatch):
     orig = tensor_numba.ttm
     monkeypatch.setattr(tensor_numba, "ttm", lambda *a, **k: nb.append(1) or orig(*a, **k))
     rng = np.random.default_rng(97)
-    # Few fibers: hypersparse output
-    H, hv, hp = random_tensor((30, 40, 50), rng, density=0.002, layout=((0, 1), (2,)))
+    # Few fibers (under SuiteSparse's hyper switch, 1/16): hypersparse output
+    H, hv, hp = random_tensor((30, 40, 50), rng, density=0.0005, layout=((0, 1), (2,)))
+    assert 16 * tl.count_nonempty_rows(H._M) < H._M._nrows
+    # Some (Uber's 14%): a sparse output, not hypersparse
+    S, sv, sp = random_tensor((30, 40, 50), rng, density=0.003, layout=((0, 1), (2,)))
+    assert 0.1 < tl.count_nonempty_rows(S._M) / S._M._nrows < 0.5
     # Most fibers: bitmap output
     B, bv, bp = random_tensor((10, 12, 50), rng, density=0.2, layout=((0, 1), (2,)))
     cases = [
         (H, hv, hp, 2, 4, "udt"),
         (H, hv, hp, 2, tensor._TTM_UDT_MAX_R + 1, "numba"),
         (H, hv, hp, 0, 4, "numba"),  # (a relayout)
+        (S, sv, sp, 2, 4, "numba"),
         (B, bv, bp, 2, 4, "numba"),
     ]
     for X, xv, xp, mode, R, engine in cases:

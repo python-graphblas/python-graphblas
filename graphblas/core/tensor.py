@@ -3005,8 +3005,9 @@ _TTM_KERNEL_MIN_NNZ = 2**16
 #                TTM, so it is also what any list falls back to
 _TTM_ENGINES = ("udt", "numba", "products")
 # Where both engines run, the UDT one is faster only in the stored order with a hypersparse
-# output and R up to 32 (NELL-2 mode 2: 77 / 139 / 329 ms against 92 / 174 / 354 at R = 8 /
-# 16 / 32, 1 thread; 14 / 24 / 55 against 18 / 31 / 62 at 8); slower with a bitmap output
+# output (fewer nonempty fibers than SuiteSparse's hyper switch, 1/16) and R up to 32
+# (NELL-2 mode 2: 77 / 139 / 329 ms against 92 / 174 / 354 at R = 8 / 16 / 32, 1 thread;
+# 14 / 24 / 55 against 18 / 31 / 62 at 8); slower with a bitmap output
 # (u7: 25-86 against 27-77 ms at R = 16, 1 thread, and 1.4-1.8x slower at 8), at R = 64,
 # and after a relayout (NELL-2 modes 0 and 1: 1.6-1.8x slower). Phase 5c measurements.
 _TTM_UDT_MAX_R = 32
@@ -3089,7 +3090,10 @@ def _ttm_udt(updater, a, b, op, a_axes, b_axes):
         and (
             path
             or b._shape[1 - kb] > _TTM_UDT_MAX_R
-            or 2 * tl.count_nonempty_rows(a._M) >= a._M._nrows
+            # A hypersparse output as SuiteSparse decides it (nonempty rows under its hyper
+            # switch, 1/16): Uber's 14% of fibers, a sparse output, ran 1.4-1.5x faster with
+            # Numba (phase 9a census), NELL-2's 0.3% 1.24x faster with UDT
+            or tl.count_nonempty_rows(a._M) >= tl._global_hyper_switch() * a._M._nrows
         )
     ):
         return None  # (the Numba engine is faster here: see _TTM_UDT_MAX_R)
