@@ -13,10 +13,13 @@ import graphblas as gb
 from graphblas import Matrix, Scalar, Vector, backend, binary, dtypes, monoid
 from graphblas.core import tensor_layout as tl
 from graphblas.core.tensor import Layout, Tensor, TensorExpression
+from graphblas.core.tensor import _has_container as tensor_has_container
 from graphblas.exceptions import DimensionMismatch, IndexOutOfBound
 
 if backend != "suitesparse":
     pytest.skip("Tensor needs the suitesparse backend", allow_module_level=True)
+if not tensor_has_container():
+    pytest.skip("Tensor needs SuiteSparse:GraphBLAS 10 or later", allow_module_level=True)
 
 
 def all_layouts(ndim):
