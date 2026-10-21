@@ -4295,3 +4295,30 @@ def test_census():
         census.force.clear()
         census.records.clear()
     assert not census.on
+
+
+def test_bcast_options_offered_once():
+    """A broadcast multiply offers the relayout option only for layouts in another axis order:
+    one already in place, or one a reshape reaches, is the diagonal option (no duplicate).
+    """
+    from graphblas.core import tensor_census as census
+
+    rng = np.random.default_rng(704)
+    X, xv, xp = random_tensor((4, 5, 6), rng, density=0.6, layout=((0, 1), (2,)))
+    v = rng.random(6)
+    census.start()
+    try:
+        R = (X * v).new()  # v along the column group: in place
+        S = (X * rng.random((5, 6))).new()  # along axes 1 and 2: one reshape
+        recs = [r for r in census.stop() if r["point"] == "bcast" and r.get("costs")]
+    finally:
+        census.stop()
+        census.records.clear()
+    check(R, np.where(xp, xv * v, 0), xp, approx=True)
+    assert S.nvals == X.nvals
+    assert recs
+    for r in recs:
+        costs = r["costs"]
+        if "relayout, diagonal" in costs:
+            others = [c for k, c in costs.items() if k != "relayout, diagonal"]
+            assert costs["relayout, diagonal"] not in others

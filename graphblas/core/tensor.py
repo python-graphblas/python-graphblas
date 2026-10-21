@@ -2099,8 +2099,10 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
                 targets.add((r + f, len(r)))
             if row_op is not None and tl._valid_split(shape, f + r, len(f)):
                 targets.add((f + r, len(f)))
+    # Those in this axis order are the split moves above (q), offered once: only the others
+    targets = frozenset(t for t in targets if t[0] != seq)
     if targets:
-        cost = tl.plan(shape, L.state, frozenset(targets), nv, nthreads or tl._nthreads())[0]
+        cost = tl.plan(shape, L.state, targets, nv, nthreads or tl._nthreads())[0]
         options.append((cost + C_DIAG[ti] * nv, None, None, False))
     if not options:
         # No diagonal side works (an operator with no flipped form): replicate instead
@@ -2143,7 +2145,7 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
             return
         q = None
     if q is None:
-        M, L = tl.relayout(M, shape, L, frozenset(targets), nthreads=nthreads)
+        M, L = tl.relayout(M, shape, L, targets, nthreads=nthreads)
         side = "cols" if set(L.cols) == Fset and col_op is not None else "rows"
     elif q != p:
         M = M.ss.reshape(tl.prod(shape, seq[:q]), tl.prod(shape, seq[q:]))
