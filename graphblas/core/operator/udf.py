@@ -140,6 +140,72 @@ def _summarize_numba_typing_error(exc):
     return "Numba could not compile the function for these input types"
 
 
+def _udt_ret_type(parent_op, numba_ret_type, *dtypes):
+    """Return the operator's declared ``ret_dtype``, else infer one from the UDF.
+
+    Inference can only name a type that is already an operand, so an output
+    UDT that appears nowhere in the inputs is unreachable without this. A
+    declared type is checked against the UDF's return first.
+    """
+    if (ret_dtype := parent_op._ret_dtype) is not None:
+        _check_declared_ret_type(ret_dtype, numba_ret_type)
+        return ret_dtype
+    return _resolve_udt_return_type(numba_ret_type, *dtypes)
+
+
+def _check_declared_ret_type(ret_dtype, numba_ret_type):
+    """Reject a UDF whose return cannot be written as the declared ``ret_dtype``.
+
+    Inference only names a type the return can be written as; a declared
+    type skips it. Left to the wrapper, a mismatch is a raw Numba error when
+    the wrapper compiles, or a silent wrong answer when it runs: a longer
+    tuple loses its extra values, an array written to a scalar keeps its
+    first element, and a tuple written to an array element leaves it
+    uninitialized. Shapes, and record leaves that can be ``None``, are
+    checked afterwards by :func:`_check_udf_fills_output`.
+    """
+    nt = numba.core.types
+    np_type = ret_dtype.np_type
+    if ret_dtype._is_udt and np_type.names is not None:
+        nleaves = len(list(_iter_record_leaves(np_type)))
+        if isinstance(numba_ret_type, nt.BaseTuple):
+            if len(numba_ret_type.types) == nleaves:
+                return
+            # The tuple is flat over the leaves, so a nested record counts
+            # the fields of its inner records, not the inner records.
+            nested = "" if nleaves == len(np_type.names) else " once nested records are flattened"
+            raise UdfParseError(
+                f"UDT UDF returned a tuple of length {len(numba_ret_type.types)}, but "
+                f"ret_dtype={ret_dtype} has {nleaves} fields{nested}. "
+                f"Return one value per field."
+            )
+        if numba_ret_type == ret_dtype.numba_type:
+            return  # a ``ret_dtype`` value, such as an operand of that type
+        wanted = f"a tuple of its {nleaves} fields, or a {ret_dtype} value"
+    elif ret_dtype._is_udt and np_type.subdtype is not None:
+        if isinstance(numba_ret_type, (nt.Array, nt.Number, nt.Boolean)):
+            return  # a scalar fills every slot; the shape is checked later
+        wanted = "an array, or a scalar to fill every slot"
+    else:
+        if isinstance(numba_ret_type, (nt.Number, nt.Boolean)):
+            return
+        wanted = "a scalar"
+    if isinstance(numba_ret_type, nt.BaseTuple):
+        returned = f"a tuple of length {len(numba_ret_type.types)}"
+    elif isinstance(numba_ret_type, nt.Array):
+        returned = "an array"
+    elif isinstance(numba_ret_type, nt.Record):
+        returned = f"a record with fields {list(numba_ret_type.fields)}"
+    elif isinstance(numba_ret_type, (nt.Optional, nt.NoneType)):
+        returned = "a value that can be None"
+    else:
+        returned = f"{numba_ret_type}"
+    raise UdfParseError(
+        f"UDT UDF returned {returned}, which cannot be written as "
+        f"ret_dtype={ret_dtype}. Return {wanted}."
+    )
+
+
 def _resolve_udt_return_type(numba_ret_type, *dtypes):
     """Resolve a Numba return type to a DataType, matching Tuple returns to an input UDT.
 
