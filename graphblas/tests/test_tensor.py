@@ -2578,6 +2578,70 @@ def test_ttm_udt_jit_failure(control, numba, tmp_path):
     assert lines["has_numba"] == str(numba == "numba"), report
 
 
+def _engine_spies(monkeypatch):
+    """Spies on every TTM and MTTKRP engine: the names of those that produced a result."""
+    from graphblas.core import tensor, tensor_numba, tensor_udt
+
+    ran = []
+
+    def spy(name, module, attr, ok=lambda rv: rv is not None):
+        orig = getattr(module, attr)
+
+        def wrapper(*args, **kwargs):
+            rv = orig(*args, **kwargs)
+            if ok(rv):
+                ran.append(name)
+            return rv
+
+        monkeypatch.setattr(module, attr, wrapper)
+
+    spy("udt", tensor_udt, "ttm")
+    spy("numba", tensor_numba, "ttm")
+    spy("numba", tensor_numba, "mttkrp_nd")
+    spy("compacted", tensor, "_ttm_compacted")
+    spy("products", tensor, "_contract", ok=lambda rv: True)
+    monkeypatch.setattr(tensor, "_TTM_KERNEL_MIN_NNZ", 0)
+    monkeypatch.setattr(tensor, "_MTTKRP_KERNEL_MIN_NNZ", 0)
+    return ran
+
+
+def test_engines_selectable(monkeypatch):
+    """Every TTM engine (udt, numba, compacted, products) and MTTKRP engine (numba, udt,
+    products) can be forced, and each gives the numpy result; a forced engine that does not
+    run here falls back to the products.
+    """
+    if backend != "suitesparse":
+        pytest.skip("SuiteSparse only")
+    pytest.importorskip("numba")
+    _require_jit_compile()
+    from graphblas.core import tensor
+
+    ran = _engine_spies(monkeypatch)
+    rng = np.random.default_rng(99)
+    X, xv, xp = random_tensor((30, 40, 50), rng, density=0.003, layout=((0, 1), (2,)))
+    assert X.ss.format == "hypercsr"
+    U = rng.random((50, 4))
+    for engine in ["udt", "numba", "compacted", "products"]:
+        monkeypatch.setattr(tensor, "_TTM_ENGINES", (engine,))
+        ran.clear()
+        check(X.tensordot(U, ([2], [0])).new(), *_ttm_model(xv, xp, U, 2), approx=True)
+        assert ran == [engine], engine
+    # Not in the stored order: compacted does not run, so the products do
+    monkeypatch.setattr(tensor, "_TTM_ENGINES", ("compacted",))
+    ran.clear()
+    U0 = rng.random((30, 4))
+    check(X.tensordot(U0, ([0], [0])).new(), *_ttm_model(xv, xp, U0, 0), approx=True)
+    assert ran == ["products"]
+    dense = [rng.random((n, 3)) for n in X.shape]
+    factors = [Matrix.from_dense(d) for d in dense]
+    for engine, expected in [("numba", ["numba"]), ("udt", ["udt"]), ("products", [])]:
+        monkeypatch.setattr(tensor, "_MTTKRP_ENGINES", (engine,))
+        for mode in range(3):
+            ran.clear()
+            check(X.mttkrp(factors, mode).new(), *_mttkrp_model(xv, xp, dense, mode), approx=True)
+            assert ran == expected, (engine, mode)
+
+
 def test_ttm_engine_choice(monkeypatch):
     """With both engines, the UDT one takes the stored order with a hypersparse output and
     R <= _TTM_UDT_MAX_R; the Numba one the rest. Without Numba, the UDT one takes all.
@@ -2806,7 +2870,7 @@ def test_mttkrp_products_udt_first(shape, monkeypatch):
             check(R, *_mttkrp_model(xv, xp, dense, mode), approx=True)
             assert calls, (layout, mode)
             with monkeypatch.context() as m:
-                m.setattr(tensor, "_MTTKRP_UDT_FIRST", False)
+                m.setattr(tensor, "_MTTKRP_ENGINES", ("products",))
                 calls.clear()
                 assert R.isclose(X.mttkrp(factors, mode).new(), rel_tol=1e-12)
                 assert calls == []
