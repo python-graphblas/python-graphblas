@@ -2478,12 +2478,89 @@ def _tensordot_recipe(updater, a, b, op, a_axes, b_axes):
         x, w, axis = (a, b, a_axes[0]) if x_left else (b, a, b_axes[0])
         if _ttv(updater, x, w, axis, op, x_left):
             return
+    if (rv := _ttm_numba(updater, a, b, op, a_axes, b_axes)) is not None:
+        src, layout, shape = rv
+        _store(updater, src, shape, layout, fresh=True)
+        return
     src, layout, shape = _contract(updater, a, b, op, a_axes, b_axes)
     if not layout.cols and layout.rows and _fixed_layout(updater) is None:
         M, layout = _healthy(_materialize(src), shape, layout)
         _store(updater, M, shape, layout, fresh=True)
     else:
         _store(updater, src, shape, layout)
+
+
+# The TTM kernel compiles per R on first use, so small tensors keep the product
+_TTM_KERNEL_MIN_NNZ = 2**16
+
+
+def _ttm_numba(updater, a, b, op, a_axes, b_axes):
+    """TTM (an FP64 tensor's axis contracted with a full FP64 factor, plus_times) by a Numba
+    kernel over the stored arrays (``tensor_numba.ttm``): ``(src, layout, shape)`` as from
+    ``_contract``, or None to use the product. The contracted axis must be the last column
+    axis; the tensor stays as it is when it is (with leading column axes too: their runs are
+    the output fibers), else it moves to the cheapest layout that has it there.
+
+    The output is today's storage: hypersparse rows of R values, or full when every output
+    fiber exists. (One mxm was 2.4-2.7x behind TACO in the stored order: its Gustavson saxpy
+    on hypersparse rows, then the output's row hash; DESIGN_phase5 1.1.)
+    """
+    if not _has_numba or len(a_axes) != 1 or b.ndim != 2 or a.ndim < 2:
+        return None
+    if op.name != "plus_times" or op.return_type != FP64 or a.dtype != FP64 or b.dtype != FP64:
+        return None
+    if a._M._nvals < max(_TTM_KERNEL_MIN_NNZ, 1) or b._M._nvals != math.prod(b._shape):
+        return None
+    m, kb = a_axes[0], b_axes[0]
+    free_a = tuple(x for x in range(a.ndim) if x != m)
+    nthreads = _nthreads(updater)
+    targets = frozenset(
+        ((*perm, m), q)
+        for perm in (itertools.permutations(free_a) if len(free_a) <= 4 else [free_a])
+        for q in range(1, len(free_a) + 1)  # (with no row axis there is one row: no threads)
+        if tl._valid_split(a._shape, (*perm, m), q)
+    )
+    if not targets:
+        return None
+    _, _, state = tl.plan(a._shape, a._layout.state, targets, a._M._nvals, nthreads)
+    layout = Layout.from_state(state)
+    X = _in_layout(a, layout, updater.opts.get("nthreads"))
+    if X.ss.format not in {"csr", "hypercsr"}:
+        return None
+    from . import tensor_numba
+
+    # The factor as a dense (K x R) array, K along the contracted axis
+    Bm = b._M if b._layout.rows == (0,) else tl.transpose(b._M)  # (b's axis 0 | axis 1)
+    U = np.ascontiguousarray(Bm.to_dense(fill_value=0.0))
+    if kb == 1:
+        U = np.ascontiguousarray(U.T)
+    R = U.shape[1]
+    out = {x: i for i, x in enumerate(free_a)}
+    rows = tuple(out[x] for x in (*layout.rows, *layout.cols[:-1]))
+    shape = (*(a._shape[x] for x in free_a), R)
+    nrows = tl.prod(shape, rows)
+    with contextlib.ExitStack() as stack:
+        cont = stack.enter_context(tl._Unloaded(X))
+        p, h, ci = (stack.enter_context(tl._VectorArray(v)) for v in (cont.p, cont.h, cont.i))
+        xv = stack.enter_context(tl._VectorArray(cont.x, np.float64))
+        kind, *parts = tensor_numba.ttm(
+            (p.array, np.empty(0, np.int64) if h.array is None else h.array, ci.array, xv.array,
+             bool(cont.iso)),
+            tuple(a._shape[x] for x in layout.cols), U, nrows,
+            updater.opts.get("nthreads") or nthreads,
+        )  # fmt: skip
+    # The parts are handed over, not copied or checked
+    if kind == "full":
+        src = tl.matrix_from_arrays(FP64, nrows, R, "fullr", x=parts[0], nvals=nrows * R)
+    elif kind == "bitmap":
+        V, B, nvals = parts
+        src = tl.matrix_from_arrays(FP64, nrows, R, "bitmapr", x=V, b=B, nvals=nvals)
+    else:
+        hout, indptr, cols, V = parts
+        src = tl.matrix_from_arrays(
+            FP64, nrows, R, "hypercsr", x=V, h=hout, p=indptr, i=cols, nvals=V.size
+        )
+    return src, Layout(rows, (len(shape) - 1,)), shape
 
 
 def _as_factor(F, nrows, within):
