@@ -2617,9 +2617,9 @@ def _engine_spies(monkeypatch):
 
 
 def test_engines_selectable(monkeypatch):
-    """Every TTM engine (udt, numba, compacted, products) and MTTKRP engine (numba, udt,
-    products) can be forced, and each gives the numpy result; a forced engine that does not
-    run here falls back to the products.
+    """Every TTM engine (udt, numba, products) and MTTKRP engine (numba, udt, products) can be
+    forced, and each gives the numpy result; a forced engine that does not run here falls back
+    to the products, which take the hypersparse rows compacted in the stored order.
     """
     if backend != "suitesparse":
         pytest.skip("SuiteSparse only")
@@ -2632,13 +2632,13 @@ def test_engines_selectable(monkeypatch):
     X, xv, xp = random_tensor((30, 40, 50), rng, density=0.003, layout=((0, 1), (2,)))
     assert X.ss.format == "hypercsr"
     U = rng.random((50, 4))
-    for engine in ["udt", "numba", "compacted", "products"]:
+    for engine, expected in [("udt", "udt"), ("numba", "numba"), ("products", "compacted")]:
         monkeypatch.setattr(tensor, "_TTM_ENGINES", (engine,))
         ran.clear()
         check(X.tensordot(U, ([2], [0])).new(), *_ttm_model(xv, xp, U, 2), approx=True)
-        assert ran == [engine], engine
-    # Not in the stored order: compacted does not run, so the products do
-    monkeypatch.setattr(tensor, "_TTM_ENGINES", ("compacted",))
+        assert ran == [expected], engine
+    # Not in the stored order: the rows are not compacted, the plain product runs
+    monkeypatch.setattr(tensor, "_TTM_ENGINES", ("products",))
     ran.clear()
     U0 = rng.random((30, 4))
     check(X.tensordot(U0, ([0], [0])).new(), *_ttm_model(xv, xp, U0, 0), approx=True)
