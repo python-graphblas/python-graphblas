@@ -108,7 +108,7 @@ def test_default_layout():
     assert tl.default_layout((5,)) == Layout((), (0,))
     assert tl.default_layout((5, 6)) == Layout((0,), (1,))
     assert tl.default_layout((10, 20, 30)) == Layout((0, 1), (2,))
-    # DESIGN.md 7.6: cases D, H and Uber
+    # Uniform 1000^3 at 1e7 entries, hypersparse (2^19)^3 at 1e6, and FROSTT Uber
     assert tl.default_layout((1000, 1000, 1000), 10**7) == Layout((0, 1), (2,))
     assert tl.default_layout((2**19,) * 3, 10**6) == Layout((0,), (1, 2))
     assert tl.default_layout((183, 24, 1140, 1717), 3_309_490) == Layout((0, 1), (2, 3))
@@ -400,7 +400,7 @@ def test_relayout_all_pairs(shape):
         T = Tensor.from_coo(coords, vals, shape=shape, layout=src)
         for dst in states:
             # Price as if large so the plans use the real primitives (not REBUILD), at both
-            # thread counts, as the s12 spike did.
+            # thread counts.
             for nthreads in [8, 1]:
                 _, path, final = tl.plan(shape, src.state, frozenset([dst.state]), 10**7, nthreads)
                 assert final == dst.state
@@ -417,8 +417,8 @@ def test_relayout_all_pairs(shape):
             assert U.ss.matrix.isequal(ref.ss.matrix)
 
 
-def test_relayout_plans_match_spike():
-    """The planner finds the measured best chains of s1c/s12 for 1000^3, 1e7 nnz."""
+def test_relayout_plans_match_measured():
+    """The planner finds the chains measured fastest for 1000^3, 1e7 nnz."""
     shape = (1000, 1000, 1000)
     src = ((0, 1, 2), 2)
     expected = {
@@ -431,7 +431,7 @@ def test_relayout_plans_match_spike():
     for tgt, kinds in expected.items():
         _, path, _ = tl.plan(shape, src, frozenset([(tgt, 2)]), 10**7, 8)
         assert [e[0] for e in path] == kinds, (tgt, path)
-    # Hypersparse case H (about 1 entry per row): no P @ M, whose rows pay a hash lookup each;
+    # Hypersparse (about 1 entry per row): no P @ M, whose rows pay a hash lookup each;
     # REBUILD (27 / 141 ms at 8 / 1 threads) or a PERM_C chain (25 / 104 ms)
     _, path, _ = tl.plan(
         (2**19,) * 3, ((0, 1, 2), 1), frozenset([((1, 0, 2), 2)]), 10**6, 8, hyper1=True
@@ -1333,7 +1333,7 @@ def test_tensordot_semirings_masks_and_errors():
 
 
 # --------------------------------------------------------------------------------------------
-# Phase 2a.1: core hooks (Matrix, Vector, Scalar and operators meet a Tensor)
+# Core hooks (Matrix, Vector, Scalar and operators meet a Tensor)
 
 
 def test_core_hooks():
@@ -1383,7 +1383,7 @@ def test_core_hooks():
 
 
 # --------------------------------------------------------------------------------------------
-# Phase 2a.2 / 2a.3: Matrix, Vector and ndarray operands; broadcasting
+# Matrix, Vector and ndarray operands; broadcasting
 
 
 def np_bcast(kind, xv, xp, yv, yp, ufunc, left_default=0, right_default=0):
@@ -1552,7 +1552,7 @@ def test_broadcast_mult_strategies(layout, monkeypatch):
 
 
 # --------------------------------------------------------------------------------------------
-# Phase 2a.4: matmul
+# matmul
 
 
 def np_matmul(xv, xp, yv, yp):
@@ -1656,7 +1656,7 @@ def test_embed_block_diagonal():
 
 
 # --------------------------------------------------------------------------------------------
-# Phase 2a.5: einsum, mttkrp, unfold, TTV
+# einsum, mttkrp, unfold, TTV
 
 
 def np_einsum(sub, *models):
@@ -3102,7 +3102,7 @@ def test_ttv(layout):
 
 
 # --------------------------------------------------------------------------------------------
-# Phase 2a.6: indexing, from_dense/to_dense, from_matrices/to_matrices
+# Indexing, from_dense/to_dense, from_matrices/to_matrices
 
 
 def np_outer_index(arr, key):
@@ -3325,7 +3325,7 @@ def test_relayout_rejects_layout_of_another_rank():
 
 
 # --------------------------------------------------------------------------------------------
-# Phase 2b: planner pricing and strategy choices
+# Planner pricing and strategy choices
 
 
 def test_nonempty_row_ids_and_perm_pricing():

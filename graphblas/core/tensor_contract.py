@@ -83,10 +83,9 @@ def _contract(updater, a, b, op, a_axes, b_axes, a_batch=(), b_batch=()):
 
     Without batch axes: relayout so the contracted axes are exactly a's column group and b's
     row group, in the same order, then one mxm. With batch axes they lead both row groups and
-    a's columns are embedded block-diagonally, so one mxm does every batch (DESIGN.md 3.6).
+    a's columns are embedded block-diagonally, so one mxm does every batch.
     Only a is embedded: the product keeps b's columns, so it is narrow and needs no
-    unembedding, and it beats a loop over the batches at 1 thread too (unlike s5, whose wide
-    product had to be sorted).
+    unembedding, and it beats a loop over the batches at 1 thread too.
     """
     nthreads = _nthreads(updater)
     opt_nthreads = updater.opts.get("nthreads")
@@ -263,11 +262,11 @@ def _ttv(updater, x, w, axis, op, x_left):
     options = []  # (cost, kind, split)
     if layout.cols == (axis,) and xw_op is not None:
         # One pass with no data movement; the planner's relayout estimates run low, so do
-        # not let them compete (round 1: relayout + mxm 56 ms vs vxm 36 ms)
+        # not let them compete (relayout + mxm 56 ms against vxm 36 ms, measured)
         options.append((0.0, "mxv", p))
     elif layout.rows == (axis,) and wx_op is not None and M._ncols <= 4 * max(nv, 1):
-        # vxm writes into the whole column group: fine up to a few times the data (round 1
-        # repro: 2.6x, 36 ms vs 56), slow into a hypersparse one (hyper 2^38: 87 ms vs 23)
+        # vxm writes into the whole column group: fine up to a few times the data (at 2.6x,
+        # 36 ms vs 56), slow into a hypersparse one (hyper 2^38: 87 ms vs 23)
         options.append((0.0, "vxm", p))
     for q in range(n + 1) if not options else ():
         if not tl._valid_split(x._shape, seq, q):
