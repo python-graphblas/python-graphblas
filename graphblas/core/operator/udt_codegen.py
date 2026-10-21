@@ -1419,6 +1419,97 @@ def _make_jit_c_definition(op_name, py_op, dtype, arity):
     return c_name, f"void {c_name} ({params}) {{ {assigns} }}"
 
 
+def _c_type_name(dtype):
+    """The C name SuiteSparse knows ``dtype`` by: a UDT's pinned JIT name, or the C type of
+    a built-in scalar dtype. ``None`` when it has none.
+    """
+    if dtype.np_type.names is None and dtype.np_type.subdtype is None:
+        return NP_TO_C_TYPES.get(dtype.np_type)
+    typedef_info = _udt_c_typedef(dtype.jit_c_name or dtype.name, dtype.np_type)
+    return None if typedef_info is None else typedef_info[0]
+
+
+def _c_operand(side, path, stored, computed):
+    """C source reading operand ``side`` (``*x``, or the element at ``path``) in the type the
+    op computes in. A conversion in C (integer to floating, a real to complex, a narrower
+    type to a wider one) gives what numpy's ``astype`` gives, which the cfunc uses.
+    """
+    expr = f"(*{side})" if path is None else f"{side}->{path}"
+    if stored == computed:
+        return expr
+    return f"(({NP_TO_C_TYPES[computed]}) ({expr}))"
+
+
+def _make_jit_c_mixed_definition(op_name, py_op, dtype, dtype2, ret_type, input_types):
+    """Generate a JIT C function definition for a lifted op whose operand types differ, or
+    whose result type differs from them: a scalar with an array or record UDT (either
+    order), two array UDTs of one shape with different element types, two records with the
+    same fields and different leaf types.
+
+    The signature has a C type for each of z, x and y, so the C name carries all three. A
+    scalar operand is read as ``(*x)`` for every element or leaf. Returns ``(c_name,
+    c_defn)``, or ``None`` when one of the types has no C name, when an array operand
+    broadcasts (another shape than the result's), when a record has an array leaf, or when
+    an element is not computed in the result's element type (integer ``truediv`` computes
+    in its operands' type and returns float); those keep the Numba cfunc.
+
+    ``input_types`` is what :func:`udt._udt_op_types` returns with ``ret_type``: each
+    element is computed as the built-in op on the operands' element types computes it,
+    after converting both operands to that type, as the cfunc does.
+    """
+    names = [_c_type_name(t) for t in (ret_type, dtype, dtype2)]
+    if None in names:
+        return None
+    z_name, x_name, y_name = names
+    np_x, np_y, np_z = dtype.np_type, dtype2.np_type, ret_type.np_type
+
+    def assign(target, x_path, y_path, x_stored, y_stored, types, out):
+        in_x, in_y = types
+        if not in_x == in_y == out:
+            return None
+        lhs = _c_operand("x", x_path, x_stored, in_x)
+        rhs = _c_operand("y", y_path, y_stored, in_y)
+        return _c_assign_binary(py_op, target, lhs, rhs, out)
+
+    if np_z.names is not None:
+        leaves_z = list(_iter_record_leaves(np_z))
+        leaves_x = list(_iter_record_leaves(np_x)) if np_x.names is not None else None
+        leaves_y = list(_iter_record_leaves(np_y)) if np_y.names is not None else None
+        stmts = []
+        for i, (_py, c, leaf) in enumerate(leaves_z):
+            if leaf.shape:
+                return None
+            x_path, x_stored = (None, np_x) if leaves_x is None else (c, leaves_x[i][2])
+            y_path, y_stored = (None, np_y) if leaves_y is None else (c, leaves_y[i][2])
+            stmt = assign(f"z->{c}", x_path, y_path, x_stored, y_stored, input_types[i], leaf)
+            if stmt is None:
+                return None
+            stmts.append(stmt)
+        body = " ".join(stmts)
+    else:
+        base_z, shape_z = np_z.subdtype
+        operands = []
+        for np_t in (np_x, np_y):
+            if np_t.subdtype is None:
+                operands.append((None, np_t))
+            elif np_t.subdtype[1] != shape_z:
+                return None  # (broadcasting reads through an index map)
+            else:
+                operands.append(("v[i]", np_t.subdtype[0]))
+        (x_path, x_stored), (y_path, y_stored) = operands
+        stmt = assign("z->v[i]", x_path, y_path, x_stored, y_stored, input_types[0], base_z)
+        if stmt is None:
+            return None
+        body = f"for (int64_t i = 0 ; i < {reduce(mul, shape_z)} ; i++) {{ {stmt} }}"
+    # The length of x's name keeps two pairs from sharing a C name ("A" and "B_C", "A_B" and
+    # "C"), and keeps it from any one-type name (``{op_name}_{type}``, whose type name cannot
+    # start with a digit). SuiteSparse finds a compiled kernel by its op's name, so two ops
+    # with one name would run each other's kernel.
+    c_name = f"{op_name}_{len(x_name)}_{x_name}_{y_name}"
+    params = f"{z_name} *z, const {x_name} *x, const {y_name} *y"
+    return c_name, f"void {c_name} ({params}) {{ {body} }}"
+
+
 def _make_jit_c_comparison_definition(op_name, dtype, *, is_eq):
     """Generate a JIT C function definition for ``binary.eq[udt]`` /
     ``binary.ne[udt]``.
@@ -1517,6 +1608,20 @@ def set_jit_c_comparison_on_op(gb_obj, op_name, dtype, set_string_func, *, is_eq
     if result is None:
         return None
     _set_jit_c_strings(gb_obj, *result, set_string_func)
+    return result
+
+
+def set_jit_c_mixed_on_op(gb_obj, op_name, py_op, dtype, dtype2, ret_type, input_types):
+    """Generate and set the JIT C name and definition of a lifted binary op on two types
+    (:func:`_make_jit_c_mixed_definition`). Returns ``(c_name, c_defn)``, or ``None`` when
+    the op has no C form (it keeps the Numba cfunc). Callers check ``_has_jit_set`` first,
+    as for :func:`set_jit_c_on_op`: without it, SuiteSparse has no
+    ``GrB_BinaryOp_set_String``.
+    """
+    result = _make_jit_c_mixed_definition(op_name, py_op, dtype, dtype2, ret_type, input_types)
+    if result is None:
+        return None
+    _set_jit_c_strings(gb_obj, *result, lib.GrB_BinaryOp_set_String)
     return result
 
 
