@@ -70,7 +70,10 @@ def _load_cached(path, name, text):
             tmp.replace(path)
         except OSError:
             tmp.unlink(missing_ok=True)
-            raise
+            # Another process may have written the file meanwhile: on Windows the rename then
+            # fails while that process has the file open. Its file is as good as ours.
+            if not (path.exists() and path.read_bytes() == data):
+                raise
     module = types.ModuleType(name)
     module.__file__ = str(path)
     # (registered: Numba imports the module by name when it loads cached code)
