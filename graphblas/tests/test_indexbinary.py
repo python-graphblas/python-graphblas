@@ -60,6 +60,8 @@ def test_typed_call():
 
     op = indexbinary.register_anonymous(add_theta)
     typed = op[int]
+    assert typed.orig_func is add_theta
+    assert typed._numba_func is op._numba_func
     binop = typed(10)
     assert binop.opclass == "BinaryOp"
 
@@ -209,6 +211,10 @@ def test_default_theta():
     B = Matrix.from_coo([0], [0], [5])
     C = A.ewise_mult(B, binop).new()
     assert C.to_coo()[2][0] == 8  # 3 + 5 + 0
+    # Binding no theta binds 0, to the typed op or the op given a dtype
+    for binop in [op[int](), op(dtype=int)]:
+        assert binop.type == dtypes.INT64
+        assert A.ewise_mult(B, binop).new().isequal(C, check_dtype=True)
 
 
 def test_bool_return():
@@ -236,6 +242,14 @@ def test_scalar_theta():
     B = Matrix.from_coo([0], [0], [5])
     C = A.ewise_mult(B, binop).new()
     assert C.to_coo()[2][0] == 50  # 3 + 5 + 42
+    # A C scalar or a GraphBLAS scalar, to the typed op or the op typed when it runs
+    for theta in [
+        Scalar.from_value(42, is_cscalar=True),
+        Scalar.from_value(42, is_cscalar=False),  # pragma: is_grbscalar
+    ]:
+        assert op[int](theta).type == dtypes.INT64
+        for binop in [op[int](theta), op(theta)]:
+            assert A.ewise_mult(B, binop).new().isequal(C, check_dtype=True)
 
 
 def test_parameterized():
@@ -435,6 +449,12 @@ def test_bind_raw_udt_theta_without_dtype():
         # Its array UDT is shared, under the name it got first (another test's)
         with pytest.raises(KeyError, match="_ibo_add_theta does not work with "):
             indexbinary.register_anonymous(_ibo_add_theta)(np.array([1, 2, 3]))
+        # With the dtype known, a value that is not one raises its own error
+        rec_udt = dtypes.register_anonymous(np.dtype([("rnd_a", np.int64)]), "_RawThetaRec")
+        with pytest.raises(TypeError, match="not 'object'"):
+            op[rec_udt](object())
+        with pytest.raises(TypeError, match="not 'object'"):
+            op(object(), dtype=rec_udt)
     finally:
         delattr(indexbinary, "raw_no_dtype_op")
 
@@ -547,7 +567,7 @@ def test_bound_ibo_memory_bounded():
     pytest.importorskip("resource")
     import resource
 
-    if hasattr(indexbinary, "leak_test_bound_ibo_op"):
+    if hasattr(indexbinary, "leak_test_bound_ibo_op"):  # pragma: no cover (defensive)
         delattr(indexbinary, "leak_test_bound_ibo_op")
     indexbinary.register_new("leak_test_bound_ibo_op", _ibo_add_theta)
     op = indexbinary.leak_test_bound_ibo_op
@@ -646,6 +666,22 @@ def test_type_the_op_does_not_take():
     for expr in [lambda: op[rec], lambda: op(Scalar.from_value((1.0, 2), rec), dtype=rec)]:
         with pytest.raises(KeyError, match="does not work with _IbtRec"):
             expr()
+
+
+def test_unbound_op_is_not_an_operator():
+    """An IndexBinaryOp is an operator once a theta is bound to it."""
+
+    def add_vals(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+        return x + y + theta
+
+    v = Vector.from_coo([0, 1], [1, 2])
+    A = Matrix.from_coo([0, 1], [1, 0], [1, 2])
+    for is_udt in [False, True]:
+        op = indexbinary.register_anonymous(add_vals, is_udt=is_udt)
+        with pytest.raises(TypeError, match="Bad type for argument `op` in Vector.reduce"):
+            v.reduce(op)
+        with pytest.raises(TypeError, match="Bad type for argument `op` in Matrix.reduce_rowwise"):
+            A.reduce_rowwise(op)
 
 
 def test_with_mask():
