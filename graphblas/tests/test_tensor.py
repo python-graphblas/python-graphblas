@@ -1732,14 +1732,24 @@ def test_einsum_operands_semirings_and_errors(monkeypatch):
     check(
         einsum("ijk,kl->ijl", X, Y).new(mask=Mk.S), np.where(mp & ep, ev, 0), mp & ep, approx=True
     )
-    # MTTKRP goes to Tensor.mttkrp, never the Khatri-Rao product
+    # MTTKRP goes to Tensor.mttkrp's recipe, never the Khatri-Rao product, in both orders
     called = []
-    orig = Tensor.mttkrp
-    monkeypatch.setattr(Tensor, "mttkrp", lambda *a, **k: called.append(1) or orig(*a, **k))
+    orig = tensor_mod._mttkrp_recipe
+    monkeypatch.setattr(
+        tensor_mod, "_mttkrp_recipe", lambda *a, **k: called.append(1) or orig(*a, **k)
+    )
     einsum("ijk,jr,kr->ir", X, B, C).new()
     assert called
+    R = einsum("ijk,rj,kr->ri", X, B.T, C).new()
+    assert len(called) == 2
+    check(
+        R.T,
+        *np_einsum("ijk,jr,kr->ir", (X, xv, xp), (B, B, ones2[0]), (C, C.to_dense(), ones2[1])),
+        approx=True,
+    )
     monkeypatch.undo()
-    # without opt_einsum the greedy path is used
+    # without opt_einsum the greedy path is used (the plan is cached by shapes: start afresh)
+    tensor_mod._einsum_plan.cache_clear()
     monkeypatch.setitem(__import__("sys").modules, "opt_einsum", None)
     A1, a1v, a1p = random_tensor((3, 4), rng)
     A2, a2v, a2p = random_tensor((4, 5), rng)
@@ -1749,6 +1759,7 @@ def test_einsum_operands_semirings_and_errors(monkeypatch):
         R, *np_einsum("ij,jk,kl->il", (A1, a1v, a1p), (A2, a2v, a2p), (A3, a3v, a3p)), approx=True
     )
     monkeypatch.undo()
+    tensor_mod._einsum_plan.cache_clear()
     with pytest.raises(NotImplementedError, match="diagonal"):
         einsum("iik->k", Tensor(float, 3, 3, 4))
     with pytest.raises(NotImplementedError, match=r"\.\.\."):
@@ -4164,3 +4175,30 @@ def test_isequal_matrix_vector_scalar():
     assert not X.isequal(A.dup(dtypes.INT64), check_dtype=True)
     with pytest.raises(TypeError, match="isequal"):
         X.isequal(np.ones((3, 4)))
+
+
+def test_einsum_plan_cache():
+    """Einsum's plan (parse, MTTKRP pattern, path) is cached by subscripts and shapes; another
+    shape plans again, and a result never depends on the cache.
+    """
+    from graphblas.core import tensor as tensor_mod
+
+    einsum = tensor_mod.einsum
+    rng = np.random.default_rng(700)
+    X, xv, xp = random_tensor((3, 4, 5), rng, density=0.6)
+    Y, yv, yp = random_tensor((5, 2), rng, density=0.6)
+    tensor_mod._einsum_plan.cache_clear()
+    for sub in ["ijk,kl->ijl", "ijk,kl->lij", "ijk,kl->il"]:
+        want = np_einsum(sub, (X, xv, xp), (Y, yv, yp))
+        check(einsum(sub, X, Y).new(), *want, approx=True)
+        check(einsum(sub, X, Y).new(), *want, approx=True)
+    info = tensor_mod._einsum_plan.cache_info()
+    assert (info.hits, info.misses) == (3, 3)
+    Z, zv, zp = random_tensor((5, 3), rng, density=0.6)
+    check(einsum("ijk,kl->ijl", X, Z).new(), *np_einsum("ijk,kl->ijl", (X, xv, xp), (Z, zv, zp)),
+          approx=True)  # fmt: skip
+    assert tensor_mod._einsum_plan.cache_info().misses == 4
+    # An explicit path (a list: unhashable) plans without the cache
+    A1 = random_tensor((3, 4), rng)[0]
+    R = einsum("ij,jk,kl->il", A1, A1.T, A1, optimize=[(0, 1), (0, 1)]).new()
+    assert R.shape == (3, 4)
