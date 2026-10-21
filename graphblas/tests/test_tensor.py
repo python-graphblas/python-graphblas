@@ -4063,6 +4063,21 @@ def test_gather_errors_and_options():
     E = Tensor(dtypes.FP64, (2, 3))
     assert E.vindex[[0, 1], [2, 0]].nvals == 0
     assert X.vindex[1, 2, 3].to_dense() == 23.0
+    # numpy's take modes
+    xv = np.arange(24.0).reshape(2, 3, 4)
+    idx = np.array([[-7, -1, 0], [3, 5, 11]])
+    for mode in ["wrap", "clip"]:
+        for axis in [None, 1, 2]:
+            want = np.take(xv, idx, axis, mode=mode)
+            np.testing.assert_array_equal(X.take(idx, axis, mode=mode).to_dense(), want)
+    with pytest.raises(IndexError, match="negative"):
+        X.take([-1], axis=1, mode="wrap", wraparound=False)
+    with pytest.raises(IndexError, match="out of bounds"):
+        X.take([5], axis=1, mode="raise")
+    with pytest.raises(ValueError, match="mode"):
+        X.take([0], axis=1, mode="clamp")
+    with pytest.raises(IndexError, match="out of bounds"):
+        Tensor(dtypes.FP64, (2, 0)).take([0], axis=1, mode="wrap")
 
 
 @pytest.mark.parametrize("max_listed", [None, 0])
