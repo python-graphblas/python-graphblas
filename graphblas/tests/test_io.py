@@ -257,6 +257,24 @@ def test_from_networkx_structure_matches_the_general_path(graph_cls, dtype):
 
 
 @pytest.mark.skipif("not nx")
+@pytest.mark.parametrize("weight", [None, "weight"])
+@pytest.mark.parametrize("nedges", [1, 2, 3])
+@pytest.mark.parametrize("dtype", ["record", "FP64[2]", "INT64[3]"])
+def test_from_networkx_rejects_udt_dtype(weight, nedges, dtype):
+    # numpy read the weights as the fields or elements of one UDT value, so a type
+    # whose element count matched the number of weights came back as its base
+    # dtype (FP64[2] with two edges gave FP64), and other counts raised unrelated
+    # numpy errors.
+    if dtype == "record":
+        dtype = dtypes.register_anonymous(
+            np.dtype([("from_networkx_x", np.int64), ("from_networkx_y", np.float64)])
+        )
+    G = nx.path_graph(nedges + 1)
+    with pytest.raises(ValueError, match="not the UDT"):
+        gb.io.from_networkx(G, weight=weight, dtype=dtype)
+
+
+@pytest.mark.skipif("not nx")
 @pytest.mark.parametrize("wt", [np.inf, -np.inf, 1e308])
 def test_from_networkx_undirected_selfloop_keeps_its_weight(wt):
     # Summing wt + wt - wt on the diagonal, as nx.to_scipy_sparse_array does,
