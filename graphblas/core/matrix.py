@@ -3944,6 +3944,11 @@ class TransposedMatrix:
         return self._matrix.gb_obj[0]
 
     @property
+    def _exc_arg(self):
+        # check_status reports an error against the Matrix: GraphBLAS has no transposed type
+        return self._matrix
+
+    @property
     def name(self):
         return f"{self._matrix.name}.T"
 

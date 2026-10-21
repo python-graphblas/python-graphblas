@@ -4837,6 +4837,20 @@ def test_subclass_error_text():
         assert texts[0] == texts[1], texts
 
 
+@pytest.mark.skipif("not suitesparse")
+def test_transposed_error_text():
+    # GraphBLAS has no transposed type, so an error on A.T is reported against A. It said
+    # "Unable to get the error string for type TransposedMatrix", asking for a bug report.
+    A = Matrix(int, 2, 3)
+    A.ss.export(give_ownership=True)  # leaves no GraphBLAS object, so these calls fail
+    with pytest.raises(gb.exceptions.NullPointer) as expected:
+        A.wait()
+    for func in [A.T.wait, lambda: repr(A.T)]:
+        with pytest.raises(gb.exceptions.NullPointer) as exc_info:
+            func()
+        assert str(exc_info.value) == str(expected.value)
+
+
 def test_transpose_hint():
     # A.transpose() should point at the .T property rather than fail with a
     # bare "no attribute" message; transpose is not a method here.
