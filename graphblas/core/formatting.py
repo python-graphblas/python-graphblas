@@ -357,6 +357,9 @@ def _make_coo_frame(label_arrays, add_dots):
         values = np.asarray(values)
         if add_dots:
             out.append(_Column(label, [*values.tolist(), "..."], "object", False))
+        elif values.ndim > 1:
+            # Array UDT values: a list per entry, as the dense grid shows them
+            out.append(_Column(label, values.tolist(), "object", False))
         else:
             kind, numeric = _dtype_kind_numeric(values.dtype)
             out.append(_Column(label, values.tolist(), kind, numeric))
