@@ -4400,6 +4400,19 @@ def test_repr_max_rows_zero(monkeypatch):
             "9     649  13.5\n"
             "...   ...   ..."
         )
+    # A terminal with room for one row leaves none to show. main's pandas renderer
+    # raised TypeError here (pandas fails on a frame truncated to no rows).
+    v = Vector.from_coo([100, 161, 222], [1 + 2j, -1j, 2.5], size=1000, name="v")
+    monkeypatch.setenv("LINES", "4")
+    with display_options("display.max_rows", 0):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      3  1000   FC64  sparse\n"
+            "-------------------------------------\n"
+            "    index  val\n"
+            "..    ...  ..."
+        )
 
 
 def test_repr_max_rows_one():
@@ -5826,6 +5839,19 @@ def test_udt_one_field_repr():
         "-----------------------------------------\n"
         "index     0 1      2\n"
         "value  (5,)    (-7,)"
+    )
+    # In COO form too, where main's pandas renderer raised TypeError on the record column
+    v = Vector(udt, size=1000, name="v")
+    v[100] = (5,)
+    v[500] = (-7,)
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size      dtype  format\n'
+        "gb.Vector      2  1000  one_field  sparse\n"
+        "-----------------------------------------\n"
+        "   index    val\n"
+        "0    100   (5,)\n"
+        "1    500  (-7,)"
     )
 
 
