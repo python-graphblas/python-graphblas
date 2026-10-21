@@ -4322,3 +4322,30 @@ def test_bcast_options_offered_once():
         if "relayout, diagonal" in costs:
             others = [c for k, c in costs.items() if k != "relayout, diagonal"]
             assert costs["relayout, diagonal"] not in others
+
+
+def test_relayout_allow_perm():
+    """``allow_perm`` gates each permutation edge: True both, "rows" PERM_R, "cols" PERM_C,
+    False neither; a UDT gets PERM_C only (PERM_R is a product). Results are the same.
+    """
+    from graphblas.core import tensor_layout as tl
+
+    shape = (6, 5, 4, 3)
+    src = ((0, 1, 2, 3), 1)
+    tgt = frozenset([((0, 1, 3, 2), 1)])  # two column axes swapped: one PERM_C
+    tgt_r = frozenset([((1, 0, 2, 3), 2)])  # two row axes swapped (split 2): one PERM_R
+    banned = {True: set(), "cols": {"PERM_R"}, "rows": {"PERM_C"}, False: {"PERM_R", "PERM_C"}}
+    for allow, no in banned.items():
+        _, path, _ = tl.plan(shape, src, tgt, 300, 8, allow_perm=allow)
+        used = {e[0] for e in path}
+        assert not used & no, allow
+        assert ("PERM_C" in used) == (allow in {True, "cols"}), allow  # the cheapest, when allowed
+    src2 = ((0, 1, 2, 3), 2)
+    for allow in ["cols", False]:
+        _, path, _ = tl.plan(shape, src2, tgt_r, 300, 8, allow_perm=allow)
+        assert "PERM_R" not in {e[0] for e in path}, allow
+    rng = np.random.default_rng(705)
+    X, xv, xp = random_tensor(shape, rng, density=0.5, layout=((0,), (1, 2, 3)))
+    for allow in [True, "rows", "cols", False]:
+        M, L = tl.relayout(X._M, shape, X.layout, tl.Layout((0,), (1, 3, 2)), allow_perm=allow)
+        check(Tensor._from_M(M, shape, L), xv, xp)

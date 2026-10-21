@@ -561,7 +561,7 @@ def _neighbors(state, shape, nnz, ti, hyper1, allow_perm, total_ok, reshaped=Fal
                 cost = cost2
                 threads = 2
         yield ("T", threads), (seq[p:] + seq[:p], n - p), cost + C_STEP, False
-    if allow_perm and p >= 2:
+    if allow_perm in {True, "rows"} and p >= 2:
         nrows = prod(shape, seq[:p])
         R = expected_rows(nrows, nnz)
         kind = "hyper" if nrows > 4 * R else "reshaped" if reshaped else "sparse"
@@ -579,7 +579,7 @@ def _neighbors(state, shape, nnz, ti, hyper1, allow_perm, total_ok, reshaped=Fal
         for perm in itertools.permutations(seq[:p]):
             if perm != seq[:p]:
                 yield ("PERM_R", perm), (perm + seq[p:], p), cost, False
-    if n - p >= 2:
+    if allow_perm in {True, "cols"} and n - p >= 2:
         # Values untouched, so any dtype; the sort of each row is priced in, although a
         # following transpose would skip it
         ncols = prod(shape, seq[p:])
@@ -602,7 +602,9 @@ def plan(shape, src, targets, nnz, nthreads, *, hyper1=False, allow_perm=True):
     """Cheapest edge sequence from state ``src`` to any state in ``targets`` (a frozenset).
 
     Returns ``(cost_ns, path, final_state)``. A path is a list of edges: ``("RS", q)``,
-    ``("T", nthreads or None)``, ``("PERM_R", new_row_seq)`` or ``("REBUILD", state)``.
+    ``("T", nthreads or None)``, ``("PERM_R", new_row_seq)``, ``("PERM_C", new_col_seq)`` or
+    ``("REBUILD", state)``. ``allow_perm`` is which permutation edges may be used: True (both),
+    ``"rows"`` (PERM_R), ``"cols"`` (PERM_C) or False.
     """
     if src in targets:
         return 0.0, [], src
@@ -880,9 +882,11 @@ def relayout(M, shape, src, targets, *, nthreads=None, allow_perm=None):
         nthreads = _nthreads()
     nvals = M._nvals
     if allow_perm is None:
-        allow_perm = not M.dtype._is_udt
-    if census.on and census.force.get("relayout") == "no PERM":
-        allow_perm = False
+        # PERM_R is a product (P @ M) and needs a semiring for the values; PERM_C moves column
+        # indices only, so it takes any type
+        allow_perm = "cols" if M.dtype._is_udt else True
+    if census.on and (want := census.force.get("relayout")) in _CENSUS_PERMS:
+        allow_perm = _perms_value(_perms_set(allow_perm) - _CENSUS_PERMS[want])
     hyper1 = density(M)
     cost, path, _ = plan(shape, src_state, targets, nvals, nthreads, hyper1=hyper1,
                          allow_perm=allow_perm)  # fmt: skip
@@ -901,6 +905,17 @@ def relayout(M, shape, src, targets, *, nthreads=None, allow_perm=None):
     return M, Layout.from_state(state)
 
 
+_CENSUS_PERMS = {"no PERM": {"rows", "cols"}, "no PERM_R": {"rows"}, "no PERM_C": {"cols"}}
+
+
+def _perms_set(allow_perm):
+    return {True: {"rows", "cols"}, False: set()}.get(allow_perm, {allow_perm})
+
+
+def _perms_value(kinds):
+    return True if len(kinds) == 2 else kinds.pop() if kinds else False
+
+
 def _census_relayout(shape, src, targets, nvals, nthreads, hyper1, allow_perm, cost, path):
     """Note an executed plan: its edges, and what the cheapest plan without each kind of edge
     it uses would cost (the planner's margin for that kind; REBUILD is always there).
@@ -913,9 +928,11 @@ def _census_relayout(shape, src, targets, nvals, nthreads, hyper1, allow_perm, c
             if kind == "REBUILD":
                 continue
             if kind in {"PERM_R", "PERM_C"}:
-                if allow_perm:
-                    without[kind] = plan(shape, src, targets, nvals, nthreads, hyper1=hyper1,
-                                         allow_perm=False)[0]  # fmt: skip
+                rest = _perms_value(
+                    _perms_set(allow_perm) - {"rows" if kind == "PERM_R" else "cols"}
+                )
+                without[kind] = plan(shape, src, targets, nvals, nthreads, hyper1=hyper1,
+                                     allow_perm=rest)[0]  # fmt: skip
             else:
                 # Without RS or T, only REBUILD and permutations remain priced alike: bound
                 # the margin by REBUILD's cost
