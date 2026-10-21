@@ -46,10 +46,21 @@ from .vector import Vector
 __all__ = ["Layout", "Tensor", "TensorExpression", "einsum"]
 
 
+def _has_container():
+    """Whether this SuiteSparse has the Container API (SuiteSparse:GraphBLAS 10), which the
+    Tensor is built on.
+    """
+    return hasattr(lib, "GxB_Container_new")
+
+
 def _check_backend():
+    """Every public way to make a Tensor calls this first (einsum makes its operands Tensors),
+    so another backend, or a SuiteSparse without the Container API, fails at once with one
+    message.
+    """
     if backend != "suitesparse":
         raise NotImplementedError("Tensor requires the suitesparse backend")
-    if not hasattr(lib, "GxB_Container_new"):  # pragma: no cover (old SuiteSparse)
+    if not _has_container():
         raise NotImplementedError("Tensor requires SuiteSparse:GraphBLAS 10 or later")
 
 
