@@ -2618,6 +2618,7 @@ def _ttm_udt(updater, a, b, op, a_axes, b_axes):
     """
     from . import tensor_udt
 
+    before = tensor_udt.jit_control()
     if not tensor_udt.jit_ready():
         return None
     m, kb = a_axes[0], b_axes[0]
@@ -2643,11 +2644,14 @@ def _ttm_udt(updater, a, b, op, a_axes, b_axes):
     ):
         return None  # (the Numba engine is faster here: see _TTM_UDT_MAX_R)
     layout = Layout.from_state(state)
-    X = _in_layout(a, layout, updater.opts.get("nthreads"))
     from .descriptor import lookup
 
-    src = tensor_udt.ttm(X, _ttm_factor(b, kb), lookup(**updater.opts))
-    if src is None:
+    def compute():
+        # (the relayout too: under the raised control it may compile)
+        X = _in_layout(a, layout, updater.opts.get("nthreads"))
+        return tensor_udt.ttm(X, _ttm_factor(b, kb), lookup(**updater.opts))
+
+    if (src := tensor_udt.run(before, compute)) is None:
         return None
     out = {x: i for i, x in enumerate(free_a)}
     shape = (*(a._shape[x] for x in free_a), src._ncols)
@@ -2979,9 +2983,10 @@ def _mttkrp_recipe(updater, x, mats, mode, R, op):
         from . import tensor_udt
         from .descriptor import lookup
 
+        before = tensor_udt.jit_control()
         if X._nvals >= _TTM_KERNEL_MIN_NNZ and tensor_udt.jit_ready():
             U = np.ascontiguousarray(mats[last].to_dense(fill_value=0.0), np.float64)
-            T = tensor_udt.ttm(X, U, lookup(**updater.opts))
+            T = tensor_udt.run(before, tensor_udt.ttm, X, U, lookup(**updater.opts))
     if T is None:
         T = tl.new_matrix(op.return_type, X._nrows, R)
         T(**updater.opts) << X.mxm(mats[last], op)
