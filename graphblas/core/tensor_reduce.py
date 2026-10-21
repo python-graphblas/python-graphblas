@@ -163,7 +163,7 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
         Ar = A & set(rows)
         if Ar == set(rows):
             # Rows with about one entry each: a columnwise scatter costs a cache miss per
-            # entry; rebuilding with dup_op is 4-5x faster (s13).
+            # entry; rebuilding with dup_op is 4-5x faster.
             if tl.density(M):
                 if census.on:
                     census.note("reduce", "row group, ~1 entry per row: rebuild", nvals=nvals)
@@ -178,7 +178,7 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
                 and 4 * tl.prod(shape, rows) * shape[cols[0]] <= nvals
             ):
                 # reduce_columnwise into many outputs scatters like a wide transpose and is
-                # slow with threads (DESIGN.md 3.2); move one column axis into the rows and
+                # slow with threads; move one column axis into the rows and
                 # reduce with a selector instead, when the selector is small next to the data
                 # (1000^3 / 1e7: 6.6 ms vs 55.6). A larger selector costs more than a
                 # single-threaded columnwise reduce (Uber: 32.8 ms vs 4.7).
@@ -222,7 +222,7 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
 
 def _reduce_rebuild(M, shape, layout, A, op):
     """Reduce by rebuilding with the monoid as ``dup_op``: best when rows hold about one
-    entry each (DESIGN.md 3.12), and the path for UDTs.
+    entry each, and the path for UDTs.
     """
     coords, values = tl.coords_of(M, shape, layout.state)
     # The layout may already lack axes reduced by earlier steps

@@ -5,7 +5,7 @@ are raveled (C order) into the Matrix rows and which into the columns. The plann
 physical states ``(seq, split)``: the axis sequence ``rows + cols`` and ``len(rows)``.
 
 A relayout is a sort by the new major key, so the planner builds it like an LSD radix sort
-from cheap SuiteSparse primitives (DESIGN.md 3.2 and 7.1):
+from cheap SuiteSparse primitives:
 
 - RS: ``ss.reshape`` in storage order (moves the split, keeps the sequence)
 - T: a materialized transpose (swaps the groups); cheap only into few output rows
@@ -316,7 +316,7 @@ def give_rows(M, h, nrows):
 
 def flip_orientation(M):
     """In place, O(1): an (n x m) Matrix held by column becomes the (m x n) Matrix of its
-    transpose held by row (or the reverse), sharing the same arrays (DESIGN.md 4.1, s8).
+    transpose held by row (or the reverse), sharing the same arrays.
     """
     with _Unloaded(M) as cont:
         cont.nrows, cont.ncols = cont.ncols, cont.nrows
@@ -450,7 +450,7 @@ def clear_caches():
 
 
 # ---------------------------------------------------------------------------------------------
-# Cost model: ns per stored entry, (8 threads, 1 thread), from DESIGN.md 3.10. The constants
+# Cost model: ns per stored entry, (8 threads, 1 thread). The constants
 # rank plans; they are not predictions (they run 1.3-2x low).
 
 C_RS = (0.5, 2.1)
@@ -470,7 +470,7 @@ C_RS_HYPER_ROW = (0.25, 0.5)
 C_T_HYPER = (9.0, 55.0)
 # REBUILD measured 11-17 / 75-85 ns per entry (NELL-2, skew, Zipf; 2026-10-20), most of it the
 # builder's sort; when the new keys arrive sorted (the same axis order, a split move) the
-# builder skips it: 5.9 / 9.9 ns (bench/wishlist_probes/bigsplit)
+# builder skips it: 5.9 / 9.9 ns
 C_REBUILD = (14.0, 75.0)
 C_REBUILD_SORTED = (6.0, 10.0)
 C_PERM_ENTRY = (0.6, 2.0)
@@ -478,8 +478,8 @@ C_PERM_ENTRY = (0.6, 2.0)
 # at 8 / 1 threads; rows straight from a reshape are hypersparse with no hash of the rows yet,
 # which P @ M builds and looks up: 11 / 80 ns (u7 and u6, 1e6 rows, measured 2026-10-20). The
 # planner tracks which states come from a reshape. Rows that are mostly empty
-# (hypersparse storage, about one entry each) pay a hash lookup per row: 31 ns (s1, case H)
-# to 61 ns (skew (1e5, 1e3, 10) rows (j, i)).
+# (hypersparse storage, about one entry each) pay a hash lookup per row: 31 ns to 61 ns
+# (skew (1e5, 1e3, 10) rows (j, i)).
 C_PERM_ROW = {"sparse": (6.0, 12.0), "reshaped": (11.0, 80.0), "hyper": (50.0, 185.0)}
 # Building P (numpy, one thread): per row of a full P (cached when it fits the cache), and
 # per nonempty row of a P built from the nonempty rows (unravel, ravel and an unsorted build).
@@ -554,7 +554,7 @@ def _neighbors(state, shape, nnz, ti, hyper1, allow_perm, total_ok, reshaped=Fal
         if src_cols is not None and src_cols[0] == state and not reshaped:
             # From the data itself: clustered data has far fewer nonempty columns than uniform
             # (Enron's (2,3) group: 3.0e6 of 2.9e8 against 4.9e7 uniform), so its transpose
-            # goes into hypersparse rows at C_T_HYPER, 4.7x T_TABLE at 1 thread (phase 9b)
+            # goes into hypersparse rows at C_T_HYPER, 4.7x T_TABLE at 1 thread
             hyper_out = out_rows > 16 * src_cols[1]
         else:
             hyper_out = out_rows > 16 * expected_rows(out_rows, nnz)
@@ -562,7 +562,7 @@ def _neighbors(state, shape, nnz, ti, hyper1, allow_perm, total_ok, reshaped=Fal
         threads = None
         # A transpose into many rows is slower at 4 or 8 threads than at 2, which runs
         # SuiteSparse's non-atomic method and is 1.2-1.8x faster than 1 thread
-        # (~/git/GraphBLAS/mres/transpose_thread_scaling); price 2 threads too.
+        # (measured on an Apple M5 Pro); price 2 threads too.
         if ti == 0 and out_rows >= 1e5 and not hyper_out:
             cost2 = C_T_TWO_THREADS * t_cost(out_rows, 1) * nnz
             if cost2 < cost:
@@ -581,7 +581,7 @@ def _neighbors(state, shape, nnz, ti, hyper1, allow_perm, total_ok, reshaped=Fal
         else:
             cost += C_PBUILD_ROW[ti] * R
         if hyper1:
-            # About one entry per row: P @ M pays a hash lookup per row (DESIGN.md 3.1).
+            # About one entry per row: P @ M pays a hash lookup per row.
             cost = max(cost, C_REBUILD[ti] * nnz)
         cost += C_STEP
         for perm in itertools.permutations(seq[:p]):
@@ -670,9 +670,9 @@ def plan(shape, src, targets, nnz, nthreads, *, hyper1=False, allow_perm=True, s
 
 def _perm_semiring(M):
     # P has one entry per row, so the monoid never combines two values; pick a factory kernel
-    # (DESIGN.md 7.2). min_second is one for the 32- and 64-bit integer and floating types, and
+    # min_second is one for the 32- and 64-bit integer and floating types, and
     # it keeps an iso M iso; SuiteSparse 10 compiled out any_second, and plus_second is generic
-    # for UINT32 / UINT64 and drops iso (bench/wishlist_probes/burble_semiring, burble_iso).
+    # for UINT32 / UINT64 and drops iso (as SuiteSparse's burble shows).
     # BOOL and the 8- and 16-bit integers have no factory SECOND kernel; complex has no min.
     if M.dtype.name in {"FC32", "FC64"}:
         return _semiring.any_second if M.ss.is_iso else _semiring.plus_second
@@ -1063,7 +1063,7 @@ def selector(group_shape, kept, *, transposed=False):
 
 
 # ---------------------------------------------------------------------------------------------
-# Block-diagonal embedding for batched contractions (DESIGN.md 3.6)
+# Block-diagonal embedding for batched contractions
 
 _INDEX_NP = None
 

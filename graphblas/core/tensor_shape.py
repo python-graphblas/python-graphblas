@@ -104,8 +104,7 @@ def _reshape(t, shape):
     """``t.reshape(shape)`` (``shape`` resolved): a view when the layout holds it; else the
     data moved once to a layout that does (the runs as blocks, split between two of them);
     else, when the reshape is one run, the data in C order (a relayout to the identity
-    sequence) with the stored Matrix reshaped to the new shape's default split (DESIGN.md
-    5.3).
+    sequence) with the stored Matrix reshaped to the new shape's default split.
     """
     if math.prod(shape) == 0:
         return Tensor(t.dtype, shape)

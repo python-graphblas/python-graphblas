@@ -231,7 +231,7 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
         # A reshape into hypersparse rows (more positions than SuiteSparse's 1/16 of nonempty
         # ones) makes the diagonal product pay a hash lookup per nonempty row, as the gather's
         # does: skew, hyper, Zipf, NIPS and Enron along a single last axis took 2-15x their
-        # estimate without this term (phase 9a census)
+        # estimate without this term
         nrows = tl.prod(shape, state[0][: state[1]])
         R = tl.expected_rows(nrows, nv)
         return C_EWISE_HROW[ti] * R if nrows > 16 * R else 0.0
