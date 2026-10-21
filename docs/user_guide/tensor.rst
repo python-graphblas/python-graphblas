@@ -70,6 +70,8 @@ Construction
     (2, 2)
     >>> Tensor.from_matrices([A, A, A], axis=0).shape  # stacked along a new axis
     (3, 2, 2)
+    >>> Tensor.from_matrix(A).isequal(A)  # isequal and isclose take a Matrix, Vector or Scalar
+    True
 
 ``from_coo`` takes one index array per axis (the ``np.nonzero`` form) or an ``(ndim, nvals)``
 array, and ``layout=`` to choose the stored layout (kept by later updates). Conversions out
@@ -144,6 +146,19 @@ Reductions
 A fiber with no entries stays missing (no initial value), as in GraphBLAS. ``sum``, ``prod``,
 ``min``, ``max``, ``any`` and ``all`` are shorthands for ``reduce`` with the matching monoid.
 
+``reduce`` also takes the aggregators that are one monoid or one semiring, with the results
+and result types Matrix gives:
+
+.. code-block:: python
+
+    >>> X.reduce(gb.agg.count, axis=(1, 2)).new().to_dense()
+    array([2, 1])
+    >>> X.reduce(gb.agg.hypot).new().to_scalar().value  # sqrt(1 + 4 + 9)
+    3.7416573867739413
+
+Aggregators made of several reductions (``agg.mean``, ``agg.var``, ...) or of positions
+(``agg.argmin``, ``agg.first``, ...) raise ``NotImplementedError``.
+
 Contractions
 ------------
 
@@ -202,7 +217,80 @@ not numpy's two elements).
     >>> X[0, 1, 3].new().to_scalar().value
     1.0
 
-Assignment by index (``T[...] = value``) is not implemented yet.
+A repeated index repeats its slice, as with ``np.ix_``: ``X[:, [1, 1]]`` is 2 x 2 x 4. A
+negative index counts from the end.
+
+Assignment by index
+-------------------
+
+``T[...] = value`` and ``T[...] << value`` assign to the region the outer index selects, with
+GraphBLAS assign semantics, as for Matrix. The value is a Tensor, Matrix, Vector, Scalar or
+Python scalar and broadcasts against the region as in numpy (a Scalar fills it). Without
+``accum``, the region takes the value's structure: an entry the value is missing deletes the
+region's entry there. With ``accum``, the value's entries combine with the region's.
+
+.. code-block:: python
+
+    >>> Y = Tensor(gb.dtypes.FP64, (2, 3, 4))
+    >>> Y[0, :, 1:3] = 1.0  # fill a 3 x 2 region
+    >>> Y.nvals
+    6
+    >>> Y[1] = gb.Vector.from_coo([0, 3], [5.0, 6.0], size=4)  # broadcast over the 3 rows
+    >>> Y[1].new().to_dense(fill_value=0)
+    array([[5., 0., 0., 6.],
+           [5., 0., 0., 6.],
+           [5., 0., 0., 6.]])
+    >>> Y(accum=binary.plus)[0, 0, :] << 10.0
+    >>> Y[0, 0].new().to_dense(fill_value=0)
+    array([10., 11., 11., 10.])
+    >>> Y[0, 0] = gb.Vector.from_coo([2], [7.0], size=4)  # no accum: the rest is deleted
+    >>> Y[0, 0].new().to_dense(fill_value=0)
+    array([0., 0., 7., 0.])
+    >>> del Y[1, :, 0]  # delete a region
+    >>> Y[1].new().nvals
+    3
+
+A mask goes in one of two places, as for Matrix. ``T(mask)[...] << value`` is an *assign*:
+the mask has the shape of ``T`` and applies to all of it, so with ``replace=True`` the
+entries outside the region that the mask does not cover are deleted too.
+``T[...](mask) << value`` is a *subassign*: the mask has the shape of the region and applies
+only there.
+
+.. code-block:: python
+
+    >>> R = Tensor.from_dense(np.eye(3, 4, dtype=bool), missing_value=False)  # a 3 x 4 mask
+    >>> Y[1](R.S) << 9.0  # only where the mask is
+    >>> Y[1].new().to_dense(fill_value=0)
+    array([[9., 0., 0., 6.],
+           [0., 9., 0., 6.],
+           [0., 0., 9., 6.]])
+
+A repeated index assigns its last value given, and with ``accum`` the region's value
+combines with that one value, as in Matrix assignment.
+
+Gathering elements
+------------------
+
+``take``, ``take_along_axis`` and ``vindex`` gather elements with numpy's rules for integer
+(advanced) indexing; ``T[...]`` stays outer. The indices are ints, Scalars, lists or integer
+arrays, and may repeat. A position that lands on a missing entry is missing in the result.
+They compute at once and return a Tensor.
+
+.. code-block:: python
+
+    >>> X.take([3, 0, 3], axis=2).shape  # the indices' shape in place of axis 2
+    (2, 3, 3)
+    >>> X.take([23, 14]).to_coo()  # axis=None: of the flattened Tensor (C order)
+    ((array([1]),), array([3.]))
+    >>> X.vindex[[0, 1, 0], [1, 0, 0], [3, 2, 0]].to_coo()  # three points; the last is missing
+    ((array([0, 1]),), array([1., 3.]))
+    >>> X.take_along_axis(np.array([[[2], [3], [0]]]), axis=2).to_dense(fill_value=0)[..., 0]
+    array([[0., 1., 2.],
+           [3., 0., 0.]])
+
+``vindex`` broadcasts its index arrays together, as numpy does. A negative index counts
+from the end, once; ``wraparound=False`` (``T.vindex(wraparound=False)[...]``) raises
+``IndexError`` for negative indices instead, and an index out of range always does.
 
 Input and output
 ----------------
@@ -228,6 +316,9 @@ Some operations have more than one implementation, chosen per call:
 - **TTM** (``tensordot`` of one axis with a full float64 factor and ``plus_times``) runs
   one SuiteSparse product with array-valued entries when the SuiteSparse JIT is on, a Numba
   kernel, or GraphBLAS products; the choice follows measurements.
+- **Gathers** run one SuiteSparse extract when the result is a product of index lists
+  (``take``), else a Numba binary search over the stored arrays, else (without Numba)
+  a SuiteSparse intersection with the points as a pattern Matrix.
 
 The Numba kernels are compiled on first use and cached on disk, under
 ``$GRAPHBLAS_KERNEL_CACHE`` (by default ``python-graphblas/tensor-kernels`` under
@@ -240,7 +331,8 @@ Limits
 ------
 
 - Experimental: names and behavior may change.
-- No assignment by index yet; no ``...`` and no repeated index (diagonal) in ``einsum``.
+- No ``...`` and no repeated index (diagonal) in ``einsum``; no Tensor or Vector as
+  indices.
 - No fill value: a missing entry has no value (as in all of python-graphblas).
 - Each group of the layout holds at most 2\ :sup:`60` positions (a Matrix dimension).
 - The ``suitesparse`` backend with SuiteSparse:GraphBLAS 10 or later only.
