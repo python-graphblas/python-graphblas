@@ -27,3 +27,4 @@ Topics
     udf
     udt
     recorder
+    tensor
