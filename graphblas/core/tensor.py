@@ -3636,6 +3636,11 @@ def _extract_recipe(updater, t, sel, keys):
         if not listed:
             _store(updater, t._M[ridx, cidx], shape, layout)
             return
+    # Repeated indices repeat the entries, as for Matrix (SuiteSparse's extract does; the
+    # filter below expands them; the row pick cannot)
+    repeated = {
+        a for a, s in enumerate(sel) if isinstance(s, np.ndarray) and np.unique(s).size != s.size
+    }
     ti = _ti(_nthreads(updater))
     axes = [a for a in range(t.ndim) if not (isinstance(keys[a], slice) and keys[a] == slice(None))]
     nv = t._M._nvals
@@ -3644,6 +3649,7 @@ def _extract_recipe(updater, t, sel, keys):
         options.append((C_X_ROW[ti] * tl.nonempty_rows(t._M) + C_X_LIST[ti] * listed, "extract"))
     if (
         nv
+        and not repeated
         and t._M.ss.format == "hypercsr"
         and not t.dtype._is_udt
         and all(a in rows and (isinstance(keys[a], slice) or isinstance(sel[a], int)) for a in axes)
@@ -3686,17 +3692,28 @@ def _extract_recipe(updater, t, sel, keys):
             pos[s] = np.arange(s.size)
             keep &= pos[coord] >= 0
     r, c, vals = r[keep], c[keep], vals[keep]
-    n = vals.size
     out = {}
     for a in kept:
         coord = _axis_coords(r, c, t._shape, rows, cols, a)
         s = sel[a]
         if isinstance(keys[a], slice) and keys[a] == slice(None):
             out[renum[a]] = coord
+        elif a in repeated:
+            # Each entry once per position its coordinate is listed at
+            order = np.argsort(s, kind="stable")
+            ss = s[order]
+            left = np.searchsorted(ss, coord, "left")
+            count = np.searchsorted(ss, coord, "right") - left
+            rep = np.repeat(np.arange(coord.size), count)
+            offs = np.arange(rep.size) - np.repeat(np.cumsum(count) - count, count)
+            r, c, vals = r[rep], c[rep], vals[rep]
+            out = {k: v[rep] for k, v in out.items()}
+            out[renum[a]] = order[left[rep] + offs]
         else:
             pos = np.full(t._shape[a], -1, np.int64)
             pos[s] = np.arange(s.size)
             out[renum[a]] = pos[coord]
+    n = vals.size
     rr = tl.ravel(out, shape, layout.rows, n=n)
     cc = tl.ravel(out, shape, layout.cols, n=n)
     M = tl.from_coo(rr, cc, vals, t.dtype, tl.prod(shape, layout.rows), tl.prod(shape, layout.cols))
