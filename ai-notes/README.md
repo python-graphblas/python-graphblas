@@ -18,7 +18,7 @@ to anything outside this repository.
 | `tensor/limitations-and-roadmap.md` | what is untested, missing or slow, and the planned order of work                                                                                                                              |
 | `tensor/backport-candidates.md`     | Tensor behavior that Matrix and Vector could adopt                                                                                                                                            |
 | `tensor/benchmarks.md`              | (coming) results against pydata/sparse, scipy, torch, SPLATT, TACO and Finch, and how to rerun them                                                                                           |
-| `tensor/suitesparse-wishlist.md`    | (coming) SuiteSparse:GraphBLAS features that would simplify or speed up the Tensor, with evidence                                                                                             |
+| `tensor/suitesparse-wishlist.md`    | SuiteSparse:GraphBLAS features that would simplify or speed up the Tensor, in priority order, with evidence and proposed APIs                                                                 |
 
 The user guide's "Tensors" page (`docs/user_guide/tensor.rst`) covers how to use it.
 
