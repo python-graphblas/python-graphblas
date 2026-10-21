@@ -1795,6 +1795,26 @@ def test_mttkrp(mode):
         X.mttkrp(["x", "y", "z"], mode)
 
 
+@pytest.fixture(scope="module")
+def numba_boundscheck():
+    """Compile the Numba kernels with bounds checks while the kernel tests run: an
+    out-of-bounds write corrupts the heap silently (it aborted LLVM later, in another test).
+    """
+    if not gb.core._has_numba:
+        yield
+        return
+    import numba
+
+    from graphblas.core import tensor_numba
+
+    prev = numba.config.BOUNDSCHECK
+    numba.config.BOUNDSCHECK = 1
+    tensor_numba._compiled.clear()
+    yield
+    numba.config.BOUNDSCHECK = prev
+    tensor_numba._compiled.clear()
+
+
 def _mttkrp_model(xv, xp, dense, mode):
     letters = "ijklm"[: xv.ndim]
     sub = letters + "," + ",".join(c + "r" for k, c in enumerate(letters) if k != mode)
@@ -1822,6 +1842,7 @@ def _kernel_spy(monkeypatch):
     return calls, spy
 
 
+@pytest.mark.usefixtures("numba_boundscheck")
 @pytest.mark.parametrize("nthreads", [1, 8])
 @pytest.mark.parametrize("shape", [(20, 25, 30), (8, 9, 10, 11), (4, 5, 6, 5, 4)])
 def test_mttkrp_kernel_layouts(shape, nthreads, monkeypatch):
@@ -1855,6 +1876,7 @@ def test_mttkrp_kernel_layouts(shape, nthreads, monkeypatch):
                     assert calls == [True], (layout, mode, runs, colblock)
 
 
+@pytest.mark.usefixtures("numba_boundscheck")
 def test_mttkrp_kernel_paths(monkeypatch):
     """Views, R = 1, the relayout handover and the GraphBLAS fallbacks of the MTTKRP kernel."""
     pytest.importorskip("numba")
@@ -1928,6 +1950,7 @@ def test_mttkrp_kernel_paths(monkeypatch):
     assert calls == [True]
 
 
+@pytest.mark.usefixtures("numba_boundscheck")
 @pytest.mark.parametrize("nthreads", [1, 8])
 def test_mttkrp_empty_groups(nthreads, monkeypatch):
     """Layouts with an empty group (all axes in the rows or all in the columns), as stored
@@ -2186,6 +2209,163 @@ def test_infix_bool_and_operator_waits():
     expr = U | W  # building `U | W` no longer needs plus on the UDT
     if gb.core._has_numba:  # (operators on UDTs need Numba)
         assert binary.first(expr).new().nvals == 4
+
+
+def _ttm_model(xv, xp, U, mode, kb=0):
+    """Numpy's TTM: values and presence (a full factor reaches every r of a nonempty fiber)."""
+    Uk = U if kb == 0 else U.T
+    values = np.tensordot(xv, Uk, ([mode], [0]))
+    present = np.tensordot(xp.astype(np.int64), np.ones(Uk.shape, np.int64), ([mode], [0])) > 0
+    return np.where(present, values, 0), present
+
+
+def _ttm_spy(monkeypatch):
+    from graphblas.core import tensor, tensor_numba
+
+    calls = []
+    orig = tensor_numba.ttm
+
+    def spy(*args, **kwargs):
+        rv = orig(*args, **kwargs)
+        calls.append(rv[0])
+        return rv
+
+    monkeypatch.setattr(tensor_numba, "ttm", spy)
+    monkeypatch.setattr(tensor, "_TTM_KERNEL_MIN_NNZ", 0)
+    return calls
+
+
+@pytest.mark.usefixtures("numba_boundscheck")
+@pytest.mark.parametrize("nthreads", [1, 8])
+@pytest.mark.parametrize("shape", [(12, 13, 14), (6, 7, 8, 9), (4, 5, 6, 5, 4)])
+def test_ttm_kernel_layouts(shape, nthreads, monkeypatch):
+    """The Numba TTM kernel for every mode and layout (the axis read in place as the last
+    column axis, its leading column axes making the output fibers; else after a relayout),
+    either side of the factor, iso values: 3-, 4- and 5-d against numpy.
+    """
+    pytest.importorskip("numba")
+    calls = _ttm_spy(monkeypatch)
+    rng = np.random.default_rng(76 + len(shape))
+    ndim = len(shape)
+    layouts = all_layouts(ndim)
+    if ndim == 5:
+        layouts = layouts[::29]
+    for i, layout in enumerate(layouts):
+        X, xv, xp = random_tensor(shape, rng, density=0.02, layout=layout, iso=i % 5 == 0)
+        assert X.ss.format in {"csr", "hypercsr"}
+        for mode in range(ndim):
+            U = rng.random((shape[mode], 3))
+            kb = (i + mode) % 2  # contract the factor's rows or its columns
+            F = Matrix.from_dense(U if kb == 0 else U.T)
+            calls.clear()
+            R = X.tensordot(F, ([mode], [kb])).new(nthreads=nthreads)
+            check(R, *_ttm_model(xv, xp, U, mode), approx=True)
+            assert calls, (layout, mode)
+
+
+@pytest.mark.usefixtures("numba_boundscheck")
+def test_ttm_kernel_paths(monkeypatch):
+    """TTM outputs in every storage (hypersparse rows, bitmap, full), views, empty groups,
+    R = 1, and the GraphBLAS product where the kernel cannot run.
+    """
+    pytest.importorskip("numba")
+    from graphblas.core import tensor
+
+    calls = _ttm_spy(monkeypatch)
+    rng = np.random.default_rng(80)
+    # Every (i, j) fiber present: full output; about 70% of them: bitmap
+    shape = (20, 30, 400)
+    for share, kind in [(1.0, "full"), (0.7, "bitmap")]:
+        ij = np.flatnonzero(rng.random(600) < share)
+        k = rng.integers(0, 400, (ij.size, 3))
+        lin = np.unique(
+            np.ravel_multi_index((np.repeat(ij // 30, 3), np.repeat(ij % 30, 3), k.ravel()), shape)
+        )
+        coords = np.unravel_index(lin, shape)
+        X = Tensor.from_coo(coords, rng.random(lin.size), shape=shape, layout=((0, 1), (2,)))
+        xv = np.zeros(shape)
+        xv[coords] = X.to_coo()[1]
+        U = rng.random((400, 4))
+        calls.clear()
+        R = X.tensordot(Matrix.from_dense(U), ([2], [0])).new()
+        check(R, *_ttm_model(xv, xv != 0, U, 2), approx=True)
+        assert calls == [kind]
+    # Hypersparse output; a permuted view; layouts with an empty group (squeeze too)
+    X, xv, xp = random_tensor((10, 11, 12, 13), rng, density=0.02, layout=((2, 0), (3, 1)))
+    U = rng.random((11, 2))
+    calls.clear()
+    check(
+        X.tensordot(Matrix.from_dense(U), ([1], [0])).new(), *_ttm_model(xv, xp, U, 1), approx=True
+    )
+    assert calls == ["hyper"]
+    perm = (3, 1, 0, 2)
+    V = X.permute_dims(perm)
+    for mode in range(4):
+        U = rng.random((V.shape[mode], 2))
+        expected = _ttm_model(xv.transpose(perm), xp.transpose(perm), U, mode)
+        check(V.tensordot(Matrix.from_dense(U), ([mode], [0])).new(), *expected, approx=True)
+    for layout in [((), (0, 1, 2, 3)), ((0, 1, 2, 3), ())]:
+        E, ev, ep = random_tensor((10, 11, 12, 13), rng, density=0.02, layout=layout)
+        for mode in range(4):
+            U = rng.random((E.shape[mode], 2))
+            check(
+                E.tensordot(Matrix.from_dense(U), ([mode], [0])).new(),
+                *_ttm_model(ev, ep, U, mode),
+                approx=True,
+            )
+    Y, yv, yp = random_tensor((1, 20, 30, 40), rng, density=0.01, layout=((0,), (1, 2, 3)))
+    S = Y.squeeze(0)
+    for mode in range(3):
+        U = rng.random((S.shape[mode], 2))
+        check(
+            S.tensordot(Matrix.from_dense(U), ([mode], [0])).new(),
+            *_ttm_model(yv[0], yp[0], U, mode),
+            approx=True,
+        )
+    # R = 1, and an ndarray factor
+    U = rng.random((12, 1))
+    calls.clear()
+    check(X.tensordot(U, ([2], [0])).new(), *_ttm_model(xv, xp, U, 2), approx=True)
+    assert calls
+    # The product: no Numba, a sparse factor, another dtype or semiring, an empty tensor
+    calls.clear()
+    U = rng.random((13, 3))
+    with monkeypatch.context() as m:
+        m.setattr(tensor, "_has_numba", False)
+        check(
+            X.tensordot(Matrix.from_dense(U), ([3], [0])).new(),
+            *_ttm_model(xv, xp, U, 3),
+            approx=True,
+        )
+    Us = Matrix.from_dense(U)
+    del Us[0, 0]
+    got = X.tensordot(Us, ([3], [0])).new()
+    U0 = U.copy()
+    U0[0, 0] = 0
+    vals, _ = _ttm_model(xv, xp, U0, 3)
+    present = (
+        np.tensordot(
+            xp.astype(np.int64),
+            (Us.to_dense(fill_value=0) != 0).astype(np.int64) | (np.arange(13) != 0)[:, None],
+            ([3], [0]),
+        )
+        > 0
+    )
+    check(got, np.where(present, vals, 0), present, approx=True)
+    Xi, xiv, xip = random_tensor((10, 11, 12, 13), rng, density=0.02, dtype=dtypes.INT64)
+    check(
+        Xi.tensordot(Matrix.from_dense(U), ([3], [0])).new(),
+        *_ttm_model(xiv, xip, U, 3),
+        approx=True,
+    )
+    X.tensordot(Matrix.from_dense(U), ([3], [0]), op=gb.semiring.max_times).new()
+    E = Tensor.from_coo([np.empty(0, np.int64)] * 4, np.empty(0), shape=(10, 11, 12, 13))
+    check(
+        E.tensordot(Matrix.from_dense(U), ([3], [0])).new(),
+        np.zeros((10, 11, 12, 3)),
+        np.zeros((10, 11, 12, 3), bool),
+    )
+    assert calls == []
 
 
 def test_mttkrp_without_numba():

@@ -346,3 +346,140 @@ def _sum_buffers(out, touched, total, any_touched):
                 total[i, r] += out[b, i, r]
             t = t or touched[b, i]
         any_touched[i] = t
+
+
+# ---------------------------------------------------------------------------------------------
+# TTM: the tensor times a matrix along the last column axis, read in place
+
+
+def _make_ttm(R, multi, dense):
+    """The TTM kernel for R output columns. Each output fiber is a row of the stored Matrix
+    (one column axis), or with ``multi`` a run of the row's entries sharing the leading
+    column axes (entries are sorted by column); its R values are the sum of ``x * U[k, :]``
+    over its entries, k being the last column axis. With ``dense``, fiber values go to row
+    ``g`` (the fiber's output row index) of ``V`` and ``B[g]`` is set (a bitmap); otherwise
+    to ``V[f]``, f numbering the fibers from ``offs[s]`` for row slot s, with ``hout[f] = g``
+    and the column indices ``cols[f * R + r] = r`` (hypersparse rows).
+    """
+
+    def kernel(p, h, ci, x, iso, nlast, npre, U, offs, hout, cols, V, B, starts, bin_ptr, bins):
+        for bb in prange(bin_ptr.size - 1):
+            t = np.empty(R)
+            for cc in range(bin_ptr[bb], bin_ptr[bb + 1]):
+                c = bins[cc]
+                for s in range(starts[c], starts[c + 1]):
+                    q0 = p[s]
+                    q1 = p[s + 1]
+                    if q0 == q1:
+                        continue
+                    row = np.int64(h[s]) if h.size > 0 else np.int64(s)
+                    f = offs[s]
+                    q = q0
+                    while q < q1:
+                        base = 0
+                        lim = nlast
+                        pre = 0
+                        if multi:
+                            pre = np.int64(ci[q]) // nlast
+                            base = pre * nlast
+                            lim = base + nlast
+                        for r in range(R):
+                            t[r] = 0.0
+                        while q < q1:
+                            col = np.int64(ci[q])
+                            if multi and col >= lim:
+                                break
+                            xv = x[0] if iso else x[q]
+                            k = col - base
+                            for r in range(R):
+                                t[r] += xv * U[k, r]
+                            q += 1
+                        g = row * npre + pre
+                        if dense:
+                            for r in range(R):
+                                V[g, r] = t[r]
+                            if B.shape[0] > 0:  # (no bitmap when every row exists)
+                                for r in range(R):
+                                    B[g, r] = 1
+                        else:
+                            for r in range(R):
+                                V[f, r] = t[r]
+                                cols[f * R + r] = r
+                            hout[f] = g
+                        f += 1
+
+    return kernel
+
+
+@njit(parallel=True, cache=True)
+def _count_runs(p, ci, nlast, counts):
+    # The runs of equal leading column axes in each row: the output fibers of a TTM
+    for s in prange(p.size - 1):
+        n = 0
+        last = -1
+        for q in range(p[s], p[s + 1]):
+            pre = np.int64(ci[q]) // nlast
+            if pre != last:
+                n += 1
+                last = pre
+        counts[s] = n
+
+
+def ttm(arrays, col_sizes, U, nrows_out, nthreads):
+    """The tensor times ``U`` (dense, ``K x R``) along the last column axis of the stored
+    arrays, as the parts of a Matrix with ``nrows_out`` rows (the stored row, then the leading
+    column axes, raveled) and R columns: ``("full", V)``, ``("bitmap", V, B, nvals)`` when at
+    least half the rows exist, else ``("hyper", hout, indptr, cols, V)``. Each part is a 1-d
+    array that owns its data, ready to hand to GraphBLAS. ``arrays`` and ``col_sizes`` as for
+    ``mttkrp_nd``.
+    """
+    p, h, ci, x, iso = arrays
+    R = U.shape[1]
+    nlast = int(col_sizes[-1])
+    npre = int(np.prod(np.array(col_sizes[:-1], np.int64)))
+    multi = len(col_sizes) > 1
+    nthreads = max(
+        1, min(nthreads or numba.config.NUMBA_NUM_THREADS, numba.config.NUMBA_NUM_THREADS)
+    )
+    prev = numba.get_num_threads()
+    numba.set_num_threads(nthreads)
+    try:
+        if multi:
+            counts = np.empty(p.size - 1, np.int64)
+            _count_runs(p, ci, np.int64(nlast), counts)
+        else:
+            counts = (np.diff(p) > 0).astype(np.int64)
+        offs = np.zeros(p.size, np.int64)
+        np.cumsum(counts, out=offs[1:])
+        nfib = int(offs[-1])
+        # SuiteSparse would hold rows this full as a bitmap (u7: 999,956 of 1e6 fibers)
+        dense = 2 * nfib >= nrows_out
+        key = ("ttm", R, multi, dense)
+        if (k := _compiled.get(key)) is None:
+            k = _compiled[key] = njit(parallel=True)(_make_ttm(R, multi, dense))
+        # 1-d owners (a reshaped view would be copied when handed over: 114 ms for 265e6)
+        if dense:
+            Vflat = np.empty(nrows_out * R)
+            Bflat = np.zeros(nrows_out * R if nfib < nrows_out else 0, np.int8)
+            hout = np.empty(0, np.int64)
+            cols = np.empty(0, np.uint32)
+            V = Vflat.reshape(nrows_out, R)
+            B = Bflat.reshape(-1, R)
+        else:
+            Vflat = np.empty(nfib * R)
+            Bflat = np.empty(0, np.int8)
+            hout = np.empty(nfib, np.int64)
+            cols = np.empty(nfib * R, np.uint32)  # (32-bit column indices: R < 2^31)
+            V = Vflat.reshape(nfib, R)
+            B = Bflat.reshape(0, R)
+        starts = _starts(p, 8 * nthreads)
+        bin_ptr, bins = _bins(p, starts, nthreads)
+        k(p, h, ci, x, iso, np.int64(nlast), np.int64(npre), U, offs, hout, cols, V, B, starts,
+          bin_ptr, bins)  # fmt: skip
+    finally:
+        numba.set_num_threads(prev)
+    if dense and nfib == nrows_out:
+        return ("full", Vflat)
+    if dense:
+        return ("bitmap", Vflat, Bflat, nfib * R)
+    return ("hyper", hout, np.arange(0, (nfib + 1) * R, R, dtype=np.uint64), cols, Vflat)
