@@ -392,11 +392,11 @@ def _crossproc_ibo_add_theta(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (
 
 # Operations dispatched by ``_crossproc_worker``. Each takes the unpickled dict
 # and returns a JSON-friendly value to send through the Pipe.
-def _op_udt_reduce(d):
+def _op_udt_reduce(d):  # pragma: no cover (child process)
     return d["vector"].reduce(d["op"]).new().value
 
 
-def _op_bound_ibo_ewise(d):
+def _op_bound_ibo_ewise(d):  # pragma: no cover (child process)
     rows, cols, vals = d["A"].ewise_mult(d["B"], d["bound"]).new().to_coo()
     return list(rows), list(cols), [int(v) for v in vals]
 
@@ -407,7 +407,7 @@ _CROSSPROC_OPS = {
 }
 
 
-def _crossproc_worker(backend, op_name, payload, conn):
+def _crossproc_worker(backend, op_name, payload, conn):  # pragma: no cover (child process)
     """Run ``_CROSSPROC_OPS[op_name]`` on the unpickled payload in a fresh interpreter."""
     try:
         import graphblas as gb_
@@ -458,7 +458,7 @@ def test_udt_pickle_crossprocess():
     record_dtype = np.dtype([("x", np.int64), ("y", np.int64)], align=True)
     udt_name = "CrossProcPickleUDT"
     # Use register_new so the child can re-register under the same name.
-    if hasattr(gb.dtypes, udt_name):
+    if hasattr(gb.dtypes, udt_name):  # pragma: no cover (defensive)
         delattr(gb.dtypes, udt_name)
         gb.core.dtypes._registry.pop(udt_name, None)
     udt = gb.dtypes.register_new(udt_name, record_dtype)
@@ -484,7 +484,7 @@ def _crossproc_parameterized_is_udt_factory(scale):  # pragma: no cover (called 
     return inner
 
 
-def _op_compile_parameterized_is_udt(d):
+def _op_compile_parameterized_is_udt(d):  # pragma: no cover (child process)
     op = d["op"]
     # ``op._is_udt`` must survive the spawn so the right compile path runs in the child.
     return bool(op._is_udt)
@@ -509,7 +509,7 @@ def test_parameterized_is_udt_pickle_crossprocess(module_name):
     """
     module = getattr(gb, module_name)
     op_name = f"_cpu_param_is_udt_{module_name}"
-    if hasattr(module, op_name):
+    if hasattr(module, op_name):  # pragma: no cover (defensive)
         delattr(module, op_name)
     module.register_new(
         op_name, _crossproc_parameterized_is_udt_factory, parameterized=True, is_udt=True
@@ -545,7 +545,7 @@ def test_bound_ibo_pickle_crossprocess():
         pytest.skip("requires SuiteSparse:GraphBLAS 9.4+")
 
     op_name = "CrossProcBoundIBO"
-    if hasattr(gb.indexbinary, op_name):
+    if hasattr(gb.indexbinary, op_name):  # pragma: no cover (defensive)
         delattr(gb.indexbinary, op_name)
     gb.indexbinary.register_new(op_name, _crossproc_ibo_add_theta)
     try:
