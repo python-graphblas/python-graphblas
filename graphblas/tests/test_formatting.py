@@ -4131,6 +4131,355 @@ def test_sparse_float_repr_truncated():
         )
 
 
+def test_repr_max_colwidth():
+    # Cells wider than display.max_colwidth are cut short with "..."
+    v = Vector.from_coo([100, 161], [1e10, -0.5], size=1000, name="v")
+    with display_options("display.max_colwidth", 8):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      2  1000   FP64  sparse\n"
+            "-------------------------------------\n"
+            "   index      val\n"
+            "0    100  1.00...\n"
+            "1    161 -5.00..."
+        )
+
+
+def test_repr_colheader_justify():
+    v = Vector.from_coo([100, 161], [1.5, -2.25], size=1000, name="v")
+    with display_options("display.colheader_justify", "left"):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      2  1000   FP64  sparse\n"
+            "-------------------------------------\n"
+            "   index  val \n"
+            "0  100    1.50\n"
+            "1  161   -2.25"
+        )
+    with display_options("display.colheader_justify", "center"):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      2  1000   FP64  sparse\n"
+            "-------------------------------------\n"
+            "   index   val\n"
+            "0   100   1.50\n"
+            "1   161  -2.25"
+        )
+        html_printer(v, "v")
+        assert repr_html(v) == (
+            "<div>"
+            f"{CSS_STYLE}"
+            '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+            '<table class="gb-info-table">\n'
+            "  <tr>\n"
+            '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Vector</pre></td>\n'
+            "    <td><pre>nvals</pre></td>\n"
+            "    <td><pre>size</pre></td>\n"
+            "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
+            "  </tr>\n"
+            "  <tr>\n"
+            "    <td>2</td>\n"
+            "    <td>1000</td>\n"
+            "    <td>FP64</td>\n"
+            "    <td>sparse</td>\n"
+            "  </tr>\n"
+            "</table>\n"
+            "</div>\n"
+            "</summary><div>\n"
+            "<style scoped>\n"
+            "    .dataframe tbody tr th:only-of-type {\n"
+            "        vertical-align: middle;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe tbody tr th {\n"
+            "        vertical-align: top;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe thead th {\n"
+            "        text-align: right;\n"
+            "    }\n"
+            "</style>\n"
+            '<table border="1" class="dataframe">\n'
+            "  <thead>\n"
+            '    <tr style="text-align: center;">\n'
+            "      <th></th>\n"
+            "      <th>index</th>\n"
+            "      <th>val</th>\n"
+            "    </tr>\n"
+            "  </thead>\n"
+            "  <tbody>\n"
+            "    <tr>\n"
+            "      <th>0</th>\n"
+            "      <td>100</td>\n"
+            "      <td>1.50</td>\n"
+            "    </tr>\n"
+            "    <tr>\n"
+            "      <th>1</th>\n"
+            "      <td>161</td>\n"
+            "      <td>-2.25</td>\n"
+            "    </tr>\n"
+            "  </tbody>\n"
+            "</table>\n"
+            "</div></details></div>"
+        )
+
+
+def test_repr_html_no_mathjax():
+    v = Vector.from_coo([100, 161], [1.5, -2.25], size=1000, name="v")
+    with display_options("display.html.use_mathjax", False):
+        html_printer(v, "v")
+        assert repr_html(v) == (
+            "<div>"
+            f"{CSS_STYLE}"
+            '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+            '<table class="gb-info-table">\n'
+            "  <tr>\n"
+            '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Vector</pre></td>\n'
+            "    <td><pre>nvals</pre></td>\n"
+            "    <td><pre>size</pre></td>\n"
+            "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
+            "  </tr>\n"
+            "  <tr>\n"
+            "    <td>2</td>\n"
+            "    <td>1000</td>\n"
+            "    <td>FP64</td>\n"
+            "    <td>sparse</td>\n"
+            "  </tr>\n"
+            "</table>\n"
+            "</div>\n"
+            "</summary><div>\n"
+            "<style scoped>\n"
+            "    .dataframe tbody tr th:only-of-type {\n"
+            "        vertical-align: middle;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe tbody tr th {\n"
+            "        vertical-align: top;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe thead th {\n"
+            "        text-align: right;\n"
+            "    }\n"
+            "</style>\n"
+            '<table border="1" class="dataframe tex2jax_ignore mathjax_ignore">\n'
+            "  <thead>\n"
+            '    <tr style="text-align: right;">\n'
+            "      <th></th>\n"
+            "      <th>index</th>\n"
+            "      <th>val</th>\n"
+            "    </tr>\n"
+            "  </thead>\n"
+            "  <tbody>\n"
+            "    <tr>\n"
+            "      <th>0</th>\n"
+            "      <td>100</td>\n"
+            "      <td>1.50</td>\n"
+            "    </tr>\n"
+            "    <tr>\n"
+            "      <th>1</th>\n"
+            "      <td>161</td>\n"
+            "      <td>-2.25</td>\n"
+            "    </tr>\n"
+            "  </tbody>\n"
+            "</table>\n"
+            "</div></details></div>"
+        )
+
+
+def test_repr_wraps_wide_frame():
+    # A frame wider than display.width wraps into blocks, each but the last ending in a
+    # backslash column. With expand_frame_repr off it is never wrapped.
+    A = Matrix.from_coo(
+        [0, 0, 1, 1], [0, 11, 3, 7], [1.5, -2.0, 1e3, 0.25], nrows=2, ncols=12, name="A"
+    )
+    with display_options("display.max_columns", 30, "display.width", 40):
+        repr_printer(A, "A")
+        assert repr(A) == (
+            '"A"        nvals  nrows  ncols  dtype   format\n'
+            "gb.Matrix      4      2     12   FP64  bitmapr\n"
+            "----------------------------------------------\n"
+            "    0  1  2       3  4  5  6     7   \\\n"
+            "0  1.5                                \n"
+            "1             1000.0           0.25   \n"
+            "\n"
+            "  8  9  10   11  \n"
+            "0          -2.0  \n"
+            "1                "
+        )
+    with display_options("display.max_columns", 30, "display.width", 20):
+        repr_printer(A, "A")
+        assert repr(A) == (
+            '"A"        nvals  nrows  ncols  dtype   format\n'
+            "gb.Matrix      4      2     12   FP64  bitmapr\n"
+            "----------------------------------------------\n"
+            "    0  1  2   \\\n"
+            "0  1.5         \n"
+            "1              \n"
+            "\n"
+            "       3  4  5   \\\n"
+            "0                 \n"
+            "1  1000.0         \n"
+            "\n"
+            "  6     7  8  9   \\\n"
+            "0                  \n"
+            "1     0.25         \n"
+            "\n"
+            "  10   11  \n"
+            "0    -2.0  \n"
+            "1          "
+        )
+    with display_options("display.max_columns", 30, "display.expand_frame_repr", False):
+        repr_printer(A, "A")
+        assert repr(A) == (
+            '"A"        nvals  nrows  ncols  dtype   format\n'
+            "gb.Matrix      4      2     12   FP64  bitmapr\n"
+            "----------------------------------------------\n"
+            "    0  1  2       3  4  5  6     7  8  9  10   11\n"
+            "0  1.5                                       -2.0\n"
+            "1             1000.0           0.25              "
+        )
+
+
+def test_repr_max_rows_zero(monkeypatch):
+    # display.max_rows=0 fits the rows to the terminal's height (LINES), less three
+    # lines for the header, the dots and the prompt.
+    v = Vector.from_coo([100, 161, 222], [1.5, -2.25, np.nan], size=1000, name="v")
+    monkeypatch.setenv("LINES", "30")
+    with display_options("display.max_rows", 0):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      3  1000   FP64  sparse\n"
+            "-------------------------------------\n"
+            "   index   val\n"
+            "0    100  1.50\n"
+            "1    161 -2.25\n"
+            "2    222   NaN"
+        )
+    v = Vector.from_coo(
+        [100 + 61 * i for i in range(14)], [1.5 * i for i in range(14)], size=1000, name="v"
+    )
+    monkeypatch.setenv("LINES", "8")
+    with display_options("display.max_rows", 0):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector     14  1000   FP64  sparse\n"
+            "-------------------------------------\n"
+            "    index   val\n"
+            "0     100   0.0\n"
+            "1     161   1.5\n"
+            "..    ...   ...\n"
+            "9     649  13.5\n"
+            "...   ...   ..."
+        )
+
+
+def test_repr_max_rows_one():
+    # With room for a single row, the first row is shown instead of a head and a tail
+    v = Vector.from_coo(
+        [100 + 61 * i for i in range(14)], [1.5 * i for i in range(14)], size=1000, name="v"
+    )
+    with display_options("display.max_rows", 1, "display.min_rows", 1):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector     14  1000   FP64  sparse\n"
+            "-------------------------------------\n"
+            "   index  val\n"
+            "0    100  0.0\n"
+            "..   ...  ..."
+        )
+
+
+def test_repr_max_columns_one():
+    # With room for a single column, the first column is shown instead of both ends
+    A = Matrix.from_coo(
+        [100, 300, 500], [0, 0, 0], [1.5, -2.25, np.nan], nrows=1000, ncols=1, name="A"
+    )
+    with display_options("display.max_columns", 1):
+        repr_printer(A, "A")
+        assert repr(A) == (
+            '"A"        nvals  nrows  ncols  dtype  format\n'
+            "gb.Matrix      3   1000      1   FP64     csc\n"
+            "---------------------------------------------\n"
+            "   row  ...\n"
+            "0  100  ...\n"
+            "1  300  ...\n"
+            "2  500  ..."
+        )
+        html_printer(A, "A")
+        assert repr_html(A) == (
+            "<div>"
+            f"{CSS_STYLE}"
+            '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A</tt><div>\n'
+            '<table class="gb-info-table">\n'
+            "  <tr>\n"
+            '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Matrix</pre></td>\n'
+            "    <td><pre>nvals</pre></td>\n"
+            "    <td><pre>nrows</pre></td>\n"
+            "    <td><pre>ncols</pre></td>\n"
+            "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
+            "  </tr>\n"
+            "  <tr>\n"
+            "    <td>3</td>\n"
+            "    <td>1000</td>\n"
+            "    <td>1</td>\n"
+            "    <td>FP64</td>\n"
+            "    <td>csc</td>\n"
+            "  </tr>\n"
+            "</table>\n"
+            "</div>\n"
+            "</summary><div>\n"
+            "<style scoped>\n"
+            "    .dataframe tbody tr th:only-of-type {\n"
+            "        vertical-align: middle;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe tbody tr th {\n"
+            "        vertical-align: top;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe thead th {\n"
+            "        text-align: right;\n"
+            "    }\n"
+            "</style>\n"
+            '<table border="1" class="dataframe">\n'
+            "  <thead>\n"
+            '    <tr style="text-align: right;">\n'
+            "      <th></th>\n"
+            "      <th>row</th>\n"
+            "      <th>...</th>\n"
+            "    </tr>\n"
+            "  </thead>\n"
+            "  <tbody>\n"
+            "    <tr>\n"
+            "      <th>0</th>\n"
+            "      <td>100</td>\n"
+            "      <td>...</td>\n"
+            "    </tr>\n"
+            "    <tr>\n"
+            "      <th>1</th>\n"
+            "      <td>300</td>\n"
+            "      <td>...</td>\n"
+            "    </tr>\n"
+            "    <tr>\n"
+            "      <th>2</th>\n"
+            "      <td>500</td>\n"
+            "      <td>...</td>\n"
+            "    </tr>\n"
+            "  </tbody>\n"
+            "</table>\n"
+            "</div></details></div>"
+        )
+
+
 def test_infix_expr_repr_html(A, B, v):
     html_printer(v & v, "v & v")
     assert repr_html(v & v) == (
