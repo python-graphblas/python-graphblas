@@ -3428,12 +3428,7 @@ def einsum(subscripts, *operands, op=semiring.plus_times, optimize="greedy"):
     if direct is not None:
         # One contraction whose result's axes are already in the output's order: run its
         # expression's recipe on einsum's target, with nothing in between
-        a_axes, b_axes, a_batch, b_batch = direct
-        A, B = tensors
-        if a_batch:
-            inner = _batched_contract_expr(A, B, typed, a_axes, b_axes, a_batch, b_batch)
-        else:
-            inner = A.tensordot(B, (a_axes, b_axes), typed)
+        inner = _contraction_expr(*tensors, typed, direct)
         return TensorExpression(
             "einsum", _einsum_delegate_recipe, tensors, (inner,), dtype=inner.dtype,
             shape=shape, op=typed, expr_repr=expr_repr,
@@ -3488,27 +3483,40 @@ def _einsum_plan(subscripts, shapes, optimize):
     if (mt := _mttkrp_pattern(terms, output)) is not None:
         return terms, output, shape, mt, None, None
     path = tuple(_einsum_path(terms, output, shapes, optimize))
-    direct = None
-    if len(terms) == 2:
-        ta, tb = terms
-        keep = set(output)
-        shared = [c for c in ta if c in tb]
-        batch = [c for c in shared if c in keep]
-        contracted = [c for c in shared if c not in keep]
-        free_a = [c for c in ta if c not in tb]
-        free_b = [c for c in tb if c not in ta]
-        if (
-            contracted
-            and all(c in keep for c in free_a + free_b)
-            and "".join(batch + free_a + free_b) == output
-        ):
-            direct = (
-                tuple(ta.index(c) for c in contracted),
-                tuple(tb.index(c) for c in contracted),
-                tuple(ta.index(c) for c in batch),
-                tuple(tb.index(c) for c in batch),
-            )
+    direct = _direct_axes(*terms, output) if len(terms) == 2 else None
     return terms, output, shape, None, path, direct
+
+
+def _direct_axes(ta, tb, output):
+    """``(a_axes, b_axes, a_batch, b_batch)`` when contracting terms ``ta`` and ``tb`` into
+    ``output`` is one contraction (tensordot, or batched) whose result's axes are already in
+    the output's order, with nothing to sum out first; else None.
+    """
+    keep = set(output)
+    shared = [c for c in ta if c in tb]
+    batch = [c for c in shared if c in keep]
+    contracted = [c for c in shared if c not in keep]
+    free_a = [c for c in ta if c not in tb]
+    free_b = [c for c in tb if c not in ta]
+    if (
+        not contracted
+        or not all(c in keep for c in free_a + free_b)
+        or "".join(batch + free_a + free_b) != output
+    ):
+        return None
+    return (
+        tuple(ta.index(c) for c in contracted),
+        tuple(tb.index(c) for c in contracted),
+        tuple(ta.index(c) for c in batch),
+        tuple(tb.index(c) for c in batch),
+    )
+
+
+def _contraction_expr(A, B, op, direct):
+    a_axes, b_axes, a_batch, b_batch = direct
+    if a_batch:
+        return _batched_contract_expr(A, B, op, a_axes, b_axes, a_batch, b_batch)
+    return A.tensordot(B, (a_axes, b_axes), op)
 
 
 def _mttkrp_pattern(terms, output):
@@ -3559,10 +3567,16 @@ def _einsum_mttkrp_transposed_recipe(updater, inner):
 
 def _einsum_recipe(updater, terms, output, tensors, op, path):
     ops = list(zip(terms, tensors, strict=True))
-    for i, j in path:
+    for step, (i, j) in enumerate(path):
         (ta, A), (tb, B) = ops[i], ops[j]
         for k in sorted((i, j), reverse=True):
             del ops[k]
+        if step == len(path) - 1 and (direct := _direct_axes(ta, tb, output)) is not None:
+            # The last contraction runs on einsum's target: a mask (an RPQ's ~visited) or an
+            # accumulator goes into its product, not onto a computed temporary
+            inner = _contraction_expr(A, B, op, direct)
+            inner.args[-2](updater, *inner.args[-1])
+            return
         keep = set(output).union(*(t for t, _ in ops))
         ops.append(_einsum_pair(ta, A, tb, B, keep, op, updater.opts))
     ((letters, result),) = ops

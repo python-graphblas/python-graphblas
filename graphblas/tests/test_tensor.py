@@ -4227,3 +4227,35 @@ def test_batched_contraction_embedded_format(monkeypatch):
     ev = np.einsum("lu,luv->lv", x.to_dense(), np.where(xp, xv, 0))
     ep = np.einsum("lu,luv->lv", np.ones((3, 6)), xp.astype(float)) > 0
     check(R, np.where(ep, ev, 0), ep, approx=True)
+
+
+def test_einsum_last_contraction_on_target(monkeypatch):
+    """The last contraction of a multi-operand einsum runs on the target, so a mask or an
+    accumulator applies in its product (a regular path query's step); results as numpy's.
+    """
+    from graphblas.core import tensor as tensor_mod
+
+    rng = np.random.default_rng(702)
+    F, fv, fp = random_tensor((3, 6), rng, density=0.4)
+    R, rv, rp = random_tensor((2, 3, 3), rng, density=0.5)
+    G, gv, gp = random_tensor((2, 6, 6), rng, density=0.4)
+    want = np_einsum("qu,lqp,luv->pv", (F, fv, fp), (R, rv, rp), (G, gv, gp))
+    V, vv, vp = random_tensor((3, 6), rng, density=0.5)
+    stored = []
+    orig = tensor_mod._store
+
+    def store(updater, src, *args, **kwargs):
+        stored.append(type(src).__name__)
+        return orig(updater, src, *args, **kwargs)
+
+    monkeypatch.setattr(tensor_mod, "_store", store)
+    R1 = tensor_mod.einsum("qu,lqp,luv->pv", F, R, G).new(mask=~V.S)
+    monkeypatch.undo()
+    assert stored[-1] == "MatrixExpression"  # the product itself, masked
+    keep = want[1] & ~vp
+    check(R1, np.where(keep, want[0], 0), keep, approx=True)
+    C = V.dup()
+    C(accum=binary.plus) << tensor_mod.einsum("qu,lqp,luv->pv", F, R, G)
+    both = want[1] | vp
+    cv = np.where(want[1], want[0], 0) + np.where(vp, vv, 0)
+    check(C, np.where(both, cv, 0), both, approx=True)
