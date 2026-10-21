@@ -4304,12 +4304,14 @@ def test_ss_pack_hyperhash(A):
 
     C = Matrix(int, 20000, 200000)
     C.ss.config["sparsity_control"] = "hypersparse"
-    C[100, 2000] = 2
-    C[10, 20] = 1
+    # More rows than the 1024 below which SuiteSparse 10 skips the hash
+    rows = np.arange(1025) * 3
+    C << Matrix.from_coo(rows, rows * 7, 1, nrows=20000, ncols=200000)
     Y = C.ss.unpack_hyperhash()
     Y = C.ss.unpack_hyperhash(compute=True)
     assert C.ss.unpack_hyperhash() is None
-    if Y is not None:  # hyperhash may or may not be computed
+    # The hash is optional, but every SuiteSparse we test computes this one
+    if Y is not None:  # pragma: no branch (suitesparse)
         assert Y.nrows == C.nrows
         C.ss.pack_hyperhash(Y)
         assert Y.gb_obj[0] == gb.core.NULL
