@@ -427,7 +427,8 @@ def _trim_zeros_complex(str_complexes):
         imag_part.append("".join(trimmed[-4:-2]))
     n = len(str_complexes)
     padded_parts = _trim_zeros_float(real_part + imag_part)
-    if len(padded_parts) == 0:
+    if len(padded_parts) == 0:  # pragma: no cover (defensive)
+        # An empty column becomes a float array, so it never comes here
         return []
     padded_length = max(len(part) for part in padded_parts) - 1
     return [
@@ -684,7 +685,8 @@ class _TextFormatter:
                     out.append(float_format(v))
                 else:
                     out.append(_trim_zeros_single_float(f"{v: .{precision}f}"))
-            elif v is None:
+            elif v is None:  # pragma: no cover (defensive)
+                # Cells come from numpy values or the dense grid, which blanks None
                 out.append(" None")
             elif _is_float_scalar(v):
                 out.append(" NaN")
