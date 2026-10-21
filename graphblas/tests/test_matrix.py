@@ -3801,6 +3801,31 @@ def test_ss_iteration(A):
     assert next(A.ss.iteritems()) is not None
 
 
+@pytest.mark.skipif("not suitesparse")
+def test_ss_iteration_udt():
+    # A UDT has no iterator getter of its own type; its values come from the UDT getter
+    rec = dtypes.register_anonymous(
+        np.dtype([("it_x", np.int16), ("it_y", np.float32)]), "IterRecord"
+    )
+    pair = dtypes.register_anonymous(np.dtype((np.uint32, (2,))), "IterPair")
+    for udt, values in [(rec, [(1, 0.5), (-2, 1.5), (3, -2.5)]), (pair, [(1, 2), (3, 4), (5, 6)])]:
+        A = Matrix.from_coo(
+            [0, 1, 2], [2, 0, 1], np.array(values, dtype=udt.np_type), dtype=udt, nrows=3, ncols=3
+        )
+        rows, cols, expected = A.to_coo()
+        assert [x.tolist() for x in A.ss.itervalues()] == expected.tolist()
+        r, c, vals = zip(*A.ss.iteritems(), strict=True)
+        assert list(r) == rows.tolist()
+        assert list(c) == cols.tolist()
+        assert [x.tolist() for x in vals] == expected.tolist()
+        # head of fewer than nvals reads with the iterator
+        head_rows, head_cols, head_values = A.ss.head(2, sort=True)
+        assert_array_equal(head_rows, rows[:2])
+        assert_array_equal(head_cols, cols[:2])
+        assert head_values.dtype == expected.dtype
+        assert_array_equal(head_values, expected[:2])
+
+
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt():

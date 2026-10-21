@@ -25,7 +25,7 @@ from ..utils import (
 from ._utils import _resolve_serialized_dtype
 from .config import BaseConfig
 from .descriptor import get_descriptor
-from .matrix import _concat_mn, njit
+from .matrix import _concat_mn, _iterator_value_getter, njit
 from .prefix_scan import prefix_scan
 
 ffi_new = ffi.new
@@ -46,7 +46,11 @@ def head(vector, n=10, dtype=None, *, sort=False):
     else:
         dtype = lookup_dtype(dtype)
     indices, vals = zip(*itertools.islice(vector.ss.iteritems(), n), strict=True)
-    return np.array(indices, np.uint64), np.array(vals, dtype.np_type)
+    # Filled from a list: numpy reads a tuple of records as one record, and an array
+    # UDT's dtype would add its shape to that of each value.
+    values = np.empty(len(vals), dtype.np_type)
+    values[...] = list(vals)
+    return np.array(indices, np.uint64), values
 
 
 class VectorConfig(BaseConfig):
@@ -370,7 +374,7 @@ class ss:
             return
         it = it_ptr[0]
         info = success = lib.GrB_SUCCESS
-        val_func = getattr(lib, f"GxB_Iterator_get_{self._parent.dtype.name}")
+        val_func = _iterator_value_getter(self._parent.dtype)
         next_func = lib.GxB_Vector_Iterator_next
         try:
             while info == success:
@@ -405,7 +409,7 @@ class ss:
         it = it_ptr[0]
         info = success = lib.GrB_SUCCESS
         key_func = lib.GxB_Vector_Iterator_getIndex
-        val_func = getattr(lib, f"GxB_Iterator_get_{self._parent.dtype.name}")
+        val_func = _iterator_value_getter(self._parent.dtype)
         next_func = lib.GxB_Vector_Iterator_next
         try:
             while info == success:

@@ -2697,6 +2697,27 @@ def test_ss_iteration(v):
     assert next(v.ss.iteritems()) is not None
 
 
+@pytest.mark.skipif("not suitesparse")
+def test_ss_iteration_udt():
+    # A UDT has no iterator getter of its own type; its values come from the UDT getter
+    rec = dtypes.register_anonymous(
+        np.dtype([("it_x", np.int16), ("it_y", np.float32)]), "IterRecord"
+    )
+    pair = dtypes.register_anonymous(np.dtype((np.uint32, (2,))), "IterPair")
+    for udt, values in [(rec, [(1, 0.5), (-2, 1.5), (3, -2.5)]), (pair, [(1, 2), (3, 4), (5, 6)])]:
+        v = Vector.from_coo([1, 4, 7], np.array(values, dtype=udt.np_type), dtype=udt, size=9)
+        indices, expected = v.to_coo()
+        assert [x.tolist() for x in v.ss.itervalues()] == expected.tolist()
+        keys, vals = zip(*v.ss.iteritems(), strict=True)
+        assert list(keys) == indices.tolist()
+        assert [x.tolist() for x in vals] == expected.tolist()
+        # head of fewer than nvals reads with the iterator
+        head_indices, head_values = v.ss.head(2, sort=True)
+        assert_array_equal(head_indices, indices[:2])
+        assert head_values.dtype == expected.dtype
+        assert_array_equal(head_values, expected[:2])
+
+
 def test_broadcasting(A, v):
     # Vector on left
     expected = A.dup()

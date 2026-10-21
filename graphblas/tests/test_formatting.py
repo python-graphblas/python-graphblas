@@ -6208,6 +6208,102 @@ def test_sparse_array_udt_repr():
     )
 
 
+def test_sparse_udt_repr_past_max_rows():
+    # More values than display.max_rows: the first min_rows are read with an iterator
+    rec = dtypes.register_anonymous(
+        np.dtype([("rh_x", np.int16), ("rh_y", np.float32)]), "rec_head"
+    )
+    arr = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "int8x3")
+    v = Vector(rec, size=1000, name="v")
+    A = Matrix(arr, nrows=1000, ncols=1000, name="A")
+    for i in range(5):
+        v[100 + 100 * i] = (i, i / 2)
+        A[100 + 100 * i, i] = (i, -i, 2 * i)
+    with display_options("display.max_rows", 4, "display.min_rows", 2):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size     dtype  format\n'
+            "gb.Vector      5  1000  rec_head  sparse\n"
+            "----------------------------------------\n"
+            "    index       val\n"
+            "0     100  (0, 0.0)\n"
+            "1     200  (1, 0.5)\n"
+            "...   ...       ..."
+        )
+        repr_printer(A, "A")
+        assert repr(A) == (
+            '"A"        nvals  nrows  ncols   dtype    format\n'
+            "gb.Matrix      5   1000   1000  int8x3  hypercsr\n"
+            "------------------------------------------------\n"
+            "     row  col         val\n"
+            "0    100    0   [0, 0, 0]\n"
+            "1    200    1  [1, -1, 2]\n"
+            "...  ...  ...         ..."
+        )
+        html_printer(A, "A")
+        assert repr_html(A) == (
+            "<div>"
+            f"{CSS_STYLE}"
+            '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A</tt><div>\n'
+            '<table class="gb-info-table">\n'
+            "  <tr>\n"
+            '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Matrix</pre></td>\n'
+            "    <td><pre>nvals</pre></td>\n"
+            "    <td><pre>nrows</pre></td>\n"
+            "    <td><pre>ncols</pre></td>\n"
+            "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
+            "  </tr>\n"
+            "  <tr>\n"
+            "    <td>5</td>\n" + "    <td>1000</td>\n" * 2 + "    <td>int8x3</td>\n"
+            "    <td>hypercsr</td>\n"
+            "  </tr>\n"
+            "</table>\n"
+            "</div>\n"
+            "</summary><div>\n"
+            "<style scoped>\n"
+            "    .dataframe tbody tr th:only-of-type {\n"
+            "        vertical-align: middle;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe tbody tr th {\n"
+            "        vertical-align: top;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe thead th {\n"
+            "        text-align: right;\n"
+            "    }\n"
+            "</style>\n"
+            '<table border="1" class="dataframe">\n'
+            "  <thead>\n"
+            '    <tr style="text-align: right;">\n'
+            "      <th></th>\n"
+            "      <th>row</th>\n"
+            "      <th>col</th>\n"
+            "      <th>val</th>\n"
+            "    </tr>\n"
+            "  </thead>\n"
+            "  <tbody>\n"
+            "    <tr>\n"
+            "      <th>0</th>\n"
+            "      <td>100</td>\n"
+            "      <td>0</td>\n"
+            "      <td>[0, 0, 0]</td>\n"
+            "    </tr>\n"
+            "    <tr>\n"
+            "      <th>1</th>\n"
+            "      <td>200</td>\n"
+            "      <td>1</td>\n"
+            "      <td>[1, -1, 2]</td>\n"
+            "    </tr>\n"
+            "    <tr>\n"
+            "      <th>...</th>\n" + "      <td>...</td>\n" * 3 + "    </tr>\n"
+            "  </tbody>\n"
+            "</table>\n"
+            "</div></details></div>"
+        )
+
+
 def test_empty():
     v = Vector(int, 0)
     repr_printer(v, "v")
