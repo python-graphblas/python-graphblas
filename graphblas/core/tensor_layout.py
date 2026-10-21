@@ -780,14 +780,27 @@ def transpose(M, *, nthreads=None):
     return out
 
 
+def reshape_owned(M, nrows, ncols):
+    """``M``, which the caller may change, reshaped to ``nrows`` x ``ncols``: in place, which
+    skips a copy of the values, except past 2^31 rows or columns, where SuiteSparse 10.5.1's
+    in-place reshape keeps 32-bit indices that cannot hold the new ones (Issue 462), and the
+    copying reshape runs.
+
+    TODO(SuiteSparse 10.5.2): always in place once 10.5.2, which fixes Issue 462, is the
+    oldest supported version; then this helper can go.
+    """
+    if nrows <= 2**31 and ncols <= 2**31:
+        M.ss.reshape(nrows, ncols, inplace=True)
+        return M
+    return M.ss.reshape(nrows, ncols)
+
+
 def execute(M, shape, state, path):
     """Run ``path`` on ``M`` (held by row, in ``state``); return the new Matrix and state.
 
     ``M`` itself is never changed; intermediates are reshaped in place, which skips a copy
-    of the values (7.1 ms vs 9.6 for 1e7 entries at 8 threads, and less peak memory).
-    SuiteSparse 10.5.1's in-place reshape does not widen 32-bit indices, so a reshape whose
-    new dimensions need 64-bit indices (past 2^32) gets wrong column indices; those use the
-    copying reshape.
+    of the values (7.1 ms vs 9.6 for 1e7 entries at 8 threads, and less peak memory), except
+    where ``reshape_owned`` must copy (SuiteSparse 10.5.1).
     """
     owned = False
     for edge in path:
@@ -799,14 +812,15 @@ def execute(M, shape, state, path):
             if M._nvals == 0:
                 M = new_matrix(M.dtype, nrows, ncols)
                 how = "empty: new"
-            elif owned and nrows <= 2**31 and ncols <= 2**31:
+            elif owned:
                 # Storage order (rowwise on a by-row Matrix), so the other 10.5.1 reshape bug
                 # (order != orientation) cannot apply either.
-                M.ss.reshape(nrows, ncols, inplace=True)
-                how = "in place"
+                before = M
+                M = reshape_owned(M, nrows, ncols)
+                how = "in place" if M is before else "copy (past 2^31)"
             else:
                 M = M.ss.reshape(nrows, ncols)
-                how = "copy" if not owned else "copy (past 2^31)"
+                how = "copy"
             if census.on:
                 census.note("reshape", how)
             state = (seq, q)
