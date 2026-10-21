@@ -229,9 +229,14 @@ def ttm(M, U, desc=None):
             cont.nvals = K
             cont.iso = False
             cont.jumbled = False
-        # The output's own form, so the product converts nothing (DESIGN_phase5 1.6)
-        sparsity = lib.GxB_BITMAP + lib.GxB_FULL if 2 * nonempty >= n else lib.GxB_SPARSE
-        tl._check(lib.GrB_Vector_set_INT32(w, sparsity, lib.GxB_SPARSITY_CONTROL), "set")
+        if 2 * nonempty < n:
+            # A sparse output, so the product does not leave a bitmap of n values to convert
+            # (DESIGN_phase5 1.6). The empty Vector is sparse already: nothing converts now.
+            # Otherwise the product's own bitmap or full result is kept: asking for bitmap here
+            # would convert the empty Vector at once, allocating n values, and for a UDT that
+            # conversion is a JIT kernel of its own (with a broken compiler, the call that
+            # reported GxB_JIT_ERROR).
+            tl._check(lib.GrB_Vector_set_INT32(w, lib.GxB_SPARSE, lib.GxB_SPARSITY_CONTROL), "set")
         tl._check(
             lib.GrB_mxv(w, NULL, NULL, sr, M.gb_obj[0], u, NULL if desc is None else desc._carg),
             "GrB_mxv",

@@ -2642,6 +2642,94 @@ def test_engines_selectable(monkeypatch):
             assert ran == expected, (engine, mode)
 
 
+_JIT_NEW_KERNEL_SCRIPT = """
+import sys
+import warnings
+sys.modules["numba"] = None  # (so the UDT engine takes the dense case too)
+import numpy as np
+import graphblas as gb
+from graphblas.core import tensor, tensor_udt
+from graphblas.core.tensor import Tensor
+print("package:", gb.__file__)
+if not tensor_udt.jit_ready():
+    print("skip: no JIT compiler")
+    sys.exit(0)
+tensor._TTM_KERNEL_MIN_NNZ = 0
+attempts = []
+orig = tensor_udt.ttm
+def spy(*args, **kwargs):
+    try:
+        rv = orig(*args, **kwargs)
+    except Exception as exc:
+        attempts.append(type(exc).__name__)
+        raise
+    attempts.append("ok" if rv is not None else "none")
+    return rv
+tensor_udt.ttm = spy
+rng = np.random.default_rng(0)
+shape = (300, 300, 40)
+flat = np.unique(rng.choice(np.prod(shape), 20000, replace=False))
+xv = np.zeros(shape)
+xv.flat[flat] = rng.standard_normal(flat.size)
+X = Tensor.from_coo(np.nonzero(xv), xv[xv != 0], shape=shape, layout=((0, 1), (2,)))
+dv = rng.standard_normal((30, 30, 40))
+Xd = Tensor.from_dense(dv, layout=((0, 1), (2,)))
+F = [rng.standard_normal((n, 7)) for n in (30, 30, 40)]
+def run(T, tv):
+    if sys.argv[1] == "ttm":
+        got = T.tensordot(F[2], ([2], [0])).new().to_dense(fill_value=0)
+        return float(np.abs(got - np.tensordot(tv, F[2], ([2], [0]))).max())
+    Fs = [np.resize(f, (n, 7)) for f, n in zip(F, T.shape)]
+    got = T.mttkrp(Fs, 0).new().to_dense(fill_value=0)
+    return float(np.abs(got - np.einsum("ijk,jr,kr->ir", tv, Fs[1], Fs[2])).max())
+err = [run(X, xv)]  # the engine's type, ops and kernels for R = 7 compile here
+first = list(attempts)
+gb.ss.config["jit_c_compiler_name"] = "/nonexistent/bin/cc"
+gb.ss.config["jit_c_control"] = "on"
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    err += [run(Xd, dv), run(Xd, dv)]  # a dense tensor: a new kernel, which cannot compile
+print("max_err:", max(err))
+print("attempts:", first, attempts[len(first):])
+print("control:", gb.ss.config["jit_c_control"])
+print("failure:", tensor_udt._FAILURE and tensor_udt._FAILURE[:2])
+print("warnings:", sum("array-UDT engine" in str(w.message) for w in caught))
+"""
+
+
+@pytest.mark.parametrize("case", ["ttm", "mttkrp"])
+def test_udt_engine_new_kernel_jit_failure(case, tmp_path):
+    """The engine's ops for an R are compiled, then the compiler breaks, and a case needs a
+    new kernel (a dense tensor): the JIT error is caught there too, for TTM and for the
+    MTTKRP products' first step, and the products give the result (Numba blocked, so the
+    UDT engine is the one tried).
+    """
+    if backend != "suitesparse":
+        pytest.skip("SuiteSparse only")
+    repo_root = Path(__file__).resolve().parents[2]
+    env = dict(os.environ, PYTHONPATH=str(repo_root), GRAPHBLAS_CACHE_PATH=str(tmp_path / "jit"))
+    result = subprocess.run(
+        [sys.executable, "-c", _JIT_NEW_KERNEL_SCRIPT, case],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+        timeout=600,
+    )
+    report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert result.returncode == 0, report
+    lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
+    assert lines["package"] == str(repo_root / "graphblas" / "__init__.py"), report
+    if "skip" in lines:
+        pytest.skip(lines["skip"])
+    assert float(lines["max_err"]) < 1e-10, report
+    # Compiled and ran; then one attempt that failed, and none after
+    assert lines["attempts"] == "['ok'] ['JitError']", report
+    assert lines["control"] == "on", report
+    assert lines["failure"] == "('on', 'load')", report
+    assert lines["warnings"] == "1", report
+
+
 def test_ttm_engine_choice(monkeypatch):
     """With both engines, the UDT one takes the stored order with a hypersparse output and
     R <= _TTM_UDT_MAX_R; the Numba one the rest. Without Numba, the UDT one takes all.
