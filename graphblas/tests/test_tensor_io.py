@@ -7,8 +7,13 @@ import pytest
 
 from graphblas import backend, binary, dtypes
 from graphblas.core.tensor import Layout, Tensor
+from graphblas.core.tensor import _has_container as tensor_has_container
 
 from .test_tensor import all_layouts, check
+
+if backend != "suitesparse" or not tensor_has_container():
+    pytest.skip("Tensor needs SuiteSparse:GraphBLAS 10 or later", allow_module_level=True)
+
 
 ss = pytest.importorskip("scipy.sparse")
 try:

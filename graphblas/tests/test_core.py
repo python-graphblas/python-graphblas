@@ -83,6 +83,109 @@ def test_tensor_exports(backend):
         assert lines["use"] == ["ok", "ok"], report
 
 
+_TENSOR_OLD_SS_SCRIPT = """
+import sys
+import numpy as np
+import pytest
+
+
+class OldLib:
+    # SuiteSparse's cffi lib as one without the Container API (SuiteSparse:GraphBLAS 9 and
+    # older) would be
+    def __init__(self, lib):
+        self._lib = lib
+
+    def __getattr__(self, name):
+        if "Container" in name:
+            raise AttributeError(name)
+        return getattr(self._lib, name)
+
+
+def old_suitesparse():
+    from graphblas.core import tensor
+
+    tensor.lib = OldLib(tensor.lib)
+
+
+if sys.argv[1] == "calls":
+    import graphblas as gb
+
+    print("package:", gb.__file__)
+    old_suitesparse()
+    M = gb.Matrix.from_dense(np.eye(2))
+    calls = {
+        "Tensor": lambda: gb.Tensor(gb.dtypes.FP64, (2, 3)),
+        "from_coo": lambda: gb.Tensor.from_coo([[0], [1]], [1.0], shape=(2, 2)),
+        "from_dense": lambda: gb.Tensor.from_dense(np.eye(2)),
+        "from_matrix": lambda: gb.Tensor.from_matrix(M),
+        "from_vector": lambda: gb.Tensor.from_vector(gb.Vector.from_dense([1.0, 2.0])),
+        "from_matrices": lambda: gb.Tensor.from_matrices([M, M]),
+        "einsum": lambda: gb.einsum("ij->ji", np.eye(2)),
+    }
+    try:
+        import scipy.sparse
+
+        calls["from_scipy_sparse"] = lambda: gb.Tensor.from_scipy_sparse(scipy.sparse.eye(2))
+    except ImportError:
+        pass
+    for name, call in calls.items():
+        try:
+            call()
+            print("use:", name, "ok")
+        except NotImplementedError as exc:
+            print("use:", name, exc)
+else:
+
+    class Patch:
+        # after the conftest has initialized graphblas, before collection
+        def pytest_sessionstart(self, session):
+            old_suitesparse()
+
+    tests = sys.argv[2]
+    rc = pytest.main(
+        [f"{tests}/test_tensor.py", f"{tests}/test_tensor_io.py", "-q", "-rs", "-p",
+         "no:cacheprovider"],
+        plugins=[Patch()],
+    )
+    print("pytest:", int(rc))
+"""
+
+
+@pytest.mark.skipif(gb.backend != "suitesparse", reason="SuiteSparse only")
+def test_tensor_old_suitesparse():
+    """With a SuiteSparse that has no Container API (before 10), every public way to make a
+    Tensor, and einsum, raises one NotImplementedError naming the version, and the Tensor test
+    modules skip. Run in subprocesses with the Tensor module's ``lib`` patched.
+    """
+    import subprocess
+    import sys
+
+    repo_root = pathlib.Path(gb.__file__).resolve().parents[1]
+    tests = repo_root / "graphblas" / "tests"
+    out = {}
+    for what in ["calls", "pytest"]:
+        result = subprocess.run(
+            [sys.executable, "-c", _TENSOR_OLD_SS_SCRIPT, what, str(tests)],
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=str(repo_root),
+            env={**__import__("os").environ, "PYTHONPATH": str(repo_root)},
+        )
+        out[what] = report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        assert result.returncode == 0, report
+    report = out["calls"]
+    assert f"package: {repo_root / 'graphblas' / '__init__.py'}" in report, report
+    uses = [line for line in report.splitlines() if line.startswith("use: ")]
+    assert len(uses) >= 7, report
+    for line in uses:
+        assert line.endswith("Tensor requires SuiteSparse:GraphBLAS 10 or later"), report
+    report = out["pytest"]
+    assert "pytest: 5" in report, report  # (pytest's "no tests collected": both modules skip)
+    assert "2 skipped" in report, report
+    assert "passed" not in report, report
+
+
 def test_bad_init():
     # same params is okay
     params = dict(gb._init_params)
