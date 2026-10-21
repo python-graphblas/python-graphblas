@@ -187,6 +187,12 @@ the leading axes as batch axes; ``einsum`` takes numpy's subscripts and any semi
 ``einsum`` with three or more operands picks a pairwise order (``opt_einsum`` when it is
 installed), and recognizes the MTTKRP pattern (``"ijk,jr,kr->ir"``).
 
+A contraction moves an operand whose layout does not suit it, and does not keep the moved
+copy. In a loop that contracts the same Tensor every step (a PageRank or a path query), store
+it once in the layout the contraction uses: ``E = E.relayout(((0, 1), (2, 3)))`` for
+``einsum("qu,qupv->pv", F, E)``, which contracts axes 0 and 1. That made a regular path query
+on Hetionet 17-27x faster.
+
 Masks and updates
 -----------------
 
