@@ -205,6 +205,36 @@ def _reshape(t, shape):
     return Tensor._from_M(M, shape, layout)
 
 
+def _reduce_aggregator(t, op, axis, keepdims):
+    """``reduce`` with an aggregator: its monoid; or its semiring's multiply applied with the
+    aggregator's initial value to every entry, then the semiring's monoid, then its finalize
+    op, as Matrix aggregations do.
+    """
+    from .operator.agg import TypedAggregator
+
+    agg = op.parent if isinstance(op, TypedAggregator) else op
+    if agg._monoid is not None:
+        return _reduce_expr(t, agg._monoid, axis, keepdims)
+    if agg._semiring is None or agg._composite is not None or agg._custom is not None:
+        raise NotImplementedError(
+            f"Tensor.reduce supports aggregators made of a monoid or a semiring; not "
+            f"agg.{agg.name}"
+        )
+    # The semiring typed as Matrix aggregations type it, by the values' type and the initial
+    # value's (so integer powers of INT64 values stay INT64: logaddexp2 of -3 is log2(0)); its
+    # result type is then the one Matrix gives (INT64 for count and exists)
+    agg[t.dtype]  # (a KeyError for the types Matrix refuses, as sum_of_squares of BOOL)
+    sr = get_typed_op(agg._semiring, t.dtype, agg._initdtype)
+    if agg._switch:
+        x = t.apply(sr.binaryop, left=agg._initval).new()
+    else:
+        x = t.apply(sr.binaryop, right=agg._initval).new()
+    rv = _reduce_expr(x, sr.monoid, axis, keepdims)
+    if agg._finalize is not None:
+        rv = rv.new().apply(agg._finalize[sr.return_type])
+    return rv
+
+
 def _insert_unit_axes(layout, unit_axes):
     """Add size-1 axes to a layout. They do not change the stored Matrix, so they may go
     anywhere; put each before the next larger axis so an identity sequence stays one.
@@ -882,9 +912,23 @@ class Tensor(BaseType):
     def wait(self, how="materialize"):
         self._M.wait(how)
 
+    def _comparand(self, other, within):
+        """``other`` for ``isequal`` / ``isclose``: a Tensor, or a Matrix, Vector or Scalar as
+        the Tensor of its shape (2-d, 1-d, 0-d).
+        """
+        if type(other) is Scalar:
+            if other._is_empty:
+                return Tensor(other.dtype, ())
+            return Tensor.from_coo((), [other.value], other.dtype, shape=())
+        if output_type(other) in {Matrix, Vector, TransposedMatrix}:
+            return _as_tensor(other, within)
+        return self._expect_type(other, Tensor, within=within, argname="other")
+
     def isequal(self, other, *, check_dtype=False):
-        """Whether ``other`` has the same shape, the same entries and equal values."""
-        other = self._expect_type(other, Tensor, within="isequal", argname="other")
+        """Whether ``other`` has the same shape, the same entries and equal values. ``other``
+        is a Tensor, or a Matrix, Vector or Scalar (compared as a 2-, 1- or 0-d Tensor).
+        """
+        other = self._comparand(other, "isequal")
         if check_dtype and self.dtype != other.dtype:
             return False
         if self._shape != other._shape or self._M.nvals != other._M.nvals:
@@ -893,8 +937,10 @@ class Tensor(BaseType):
         return A.isequal(B, check_dtype=check_dtype)
 
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
-        """Whether ``other`` has the same shape, the same entries and close values."""
-        other = self._expect_type(other, Tensor, within="isclose", argname="other")
+        """Whether ``other`` has the same shape, the same entries and close values (a Tensor,
+        Matrix, Vector or Scalar, as for ``isequal``).
+        """
+        other = self._comparand(other, "isclose")
         if check_dtype and self.dtype != other.dtype:
             return False
         if self._shape != other._shape or self._M.nvals != other._M.nvals:
@@ -1119,10 +1165,18 @@ class Tensor(BaseType):
 
     # Reductions
     def reduce(self, op=monoid.plus, axis=None, *, keepdims=False):
-        """Reduce over ``axis`` (None: all axes, giving a 0-d Tensor) with the monoid ``op``.
+        """Reduce over ``axis`` (None: all axes, giving a 0-d Tensor) with the monoid ``op``,
+        or an aggregator made of one (``agg.sum``, ``agg.max``, ...) or of a semiring
+        (``agg.count``, ``agg.count_nonzero``, ``agg.sum_of_squares``, ``agg.hypot``, ...).
+        Composite aggregators (``agg.mean``, ``agg.varp``, ...) and ones that need positions
+        (``agg.argmin``, ``agg.first``, ...) are not supported.
 
         A position whose fiber has no entries stays missing (it is not 0).
         """
+        from .operator.agg import Aggregator, TypedAggregator
+
+        if isinstance(op, (Aggregator, TypedAggregator)):
+            return _reduce_aggregator(self, op, axis, keepdims)
         return _reduce_expr(self, op, axis, keepdims)
 
     # Contractions
