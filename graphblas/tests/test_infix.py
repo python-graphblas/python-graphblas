@@ -403,6 +403,11 @@ def test_multi_infix_vector():
     assert result.isequal(expected)
     result = binary.plus(v1 | (v2 | v3)).new()
     assert result.isequal(expected)
+    # Both operands an expression: v1 + v2 is [1, 3, 2] and v2 + v3 is [2, 1, 3]
+    result = binary.plus((v1 | v2) | (v2 | v3)).new()
+    assert result.isequal(Vector.from_coo([0, 1, 2], [3, 4, 5]), check_dtype=True)
+    result = binary.plus((v1 | v2) | (v2 | v3.dup(float))).new()
+    assert result.isequal(Vector.from_coo([0, 1, 2], [3.0, 4.0, 5.0]), check_dtype=True)
     result = monoid.min(v1 | v2 | v3).new()
     expected = Vector.from_scalar(1, size=3)
     assert result.isequal(expected)
