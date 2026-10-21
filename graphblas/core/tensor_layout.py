@@ -1177,8 +1177,8 @@ def embed_block_diagonal(M, rows_per_block, nblocks):
 
     Each row gains one constant, so sorted rows stay sorted, and the column indices are
     changed in the Container's own array, keeping their integer width (``ss.unpack`` would
-    widen them to 64 bits for good, review F14). Returns False when that is not possible (the
-    new width does not fit, a read-only array, bitmap or full storage); then nothing changed.
+    widen them to 64 bits for good). Returns False when that is not possible (the new width
+    does not fit, a read-only array, bitmap or full storage); then nothing changed.
     """
     K = M._ncols
     new_ncols = nblocks * K

@@ -351,7 +351,7 @@ def test_vanilla_check(monkeypatch):
 
 
 def test_by_col_global_format():
-    """Every stored Matrix stays held by row when the global format is by column (F6)."""
+    """Every stored Matrix stays held by row when the global format is by column."""
     rng = np.random.default_rng(4)
     prev = gb.ss.config["format"]
     gb.ss.config["format"] = "by_col"
@@ -545,7 +545,7 @@ def test_relayout_4d_and_big():
             assert state == dst.state
             assert M.isequal(_rebuild_reference(T, dst).ss.matrix), (src, dst, path)
         check(S, values, present)
-    # Total size past 2**60: no reshape edges; groups past 2**60 are not states (F13)
+    # Total size past 2**60: no reshape edges; groups past 2**60 are not states
     shape = (2**19,) * 4
     n = 300
     coords = [rng.integers(0, 2**19, n) for _ in range(4)]
@@ -860,7 +860,7 @@ def test_update_layout_rules():
     rng = np.random.default_rng(16)
     shape = (3, 4, 5)
     A, av, ap = random_tensor(shape, rng, layout=((2,), (0, 1)))
-    # Unpinned target adopts the result's layout; pinned keeps its own (F3)
+    # Unpinned target adopts the result's layout; pinned keeps its own
     C = Tensor(float, shape)
     C << A * 2
     assert C.layout == A.layout
@@ -1046,7 +1046,7 @@ def test_ewise_infix_and_scalars():
 
 @pytest.mark.parametrize("opname", ["times", "first", "plus", "second"])
 def test_ewise_iso(opname):
-    """Iso inputs give iso results exactly when the same Matrix op does (F7)."""
+    """Iso inputs give iso results exactly when the same Matrix op does."""
     rng = np.random.default_rng(21)
     shape = (3, 4, 5)
     op = EWISE_OPS[opname][0]
@@ -1212,7 +1212,7 @@ def test_reduce_target_layout():
     D(binary.plus) << T.sum(1)
     ev, ep = np_reduce("plus", values, present, 1)
     check(D, np.where(dp, dv, 0) + ev, dp | ep, approx=True)
-    # A result is not left as an n x 1 Matrix (review F4); one row is fine
+    # A result is not left as an n x 1 Matrix (``_healthy``); one row is fine
     R = T.sum(2, keepdims=True).new()
     assert R.layout.cols
     check(R, *np_reduce("plus", values, present, 2, keepdims=True), approx=True)
