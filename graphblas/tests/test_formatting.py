@@ -4413,6 +4413,25 @@ def test_repr_max_rows_zero(monkeypatch):
             "    index  val\n"
             "..    ...  ..."
         )
+    # A Matrix shown as a grid reads the rows that fit, not min_rows of them
+    rows = [0, 1, 2, 3, 36, 37, 38, 39]
+    A = Matrix.from_coo(
+        rows, [0, 1, 2, 0, 1, 2, 0, 1], [r * 10 + 1 for r in rows], nrows=40, ncols=3, name="A"
+    )
+    monkeypatch.setenv("LINES", "8")
+    with display_options("display.max_rows", 0):
+        repr_printer(A, "A")
+        assert repr(A) == (
+            '"A"        nvals  nrows  ncols  dtype   format\n'
+            "gb.Matrix      8     40      3  INT64  bitmapr\n"
+            "----------------------------------------------\n"
+            "      0    1 2 \n"
+            "0     1        \n"
+            "1         11   \n"
+            "..  ...  ... ..\n"
+            "38  381        \n"
+            "39       391   "
+        )
 
 
 def test_repr_max_rows_one():
@@ -4429,6 +4448,88 @@ def test_repr_max_rows_one():
             "   index  val\n"
             "0    100  0.0\n"
             "..   ...  ..."
+        )
+    # display.min_rows=1 leaves room for one row too, so the first max_rows rows are shown
+    B = Matrix.from_coo(
+        [0, 1, 3, 20, 39], [0, 1, 2, 0, 2], [1, 2, 3, 4, 5], nrows=40, ncols=3, name="B"
+    )
+    with display_options("display.max_rows", 5, "display.min_rows", 1):
+        repr_printer(B, "B")
+        assert repr(B) == (
+            '"B"        nvals  nrows  ncols  dtype    format\n'
+            "gb.Matrix      5     40      3  INT64  hypercsr\n"
+            "-----------------------------------------------\n"
+            "    0  1  2\n"
+            "0   1      \n"
+            "1      2   \n"
+            "2          \n"
+            "3         3\n"
+            "4          \n"
+            ".. .. .. .."
+        )
+
+
+def test_repr_max_rows_below_min_rows():
+    # The rows shown are the first and last half of min(min_rows, max_rows), or of
+    # max_rows when min_rows is 0, so only those rows are read, each under its label
+    rows = [0, 1, 2, 3, 36, 37, 38, 39]
+    A = Matrix.from_coo(
+        rows, [0, 1, 2, 0, 1, 2, 0, 1], [r * 10 + 1 for r in rows], nrows=40, ncols=3, name="A"
+    )
+    with display_options("display.max_rows", 4):
+        repr_printer(A, "A")
+        assert repr(A) == (
+            '"A"        nvals  nrows  ncols  dtype   format\n'
+            "gb.Matrix      8     40      3  INT64  bitmapr\n"
+            "----------------------------------------------\n"
+            "      0    1 2 \n"
+            "0     1        \n"
+            "1         11   \n"
+            "..  ...  ... ..\n"
+            "38  381        \n"
+            "39       391   "
+        )
+    with display_options("display.max_rows", 6, "display.min_rows", 0):
+        repr_printer(A, "A")
+        assert repr(A) == (
+            '"A"        nvals  nrows  ncols  dtype   format\n'
+            "gb.Matrix      8     40      3  INT64  bitmapr\n"
+            "----------------------------------------------\n"
+            "      0    1    2\n"
+            "0     1          \n"
+            "1         11     \n"
+            "2              21\n"
+            "..  ...  ...  ...\n"
+            "37            371\n"
+            "38  381          \n"
+            "39       391     "
+        )
+    # Fewer rows than min_rows
+    C = Matrix.from_coo([0, 1, 2], [0, 1, 2], [1, 2, 3], nrows=3, ncols=3, name="C")
+    with display_options("display.max_rows", 2):
+        repr_printer(C, "C")
+        assert repr(C) == (
+            '"C"        nvals  nrows  ncols  dtype   format\n'
+            "gb.Matrix      3      3      3  INT64  bitmapr\n"
+            "----------------------------------------------\n"
+            "    0 1   2\n"
+            "0   1      \n"
+            ".. .. .. ..\n"
+            "2         3"
+        )
+    # A dense Matrix stays a grid: the COO form would show no more rows than the grid
+    vals = np.arange(5)[:, None] * 1000 + np.arange(4)[None, :] + 1
+    D = Matrix.from_dense(vals, name="D")
+    with display_options("display.max_rows", 3, "display.max_columns", 2):
+        repr_printer(D, "D")
+        assert repr(D) == (
+            '"D"        nvals  nrows  ncols  dtype  format\n'
+            "gb.Matrix     20      5      4  INT64   fullr\n"
+            "---------------------------------------------\n"
+            "       0  ...     3\n"
+            "0      1  ...     4\n"
+            "..   ...  ...   ...\n"
+            "4   4001  ...  4004"
         )
 
 
@@ -4512,6 +4613,31 @@ def test_repr_max_columns_one():
             "  </tbody>\n"
             "</table>\n"
             "</div></details></div>"
+        )
+    # The same for a Matrix and a Vector shown as a grid
+    A = Matrix.from_coo(
+        [0, 1, 2, 0, 2], [0, 0, 0, 3, 4], [1, 2, 3, 4, 5], nrows=3, ncols=5, name="A"
+    )
+    with display_options("display.max_columns", 1):
+        repr_printer(A, "A")
+        assert repr(A) == (
+            '"A"        nvals  nrows  ncols  dtype   format\n'
+            "gb.Matrix      5      3      5  INT64  bitmapr\n"
+            "----------------------------------------------\n"
+            "   0  ...\n"
+            "0  1  ...\n"
+            "1  2  ...\n"
+            "2  3  ..."
+        )
+    v = Vector.from_coo([0, 4], [1, 2], size=5, name="v")
+    with display_options("display.max_columns", 1):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      2     5  INT64  bitmap\n"
+            "-------------------------------------\n"
+            "index  0  ...\n"
+            "value  1  ..."
         )
 
 

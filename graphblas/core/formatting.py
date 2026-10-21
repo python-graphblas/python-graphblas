@@ -254,15 +254,29 @@ def _get_max_columns():
     return max_columns
 
 
+def _terminal_rows():
+    # rows available for data: terminal height minus dots + prompt + header
+    return shutil.get_terminal_size()[1] - 3
+
+
 def _get_chunk(length, min_length, max_length):
     if length <= max_length:
         chunk = list(range(length))
         chunk_groups = [(None, None)]
     else:
-        half = min_length // 2
+        # The renderer cuts a frame longer than max_length to the first and last half of
+        # min(min_length, max_length) items, or of max_length when min_length is 0. Only
+        # those are read: the frame is one item longer than max_length, and the items
+        # between them are blank and cut.
+        shown = min(min_length, max_length) if min_length else max_length
+        half = shown // 2
+        chunk = list(range(max_length + 1))
+        if half == 0:
+            # With room for one item the renderer shows the first max_length items
+            # instead of a head and a tail.
+            return chunk, [(list(range(max_length)), None)]
         first_chunk = list(range(half))
         second_chunk = list(range(length - half, length))
-        chunk = list(range(max_length + 1))
         chunk[-half:] = second_chunk
         chunk_groups = [(first_chunk, None), (second_chunk, length - len(chunk))]
     return chunk, chunk_groups
@@ -611,8 +625,7 @@ class _TextFormatter:
 
     def _calc_max_rows_fitted(self):
         if self._is_in_terminal() and self.max_rows == 0:
-            # rows available for data: terminal height minus dots + prompt + header
-            return shutil.get_terminal_size()[1] - 3
+            return _terminal_rows()
         max_rows = self.max_rows
         if max_rows and self.frame.nrows > max_rows and self.min_rows:
             max_rows = min(self.min_rows, max_rows)
@@ -916,7 +929,13 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
         min_rows = _display_option("min_rows")
     if max_columns is None:  # pragma: no branch
         max_columns = _get_max_columns()
-    rows, row_groups = _get_chunk(matrix._nrows, min_rows, max_rows)
+    if max_rows == 0:
+        # The renderer fits the rows to the terminal; read at least the first row
+        fit_rows = max(_terminal_rows(), 1)
+        rows, row_groups = _get_chunk(matrix._nrows, fit_rows, fit_rows)
+    else:
+        fit_rows = max_rows
+        rows, row_groups = _get_chunk(matrix._nrows, min_rows, max_rows)
     columns, column_groups = _get_chunk(matrix._ncols, max_columns, max_columns)
     arr = np.full((len(rows), len(columns)), np.nan, dtype=object)
     for row_group, row_offset in row_groups:
@@ -932,10 +951,13 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
             )
     present = _count_present(arr)
     truncated = (len(rows), len(columns)) != matrix.shape
+    # Weigh the COO form by the entries it would show: the renderer cuts it to the rows it
+    # shows, as it does the grid
+    coo_rows = matrix._nvals if matrix._nvals <= max_rows else min(min_rows, fit_rows)
     if (
         (mask is None or mask.structure)
         and truncated
-        and min(matrix._nvals, max_rows if matrix._nvals <= max_rows else min_rows) > 2 * present
+        and min(matrix._nvals, coo_rows) > 2 * present
     ):
         # The data is sparse and it's better to show in COO format.
         # SS, SuiteSparse-specific: head
@@ -957,7 +979,7 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
         # Perhaps we could use the efficient "constant vector or matrix" trick.
         nonzero = matrix.apply(unary.one["UINT8"]).new(mask=matrix.V, name="")
         num_rows = matrix._nvals if matrix._nvals <= max_rows else min_rows
-        if min(nonzero._nvals, num_rows) > 2 * present:
+        if min(nonzero._nvals, coo_rows) > 2 * present:
             rows, cols, vals = nonzero.ss.head(num_rows, sort=True)
             if mask.complement:
                 if not vals.flags.writeable:  # pragma: no cover (safety)
