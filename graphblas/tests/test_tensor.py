@@ -3562,3 +3562,127 @@ def test_extract_filter_path():
         for nthreads in (8, 1):
             R = X[key].new(nthreads=nthreads)
             check(R, np_outer_index(xv, key), np_outer_index(xp, key))
+
+
+def _random_reshape(shape, rng):
+    """A random target shape of the same size: the sizes' prime factors regrouped, with
+    some size-1 axes, up to 6 axes.
+    """
+    size = math.prod(shape)
+    if size == 0:
+        return tuple(int(n) for n in rng.permutation([0, *([1] * int(rng.integers(0, 3)))]))
+    factors = []
+    for n in shape:
+        p = 2
+        while n > 1:
+            while n % p == 0:
+                factors.append(p)
+                n //= p
+            p += 1
+    out = [1] * int(rng.integers(1, 5))
+    for f in factors:
+        out[int(rng.integers(0, len(out)))] *= f
+    for _ in range(int(rng.integers(0, 2))):
+        out.insert(int(rng.integers(0, len(out) + 1)), 1)
+    return tuple(out[:6]) if math.prod(out[:6]) == size else tuple(out)
+
+
+@pytest.mark.parametrize("ndim", [1, 2, 3, 4, 5])
+def test_reshape_random(ndim):
+    """``reshape`` against numpy: random shapes (size-1 and size-0 axes too), every layout
+    (a sample at 4-5-d), views, and target shapes that split and fuse runs across the
+    groups; a view exactly when the layout holds the result.
+    """
+    from graphblas.core.tensor import _reshape_layout
+
+    rng = np.random.default_rng(100 + ndim)
+    layouts = all_layouts(ndim)[:: {1: 1, 2: 1, 3: 1, 4: 7, 5: 61}[ndim]]
+    for i, layout in enumerate(layouts):
+        shape = tuple(int(n) for n in rng.choice([1, 2, 3, 4, 6], ndim))
+        if i % 11 == 5:
+            shape = (*shape[:-1], 0)
+        X, xv, xp = random_tensor(shape, rng, density=0.4, layout=layout, iso=i % 6 == 0)
+        views = [tuple(range(ndim))]
+        if ndim > 1:
+            views.append(tuple(int(a) for a in rng.permutation(ndim)))
+        for perm in views:
+            V = X.permute_dims(perm)
+            vv, vp = xv.transpose(perm), xp.transpose(perm)
+            for _ in range(4):
+                new = _random_reshape(V.shape, rng)
+                R = V.reshape(new)
+                check(R, vv.reshape(new), vp.reshape(new))
+                if math.prod(new) > 0:
+                    holds = _reshape_layout(V.shape, V.layout, new) is not None
+                    assert (R._M is V._M) == holds, (V.layout, V.shape, new)
+                    if not holds:
+                        with pytest.raises(ValueError, match="copy=False"):
+                            V.reshape(new, copy=False)
+                C = V.reshape(new, copy=True)
+                check(C, vv.reshape(new), vp.reshape(new))
+                assert C._M is not V._M
+
+
+def test_reshape_views_and_moves():
+    """Splits and fuses within one group are views (O(1), sharing the data copy-on-write);
+    across the groups, or out of order, the data moves once to a healthy layout.
+    """
+    rng = np.random.default_rng(7)
+    X, xv, xp = random_tensor((4, 6, 10), rng, density=0.3, layout=((0, 1), (2,)))
+    for new, view in [
+        ((24, 10), True),
+        ((2, 2, 6, 10), True),
+        ((4, 6, 2, 5), True),
+        ((1, 4, 6, 1, 10), True),
+        ((4, 60), False),
+        ((10, 24), False),
+        ((240,), False),
+    ]:
+        R = X.reshape(new)
+        check(R, xv.reshape(new), xp.reshape(new))
+        assert (R._M is X._M) == view, new
+        if not view:
+            assert R.layout.rows and R.layout.cols or R.ndim == 1, R.layout
+    # Out of order in its group: moves
+    Y, yv, yp = random_tensor((4, 6, 10), rng, density=0.3, layout=((1, 0), (2,)))
+    R = Y.reshape(24, 10)
+    check(R, yv.reshape(24, 10), yp.reshape(24, 10))
+    assert R._M is not Y._M
+    assert Y.reshape(2, 2, 6, 10)._M is Y._M  # (axis 0 split in place)
+    # Copy-on-write: changing the view leaves the source alone, and the reverse
+    V = X.reshape(24, 10)
+    V << V.apply(gb.unary.ainv)
+    check(X, xv, xp)
+    check(V, -xv.reshape(24, 10), xp.reshape(24, 10))
+    W = X.reshape(2, 2, 6, 10)
+    X << X.apply(gb.unary.ainv)
+    check(W, xv.reshape(2, 2, 6, 10), xp.reshape(2, 2, 6, 10))
+    # ravel, flatten, -1, the argument forms
+    check(X.ravel(), -xv.ravel(), xp.ravel())
+    assert X.ravel()._M is not X._M  # (24 x 10 is not one row)
+    F = X.flatten()
+    check(F, -xv.ravel(), xp.ravel())
+    assert X.reshape((2, -1, 10)).shape == X.reshape(2, -1, 10).shape == (2, 12, 10)
+    # 0-d and size-1
+    S = Tensor.from_coo((), [5.0], shape=())
+    check(S.reshape(1, 1, 1), np.full((1, 1, 1), 5.0), np.ones((1, 1, 1), bool))
+    check(S.reshape(1, 1).reshape(()), np.array(5.0), np.array(True))
+
+
+def test_reshape_errors():
+    X = Tensor.from_coo(np.array([[0, 1], [1, 2], [2, 3]]), [1.0, 2.0], shape=(2, 3, 4))
+    with pytest.raises(ValueError, match="cannot reshape a Tensor of size 24 into shape"):
+        X.reshape(5, 5)
+    with pytest.raises(ValueError, match="one unknown"):
+        X.reshape(-1, -1)
+    with pytest.raises(ValueError, match="negative"):
+        X.reshape(-2, -12)
+    with pytest.raises(ValueError, match="size 24"):
+        X.reshape(-1, 5)
+    with pytest.raises(TypeError, match="ints"):
+        X.reshape(2.0, 12)
+    E = Tensor(dtypes.FP64, (0, 3))
+    with pytest.raises(ValueError, match="size 0"):
+        E.reshape(-1, 0)
+    assert E.reshape(3, 0, 5).shape == (3, 0, 5)
+    assert E.reshape(3, 0, copy=False).nvals == 0
