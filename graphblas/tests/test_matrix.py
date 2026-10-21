@@ -3991,6 +3991,39 @@ def test_udt():
         A[[0, 1], :] = [[2, 3, 4], [5, 6, 7]]
 
 
+@pytest.mark.skipif("not suitesparse")
+def test_ss_serialize_udt_with_a_long_name():
+    # The numpy repr of these UDTs is too long to keep in a serialized blob.
+    def register(register, *args):
+        if hasattr(lib, "GrB_Type_set_String"):
+            return register(*args)
+        with pytest.warns(UserWarning, match="too large"):
+            return register(*args)
+
+    def assert_same(A, B):
+        # Compared by the arrays, since isequal on a record UDT needs Numba.
+        assert B.dtype == A.dtype
+        for a, b in zip(A.to_coo(), B.to_coo(), strict=True):
+            assert_array_equal(a, b)
+
+    long_dtype = np.dtype([("x", np.bool_), ("z" * 1000, np.float64)], align=True)
+    long_udt = register(dtypes.register_anonymous, long_dtype)
+    A = Matrix(long_udt, nrows=2, ncols=3)
+    A[0, 0] = 0
+    A[1, 2] = (1, 5.6)
+    assert_same(A, Matrix.ss.deserialize(A.ss.serialize(), dtype=long_udt))
+    # An anonymous one needs dtype= (see test_vector.py's test_udt for the errors)
+    with pytest.raises(SyntaxError if hasattr(lib, "GxB_Serialized_get_String") else ValueError):
+        Matrix.ss.deserialize(A.ss.serialize())
+    # A named one is found by its name
+    named_long_dtype = np.dtype([("x", np.bool_), ("z" * 1000, np.float64)], align=False)
+    named_long_udt = register(dtypes.register_new, "LongMatrixUDT", named_long_dtype)
+    A = Matrix(named_long_udt, nrows=2, ncols=3)
+    A[0, 0] = 0
+    A[1, 2] = (1, 5.6)
+    assert_same(A, Matrix.ss.deserialize(A.ss.serialize()))
+
+
 def test_reposition(A):
     rows, cols, values = A.to_coo()
     rows = rows.astype(int)
