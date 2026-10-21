@@ -4407,3 +4407,30 @@ def test_plan_prices_the_first_transpose_on_the_data(monkeypatch):
     assert seen
     assert seen[-1] is not None
     check(Tensor._from_M(M2, X.shape, L2), xv, xp)
+
+
+def test_bcast_reshape_into_hypersparse_rows_is_priced():
+    """A broadcast's split move that leaves hypersparse rows prices the diagonal product's
+    hash lookup per nonempty row (C_EWISE_HROW), as the gather does; the result is the same.
+    """
+    from graphblas.core import tensor as tensor_mod
+    from graphblas.core import tensor_census as census
+
+    rng = np.random.default_rng(707)
+    X, xv, xp = random_tensor((100, 100, 70), rng, density=0.00005, layout=((0,), (1, 2)))
+    v = rng.random(70)
+    census.start()
+    try:
+        R = (X * v).new()
+        recs = [r for r in census.stop() if r["point"] == "bcast" and r.get("costs")]
+    finally:
+        census.stop()
+        census.records.clear()
+    check(R, np.where(xp, xv * v, 0), xp, approx=True)
+    costs = recs[0]["costs"]
+    nv, ti = X.nvals, 0 if gb.ss.config["nthreads"] > 1 else 1
+    rows = tl.expected_rows(100 * 100, nv)
+    base = tensor_mod._rs_cost(X.shape, (0, 1, 2), 2, nv, ti) + tensor_mod.C_DIAG[ti] * nv
+    assert costs["diagonal cols, reshape"] == pytest.approx(
+        base + tensor_mod.C_EWISE_HROW[ti] * rows
+    )
