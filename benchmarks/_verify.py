@@ -30,6 +30,7 @@ MODULES = [
     "conversions",
     "imports",
     "repr_bench",
+    "tensor_ops",
 ]
 PREFIXES = ("time_", "timeraw_", "peakmem_", "mem_", "track_")
 
