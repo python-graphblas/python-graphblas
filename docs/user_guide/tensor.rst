@@ -156,7 +156,7 @@ and result types Matrix gives:
     >>> X.reduce(gb.agg.hypot).new().to_scalar().value  # sqrt(1 + 4 + 9)
     3.7416573867739413
 
-Aggregators made of several reductions (``agg.mean``, ``agg.var``, ...) or of positions
+Aggregators made of several reductions (``agg.mean``, ``agg.varp``, ...) or of positions
 (``agg.argmin``, ``agg.first``, ...) raise ``NotImplementedError``.
 
 Contractions
