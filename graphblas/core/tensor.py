@@ -322,6 +322,11 @@ class Tensor(BaseType):
         return self._M.nvals
 
     @property
+    def _nvals(self):
+        # As Matrix and Vector have it: mask combination (mask.py) compares sizes with it
+        return self._M._nvals
+
+    @property
     def layout(self):
         return self._layout
 
@@ -1091,7 +1096,10 @@ class _TensorInfixExpr(InfixExprBase):
         if left is None or right is None:
             raise TypeError(f"Bad types for `{self._infix}`: {type(left)}, {type(right)}")
         super().__init__(left, right)
-        # Build the default expression now so mismatched shapes raise here, as for Matrix
+        # Mismatched shapes raise here, as for Matrix
+        self._validate()
+
+    def _validate(self):
         self._to_expr()
 
     @property
@@ -1109,13 +1117,35 @@ class _TensorInfixExpr(InfixExprBase):
         return f"gb.Tensor infix expression\n{self._format_expr()}"
 
 
-class TensorEwiseAddExpr(_TensorInfixExpr):
+class _TensorEwiseInfixExpr(_TensorInfixExpr):
+    __slots__ = ()
+
+    def _validate(self):
+        # With an operator every dtype has: the default one may not exist for these dtypes,
+        # and `monoid.any(X | Y)` (how a mask union is built) brings its own
+        try:
+            getattr(self.left, self.method_name)(self.right, binary.first)
+        except KeyError:
+            pass  # (no `first` for this pair of dtypes; the operator call checks)
+
+    def _to_expr(self):
+        if self._expr is None:
+            if self.left.dtype == BOOL and self.right.dtype == BOOL:
+                # As for Matrix: `x | y` is lor, `x & y` land
+                op = binary.lor if self.method_name == "ewise_add" else binary.land
+                self._expr = getattr(self.left, self.method_name)(self.right, op)
+            else:
+                self._expr = getattr(self.left, self.method_name)(self.right)
+        return self._expr
+
+
+class TensorEwiseAddExpr(_TensorEwiseInfixExpr):
     __slots__ = ()
     method_name = "ewise_add"
     _infix = "|"
 
 
-class TensorEwiseMultExpr(_TensorInfixExpr):
+class TensorEwiseMultExpr(_TensorEwiseInfixExpr):
     __slots__ = ()
     method_name = "ewise_mult"
     _infix = "&"
@@ -1214,6 +1244,26 @@ def _materialize(src):
     return out
 
 
+def _output_mask(updater):
+    """The update's mask as a Tensor mask: a mask of a Matrix or Vector of the output's shape
+    becomes the same mask of it as a Tensor (as Tensor operations treat such operands; mask
+    combinations make them, as in ``T.S & A.V``); one of another shape is refused, since
+    masks do not broadcast.
+    """
+    mask = updater.kwargs.get("mask")
+    if mask is None or type(mask.parent) is Tensor:
+        return mask
+    parent = _as_tensor(mask.parent, "mask")
+    if parent is None or parent._shape != updater.parent._shape:
+        raise TypeError(
+            f"A Tensor needs a Tensor mask (or one of a Matrix or Vector of its shape, "
+            f"{updater.parent._shape}); got a mask of {type(mask.parent).__name__}"
+        )
+    mask = type(mask)(parent)
+    updater.kwargs["mask"] = mask
+    return mask
+
+
 def _mask_in_layout(mask, shape, layout, nthreads):
     parent = mask.parent
     if type(parent) is not Tensor:
@@ -1251,7 +1301,7 @@ def _store(updater, src, shape, layout, *, fresh=False, share=None):
     if target._shape != shape:
         raise DimensionMismatch(f"Tensor shapes do not match: {target._shape} and {shape}")
     kw = updater.kwargs
-    mask = kw.get("mask")
+    mask = _output_mask(updater)
     accum = kw.get("accum")
     replace = kw.get("replace", False)
     opts = updater.opts
@@ -1306,7 +1356,7 @@ def _store(updater, src, shape, layout, *, fresh=False, share=None):
 def _fill(updater, value):
     target = updater.parent
     kw = updater.kwargs
-    mask = kw.get("mask")
+    mask = _output_mask(updater)
     accum = kw.get("accum")
     replace = kw.get("replace", False)
     opts = updater.opts
@@ -1336,8 +1386,11 @@ def _choose_layout(updater, operands, result_nvals):
     fixed output layout, or the mask's) with the least estimated relayout cost.
     """
     fixed = _fixed_layout(updater)
-    mask = updater.kwargs.get("mask")
-    mlayout = mask.parent._layout if mask is not None and type(mask.parent) is Tensor else None
+    mask = _output_mask(updater)
+    mlayout = None
+    if mask is not None and mask.parent._shape == updater.parent._shape:
+        # (a mask of another shape raises when stored)
+        mlayout = mask.parent._layout
     layouts = {t._layout for t in operands}
     if fixed is not None:
         layouts.add(fixed)
@@ -2885,6 +2938,21 @@ def _batched_contract_recipe(updater, a, b, op, a_axes, b_axes, a_batch, b_batch
 # Indexing (outer semantics)
 
 
+def _scalar_index(index, axis):
+    """A GraphBLAS Scalar indexes as the int it holds, as for Matrix (which refuses empty and
+    non-integer Scalars with TypeError too).
+    """
+    if type(index) is not Scalar:
+        return index
+    if not np.issubdtype(index.dtype.np_type, np.integer):
+        raise TypeError(
+            f"An integer is required for indexing.  Got: {index.dtype} (index for axis {axis})"
+        )
+    if index._is_empty:
+        raise TypeError(f"The index for axis {axis} is an empty Scalar")
+    return int(index.value)
+
+
 def _axis_index(index, size, axis):
     """An int (axis dropped) or a sorted-or-not int64 array of coordinates (axis kept)."""
     if isinstance(index, (int, np.integer)):
@@ -2917,6 +2985,7 @@ def _extract_expr(self, keys):
     if len(keys) > self.ndim:
         raise IndexError(f"too many indices for a Tensor of {self.ndim} dimensions")
     keys = keys + (slice(None),) * (self.ndim - len(keys))
+    keys = tuple(_scalar_index(k, a) for a, k in enumerate(keys))
     sel = [_axis_index(k, n, a) for a, (k, n) in enumerate(zip(keys, self._shape, strict=True))]
     shape = tuple(len(x) for x in sel if not isinstance(x, int))
     return TensorExpression(

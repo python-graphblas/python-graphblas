@@ -2010,6 +2010,184 @@ def test_mttkrp_products_order(shape, monkeypatch):
     check(R, *_mttkrp_model(xv, xv != 0, dense, 0), approx=True)
 
 
+def _selected(mask, shape):
+    """The positions a mask selects, as a dense bool array (it masks an assignment of True)."""
+    if type(mask.parent) is Tensor or len(shape) > 2:
+        R = Tensor(dtypes.BOOL, shape)
+        R(mask) << Tensor.from_dense(np.ones(shape, bool))
+        out = np.zeros(shape, bool)
+        coords, _ = R.to_coo()
+    else:
+        R = Matrix(dtypes.BOOL, *shape) if len(shape) == 2 else Vector(dtypes.BOOL, *shape)
+        ones = np.ones(shape, bool)
+        R(mask) << (Matrix if len(shape) == 2 else Vector).from_dense(ones)
+        out = np.zeros(shape, bool)
+        coords = R.to_coo()[:-1]
+    out[tuple(coords)] = True
+    return out
+
+
+def _mask_kinds(X, values):
+    """The four masks of X with the numpy positions each selects."""
+    present = values >= 0  # -1 marks a missing entry; 0 is a stored zero
+    return {
+        "S": (X.S, present),
+        "V": (X.V, present & (values != 0)),
+        "~S": (~X.S, ~present),
+        "~V": (~X.V, ~(present & (values != 0))),
+    }
+
+
+def _masked_data(rng, shape):
+    values = np.where(rng.random(shape) < 0.4, rng.integers(0, 3, shape), -1)
+    return values, values[values >= 0].astype(np.float64)
+
+
+def test_mask_combinations(monkeypatch):
+    """`|` and `&` of S, V, ~S and ~V masks of Tensors (the union used to raise "plus does not
+    work with BOOL"), and mixed with Matrix and Vector masks: against numpy, and against Matrix
+    for the same data in 2-d.
+    """
+    rng = np.random.default_rng(72)
+    ops = {"|": lambda a, b: a | b, "&": lambda a, b: a & b}
+    # 3-d, Tensor with Tensor, against numpy
+    shape = (4, 5, 6)
+    xv, xvals = _masked_data(rng, shape)
+    yv, yvals = _masked_data(rng, shape)
+    X = Tensor.from_coo(np.nonzero(xv >= 0), xvals, shape=shape)
+    Y = Tensor.from_coo(np.nonzero(yv >= 0), yvals, shape=shape, layout=((2,), (0, 1)))
+    for (k1, (m1, p1)), (k2, (m2, p2)) in itertools.product(
+        _mask_kinds(X, xv).items(), _mask_kinds(Y, yv).items()
+    ):
+        for name, op in ops.items():
+            np.testing.assert_array_equal(
+                _selected(op(m1, m2), shape), op(p1, p2), err_msg=f"{k1} {name} {k2}"
+            )
+    # 2-d: Tensor-Tensor, Tensor-Matrix and Matrix-Tensor give what Matrix-Matrix gives
+    shape = (5, 6)
+    av, avals = _masked_data(rng, shape)
+    bv, bvals = _masked_data(rng, shape)
+    A = Matrix.from_coo(*np.nonzero(av >= 0), avals, nrows=5, ncols=6)
+    B = Matrix.from_coo(*np.nonzero(bv >= 0), bvals, nrows=5, ncols=6)
+    TA, TB = Tensor.from_matrix(A), Tensor.from_matrix(B)
+    for (k1, (ma, p1)), (k2, (mb, p2)) in itertools.product(
+        _mask_kinds(A, av).items(), _mask_kinds(B, bv).items()
+    ):
+        mta, mtb = _mask_kinds(TA, av)[k1][0], _mask_kinds(TB, bv)[k2][0]
+        for name, op in ops.items():
+            expected = _selected(op(ma, mb), shape)
+            np.testing.assert_array_equal(expected, op(p1, p2))
+            for left, right in [(mta, mtb), (mta, mb), (ma, mtb)]:
+                got = _selected(op(left, right), shape)
+                np.testing.assert_array_equal(got, expected, err_msg=f"{k1} {name} {k2}")
+    # With a Vector: where Matrix combines (a union broadcasting the Vector along the rows),
+    # the Tensor gives the same; where Matrix refuses a mask of another shape, so does the
+    # Tensor (masks do not broadcast)
+    cv, cvals = _masked_data(rng, (6,))
+    v = Vector.from_coo(np.flatnonzero(cv >= 0), cvals, size=6)
+    for (k1, (ma, _p1)), (k2, (mv, _)) in itertools.product(
+        _mask_kinds(A, av).items(), _mask_kinds(v, cv).items()
+    ):
+        mta = _mask_kinds(TA, av)[k1][0]
+        for name, op in ops.items():
+            try:
+                expected = _selected(op(ma, mv), shape)
+            except (TypeError, DimensionMismatch):
+                with pytest.raises((TypeError, DimensionMismatch)):
+                    _selected(op(mta, mv), shape)
+                continue
+            np.testing.assert_array_equal(
+                _selected(op(mta, mv), shape), expected, err_msg=f"{k1} {name} v.{k2}"
+            )
+    # A mask of a Matrix applies to a 2-d Tensor result directly; of another shape, it raises
+    R = TA.apply(gb.unary.one).new(mask=B.S)
+    np.testing.assert_array_equal(_selected(R.S, shape), (av >= 0) & (bv >= 0))
+    with pytest.raises(TypeError, match="Tensor mask"):
+        TA.apply(gb.unary.one).new(mask=v.S)
+
+
+def test_relayout_ends_sparse_when_rows_fill():
+    """A relayout that ends with a reshape gives its result SuiteSparse's usual hyper switch
+    (a reshape leaves 1.0, keeping full rows hypersparse, which sends mxm to its Gustavson
+    saxpy); rows that stay mostly empty stay hypersparse.
+    """
+    rng = np.random.default_rng(75)
+    shape = (40, 50, 300)
+    lin = np.unique(rng.integers(0, math.prod(shape), 20000))
+    X = Tensor.from_coo(np.unravel_index(lin, shape), 1.0, shape=shape, layout=((0,), (1, 2)))
+    M, state = tl.execute(X.ss.matrix, shape, ((0, 1, 2), 1), [("RS", 2)])
+    assert state == ((0, 1, 2), 2)
+    assert M.ss.format == "csr"  # 2000 rows, about 10 entries each
+    assert M.ss.config["hyper_switch"] == gb.ss.config["hyper_switch"]
+    T = Tensor._from_M(M, shape, Layout((0, 1), (2,)))
+    T._check_invariants()
+    sparse_shape = (40, 5000, 30)
+    lin = np.unique(rng.integers(0, math.prod(sparse_shape), 2000))
+    Y = Tensor.from_coo(np.unravel_index(lin, sparse_shape), 1.0, shape=sparse_shape)
+    M, _ = tl.execute(Y.ss.matrix, sparse_shape, Y.layout.state, [("RS", 2)])
+    assert M.ss.format == "hypercsr"  # 2000 entries in 200000 rows
+
+
+def test_scalar_index():
+    """A GraphBLAS Scalar indexes as the int it holds, on any axis and with any integer dtype;
+    an empty or non-integer Scalar raises TypeError, as for Matrix.
+    """
+    rng = np.random.default_rng(74)
+    X, xv, xp = random_tensor((4, 5, 6), rng, layout=((1,), (2, 0)))
+    for axis, i in [(0, 1), (1, -1), (2, 5), (1, 0)]:
+        for dtype in ["INT8", "INT64", "UINT32"]:
+            if i < 0 and dtype.startswith("U"):
+                continue
+            key = [slice(None)] * 3
+            key[axis] = Scalar.from_value(i, dtype=dtype)
+            ikey = list(key)
+            ikey[axis] = i
+            got = X[tuple(key)].new()
+            check(got, np_outer_index(xv, tuple(ikey)), np_outer_index(xp, tuple(ikey)))
+    # With slices and lists on other axes, and all three (one element)
+    key = (Scalar.from_value(2), [0, 3], slice(1, 5))
+    ikey = (2, [0, 3], slice(1, 5))
+    check(X[key].new(), np_outer_index(xv, ikey), np_outer_index(xp, ikey))
+    s = [Scalar.from_value(i) for i in (3, 2, 1)]
+    assert X[s[0], s[1], s[2]].new().isequal(X[3, 2, 1].new())
+    A = Matrix.from_dense(np.arange(12.0).reshape(3, 4))
+    for bad in [Scalar("INT64"), Scalar.from_value(1.0), Scalar.from_value(True)]:
+        with pytest.raises(TypeError):
+            A[bad, :].new()
+        with pytest.raises(TypeError):
+            X[bad, :, :]
+    with pytest.raises(IndexOutOfBound):
+        X[:, Scalar.from_value(5), :]
+
+
+def test_infix_bool_and_operator_waits():
+    """`X | Y` and `X & Y` of BOOL Tensors default to lor and land, as for Matrix; an infix
+    expression leaves the operator to its caller, so `op(X | Y)` works for dtypes the default
+    operator does not cover (UDTs, and BOOL under monoid.any, as mask unions use).
+    """
+    rng = np.random.default_rng(73)
+    av, _ = _masked_data(rng, (5, 6))
+    bv, _ = _masked_data(rng, (5, 6))
+    A = Matrix.from_coo(*np.nonzero(av >= 0), av[av >= 0] > 0, nrows=5, ncols=6)
+    B = Matrix.from_coo(*np.nonzero(bv >= 0), bv[bv >= 0] > 1, nrows=5, ncols=6)
+    TA, TB = Tensor.from_matrix(A), Tensor.from_matrix(B)
+    for expr, ref in [(TA | TB, A | B), (TA & TB, A & B)]:
+        got = expr.new()
+        assert got.dtype == dtypes.BOOL
+        assert got.to_matrix().isequal(ref.new())
+    assert (monoid.any(TA | TB)).new().to_matrix().isequal(monoid.any(A | B).new())
+    with pytest.raises(DimensionMismatch):
+        TA | Tensor(bool, 5, 7)  # mismatched shapes still raise at once
+    udt = dtypes.register_anonymous(np.dtype([("tensor_a", "<i4"), ("tensor_b", "<f8")]))
+    vals = np.zeros(3, dtype=udt.np_type)
+    vals["tensor_a"] = [1, 2, 3]
+    U = Tensor.from_coo(([0, 1, 2], [0, 1, 2]), vals, udt, shape=(3, 3))
+    W = Tensor.from_coo(([0, 2], [1, 2]), vals[:2], udt, shape=(3, 3))
+    expr = U | W  # building `U | W` no longer needs plus on the UDT
+    if gb.core._has_numba:  # (operators on UDTs need Numba)
+        assert binary.first(expr).new().nvals == 4
+
+
 def test_mttkrp_without_numba():
     """With Numba blocked, the Tensor imports and MTTKRP runs the GraphBLAS products."""
     script = """

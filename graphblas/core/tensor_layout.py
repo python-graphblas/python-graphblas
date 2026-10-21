@@ -743,7 +743,29 @@ def execute(M, shape, state, path):
             M = rebuild(M, shape, state, edge[1])
             state = edge[1]
         owned = True
+    if path and path[-1][0] == "RS" and M._nvals > 0:
+        _restore_hyper_switch(M)
     return M, state
+
+
+def _restore_hyper_switch(M):
+    """A reshape's output has hyper_switch 1.0, so it stays hypersparse even with every row
+    nonempty (SuiteSparse 10.5.1). When at least half the rows are nonempty, give it the
+    global switch, which converts it to sparse: a hypersparse A sends mxm to a Gustavson saxpy
+    (u7 TTM modes 0 and 1 at 1 thread: 187 -> 128 and 165 -> 105 ms with this). With fewer,
+    SuiteSparse could still convert (skew's 9.5e6 of 1e8 rows is past its 1/16), and the row
+    pointers would outweigh the data, so it stays. The count is the uniform estimate:
+    counting through the Container would wait, and a wait builds the rows' hash (C_RS_HYPER_ROW).
+    """
+    switch = _global_hyper_switch()
+    if M.ss.config["hyper_switch"] != switch and 2 * expected_rows(M._nrows, M._nvals) >= M._nrows:
+        M.ss.config["hyper_switch"] = switch
+
+
+def _global_hyper_switch():
+    from .. import ss
+
+    return ss.config["hyper_switch"]
 
 
 def _nthreads():
