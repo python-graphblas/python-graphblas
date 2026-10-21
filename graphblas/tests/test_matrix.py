@@ -3973,6 +3973,20 @@ def test_udt():
         info = A.ss.export("coor")
         result = A.ss.import_any(**info)
         assert result.isequal(A)
+        # Without nrows and ncols, the shape comes from values of three dimensions,
+        # which an iso export (one element) does not have.
+        B = A.dup()
+        B[0, 0] = (4, 5, 6)
+        info = B.ss.export("fullr")
+        assert info["values"].shape == (2, 2, 3)
+        assert "nrows" not in info
+        assert "ncols" not in info
+        assert Matrix.ss.import_any(**info).isequal(B)
+        info = A.ss.export("fullr")
+        assert info["values"].shape == (1, 3)
+        del info["nrows"], info["ncols"]
+        with pytest.raises(ValueError, match="nrows and ncols must be provided"):
+            Matrix.ss.import_any(**info)
     assert Matrix.from_csr(*A.to_csr()).isequal(A)
     A.clear()
     A[[0, 1], 1] = [(2, 3, 4), [5, 6, 7]]
