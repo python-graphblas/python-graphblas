@@ -4144,6 +4144,19 @@ def test_repr_max_colwidth():
             "0    100  1.00...\n"
             "1    161 -5.00..."
         )
+    # Deliberately not pandas' output: with a max_colwidth of 3 or less pandas narrows
+    # the column labels as well, so labels of one and two digits end up ragged; here
+    # they keep one padded width.
+    v = Vector.from_coo([0, 1, 11], [1, 2, 3], size=12, name="v")
+    with display_options("display.max_colwidth", 2):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      3    12  INT64  bitmap\n"
+            "-------------------------------------\n"
+            "index 0  1  2  3  4  5  6  7  8  9  10 11\n"
+            "value  1  2                             3"
+        )
 
 
 def test_repr_colheader_justify():
@@ -4289,6 +4302,15 @@ def test_repr_html_no_mathjax():
             "</table>\n"
             "</div></details></div>"
         )
+
+
+def test_repr_html_ignores_notebook_repr_html(v):
+    # Deliberately not pandas' output: with display.notebook_repr_html off, pandas'
+    # DataFrame._repr_html_ returns None, which the pandas-based renderer embedded as
+    # the text "None" where the table goes. The table is shown either way now.
+    expected = repr_html(v)
+    with display_options("display.notebook_repr_html", False):
+        assert repr_html(v) == expected
 
 
 def test_repr_wraps_wide_frame():
