@@ -1928,6 +1928,57 @@ def test_mttkrp_kernel_paths(monkeypatch):
     assert calls == [True]
 
 
+@pytest.mark.parametrize("nthreads", [1, 8])
+def test_mttkrp_empty_groups(nthreads, monkeypatch):
+    """Layouts with an empty group (all axes in the rows or all in the columns), as stored
+    and as squeeze / expand_dims views make them: the kernel relayouts first (it needs both
+    groups), the products work as usual; every mode, against numpy's einsum.
+    """
+    from graphblas.core import tensor
+
+    has_kernel = tensor._has_numba
+    if has_kernel:
+        calls, _ = _kernel_spy(monkeypatch)
+    rng = np.random.default_rng(71)
+    shape = (9, 10, 11, 12)
+    cases = []
+    for i, layout in enumerate(
+        [((), (0, 1, 2, 3)), ((0, 1, 2, 3), ()), ((), (2, 0, 3, 1)), ((3, 1, 0, 2), ())]
+    ):
+        X, xv, xp = random_tensor(shape, rng, density=0.03, layout=layout, iso=i == 2)
+        assert not X.layout.rows or not X.layout.cols
+        cases.append((X, xv, xp))
+    # squeeze of a leading size-1 axis in the rows leaves the rows empty
+    Y, yv, yp = random_tensor((1, 20, 30, 40), rng, density=0.01, layout=((0,), (1, 2, 3)))
+    S = Y.squeeze(0)
+    assert S.layout.rows == ()
+    cases.append((S, yv[0], yp[0]))
+    # expand_dims of tensors with an empty group: a size-1 axis, the group stays empty
+    for X, xv, xp in cases[:2]:
+        E = X.expand_dims(2)
+        assert not E.layout.rows or not E.layout.cols
+        cases.append((E, np.expand_dims(xv, 2), np.expand_dims(xp, 2)))
+    # and an empty tensor in an empty-group layout
+    E = Tensor.from_coo(
+        [np.empty(0, np.int64)] * 4, np.empty(0), shape=shape, layout=((), (0, 1, 2, 3))
+    )
+    cases.append((E, np.zeros(shape), np.zeros(shape, bool)))
+    for X, xv, xp in cases:
+        dense = [rng.random((n, 3)) for n in X.shape]
+        factors = [Matrix.from_dense(d) for d in dense]
+        for mode in range(X.ndim):
+            expected = _mttkrp_model(xv, xp, dense, mode)
+            if has_kernel:
+                calls.clear()
+            check(X.mttkrp(factors, mode).new(nthreads=nthreads), *expected, approx=True)
+            if has_kernel:
+                # Declined in the stored layout (no call), run after the relayout
+                assert calls == ([] if X.nvals == 0 else [True]), (X.layout, mode)
+            with monkeypatch.context() as m:
+                m.setattr(tensor, "_has_numba", False)
+                check(X.mttkrp(factors, mode).new(nthreads=nthreads), *expected, approx=True)
+
+
 @pytest.mark.parametrize("shape", [(6, 7, 3000, 4), (6, 3000, 7, 4)])
 def test_mttkrp_products_order(shape, monkeypatch):
     """Without the kernel, MTTKRP contracts the widest axis first: its intermediates have one
