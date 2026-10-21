@@ -3131,8 +3131,8 @@ def test_indexing(layout, monkeypatch):
         X[None]
     with pytest.raises(TypeError, match="boolean"):
         X[np.array([True, False, True])]
-    with pytest.raises(NotImplementedError):
-        X[0] = 1
+    with pytest.raises(TypeError, match="boolean"):
+        X[np.array([True, False, True])] = 1  # (assignment takes the same keys)
 
 
 def test_indexing_hypersparse_slab():
@@ -3783,3 +3783,206 @@ def test_expression_methods():
     A = Matrix.from_dense(np.eye(3))
     with gb.config.set(autocompute=False), pytest.raises(TypeError, match="Use `.new"):
         (A @ A).reduce_rowwise()  # (the same rule for Matrix)
+
+
+def _model_assign(cv, cp, sel, rv, rp, *, mask=None, accum=None, replace=False, submask=False):
+    """GraphBLAS assign on numpy models (values and presence): the region's positions in C
+    order, the last occurrence of a repeated position winning, as for Matrix (SuiteSparse).
+    ``rv``/``rp`` are the value's values and presence over the region; ``mask`` is a boolean
+    array of the Tensor's shape (assign) or the region's (``submask``).
+    """
+    zv, zp = cv.copy(), cp.copy()
+    axes = [[None] if isinstance(s, int) else range(len(s)) for s in sel]
+    last = {}
+    for r in itertools.product(*axes):
+        t = tuple(s if isinstance(s, int) else int(s[i]) for s, i in zip(sel, r, strict=True))
+        last[t] = tuple(i for i in r if i is not None)
+    for t, r in last.items():
+        v, p = rv[r], rp[r]
+        if accum is None:
+            zv[t], zp[t] = (v if p else 0), p
+        elif p and cp[t]:
+            zv[t] = accum(cv[t], v)
+        elif p:
+            zv[t], zp[t] = v, True
+    if mask is None:
+        return zv, zp
+    nv, np_ = cv.copy(), cp.copy()
+    if submask:
+        for t, r in last.items():
+            if mask[r]:
+                nv[t], np_[t] = zv[t], zp[t]
+            elif replace:
+                np_[t] = False
+    else:
+        nv = np.where(mask, zv, cv)
+        np_ = np.where(mask, zp, cp & (not replace))
+    return np.where(np_, nv, 0), np_
+
+
+def _random_key(n, rng, *, dups):
+    kind = rng.choice(["int", "slice", "list", "array", "full"])
+    if kind == "int":
+        return int(rng.integers(-n, n))
+    if kind == "slice":
+        a, b = sorted(rng.integers(0, n + 1, 2))
+        return slice(int(a), int(b) if b > a else None, int(rng.choice([1, 1, 2])))
+    if kind == "full":
+        return slice(None)
+    k = int(rng.integers(1, n + 1))
+    idx = rng.choice(n, k, replace=False) if not dups else rng.integers(-n, n, k)
+    return [int(i) for i in idx] if kind == "list" else np.asarray(idx)
+
+
+def _region_model(v_shape_value, shape, rng, kind):
+    """A value for a region of ``shape``: (value, values, presence) broadcast to ``shape``."""
+    if kind == "scalar":
+        x = float(rng.integers(-9, 10))
+        return x, np.full(shape, x), np.ones(shape, bool)
+    if kind == "empty":
+        return gb.Scalar(dtypes.FP64), np.zeros(shape), np.zeros(shape, bool)
+    # A Tensor of a broadcastable shape: drop some leading axes, set some sizes to 1
+    vshape = list(shape[int(rng.integers(0, len(shape))) :] if kind == "broadcast" else shape)
+    if kind == "broadcast":
+        vshape = [1 if rng.random() < 0.4 else n for n in vshape]
+    V, vv, vp = random_tensor(tuple(vshape), rng, density=0.6)
+    bv, bp = np.broadcast_to(vv, shape), np.broadcast_to(vp, shape)
+    if kind == "matrix" and len(vshape) == 2:
+        return V.to_matrix((0,)), bv, bp
+    if kind == "vector" and len(vshape) == 1:
+        return V.to_vector(), bv, bp
+    return V, bv, bp
+
+
+@pytest.mark.parametrize("ndim", [1, 2, 3, 4, 5])
+def test_assign_random(ndim):
+    """``T[idx] << value`` and its masked forms against a numpy model of GraphBLAS assign:
+    1-5-d, every layout (sampled at 4-5-d), outer keys of every kind (ints, slices, lists,
+    arrays, Scalars, negatives), values broadcast, accum, assign and subassign masks of each
+    kind, replace.
+    """
+    rng = np.random.default_rng(300 + ndim)
+    layouts = all_layouts(ndim)[:: {1: 1, 2: 1, 3: 1, 4: 5, 5: 41}[ndim]]
+    plus = binary.plus
+    n_checks = 0
+    for layout in layouts:
+        shape = tuple(int(n) for n in rng.integers(1, 5, ndim))
+        for trial in range(3):
+            T, cv, cp = random_tensor(shape, rng, density=0.5, layout=layout)
+            keys = tuple(_random_key(n, rng, dups=False) for n in shape)
+            if trial == 1 and isinstance(keys[0], int):
+                keys = (gb.Scalar.from_value(keys[0]), *keys[1:])
+            keyed = tuple(k.value if isinstance(k, gb.Scalar) else k for k in keys)
+            sel = [
+                k if isinstance(k, int) else np.arange(n)[k]
+                for k, n in zip(keyed, shape, strict=True)
+            ]
+            sel = [
+                (s + n if s < 0 else s) if isinstance(s, int) else s
+                for s, n in zip(sel, shape, strict=True)
+            ]
+            rshape = tuple(len(s) for s in sel if not isinstance(s, int))
+            kinds = ["tensor", "broadcast", "scalar", "empty", "matrix", "vector"]
+            kind = rng.choice(kinds if rshape else ["scalar", "empty"])
+            value, rv, rp = _region_model(None, rshape, rng, kind)
+            accum = plus if rng.random() < 0.3 else None
+            how = rng.choice(["plain", "setitem", "assign_mask", "submask"][: 4 if rshape else 3])
+            mask = mbool = None
+            replace = False
+            if how in {"assign_mask", "submask"}:
+                mshape = rshape if how == "submask" else shape
+                Mt, mv, mp = random_tensor(mshape, rng, density=0.5, dtype=dtypes.BOOL)
+                mkind = rng.choice(["S", "V", "~S", "~V"])
+                mask = {"S": Mt.S, "V": Mt.V, "~S": ~Mt.S, "~V": ~Mt.V}[mkind]
+                mbool = {"S": mp, "V": mp & mv, "~S": ~mp, "~V": ~(mp & mv)}[mkind]
+                replace = rng.random() < 0.4
+            ev, ep = _model_assign(
+                cv,
+                cp,
+                sel,
+                rv,
+                rp,
+                mask=mbool,
+                accum=(np.add if accum else None),
+                replace=replace,
+                submask=how == "submask",
+            )
+            if how == "plain":
+                if accum is None:
+                    T[keys] << value
+                else:
+                    T(accum=accum)[keys] << value
+            elif how == "setitem":
+                if accum is None:
+                    T[keys] = value
+                else:
+                    T(accum=accum)[keys] = value
+            elif how == "assign_mask":
+                T(mask, accum=accum, replace=replace)[keys] << value
+            else:
+                T[keys](mask, accum=accum, replace=replace) << value
+            check(T, ev, ep)
+            assert T.layout == Layout(*layout)
+            n_checks += 1
+    assert n_checks == 3 * len(layouts)
+
+
+def test_assign_views_duplicates_and_matrix_parity():
+    """Assigning into a view leaves its source and siblings alone (copy-on-write); repeated
+    indices: the last occurrence wins, as for Matrix; 2-d Tensors assign as Matrices do
+    (masks both ways, accum, replace); ``del``; errors.
+    """
+    rng = np.random.default_rng(320)
+    X, xv, xp = random_tensor((4, 5, 6), rng, density=0.5, layout=((2, 0), (1,)))
+    V = X.permute_dims((2, 0, 1))
+    W = X.reshape(20, 6)  # (a sibling sharing the data)
+    V[1, :, 2:4] = 9.0
+    check(X, xv, xp)
+    check(W, xv.reshape(20, 6), xp.reshape(20, 6))
+    vv, vp = xv.transpose(2, 0, 1).copy(), xp.transpose(2, 0, 1).copy()
+    vv[1, :, 2:4], vp[1, :, 2:4] = 9.0, True
+    check(V, vv, vp)
+    X[0] << -1.0
+    check(V, vv, vp)
+    # Repeated indices: the last occurrence wins, its absence too
+    T, tv, tp = random_tensor((3, 4, 5), rng, density=0.5)
+    val, rv, rp = random_tensor((3, 2), rng, density=0.6)
+    sel = [np.array([2, 0, 2]), 1, np.array([4, 4])]
+    T[[2, 0, 2], 1, [4, 4]] << val
+    check(T, *_model_assign(tv, tp, sel, rv, rp))
+    # 2-d: the same as Matrix, for each form
+    for form in range(6):
+        A = Matrix.from_dense(rng.integers(0, 3, (6, 7)).astype(float), missing_value=0.0)
+        Am = Matrix.from_dense(rng.integers(0, 2, (6, 7)).astype(bool), missing_value=False)
+        B = Matrix.from_dense(rng.integers(0, 3, (3, 2)).astype(float), missing_value=0.0)
+        Bm = Matrix.from_dense(rng.integers(0, 2, (3, 2)).astype(bool), missing_value=False)
+        T = Tensor.from_matrix(A)
+        rows, cols = [5, 1, 3], [0, 6]
+        if form == 0:
+            A[rows, cols] << B
+            T[rows, cols] << B
+        elif form == 1:
+            A(Am.V, replace=True)[rows, cols] << B
+            T(Am.V, replace=True)[rows, cols] << B
+        elif form == 2:
+            A[rows, cols](Bm.S, binary.plus) << B
+            T[rows, cols](Bm.S, binary.plus) << B
+        elif form == 3:
+            A[rows, cols](~Bm.V, replace=True) << 4.0
+            T[rows, cols](~Bm.V, replace=True) << 4.0
+        elif form == 4:
+            del A[rows, 2:5]
+            del T[rows, 2:5]
+        else:
+            A(~Am.S, binary.times)[rows, cols] << B
+            T(~Am.S, binary.times)[rows, cols] << B
+        assert T.to_matrix().isequal(A), form
+    T = Tensor.from_dense(np.zeros((2, 3, 4)))
+    with pytest.raises(DimensionMismatch, match="does not broadcast"):
+        T[0] << Tensor.from_dense(np.ones((4, 3)))
+    with pytest.raises(DimensionMismatch, match="mask"):
+        T[0](Tensor.from_dense(np.ones((2, 3, 4), bool)).S) << 1.0
+    with pytest.raises(IndexError, match="too many"):
+        T[0, 0, 0, 0] = 1.0
+    with pytest.raises(IndexOutOfBound):
+        T[2] = 1.0
