@@ -2594,7 +2594,7 @@ def test_ttm_udt_jit_failure(control, numba, tmp_path):
 
 def _engine_spies(monkeypatch):
     """Spies on every TTM and MTTKRP engine: the names of those that produced a result."""
-    from graphblas.core import tensor, tensor_numba, tensor_udt
+    from graphblas.core import tensor, tensor_contract, tensor_numba, tensor_udt
 
     ran = []
 
@@ -2613,7 +2613,7 @@ def _engine_spies(monkeypatch):
     spy("numba", tensor_numba, "ttm")
     spy("numba", tensor_numba, "mttkrp_nd")
     spy("compacted", tensor, "_ttm_compacted")
-    spy("products", tensor, "_contract", ok=lambda rv: True)
+    spy("products", tensor_contract, "_contract", ok=lambda rv: True)
     monkeypatch.setattr(tensor, "_TTM_KERNEL_MIN_NNZ", 0)
     monkeypatch.setattr(tensor, "_MTTKRP_KERNEL_MIN_NNZ", 0)
     return ran
@@ -4258,6 +4258,7 @@ def test_einsum_last_contraction_on_target(monkeypatch):
     accumulator applies in its product (a regular path query's step); results as numpy's.
     """
     from graphblas.core import tensor as tensor_mod
+    from graphblas.core import tensor_contract
 
     rng = np.random.default_rng(702)
     F, fv, fp = random_tensor((3, 6), rng, density=0.4)
@@ -4266,13 +4267,14 @@ def test_einsum_last_contraction_on_target(monkeypatch):
     want = np_einsum("qu,lqp,luv->pv", (F, fv, fp), (R, rv, rp), (G, gv, gp))
     V, vv, vp = random_tensor((3, 6), rng, density=0.5)
     stored = []
-    orig = tensor_mod._store
+    orig = tensor_contract._store
 
     def store(updater, src, *args, **kwargs):
         stored.append(type(src).__name__)
         return orig(updater, src, *args, **kwargs)
 
-    monkeypatch.setattr(tensor_mod, "_store", store)
+    # (the contraction's recipe stores its product: spy where it is called)
+    monkeypatch.setattr(tensor_contract, "_store", store)
     R1 = tensor_mod.einsum("qu,lqp,luv->pv", F, R, G).new(mask=~V.S)
     monkeypatch.undo()
     assert stored[-1] == "MatrixExpression"  # the product itself, masked
