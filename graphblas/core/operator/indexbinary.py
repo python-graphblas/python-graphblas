@@ -369,7 +369,9 @@ class IndexBinaryOp(OpBase):
         raise UdfParseError("Unable to parse function using Numba")
 
     def _compile_udt(self, dtype, dtype2):
-        if not _has_idxbinop:
+        # ``_build`` refuses to make an IndexBinaryOp without this, so it guards one
+        # made some other way.
+        if not _has_idxbinop:  # pragma: no cover (safety)
             # KeyError (not RuntimeError) so ``udt in op`` and the resolver
             # chain in ``__contains__`` / ``[dtype]`` lookups return cleanly.
             raise KeyError(
@@ -540,7 +542,7 @@ class IndexBinaryOp(OpBase):
 
     @classmethod
     def _initialize(cls):
-        if cls._initialized:
+        if cls._initialized:  # pragma: no cover (safety)
             return
         super()._initialize(include_in_ops=False)
         # No built-in IndexBinaryOps to register.

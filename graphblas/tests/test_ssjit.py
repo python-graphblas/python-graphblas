@@ -772,6 +772,24 @@ def test_jit_indexunary(v):
     assert ("FP32", "FP64") not in diffy
 
 
+@pytest.mark.skipif(_has_idxbinop, reason="SuiteSparse:GraphBLAS has IndexBinaryOp")
+def test_indexbinary_needs_suitesparse_9_4():
+    """Before SuiteSparse:GraphBLAS 9.4, both ways to make an IndexBinaryOp say what is missing."""
+    cdef = (
+        "void ibo_first (double *z, double *x, GrB_Index ix, GrB_Index jx, "
+        "double *y, GrB_Index iy, GrB_Index jy, double *theta) { (*z) = (*x) ; }"
+    )
+    with pytest.raises(RuntimeError, match="requires SuiteSparse:GraphBLAS 9.4"):
+        indexbinary.ss.register_new("ibo_first", cdef, "FP64", "FP64", "FP64", "FP64")
+    if supports_udfs:
+
+        def ibo_first(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+            return x
+
+        with pytest.raises(RuntimeError, match="requires SuiteSparse:GraphBLAS 9.4"):
+            indexbinary.register_anonymous(ibo_first)
+
+
 @pytest.mark.slow
 @pytest.mark.skipif(not _has_idxbinop, reason="requires SuiteSparse:GraphBLAS 9.4+")
 def test_jit_indexbinary(v):
