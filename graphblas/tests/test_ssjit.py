@@ -1968,3 +1968,31 @@ def test_context_importable():
     from graphblas.core.ss.context import global_context
 
     assert gb.ss.global_context is global_context
+
+
+def test_fix_from_conda_finds_windows_compilers(tmp_path):
+    """The conda repair looks in ``bin`` and, as Windows conda installs them, ``Library/bin``
+    with ``.exe`` names; a baked-in Windows path's basename is found too. Nothing there: None.
+    """
+    from graphblas.core.ss.jit_config import _fix_from_conda
+
+    def cfg_for(name):
+        return {"jit_c_compiler_name": name, "jit_c_compiler_flags": "-O3"}
+
+    win = tmp_path / "win"
+    (win / "Library" / "bin").mkdir(parents=True)
+    (win / "Library" / "bin" / "clang.exe").write_text("")
+    cfg = cfg_for(r"C:\bld\_h_env\Library\bin\cl.exe")
+    assert _fix_from_conda(cfg, str(win)) is True
+    assert cfg["jit_c_compiler_name"] == str(win / "Library" / "bin" / "clang.exe")
+    (win / "Library" / "bin" / "cl.exe").write_text("")
+    cfg = cfg_for(r"C:\bld\_h_env\Library\bin\cl.exe")
+    assert _fix_from_conda(cfg, str(win)) is True
+    assert cfg["jit_c_compiler_name"] == str(win / "Library" / "bin" / "cl.exe")
+    posix = tmp_path / "posix"
+    (posix / "bin").mkdir(parents=True)
+    (posix / "bin" / "gcc").write_text("")
+    cfg = cfg_for("/home/conda/feedstock_root/build_artifacts/bin/x86_64-conda-linux-gnu-cc")
+    assert _fix_from_conda(cfg, str(posix)) is True
+    assert cfg["jit_c_compiler_name"] == str(posix / "bin" / "gcc")
+    assert _fix_from_conda(cfg_for("/nowhere/cc"), str(tmp_path / "empty")) is None
