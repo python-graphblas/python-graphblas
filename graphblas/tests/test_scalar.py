@@ -875,3 +875,37 @@ def test_scalar_operators(s):
         unary.sin(object())
     with pytest.raises(TypeError):
         binary.plus(object(), object())
+
+
+@autocompute
+def test_scalar_operators_literal_on_the_left():
+    # `3 ** s` is pow(3, s), as `binary.pow(3, s)` is, with no reflected op: numpy.mod has
+    # none, rpow is a Numba function, and none takes a UDT
+    s = Scalar.from_value(5, dtype=dtypes.INT8)
+    assert 2 - s == -3
+    assert 2**s == 32
+    result = (3**s).new()
+    assert result.dtype == dtypes.INT8
+    assert result.value == 127  # GraphBLAS's pow saturates
+    t = Scalar.from_value(True)
+    result = (False**t).new()
+    assert result.dtype == dtypes.BOOL
+    assert result.value is False
+    if gb.core._supports_udfs:
+        assert 7 % s == 2
+
+
+@pytest.mark.skipif("not gb.core._supports_udfs")
+def test_scalar_operators_literal_on_the_left_udt():
+    udt = dtypes.register_anonymous(np.dtype((np.int8, (2,))), "_LeftLiteralI8")
+    u = Scalar.from_value([5, 7], udt)
+    for result, expected in [
+        (1 - u, [-4, -6]),
+        ((1, 2) - u, [-4, -5]),
+        (1 // u, [0, 0]),
+        (10 / u, [2.0, 10 / 7]),
+    ]:
+        result = result.new()
+        np.testing.assert_array_equal(result.value, expected)
+    assert (1 - u).new().dtype == udt
+    assert (10 / u).new().dtype.np_type == np.dtype((np.float64, (2,)))
