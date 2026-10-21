@@ -2491,6 +2491,46 @@ def test_kernel_disk_cache(tmp_path):
     assert int(_kernel_cache_lines(_run_kernel_cache_script(""))["cache_hits"]) == 0
 
 
+def test_kernel_disk_cache_guards(tmp_path, monkeypatch):
+    """A cache file that is not the kernel's source (corrupt, tampered with, or a digest
+    prefix collision) is neither run nor overwritten: the kernel compiles in memory. A failed
+    rename leaves no temporary file behind.
+    """
+    pytest.importorskip("numba")
+    from graphblas.core import tensor_numba
+
+    source = (
+        "def kernel(x):\n"
+        "    s = 0.0\n"
+        "    for i in prange(x.size):\n"
+        "        s += x[i]\n"
+        "    return s\n"
+    )
+    x = np.arange(10.0)
+    monkeypatch.setenv(tensor_numba._CACHE_ENV, str(tmp_path / "kernels"))
+    k = tensor_numba._compile(source)
+    assert k(x) == 45
+    assert type(k._cache).__name__ != "NullCache"
+    [path] = (tmp_path / "kernels").glob("k_*.py")
+    tampered = path.read_bytes().replace(b"s += x[i]", b"s += 2 * x[i]")
+    path.write_bytes(tampered)
+    k = tensor_numba._compile(source)
+    assert k(x) == 45
+    assert type(k._cache).__name__ == "NullCache"
+    assert path.read_bytes() == tampered
+
+    def fail(self, target):
+        raise OSError("rename failed")
+
+    monkeypatch.setenv(tensor_numba._CACHE_ENV, str(tmp_path / "other"))
+    with monkeypatch.context() as m:
+        m.setattr(Path, "replace", fail)
+        k = tensor_numba._compile(source)
+    assert k(x) == 45
+    assert type(k._cache).__name__ == "NullCache"
+    assert list((tmp_path / "other").iterdir()) == []
+
+
 def test_mttkrp_without_numba():
     """With Numba blocked, the Tensor imports and MTTKRP runs the GraphBLAS products."""
     script = """
