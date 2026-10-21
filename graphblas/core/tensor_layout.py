@@ -28,6 +28,7 @@ from .. import semiring as _semiring
 from ..dtypes import BOOL, UINT32, UINT64, lookup_dtype
 from ..exceptions import _error_code_lookup
 from . import NULL, ffi, lib
+from . import tensor_census as census
 from .matrix import Matrix
 from .vector import Vector
 
@@ -599,7 +600,11 @@ def plan(shape, src, targets, nnz, nthreads, *, hyper1=False, allow_perm=True):
     ti = 0 if nthreads > 1 else 1
     key = (shape, src, targets, ti, hyper1, allow_perm, int(nnz).bit_length())
     if (rv := _plan_cache.get(key)) is not None:
+        if census.on:
+            census.note("plan.cache", "hit")
         return rv
+    if census.on:
+        census.note("plan.cache", "miss", ndim=len(shape))
     # Past 2^60 positions in total, prefer a target in the source's axis order: its REBUILD
     # needs no sort. Below, such a target is reached by reshapes, which cost less still in a
     # chain (the sorted REBUILD's price would undercut RS's, measured with a wait: u6 tdot1 at
@@ -782,12 +787,17 @@ def execute(M, shape, state, path):
             nrows, ncols = prod(shape, seq[:q]), prod(shape, seq[q:])
             if M._nvals == 0:
                 M = new_matrix(M.dtype, nrows, ncols)
+                how = "empty: new"
             elif owned and nrows <= 2**31 and ncols <= 2**31:
                 # Storage order (rowwise on a by-row Matrix), so the other 10.5.1 reshape bug
                 # (order != orientation) cannot apply either.
                 M.ss.reshape(nrows, ncols, inplace=True)
+                how = "in place"
             else:
                 M = M.ss.reshape(nrows, ncols)
+                how = "copy" if not owned else "copy (past 2^31)"
+            if census.on:
+                census.note("reshape", how)
             state = (seq, q)
             owned = True
         elif kind == "T":
@@ -862,9 +872,17 @@ def relayout(M, shape, src, targets, *, nthreads=None, allow_perm=None):
     nvals = M._nvals
     if allow_perm is None:
         allow_perm = not M.dtype._is_udt
+    if census.on and census.force.get("relayout") == "no PERM":
+        allow_perm = False
     hyper1 = density(M)
-    _, path, _ = plan(shape, src_state, targets, nvals, nthreads, hyper1=hyper1,
-                      allow_perm=allow_perm)  # fmt: skip
+    cost, path, _ = plan(shape, src_state, targets, nvals, nthreads, hyper1=hyper1,
+                         allow_perm=allow_perm)  # fmt: skip
+    if census.on:
+        if census.force.get("relayout") == "REBUILD" and path:
+            fallback = min(targets, key=lambda t: (t[0] != src_state[0], t))
+            path = [("REBUILD", fallback)]
+        _census_relayout(shape, src_state, targets, nvals, nthreads, hyper1, allow_perm, cost,
+                         path)  # fmt: skip
     if nvals == 0:
         seq, p = _final_state(src_state, path)
         return new_matrix(M.dtype, prod(shape, seq[:p]), prod(shape, seq[p:])), Layout(
@@ -872,6 +890,37 @@ def relayout(M, shape, src, targets, *, nthreads=None, allow_perm=None):
         )
     M, state = execute(M, shape, src_state, path)
     return M, Layout.from_state(state)
+
+
+def _census_relayout(shape, src, targets, nvals, nthreads, hyper1, allow_perm, cost, path):
+    """Note an executed plan: its edges, and what the cheapest plan without each kind of edge
+    it uses would cost (the planner's margin for that kind; REBUILD is always there).
+    """
+    kinds = sorted({e[0] for e in path})
+    without = {}
+    census.on = False  # (the counterfactual plans are not decisions)
+    try:
+        for kind in kinds:
+            if kind == "REBUILD":
+                continue
+            if kind in {"PERM_R", "PERM_C"}:
+                if allow_perm:
+                    without[kind] = plan(shape, src, targets, nvals, nthreads, hyper1=hyper1,
+                                         allow_perm=False)[0]  # fmt: skip
+            else:
+                # Without RS or T, only REBUILD and permutations remain priced alike: bound
+                # the margin by REBUILD's cost
+                without[kind] = rebuild_cost(nvals, 0 if nthreads > 1 else 1)
+    finally:
+        census.on = True
+    census.note(
+        "relayout",
+        " ".join(e[0] for e in path) or "none",
+        {"plan": cost, **without},
+        length=len(path),
+        nvals=nvals,
+        ndim=len(shape),
+    )
 
 
 def _final_state(state, path):
