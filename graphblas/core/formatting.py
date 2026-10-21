@@ -1492,7 +1492,7 @@ def format_matrix_infix_expression_html(expr):
     expr_html = expr._format_expr_html()
     header = create_header_html(
         expr_html,
-        ["nrows", "ncols", "right_dtype", "left_dtype"],
+        ["nrows", "ncols", "left_dtype", "right_dtype"],
         [expr._nrows, expr._ncols, expr.left.dtype, expr.right.dtype],
     )
     return _format_infix_expression(expr, header, expr_html)
