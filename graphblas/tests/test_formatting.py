@@ -5791,6 +5791,22 @@ def test_udt():
     )
 
 
+def test_udt_one_field_repr():
+    # A record with one field shows as a 1-tuple, trailing comma included
+    udt = dtypes.register_anonymous(np.dtype([("one_field_x", np.int16)]), "one_field")
+    v = Vector(udt, size=3, name="v")
+    v[0] = (5,)
+    v[2] = (-7,)
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size      dtype  format\n'
+        "gb.Vector      2     3  one_field  bitmap\n"
+        "-----------------------------------------\n"
+        "index     0 1      2\n"
+        "value  (5,)    (-7,)"
+    )
+
+
 def test_empty():
     v = Vector(int, 0)
     repr_printer(v, "v")
@@ -5812,6 +5828,173 @@ def test_empty():
         '"M_1"      nvals  nrows  ncols  dtype  format\n'
         "gb.Matrix      0      0      5  INT64     csr\n"
         "---------------------------------------------"
+    )
+
+
+def test_empty_repr_html():
+    # The text repr of an object with no rows or columns stops at the header; the
+    # HTML repr still shows the table, with its row and column labels.
+    A = Matrix(int, 0, 5, name="A")
+    html_printer(A, "A")
+    assert repr_html(A) == (
+        "<div>"
+        f"{CSS_STYLE}"
+        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A</tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Matrix</pre></td>\n'
+        "    <td><pre>nvals</pre></td>\n"
+        "    <td><pre>nrows</pre></td>\n"
+        "    <td><pre>ncols</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n" + "    <td>0</td>\n" * 2 + "    <td>5</td>\n"
+        "    <td>INT64</td>\n"
+        "    <td>csr</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary><div>\n"
+        "<style scoped>\n"
+        "    .dataframe tbody tr th:only-of-type {\n"
+        "        vertical-align: middle;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe tbody tr th {\n"
+        "        vertical-align: top;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe thead th {\n"
+        "        text-align: right;\n"
+        "    }\n"
+        "</style>\n"
+        '<table border="1" class="dataframe">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        "      <th></th>\n"
+        "      <th>0</th>\n"
+        "      <th>1</th>\n"
+        "      <th>2</th>\n"
+        "      <th>3</th>\n"
+        "      <th>4</th>\n"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        "  </tbody>\n"
+        "</table>\n"
+        "</div></details></div>"
+    )
+    A = Matrix(int, 5, 0, name="A")
+    html_printer(A, "A")
+    assert repr_html(A) == (
+        "<div>"
+        f"{CSS_STYLE}"
+        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A</tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Matrix</pre></td>\n'
+        "    <td><pre>nvals</pre></td>\n"
+        "    <td><pre>nrows</pre></td>\n"
+        "    <td><pre>ncols</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>0</td>\n"
+        "    <td>5</td>\n"
+        "    <td>0</td>\n"
+        "    <td>INT64</td>\n"
+        "    <td>hypercsr</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary><div>\n"
+        "<style scoped>\n"
+        "    .dataframe tbody tr th:only-of-type {\n"
+        "        vertical-align: middle;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe tbody tr th {\n"
+        "        vertical-align: top;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe thead th {\n"
+        "        text-align: right;\n"
+        "    }\n"
+        "</style>\n"
+        '<table border="1" class="dataframe">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        "      <th></th>\n"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        "    <tr>\n"
+        "      <th>0</th>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>1</th>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>2</th>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>3</th>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>4</th>\n"
+        "    </tr>\n"
+        "  </tbody>\n"
+        "</table>\n"
+        "</div></details></div>"
+    )
+    v = Vector(int, 0, name="v")
+    html_printer(v, "v")
+    assert repr_html(v) == (
+        "<div>"
+        f"{CSS_STYLE}"
+        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Vector</pre></td>\n'
+        "    <td><pre>nvals</pre></td>\n"
+        "    <td><pre>size</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n" + "    <td>0</td>\n" * 2 + "    <td>INT64</td>\n"
+        "    <td>sparse</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary><div>\n"
+        "<style scoped>\n"
+        "    .dataframe tbody tr th:only-of-type {\n"
+        "        vertical-align: middle;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe tbody tr th {\n"
+        "        vertical-align: top;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe thead th {\n"
+        "        text-align: right;\n"
+        "    }\n"
+        "</style>\n"
+        '<table border="1" class="dataframe">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        "      <th></th>\n"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        "    <tr>\n"
+        "      <th></th>\n"
+        "    </tr>\n"
+        "  </tbody>\n"
+        "</table>\n"
+        "</div></details></div>"
     )
 
 
