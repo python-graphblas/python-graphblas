@@ -7276,6 +7276,7 @@ def test_op_ss():
         gb.semiring.ss.max_secondj
         gb.op.ss.positionj
         gb.agg.ss.argmin
+        gb.indexbinary.ss.register_new
     else:
         with pytest.raises(AttributeError, match="suitesparse"):
             gb.unary.ss
@@ -7287,6 +7288,8 @@ def test_op_ss():
             gb.op.ss
         with pytest.raises(AttributeError, match="suitesparse"):
             gb.agg.ss
+        with pytest.raises(AttributeError, match="suitesparse"):
+            gb.indexbinary.ss
 
 
 def test_deprecated():
