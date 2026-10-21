@@ -2120,10 +2120,12 @@ def test_udt_mixed_semiring_runs_jit(capfd):
         w.wait()
     out = capfd.readouterr().out
     assert "GrB_mxv" in out
-    assert "(jit: " in out
     assert "generic" not in out
-    with _jit_mode("off"):
+    # (and burble names the generic kernel when it runs)
+    with _jit_mode("off"), burble():
         w_generic = A.mxv(u, semi).new()
+        w_generic.wait()
+    assert "generic" in capfd.readouterr().out
     idx, vals = w.to_coo()
     gidx, gvals = w_generic.to_coo()
     assert_array_equal(idx, gidx)
