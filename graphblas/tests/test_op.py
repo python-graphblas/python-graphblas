@@ -3317,7 +3317,7 @@ def test_udt_array_udf_known_extents_never_match_by_rank(monkeypatch):
     def refuse_nested(key, value=None):
         if isinstance(key, numba.core.types.NestedArray):
             raise ValueError("simulated: SuiteSparse refused to register this UDT")
-        return real_lookup(key, value)
+        return real_lookup(key, value)  # pragma: no cover (defensive)
 
     monkeypatch.setattr(_udf, "lookup_dtype", refuse_nested)
     with pytest.raises(UdfParseError, match="matches no input array UDT"):
