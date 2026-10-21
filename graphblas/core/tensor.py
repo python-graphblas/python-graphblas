@@ -1170,7 +1170,7 @@ class Tensor(BaseType):
         or an aggregator made of one (``agg.sum``, ``agg.max``, ...) or of a semiring
         (``agg.count``, ``agg.count_nonzero``, ``agg.sum_of_squares``, ``agg.hypot``, ...).
         Composite aggregators (``agg.mean``, ``agg.varp``, ...) and ones that need positions
-        (``agg.argmin``, ``agg.first``, ...) are not supported.
+        (``agg.ss.argmin``, ``agg.ss.first``, ...) are not supported.
 
         A position whose fiber has no entries stays missing (it is not 0).
         """
