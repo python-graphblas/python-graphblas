@@ -289,6 +289,11 @@ def test_udt_nat_duration_in_another_unit_stays_nat():
     seconds = dtypes.register_anonymous(np.dtype("m8[s]"), "_NatSeconds")
     rec = dtypes.register_anonymous(np.dtype([("nat_d", "m8[s]"), ("nat_n", np.int8)]), "_NatRec")
     days = dtypes.register_anonymous(np.dtype([("nat_t", "M8[D]"), ("nat_n", np.int8)]))
+    nested = dtypes.register_anonymous(
+        np.dtype([("nat_o", [("nat_d", "m8[s]")]), ("nat_n", np.int8)]), "_NatNested"
+    )
+    # Numba cannot type an array of durations, so registering one needs it absent.
+    pair = None if gb.core._has_numba else dtypes.register_anonymous(np.dtype(("m8[s]", 2)))
     for unit in ["ns", "ms", "m", "D"]:
         nat = np.timedelta64("NaT", unit)
         assert np.isnat(Scalar.from_value(nat, seconds).value)
@@ -311,6 +316,11 @@ def test_udt_nat_duration_in_another_unit_stays_nat():
             assert np.isnat(v.to_coo()[1]).all()
             r = Vector.from_coo([0, 1], [(nat, 1), (nat, 2)], dtype=rec)
             assert np.isnat(r.to_coo()[1]["nat_d"]).all()
+        assert np.isnat(Scalar.from_value(((nat,), 1), nested).value["nat_o"]["nat_d"])
+        if pair is not None:
+            got = Scalar.from_value([nat, np.timedelta64(5000, "ms")], pair).value
+            assert np.isnat(got[0])
+            assert got[1] == np.timedelta64(5, "s")
         r = Vector(days, size=1)
         r[0] = (np.datetime64("NaT", unit), 1)
         assert np.isnat(r[0].new().value["nat_t"])

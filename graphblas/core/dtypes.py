@@ -660,18 +660,32 @@ def _view_if_same_layout(values, np_type):
     return values
 
 
-def _generic_nats(values, np_type):
-    """Return ``values`` with each NaT duration in it as a NaT of no unit, if ``np_type`` has one.
+def _nats_in_leaf_units(values, np_type):
+    """Return ``values`` with each NaT duration in it in the unit of the leaf it fills.
 
     numpy before 2.3 converts a NaT ``timedelta64`` scalar, alone or in a tuple
     or list, into another unit as the integer it is stored as: NaT ms into
     ``timedelta64[s]`` is 9223372036854774 s, and NaT s into ``timedelta64[ms]``
-    is 0 ms. A NaT of no unit converts to NaT in every unit. An array of
-    durations, and a date, convert NaT correctly.
+    is 0 ms. Converting an array (``astype``) keeps NaT, as does a date, so each
+    NaT scalar is converted that way first. ``values`` holds elements of
+    ``np_type``: a list is a sequence of them, and a tuple is a record's fields
+    (or, for any other dtype, a sequence too).
     """
     if not _has_duration_leaf(np_type):
         return values
-    return _with_generic_nats(values)
+    while np_type.subdtype is not None:
+        np_type = np_type.subdtype[0]
+    if isinstance(values, list) or (isinstance(values, tuple) and np_type.names is None):
+        items = [_nats_in_leaf_units(x, np_type) for x in values]
+        return items if isinstance(values, list) else tuple(items)
+    if isinstance(values, tuple) and len(values) == len(np_type.names):
+        return tuple(
+            _nats_in_leaf_units(x, np_type.fields[name][0])
+            for x, name in zip(values, np_type.names, strict=True)
+        )
+    if np_type.kind == "m" and isinstance(values, np.timedelta64) and np.isnat(values):
+        return np.asarray(values).astype(np_type)[()]
+    return values
 
 
 def _has_duration_leaf(np_type):
@@ -681,15 +695,6 @@ def _has_duration_leaf(np_type):
     if np_type.names is not None:
         return any(_has_duration_leaf(np_type.fields[name][0]) for name in np_type.names)
     return np_type.kind == "m"
-
-
-def _with_generic_nats(values):
-    if isinstance(values, np.timedelta64):
-        return np.timedelta64("NaT") if np.isnat(values) else values
-    if isinstance(values, (tuple, list)):
-        items = [_with_generic_nats(x) for x in values]
-        return items if isinstance(values, list) else tuple(items)
-    return values
 
 
 def _dtype_to_string(dtype):
