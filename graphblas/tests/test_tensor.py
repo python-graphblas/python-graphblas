@@ -4202,3 +4202,28 @@ def test_einsum_plan_cache():
     A1 = random_tensor((3, 4), rng)[0]
     R = einsum("ij,jk,kl->il", A1, A1.T, A1, optimize=[(0, 1), (0, 1)]).new()
     assert R.shape == (3, 4)
+
+
+def test_batched_contraction_embedded_format(monkeypatch):
+    """The block-diagonal operand of a batched contraction may take any format again after the
+    embedding (bitmap when few batches make it dense: SuiteSparse's bitmap saxpy instead of
+    the sparse one's fine tasks); the result is unchanged.
+    """
+    rng = np.random.default_rng(701)
+    X, xv, xp = random_tensor((3, 6, 5), rng, density=0.5, layout=((0, 1), (2,)))
+    x = Tensor.from_dense(rng.random((3, 6)))
+    seen = []
+    orig = Matrix.mxm
+
+    def mxm(self, other, op=gb.semiring.plus_times):
+        seen.append(set(self.ss.config["sparsity_control"]))
+        return orig(self, other, op)
+
+    monkeypatch.setattr(Matrix, "mxm", mxm)
+    R = gb.core.tensor.einsum("lu,luv->lv", x, X).new()
+    monkeypatch.undo()
+    assert seen
+    assert seen[-1] & {"auto", "bitmap"}
+    ev = np.einsum("lu,luv->lv", x.to_dense(), np.where(xp, xv, 0))
+    ep = np.einsum("lu,luv->lv", np.ones((3, 6)), xp.astype(float)) > 0
+    check(R, np.where(ep, ev, 0), ep, approx=True)
