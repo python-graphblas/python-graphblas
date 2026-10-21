@@ -6,7 +6,7 @@ from .. import backend, binary, config, monoid
 from ..dtypes import _INDEX, FP64, _index_dtypes, lookup_dtype, unify
 from ..exceptions import EmptyObject, check_status
 from . import _has_numba, _supports_udfs, automethods, ffi, lib, utils
-from .base import BaseExpression, BaseType, call
+from .base import BaseExpression, BaseType, _is_recording, call
 from .expr import AmbiguousAssignOrExtract
 from .literals import (
     _SINGLE_PRECISION,
@@ -387,7 +387,8 @@ class Scalar(BaseType):
         else:
             scalar = Scalar(self.dtype, is_cscalar=True, name="s_temp")
             dtype_name = "UDT" if is_udt else self.dtype.name
-            call(f"GrB_Scalar_extractElement_{dtype_name}", [_Pointer(scalar), self])
+            out = _Pointer(scalar, exc_arg=self)
+            call(f"GrB_Scalar_extractElement_{dtype_name}", [out, self])
         if is_udt:
             return _element_value(self.dtype, scalar.gb_obj)
         return scalar.gb_obj[0]
@@ -422,7 +423,7 @@ class Scalar(BaseType):
         if self._is_cscalar:
             return 0 if self._empty else 1
         scalar = _scalar_index("s_nvals")
-        call("GrB_Scalar_nvals", [_Pointer(scalar), self])
+        call("GrB_Scalar_nvals", [_Pointer(scalar, exc_arg=self), self])
         return scalar.gb_obj[0]
 
     @property
@@ -1072,7 +1073,37 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
     def new(self, dtype=None, *, is_cscalar=None, name=None, **opts):
         if is_cscalar is None:
             is_cscalar = False
-        return self.parent._extract_element(
+        parent = self.parent
+        # Fast path for the default `expr.new()`: extract a single element
+        # straight into a fresh GrB_Scalar via GrB_*_extractElement_Scalar,
+        # skipping the `call` wrapper's per-arg _carg marshalling. Falls back
+        # for a dtype cast, cscalar output, opts, UDTs, and an active Recorder
+        # (so the call is recorded). Result is a GrB_Scalar (is_cscalar=False),
+        # empty exactly when the element is missing, same as _extract_element.
+        if (
+            dtype is None
+            and not is_cscalar
+            and not opts
+            and not parent.dtype._is_udt
+            and not _is_recording()
+        ):
+            indices = self.resolved_indexes.indices
+            result = Scalar(parent.dtype, is_cscalar=False, name=name)  # pragma: is_grbscalar
+            if len(indices) == 1:
+                err_code = lib.GrB_Vector_extractElement_Scalar(
+                    result.gb_obj[0], parent.gb_obj[0], indices[0].index._carg
+                )
+            else:
+                rowidx, colidx = indices
+                if parent._is_transposed:
+                    rowidx, colidx = colidx, rowidx
+                err_code = lib.GrB_Matrix_extractElement_Scalar(
+                    result.gb_obj[0], parent.gb_obj[0], rowidx.index._carg, colidx.index._carg
+                )
+            if err_code:
+                check_status(err_code, [result])
+            return result
+        return parent._extract_element(
             self.resolved_indexes, dtype, opts, is_cscalar=is_cscalar, name=name
         )
 
@@ -1083,6 +1114,21 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
         if clear:
             return Scalar(dtype, is_cscalar=is_cscalar, name=name)
         return self.new(dtype, is_cscalar=is_cscalar, name=name, **opts)
+
+    def _extract_fast(self):
+        """Resolve a value read (``.value``, ``float(...)``, ...) with one extract.
+
+        Those readers only need the raw element, so extract it straight into a
+        cscalar and skip the extra GrB_Scalar round-trip that ``.new()`` followed
+        by ``Scalar.value`` would perform. Defer to the full ``.new()`` for UDTs
+        (whose values need numpy conversion in ``Scalar.value``) and while a
+        Recorder is active (so it observes the same calls as the expression path).
+        ``automethods._get_value`` consults this hook for ``_fast_scalar_attrs``.
+        """
+        parent = self.parent
+        if parent.dtype._is_udt or _is_recording():
+            return self.new()
+        return parent._extract_element(self.resolved_indexes, None, {}, is_cscalar=True)
 
     is_cscalar = Scalar.is_cscalar
     is_grbscalar = Scalar.is_grbscalar

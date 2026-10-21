@@ -5,9 +5,16 @@ import numpy as np
 
 from .. import backend, binary, monoid, select, semiring
 from ..dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
-from ..exceptions import DimensionMismatch, InvalidValue, NoValue, check_status
+from ..exceptions import (
+    DimensionMismatch,
+    GrB_NO_VALUE,
+    InvalidValue,
+    NoValue,
+    check_status,
+    check_status_carg,
+)
 from . import _supports_udfs, automethods, ffi, lib, utils
-from .base import BaseExpression, BaseType, _check_mask, call
+from .base import BaseExpression, BaseType, _check_mask, _is_recording, call
 from .descriptor import lookup as descriptor_lookup
 from .dtypes import _raise_dtype_or_arraylike
 from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, InfixExprBase, Updater
@@ -372,6 +379,53 @@ class Matrix(BaseType):
             M[0, 0:3] = 17
 
         """
+        # Fast path for `A[i, j] = scalar`: a plain (row, col) integer pair and
+        # an exact-fit Python scalar, with no mask/accum/opts, a non-UDT dtype,
+        # and no active Recorder. Mirrors Updater -> _assign_element for a single
+        # element while skipping the resolver, Updater, and Scalar objects. Only
+        # int/float/bool/complex are taken here so dtype inference and cffi
+        # coercion match _assign_element exactly; everything else (slices, fancy
+        # indexing, numpy or Scalar values, `A(mask)[i, j] << x`) falls back to
+        # the full assign path, leaving mask/accum and coercion unchanged. So
+        # does an int beyond INT64, which that path types as the matrix's dtype
+        # (``uint64_mat[i, j] = 2**63``; literals._literal_store_dtype).
+        if (
+            not opts
+            and type(keys) is tuple
+            and len(keys) == 2
+            and type(expr) in (int, float, bool, complex)
+            and (type(expr) is not int or -(2**63) <= expr < 2**63)
+            and not self.dtype._is_udt
+            and not _is_recording()
+        ):
+            row, col = keys
+            # Only int and np.integer keys take the fast lane (bools excluded),
+            # matching parse_index; other __index__ objects fall through to the
+            # expression path and its canonical errors.
+            if (type(row) is int or isinstance(row, np.integer)) and (
+                type(col) is int or isinstance(col, np.integer)
+            ):
+                rowidx = row.__index__()
+                colidx = col.__index__()
+                nrows = self._nrows
+                ncols = self._ncols
+                if rowidx < 0:
+                    rowidx += nrows
+                if rowidx < 0 or rowidx >= nrows:
+                    raise IndexError(f"Index out of range: index={row}, size={nrows}")
+                if colidx < 0:
+                    colidx += ncols
+                if colidx < 0 or colidx >= ncols:
+                    raise IndexError(f"Index out of range: index={col}, size={ncols}")
+                vdtype = lookup_dtype(type(expr), expr)
+                cvalue = ffi_new(f"{vdtype.c_type}*")
+                cvalue[0] = expr  # cffi coercion, identical to the Scalar.value setter
+                err_code = utils.libget(f"GrB_Matrix_setElement_{vdtype.name}")(
+                    self.gb_obj[0], cvalue[0], rowidx, colidx
+                )
+                if err_code:
+                    check_status_carg(err_code, "Matrix", self.gb_obj[0])
+                return
         Updater(self, opts=opts)[keys] = expr
 
     def __contains__(self, index):
@@ -384,6 +438,46 @@ class Matrix(BaseType):
             (10, 15) in M
 
         """
+        # Fast path for a plain (row, col) integer pair: probe with
+        # GrB_Matrix_extractElement directly instead of building an extract
+        # expression and Scalar. An out-of-range index falls through to the
+        # expression path so it raises the same IndexError as the slow path.
+        # Fall back for a UDT dtype and an active Recorder (so the call is
+        # recorded), mirroring Matrix.get. TransposedMatrix reuses this method.
+        if (
+            type(index) is tuple
+            and len(index) == 2
+            and not self.dtype._is_udt
+            and not _is_recording()
+        ):
+            row, col = index
+            # Only int and np.integer take the fast lane (bools excluded),
+            # matching parse_index; other __index__ objects fall through to the
+            # expression path and its canonical errors.
+            if (type(row) is int or isinstance(row, np.integer)) and (
+                type(col) is int or isinstance(col, np.integer)
+            ):
+                rowidx = row.__index__()
+                colidx = col.__index__()
+                nrows = self._nrows
+                ncols = self._ncols
+                if rowidx < 0:
+                    rowidx += nrows
+                if colidx < 0:
+                    colidx += ncols
+                if 0 <= rowidx < nrows and 0 <= colidx < ncols:
+                    if self._is_transposed:
+                        rowidx, colidx = colidx, rowidx
+                    dtype = self.dtype
+                    res = ffi_new(f"{dtype.c_type}*")
+                    err_code = utils.libget(f"GrB_Matrix_extractElement_{dtype.name}")(
+                        res, self.gb_obj[0], rowidx, colidx
+                    )
+                    if err_code:
+                        if err_code == GrB_NO_VALUE:
+                            return False
+                        check_status_carg(err_code, "Matrix", self.gb_obj[0])
+                    return True
         extractor = self[index]
         if not extractor._is_scalar:
             raise TypeError(
@@ -506,14 +600,18 @@ class Matrix(BaseType):
     def nrows(self):
         """Number of rows in the Matrix."""
         scalar = _scalar_index("s_nrows")
-        call("GrB_Matrix_nrows", [_Pointer(scalar), self])
+        # TransposedMatrix shares this, and reports against its Matrix (no error function)
+        matrix = self._matrix if self._is_transposed else self
+        call("GrB_Matrix_nrows", [_Pointer(scalar, exc_arg=matrix), self])
         return scalar.gb_obj[0]
 
     @property
     def ncols(self):
         """Number of columns in the Matrix."""
         scalar = _scalar_index("s_ncols")
-        call("GrB_Matrix_ncols", [_Pointer(scalar), self])
+        # TransposedMatrix shares this, and reports against its Matrix (no error function)
+        matrix = self._matrix if self._is_transposed else self
+        call("GrB_Matrix_ncols", [_Pointer(scalar, exc_arg=matrix), self])
         return scalar.gb_obj[0]
 
     @property
@@ -525,7 +623,9 @@ class Matrix(BaseType):
     def nvals(self):
         """Number of non-empty values in the Matrix."""
         scalar = _scalar_index("s_nvals")
-        call("GrB_Matrix_nvals", [_Pointer(scalar), self])
+        # TransposedMatrix shares this, and reports against its Matrix (no error function)
+        matrix = self._matrix if self._is_transposed else self
+        call("GrB_Matrix_nvals", [_Pointer(scalar, exc_arg=matrix), self])
         return scalar.gb_obj[0]
 
     @property
@@ -852,6 +952,46 @@ class Matrix(BaseType):
         Python scalar
 
         """
+        # Fast path for plain integer indices: call GrB_Matrix_extractElement
+        # directly instead of building an extract expression, which costs ~10x
+        # more than the C call for single-element access. Fall back when a
+        # Recorder is active (so the call is recorded) and for UDTs (whose
+        # values need numpy-based conversion in Scalar.value).
+        # Only int and np.integer take the fast lane (bools excluded), matching
+        # parse_index; other __index__ objects fall through to the expression
+        # path and its canonical errors.
+        if (
+            (type(row) is int or isinstance(row, np.integer))
+            and (type(col) is int or isinstance(col, np.integer))
+            and not self.dtype._is_udt
+            and not _is_recording()
+        ):
+            rowidx = row.__index__()
+            colidx = col.__index__()
+            nrows = self._nrows
+            ncols = self._ncols
+            if rowidx < 0:
+                rowidx += nrows
+            if rowidx < 0 or rowidx >= nrows:
+                raise IndexError(f"Index out of range: index={row}, size={nrows}")
+            if colidx < 0:
+                colidx += ncols
+            if colidx < 0 or colidx >= ncols:
+                raise IndexError(f"Index out of range: index={col}, size={ncols}")
+            if self._is_transposed:
+                # TransposedMatrix reuses this method; gb_obj is the
+                # untransposed parent, so extract the mirrored element.
+                rowidx, colidx = colidx, rowidx
+            dtype = self.dtype
+            res = ffi_new(f"{dtype.c_type}*")
+            err_code = utils.libget(f"GrB_Matrix_extractElement_{dtype.name}")(
+                res, self.gb_obj[0], rowidx, colidx
+            )
+            if err_code:
+                if err_code == GrB_NO_VALUE:
+                    return default
+                check_status_carg(err_code, "Matrix", self.gb_obj[0])
+            return res[0]
         expr = self[row, col]
         if expr._is_scalar:
             rv = expr.new().value
@@ -3076,10 +3216,13 @@ class Matrix(BaseType):
             desc = descriptor_lookup(**opts)  # noqa: F841 (keep desc in scope for context)
         if is_cscalar:
             dtype_name = "UDT" if dtype._is_udt else dtype.name
+            # Report an error against this Matrix (not a TransposedMatrix, which has no
+            # error function): the empty C scalar has no GraphBLAS object to ask.
+            out = _Pointer(result, exc_arg=self._matrix if self._is_transposed else self)
             if (
                 call(
                     f"GrB_Matrix_extractElement_{dtype_name}",
-                    [_Pointer(result), self, rowidx.index, colidx.index],
+                    [out, self, rowidx.index, colidx.index],
                 )
                 is not NoValue
             ):

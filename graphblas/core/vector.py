@@ -4,9 +4,9 @@ import numpy as np
 
 from .. import backend, binary, monoid, select, semiring, unary
 from ..dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
-from ..exceptions import DimensionMismatch, NoValue, check_status
+from ..exceptions import DimensionMismatch, GrB_NO_VALUE, NoValue, check_status, check_status_carg
 from . import _supports_udfs, automethods, ffi, lib, utils
-from .base import BaseExpression, BaseType, _check_mask, call
+from .base import BaseExpression, BaseType, _check_mask, _is_recording, call
 from .descriptor import lookup as descriptor_lookup
 from .dtypes import _raise_dtype_or_arraylike
 from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, InfixExprBase, Updater
@@ -313,6 +313,42 @@ class Vector(BaseType):
             v[:] = 1
 
         """
+        # Fast path for `v[i] = scalar`: a plain integer index and an exact-fit
+        # Python scalar, with no mask/accum/opts, a non-UDT dtype, and no active
+        # Recorder. This mirrors what Updater -> _assign_element does for a
+        # single element, but skips building the resolver, Updater, and Scalar.
+        # Only int/float/bool/complex values are taken here so the dtype
+        # inference and cffi coercion match _assign_element exactly, and only
+        # int and np.integer keys (bools excluded) so the accepted indices
+        # match parse_index; everything else (slices, fancy indexing, 0-d
+        # arrays and other __index__ objects, numpy or Scalar values,
+        # `v(mask)[i] << x`) falls back to the full assign path, leaving
+        # mask/accum, coercion, and index errors unchanged. So does an int
+        # beyond INT64, which that path types as the vector's dtype
+        # (``uint64_vec[i] = 2**63``; literals._literal_store_dtype).
+        if (
+            not opts
+            and type(expr) in (int, float, bool, complex)
+            and (type(expr) is not int or -(2**63) <= expr < 2**63)
+            and (type(keys) is int or isinstance(keys, np.integer))
+            and not self.dtype._is_udt
+            and not _is_recording()
+        ):
+            idx = keys.__index__()
+            size = self._size
+            if idx < 0:
+                idx += size
+            if idx < 0 or idx >= size:
+                raise IndexError(f"Index out of range: index={keys}, size={size}")
+            vdtype = lookup_dtype(type(expr), expr)
+            cvalue = ffi_new(f"{vdtype.c_type}*")
+            cvalue[0] = expr  # cffi coercion, identical to the Scalar.value setter
+            err_code = utils.libget(f"GrB_Vector_setElement_{vdtype.name}")(
+                self.gb_obj[0], cvalue[0], idx
+            )
+            if err_code:
+                check_status_carg(err_code, "Vector", self.gb_obj[0])
+            return
         Updater(self, opts=opts)[keys] = expr
 
     def __contains__(self, index):
@@ -326,6 +362,34 @@ class Vector(BaseType):
             15 in v
 
         """
+        # Fast path for a plain integer index: probe with
+        # GrB_Vector_extractElement directly instead of building an extract
+        # expression and Scalar. An out-of-range index falls through to the
+        # expression path so it raises the same IndexError as the slow path.
+        # Only int and np.integer take the fast lane (bools excluded), matching
+        # parse_index; other __index__ objects fall through to the expression
+        # path and its canonical errors. Fall back for a UDT dtype and an active
+        # Recorder (so the call is recorded), mirroring Vector.get.
+        if (
+            (type(index) is int or isinstance(index, np.integer))
+            and not self.dtype._is_udt
+            and not _is_recording()
+        ):
+            idx = index.__index__()
+            size = self._size
+            if idx < 0:
+                idx += size
+            if 0 <= idx < size:
+                dtype = self.dtype
+                res = ffi_new(f"{dtype.c_type}*")
+                err_code = utils.libget(f"GrB_Vector_extractElement_{dtype.name}")(
+                    res, self.gb_obj[0], idx
+                )
+                if err_code:
+                    if err_code == GrB_NO_VALUE:
+                        return False
+                    check_status_carg(err_code, "Vector", self.gb_obj[0])
+                return True
         extractor = self[index]
         if not extractor._is_scalar:
             raise TypeError(
@@ -440,7 +504,7 @@ class Vector(BaseType):
     def size(self):
         """Size of the Vector."""
         scalar = _scalar_index("s_size")
-        call("GrB_Vector_size", [_Pointer(scalar), self])
+        call("GrB_Vector_size", [_Pointer(scalar, exc_arg=self), self])
         return scalar.gb_obj[0]
 
     @property
@@ -452,7 +516,7 @@ class Vector(BaseType):
     def nvals(self):
         """Number of non-empty values in the Vector."""
         scalar = _scalar_index("s_nvals")
-        call("GrB_Vector_nvals", [_Pointer(scalar), self])
+        call("GrB_Vector_nvals", [_Pointer(scalar, exc_arg=self), self])
         return scalar.gb_obj[0]
 
     @property
@@ -689,6 +753,35 @@ class Vector(BaseType):
         Python scalar
 
         """
+        # Fast path for a plain integer index: call GrB_Vector_extractElement
+        # directly instead of building an extract expression, which costs ~10x
+        # more than the C call for single-element access. Fall back when a
+        # Recorder is active (so the call is recorded) and for UDTs (whose
+        # values need numpy-based conversion in Scalar.value). Only int and
+        # np.integer take the fast lane (bools excluded), matching parse_index;
+        # other __index__ objects fall through to the expression path and its
+        # canonical errors.
+        if (
+            (type(index) is int or isinstance(index, np.integer))
+            and not self.dtype._is_udt
+            and not _is_recording()
+        ):
+            idx = index.__index__()
+            size = self._size
+            if idx < 0:
+                idx += size
+            if idx < 0 or idx >= size:
+                raise IndexError(f"Index out of range: index={index}, size={size}")
+            dtype = self.dtype
+            res = ffi_new(f"{dtype.c_type}*")
+            err_code = utils.libget(f"GrB_Vector_extractElement_{dtype.name}")(
+                res, self.gb_obj[0], idx
+            )
+            if err_code:
+                if err_code == GrB_NO_VALUE:
+                    return default
+                check_status_carg(err_code, "Vector", self.gb_obj[0])
+            return res[0]
         expr = self[index]
         if expr._is_scalar:
             rv = expr.new().value
@@ -1867,8 +1960,11 @@ class Vector(BaseType):
             desc = descriptor_lookup(**opts)  # noqa: F841 (keep desc in scope for context)
         if is_cscalar:
             dtype_name = "UDT" if dtype._is_udt else dtype.name
+            # Report an error against this Vector: the empty C scalar has no
+            # GraphBLAS object to ask for the error text.
+            out = _Pointer(result, exc_arg=self)
             if (
-                call(f"GrB_Vector_extractElement_{dtype_name}", [_Pointer(result), self, idx.index])
+                call(f"GrB_Vector_extractElement_{dtype_name}", [out, self, idx.index])
                 is not NoValue
             ):
                 result._empty = False

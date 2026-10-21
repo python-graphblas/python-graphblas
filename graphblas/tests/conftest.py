@@ -170,6 +170,30 @@ def _reset_name_counters():
     gb.Scalar._name_counter = itertools.count()
 
 
+@pytest.fixture(autouse=True)
+def _stop_a_leaked_recorder():
+    """Fail a test that leaves a Recorder running, and stop that Recorder.
+
+    A running Recorder records every later call, and the scalar fast paths step
+    aside while one runs, so every test after a leak would test the full path.
+    """
+    from graphblas.core import base
+
+    def running():
+        return base._recorder.get(base._prev_recorder)
+
+    before = running()  # the session's own Recorder under --record, else None
+    yield
+    rec = running()
+    if rec is not None and rec is not before:  # pragma: no cover (only on failure)
+        while rec is not None and rec is not before:
+            rec.stop()
+            if running() is rec:
+                break
+            rec = running()
+        pytest.fail("The test left a Recorder running; stop it, or use `with Recorder():`")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _warn_if_no_memory_handler():
     """Fail a test that frees an array that owns its data but has no memory handler.

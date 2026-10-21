@@ -450,10 +450,14 @@ class _CArray:
 
 
 class _Pointer:
-    __slots__ = "val"
+    __slots__ = "val", "_exc_arg"
 
-    def __init__(self, val):
+    def __init__(self, val, exc_arg=None):
         self.val = val
+        if exc_arg is not None:
+            # check_status asks this object for the error text instead of ``val``, since a
+            # C-scalar ``val`` has no GraphBLAS object to ask
+            self._exc_arg = exc_arg
 
     @property
     def _carg(self):
