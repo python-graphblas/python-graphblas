@@ -509,7 +509,8 @@ changes:
 - In-place operators on a Matrix with a Tensor operand raise. Returning `NotImplemented`
   would let Python rebind `A` to a Tensor expression.
 - Matrix and Vector methods keep their rules and raise with a hint when given a Tensor
-  (`base._expect_type_message`).
+  (`base._expect_type_message`). `isequal` and `isclose` are the exceptions: they return what
+  the Tensor's methods return.
 - A Tensor mask on a Matrix or Vector output raises (`base.py`, `mask.py`). Masks combine
   across kinds (`T.S & A.V` is a Tensor mask).
 - Named operators dispatch to the Tensor (`operator/base.py`, `operator/unary.py`,
