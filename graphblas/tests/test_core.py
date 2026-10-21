@@ -30,6 +30,59 @@ def test_import_special_attrs():
             gb.ss
 
 
+_TENSOR_IMPORT_SCRIPT = """
+import sys
+import graphblas as gb
+print("package:", gb.__file__)
+print("after import:", sorted(m for m in ("numba", "graphblas.core.tensor") if m in sys.modules))
+if sys.argv[1] == "vanilla":
+    gb.init("suitesparse-vanilla")
+T = gb.Tensor
+from graphblas.core import tensor
+print("same:", T is tensor.Tensor and gb.einsum is tensor.einsum)
+loaded = ("tensor_numba", "tensor_udt", "tensor_io")
+print("engines:", sorted(m for m in loaded if f"graphblas.core.{m}" in sys.modules))
+import numpy as np
+for call in (lambda: gb.Tensor(gb.dtypes.FP64, (2, 3)), lambda: gb.einsum("ij->ji", np.eye(2))):
+    try:
+        call()
+        print("use: ok")
+    except NotImplementedError as exc:
+        print("use:", exc)
+"""
+
+
+@pytest.mark.parametrize("backend", ["suitesparse", "vanilla"])
+def test_tensor_exports(backend):
+    """``gb.Tensor`` and ``gb.einsum`` (experimental) load lazily, like Matrix: ``import
+    graphblas`` imports neither them nor Numba, and the Tensor's engines load on use. On the
+    vanilla backend they import, and using them raises.
+    """
+    import subprocess
+    import sys
+
+    repo_root = pathlib.Path(gb.__file__).resolve().parents[1]
+    result = subprocess.run(
+        [sys.executable, "-c", _TENSOR_IMPORT_SCRIPT, backend],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**__import__("os").environ, "PYTHONPATH": str(repo_root)},
+    )
+    report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert result.returncode == 0, report
+    lines = [line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line]
+    lines = {key: [v for k, v in lines if k == key] for key, _ in lines}
+    assert lines["package"] == [str(repo_root / "graphblas" / "__init__.py")], report
+    assert lines["after import"] == ["[]"], report
+    assert lines["same"] == ["True"], report
+    assert lines["engines"] == ["[]"], report
+    if backend == "vanilla":
+        assert lines["use"] == ["Tensor requires the suitesparse backend"] * 2, report
+    else:
+        assert lines["use"] == ["ok", "ok"], report
+
+
 def test_bad_init():
     # same params is okay
     params = dict(gb._init_params)

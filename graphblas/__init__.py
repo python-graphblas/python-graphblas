@@ -85,11 +85,13 @@ _SPECIAL_ATTRS = {
     "Matrix",
     "Recorder",
     "Scalar",
+    "Tensor",  # Experimental: n-dimensional sparse arrays (graphblas.core.tensor)
     "Vector",
     "agg",
     "binary",
     "core",
     "dtypes",
+    "einsum",  # Experimental, with Tensor
     "exceptions",
     "indexbinary",
     "indexunary",
@@ -248,6 +250,9 @@ _STANDARD_OPERATOR_NAMES = set()
 def _load(name):
     if name in {"Matrix", "Vector", "Scalar", "Recorder"}:
         module = _import_module(f".core.{name.lower()}", __name__)
+        globals()[name] = getattr(module, name)
+    elif name in {"Tensor", "einsum"}:
+        module = _import_module(".core.tensor", __name__)
         globals()[name] = getattr(module, name)
     elif name == "MAX_SIZE":
         from .core import lib
