@@ -120,8 +120,8 @@ scipy, torch, [SPLATT](https://github.com/ShadenSmith/splatt),
 [TACO](https://github.com/tensor-compiler/taco), [Finch](https://github.com/finch-tensor/Finch.jl),
 and the Tensor itself at different thread counts and with each engine forced. The comparison
 has its own teeth check (tampered fingerprints must be flagged). Small data sets are also
-checked against dense numpy. The benchmark harness is not in the repository yet;
-`benchmarks.md` will describe it and how to rerun it.
+checked against dense numpy. The harness is in `scripts/tensor_bench/`; `benchmarks.md` gives
+the counts and the results, and the kit's README says how to rerun it.
 
 ## Real workloads
 
@@ -137,7 +137,8 @@ the code that python-graphblas users write today (usually a loop over Matrices):
 - regular path queries, against [LAGraph](https://github.com/GraphBLAS/LAGraph)'s expected
   outputs.
 
-These scripts are not in the repository yet either.
+These scripts are in `scripts/tensor_bench/demos/`, reading data that `fetch_data.py`
+downloads from the original sources.
 
 ## What this does not cover
 
