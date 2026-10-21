@@ -4089,3 +4089,63 @@ def test_extract_repeated_indices(ndim, max_listed, monkeypatch):
     A = Matrix.from_dense(np.arange(1.0, 13.0).reshape(3, 4))
     T = Tensor.from_matrix(A)
     assert T[[2, 2, 0], [1, 1]].new().to_matrix().isequal(A[[2, 2, 0], [1, 1]].new())
+
+
+def test_reduce_aggregators():
+    """``reduce`` with aggregators made of a monoid or a semiring gives what Matrix gives
+    (values and dtypes); composite ones raise.
+    """
+    from graphblas import agg
+
+    rng = np.random.default_rng(600)
+    for dtype in [dtypes.FP64, dtypes.INT64, dtypes.INT8, dtypes.BOOL]:
+        X = random_tensor((3, 4, 5), rng, density=0.5, dtype=dtype, layout=((2, 0), (1,)))[0]
+        A = X.permute_dims((0, 2, 1)).reshape(15, 4)  # (axis 1 last)
+        M = A.to_matrix((0,))
+        names = "count exists sum max count_nonzero count_zero sum_of_squares sum_of_inverses"
+        for name in [*names.split(), "hypot", "logaddexp", "logaddexp2"]:
+            a = getattr(agg, name)
+            try:
+                want = M.reduce_rowwise(a).new()
+            except KeyError:
+                with pytest.raises(KeyError):
+                    X.reduce(a, axis=1)
+                continue
+            got = X.reduce(a, axis=1).new()
+            assert got.dtype == want.dtype, (dtype, name)
+            assert got.reshape(15).isclose(want, rel_tol=1e-12), (dtype, name)
+            assert X.reduce(a[dtype], axis=1).new().isclose(got)
+    with pytest.raises(NotImplementedError, match="agg.mean"):
+        X.reduce(agg.mean)
+
+
+def test_isequal_matrix_vector_scalar():
+    """``isequal`` / ``isclose`` compare a Tensor with a Matrix, Vector or Scalar of its shape
+    by values; another shape is not equal.
+    """
+    rng = np.random.default_rng(601)
+    X = random_tensor((3, 4), rng, density=0.5)[0]
+    A = X.to_matrix((0,))
+    assert X.isequal(A)
+    assert X.isclose(A)
+    assert X.T.isequal(A.T)
+    assert not X.isequal(A.T.new())
+    B = A.dup()
+    B[0, 0] = 99.0
+    assert not X.isequal(B)
+    v = X[1].new()
+    assert v.isequal(v.to_vector())
+    w = v.to_vector()
+    w[0] = 1e9
+    assert not v.isequal(w)
+    assert not v.isequal(gb.Vector(v.dtype, 5))
+    assert not v.isequal(A)
+    s = X[1, 2].new()
+    assert s.isequal(s.to_scalar())
+    assert not s.isequal(gb.Scalar.from_value(1e9))
+    assert Tensor(dtypes.FP64, ()).isequal(gb.Scalar(dtypes.FP64))
+    assert not X.isequal(gb.Scalar.from_value(1.0))
+    assert X.isequal(A, check_dtype=True)
+    assert not X.isequal(A.dup(dtypes.INT64), check_dtype=True)
+    with pytest.raises(TypeError, match="isequal"):
+        X.isequal(np.ones((3, 4)))
