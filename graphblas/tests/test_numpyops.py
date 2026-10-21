@@ -135,7 +135,7 @@ def test_numpy_monoid_identity_matches_builtin():
             gb_id = gb_monoid[dtype].identity
             np_cast = np.asarray(np_id).astype(dtype.np_type)
             gb_cast = np.asarray(gb_id).astype(dtype.np_type)
-            if np_cast != gb_cast:
+            if np_cast != gb_cast:  # pragma: no cover (only on failure)
                 mismatches.append(f"{np_name}[{dtype.name}]={np_id!r} vs {gb_name}={gb_id!r}")
     assert not mismatches, mismatches
 
@@ -164,7 +164,7 @@ def test_numpy_monoid_unmapped_identity_consistency():
             np_type = gb.dtypes.lookup_dtype(name).np_type
             np_cast = np.asarray(table[name]).astype(np_type)
             twin_cast = np.asarray(twin_table[name]).astype(np_type)
-            if np_cast != twin_cast:
+            if np_cast != twin_cast:  # pragma: no cover (only on failure)
                 mismatches.append(
                     f"{np_name}[{name}]={table[name]!r} vs {twin}[{name}]={twin_table[name]!r}"
                 )
