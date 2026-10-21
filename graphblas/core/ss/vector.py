@@ -14,6 +14,7 @@ from ..operator import get_typed_op
 from ..scalar import Scalar, _as_scalar
 from ..utils import (
     _CArray,
+    _distinct_buffers,
     _MatrixArray,
     ints_to_numpy_buffer,
     normalize_chunks,
@@ -879,7 +880,8 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (uint64 for indices)
-                - own its own data
+                - own its own data, allocated by NumPy's default memory handler
+                  (GraphBLAS can't free memory from a custom one)
                 - be writeable
             If all of these conditions are not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
@@ -981,8 +983,7 @@ class ss:
         values, dtype = values_to_numpy_buffer(
             values, dtype, copy=copy, ownable=True, subarray_after=1
         )
-        if indices is values:
-            values = np.copy(values)
+        indices, values = _distinct_buffers(indices, values)
         vi = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indices))
         vx = ffi_new("void**", ffi.from_buffer("void*", values))
         if nvals is None:
@@ -1063,7 +1064,8 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (bool for bitmap)
-                - own its own data
+                - own its own data, allocated by NumPy's default memory handler
+                  (GraphBLAS can't free memory from a custom one)
                 - be writeable
             If all of these conditions are not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
@@ -1162,8 +1164,7 @@ class ss:
         values, dtype = values_to_numpy_buffer(
             values, dtype, copy=copy, ownable=True, subarray_after=1
         )
-        if bitmap is values:
-            values = np.copy(values)
+        bitmap, values = _distinct_buffers(bitmap, values)
         vhandle = ffi_new("GrB_Vector*")
         vb = ffi_new("int8_t**", ffi.from_buffer("int8_t*", bitmap))
         vx = ffi_new("void**", ffi.from_buffer("void*", values))
@@ -1243,7 +1244,8 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (bool for bitmap)
-                - own its own data
+                - own its own data, allocated by NumPy's default memory handler
+                  (GraphBLAS can't free memory from a custom one)
                 - be writeable
             If all of these conditions are not met, then the data will be
             copied and the original array will be unmodified.  If zero copy

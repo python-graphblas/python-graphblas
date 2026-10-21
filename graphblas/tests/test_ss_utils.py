@@ -1,3 +1,9 @@
+import ctypes
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
@@ -8,6 +14,12 @@ from graphblas.exceptions import InvalidValue
 
 if backend != "suitesparse":
     pytest.skip("gb.ss and A.ss only available with suitesparse backend", allow_module_level=True)
+
+try:
+    from suitesparse_graphblas.utils import can_unclaim_buffer, empty
+except ImportError:  # pragma: no cover (import)
+    # suitesparse-graphblas < 10.5.1.1
+    can_unclaim_buffer = empty = None
 
 
 # ``from_coo`` with all-equal values used to come back iso, because SuiteSparse
@@ -334,3 +346,202 @@ def test_context():
     context._context = context  # This is allowed to work with config
     with pytest.raises(AttributeError, match="_context"):
         context._context = ctx  # This is not
+
+
+def _libc_arena():
+    """Give the last GraphBLAS arena libc's allocator, and return its number.
+
+    Arrays from ``empty(..., arena=k)`` then carry a NumPy memory handler of
+    their own, as arrays from any custom handler (NEP 49) do.
+    """
+    from graphblas.core import ffi, lib
+
+    k = lib.GxB_NARENAS - 1
+    initialized = ffi.new("int*")
+    assert lib.GxB_arena_initialized(initialized, k) == lib.GrB_SUCCESS
+    # GxB_arena_init refuses an arena that is already initialized, which it is
+    # only if the test runs again in the same process
+    if not initialized[0]:  # pragma: no branch (safety)
+        libc = ctypes.CDLL(None)
+        funcs = [
+            ffi.cast(sig, ctypes.cast(getattr(libc, name), ctypes.c_void_p).value)
+            for name, sig in [
+                ("malloc", "void *(*)(size_t)"),
+                ("calloc", "void *(*)(size_t, size_t)"),
+                ("realloc", "void *(*)(void *, size_t)"),
+                ("free", "void (*)(void *)"),
+            ]
+        ]
+        assert lib.GxB_arena_init(k, *funcs) == lib.GrB_SUCCESS
+    return k
+
+
+@pytest.mark.skipif("empty is None")
+@pytest.mark.skipif("sys.platform == 'win32'")  # no ``ctypes.CDLL(None)``
+def test_take_ownership_of_foreign_memory():
+    # These arrays own their data, but GraphBLAS would free it with NumPy's
+    # allocator, so it must copy them. It used to take them, and then the
+    # process aborted when GraphBLAS freed one (NumPy >=2.5, PYTHONMALLOC=debug).
+    k = _libc_arena()
+
+    def foreign(values, dtype):
+        array = empty(len(values), dtype, arena=k)
+        array[:] = values
+        assert array.flags.owndata
+        assert not can_unclaim_buffer(array)
+        return array
+
+    indptr = foreign([0, 2, 3], np.uint64)
+    col_indices = foreign([0, 2, 1], np.uint64)
+    values = foreign([1.0, 2.0, 3.0], np.float64)
+    A = Matrix.ss.import_csr(
+        nrows=2,
+        ncols=3,
+        indptr=indptr,
+        col_indices=col_indices,
+        values=values,
+        take_ownership=True,
+    )
+    expected = Matrix.from_coo([0, 0, 1], [0, 2, 1], [1.0, 2.0, 3.0], nrows=2, ncols=3)
+    assert A.isequal(expected)
+    for array in [indptr, col_indices, values]:
+        assert array.flags.owndata
+        assert array.flags.writeable
+    values[:] = 0
+    assert A.isequal(expected)
+
+    values = foreign([1, 2, 3], np.int64)
+    v = Vector.ss.import_full(values=values, take_ownership=True)
+    assert v.isequal(Vector.from_coo([0, 1, 2], [1, 2, 3]))
+    assert values.flags.owndata
+    del A, v
+
+
+def test_take_ownership_asks_suitesparse_graphblas(monkeypatch):
+    # Whether GraphBLAS may own an array is up to ``can_unclaim_buffer``
+    # (``owndata`` alone can't tell), even on a suitesparse-graphblas without it
+    monkeypatch.setattr(gb.core.utils, "can_unclaim_buffer", lambda array: False)
+    v = Vector.from_coo([1, 3], [10, 20], size=5)
+    d = v.ss.export("sparse")
+    w = Vector.ss.import_sparse(take_ownership=True, **d)
+    assert w.isequal(v)
+    assert d["indices"].flags.owndata
+    assert d["values"].flags.owndata
+
+
+def test_take_ownership_without_can_unclaim_buffer(monkeypatch):
+    # suitesparse-graphblas < 10.5.1.1 has neither function. GraphBLAS then takes an
+    # array that owns its data and is writeable, and gets a NumPy copy of any other.
+    monkeypatch.setattr(gb.core.utils, "can_unclaim_buffer", None)
+    monkeypatch.setattr(gb.core.utils, "empty", None)
+    v = Vector.from_coo([1, 3], [10, 20], size=5)
+    d = v.ss.export("sparse")
+    d["indices"].flags.writeable = False
+    values = np.array([10, 20, 0, 0])
+    w = Vector.ss.import_sparse(take_ownership=True, **dict(d, values=values[:2]))
+    assert w.isequal(v)
+    assert d["indices"].flags.owndata
+    values[:] = 0  # w has a copy of the view
+    assert w.isequal(v)
+
+    d = v.ss.export("sparse")
+    w = Vector.ss.import_sparse(take_ownership=True, **d)
+    assert w.isequal(v)
+    assert not d["indices"].flags.owndata
+    assert not d["values"].flags.owndata
+
+
+# Run in a subprocess: GraphBLAS is initialized once per process, and this needs
+# it initialized with libc's allocator before python-graphblas starts.
+_LIBC_ALLOCATOR_PROBE = """
+import numpy as np
+import suitesparse_graphblas as ssgb
+
+ssgb.initialize(memory_manager="c")
+import graphblas as gb
+
+print("package: " + gb.__file__)
+for take_ownership in [False, True]:
+    values = np.arange(1000, dtype=np.float64)
+    v = gb.Vector.ss.import_full(values=values, take_ownership=take_ownership)
+    assert v.reduce().new().value == values.sum()
+    del v
+print("done")
+"""
+
+
+def _run_probe(source, **env):
+    """Run ``source`` in a new process that imports this tree's graphblas, and check it ends."""
+    repo_root = Path(__file__).resolve().parents[2]
+    env = dict(os.environ, PYTHONPATH=str(repo_root), PYTHONUNBUFFERED="1", **env)
+    result = subprocess.run(
+        [sys.executable, "-c", source],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert result.returncode == 0, report
+    lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
+    assert lines.get("package") == str(repo_root / "graphblas" / "__init__.py"), report
+    assert result.stdout.splitlines()[-1] == "done", report
+
+
+@pytest.mark.slow
+@pytest.mark.skipif("empty is None")
+def test_import_with_libc_allocator():
+    # With ``memory_manager="c"`` GraphBLAS frees with libc's ``free``, so not
+    # even the copy that ``take_ownership=False`` makes may come from NumPy
+    _run_probe(_LIBC_ALLOCATOR_PROBE, PYTHONMALLOC="debug")
+
+
+# Run in a subprocess: a regression frees an array twice, which aborts the
+# process instead of failing the test.
+_ONE_ARRAY_TWICE_PROBE = """
+import numpy as np
+
+import graphblas as gb
+from graphblas import Matrix
+
+print("package: " + gb.__file__)
+a = np.array([0, 2], np.uint64)
+A = Matrix.ss.import_csr(
+    nrows=1, ncols=3, indptr=a, col_indices=a, values=[1.0, 2.0], take_ownership=True
+)
+assert A.isequal(Matrix.from_coo([0, 0], [0, 2], [1.0, 2.0], nrows=1, ncols=3))
+assert not a.flags.owndata  # taken once, copied once
+
+a = np.array([0, 2], np.uint64)
+A = Matrix.ss.import_hypercsr(
+    nrows=3,
+    ncols=3,
+    indptr=[0, 1, 2],
+    rows=a,
+    col_indices=a,
+    values=[1.0, 2.0],
+    take_ownership=True,
+)
+assert A.isequal(Matrix.from_coo([0, 2], [0, 2], [1.0, 2.0], nrows=3, ncols=3))
+
+a = np.array([0, 2], np.uint64)
+A = Matrix.ss.import_hypercsc(
+    nrows=3,
+    ncols=3,
+    indptr=[0, 1, 2],
+    cols=a,
+    row_indices=a,
+    values=[1.0, 2.0],
+    take_ownership=True,
+)
+assert A.isequal(Matrix.from_coo([0, 2], [0, 2], [1.0, 2.0], nrows=3, ncols=3))
+del A
+print("done")
+"""
+
+
+def test_take_ownership_of_one_array_twice():
+    # GraphBLAS frees every buffer it takes, so an array given as two arguments
+    # has to be copied for one of them. Only an index array given as the values
+    # was, and an index array given twice was freed twice, crashing the process.
+    _run_probe(_ONE_ARRAY_TWICE_PROBE)
