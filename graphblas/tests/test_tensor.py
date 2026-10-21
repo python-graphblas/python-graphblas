@@ -2508,6 +2508,76 @@ def test_ttm_udt_paths(monkeypatch, capfd):
         gb.ss.config["jit_c_control"] = prev
 
 
+_JIT_FAILURE_SCRIPT = """
+import sys
+import warnings
+if sys.argv[2] == "nonumba":
+    sys.modules["numba"] = None
+import numpy as np
+import graphblas as gb
+from graphblas.core import _has_numba, tensor, tensor_udt
+from graphblas.core.tensor import Tensor
+print("package:", gb.__file__)
+if not tensor_udt.jit_ready():  # (the probe compiles a test type into the empty cache)
+    print("skip: no JIT compiler")
+    sys.exit(0)
+gb.ss.config["jit_c_compiler_name"] = "/nonexistent/bin/cc"
+gb.ss.config["jit_c_control"] = sys.argv[1]
+tensor._TTM_KERNEL_MIN_NNZ = 0
+rng = np.random.default_rng(0)
+shape = (30, 40, 50)
+xv = np.where(rng.random(shape) < 0.002, rng.random(shape), 0)
+X = Tensor.from_coo(np.nonzero(xv), xv[xv != 0], shape=shape, layout=((0, 1), (2,)))
+U = rng.random((50, 11))
+expected = np.tensordot(xv, U, ([2], [0]))
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    err = [
+        float(np.abs(X.tensordot(U, ([2], [0])).new().to_dense(fill_value=0) - expected).max())
+        for _ in range(2)
+    ]
+print("max_err:", max(err))
+print("control:", gb.ss.config["jit_c_control"])
+print("compiler:", gb.ss.config["jit_c_compiler_name"])
+print("failure:", tensor_udt._FAILURE and tensor_udt._FAILURE[:2])
+print("warnings:", sum("array-UDT engine" in str(w.message) for w in caught))
+print("has_numba:", _has_numba)
+"""
+
+
+@pytest.mark.parametrize(("control", "numba"), [("run", "numba"), ("on", "nonumba")])
+def test_ttm_udt_jit_failure(control, numba, tmp_path):
+    """A compile that fails with the JIT on (a compiler gone missing after the probe, an
+    empty JIT cache, a fresh R): the UDT engine gives up once, warns, restores the JIT
+    control the user had, and the next engine (Numba, or the products without it) gives
+    the right result; later calls do not try the engine again.
+    """
+    if backend != "suitesparse":
+        pytest.skip("SuiteSparse only")
+    repo_root = Path(__file__).resolve().parents[2]
+    env = dict(os.environ, PYTHONPATH=str(repo_root), GRAPHBLAS_CACHE_PATH=str(tmp_path / "jit"))
+    result = subprocess.run(
+        [sys.executable, "-c", _JIT_FAILURE_SCRIPT, control, numba],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+        timeout=600,
+    )
+    report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert result.returncode == 0, report
+    lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
+    assert lines["package"] == str(repo_root / "graphblas" / "__init__.py"), report
+    if "skip" in lines:
+        pytest.skip(lines["skip"])
+    assert float(lines["max_err"]) < 1e-12, report
+    assert lines["control"] == control, report  # (restored)
+    assert lines["compiler"] == "/nonexistent/bin/cc", report  # (not touched)
+    assert lines["failure"] == f"({control!r}, 'load')", report  # (SuiteSparse had set "load")
+    assert lines["warnings"] == "1", report
+    assert lines["has_numba"] == str(numba == "numba"), report
+
+
 def test_ttm_engine_choice(monkeypatch):
     """With both engines, the UDT one takes the stored order with a hypersparse output and
     R <= _TTM_UDT_MAX_R; the Numba one the rest. Without Numba, the UDT one takes all.
