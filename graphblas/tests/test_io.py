@@ -695,6 +695,59 @@ def test_matrix_market_fmm_engine_unavailable():
 
 
 @pytest.mark.skipif("not ss")
+def test_matrix_market_fmm_engine_installed(monkeypatch):
+    """With fast_matrix_market installed, "auto" and "fmm" use it and warn that it is deprecated.
+
+    A stand-in module plays the package, which CI does not install: it reads
+    and writes with scipy and records what it was given. A version before 1.7
+    cannot write the sparse arrays of scipy 1.11 and later, so it gets a sparse
+    matrix.
+    """
+    import types
+
+    import scipy as sp
+    import scipy.io as sio
+
+    calls = []
+
+    def stub_mmread(source, **kwargs):
+        calls.append("mmread")
+        return gb.io.to_scipy_sparse(gb.io.mmread(source, engine="scipy"), "coo")
+
+    def stub_mmwrite(target, a, **kwargs):
+        calls.append(a)
+        sio.mmwrite(target, a, **kwargs)
+
+    fmm_stub = types.ModuleType("fast_matrix_market")
+    fmm_stub.mmread = stub_mmread
+    fmm_stub.mmwrite = stub_mmwrite
+    monkeypatch.setitem(sys.modules, "fast_matrix_market", fmm_stub)
+    A = gb.Matrix.from_coo([0, 0, 3, 5], [1, 4, 0, 2], [1, 0, 2, -1], nrows=7, ncols=6)
+    scipy_has_sparse_arrays = tuple(map(int, sp.__version__.split(".")[:2])) >= (1, 11)
+    for version, written_type in [
+        ("1.7.0", type(gb.io.to_scipy_sparse(A, "coo"))),
+        ("1.6.0", ss.coo_matrix if scipy_has_sparse_arrays else None),
+    ]:
+        fmm_stub.__version__ = version
+        for engine, match in [
+            ("auto", "fast_matrix_market is installed but is no longer maintained"),
+            ("fmm", "fast_matrix_market is no longer maintained"),
+        ]:
+            calls.clear()
+            mm = BytesIO()
+            with pytest.warns(DeprecationWarning, match=match):
+                gb.io.mmwrite(mm, A, engine)
+            mm.seek(0)
+            with pytest.warns(DeprecationWarning, match=match):
+                M = gb.io.mmread(mm, engine)
+            assert M.isequal(A, check_dtype=True)
+            written, read = calls
+            assert read == "mmread"
+            if written_type is not None:
+                assert type(written) is written_type
+
+
+@pytest.mark.skipif("not ss")
 def test_scipy_sparse():
     a = np.arange(12).reshape(3, 4)
     for a in [np.arange(12).reshape(3, 4), np.ones((3, 4)), np.zeros((3, 4))]:
