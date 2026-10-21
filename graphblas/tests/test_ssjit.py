@@ -1849,9 +1849,11 @@ def test_udt_op_jit_cfunc_parity(udt_kind):
     def values_equal(j, c):
         # Compare bytes, not ``isequal``: ``binary.eq`` on a UDT follows IEEE, so
         # records with a NaN never compare equal, whether or not the paths agree.
-        if j.dtype != c.dtype or j.nvals != c.nvals:
-            return False
-        return j.to_dense().tobytes() == c.to_dense().tobytes()
+        return (
+            j.dtype == c.dtype
+            and j.nvals == c.nvals
+            and j.to_dense().tobytes() == c.to_dense().tobytes()
+        )
 
     for op in binary_ops:
         assert values_equal(
