@@ -20,9 +20,14 @@ on:
 permissions:
   contents: read
 
-# concurrency:
-#   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
-#   cancel-in-progress: true
+# GitHub can deliver a PR's pull_request event twice for one push when the PR's base
+# branch moved in the same push, as it does for every PR above the bottom of a restacked
+# stack. Keyed on the PR and its head commit, the later run cancels its identical twin,
+# and a run for an earlier commit is left to finish, as before (a group keyed on the
+# branch would cancel it). Pushes to main key on the run id, so none is ever cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
 
 jobs:
   rngs:
