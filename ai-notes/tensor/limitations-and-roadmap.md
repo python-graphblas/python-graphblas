@@ -31,9 +31,6 @@ and the data sets are those named in `design.md`.
   engine choices rest on earlier forced-engine measurements, and only its slices were rerun
   after the last changes. Uber's and NIPS's contraction and slice rows were not run by the census
   (Uber's slices were measured later, with the benchmark kit: see "Known performance gaps").
-- **The independent oracles** are not in the repository (see `verification.md`), so the
-  checks they made cannot be rerun from it yet. The benchmark harness and the workload scripts
-  are, in `scripts/tensor_bench/` (`benchmarks.md`).
 
 ## Missing features
 
@@ -62,6 +59,10 @@ and the data sets are those named in `design.md`.
   entries in many rows of the stored Matrix.
 - **einsum's per-call overhead** shows at millisecond scale: about 45 us for one contraction,
   97 us for an MTTKRP through einsum, and 128 us for three operands.
+- **Planning a 5-d MTTKRP** takes about 130 ms on the first call for a shape, even for a
+  tiny tensor: choosing the products' axis order prices a relayout for every candidate order
+  (`_mttkrp_order`), and each is a planner search over the 5-d states. Later calls hit the
+  plan cache (0.3 ms); 3-d and 4-d first calls take about 3 ms.
 - **Moved operands are not kept.** A relayout made for one operation is dropped afterwards, so
   repeated contractions of the same operand repay it. Keeping it on the store needs a memory
   policy.
@@ -90,16 +91,13 @@ and the data sets are those named in `design.md`.
 2. **CI on every platform** python-graphblas supports, with a SuiteSparse 10 job on each.
    This closes the Windows questions above, and runs the suite without Numba and with the JIT
    off there too.
-3. **Bring the rest of the verification into the repository:** the independent oracles, as
-   slow tests, so that anyone can rerun them (the benchmark kit is in `scripts/tensor_bench/`,
-   and asv benchmarks for the Tensor in `benchmarks/tensor_ops.py`).
-4. **Refit the cost constants** on x86, and with a script driven by the census instead of by
+3. **Refit the cost constants** on x86, and with a script driven by the census instead of by
    hand. Then fix the mispricings listed above, and finish the census on NELL-2 and Enron.
-5. **Performance:** TTM along non-stored modes (an in-place kernel, or opt-in per-mode copies);
+4. **Performance:** TTM along non-stored modes (an in-place kernel, or opt-in per-mode copies);
    einsum's per-call overhead; keeping moved operands on the store.
-6. **API:** `pad`, more aggregators, index-based `select`, einsum diagonals, and the open
+5. **API:** `pad`, more aggregators, index-based `select`, einsum diagonals, and the open
    questions (Vector and Tensor index arrays, `graphblas.io` dispatch).
-7. **When SuiteSparse 10.5.2 is the oldest supported version:** drop the 10.5.1 reshape
+6. **When SuiteSparse 10.5.2 is the oldest supported version:** drop the 10.5.1 reshape
    workaround (`tensor_layout.reshape_owned`, marked `TODO(SuiteSparse 10.5.2)`).
-8. **Backports** to Matrix and Vector (`backport-candidates.md`).
-9. **Later:** binsparse, when its protocol settles; an Array API namespace.
+7. **Backports** to Matrix and Vector (`backport-candidates.md`).
+8. **Later:** binsparse, when its protocol settles; an Array API namespace.
