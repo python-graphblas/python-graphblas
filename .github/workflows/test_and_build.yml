@@ -146,6 +146,7 @@ jobs:
           # on every run that still uses the old one.
           auto-activate: false
       - name: Update env
+        id: update_env
         env:
           # Step outputs reach the script through the environment, not ``${{ }}``, so
           # bash never parses them as code (zizmor's template-injection audit).
@@ -170,6 +171,21 @@ jobs:
           psg=""
           if [[ $SOURCETYPE == "conda-forge" ]] ; then
             psg=python-suitesparse-graphblas${psgver}
+          fi
+          # Wheel and source draws install psg in "Build extension module", where this
+          # step's shell variables no longer exist, so psgver goes there as an output.
+          echo "psgver=$psgver" >> "$GITHUB_OUTPUT"
+
+          # Wheels bundle their own GraphBLAS. A source draw compiles psg's sdist against
+          # conda-forge's, so give it the one conda-forge pairs with that psg release:
+          # python-suitesparse-graphblas X.Y.Z.W depends on graphblas >=X.Y.Z,<X.(Y+1).
+          # psg's 9.x sdists do not compile against GraphBLAS 10.
+          graphblas=""
+          if [[ $SOURCETYPE == "source" && -n $psgver ]] ; then
+            IFS=. read -r gbmajor gbminor gbpatch _ <<< "${psgver##*=}"
+            graphblas="graphblas>=${gbmajor}.${gbminor}.${gbpatch},<${gbmajor}.$((gbminor + 1))"
+          elif [[ $SOURCETYPE != "wheel" ]] ; then
+            graphblas="graphblas>=7.4"
           fi
 
           # Decide whether to install numba and sparse.
@@ -236,26 +252,27 @@ jobs:
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && '"matplotlib${mplver}" nbconvert jupyter "ipython>=7" drawsvg' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
-            ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4"' || '' }} \
+            ${graphblas} \
             ${interpreter} \
             ${{ matrix.os == 'windows-latest' && 'cmake' || 'm4' }} \
             # ${{ matrix.os != 'windows-latest' && 'pytest-forked' || '' }}  # to investigate crashes
       - name: Build extension module
         env:
           SOURCETYPE: ${{ steps.sourcetype.outputs.selected }}
+          PSGVER: ${{ steps.update_env.outputs.psgver }}
         run: |
           # ``python -m pip`` ensures the conda env's interpreter drives the
           # install, not a system ``pip`` on PATH.
           if [[ $SOURCETYPE == "wheel" ]]; then
               # Add --pre if installing a pre-release
-              python -m pip install --no-deps --only-binary ":all:" suitesparse-graphblas${psgver}
+              python -m pip install --no-deps --only-binary ":all:" "suitesparse-graphblas${PSGVER}"
 
               # Add the below line to the conda install command above if installing from test.pypi.org
               # ${{ steps.sourcetype.outputs.selected == 'wheel' && 'setuptools setuptools-git-versioning wheel cython' || '' }} \
               # python -m pip install --no-deps --only-binary ":all:" --index-url https://test.pypi.org/simple/ "suitesparse-graphblas>=7.4.3"
           elif [[ $SOURCETYPE == "source" ]]; then
               # Add --pre if installing a pre-release
-              python -m pip install --no-deps --no-binary suitesparse-graphblas suitesparse-graphblas${psgver}
+              python -m pip install --no-deps --no-binary suitesparse-graphblas "suitesparse-graphblas${PSGVER}"
 
               # Add the below line to the conda install command above if installing from test.pypi.org
               # ${{ steps.sourcetype.outputs.selected == 'source' && 'setuptools setuptools-git-versioning wheel cython' || '' }} \

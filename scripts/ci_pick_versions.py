@@ -195,8 +195,10 @@ PSG_VERSIONS_NP1 = {
         ],
         "3.12": ["8.2.0.1", "8.2.1.0"],
     },
+    # The picker does not know the OS, and 7.4.3.2's wheels are manylinux x86_64 only,
+    # so a "wheel" draw of it would fail to install on every other runner.
     "wheel": {
-        "3.11": ["7.4.3.2", "8.0.2.1", "8.2.0.1", "8.2.1.0"],
+        "3.11": ["8.0.2.1", "8.2.0.1", "8.2.1.0"],
         "3.12": ["8.2.0.1", "8.2.1.0"],
     },
 }
