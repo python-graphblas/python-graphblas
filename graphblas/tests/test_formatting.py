@@ -4144,9 +4144,7 @@ def test_repr_max_colwidth():
             "0    100  1.00...\n"
             "1    161 -5.00..."
         )
-    # Deliberately not pandas' output: with a max_colwidth of 3 or less pandas narrows
-    # the column labels as well, so labels of one and two digits end up ragged; here
-    # they keep one padded width.
+    # With a max_colwidth of 3 or less, integer labels are narrowed but not cut
     v = Vector.from_coo([0, 1, 11], [1, 2, 3], size=12, name="v")
     with display_options("display.max_colwidth", 2):
         repr_printer(v, "v")
@@ -4154,8 +4152,99 @@ def test_repr_max_colwidth():
             '"v"        nvals  size  dtype  format\n'
             "gb.Vector      3    12  INT64  bitmap\n"
             "-------------------------------------\n"
-            "index 0  1  2  3  4  5  6  7  8  9  10 11\n"
-            "value  1  2                             3"
+            "index  0  1 2 3 4 5 6 7 8 9 10 11\n"
+            "value  1  2                     3"
+        )
+    # Longer integer labels are cut short as cells are, counting the sign column pandas
+    # gives them, in the text and the HTML
+    A = Matrix(int, 10**6, 10**6, name="A")
+    A[:, :] << 1
+    small = ("display.max_rows", 4, "display.min_rows", 4, "display.max_columns", 4)
+    with display_options("display.max_colwidth", 6, *small):
+        repr_printer(A, "A")
+        assert repr(A) == (
+            '"A"                nvals    nrows    ncols  dtype       format\n'
+            "gb.Matrix  1000000000000  1000000  1000000  INT64  fullr (iso)\n"
+            "--------------------------------------------------------------\n"
+            "      0     1      ... 99... 99...\n"
+            "0         1     1  ...     1     1\n"
+            "1         1     1  ...     1     1\n"
+            "...     ...   ...  ...   ...   ...\n"
+            "99...     1     1  ...     1     1\n"
+            "99...     1     1  ...     1     1"
+        )
+        html_printer(A, "A")
+        assert repr_html(A) == (
+            "<div>"
+            f"{CSS_STYLE}"
+            '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A</tt><div>\n'
+            '<table class="gb-info-table">\n'
+            "  <tr>\n"
+            '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Matrix</pre></td>\n'
+            "    <td><pre>nvals</pre></td>\n"
+            "    <td><pre>nrows</pre></td>\n"
+            "    <td><pre>ncols</pre></td>\n"
+            "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
+            "  </tr>\n"
+            "  <tr>\n"
+            "    <td>1000000000000</td>\n" + "    <td>1000000</td>\n" * 2 + "    <td>INT64</td>\n"
+            "    <td>fullr (iso)</td>\n"
+            "  </tr>\n"
+            "</table>\n"
+            "</div>\n"
+            "</summary><div>\n"
+            "<style scoped>\n"
+            "    .dataframe tbody tr th:only-of-type {\n"
+            "        vertical-align: middle;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe tbody tr th {\n"
+            "        vertical-align: top;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe thead th {\n"
+            "        text-align: right;\n"
+            "    }\n"
+            "</style>\n"
+            '<table border="1" class="dataframe">\n'
+            "  <thead>\n"
+            '    <tr style="text-align: right;">\n'
+            "      <th></th>\n"
+            "      <th>0</th>\n"
+            "      <th>1</th>\n"
+            "      <th>...</th>\n" + "      <th>99...</th>\n" * 2 + "    </tr>\n"
+            "  </thead>\n"
+            "  <tbody>\n"
+            "    <tr>\n"
+            "      <th>0</th>\n"
+            + "      <td>1</td>\n" * 2
+            + "      <td>...</td>\n"
+            + "      <td>1</td>\n" * 2
+            + "    </tr>\n"
+            "    <tr>\n"
+            "      <th>1</th>\n"
+            + "      <td>1</td>\n" * 2
+            + "      <td>...</td>\n"
+            + "      <td>1</td>\n" * 2
+            + "    </tr>\n"
+            "    <tr>\n"
+            "      <th>...</th>\n" + "      <td>...</td>\n" * 5 + "    </tr>\n"
+            "    <tr>\n"
+            "      <th>99...</th>\n"
+            + "      <td>1</td>\n" * 2
+            + "      <td>...</td>\n"
+            + "      <td>1</td>\n" * 2
+            + "    </tr>\n"
+            "    <tr>\n"
+            "      <th>99...</th>\n"
+            + "      <td>1</td>\n" * 2
+            + "      <td>...</td>\n"
+            + "      <td>1</td>\n" * 2
+            + "    </tr>\n"
+            "  </tbody>\n"
+            "</table>\n"
+            "</div></details></div>"
         )
 
 
