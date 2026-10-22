@@ -462,7 +462,15 @@ jobs:
         if: matrix.slowtask == 'notebooks'
         timeout-minutes: 30
         run: |
-          # Run notebooks only if numba is installed
+          # Run notebooks only if numba is installed. The Tensor notebooks need
+          # SuiteSparse:GraphBLAS 10 or later, which the version picker may not choose;
+          # without it, a Tensor raises NotImplementedError and they are skipped.
+          shopt -s extglob
           if python -c 'import numba' 2> /dev/null ; then
-            jupyter nbconvert --to notebook --execute notebooks/*ipynb
+            if python -c 'import graphblas as gb; gb.Tensor(float, (1,))' 2> /dev/null ; then
+              jupyter nbconvert --to notebook --execute notebooks/*ipynb
+            else
+              echo "No Tensor with this SuiteSparse:GraphBLAS: skipping the Tensor notebooks"
+              jupyter nbconvert --to notebook --execute notebooks/!(Tensor*).ipynb
+            fi
           fi
