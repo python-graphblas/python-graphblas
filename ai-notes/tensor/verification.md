@@ -143,6 +143,25 @@ it. Set `NUMBA_BOUNDSCHECK=1` to compile the kernels with bounds checks. Porting
 into the repository found one bug: the array-UDT TTM engine raised on a product SuiteSparse
 marks iso (a one-entry tensor contracted over an axis of size 1); it now declines.
 
+## Notebooks
+
+Two notebooks run the Tensor end to end, committed with their outputs:
+
+- `notebooks/Tensor Quickstart.ipynb`: the model, construction, views and copy-on-write,
+  broadcasting, reductions, contractions, masks and assignment, indexing and gathering, and
+  io, on one small example.
+- `notebooks/Tensor Multiplex PageRank.ipynb`: a multilayer PageRank over the 37
+  airline layers of the EU airline multiplex, as one Tensor and one einsum per step, checked
+  against scipy's sparse direct solve. It downloads the data (24 KB) from Netzschleuder and
+  checks its SHA-256.
+
+CI's notebook job executes every notebook, the Tensor ones only where SuiteSparse:GraphBLAS 10
+or later is installed. To rerun them in place, with Jupyter installed:
+
+```bash
+jupyter nbconvert --to notebook --execute --inplace notebooks/Tensor*.ipynb
+```
+
 ## Cross-library agreement in the benchmarks
 
 Every benchmark result carries a fingerprint: the shape, the entry count, a hash of the
