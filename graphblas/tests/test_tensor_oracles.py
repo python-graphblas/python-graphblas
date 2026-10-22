@@ -807,7 +807,7 @@ def oracle_assign(rng, n, teeth=False, *, target="tensor"):
         kw = {}
         if acc is not None:
             kw["accum"] = ACCUMS[acc][0]
-        if mask is not None and rng.random() < 0.3:
+        if mask is not None and (teeth or rng.random() < 0.3):  # (the teeth ignore replace)
             kw["replace"] = True
         what = f"{shape} {key} value={vkind} {how} mask={mask is not None} {sorted(kw)}"
         if how == "assign":
@@ -1103,15 +1103,15 @@ def test_io(rng):
 # a non-commutative operator swapped, the wrong mode or factor axis, F order for C order,
 # "replace" ignored, the mask dropped, a gather one position off, an entry dropped.
 TEETH = {
-    "ewise_reduce": (oracle_ewise_reduce, 10, {}),
+    "ewise_reduce": (oracle_ewise_reduce, 20, {}),
     "broadcast_contract": (oracle_broadcast_contract, 10, {}),
     "mttkrp": (oracle_mttkrp, 10, {}),
     "ttm": (oracle_ttm, 10, {}),
-    "reshape": (oracle_reshape, 20, {}),
+    "reshape": (oracle_reshape, 40, {}),
     "assign_matrix": (oracle_assign, 40, {"target": "matrix"}),
     "assign": (oracle_assign, 40, {}),
     "gather": (oracle_gather, 10, {}),
-    "einsum": (oracle_einsum, 30, {}),
+    "einsum": (oracle_einsum, 60, {}),
     "io": (oracle_io, 10, {}),
 }
 
