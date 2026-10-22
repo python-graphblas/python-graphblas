@@ -4455,6 +4455,23 @@ def test_udt_array_pair_promotes_the_base():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udt_scalar_operand_is_named_in_reprs():
+    # apply passes a UDT C scalar to GraphBLAS through a pointer, which the reprs name
+    rec = dtypes.register_anonymous(
+        np.dtype([("srp_a", np.int64), ("srp_b", np.float64)]), "_ReprRec"
+    )
+    v = Vector(rec, size=3, name="v")
+    v[0] = (1, 2.0)
+    s = gb.Scalar.from_value((3, 4.0), rec, is_cscalar=True, name="s")
+    for expr, text in [
+        (v.apply(binary.first, left=s), "v.apply(binary.first[_ReprRec, _ReprRec], left=s)"),
+        (v.apply(binary.second, right=s), "v.apply(binary.second[_ReprRec, _ReprRec], right=s)"),
+    ]:
+        assert text in repr(expr)
+        assert text in expr._repr_html_()
+
+
+@pytest.mark.skipif("not supports_udfs")
 def test_udt_array_scalar_promotes_like_builtin():
     """A number beside an array UDT keeps its dtype, and each element promotes as the op does.
 
