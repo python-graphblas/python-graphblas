@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# Cancels a run's identical twin only; see the note in test_and_build.yml.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+
 jobs:
   rngs:
     runs-on: ubuntu-latest
