@@ -406,7 +406,9 @@ ignore = [
 "graphblas/ss/_core.py" = ["N999"] # We want _core.py to be underscopre
 # Allow useless expressions, assert, pickle, RNG, print, no docstring, and yoda in tests
 "graphblas/tests/*py" = ["B018", "S101", "S301", "S311", "T201", "D103", "D100", "SIM300"]
-"graphblas/tests/test_formatting.py" = ["E501"] # Allow long lines
+"graphblas/tests/test_formatting.py" = ["E501"]                                            # Allow long lines
+# Each case's thunks run at once, inside their loop iteration
+"graphblas/tests/test_tensor_oracles.py" = ["B023"]
 "graphblas/**/__init__.py" = [
   "F401", # Allow unused imports (w/o defining `__all__`)
 ]
