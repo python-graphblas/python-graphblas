@@ -15,6 +15,10 @@ number of axes. Like the other collections it has one data type and a shape, and
 may be empty (missing). It follows GraphBLAS for missing values (there is no fill value) and
 numpy and the Array API for shapes, axes and broadcasting.
 
+Two notebooks in the repository's ``notebooks`` directory run the Tensor end to end:
+``Tensor Quickstart.ipynb`` works through this page on one small example, and
+``Tensor Multiplex PageRank.ipynb`` ranks European airports over 37 airline networks at once.
+
 The examples below assume:
 
 .. code-block:: python
