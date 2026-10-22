@@ -540,13 +540,14 @@ def _make_fixed_width(strings, justify="right", minimum=None):
 
 def _format_labels(labels):
     # Reproduce pandas Index._format_flat(include_name=False) for our label types:
-    # integer labels are padded to a uniform width (left-justified, with a sign
-    # column when any are negative); string labels are left as-is.
+    # integer labels get a sign column and are made one width, left-justified and cut
+    # short at display.max_colwidth, then the leading spaces they all share are
+    # trimmed; string labels are left as-is.
     if labels and all(isinstance(x, (int, np.integer)) and not isinstance(x, bool) for x in labels):
-        pattern = "{: d}" if any(x < 0 for x in labels) else "{:d}"
-        strs = [pattern.format(x) for x in labels]
-        width = max(len(s) for s in strs)
-        return [s.ljust(width) for s in strs]
+        strs = _make_fixed_width([f"{x: d}" for x in labels], "left")
+        while all(s.startswith(" ") for s in strs):
+            strs = [s[1:] for s in strs]
+        return strs
     return [str(x) for x in labels]
 
 
@@ -719,7 +720,9 @@ class _TextFormatter:
         return strcols
 
     def _get_index_strcol(self):
-        idx = _make_fixed_width([str(x) for x in self.tr_frame.index], justify="left")
+        idx = _make_fixed_width(_format_labels(self.tr_frame.index), justify="left")
+        width = max(map(len, idx), default=0)
+        idx = [s.ljust(width) for s in idx]
         corner = "" if self.frame.col_name is None else str(self.frame.col_name)
         return [corner, *idx]
 
