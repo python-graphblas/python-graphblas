@@ -13,6 +13,7 @@
 conda search 'flake8-bugbear[channel=conda-forge]>=26.9.9'
 conda search 'flake8-simplify[channel=conda-forge]>=0.30.0'
 conda search 'numpy[channel=conda-forge]>=2.5'
+# ci_pick_versions.py caps an unpinned pandas below 3.1 for now (see its MAINT note).
 conda search 'pandas[channel=conda-forge]>=3.0'
 conda search 'scipy[channel=conda-forge]>=1.18'
 conda search 'networkx[channel=conda-forge]>=3.6'
