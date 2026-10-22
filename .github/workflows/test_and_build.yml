@@ -390,6 +390,17 @@ jobs:
           coverage run -a -m pytest --color=yes --runslow --no-mapnumpy -p no:randomly -v -k 'test_commutes or test_bool_doesnt_get_too_large or test_npbinary or test_npmonoid or test_npsemiring'
           coverage run -a -m pytest --color=yes --runslow --mapnumpy -p no:randomly -k 'test_bool_doesnt_get_too_large or test_npunary or test_binaryop_monoid_numpy'
           coverage run -a -m pytest --color=yes -x --no-mapnumpy --runslow -k test_binaryop_attributes_numpy graphblas/tests/test_op.py
+      - name: JIT tests for coverage
+        if: matrix.slowtask == 'notebooks' && matrix.os != 'windows-latest'
+        run: |
+          # Most of test_ssjit.py needs the suitesparse backend, --runslow, Numba and a
+          # GraphBLAS that can JIT-compile, all in one pytest run. In one run in four or five,
+          # no job draws all four, so its coverage came and went. 'notebooks' jobs install
+          # Numba unless the picker rules it out. Windows is left out: conda-forge's GraphBLAS
+          # there names the build machine's compiler, so it never compiles. The tests skip
+          # what a draw cannot do: the JIT tests on psg's wheels (built without the JIT) and
+          # on GraphBLAS 7, the UDT tests without Numba.
+          coverage run -a -m pytest --color=yes --runslow --backend=suitesparse -p no:randomly -v graphblas/tests/test_ssjit.py
       - name: Auto-generated code check
         if: matrix.slowtask == 'pytest_bizarro'
         run: |
