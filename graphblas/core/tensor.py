@@ -38,7 +38,7 @@ import numpy as np
 from .. import backend, binary, config, monoid, semiring
 from ..dtypes import BOOL, FP64, lookup_dtype, unify
 from ..exceptions import DimensionMismatch, IndexOutOfBound
-from . import _has_numba, automethods, lib  # noqa: F401 (_has_numba: a knob, see tensor_engines)
+from . import _has_numba, automethods, infixmethods, lib  # noqa: F401 (_has_numba: a knob)
 from . import tensor_census as census
 from . import tensor_layout as tl
 from . import utils
@@ -1012,15 +1012,17 @@ class Tensor(BaseType):
         return self.ewise_union(other, op, left_default, right_default)
 
     def select(self, op, thunk=None):
-        """Keep the entries whose values pass ``op`` (a value selector such as
-        ``select.valuegt``); index-based selectors are not supported yet.
+        """Keep the entries whose values pass ``op``: a value selector, as an operator
+        (``select.valuegt``) or a string as Matrix takes it (``">"``, ``"valuegt"``);
+        index-based selectors are not supported yet.
         """
-        if not getattr(op, "name", "").startswith("value"):
+        # (Matrix resolves the op, strings included; the probe is not computed)
+        probe = self._M.select(op, thunk)
+        if not probe.op.name.startswith("value"):
             raise NotImplementedError(
                 "Tensor.select supports value selectors (select.value*) only; index-based "
                 "selectors would need logical coordinates"
             )
-        probe = self._M.select(op, thunk)
         return TensorExpression(
             "select",
             _select_recipe,
@@ -1493,12 +1495,17 @@ for _cls in (Tensor, TensorExpression):
     _cls.__rand__ = _infix_rand
     _cls.__matmul__ = _infix_matmul
     _cls.__rmatmul__ = _infix_rmatmul
+    # -X, abs(X) and ~X (BOOL) as for Matrix: apply ainv, abs or lnot
+    _cls.__neg__ = infixmethods.__neg__
+    _cls.__abs__ = infixmethods.__abs__
+    _cls.__invert__ = infixmethods.__invert__
     # numpy defers `ndarray op T` to the Tensor's reflected operator
     _cls.__array_ufunc__ = None
 del _name, _op, _kind, _fwd, _ref, _inp, _cls
 
 utils._output_types[Tensor] = Tensor
 utils._output_types[TensorExpression] = Tensor
+utils._output_types[TensorIndexExpr] = Tensor  # (so op(T[i]) and -T[i] apply, as for Matrix)
 for _cls in (TensorEwiseAddExpr, TensorEwiseMultExpr, TensorMatMulExpr):
     utils._output_types[_cls] = Tensor
 del _cls

@@ -1166,6 +1166,43 @@ def test_ewise_infix_and_scalars():
     check(C, np.where(ap, av * av, 0), ap, approx=True)
 
 
+def test_unary_operators_and_select_strings():
+    """``-X``, ``abs(X)``, ``~X`` (BOOL) and ``select`` with a string op, as Matrix takes them,
+    on Tensors, their expressions and extractions. They raised TypeError ("bad operand
+    type") and NotImplementedError (a string is not a value selector by name).
+    """
+    rng = np.random.default_rng(55)
+    T = random_tensor((3, 4), rng, density=0.7)[0]
+    A = T.to_matrix()
+    B = random_tensor((3, 4), rng, density=0.7, dtype=dtypes.BOOL)[0]
+    Ab = B.to_matrix()
+    for got, want in [(-T, -A), (abs(T), abs(A)), (~B, ~Ab), (abs(T.T), abs(A.T))]:
+        assert got.new().to_matrix().isequal(want.new()), (got, want)
+    # Expressions and extractions: computed first, as Matrix's are
+    with gb.config.set(autocompute=True):
+        for got, want in [
+            (-(T + T), -(A + A)),
+            (-T[1:], -A[1:, :]),
+            (~B[[2, 0]], ~Ab[[2, 0], :]),
+        ]:
+            assert got.new().to_matrix().isequal(want.new()), (got, want)
+    with pytest.raises(TypeError, match="only supported for BOOL"):
+        ~T
+    for op, thunk in [(">", 0), (">=", 1.5), ("<", -1), ("<=", 0), ("==", 0), ("!=", 0),
+                      ("valuegt", 0), ("valuele", 2), (gb.select.valuene, 0)]:  # fmt: skip
+        got = T.select(op, thunk).new().to_matrix()
+        assert got.isequal(A.select(op, thunk).new()), op
+    for op in ["rowle", "tril", gb.select.offdiag]:
+        with pytest.raises(NotImplementedError, match="value selectors"):
+            T.select(op, 1)
+    # 3-d against numpy
+    X, xv, xp = random_tensor((2, 3, 4), rng, density=0.6)
+    check((-X).new(), -xv, xp)
+    check(abs(X).new(), np.abs(xv), xp)
+    keep = xp & (xv > 0.5)
+    check(X.select(">", 0.5).new(), np.where(keep, xv, 0), keep)
+
+
 @pytest.mark.parametrize("opname", ["times", "first", "plus", "second"])
 def test_ewise_iso(opname):
     """Iso inputs give iso results exactly when the same Matrix op does."""
