@@ -357,8 +357,10 @@ class Monoid(OpBase):
                 f"must return its input type, {dtype}, not {ret_type}"
             )
         identity_val = self._identity
-        if identity_val is None and self.name in _BUILTIN_UDT_MONOIDS:
-            # Auto-generate the identity for built-in monoids on UDTs.
+        if identity_val is None and self._binaryop is None and self.name in _BUILTIN_UDT_MONOIDS:
+            # Auto-generate the identity for built-in monoids on UDTs. Only built-in
+            # monoids have no ``_binaryop``: a user monoid named like one (after its
+            # op's function, or by ``name=``) must not get that identity.
             identity_val = _udt_identity(self.name, ret_type)
         if identity_val is None:
             raise KeyError(

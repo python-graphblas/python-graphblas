@@ -2516,6 +2516,37 @@ def test_udt_auto_monoid_time_fields():
 
 
 @pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_monoid_named_like_builtin_gets_no_identity():
+    """Only the built-in monoids generate a UDT identity, not a user monoid of the same name.
+
+    A user monoid named plus, times, min or max (after its op's function, or by
+    ``name=``) used to get that built-in's generated identity. The op here takes
+    the field-wise max, so the generated ``min`` identity, INT64_MAX in every
+    field, absorbed every value: the reduce below gave that instead of (5, 2).
+    """
+    udt = dtypes.register_anonymous(np.dtype([("ni_a", np.int64), ("ni_b", np.int64)]))
+    v = Vector(udt, size=2)
+    v[0] = (1, 2)
+    v[1] = (5, -3)
+
+    def _fieldwise_max(x, y):
+        return (max(x["ni_a"], y["ni_a"]), max(x["ni_b"], y["ni_b"]))  # pragma: no cover (numba)
+
+    fieldwise_max = BinaryOp.register_anonymous(_fieldwise_max, "min", is_udt=True)
+    named_by_op = Monoid.register_anonymous(fieldwise_max, None)
+    assert named_by_op.name == "min"
+    for mon in [named_by_op] + [
+        Monoid.register_anonymous(fieldwise_max, None, name) for name in ["plus", "times", "max"]
+    ]:
+        with pytest.raises(KeyError, match="no identity value"):
+            mon[udt]
+        assert udt not in mon
+    lowest = np.iinfo(np.int64).min
+    assert v.reduce(Monoid.register_anonymous(fieldwise_max, (lowest, lowest))).new() == (5, 2)
+
+
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.parametrize("shape", [(4,), (3, 2)])
 def test_udt_array_wrapper_stays_within_element(shape):
     """The array-UDT cfunc wrapper writes one element's bytes and nothing more.
