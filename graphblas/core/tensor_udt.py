@@ -9,7 +9,10 @@ Containers without a copy of the values.
 The type and ops are made here, not through ``graphblas.dtypes`` and ``graphblas.binary``:
 - the type has a fixed C name per R (``_gbtensor_fp64x16``), where an anonymous UDT gets a
   per-process ``_gbudt_N`` (by registration order), so compiled kernels are found again in
-  the JIT cache by every process, instead of being recompiled and overwritten;
+  the JIT cache by every process, instead of being recompiled and overwritten. The name is
+  claimed in ``udt_codegen._jit_c_type_defs``, as a registered UDT's is, so a user type of
+  that name and another layout gets another C name (or, registered first, makes this one
+  take another);
 - the ops have a NULL function pointer and the C definitions ``udt_codegen`` generates for
   the lifted ops (``GxB_BinaryOp_new`` has the JIT compile the function), so no Numba cfunc
   is involved and the engine works without Numba.
@@ -125,16 +128,23 @@ def semiring(R):
     if not jit_ready():
         return None  # (not remembered: the JIT may be turned on later)
     from .operator.udt_codegen import (
+        _jit_c_type_defs,
         _make_jit_c_definition,
         _make_jit_c_mixed_definition,
+        _synthetic_udt_counter,
         _udt_c_typedef,
     )
 
-    name = f"_gbtensor_fp64x{R}"
     np_type = np.dtype((np.float64, (R,)))
+    name, typedef = _udt_c_typedef(f"_gbtensor_fp64x{R}", np_type)
+    # SuiteSparse finds JIT kernels by the type's and ops' C names alone, so claim this one in
+    # the registry that registered UDTs use: a user type of that name and another layout then
+    # gets a fresh C name (and so do its ops). If one already holds it, take a fresh name.
+    while _jit_c_type_defs.setdefault(name, typedef) != typedef:
+        fresh = f"_gbtensor_fp64x{R}_{next(_synthetic_udt_counter)}"
+        name, typedef = _udt_c_typedef(fresh, np_type)
     # (what the generators read of a DataType)
     row = SimpleNamespace(name=name, jit_c_name=name, np_type=np_type)
-    _, typedef = _udt_c_typedef(name, np_type)
     f64 = np.dtype(np.float64)
     times = _make_jit_c_mixed_definition("times", "*", FP64, row, row, [(f64, f64)])
     plus = _make_jit_c_definition("plus", "+", row, 2)
