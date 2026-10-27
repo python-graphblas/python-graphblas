@@ -410,6 +410,24 @@ def _mttkrp_recipe(updater, x, mats, mode, R, op):
         out = tl.new_matrix(op.return_type, x._shape[mode], R)
         _store(updater, out, (x._shape[mode], R), Layout((0,), (1,)), fresh=True)
         return
+    from .tensor_einsum import _einsum_recipe, _grouping
+
+    if (grouping := _grouping(op)) != "any order":
+        # The engines below sum over one axis before multiplying by the next factor, and take
+        # the factors last axis first: right when the multiply distributes over the monoid and
+        # commutes. Otherwise einsum's way, mult(mult(X, F_0), F_1)... in axis order.
+        letters = [chr(ord("A") + a) for a in range(x.ndim + 1)]  # (the last one is r)
+        terms = ["".join(letters[:-1])]
+        tensors = [x]
+        for a in range(x.ndim):
+            if a != mode:
+                terms.append(letters[a] + letters[-1])
+                tensors.append(Tensor.from_matrix(mats[a], copy=False))
+        output = letters[mode] + letters[-1]
+        if census.on:
+            census.note("mttkrp", f"einsum, {grouping}", nvals=x._M._nvals, ndim=x.ndim)
+        _einsum_recipe(updater, terms, output, tensors, op, None, grouping)
+        return
     nthreads = updater.opts.get("nthreads")
     kernel = op.name == "plus_times" and op.return_type == FP64
     numba_kernel = kernel and "numba" in _t._MTTKRP_ENGINES

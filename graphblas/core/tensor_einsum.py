@@ -21,13 +21,21 @@ def einsum(subscripts, *operands, op=semiring.plus_times, optimize="greedy"):
 
     **THIS API IS EXPERIMENTAL AND MAY CHANGE.**
 
-    ``op``'s multiply combines the operands and its monoid sums over the contracted indices;
-    a result position is present when at least one term exists. Operands may be Tensors,
+    ``op``'s multiply combines the operands of each term, left to right
+    (``mult(mult(a, b), c)``), and its monoid sums the terms over the contracted indices; a
+    result position is present when at least one term exists. Operands may be Tensors,
     Matrices, Vectors or ndarrays. Each index appears at most once per operand (no
-    diagonals) and ``...`` is not supported. With three or more operands the pairwise order
-    comes from ``opt_einsum.contract_path`` when it is installed (else a greedy choice by
-    result size); the MTTKRP pattern (``'ijk,jr,kr->ir'``) goes to ``Tensor.mttkrp`` instead,
-    which never forms the Khatri-Rao product.
+    diagonals) and ``...`` is not supported.
+
+    When the multiply distributes over the monoid (``plus_times``, ``min_plus``,
+    ``max_plus``, ``lor_land``, ``min_max``, any ``min``, ``max`` or ``any`` with ``first``,
+    ``second`` or ``pair``, ...), an index only one operand has is summed out first, and
+    three or more operands are contracted in pairs: in the order of
+    ``opt_einsum.contract_path`` when it is installed (else a greedy choice by result size)
+    if the multiply is also commutative, else left to right. The MTTKRP pattern
+    (``'ijk,jr,kr->ir'``) then goes to ``Tensor.mttkrp``, which never forms the Khatri-Rao
+    product. Other semirings (``plus_pair``, ``plus_first``, ``max_times``, ...) form every
+    term, left to right, and sum only at the end, which takes more memory.
     """
     pre = []
     for x in operands:
@@ -43,17 +51,25 @@ def einsum(subscripts, *operands, op=semiring.plus_times, optimize="greedy"):
     except TypeError:  # an unhashable ``optimize`` (an explicit path): plan without the cache
         plan = _einsum_plan.__wrapped__(subscripts, shapes, optimize)
     terms, output, shape, mt, path, direct = plan
-    if census.on:
-        kind = "mttkrp" if mt is not None else "one contraction" if direct is not None else None
-        census.note("einsum", kind or f"{len(terms)} operands, pairwise", subscripts=subscripts)
     dtype = pre[0].dtype if type(pre[0]) is not np.ndarray else lookup_dtype(pre[0].dtype)
     for x in pre[1:]:
         dtype = unify(dtype, x.dtype if type(x) is not np.ndarray else lookup_dtype(x.dtype))
     typed = get_typed_op(op, dtype, dtype, kind="semiring")
     if typed.opclass != "Semiring":
         raise TypeError(f"einsum needs a Semiring, not {typed.opclass}")
+    grouping = _grouping(typed)
+    if census.on:
+        if mt is not None and grouping == "any order":
+            kind = "mttkrp"
+        elif direct is not None:
+            kind = "one contraction"
+        else:
+            kind = f"{len(terms)} operands, " + (
+                "pairwise" if grouping == "any order" else grouping
+            )
+        census.note("einsum", kind, subscripts=subscripts)
     expr_repr = f"einsum({subscripts!r}, ...)".replace("{", "{{").replace("}", "}}")
-    if mt is not None:
+    if mt is not None and grouping == "any order":
         # An MTTKRP: Tensor.mttkrp's expression, given the factors as they came (an ndarray
         # becomes a factor Matrix with one copy)
         xi, factor_of, mode, rank_first = mt
@@ -73,7 +89,8 @@ def einsum(subscripts, *operands, op=semiring.plus_times, optimize="greedy"):
     tensors = [x if type(x) is not np.ndarray else Tensor.from_dense(x) for x in pre]
     if direct is not None:
         # One contraction whose result's axes are already in the output's order: run its
-        # expression's recipe on einsum's target, with nothing in between
+        # expression's recipe on einsum's target, with nothing in between (one product, so
+        # right for any semiring)
         inner = _contraction_expr(*tensors, typed, direct)
         return TensorExpression(
             "einsum", _einsum_delegate_recipe, tensors, (inner,), dtype=inner.dtype,
@@ -83,12 +100,48 @@ def einsum(subscripts, *operands, op=semiring.plus_times, optimize="greedy"):
         "einsum",
         _einsum_recipe,
         tensors,
-        (terms, output, tensors, typed, path),
+        (terms, output, tensors, typed, path, grouping),
         dtype=typed.return_type,
         shape=shape,
         op=typed,
         expr_repr=expr_repr,
     )
+
+
+# (monoid, multiply) pairs whose multiply distributes over the monoid on both sides,
+# a (x) (b (+) c) = (a (x) b) (+) (a (x) c) and likewise on the right, so summing an index out
+# early, or contracting in steps, gives the sum of the terms. Each multiply here is associative.
+_DISTRIBUTIVE = frozenset(
+    {("plus", "times"), ("min", "plus"), ("max", "plus"), ("min", "max"), ("max", "min"),
+     ("lor", "land"), ("land", "lor"), ("lxor", "land"), ("bor", "band"), ("band", "bor"),
+     ("bxor", "band")}
+)  # fmt: skip
+# Monoids with x (+) x = x: first, second, pair and the monoid's own op distribute over them
+_IDEMPOTENT = frozenset({"min", "max", "lor", "land", "bor", "band"})
+_ASSOCIATIVE = frozenset(
+    {"times", "plus", "min", "max", "first", "second", "pair", "oneb", "any", "land", "lor",
+     "lxor", "band", "bor", "bxor"}
+)  # fmt: skip
+
+
+def _grouping(op):
+    """How the terms of the typed semiring ``op`` may be grouped. "any order": sum an index
+    out early, contract in pairs in any order (``opt_einsum``'s), either operand on either
+    side. "in order": the same, but contract left to right, each intermediate on the left
+    (a multiply that is not commutative). "terms": form every term left to right, and sum
+    only at the end (any semiring).
+    """
+    monoid, mult = op.monoid.name, op.binaryop.name
+    if (monoid, mult) in _DISTRIBUTIVE or (
+        monoid in _IDEMPOTENT and mult in {monoid, "first", "second", "pair", "oneb"}
+    ):
+        return "any order" if op.binaryop.is_commutative else "in order"
+    if monoid == "any":
+        # Any one term's value: summing early or in steps still gives one, as long as each
+        # term multiplies its operands left to right
+        commutes = op.binaryop.is_commutative and mult in _ASSOCIATIVE
+        return "any order" if commutes else "in order"
+    return "terms"
 
 
 @functools.lru_cache(maxsize=1024)
@@ -211,8 +264,11 @@ def _einsum_mttkrp_transposed_recipe(updater, inner):
     _store(updater, R._M, R._shape, R._layout, share=R)
 
 
-def _einsum_recipe(updater, terms, output, tensors, op, path):
+def _einsum_recipe(updater, terms, output, tensors, op, path, grouping):
     ops = list(zip(terms, tensors, strict=True))
+    if grouping != "any order":
+        # Left to right, each intermediate in place of its left operand
+        path = [(0, 1)] * (len(ops) - 1)
     for step, (i, j) in enumerate(path):
         (ta, A), (tb, B) = ops[i], ops[j]
         for k in sorted((i, j), reverse=True):
@@ -224,7 +280,17 @@ def _einsum_recipe(updater, terms, output, tensors, op, path):
             inner.args[-2](updater, *inner.args[-1])
             return
         keep = set(output).union(*(t for t, _ in ops))
-        ops.append(_einsum_pair(ta, A, tb, B, keep, op, updater.opts))
+        if grouping == "terms" and ops:
+            keep |= set(ta) | set(tb)  # no sum before the last step
+        elif grouping == "terms":
+            # The last step contracts only the indices both have; the others are summed out
+            # after (below)
+            keep |= set(ta) ^ set(tb)
+        pair = _einsum_pair(ta, A, tb, B, keep, op, updater.opts)
+        if grouping == "any order":
+            ops.append(pair)  # (where opt_einsum's paths expect it)
+        else:
+            ops.insert(0, pair)
     ((letters, result),) = ops
     extra = [k for k, c in enumerate(letters) if c not in output]
     if extra:

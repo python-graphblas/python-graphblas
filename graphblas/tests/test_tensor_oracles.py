@@ -924,6 +924,55 @@ def oracle_gather(rng, n, teeth=False):
 # einsum: the plan cache against new layouts, masked products, batched matmul
 
 
+# Semirings for einsum beyond plus_times: their monoid (a ufunc and its identity) and multiply.
+# Some multiplies do not distribute over the monoid, or do not commute, so einsum may not sum
+# an index out early, contract in another order or swap operands.
+EINSUM_SEMIRINGS = {
+    "min_plus": (np.minimum, np.inf, np.add),
+    "max_plus": (np.maximum, -np.inf, np.add),
+    "plus_pair": (np.add, 0.0, lambda x, y: 0 * x + 0 * y + 1),
+    "plus_first": (np.add, 0.0, lambda x, y: x + 0 * y),
+    "plus_second": (np.add, 0.0, lambda x, y: 0 * x + y),
+    "max_times": (np.maximum, -np.inf, np.multiply),
+    "min_first": (np.minimum, np.inf, lambda x, y: x + 0 * y),
+    "max_second": (np.maximum, -np.inf, lambda x, y: 0 * x + y),
+    "plus_min": (np.add, 0.0, np.minimum),
+    "plus_minus": (np.add, 0.0, np.subtract),
+}
+
+
+def einsum_model(spec, models, name):
+    """Each term's operands multiplied left to right, the terms summed by the monoid: by brute
+    force over every index (numpy's own einsum for plus_times).
+    """
+    if name == "plus_times":
+        want = np.einsum(spec, *[v for v, _ in models])
+        return want, np.einsum(spec, *[p.astype(int) for _, p in models]) > 0
+    ufunc, identity, mult = EINSUM_SEMIRINGS[name]
+    ins, out = spec.split("->")
+    terms = ins.split(",")
+    letters = sorted(set(ins) - {","})
+    grid = {}
+    for term, (v, _) in zip(terms, models, strict=True):
+        grid.update(zip(term, v.shape, strict=True))
+    value = present = None
+    for term, (v, p) in zip(terms, models, strict=True):
+        # Onto every index (an einsum that only moves axes and adds unit ones)
+        idx = "".join(c for c in letters if c in term)
+        shape = [grid[c] if c in term else 1 for c in letters]
+        v = np.einsum(f"{term}->{idx}", v).reshape(shape)
+        p = np.einsum(f"{term}->{idx}", p).reshape(shape)
+        value = v if value is None else mult(value, v)
+        present = p if present is None else present & p
+    full = tuple(grid[c] for c in letters)
+    value, present = np.broadcast_to(value, full), np.broadcast_to(present, full)
+    axes = tuple(k for k, c in enumerate(letters) if c not in out)
+    v = ufunc.reduce(np.where(present, value, identity), axis=axes)
+    p = present.any(axis=axes)
+    kept = "".join(c for c in letters if c in out)
+    return np.einsum(f"{kept}->{out}", np.where(p, v, 0.0)), np.einsum(f"{kept}->{out}", p)
+
+
 def oracle_einsum(rng, n, teeth=False):
     o = Oracle("einsum")
     letters = "abcdefg"
@@ -943,17 +992,19 @@ def oracle_einsum(rng, n, teeth=False):
         models = [rand_model(rng, tuple(sizes[c] for c in t), kind="int") for t in ins.split(",")]
         operands = [build(rng, v, p) for v, p in models]
         oshape = tuple(sizes[c] for c in out)
-        want = np.einsum(spec, *[v for v, _ in models])
-        wantp = np.einsum(spec, *[p.astype(int) for _, p in models]) > 0
+        name = "plus_times" if rng.random() < 0.5 else str(rng.choice(list(EINSUM_SEMIRINGS)))
+        op = getattr(semiring, name)
+        want, wantp = einsum_model(spec, models, name)
+        o.stats[f"semiring {name}"] += 1
         if not oshape or rng.random() < 0.5:
-            o.expect(f"einsum {spec} {sizes}", lambda: gb.einsum(spec, *operands).new(), want,
-                     wantp)  # fmt: skip
+            o.expect(f"einsum {spec} {sizes} {name}",
+                     lambda: gb.einsum(spec, *operands, op=op).new(), want, wantp)  # fmt: skip
             continue
         mask_arg, mask, mkind = random_mask(rng, oshape)
         cv, cp = rand_model(rng, oshape, 0.3)
         C = build(rng, cv, cp)
-        what = f"einsum {spec} {sizes} mask={mkind}"
-        o.run(what, lambda: C(mask_arg) << gb.einsum(spec, *operands))
+        what = f"einsum {spec} {sizes} {name} mask={mkind}"
+        o.run(what, lambda: C(mask_arg) << gb.einsum(spec, *operands, op=op))
         if teeth:  # the model drops the mask
             mask = np.ones(oshape, bool)
         o.stats["einsum masked"] += 1

@@ -191,7 +191,11 @@ the leading axes as batch axes; ``einsum`` takes numpy's subscripts and any semi
            [3., 3.]])
 
 ``einsum`` with three or more operands picks a pairwise order (``opt_einsum`` when it is
-installed), and recognizes the MTTKRP pattern (``"ijk,jr,kr->ir"``).
+installed), and recognizes the MTTKRP pattern (``"ijk,jr,kr->ir"``), when the semiring's
+multiply distributes over its monoid and commutes (``plus_times``, ``min_plus``, ``max_plus``,
+...). Otherwise it multiplies the operands of each term left to right, and with a multiply that
+does not distribute (``plus_pair``, ``plus_first``, ``max_times``, ...) it forms every term
+before summing, which takes more memory.
 
 A contraction moves an operand whose layout does not suit it, and does not keep the moved
 copy. In a loop that contracts the same Tensor every step (a PageRank or a path query), store

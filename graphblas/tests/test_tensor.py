@@ -1969,6 +1969,115 @@ def test_einsum_operands_semirings_and_errors(monkeypatch):
     assert "einsum" in repr(einsum("ijk->i", X))
 
 
+_NP_MONOID = {"plus": (np.add, 0.0), "min": (np.minimum, np.inf), "max": (np.maximum, -np.inf)}
+_NP_MULT = {
+    "times": np.multiply,
+    "plus": np.add,
+    "minus": np.subtract,
+    "min": np.minimum,
+    "max": np.maximum,
+    "first": lambda x, y: x + 0 * y,
+    "second": lambda x, y: 0 * x + y,
+    "pair": lambda x, y: 0 * x + 0 * y + 1,
+}
+
+
+def semiring_einsum_model(sub, op, *models):
+    """Every term of the einsum, its operands multiplied left to right, summed by the monoid
+    (brute force over every index): ``(values, present)``.
+    """
+    ins, out = sub.split("->")
+    terms = ins.split(",")
+    letters = sorted(set(ins) - {","})
+    sizes = {}
+    for term, m in zip(terms, models, strict=True):
+        sizes.update(zip(term, m[1].shape, strict=True))
+
+    def spread(term, arr):  # over every index, in letters' order
+        order = sorted(term, key=letters.index)
+        arr = arr.transpose([term.index(c) for c in order])
+        return arr.reshape([sizes[c] if c in term else 1 for c in letters])
+
+    mult = _NP_MULT[op.binaryop.name]
+    ufunc, identity = _NP_MONOID[op.monoid.name]
+    value, present = spread(terms[0], models[0][1]), spread(terms[0], models[0][2])
+    for term, (_, v, p) in zip(terms[1:], models[1:], strict=True):
+        value, present = mult(value, spread(term, v)), present & spread(term, p)
+    full = tuple(sizes[c] for c in letters)
+    value, present = np.broadcast_to(value, full), np.broadcast_to(present, full)
+    axes = tuple(k for k, c in enumerate(letters) if c not in out)
+    v = ufunc.reduce(np.where(present, value, identity), axis=axes)
+    p = present.any(axis=axes)
+    perm = [[c for c in letters if c in out].index(c) for c in out]
+    return np.where(p, v, 0).transpose(perm), p.transpose(perm)
+
+
+SEMIRING_EINSUM_CASES = [
+    ("ij,jk->i", [(3, 4), (4, 5)]),  # k only in the second operand
+    ("ij,jk->ik", [(3, 4), (4, 5)]),
+    ("ij,jk->kj", [(3, 4), (4, 5)]),
+    ("ij,j->i", [(3, 4), (4,)]),
+    ("ij,jk,kl->il", [(2, 6), (6, 2), (2, 5)]),  # the first two first
+    ("ij,jk,kl->il", [(5, 2), (2, 6), (6, 2)]),  # the last two first
+    ("ijk,jr,kr->ir", [(3, 4, 5), (4, 2), (5, 2)]),  # the MTTKRP pattern
+    ("ijk,kr,jr->ri", [(3, 4, 5), (5, 2), (4, 2)]),
+    ("ab,bc,cd,da->", [(2, 3), (3, 2), (2, 3), (3, 2)]),
+    ("ab,bc,cd->", [(2, 3), (3, 2), (2, 3)]),
+]
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["plus_times", "min_plus", "max_plus", "min_max", "max_min", "plus_pair", "plus_first",
+     "plus_second", "max_times", "min_times", "min_first", "min_second", "max_first",
+     "plus_min", "plus_minus", "min_minus"],
+)  # fmt: skip
+def test_einsum_semirings(name):
+    """Einsum and MTTKRP with any semiring against every term, its operands multiplied left
+    to right, summed by the monoid. Summing an index out early, contracting in steps and the
+    MTTKRP products are right only when the multiply distributes over the monoid
+    (``max_times`` on signed values, ``plus_pair`` and ``plus_first`` do not), and with three
+    or more operands a later step put the intermediate on the right of an operand that came
+    after it (``min_first`` took C's values).
+    """
+    from graphblas.core import tensor_census as census
+
+    op = getattr(gb.semiring, name)[dtypes.FP64]
+    fast = name in {"plus_times", "min_plus", "max_plus", "min_max", "max_min"}
+    rng = np.random.default_rng(52)
+    census.start()
+    try:
+        for sub, shapes in SEMIRING_EINSUM_CASES:
+            models = []
+            for shape in shapes:
+                T, values, present = random_tensor(shape, rng, density=0.7, dtype=dtypes.INT64)
+                models.append((T.dup(dtypes.FP64), values.astype(float), present))
+            R = gb.einsum(sub, *[m[0] for m in models], op=op).new()
+            check(R, *semiring_einsum_model(sub, op, *models), approx=True)
+        # MTTKRP itself: factors in axis order
+        X, xv, xp = random_tensor((3, 4, 5), rng, density=0.7, dtype=dtypes.INT64)
+        X = X.dup(dtypes.FP64)
+        F = [rng.integers(-3, 4, (n, 2)).astype(float) for n in X.shape]
+        ones = [np.ones(f.shape, bool) for f in F]
+        for mode, sub in enumerate(["ijk,jr,kr->ir", "ijk,ir,kr->jr", "ijk,ir,jr->kr"]):
+            others = [(None, F[a], ones[a]) for a in range(3) if a != mode]
+            want = semiring_einsum_model(sub, op, (X, xv.astype(float), xp), *others)
+            check(X.mttkrp(F, mode, op=op).new(), *want, approx=True)
+    finally:
+        records = census.stop()
+    # The distributive, commutative semirings keep the fast paths: MTTKRP's engines, and
+    # contractions in pairs in opt_einsum's (or the greedy) order
+    einsum_choices = {r["choice"] for r in records if r["point"] == "einsum"}
+    mttkrp_choices = {r["choice"] for r in records if r["point"] == "mttkrp"}
+    if fast:
+        assert "mttkrp" in einsum_choices
+        assert "3 operands, pairwise" in einsum_choices
+        assert not any(c.startswith("einsum") for c in mttkrp_choices)
+    else:
+        assert "mttkrp" not in einsum_choices
+        assert all(c.startswith("einsum") for c in mttkrp_choices)
+
+
 @pytest.mark.parametrize("mode", [0, 1, 2])
 def test_mttkrp(mode):
     rng = np.random.default_rng(50)
