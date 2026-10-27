@@ -2947,8 +2947,15 @@ def test_kernel_disk_cache(tmp_path):
     cache = tmp_path / "kernels"
     # Two processes at once on an empty cache: both work
     procs = [_run_kernel_cache_script(str(cache)) for _ in range(2)]
-    for proc in procs:
-        _kernel_cache_lines(proc)
+    try:
+        for proc in procs:
+            _kernel_cache_lines(proc)
+    finally:
+        # (when one fails, reap the other: its pipes would fail a later test when collected)
+        for proc in procs:
+            if proc.returncode is None:
+                proc.kill()
+                proc.communicate()
     files = sorted(p.name for p in cache.glob("k_*.py"))
     assert files
     assert not list(cache.glob("*.tmp"))
