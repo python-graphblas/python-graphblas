@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from operator import index
 
 import numpy as np
@@ -7,10 +8,10 @@ from . import ffi, lib
 from .dtypes import _nats_in_leaf_units, _view_if_same_layout
 
 try:
-    from suitesparse_graphblas.utils import can_unclaim_buffer, empty
+    from suitesparse_graphblas.utils import can_unclaim_buffer, empty, give_buffer
 except ImportError:  # pragma: no cover (import)
-    # MAINT 2026-10-18: suitesparse-graphblas < 10.5.1.1 has neither
-    can_unclaim_buffer = empty = None
+    # MAINT 2026-10-18: suitesparse-graphblas < 10.5.1.1 has none of them
+    can_unclaim_buffer = empty = give_buffer = None
 
 _NP2 = np.__version__.startswith("2.")
 
@@ -144,6 +145,27 @@ def _ownable_copy(array, order):
     buf = empty(array.shape, array.dtype, order)
     np.copyto(buf, array)
     return buf
+
+
+@contextmanager
+def _give_buffer(array):
+    """``give_buffer`` of suitesparse-graphblas: yields ``(ptr, nbytes, arena)`` to hand the
+    data of ``array`` (or of a copy GraphBLAS can own) to, e.g., ``GxB_Vector_load``. Before
+    10.5.1.1, the same as the ``ss`` pack methods do it, in the global arena (0).
+    """
+    if give_buffer is not None:
+        with give_buffer(array) as rv:
+            yield rv
+        return
+    from suitesparse_graphblas.utils import unclaim_buffer
+
+    buf = _ownable(array, "C")
+    ptr = ffi.new("void**", ffi.cast("void*", buf.ctypes.data))
+    try:
+        yield ptr, buf.nbytes, 0
+    finally:
+        if ptr[0] == ffi.NULL:  # GraphBLAS owns the data now
+            unclaim_buffer(buf)
 
 
 def _distinct_buffers(*arrays):

@@ -188,10 +188,10 @@ def _load(vec, arr, gtype, n=None):
     """Hand the numpy array ``arr`` (from numpy's allocator) to the Container vector ``vec``
     as ``n`` values of ``gtype`` (by default one per element).
     """
-    from suitesparse_graphblas.utils import give_buffer
+    from .utils import _give_buffer
 
     n = arr.size if n is None else n
-    with give_buffer(arr) as (ptr, nbytes, arena):
+    with _give_buffer(arr) as (ptr, nbytes, arena):
         tl._check(
             lib.GxB_Vector_load(vec, ptr, gtype, n, nbytes, lib.GrB_DEFAULT + arena, NULL),
             "GxB_Vector_load",
