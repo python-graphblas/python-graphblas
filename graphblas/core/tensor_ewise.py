@@ -218,12 +218,12 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
         and not M.dtype._is_udt
         and not ts.dtype._is_udt
         and ts._M._nvals == math.prod(ts._shape)
-        and M.ss.format in {"csr", "hypercsr"}
+        and tl.stored_format(M) in {"csr", "hypercsr"}
         and not M.ss.is_iso
     ):
         need_rows = any(o in L.rows for o in F)
         cost = (C_GATHER["rows" if need_rows else "cols"] + C_EWISE_SAME[ti]) * nv
-        if M.ss.format == "hypercsr":
+        if tl.stored_format(M) == "hypercsr":
             cost += C_EWISE_HROW[ti] * tl.nonempty_rows(M)
         options.append((cost, "gather", None, False))
 
@@ -248,7 +248,7 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
         if q != p:
             continue
         if row_op is not None and Fset < set(rows):
-            hyper = M.ss.format == "hypercsr"
+            hyper = tl.stored_format(M) == "hypercsr"
             if hyper:
                 cost = C_DIAG[ti] * nv + C_HROW[ti] * tl.nonempty_rows(M)
             else:

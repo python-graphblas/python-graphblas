@@ -1910,7 +1910,7 @@ def _shape_selector_cost(nvals, positions, ti):
 def _row_selector_cost(M, positions, ti):
     """Cost of a selector over M's row group: from the nonempty rows when M is hypersparse."""
     nvals = M._nvals
-    if M.ss.format == "hypercsr":
+    if tl.stored_format(M) == "hypercsr":
         return C_SEL_ENTRY[ti] * nvals + C_HROW[ti] * tl.nonempty_rows(M)
     return _shape_selector_cost(nvals, positions, ti)
 

@@ -3499,6 +3499,84 @@ def test_nonempty_row_ids_and_perm_pricing():
     )
 
 
+def test_pending_work_before_container_surgery():
+    """Container code tests the stored format only once the Matrix is finished. In
+    non-blocking mode, pending tuples make a hypersparse Matrix sparse when it is finished,
+    and zombies make a sparse one hypersparse; ``ss.format`` does not finish it. A TTM in the
+    stored order then loaded a Container SuiteSparse refused, and the nonempty-row helpers
+    read the arrays of the wrong format. (A subprocess: in blocking mode, which the session
+    may be in, no pending work stays.)
+    """
+    script = """
+import numpy as np
+import graphblas as gb
+gb.init("suitesparse", blocking=False)
+from graphblas import Matrix, Tensor
+from graphblas.core import tensor_layout as tl
+print("package:", gb.__file__)
+rng = np.random.default_rng(0)
+shape = (1000, 4, 8)
+x = np.zeros(shape, np.int64)
+X = Tensor.from_coo([[0], [0], [0]], [1], dtype="INT64", shape=shape, layout=((0, 1), (2,)))
+x[0, 0, 0] = 1
+for n in range(1000):
+    i, j, k = (int(rng.integers(s)) for s in shape)
+    X[i, j, k] = x[i, j, k] = n % 7 + 1
+print("inserted:", X.ss.format)
+B = np.arange(1, 25).reshape(8, 3)
+try:
+    got = X.tensordot(Matrix.from_dense(B), ([2], [0])).new().to_dense(fill_value=0)
+    print("ttm:", np.array_equal(got, np.tensordot(x, B, ([2], [0]))))
+except Exception as exc:
+    print("ttm:", repr(exc))
+
+
+def pending(kind):
+    if kind == "tuples":  # hypersparse, then sparse once finished
+        M = Matrix.from_coo([0], [0], 1, nrows=4000, ncols=8)
+        for r in rng.choice(4000, 1200, replace=False):
+            M[int(r), int(rng.integers(8))] = 2
+    else:  # sparse, then hypersparse once the zombies go
+        M = Matrix.from_coo(np.repeat(np.arange(4000), 2), np.tile([1, 5], 4000), 1, ncols=100)
+        for r in rng.choice(4000, 3990, replace=False):
+            del M[int(r), 1]
+            del M[int(r), 5]
+    stale = M.ss.format
+    ref = M.dup()
+    ref.wait()
+    rows = np.unique(ref.to_coo()[0])
+    return M, stale, ref.ss.format, rows
+
+
+for kind in ["tuples", "zombies"]:
+    M, stale, fmt, rows = pending(kind)
+    print(f"{kind} format:", stale, fmt)
+    print(f"{kind} ids:", np.array_equal(tl.nonempty_row_ids(M), rows))
+    M, _, fmt, rows = pending(kind)
+    print(f"{kind} count:", tl.count_nonempty_rows(M) == rows.size)
+    M, _, fmt, rows = pending(kind)
+    print(f"{kind} nonempty:", tl.nonempty_rows(M) == (rows.size if fmt == "hypercsr" else 4000))
+"""
+    repo_root = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=dict(os.environ, PYTHONPATH=str(repo_root)),
+    )
+    report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert result.returncode == 0, report
+    lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
+    assert lines.pop("package") == str(repo_root / "graphblas" / "__init__.py"), report
+    # Each case had pending work that changes the format
+    assert lines.pop("inserted") == "hypercsr", report
+    assert lines.pop("tuples format") == "hypercsr csr", report
+    assert lines.pop("zombies format") == "csr hypercsr", report
+    assert lines == dict.fromkeys(lines, "True"), report
+    assert len(lines) == 7, report
+
+
 def _states_along(state, path):
     out = []
     for edge in path:

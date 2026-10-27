@@ -269,7 +269,7 @@ def _lookup_numba(t, rows, cols):
     M = t._M
     if not _has_numba or M.dtype._is_udt:
         return None
-    fmt = M.ss.format
+    fmt = tl.stored_format(M)
     np_type = M.dtype.np_type
     with tl._Unloaded(M) as cont:
         if fmt in {"bitmapr", "fullr"}:
@@ -585,7 +585,7 @@ def _extract_recipe(updater, t, sel, keys):
         options.append((C_X_ROW[ti] * tl.nonempty_rows(t._M) + C_X_LIST[ti] * listed, "extract"))
     if (
         nv
-        and t._M.ss.format == "hypercsr"
+        and tl.stored_format(t._M) == "hypercsr"
         and not t.dtype._is_udt
         and all(a in rows and (isinstance(keys[a], slice) or isinstance(sel[a], int)) for a in axes)
     ):

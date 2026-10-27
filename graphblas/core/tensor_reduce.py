@@ -109,7 +109,7 @@ def _selector_semiring(op, mult):
 
 def _row_reducer(M, shape, rows, kept):
     """S with S @ M reducing the row axes not in ``kept`` (positions in ``rows``)."""
-    if M.ss.format == "hypercsr":
+    if tl.stored_format(M) == "hypercsr":
         return tl.rows_selector(M, shape, rows, kept)
     return tl.selector(tuple(shape[x] for x in rows), kept)
 
