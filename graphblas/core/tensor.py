@@ -700,6 +700,9 @@ class Tensor(BaseType):
     def to_scipy_sparse(self, format="coo"):
         """Create a scipy.sparse array (``coo_array`` for any rank but 0).
 
+        scipy.sparse has n-d COO arrays from scipy 1.15 on and 1-d ones from 1.13; with an
+        older scipy, those ranks raise ``NotImplementedError``.
+
         A COO array comes in the stored order with no relayout; it is in C order (marked
         canonical) when the layout is the identity axis order. A 2-d Tensor may also give
         the other scipy formats, as ``graphblas.io.to_scipy_sparse``: "csr" from layout

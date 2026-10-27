@@ -8,6 +8,7 @@ import pytest
 from graphblas import backend, binary, dtypes
 from graphblas.core.tensor import Layout, Tensor
 from graphblas.core.tensor import _has_container as tensor_has_container
+from graphblas.core.tensor_io import _scipy_coo_needs
 
 from .test_tensor import all_layouts, check
 
@@ -215,6 +216,10 @@ def test_pydata_options_and_errors():
 def test_scipy_round_trip(shape, dtype):
     rng = np.random.default_rng(len(shape) * 100 + np.dtype(dtype).num + 7)
     coords, vals, present, dense = _model(shape, rng, dtype)
+    if need := _scipy_coo_needs(len(shape)):  # (this scipy has no such array)
+        with pytest.raises(NotImplementedError, match=f"requires scipy {need} or later"):
+            Tensor.from_coo(coords, vals, shape=shape).to_scipy_sparse()
+        return
     A = ss.coo_array((vals, tuple(coords)), shape=shape)
     T = Tensor.from_scipy_sparse(A)
     assert T.dtype == dtypes.lookup_dtype(dtype)
@@ -235,6 +240,10 @@ def test_scipy_layouts_and_duplicates(ndim):
     rng = np.random.default_rng(20 + ndim)
     shape = SHAPES[ndim]
     coords, vals, present, dense = _model(shape, rng)
+    if need := _scipy_coo_needs(ndim):  # (this scipy has no such array)
+        with pytest.raises(NotImplementedError, match=f"requires scipy {need} or later"):
+            Tensor.from_coo(coords, vals, shape=shape).to_scipy_sparse()
+        return
     for lay in all_layouts(ndim)[:: 1 if ndim < 4 else 7]:
         T = Tensor.from_coo(coords, vals, shape=shape, layout=lay)
         B = T.to_scipy_sparse()
@@ -304,10 +313,26 @@ def test_scipy_2d_formats():
     np.testing.assert_array_equal(T.to_scipy_sparse("csc").toarray(), dense)
 
 
-def test_scipy_errors():
+def test_scipy_errors(monkeypatch):
+    import scipy
+
     T = Tensor.from_coo(np.array([[0, 1], [1, 2], [2, 3]]), [1.0, 2.0], shape=(2, 3, 4))
     with pytest.raises(ValueError, match="'coo' only"):
         T.to_scipy_sparse("csr")
+    # scipy.sparse is 2-d only before scipy 1.13, has 1-d COO from 1.13 and n-d from 1.15
+    V = Tensor.from_coo(np.array([[0, 2]]), [1.0, 2.0], shape=(3,))
+    M = Tensor.from_coo(np.array([[0, 1], [1, 0]]), [1.0, 2.0], shape=(2, 2))
+    real_1d = _scipy_coo_needs(1) is None  # (the real scipy makes the array below)
+    monkeypatch.setattr(scipy, "__version__", "1.14.1")
+    with pytest.raises(NotImplementedError, match="3-d .* requires scipy 1.15 or later"):
+        T.to_scipy_sparse()
+    if real_1d:
+        assert V.to_scipy_sparse().shape == (3,)
+    monkeypatch.setattr(scipy, "__version__", "1.12.0")
+    with pytest.raises(NotImplementedError, match="1-d .* requires scipy 1.13 .* scipy 1.12.0"):
+        V.to_scipy_sparse()
+    assert M.to_scipy_sparse().shape == (2, 2)
+    monkeypatch.undo()
     with pytest.raises(ValueError, match="no 0-d"):
         Tensor.from_coo((), [1.0], shape=()).to_scipy_sparse()
     with pytest.raises(TypeError, match="scipy.sparse"):
