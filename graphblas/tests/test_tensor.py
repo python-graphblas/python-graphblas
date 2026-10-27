@@ -2529,6 +2529,37 @@ def test_ttm_udt_declines_an_iso_product(monkeypatch):
     check(R, 0.7 * U.reshape(1, 1, 3), np.ones((1, 1, 3), bool), approx=True)
 
 
+def test_ttm_udt_raises_run_only_when_it_runs(monkeypatch):
+    """At SuiteSparse's default "run", a TTM the array-UDT engine leaves to Numba (R above
+    ``_TTM_UDT_MAX_R``) keeps the JIT control at "run"; one it takes raises it to "on".
+    """
+    if backend != "suitesparse":
+        pytest.skip("SuiteSparse only")
+    from graphblas.core import _has_numba, tensor
+
+    if not _has_numba:
+        pytest.skip("the engine declines in favor of Numba")
+    _require_jit_compile()
+    calls = _ttm_udt_spy(monkeypatch, ("udt", "numba"))
+    rng = np.random.default_rng(96)
+    X, xv, xp = random_tensor((10, 11, 12), rng, density=0.05, layout=((0, 1), (2,)))
+    prev = gb.ss.config["jit_c_control"]
+    try:
+        for R, engines, control in [
+            (tensor._TTM_UDT_MAX_R + 1, ("udt", "numba"), "run"),  # declined: Numba runs
+            (3, ("udt",), "on"),  # taken
+        ]:
+            monkeypatch.setattr(tensor, "_TTM_ENGINES", engines)
+            gb.ss.config["jit_c_control"] = "run"
+            calls.clear()
+            U = rng.random((12, R))
+            check(X.tensordot(U, ([2], [0])).new(), *_ttm_model(xv, xp, U, 2), approx=True)
+            assert bool(calls) == (control == "on")
+            assert gb.ss.config["jit_c_control"] == control
+    finally:
+        gb.ss.config["jit_c_control"] = prev
+
+
 def test_ttm_udt_paths(monkeypatch, capfd):
     """UDT engine outputs in every storage, views and empty groups, an empty tensor, the
     JIT kernel (burble), its type and ops made once per R, and JIT off.
