@@ -67,7 +67,8 @@ def _region_value(value, shape, dtype):
     if t is None:
         raise TypeError(f"Bad type for the assigned value: {type(value)}")
     if t.ndim == 0 and shape != ():
-        return t.to_scalar()
+        # (a GrB_Scalar, which may be empty when assigned; a C scalar may not)
+        return t._M[0, 0].new(is_cscalar=False)  # pragma: is_grbscalar
     try:
         broadcast = np.broadcast_shapes(t._shape, shape)
     except ValueError:
@@ -151,7 +152,9 @@ class TensorUpdater(Updater):
     def __delitem__(self, keys):
         from .scalar import Scalar
 
-        self._assign(keys, Scalar(self.parent.dtype), is_submask=False)
+        # Delete by assigning an empty scalar, as Matrix does
+        scalar = Scalar(self.parent.dtype, is_cscalar=False, name="s_empty")  # pragma: is_grbscalar
+        self._assign(keys, scalar, is_submask=False)
 
     def _assign(self, keys, value, *, is_submask):
         kw = self.kwargs
