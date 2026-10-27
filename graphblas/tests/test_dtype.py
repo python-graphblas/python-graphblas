@@ -554,6 +554,14 @@ def test_udt_layouts_under_one_name_get_their_own_jit_c_names():
     assert small.jit_c_name == "_SameJitName"
     assert big.jit_c_name != small.jit_c_name
     assert big.jit_c_name in big.jit_c_definition
+    # Nor may a typedef registered in C take a name a UDT already has.
+    with pytest.raises(ValueError, match="unavailable"):
+        dtypes.ss.register_new("_SameJitName", "typedef struct { int8_t q ; } _SameJitName ;")
+    # The rest compiles kernels for both layouts, which needs a C compiler the JIT can use.
+    from graphblas.core.ss.jit_config import _enable_jit_for_udt
+
+    if not _enable_jit_for_udt():
+        pytest.skip("the JIT cannot compile here (no usable C compiler)")
     jit_c_control = gb.ss.config["jit_c_control"]
     gb.ss.config["jit_c_control"] = "on"
     try:
@@ -569,9 +577,6 @@ def test_udt_layouts_under_one_name_get_their_own_jit_c_names():
             assert values == [one.tolist(), one.tolist(), two.tolist()]
     finally:
         gb.ss.config["jit_c_control"] = jit_c_control
-    # Nor may a typedef registered in C take a name a UDT already has.
-    with pytest.raises(ValueError, match="unavailable"):
-        dtypes.ss.register_new("_SameJitName", "typedef struct { int8_t q ; } _SameJitName ;")
 
 
 def test_dtype_to_from_string():
