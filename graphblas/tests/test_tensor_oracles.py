@@ -855,7 +855,10 @@ def oracle_gather(rng, n, teeth=False):
                 lambda: X.take(idx, axis=axis), np.take(xv, idx, axis=axis),
                 np.take(xp, idx, axis=axis),
             )  # fmt: skip
-            along = list(shape)
+            # The indices broadcast against the Tensor: a size-1 axis of either spreads
+            along = [
+                int(rng.integers(1, 4)) if s == 1 else 1 if rng.random() < 0.2 else s for s in shape
+            ]
             along[axis] = int(rng.integers(0, 4))
             idx = rng.integers(-d, d, size=tuple(along))
             o.expect(
