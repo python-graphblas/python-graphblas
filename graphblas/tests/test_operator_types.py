@@ -185,6 +185,7 @@ IGNORE = {
     "plus_copysign",
     "lazy",
     "lazy2",
+    "lazy_idem",
     "lazy_lazy",
     # UDFs created during tests
     "is_positive",
