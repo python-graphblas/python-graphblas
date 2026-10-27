@@ -997,7 +997,8 @@ def oracle_io(rng, n, teeth=False):
                 pass
         else:
             a = X.to_scipy_sparse()
-            compare("to scipy COO", shape, coords, vals, a.shape, a.coords, a.data)
+            a_coords = (a.row, a.col) if ndim == 2 else a.coords  # (no coords before scipy 1.13)
+            compare("to scipy COO", shape, coords, vals, a.shape, a_coords, a.data)
         if nnz and vals.dtype != bool and not need:  # duplicates add up
             dup = rng.integers(0, nnz, max(1, nnz // 3))
             cc = [np.concatenate([c, c[dup]]) for c in coords]
