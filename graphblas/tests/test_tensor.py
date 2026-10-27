@@ -3057,15 +3057,26 @@ print("compiler:", gb.ss.config["jit_c_compiler_name"])
 print("failure:", tensor_udt._FAILURE and tensor_udt._FAILURE[:2])
 print("warnings:", sum("array-UDT engine" in str(w.message) for w in caught))
 print("has_numba:", _has_numba)
+if _has_numba:
+    # A UDT Matrix operation next: under "load" it takes the Numba path, without compiling
+    dt = gb.dtypes.register_anonymous(np.dtype((np.float64, (3,))), "jit_failure_next_op")
+    A = gb.Matrix.from_coo([0, 1], [0, 1], np.ones((2, 3)), dt, nrows=2, ncols=2)
+    try:
+        ok = A.ewise_add(A, gb.binary.plus).new().isequal(A.apply(gb.binary.times, 2).new())
+        print("next_udt_op:", ok, gb.ss.config["jit_c_control"])
+    except Exception as exc:
+        print("next_udt_op:", type(exc).__name__, gb.ss.config["jit_c_control"])
 """
 
 
 @pytest.mark.parametrize(("control", "numba"), [("run", "numba"), ("on", "nonumba")])
 def test_ttm_udt_jit_failure(control, numba, tmp_path):
     """A compile that fails with the JIT on (a compiler gone missing after the probe, an
-    empty JIT cache, a fresh R): the UDT engine gives up once, warns, restores the JIT
-    control the user had, and the next engine (Numba, or the products without it) gives
-    the right result; later calls do not try the engine again.
+    empty JIT cache, a fresh R): the UDT engine gives up once, warns, and the next engine
+    (Numba, or the products without it) gives the right result; later calls do not try the
+    engine again. The control stays at "load", where SuiteSparse puts it: the engine put
+    back "run", which UDT auto-lift raised to "on" again, so the next UDT Matrix operation
+    retried the compile and raised JitError.
     """
     if backend != "suitesparse":
         pytest.skip("SuiteSparse only")
@@ -3088,11 +3099,13 @@ def test_ttm_udt_jit_failure(control, numba, tmp_path):
     if "skip" in lines:
         pytest.skip(lines["skip"])
     assert float(lines["max_err"]) < 1e-12, report
-    assert lines["control"] == control, report  # (restored)
+    assert lines["control"] == "load", report
     assert lines["compiler"] == "/nonexistent/bin/cc", report  # (not touched)
     assert lines["failure"] == f"({control!r}, 'load')", report  # (SuiteSparse had set "load")
     assert lines["warnings"] == "1", report
     assert lines["has_numba"] == str(numba == "numba"), report
+    if numba == "numba":
+        assert lines["next_udt_op"] == "True load", report
 
 
 def _engine_spies(monkeypatch):
@@ -3243,7 +3256,7 @@ def test_udt_engine_new_kernel_jit_failure(case, tmp_path):
     assert float(lines["max_err"]) < 1e-10, report
     # Compiled and ran; then one attempt that failed, and none after
     assert lines["attempts"] == "['ok'] ['JitError']", report
-    assert lines["control"] == "on", report
+    assert lines["control"] == "load", report
     assert lines["failure"] == "('on', 'load')", report
     assert lines["warnings"] == "1", report
 
