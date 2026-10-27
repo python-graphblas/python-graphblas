@@ -3929,7 +3929,8 @@ def _region_model(v_shape_value, shape, rng, kind):
         x = float(rng.integers(-9, 10))
         return x, np.full(shape, x), np.ones(shape, bool)
     if kind == "empty":
-        return gb.Scalar(dtypes.FP64), np.zeros(shape), np.zeros(shape, bool)
+        empty = gb.Scalar(dtypes.FP64, is_cscalar=False)  # pragma: is_grbscalar
+        return empty, np.zeros(shape), np.zeros(shape, bool)
     # A Tensor of a broadcastable shape: drop some leading axes, set some sizes to 1
     vshape = list(shape[int(rng.integers(0, len(shape))) :] if kind == "broadcast" else shape)
     if kind == "broadcast":
