@@ -749,7 +749,9 @@ def assign_model(cv, cp, key, vv, vp, mask, how, accum, replace, region_shape, t
 def make_object(rng, kind, values, present):
     """A Matrix, Vector, Scalar or Tensor (in a random layout) holding the model."""
     if kind == "scalar" or values.ndim == 0:
-        return Scalar.from_value(float(values[()])) if present[()] else Scalar(float)
+        if present[()]:
+            return Scalar.from_value(float(values[()]))
+        return Scalar(float, is_cscalar=False)  # pragma: is_grbscalar
     coords = np.nonzero(present)
     if kind == "matrix":
         nrows, ncols = values.shape
