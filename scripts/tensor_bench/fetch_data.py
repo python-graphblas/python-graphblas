@@ -7,9 +7,11 @@
 
 Files go to the data directory (``--data-dir``, else ``TENSOR_BENCH_DATA``, else ``data/``
 next to this script), one subdirectory per source. Every file is checked against the SHA-256
-recorded below, and a file that does not match is deleted. Nothing is redistributed: each
-file comes from its publisher, and each dataset's license and citation are printed when it
-is fetched and written to ``SOURCES-<name>.md`` in its subdirectory. Cite the sources you use.
+recorded below, and a file that does not match is deleted. (An archive its server may rebuild,
+such as eu-airlines' zip, is checked by the files unzipped from it instead.) Nothing is
+redistributed: each file comes from its publisher, and each dataset's license and citation
+are printed when it is fetched and written to ``SOURCES-<name>.md`` in its subdirectory.
+Cite the sources you use.
 
 FROSTT tensors are also converted once to ``frostt/cache/<name>.npz`` for the benchmark
 harness (``harness/datasets.py`` does that on first use if you skip it here).
@@ -52,7 +54,8 @@ def _frostt(name, path, size, sha, page, what):
     }
 
 
-# name: dir, files (local name, url, bytes, sha256), page, what, license, citation
+# name: dir, files (local name, url, bytes, sha256), page, what, license, citation.
+# A sha256 of None marks an archive checked only by the files in it ("unzip").
 DATASETS = {
     "frostt-uber": _frostt(
         "uber",
@@ -139,7 +142,7 @@ DATASETS = {
                 "eu_airlines.csv.zip",
                 "https://networks.skewed.de/net/eu_airlines/files/eu_airlines.csv.zip",
                 24_291,
-                "c327d9c434ef2d4d09a798699adb6fab4a609aa27323d76f62db2b8ccdd599c4",
+                None,  # (Netzschleuder rebuilds the zip; the CSVs in it stay the same)
             ),
         ],
         "unzip": {
@@ -283,6 +286,9 @@ def fetch(name, copy_from=None):
     d.mkdir(parents=True, exist_ok=True)
     for fname, url, size, sha in spec["files"]:
         dst = d / fname
+        if dst.exists() and sha is None:
+            print(f"  {fname}: present (checked by the files in it)")
+            continue
         if dst.exists() and sha256(dst) == sha:
             print(f"  {fname}: present, SHA-256 ok")
             continue
@@ -296,6 +302,8 @@ def fetch(name, copy_from=None):
                 flush=True,
             )
             download(url, dst)
+        if sha is None:
+            continue
         got = sha256(dst)
         if got != sha:
             dst.unlink()
@@ -304,11 +312,20 @@ def fetch(name, copy_from=None):
     for fname, sha in spec.get("unzip", {}).items():
         dst = d / fname
         if not (dst.exists() and sha256(dst) == sha):
-            with zipfile.ZipFile(d / spec["files"][0][0]) as z:
-                member = next(m for m in z.namelist() if m.endswith(fname))
-                dst.write_bytes(z.read(member))
-            if sha256(dst) != sha:
-                raise SystemExit(f"  {fname}: SHA-256 mismatch after unzipping")
+            archive = d / spec["files"][0][0]
+            try:
+                with zipfile.ZipFile(archive) as z:
+                    member = next(m for m in z.namelist() if m.endswith(fname))
+                    dst.write_bytes(z.read(member))
+            except (zipfile.BadZipFile, StopIteration):
+                pass
+            if not (dst.exists() and sha256(dst) == sha):
+                archive.unlink()
+                dst.unlink(missing_ok=True)
+                raise SystemExit(
+                    f"  {fname}: SHA-256 mismatch after unzipping; deleted {archive.name}, "
+                    "so the next run downloads it again"
+                )
         print(f"  {fname}: unzipped, SHA-256 ok")
     with open(d / f"SOURCES-{name}.md", "w") as f:
         f.write(
