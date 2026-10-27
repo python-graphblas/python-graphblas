@@ -4286,6 +4286,41 @@ def test_gather_errors_and_options():
         Tensor(dtypes.FP64, (2, 0)).take([0], axis=1, mode="wrap")
 
 
+@pytest.mark.parametrize("engines", [("extract", "numba", "graphblas"), ("numba",), ("graphblas",)])
+def test_take_along_axis_size1_axes(engines, monkeypatch):
+    """``take_along_axis`` whose indices broadcast over a size-1 axis of the Tensor reads
+    coordinate 0 along it, as numpy does. It used to take the broadcast grid's coordinate,
+    past the axis: wrong values, an IndexError, or a read past the stored row pointers.
+    """
+    from graphblas.core import tensor_index
+
+    if "numba" in engines and not gb.core._has_numba:
+        pytest.skip("needs numba")
+    monkeypatch.setattr(tensor_index, "_GATHER_ENGINES", engines)
+    rng = np.random.default_rng(470)
+    for shape, axis, ishape in [
+        ((1, 6, 7), 2, (3, 6, 2)),
+        ((5, 1, 4), 0, (2, 3, 4)),
+        ((1, 1, 6), 2, (2, 3, 4)),
+        ((4, 1), 0, (3, 5)),
+        ((1, 5), 1, (4, 1)),  # each broadcasts over the other
+    ]:
+        for i, layout in enumerate(all_layouts(len(shape))):
+            X, xv, xp = random_tensor(shape, rng, density=[0.3, 1.0][i % 2], layout=layout)
+            idx = rng.integers(-shape[axis], shape[axis], ishape)
+            wrapped = np.where(idx < 0, idx + shape[axis], idx)
+            _gather_check(
+                X.take_along_axis(idx, axis),
+                np.take_along_axis(xv, wrapped, axis),
+                np.take_along_axis(xp, wrapped, axis),
+            )
+    # The lookups trust their positions, so gather refuses a coordinate out of range
+    X = Tensor.from_dense(np.arange(6.0).reshape(1, 2, 3))
+    for coords in [[[1], [0], [0]], [[0], [0], [-1]]]:
+        with pytest.raises(IndexError, match="out of bounds for axis"):
+            tensor_index.gather(X, [np.array(c) for c in coords], (1,))
+
+
 @pytest.mark.parametrize("max_listed", [None, 0])
 @pytest.mark.parametrize("ndim", [2, 3, 4])
 def test_extract_repeated_indices(ndim, max_listed, monkeypatch):
