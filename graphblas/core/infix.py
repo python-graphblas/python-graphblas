@@ -531,7 +531,7 @@ utils._output_types[MatrixEwiseMultExpr] = Matrix
 utils._output_types[MatrixMatMulExpr] = Matrix
 
 
-def _dummy(obj, obj_type):
+def _dummy(obj):
     with recorder.skip_record:
         return output_type(obj)(BOOL, *obj.shape, name="")
 
