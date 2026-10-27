@@ -5100,6 +5100,53 @@ def test_einsum_plan_cache():
     assert R.shape == (3, 4)
 
 
+@pytest.mark.parametrize("opt_einsum", [True, False])
+def test_einsum_explicit_path(opt_einsum, monkeypatch):
+    """An explicit path is used as given, with or without opt_einsum, in opt_einsum's form or
+    numpy.einsum_path's (with its leading "einsum_path"); a bad one is refused clearly.
+    Without opt_einsum it was ignored for the greedy order, and numpy's form raised
+    "'str' object cannot be interpreted as an integer" from opt_einsum.
+    """
+    from graphblas.core import tensor_einsum
+
+    if opt_einsum:
+        pytest.importorskip("opt_einsum")
+    else:
+        monkeypatch.setitem(sys.modules, "opt_einsum", None)
+    paths = []
+    orig = tensor_einsum._einsum_recipe
+
+    def spy(updater, terms, output, tensors, op, path, grouping):
+        paths.append(list(path))
+        return orig(updater, terms, output, tensors, op, path, grouping)
+
+    monkeypatch.setattr(tensor_einsum, "_einsum_recipe", spy)
+    rng = np.random.default_rng(702)
+    models = [random_tensor(s, rng, density=0.7) for s in [(3, 4), (4, 5), (5, 2), (2, 3)]]
+    ops = [m[0] for m in models]
+    sub = "ij,jk,kl,lm->im"
+    want = np_einsum(sub, *models)
+    numpy_path = np.einsum_path(sub, *[m[1] for m in models], optimize="greedy")[0]
+    for path, used in [
+        ([(0, 1), (0, 1), (0, 1)], [(0, 1), (0, 1), (0, 1)]),
+        (((2, 3), (0, 1), (0, 1)), [(2, 3), (0, 1), (0, 1)]),
+        (["einsum_path", (0, 1), (1, 2), (0, 1)], [(0, 1), (1, 2), (0, 1)]),
+        (numpy_path, [tuple(p) for p in numpy_path[1:]]),
+    ]:
+        paths.clear()
+        check(gb.einsum(sub, *ops, optimize=path).new(), *want, approx=True)
+        assert paths == [used], path
+    for bad, err, match in [
+        ([(0, 1)], ValueError, "leaves 3 operands"),
+        ([(0, 4), (0, 1), (0, 1)], ValueError, "two of the 4 operands"),
+        ([(1, 1), (0, 1), (0, 1)], ValueError, "two of the 4 operands"),
+        ([(0, 1, 2), (0, 1)], ValueError, "two of the 4 operands"),
+        ([("a", 1), (0, 1), (0, 1)], TypeError, "pair of operand positions"),
+    ]:
+        with pytest.raises(err, match=match):
+            gb.einsum(sub, *ops, optimize=bad)
+
+
 def test_batched_contraction_embedded_format(monkeypatch):
     """The block-diagonal operand of a batched contraction may take any format again after the
     embedding (bitmap when few batches make it dense: SuiteSparse's bitmap saxpy instead of
