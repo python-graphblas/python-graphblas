@@ -578,6 +578,10 @@ def test_relayout_dtypes_iso(dtype, iso):
     coords = np.nonzero(present)
     if iso:
         vals = dtype.np_type.type(1)
+    elif dtype == dtypes.BOOL:
+        # (not ``astype(bool)`` of the floats below: they are all True, and with
+        # suitesparse-graphblas 10.3.1.0 a Matrix built of them is iso)
+        vals = rng.random(present.sum()) < 0.5
     else:
         vals = (rng.random(present.sum()) * 10).astype(dtype.np_type)
     T = Tensor.from_coo(coords, vals, dtype, shape=shape)
