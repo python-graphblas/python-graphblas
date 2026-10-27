@@ -2475,6 +2475,25 @@ def test_udt_auto_monoid():
 
 
 @pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_auto_monoid_time_fields():
+    """Monoid min and max generate no identity for a datetime64 or timedelta64 field.
+
+    numpy files timedelta64 under ``np.integer``, so a timedelta64 field used to
+    reach ``np.iinfo`` and raise ``ValueError: Invalid integer data type 'm'``,
+    from ``udt in agg.min`` too, where a datetime64 field gets a KeyError.
+    """
+    for code in ["M8[s]", "m8[s]"]:
+        udt = dtypes.register_anonymous(np.dtype([("tf_n", np.int64), ("tf_t", code)]))
+        for mon in [monoid.min, monoid.max]:
+            with pytest.raises(KeyError, match="field 'tf_t' has unsupported dtype"):
+                mon[udt]
+            assert udt not in mon
+        assert udt not in agg.min
+        assert udt not in agg.max
+
+
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.parametrize("shape", [(4,), (3, 2)])
 def test_udt_array_wrapper_stays_within_element(shape):
     """The array-UDT cfunc wrapper writes one element's bytes and nothing more.
