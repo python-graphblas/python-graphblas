@@ -64,7 +64,9 @@ def _scalar_identity(monoid_name, scalar_dtype):
         return scalar_dtype.type(1)
     if monoid_name not in {"min", "max"}:
         return None
-    if np.issubdtype(scalar_dtype, np.integer):
+    # Not ``np.issubdtype(scalar_dtype, np.integer)``: numpy files timedelta64
+    # under ``np.integer``, and ``np.iinfo`` rejects it.
+    if scalar_dtype.kind in "iu":
         info = np.iinfo(scalar_dtype)
         return info.max if monoid_name == "min" else info.min
     if np.issubdtype(scalar_dtype, np.floating):
