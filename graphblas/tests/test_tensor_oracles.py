@@ -926,7 +926,10 @@ def oracle_einsum(rng, n, teeth=False):
 
 
 def oracle_io(rng, n, teeth=False):
-    sparse = pytest.importorskip("sparse")
+    try:
+        import sparse
+    except ImportError:  # (pydata sparse needs Numba)
+        pytest.skip("needs pydata sparse")
     ssp = pytest.importorskip("scipy.sparse")
     o = Oracle("io")
 
