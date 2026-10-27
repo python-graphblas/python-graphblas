@@ -76,8 +76,7 @@ def _ttm_udt(updater, a, b, op, a_axes, b_axes):
     """
     from . import tensor_udt
 
-    before = tensor_udt.jit_control()
-    if not tensor_udt.jit_ready():
+    if not tensor_udt.jit_possible():
         return None
     m, kb = a_axes[0], b_axes[0]
     free_a = tuple(x for x in range(a.ndim) if x != m)
@@ -104,6 +103,10 @@ def _ttm_udt(updater, a, b, op, a_axes, b_axes):
         )
     ):
         return None  # (the Numba engine is faster here: see _TTM_UDT_MAX_R)
+    # Decided: only now raise SuiteSparse's default "run" to "on", so a declined case leaves it
+    before = tensor_udt.jit_control()
+    if not tensor_udt.jit_ready():
+        return None
     layout = Layout.from_state(state)
     from .descriptor import lookup
 
