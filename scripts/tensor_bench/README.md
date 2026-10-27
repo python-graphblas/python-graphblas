@@ -61,6 +61,19 @@ under a minute.
   tensor), `bmm` (`'bij,bjk->bik'`), `slice` (the middle index and a 10% range of each axis).
 - **Threads** (`--threads`, default `min(8, cores),1`): multithreaded libraries (the Tensor,
   torch, Numba, SPLATT, TACO) run at each count; pydata/sparse and scipy are single-threaded.
+- **The SuiteSparse JIT** (`--jit`, default `on`), for the Tensor:
+  - `on` compiles a kernel for each new operator and type, with the active conda environment's
+    compiler (`fix_jit_config()`): what users with a working C compiler get;
+  - `off` runs SuiteSparse's precompiled ("factory") kernels, and its generic kernels where
+    there is none: what users without a compiler get;
+  - `run`, SuiteSparse's default, runs the factory kernels and those already loaded in the
+    process, and compiles nothing, except that the Tensor's array-UDT engine raises it to `on`
+    when a compiler works (the results it affects say so in their note).
+
+  Every Tensor result records its mode, and `report.py` gives each mode its own columns and a
+  table of its times over the times at `on`. The warm-up call of each case absorbs the
+  compiles, so `first_ms` with an empty JIT cache (`GRAPHBLAS_CACHE_PATH`) minus `first_ms`
+  with a full one is what they cost.
 
 ## How it measures
 

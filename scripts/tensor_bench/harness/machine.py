@@ -114,8 +114,10 @@ def versions():
     return out
 
 
-def graphblas_info():
-    """The SuiteSparse library, the JIT after ``fix_jit_config()``, and where graphblas is."""
+def graphblas_info(jit="on"):
+    """The SuiteSparse library, the JIT after ``fix_jit_config()`` and run.py's ``--jit``, and
+    where graphblas is.
+    """
     try:
         import graphblas as gb
         from graphblas.core import _has_numba
@@ -124,6 +126,8 @@ def graphblas_info():
         return {"error": f"graphblas does not import: {e}"}
     fixed = jit_config.fix_jit_config()
     cfg = gb.ss.config
+    if jit != "on":
+        cfg["jit_c_control"] = jit
     return {
         "path": os.path.dirname(gb.__file__),
         "suitesparse": ".".join(map(str, gb.ss.about["library_version"])),
@@ -141,13 +145,13 @@ def git_commit(path):
     return (sha + ("+dirty" if dirty else "")) if sha else None
 
 
-def machine_info(repo=None):
+def machine_info(repo=None, jit="on"):
     info = {
         "host": platform.node(),
         "os": platform.platform(),
         "cpu": cpu_info(),
         "versions": versions(),
-        "graphblas": graphblas_info(),
+        "graphblas": graphblas_info(jit),
         "env": {
             k: os.environ[k]
             for k in ("OMP_NUM_THREADS", "NUMBA_NUM_THREADS", "CONDA_PREFIX")
