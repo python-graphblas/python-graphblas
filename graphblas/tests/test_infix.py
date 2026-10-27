@@ -170,6 +170,13 @@ def test_bad_ewise(s1, v1, A1, A2):
         A1.T | A1
     with pytest.raises(DimensionMismatch):
         A1.T & A1
+    # Beside an infix expression, on either side
+    for left, right in [(v1 | v1, w), (w, v1 | v1), (A2 | A2, A1), (A1, A2 | A2)]:
+        with pytest.raises(DimensionMismatch):
+            left | right
+    for left, right in [(v1 & v1, w), (w, v1 & v1), (A2 & A2, A1), (A1, A2 & A2)]:
+        with pytest.raises(DimensionMismatch):
+            left & right
 
     # These are okay now
     # with pytest.raises(TypeError):
@@ -227,6 +234,15 @@ def test_bad_matmul(s1, v1, A1, A2):
         A1.T @ A1.T
     with pytest.raises(DimensionMismatch):
         A1 @= A1
+    # Beside an infix expression, on either side
+    for left, right in [
+        (A1 @ A2, v1),
+        (v1, A1 @ A2),
+        (A2 @ A1, A2.T),
+        (A2, A2 @ A1),
+    ]:
+        with pytest.raises(DimensionMismatch):
+            left @ right
     with pytest.raises(TypeError):
         s1 @ 1
     with pytest.raises(TypeError):
