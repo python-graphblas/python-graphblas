@@ -2799,6 +2799,58 @@ def test_ttm_udt_declines_an_iso_product(monkeypatch):
     check(R, 0.7 * U.reshape(1, 1, 3), np.ones((1, 1, 3), bool), approx=True)
 
 
+def test_ttm_udt_type_name_claimed(monkeypatch):
+    """The array-UDT engine's type claims its C name (``_gbtensor_fp64x{R}``) in the registry
+    that registered UDTs use. It made the type with ``GxB_Type_new`` directly, so a user UDT
+    of that name and another layout got the same C name, and its ``plus`` the engine's C op
+    name: SuiteSparse finds kernels by name, so one could run the other's kernel. A user type
+    that takes the name first makes the engine's type take another.
+    """
+    from graphblas.core import ffi, lib, tensor_udt
+    from graphblas.core.operator import udt_codegen
+
+    _require_jit_compile()
+
+    def c_name(gtype):
+        buf = ffi.new("char[]", lib.GxB_MAX_NAME_LEN)
+        tl._check(lib.GrB_Type_get_String(gtype, buf, lib.GxB_JIT_C_NAME), "GrB_Type_get_String")
+        return ffi.string(buf).decode()
+
+    # Two R this process has not made a type for, whose names are free
+    free = [
+        R
+        for R in range(17, 33)
+        if R not in tensor_udt._SEMIRINGS
+        and f"_gbtensor_fp64x{R}" not in udt_codegen._jit_c_type_defs
+    ]
+    if len(free) < 2:
+        pytest.skip("no free R left in this process")
+    R1, R2 = free[:2]
+    # The engine's type first, then a user type of its name with another (aligned) layout
+    t, _ = tensor_udt.semiring(R1)
+    assert c_name(t) == f"_gbtensor_fp64x{R1}"
+    layout = np.dtype([("cname_a", np.int64), ("cname_b", np.float64)], align=True)
+    udt = dtypes.register_anonymous(layout, f"_gbtensor_fp64x{R1}")
+    assert udt.jit_c_name not in {None, f"_gbtensor_fp64x{R1}"}
+    if gb.core._has_numba:  # (ops on a UDT need Numba)
+        assert binary.plus[udt].jit_c_name not in {None, f"plus__gbtensor_fp64x{R1}"}
+    # A user type of the engine's name first: the engine's type takes another
+    layout = np.dtype([("cname_c", np.int64), ("cname_d", np.float64)], align=True)
+    udt = dtypes.register_anonymous(layout, f"_gbtensor_fp64x{R2}")
+    assert udt.jit_c_name == f"_gbtensor_fp64x{R2}"
+    t, _ = tensor_udt.semiring(R2)
+    assert c_name(t).startswith(f"_gbtensor_fp64x{R2}_")
+    # The engine computes right with either type
+    calls = _ttm_udt_spy(monkeypatch, ("udt",))
+    rng = np.random.default_rng(91)
+    X, xv, xp = random_tensor((6, 7, 8), rng, density=0.2)
+    for R in [R1, R2]:
+        U = rng.random((8, R))
+        check(X.tensordot(U, ([2], [0])).new(), *_ttm_model(xv, xp, U, 2), approx=True)
+    assert len(calls) == 2
+    assert None not in calls
+
+
 def test_ttm_udt_raises_run_only_when_it_runs(monkeypatch):
     """At SuiteSparse's default "run", a TTM the array-UDT engine leaves to Numba (R above
     ``_TTM_UDT_MAX_R``) keeps the JIT control at "run"; one it takes raises it to "on".
