@@ -15,9 +15,10 @@ The type and ops are made here, not through ``graphblas.dtypes`` and ``graphblas
   is involved and the engine works without Numba.
 
 It needs the JIT: without it the ops cannot be created (the product would run SuiteSparse's
-generic kernel, about 2x slower than the other engines). So it raises the JIT control from
-SuiteSparse's default "run" to "on" as UDT auto-lift does, and is not used under an explicit
-"off". The type and ops of each R are made once per process.
+generic kernel, about 2x slower than the other engines). So once an engine has chosen to run
+(``jit_ready``), it raises the JIT control from SuiteSparse's default "run" to "on" as UDT
+auto-lift does; an engine that declines a case leaves the control alone (``jit_possible``).
+It is not used under an explicit "off". The type and ops of each R are made once per process.
 
 A compile can still fail with the control "on" (a compiler that stopped working, a full
 disk, an unwritable cache): SuiteSparse then returns ``GxB_JIT_ERROR`` rather than run the
@@ -49,6 +50,21 @@ def jit_control():
     return ss.config["jit_c_control"]
 
 
+def jit_possible():
+    """Whether ``jit_ready`` may say yes, with none of its side effects (it may raise the
+    control and probe the compiler): False after a failed compile, under "off", "pause" or
+    "load", and when this process is known to have no working compiler. An engine checks
+    this before deciding, and calls ``jit_ready`` only once it has decided to run.
+    """
+    from .ss import jit_config
+
+    return (
+        _FAILURE is None
+        and jit_control() not in {"off", "pause", "load"}
+        and jit_config._jit_enabled_for_udt is not False
+    )
+
+
 def jit_ready():
     """Whether a kernel armed now will be JIT-compiled. As for UDT auto-lift
     (``jit_config._enable_jit_for_udt``), SuiteSparse's default "run" is raised to "on" when
@@ -62,8 +78,8 @@ def jit_ready():
 
 def run(before, func, *args, **kwargs):
     """``func(*args, **kwargs)``: engine code that may JIT-compile, with ``before`` the JIT
-    control from before ``jit_ready``. None when a compile fails (see the module notes):
-    the control is set back to ``before``, and a ``NoJITWarning`` says so.
+    control from before ``jit_ready`` raised it. None when a compile fails (see the module
+    notes): the control is set back to ``before``, and a ``NoJITWarning`` says so.
     """
     global _FAILURE
     from ..exceptions import JitError, NoJITWarning, NullPointer

@@ -339,10 +339,11 @@ Some operations have more than one implementation, chosen per call:
 
 The Numba kernels are compiled on first use and cached on disk, under
 ``$GRAPHBLAS_KERNEL_CACHE`` (by default ``python-graphblas/tensor-kernels`` under
-``$XDG_CACHE_HOME`` or ``~/.cache``; an empty value turns the cache off). The JIT engine
-raises SuiteSparse's JIT control from its default ``"run"`` to ``"on"``, as user-defined
-types do (see :doc:`udt`); if a compile then fails, it puts the control back, warns once,
-and another engine runs. Every engine gives the same results; only the speed differs.
+``$XDG_CACHE_HOME`` or ``~/.cache``; an empty value turns the cache off). When the JIT
+engine runs, it raises SuiteSparse's JIT control from its default ``"run"`` to ``"on"``, as
+user-defined types do (see :doc:`udt`); a case it leaves to another engine leaves the
+control as it was. If a compile fails, it puts the control back, warns once, and another
+engine runs. Every engine gives the same results; only the speed differs.
 
 Limits
 ------
