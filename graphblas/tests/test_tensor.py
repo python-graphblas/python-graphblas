@@ -1309,6 +1309,54 @@ def test_reduce_strategies(monkeypatch):
     assert R.to_coo()[1].sum() == pytest.approx(50.0)
 
 
+def test_empty_region_of_iso_tensor():
+    """Reductions and products of an empty region (a 0-size axis) of an iso Tensor have no
+    entries. SuiteSparse (seen from 8.2 through 10.5.1) returns every output position of a
+    product or reduction over a dimension of size 0 when its operands are iso and full, as
+    such a region and the iso selectors are; the Tensor gave entries of 0 ("a fiber with no
+    entries stays missing").
+    """
+    rng = np.random.default_rng(17)
+    shape = (4, 5, 6)
+    X = Tensor.from_coo(np.nonzero(rng.random(shape) < 0.5), shape=shape)  # values 1.0: iso
+    assert X.ss.is_iso
+    R = 3
+
+    def iso_empty(*shape):  # an iso Tensor with a 0-size axis: held iso and full
+        return Tensor.from_coo([np.empty(0, np.int64)] * len(shape), 2.0, shape=shape)
+
+    for layout in all_layouts(3):
+        Y = X.dup(layout=layout)
+        for axis in range(3):
+            key = [slice(None)] * 3
+            key[axis] = slice(2, 2)
+            E = Y[tuple(key)].new()
+            assert E.nvals == 0
+            eshape = E.shape
+            for axes in [(axis,), (axis, (axis + 1) % 3), (0, 1, 2)]:
+                for keepdims in [False, True]:
+                    S = E.sum(axis=axes, keepdims=keepdims).new()
+                    want = np.zeros(eshape).sum(axis=axes, keepdims=keepdims)
+                    check(S, want, np.zeros(want.shape, bool))
+            # Products over the 0-size axis: TTV, TTM, tensordot with a Tensor, einsum,
+            # matmul, MTTKRP
+            others = [a for a in range(3) if a != axis]
+            prods = [
+                E.tensordot(iso_empty(0), ([axis], [0])),
+                E.tensordot(Vector.from_coo([], 2.0, size=0), ([axis], [0])),
+                E.tensordot(Matrix.from_coo([], [], 2.0, nrows=0, ncols=R), ([axis], [0])),
+                E.tensordot(iso_empty(R, 0), ([axis], [1])),
+                gb.einsum("ijk,ijk->", E, iso_empty(*eshape)),
+                E.mttkrp([iso_empty(n, R) if a == axis else np.ones((n, R))
+                          for a, n in enumerate(eshape)], others[0]),
+            ]  # fmt: skip
+            if axis == 2:
+                prods.append(E @ iso_empty(0, R))
+            for expr in prods:
+                P = expr.new()
+                check(P, np.zeros(P.shape), np.zeros(P.shape, bool))
+
+
 def test_reduce_target_layout():
     rng = np.random.default_rng(27)
     T, values, present = random_tensor((3, 4, 5), rng)

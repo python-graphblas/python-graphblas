@@ -92,6 +92,20 @@ def _contract(updater, a, b, op, a_axes, b_axes, a_batch=(), b_batch=()):
     free_b = tuple(y for y in range(b.ndim) if y not in b_axes and y not in b_batch)
     k, nb = len(a_axes), len(a_batch)
     na, nbv = a._M._nvals, b._M._nvals
+    shape = (
+        tuple(a._shape[x] for x in a_batch)
+        + tuple(a._shape[x] for x in free_a)
+        + tuple(b._shape[y] for y in free_b)
+    )
+    if na == 0 or nbv == 0:
+        # SuiteSparse (seen from 8.2 through 10.5.1): a product over an inner dimension of
+        # size 0 returns every output position when both operands are iso and full (see
+        # tensor_reduce._reduce_matrix). An operand with no entries gives no entries.
+        layout = tl.default_layout(shape)
+        out = tl.new_matrix(
+            op.return_type, tl.prod(shape, layout.rows), tl.prod(shape, layout.cols)
+        )
+        return out, layout, shape
     best = None
     # The contracted (and batch) axes must come in the same order on both sides; try each
     # order and the free-axis orders, and take the cheapest pair of relayouts.
@@ -131,11 +145,6 @@ def _contract(updater, a, b, op, a_axes, b_axes, a_batch=(), b_batch=()):
         out_a[x] for x in sa[0][nb : nb + len(free_a)]
     )
     layout = Layout(rows, tuple(out_b[y] for y in sb[0][nb + k :]))
-    shape = (
-        tuple(a._shape[x] for x in a_batch)
-        + tuple(a._shape[x] for x in free_a)
-        + tuple(b._shape[y] for y in free_b)
-    )
     if census.on:
         census.note("contract", "batched, block-diagonal" if nb else "one mxm",
                     moved=[A is not a._M, B is not b._M], cost=best[0])  # fmt: skip
@@ -256,6 +265,16 @@ def _ttv(updater, x, w, axis, op, x_left):
     seq, p = layout.state
     n = len(seq)
     nv = M._nvals
+    if nv == 0 or w._M._nvals == 0:
+        # SuiteSparse (seen from 8.2 through 10.5.1): mxv and vxm over a dimension of size 0
+        # return every output position when the operands are iso and full (see
+        # tensor_reduce._reduce_matrix). An operand with no entries gives no entries.
+        shape = tuple(m for a, m in enumerate(x._shape) if a != axis)
+        renum = {a: i for i, a in enumerate(a for a in range(n) if a != axis)}
+        out = Layout(*(tuple(renum[a] for a in g if a != axis) for g in layout))
+        src = tl.new_matrix(op.return_type, tl.prod(shape, out.rows), tl.prod(shape, out.cols))
+        _store(updater, src, shape, out, fresh=True)
+        return True
     nthreads = _nthreads(updater)
     ti = _ti(nthreads)
     options = []  # (cost, kind, split)
