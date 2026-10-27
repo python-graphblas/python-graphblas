@@ -612,7 +612,9 @@ Every path must stay correct with it off.
     `"load"`. It raises it only once it has decided to run: before that, `jit_possible`
     answers with no side effect, so a TTM it leaves to Numba leaves the control at `"run"`.
 - **A failed compile** returns `GxB_JIT_ERROR`, and SuiteSparse drops the control to
-  `"load"`. `tensor_udt.run` catches that: it restores the control, warns once
+  `"load"`. `tensor_udt.run` catches that: it leaves the control at `"load"`, as UDT
+  auto-lift does after a failed compile (putting back `"run"` made auto-lift raise it to
+  `"on"` at the next UDT operation, which retried the compile and raised), warns once
   (`NoJITWarning`), and turns the engine off for the process. The next engine then runs.
 - Lifted operators between a scalar and an array or record UDT get JIT C definitions in core
   (`operator/udt_codegen.py`, `operator/binary.py`). This is a separate change on this

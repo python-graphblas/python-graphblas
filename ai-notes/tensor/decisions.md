@@ -80,9 +80,13 @@ the API settles. `design.md` describes how the code implements these.
 16. **The SuiteSparse JIT is assumed to be on for speed,** not for correctness. Every path is
     correct with the JIT off. The array-UDT TTM engine needs the JIT. When it runs, it raises
     `jit_c_control` from SuiteSparse's default "run" to "on", as python-graphblas's UDT
-    auto-lift does; a case it declines leaves the control alone. If a compile fails, it
-    restores the previous setting, warns once, and turns itself off for the process. _Why
-    restore:_ the engine changed a user-visible setting itself, so it puts it back.
+    auto-lift does; a case it declines leaves the control alone. If a compile fails, it leaves
+    the control at "load", where SuiteSparse puts it after a failed compile, warns once, and
+    turns itself off for the process. _Why not restore:_ it first put back the previous
+    setting, since it had raised it itself. But UDT auto-lift raises "run" to "on" again at
+    the next UDT operation (it leaves only "load", "off" and "pause" alone), which retried
+    the failed compile and raised JitError from an unrelated Matrix operation. Leaving "load"
+    is what auto-lift itself does after a failed compile.
 17. **Alternative engines are kept only where measurements justify them,** and every engine
     stays selectable so that tests and benchmarks can force each one. A census of every
     decision point, over the test suite, benchmark rows and real workloads, decides what

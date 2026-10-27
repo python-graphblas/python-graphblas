@@ -346,8 +346,9 @@ The Numba kernels are compiled on first use and cached on disk, under
 ``$XDG_CACHE_HOME`` or ``~/.cache``; an empty value turns the cache off). When the JIT
 engine runs, it raises SuiteSparse's JIT control from its default ``"run"`` to ``"on"``, as
 user-defined types do (see :doc:`udt`); a case it leaves to another engine leaves the
-control as it was. If a compile fails, it puts the control back, warns once, and another
-engine runs. Every engine gives the same results; only the speed differs.
+control as it was. If a compile fails, it warns once, another engine runs, and the control
+stays at ``"load"``, as after any failed compile, so later operations do not try to compile
+again. Every engine gives the same results; only the speed differs.
 
 Limits
 ------

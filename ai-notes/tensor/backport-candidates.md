@@ -58,12 +58,13 @@ by running python-graphblas on this branch, unless the entry says otherwise. Sta
       bytes match the generated source.
     - Matrix and Vector: Numba UDFs compile in every process.
     - Status: candidate, if other generated code appears.
-11. **Restoring the user's `jit_c_control` after a failed compile, and not retrying.**
-    - Tensor: the array-UDT engine restores the setting, warns once, and turns itself off.
-    - UDT auto-lift leaves SuiteSparse's `"load"` in place after a failure, which also stops
-      retries.
-    - Status: candidate, a policy question: restoring is politer for a setting the library
-      raised itself.
+11. **Not retrying after a failed compile.**
+    - Tensor: the array-UDT engine leaves SuiteSparse's `"load"`, warns once, and turns
+      itself off. (It used to restore the setting; with `"run"` back, auto-lift raised it to
+      `"on"` again and the next UDT operation retried the compile and raised.)
+    - UDT auto-lift leaves `"load"` in place after a failure too.
+    - Status: now the same policy in both; a warning from auto-lift as well is a
+      candidate.
 12. **Lifted UDT operators without Numba when the JIT is on.**
     - Tensor: the engine makes its operators with `GxB_BinaryOp_new`, a NULL function pointer
       and the generated C definition.
