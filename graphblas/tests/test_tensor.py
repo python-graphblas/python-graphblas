@@ -1,3 +1,4 @@
+import functools
 import gc
 import itertools
 import math
@@ -781,6 +782,68 @@ def test_copy_on_write_weak_owners():
     check(T, values * 2, present)
     T << T
     check(T, values * 2, present)
+
+
+def _views_of_same_shape(B):
+    """Views of ``B`` with its shape in another layout, each with its numpy counterpart."""
+    letters = "abcd"[: B.ndim]
+    views = [(B.T, lambda x: x.T), (B.mT, lambda x: np.swapaxes(x, -1, -2))]
+    for perm in itertools.permutations(range(B.ndim)):
+        out = "".join(letters[a] for a in perm)
+        model = functools.partial(np.transpose, axes=perm)
+        views += [(B.permute_dims(perm), model), (gb.einsum(f"{letters}->{out}", B), model)]
+    return [(V, f) for V, f in views if V.shape == B.shape]
+
+
+@pytest.mark.parametrize("base", ["square", "cube", "reshape", "expand_dims"])
+@pytest.mark.parametrize("target", ["itself", "dup", "assigned"])
+def test_assign_view_of_shared_store(base, target):
+    """``C << V`` where V is a view, of C's shape in another layout, of the store C shares (C
+    is T itself, ``T.dup()``, or a Tensor assigned from T): C takes V's values, and every
+    other holder of the store keeps its own. ``_share`` returned early when the stores
+    matched, so C kept its own layout over the same Matrix and did not change.
+    """
+
+    def make():
+        rng = np.random.default_rng(16)
+        if base == "square":
+            T, tv, tp = random_tensor((4, 4), rng, density=0.6)
+            return T, tv, tp, []
+        if base == "cube":
+            T, tv, tp = random_tensor((3, 3, 3), rng, density=0.5)
+            return T, tv, tp, []
+        if base == "reshape":
+            X, sv, sp = random_tensor((2, 2, 4), rng, density=0.6, layout=((0, 1), (2,)))
+            S = Tensor(X.dtype, X.shape)  # X's layout, not pinned
+            S << X
+            T = S.reshape(4, 4)
+            return T, sv.reshape(4, 4), sp.reshape(4, 4), [(S, sv, sp), (X, sv, sp)]
+        S, sv, sp = random_tensor((3, 3), rng, density=0.6)
+        T = S.expand_dims(1)
+        return T, sv[:, None], sp[:, None], [(S, sv, sp)]
+
+    T, tv, tp, others = make()
+    nviews = len(_views_of_same_shape(T))
+    assert nviews >= 3
+    for k in range(nviews):
+        T, tv, tp, others = make()
+        assert not T._pinned  # (a pinned target relays the view out)
+        assert all(S._store is T._store for S, *_ in others)
+        if target == "itself":
+            C = T
+        elif target == "dup":
+            C = T.dup()
+            others.append((T, tv, tp))
+        else:
+            C = Tensor(T.dtype, T.shape)
+            C << T
+            others.append((T, tv, tp))
+        assert C._store is T._store
+        V, f = _views_of_same_shape(T)[k]
+        C << V
+        check(C, f(tv), f(tp))
+        for S, sv, sp in others:
+            check(S, sv, sp)
 
 
 # --------------------------------------------------------------------------------------------
