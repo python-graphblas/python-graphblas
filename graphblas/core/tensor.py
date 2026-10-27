@@ -302,11 +302,12 @@ class Tensor(BaseType):
         self._layout = layout
 
     def _share(self, other):
-        if other._store is self._store:
-            return
-        self._store.owners.discard(self)
-        self._store = other._store
-        self._store.owners.add(self)
+        if other._store is not self._store:
+            self._store.owners.discard(self)
+            self._store = other._store
+            self._store.owners.add(self)
+        # Also when the store is already ours: a permuted view of it (``T << T.T``) holds the
+        # same Matrix in another layout
         self._M = other._M
         self._layout = other._layout
 
