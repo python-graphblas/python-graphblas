@@ -6,6 +6,7 @@ Private: part of ``graphblas.core.tensor``, which imports it at its end.
 import functools
 import itertools
 import math
+import operator
 
 import numpy as np
 
@@ -30,12 +31,18 @@ def einsum(subscripts, *operands, op=semiring.plus_times, optimize="greedy"):
     When the multiply distributes over the monoid (``plus_times``, ``min_plus``,
     ``max_plus``, ``lor_land``, ``min_max``, any ``min``, ``max`` or ``any`` with ``first``,
     ``second`` or ``pair``, ...), an index only one operand has is summed out first, and
-    three or more operands are contracted in pairs: in the order of
-    ``opt_einsum.contract_path`` when it is installed (else a greedy choice by result size)
-    if the multiply is also commutative, else left to right. The MTTKRP pattern
-    (``'ijk,jr,kr->ir'``) then goes to ``Tensor.mttkrp``, which never forms the Khatri-Rao
-    product. Other semirings (``plus_pair``, ``plus_first``, ``max_times``, ...) form every
-    term, left to right, and sum only at the end, which takes more memory.
+    three or more operands are contracted in pairs: in the order ``optimize`` gives if the
+    multiply is also commutative, else left to right. The MTTKRP pattern (``'ijk,jr,kr->ir'``)
+    then goes to ``Tensor.mttkrp``, which never forms the Khatri-Rao product. Other semirings
+    (``plus_pair``, ``plus_first``, ``max_times``, ...) form every term, left to right, and sum
+    only at the end, which takes more memory.
+
+    ``optimize`` picks the pairwise order: an ``opt_einsum`` strategy (default ``"greedy"``,
+    or True), used through ``opt_einsum.contract_path`` when it is installed, else a greedy
+    choice by result size (False too); or an explicit path, a sequence of pairs of positions
+    in the list of operands left at each step (each pair's result goes last), as
+    ``opt_einsum.contract_path`` and ``numpy.einsum_path`` give it (numpy's leading
+    ``"einsum_path"`` may stay), used as given with or without ``opt_einsum``.
     """
     pre = []
     for x in operands:
@@ -302,6 +309,8 @@ def _einsum_recipe(updater, terms, output, tensors, op, path, grouping):
 
 def _einsum_path(terms, output, shapes, optimize):
     n = len(terms)
+    if not isinstance(optimize, (str, bool)) and optimize is not None:
+        return _explicit_path(optimize, n)
     if n == 1:
         return []
     if n > 2 and optimize:
@@ -331,6 +340,35 @@ def _einsum_path(terms, output, shapes, optimize):
         path.append((i, j))
         cur = [cur[k] for k in range(len(cur)) if k not in (i, j)] + [letters]
     return path
+
+
+def _explicit_path(path, n):
+    """An explicit pairwise path for ``n`` operands, checked: pairs of distinct positions among
+    the operands left at each step, down to one.
+    """
+    steps = list(path)
+    if steps and isinstance(steps[0], str) and steps[0] == "einsum_path":
+        steps = steps[1:]  # (numpy.einsum_path's form)
+    out = []
+    left = n
+    for step in steps:
+        try:
+            pair = tuple(operator.index(k) for k in step)
+        except TypeError:
+            raise TypeError(
+                f"einsum: each step of an explicit path must be a pair of operand positions; "
+                f"got {step!r}"
+            ) from None
+        if len(pair) != 2 or pair[0] == pair[1] or not all(0 <= k < left for k in pair):
+            raise ValueError(
+                f"einsum: path step {step!r} does not name two of the {left} operands left at "
+                "that step"
+            )
+        out.append(pair)
+        left -= 1
+    if left != 1:
+        raise ValueError(f"einsum: the path leaves {left} operands; it must contract them to one")
+    return out
 
 
 def _einsum_pair(ta, A, tb, B, keep, op, opts):
