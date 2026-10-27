@@ -232,7 +232,14 @@ def gather(t, coords, shape):
     from .tensor import Tensor
 
     n = math.prod(shape)
-    if n == 0 or t._M._nvals == 0:
+    if n == 0:
+        return Tensor(t.dtype, shape)
+    # The lookups trust the raveled positions (the Numba one reads the row pointers with them),
+    # so a coordinate out of range must not get that far
+    for a, (c, size) in enumerate(zip(coords, t._shape, strict=True)):
+        if c.min() < 0 or c.max() >= size:
+            raise IndexError(f"a coordinate is out of bounds for axis {a} of size {size}")
+    if t._M._nvals == 0:
         return Tensor(t.dtype, shape)
     rows = tl.ravel(coords, t._shape, t._layout.rows, n=n)
     cols = tl.ravel(coords, t._shape, t._layout.cols, n=n)
@@ -380,11 +387,17 @@ def take_along_axis(t, indices, axis, *, wraparound=True):
             f"indices of shape {idx.shape} do not broadcast against {t._shape} along the "
             f"other axes"
         ) from None
-    grids = np.meshgrid(*(np.arange(n) for n in shape), indexing="ij")
-    coords = [
-        np.broadcast_to(idx, shape).ravel() if a == axis else grids[a].ravel()
-        for a in range(t.ndim)
-    ]
+    # As numpy's _make_along_axis_idx: each other axis counts over the Tensor's own size, so
+    # along a size-1 axis that the indices broadcast over the coordinate stays 0
+    coords = []
+    for a, size in enumerate(t._shape):
+        if a == axis:
+            coords.append(np.broadcast_to(idx, shape).ravel())
+        else:
+            along = [1] * t.ndim
+            along[a] = size
+            grid = np.arange(size, dtype=np.int64).reshape(along)
+            coords.append(np.broadcast_to(grid, shape).ravel())
     return gather(t, coords, shape)
 
 
