@@ -649,7 +649,9 @@ class Tensor(BaseType):
         s : sparse.SparseArray
             See https://sparse.pydata.org
         dup_op : BinaryOp, optional
-            Combines values at repeated coordinates (pydata's COO has none).
+            Combines values at repeated coordinates, which only a GCXS array can hold
+            (pydata's COO sums them); by default they are summed, as pydata's ``todense``
+            does.
         layout : Layout or (rows, cols), optional
             The stored layout (pinned), as in ``from_coo``.
         name : str, optional
