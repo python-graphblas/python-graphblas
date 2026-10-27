@@ -2,7 +2,9 @@
 
 The SuiteSparse JIT is configured with ``fix_jit_config()`` (the compiler of the active conda
 environment), as the maintainers benchmark it; the machine record says whether it worked.
-``TENSOR_BENCH_REQUIRE_JIT=1`` refuses to run unless the JIT is on.
+``TENSOR_BENCH_REQUIRE_JIT=1`` refuses to run unless that turned the JIT on.
+``TENSOR_BENCH_JIT`` (``on``, ``run`` or ``off``; run.py's ``--jit``) then sets
+``jit_c_control``; every result records the control it started with as ``jit``.
 ``TENSOR_BENCH_GB_ENGINE`` (``numba``, ``udt`` or ``products``) forces one engine for TTM and
 MTTKRP, as run.py's ``graphblas-numba``, ``graphblas-udt`` and ``graphblas-products`` do.
 """
@@ -23,6 +25,10 @@ from graphblas.core.tensor import Tensor
 jit_config.fix_jit_config()
 if os.environ.get("TENSOR_BENCH_REQUIRE_JIT") and gb.ss.config["jit_c_control"] != "on":
     raise SystemExit(f"the SuiteSparse JIT is {gb.ss.config['jit_c_control']!r}, not 'on'")
+if (_mode := os.environ.get("TENSOR_BENCH_JIT", "on")) != "on":
+    gb.ss.config["jit_c_control"] = _mode
+# (not the mode asked for when fix_jit_config() found no working compiler)
+JIT = gb.ss.config["jit_c_control"]
 ENGINE = os.environ.get("TENSOR_BENCH_GB_ENGINE")
 if ENGINE:
     _tensor._TTM_ENGINES = (ENGINE,)
@@ -160,9 +166,15 @@ class Adapter:
         raise NA(f"unknown case {group}/{case}")
 
     def note(self, group, case):
+        notes = []
         if group == "permute":
-            return f"result layout {self._last_layout} (identity order = materialized C order)"
-        return ""
+            notes.append(
+                f"result layout {self._last_layout} (identity order = materialized C order)"
+            )
+        if (jit := gb.ss.config["jit_c_control"]) != JIT:
+            # the array-UDT engine raises "run" to "on" when a compiler works
+            notes.append(f"jit_c_control now {jit!r}")
+        return "; ".join(notes)
 
     def canon(self, r):
         if isinstance(r, tuple):

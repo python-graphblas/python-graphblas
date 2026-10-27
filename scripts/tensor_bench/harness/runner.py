@@ -44,6 +44,9 @@ def main():
     groups = args.groups.split(",")
     try:
         mod = importlib.import_module(f"ad_{args.lib}")
+        if hasattr(mod, "JIT"):
+            # the SuiteSparse JIT control (run.py --jit) goes on every result
+            base["jit"] = mod.JIT
         t0 = time.perf_counter()
         ad = mod.Adapter(args.dataset, coords, vals, shape)
         build_s = time.perf_counter() - t0

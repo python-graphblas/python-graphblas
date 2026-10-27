@@ -25,6 +25,11 @@ The default is graphblas plus whichever of pydata, scipy and torch import.
 Datasets (``--datasets``): synthetic ones are generated on first use (small, small_skew, u6,
 u7, skew, hyper, zipf, bmm10, bmm100, bmm1000); FROSTT ones (nell2, enron, uber, nips,
 chicago) need ``python fetch_data.py frostt-<name>`` first.
+
+The SuiteSparse JIT (``--jit``) for the Tensor:
+  on                   compile a kernel for each new operator and type (the default)
+  run                  run precompiled kernels and those already loaded; compile nothing
+  off                  precompiled kernels only, generic ones elsewhere (no C compiler)
 """
 
 import argparse
@@ -204,6 +209,9 @@ def main():
     )
     ap.add_argument("--out", default=None, help="results file (JSON lines; appended to)")
     ap.add_argument("--timeout", type=float, default=1800, help="seconds per process")
+    ap.add_argument(
+        "--jit", choices=("on", "run", "off"), default="on", help="SuiteSparse JIT control"
+    )
     args = ap.parse_args()
     paths.set_data_dir(args.data_dir)
     if args.threads is None:
@@ -223,18 +231,19 @@ def main():
         else paths.results_dir() / f"{platform.node()}-{time.strftime('%Y%m%d-%H%M%S')}.jsonl"
     )
     out.parent.mkdir(parents=True, exist_ok=True)
-    env = dict(os.environ)
+    env = dict(os.environ, TENSOR_BENCH_JIT=args.jit)
 
     from machine import machine_info
 
     repo = HERE.parent.parent if (HERE.parent.parent / ".git").exists() else None
-    info = machine_info(repo)
+    info = machine_info(repo, args.jit)
     info.update(
         kind="machine",
         libs=libs,
         datasets=args.datasets.split(","),
         groups=groups,
         threads=args.threads,
+        jit=args.jit,
         data_dir=str(paths.data_dir()),
     )
     append(out, info)

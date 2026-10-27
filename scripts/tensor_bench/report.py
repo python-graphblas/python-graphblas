@@ -6,7 +6,9 @@
 
 Each table has one row per (dataset, case) and one column per (library, threads), with the
 best time in ms; the fastest is in bold. With results from several machines, each machine
-gets its own tables (``--host`` picks one).
+gets its own tables (``--host`` picks one). The Tensor's results at another SuiteSparse JIT
+mode than "on" (``run.py --jit``) get columns of their own, and a table of their times over
+the times at "on".
 
 **The check.** Every result carries a fingerprint of its output: the shape, the entry count, an
 order-independent hash of the entries' linear indices, the sum of the values and a weighted
@@ -91,13 +93,20 @@ def timed(rows):
     ]
 
 
+def jit_rank(jit):
+    order = ["on", "run", "off"]
+    return order.index(jit) if jit in order else len(order)
+
+
 def col(r):
-    return (r["lib"], r.get("nthreads"))
+    # results from before run.py --jit ran with the JIT on
+    return (r["lib"], r.get("nthreads"), r.get("jit", "on"))
 
 
 def colname(c):
-    lib, nt = c
-    return f"{lib} {nt}t" if nt is not None else lib
+    lib, nt, jit = c
+    name = f"{lib} {nt}t" if nt is not None else lib
+    return name if jit == "on" else f"{name} jit {jit}"
 
 
 def fmt(ms):
@@ -126,7 +135,11 @@ def check(rows, verbose=True):
     msgs = []
     for key, rs in sorted(by.items()):
         gb = [r for r in rs if r["lib"] == "graphblas"]
-        ref = max(gb, key=lambda r: r.get("nthreads") or 0) if gb else rs[0]
+        ref = (
+            max(gb, key=lambda r: (r.get("jit", "on") == "on", r.get("nthreads") or 0))
+            if gb
+            else rs[0]
+        )
         for r in rs:
             if r is ref:
                 continue
@@ -209,7 +222,11 @@ def tables(rows, host):
     for g in groups:
         cols = sorted(
             {k[3] for k in best if k[0] == g},
-            key=lambda c: (LIB_ORDER.index(c[0]) if c[0] in LIB_ORDER else 99, -(c[1] or 0)),
+            key=lambda c: (
+                LIB_ORDER.index(c[0]) if c[0] in LIB_ORDER else 99,
+                -(c[1] or 0),
+                jit_rank(c[2]),
+            ),
         )
         keys = sorted({(k[1], k[2]) for k in best if k[0] == g})
         print(f"\n### {g} ({host}; best of N, ms; bold = fastest)\n")
@@ -234,7 +251,7 @@ def tables(rows, host):
     ratios = defaultdict(list)
     for (g, ds, case, c), r in best.items():
         # export to COO is a copy for the Tensor and free for COO libraries: not a kernel
-        if c[0] != "graphblas" or case == "to_coo":
+        if c[0] != "graphblas" or c[2] != "on" or case == "to_coo":
             continue
         others = [
             v["best_ms"]
@@ -256,6 +273,25 @@ def tables(rows, host):
         for (ds, nt), xs in sorted(ratios.items(), key=lambda kv: (kv[0][0], -(kv[0][1] or 0))):
             gm = math.exp(sum(map(math.log, xs)) / len(xs))
             print(f"| {ds} | {nt} | {len(xs)} | {gm:.2f}x | {min(xs):.2f}x | {max(xs):.2f}x |")
+    # the Tensor at another JIT mode over the Tensor at "on", for the same case and threads
+    slow = defaultdict(list)
+    for (g, ds, case, c), r in best.items():
+        on = best.get((g, ds, case, (c[0], c[1], "on")))
+        if c[2] != "on" and on and on["best_ms"] > 0:
+            slow[(c[0], ds, c[1], c[2])].append((r["best_ms"] / on["best_ms"], case))
+    if slow:
+        print(
+            f'\n### JIT modes against "on" ({host}; time over the time at "on", '
+            "geometric mean and the slowest case)\n"
+        )
+        print("| library | dataset | threads | JIT | cases | geomean | max |")
+        print("|---|---|---|---|---|---|---|")
+        order = sorted(slow, key=lambda k: (k[0], k[1], -(k[2] or 0), jit_rank(k[3])))
+        for lib, ds, nt, jit in order:
+            xs = slow[lib, ds, nt, jit]
+            gm = math.exp(sum(math.log(x) for x, _ in xs) / len(xs))
+            worst, case = max(xs)
+            print(f"| {lib} | {ds} | {nt} | {jit} | {len(xs)} | {gm:.2f}x | {worst:.2f}x {case} |")
 
 
 def write_csv(rows, path):
@@ -266,6 +302,7 @@ def write_csv(rows, path):
         "group",
         "case",
         "nthreads",
+        "jit",
         "best_ms",
         "median_ms",
         "n",
