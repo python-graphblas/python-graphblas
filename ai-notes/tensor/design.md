@@ -149,7 +149,7 @@ reshape: such rows are hypersparse with no hash of their row ids yet, so a follo
   than 4 or 8 threads on the measuring machine.
 - **`PERM_R`** applies any permutation of the row axes: one `P @ M` with a permutation matrix
   `P` (`perm_rows`), with a factory-kernel semiring (`_perm_semiring`: `min_second`, or
-  `lor_second` for BOOL).
+  `lor_land` for BOOL, as `P` holds True).
 - **`PERM_C`** applies any permutation of the column axes: the column indices are rewritten
   in the Container through a cached map (`perm_cols`), and the rows are marked jumbled, so
   SuiteSparse sorts each only when something needs it. Values are untouched, so it takes any
