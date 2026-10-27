@@ -4005,6 +4005,59 @@ def test_transpose_thread_choices():
     assert tl.transpose(M, nthreads=2).isequal(M.T.new())
 
 
+@pytest.mark.parametrize("dtype", [dtypes.UINT8, dtypes.INT8])
+def test_broadcast_pow_saturates(dtype):
+    """Broadcast ``ewise_mult`` and TTV with ``pow`` on integers saturate, as GraphBLAS's pow
+    does without broadcasting, whichever side broadcasts and whatever the layout. A product
+    that put the small operand first swapped ``pow`` for ``rpow``, a Numba UDF that wraps on
+    overflow.
+    """
+    from graphblas.core.operator import get_semiring
+
+    np_type = dtype.np_type
+    info = np.iinfo(np_type)
+
+    def sat_pow(x, y):
+        z = np.power(x.astype(float), y.astype(float))
+        return np.clip(z, info.min, info.max).astype(np_type)
+
+    def make(shape, layout, lo, hi):
+        values = rng.integers(lo, hi, shape).astype(np_type)
+        present = rng.random(shape) < 0.7
+        T = Tensor.from_coo(np.nonzero(present), values[present], dtype, shape=shape, layout=layout)
+        return T, values, present
+
+    rng = np.random.default_rng(53)
+    lo = -5 if info.min < 0 else 2
+    for shape, small in [((2, 3), (1, 3)), ((2, 3), (2, 1)), ((3, 4, 5), (1, 4, 1)),
+                         ((3, 4, 5), (3, 1, 5)), ((3, 4, 5), (5,))]:  # fmt: skip
+        for layout in all_layouts(len(shape)):
+            B, bv, bp = make(shape, layout, 1, 8)
+            S, sv, sp = make(small, None, lo, 6)
+            for (L, lv, lp), (R, rv, rp) in [
+                ((S, sv, sp), (B, bv, bp)),
+                ((B, bv, bp), (S, sv, sp)),
+            ]:
+                lv, rv, lp, rp = np.broadcast_arrays(lv, rv, lp, rp)
+                want = np.where(lp & rp, sat_pow(lv, rv), 0)
+                check(L.ewise_mult(R, binary.pow).new(), want, lp & rp)
+    # TTV with a pow multiply, the vector on either side
+    op = get_semiring(monoid.max, binary.pow)
+    for layout in all_layouts(3):
+        X, xv, xp = make((3, 4, 5), layout, 1, 8)
+        for axis in range(3):
+            w = rng.integers(lo, 6, xv.shape[axis]).astype(np_type)
+            W = Tensor.from_dense(w)
+            ws = w.reshape([-1 if a == axis else 1 for a in range(3)])
+            for got, terms in [
+                (W.tensordot(X, ([0], [axis]), op), sat_pow(np.broadcast_to(ws, xv.shape), xv)),
+                (X.tensordot(W, ([axis], [0]), op), sat_pow(xv, np.broadcast_to(ws, xv.shape))),
+            ]:
+                present = xp.any(axis=axis)
+                want = np.where(xp, terms, info.min).max(axis=axis)
+                check(got.new(), np.where(present, want, 0), present)
+
+
 def test_broadcast_gather_path():
     """A full small operand along axes inside a wide group: its values are gathered onto the
     stored entries, then one same-pattern ewise_mult.
