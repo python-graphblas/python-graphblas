@@ -29,7 +29,7 @@ def _ewise_expr(
     shape = self._shape
     if other._shape != shape:
         try:
-            shape = tuple(int(n) for n in np.broadcast_shapes(self._shape, other._shape))
+            shape = _broadcast_shapes(self._shape, other._shape)
         except ValueError:
             raise DimensionMismatch(
                 f"Tensor shapes {self._shape} and {other._shape} do not broadcast in {method}"
@@ -236,8 +236,11 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
         R = tl.expected_rows(nrows, nv)
         return C_EWISE_HROW[ti] * R if nrows > 16 * R else 0.0
 
+    # SuiteSparse's reshape refuses 2^60 positions or more in total: no split moves then (the
+    # relayout option below replaces them by REBUILDs, see tensor_layout._neighbors)
+    total_ok = math.prod(shape) < tl.MAX_GROUP
     for q in range(len(seq) + 1):
-        if not tl._valid_split(shape, seq, q):
+        if not tl._valid_split(shape, seq, q) or q != p and not total_ok:
             continue
         move = 0.0 if q == p else _rs_cost(shape, seq, q, nv, ti) + hyper_rows((seq, q))
         rows, cols = seq[:q], seq[q:]
@@ -406,6 +409,7 @@ from .tensor import (  # noqa: E402
     Tensor,
     TensorExpression,
     _as_tensor,
+    _broadcast_shapes,
     _choose_layout,
     _flipped,
     _in_layout,
