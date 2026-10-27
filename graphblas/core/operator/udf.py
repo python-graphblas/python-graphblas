@@ -91,11 +91,13 @@ def _compile_udf_for_udt(numba_func, sig, *, op_kind, op_name, dtypes):
 
     Catches the full ``NumbaError`` hierarchy (TypingError, LoweringError,
     UnsupportedError, ...) so any compilation failure produces a
-    single-line UDT diagnostic.
+    single-line UDT diagnostic. Also catches the bare NotImplementedError
+    Numba raises for an op it types but cannot lower, such as ``>`` (so
+    ``max``) on complex values.
     """
     try:
         numba_func.compile(sig)
-    except NumbaError as exc:
+    except (NumbaError, NotImplementedError) as exc:
         dtypes_str = ", ".join(str(d) for d in dtypes)
         snippet = _summarize_numba_typing_error(exc)
         raise UdfParseError(

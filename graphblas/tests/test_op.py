@@ -685,6 +685,29 @@ def test_udf_skips_dtypes_numba_cannot_lower():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udt_udf_on_a_dtype_numba_cannot_lower():
+    """An ``is_udt=True`` UDF on a dtype Numba types but cannot lower does not work with it.
+
+    It used to raise Numba's bare NotImplementedError, from ``in`` too.
+    """
+
+    def unary_max(x):
+        return max(x, 0)  # pragma: no cover (numba)
+
+    def binary_max(x, y):
+        return max(x, y)  # pragma: no cover (numba)
+
+    unary_op = UnaryOp.register_anonymous(unary_max, is_udt=True)
+    binary_op = BinaryOp.register_anonymous(binary_max, is_udt=True)
+    for udf in [unary_op, binary_op]:
+        assert FP64 in udf
+        if dtypes._supports_complex:
+            with pytest.raises(UdfParseError, match=r"does not work with \(FC64.*lowering"):
+                udf[FC64]
+            assert FC64 not in udf
+
+
+@pytest.mark.skipif("not supports_udfs")
 def test_monoid_udf():
     def plus_plus_one(x, y):
         return x + y + 1  # pragma: no cover (numba)
