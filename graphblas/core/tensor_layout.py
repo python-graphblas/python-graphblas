@@ -231,6 +231,17 @@ def is_by_row(M):
     return M.ss.orientation == "rowwise"
 
 
+def stored_format(M):
+    """``M.ss.format`` once ``M`` is finished. Every format test that decides how to read or
+    change the Container goes through here: ``ss.format`` does not finish pending work, and
+    finishing it (``_Unloaded`` does) can change the format, hypersparse to sparse or bitmap
+    after pending tuples, sparse to hypersparse after zombies. ``nvals`` finishes pending
+    tuples but not zombies.
+    """
+    M.wait()
+    return M.ss.format
+
+
 class _Unloaded:
     """Context manager: ``M`` unloaded into a GxB_Container, loaded back on exit."""
 
@@ -302,7 +313,7 @@ def give_rows(M, h, nrows):
     """Make the ``F``-row Matrix ``M`` hypersparse with ``nrows`` rows, its row f becoming
     row ``h[f]`` (``h`` a GrB_Vector of F sorted row ids, taken over), in place.
     """
-    if M.ss.format != "csr":
+    if stored_format(M) != "csr":
         M.ss.config["sparsity_control"] = "sparse"  # (from bitmap or full: O(entries))
     with _Unloaded(M) as cont:
         old = ffi.new("GrB_Vector*", cont.h)
@@ -331,7 +342,7 @@ def flip_orientation(M):
 
 def nonempty_rows(M):
     """The number of nonempty rows of a hypersparse Matrix (O(1)); ``nrows`` otherwise."""
-    if M.ss.format != "hypercsr":
+    if stored_format(M) != "hypercsr":
         return M._nrows
     n = ffi.new("GrB_Index*")
     with _Unloaded(M) as cont:
@@ -344,7 +355,7 @@ def nonempty_row_ids(M):
     """The ids of the nonempty rows of ``M``, sorted, as int64: from the Container's ``h``
     (hypersparse) or ``p`` (sparse) in O(rows), without looking at the entries.
     """
-    fmt = M.ss.format
+    fmt = stored_format(M)
     if fmt in {"hypercsr", "csr"}:
         with _Unloaded(M) as cont, _VectorArray(cont.h if fmt == "hypercsr" else cont.p) as v:
             arr = np.empty(0, np.int64) if v.array is None else v.array.astype(np.int64)
@@ -357,7 +368,7 @@ def nonempty_row_ids(M):
 
 def count_nonempty_rows(M):
     """The exact number of nonempty rows: O(1) for hypersparse, O(nrows) for sparse."""
-    fmt = M.ss.format
+    fmt = stored_format(M)
     if fmt == "hypercsr":
         return nonempty_rows(M)
     if fmt == "csr":
@@ -748,7 +759,7 @@ def perm_cols(M, shape, state, new_cols):
     old_cols = seq[p:]
     if M._nvals == 0:
         return M
-    if M.ss.format not in {"csr", "hypercsr"}:
+    if stored_format(M) not in {"csr", "hypercsr"}:
         # Bitmap or full storage has no column index array
         return rebuild(M, shape, state, (seq[:p] + new_cols, p))
     ncols = M._ncols
@@ -995,7 +1006,7 @@ def sampled_nonempty_cols(M):
     from a sample of its column indices: the distinct count d in s of them, solving
     D * (1 - exp(-s / D)) = d (equal columns; skewed ones give less). None for bitmap or full.
     """
-    if M.ss.format not in {"csr", "hypercsr"}:
+    if stored_format(M) not in {"csr", "hypercsr"}:
         return None
     n = M._nvals
     with _Unloaded(M) as cont, _VectorArray(cont.i) as i_arr:
@@ -1137,11 +1148,11 @@ def gather_operand(M, shape, layout, axes, values, dtype):
     copy's own value array through the Container, O(nnz), with no data movement. A
     broadcast multiply along axes inside a wide group then takes one same-pattern ewise_mult.
     """
-    if M.ss.format not in {"csr", "hypercsr"} or M.ss.is_iso or M._nvals == 0:
+    if stored_format(M) not in {"csr", "hypercsr"} or M.ss.is_iso or M._nvals == 0:
         return None
     W = new_matrix(dtype, M._nrows, M._ncols)
     W << M
-    if W.ss.is_iso or W.ss.format not in {"csr", "hypercsr"}:
+    if stored_format(W) not in {"csr", "hypercsr"} or W.ss.is_iso:
         return None
     rows, cols = layout
     need_rows = any(a in rows for a in axes)
@@ -1187,13 +1198,13 @@ def embed_block_diagonal(M, rows_per_block, nblocks):
     """
     K = M._ncols
     new_ncols = nblocks * K
-    if M.ss.format not in {"csr", "hypercsr"}:
+    if stored_format(M) not in {"csr", "hypercsr"}:
         return False
     with _Unloaded(M) as cont:
         hyper = cont.format == lib.GxB_HYPERSPARSE
         with _VectorArray(cont.i) as i_arr:
             if i_arr.array is None or i_arr.handling != 0:
-                return _abort_embed(i_arr.array is None and M._nvals == 0, cont, new_ncols, M)
+                return _abort_embed(i_arr.array is None and cont.nvals == 0, cont, new_ncols, M)
             # SuiteSparse stores 32-bit indices only for dimensions below 2^31
             if new_ncols > (2**31 if i_arr.array.dtype.itemsize == 4 else 2**60):
                 return False

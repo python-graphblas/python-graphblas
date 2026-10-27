@@ -153,7 +153,7 @@ def _ttm_numba(updater, a, b, op, a_axes, b_axes):
     _, _, state = tl.plan(a._shape, a._layout.state, targets, a._M._nvals, nthreads)
     layout = Layout.from_state(state)
     X = _in_layout(a, layout, updater.opts.get("nthreads"))
-    if X.ss.format not in {"csr", "hypercsr"}:
+    if tl.stored_format(X) not in {"csr", "hypercsr"}:
         return None
     from . import tensor_numba
 
@@ -198,7 +198,7 @@ def _ttm_compacted(updater, a, b, op, a_axes, b_axes):
     if len(a_axes) != 1 or b.ndim != 2 or a._layout.cols != a_axes or not a._layout.rows:
         return None
     M = a._M
-    if M.ss.format != "hypercsr" or M._nvals == 0:
+    if tl.stored_format(M) != "hypercsr" or M._nvals == 0:
         return None
     nonempty = tl.count_nonempty_rows(M)
     if 2 * nonempty > M._nrows:
@@ -276,7 +276,7 @@ def _mttkrp_numba(x, mats, mode, nthreads, *, layout=None):
         if M.dtype != FP64 or M._nvals != M._nrows * M._ncols:
             return None
     X = _in_layout(x, layout, nthreads)
-    if X.ss.format not in {"csr", "hypercsr"}:
+    if tl.stored_format(X) not in {"csr", "hypercsr"}:
         return None
     from . import tensor_numba
 
@@ -324,7 +324,7 @@ def _factor_array(M, stack):
     while ``stack`` is open (Enron's 244268 x 64 factor is 125 MB to copy), else a copy.
     """
     nrows, ncols = M._nrows, M._ncols  # (M reads as empty while unloaded)
-    if M.ss.format == "fullr" and not M.ss.is_iso and nrows * ncols > 0:
+    if tl.stored_format(M) == "fullr" and not M.ss.is_iso and nrows * ncols > 0:
         cont = stack.enter_context(tl._Unloaded(M))
         x = stack.enter_context(tl._VectorArray(cont.x, np.float64))
         if x.array is not None and x.array.size == nrows * ncols:
@@ -373,7 +373,7 @@ def _sampled_fibers(x, groups):
     M = x._M
     nnz = M._nvals
     rows, cols = x._layout
-    if M.ss.format not in {"csr", "hypercsr"}:
+    if tl.stored_format(M) not in {"csr", "hypercsr"}:
         return {g: tl.expected_rows(tl.prod(x._shape, g), nnz) for g in groups}
     q = np.sort(np.random.default_rng(0).integers(0, nnz, min(nnz, _SPLIT_SAMPLE)))
     with (
