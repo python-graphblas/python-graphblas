@@ -42,6 +42,7 @@ from graphblas.core import tensor
 print("same:", T is tensor.Tensor and gb.einsum is tensor.einsum)
 loaded = ("tensor_numba", "tensor_udt", "tensor_io")
 print("engines:", sorted(m for m in loaded if f"graphblas.core.{m}" in sys.modules))
+print("container:", tensor._has_container())
 import numpy as np
 for call in (lambda: gb.Tensor(gb.dtypes.FP64, (2, 3)), lambda: gb.einsum("ij->ji", np.eye(2))):
     try:
@@ -61,8 +62,6 @@ def test_tensor_exports(backend):
     import subprocess
     import sys
 
-    from graphblas.core.tensor import _has_container as tensor_has_container
-
     repo_root = pathlib.Path(gb.__file__).resolve().parents[1]
     result = subprocess.run(
         [sys.executable, "-c", _TENSOR_IMPORT_SCRIPT, backend],
@@ -79,13 +78,14 @@ def test_tensor_exports(backend):
     assert lines["after import"] == ["[]"], report
     assert lines["same"] == ["True"], report
     assert lines["engines"] == ["[]"], report
+    # The subprocess reports its own SuiteSparse: this process may be on another backend
+    assert lines["container"] in (["True"], ["False"]), report
     if backend == "vanilla":
         assert lines["use"] == ["Tensor requires the suitesparse backend"] * 2, report
-    elif tensor_has_container():
+    elif lines["container"] == ["True"]:
         assert lines["use"] == ["ok", "ok"], report
     else:  # (an older SuiteSparse: see test_tensor_old_suitesparse)
-        assert len(lines["use"]) == 2, report
-        assert all(use.startswith("Tensor requires ") for use in lines["use"]), report
+        assert lines["use"] == ["Tensor requires SuiteSparse:GraphBLAS 10 or later"] * 2, report
 
 
 _TENSOR_OLD_SS_SCRIPT = """
