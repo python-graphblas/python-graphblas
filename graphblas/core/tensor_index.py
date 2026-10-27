@@ -308,22 +308,26 @@ def _lookup_graphblas(t, rows, cols):
     M = t._M
     if M._nrows * M._ncols < 2**63:
         # One int64 key per point, row-major: sorted keys are sorted (row, col) pairs
-        key = rows * M._ncols + cols
-        ukey, inverse = np.unique(key, return_inverse=True)
+        def encode(r, c):
+            return r * M._ncols + c
+
+        ukey, inverse = np.unique(encode(rows, cols), return_inverse=True)
         urows, ucols = np.divmod(ukey, M._ncols)
-    else:  # pragma: no cover (more than 2^63 positions)
-        uniq, inverse = np.unique(np.stack([rows, cols]), axis=1, return_inverse=True)
-        urows, ucols, ukey = uniq[0], uniq[1], None
+    else:
+        # 2^63 positions or more: the key is the row's rank among the points' distinct rows,
+        # then the column's, which fits (below points^2) and sorts as (row, col) does
+        rv, cv = np.unique(rows), np.unique(cols)
+
+        def encode(r, c):
+            return np.searchsorted(rv, r) * cv.size + np.searchsorted(cv, c)
+
+        ukey, inverse = np.unique(encode(rows, cols), return_inverse=True)
+        urows, ucols = rv[ukey // cv.size], cv[ukey % cv.size]
     P = Matrix.from_coo(urows, ucols, True, nrows=M._nrows, ncols=M._ncols)
     hit = M.ewise_mult(P, binary.first).new()
     hr, hc, hv = hit.to_coo()
-    hr, hc = hr.view(np.int64), hc.view(np.int64)
-    if ukey is not None:
-        at = np.searchsorted(ukey, hr * M._ncols + hc)
-    else:  # pragma: no cover (more than 2^63 positions: match each hit by row and column)
-        at = np.array(
-            [np.flatnonzero((urows == r) & (ucols == c))[0] for r, c in zip(hr, hc, strict=True)]
-        )
+    # Each hit is one of the points: its key's position among theirs (a binary search)
+    at = np.searchsorted(ukey, encode(hr.view(np.int64), hc.view(np.int64)))
     found_u = np.zeros(urows.size, bool)
     vals_u = np.empty(urows.size, hv.dtype)
     found_u[at] = True
