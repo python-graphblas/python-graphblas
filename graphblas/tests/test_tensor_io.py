@@ -71,6 +71,13 @@ def _c_order(coords, shape):
     return bool((np.diff(lin) > 0).all())
 
 
+def _scipy_coords(A):
+    """A scipy COO array's coordinates (scipy before 1.13 has ``row`` and ``col``, not
+    ``coords``).
+    """
+    return (A.row, A.col) if A.ndim == 2 else A.coords
+
+
 def _todense(s):
     """``s.todense()``, but a 0-d COO with an entry gives its value: pydata sparse before
     0.16 fails to make that one dense (``x[()] = data`` with ``data`` of length 1).
@@ -241,7 +248,7 @@ def test_scipy_round_trip(shape, dtype):
     assert B.nnz == A.nnz  # (explicit zeros kept)
     np.testing.assert_array_equal(B.todense(), A.todense())
     if B.has_canonical_format:
-        assert _c_order(np.array(B.coords).reshape(len(shape), -1), shape)
+        assert _c_order(np.array(_scipy_coords(B)).reshape(len(shape), -1), shape)
 
 
 @pytest.mark.parametrize("ndim", [1, 2, 3, 4])
@@ -259,7 +266,7 @@ def test_scipy_layouts_and_duplicates(ndim):
         # The stored order (no relayout), canonical only in the identity axis order
         assert B.has_canonical_format == (lay.seq == tuple(range(ndim)))
         if B.has_canonical_format:
-            assert _c_order(np.array(B.coords), shape)
+            assert _c_order(np.array(_scipy_coords(B)), shape)
         assert B.nnz == len(vals)
         np.testing.assert_array_equal(B.todense(), dense)
         for perm in list(itertools.permutations(range(ndim)))[:: 1 if ndim < 4 else 5]:
