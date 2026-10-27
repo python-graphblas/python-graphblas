@@ -108,8 +108,10 @@ jobs:
           # - os: ubuntu-24.04-arm # Linux aarch64
           #   slowtask: notebooks
     env:
-      # Wheels on OS X come with an OpenMP that conflicts with OpenMP from conda-forge.
-      # Setting this is a workaround.
+      # Wheels on OS X come with an OpenMP that conflicts with OpenMP from conda-forge:
+      # libomp aborts when a second copy starts in the process, unless this is set. Two
+      # copies can still deadlock or crash in an OpenMP barrier, so "Update env" keeps
+      # conda-forge's libomp out of macOS wheel draws where it can.
       KMP_DUPLICATE_LIB_OK: ${{ contains(matrix.os, 'macos') && 'TRUE' || 'FALSE' }}
     steps:
       - name: Checkout
@@ -193,6 +195,22 @@ jobs:
             graphblas="graphblas>=7.4"
           fi
 
+          # A psg wheel on macOS bundles its own libomp, and with conda-forge's libomp in the
+          # same process too, a GraphBLAS parallel region can hang or crash (see
+          # KMP_DUPLICATE_LIB_OK). conda-forge's libomp comes in with OpenBLAS's openmp build
+          # and with Numba's default "omp" threading layer, so take OpenBLAS's pthreads build
+          # and Numba's "workqueue" layer instead. conda-forge has pthreads builds for macOS
+          # from libopenblas 0.3.30 on only, which scipy 1.9-1.11 do not accept, so those
+          # draws keep the openmp build.
+          blas=""
+          if [[ $SOURCETYPE == "wheel" && ${{ contains(matrix.os, 'macos') }} == true ]] ; then
+            case $spver in
+              =1.9 | =1.10 | =1.11) ;;
+              *) blas="libopenblas=*=*pthreads*" ;;
+            esac
+            echo "NUMBA_THREADING_LAYER=workqueue" >> "$GITHUB_ENV"
+          fi
+
           # Decide whether to install numba and sparse.
           # Random skip: pypy always, 20% on Windows, 40% on other OSes (unless notebooks).
           awkward=awkward${akver}
@@ -257,7 +275,7 @@ jobs:
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && '"matplotlib${mplver}" nbconvert jupyter "ipython>=7" drawsvg' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
-            ${graphblas} \
+            ${graphblas} ${blas:+"$blas"} \
             ${interpreter} \
             ${{ matrix.os == 'windows-latest' && 'cmake' || 'm4' }} \
             # ${{ matrix.os != 'windows-latest' && 'pytest-forked' || '' }}  # to investigate crashes
