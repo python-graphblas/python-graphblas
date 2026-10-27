@@ -146,7 +146,7 @@ def _contract(updater, a, b, op, a_axes, b_axes, a_batch=(), b_batch=()):
     K = A._ncols
     if A is a._M or not tl.is_by_row(A):
         A = A.dup()
-    if A.ss.format not in {"csr", "hypercsr"}:
+    if tl.stored_format(A) not in {"csr", "hypercsr"}:
         A.ss.config["sparsity_control"] = ["sparse", "hypersparse"]
     if not tl.embed_block_diagonal(A, rows_per_block, nblocks):
         # The new column indices need a wider integer type: rebuild instead
@@ -324,7 +324,7 @@ def _ttv(updater, x, w, axis, op, x_left):
     gshape = tuple(x._shape[g] for g in group)
     pos = group.index(axis)
     kept_pos = tuple(i for i in range(len(group)) if i != pos)
-    if kind == "rowsel" and M.ss.format == "hypercsr":
+    if kind == "rowsel" and tl.stored_format(M) == "hypercsr":
         # A weighted selector over the nonempty rows only: S[kept, r] = w[axis coordinate]
         idx, vals = wv.to_coo()
         dense = np.zeros(x._shape[axis], vals.dtype)
