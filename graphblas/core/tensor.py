@@ -1668,6 +1668,22 @@ def _fill(updater, value):
     target._M(mask=mask, accum=accum, replace=replace, **opts) << value
 
 
+def _broadcast_shapes(*shapes):
+    """The shape numpy's ``broadcast_shapes`` gives, in Python ints: numpy refuses a result of
+    2^63 positions or more (its size is an intp), which a Tensor can have (FROSTT's NELL-1 has
+    1.6e20). Raises ValueError when the shapes do not broadcast.
+    """
+    ndim = max((len(s) for s in shapes), default=0)
+    out = [1] * ndim
+    for s in shapes:
+        for a, n in enumerate(s, ndim - len(s)):
+            if n != 1:
+                if out[a] not in {1, n}:
+                    raise ValueError(f"shapes {shapes} do not broadcast")
+                out[a] = int(n)
+    return tuple(out)
+
+
 def _flipped(op):
     """The typed op that gives ``op(x, y)`` as ``flipped(y, x)``, for a product that puts the
     operands the other way round; or None. Only a flip of the same kind and result type gives
