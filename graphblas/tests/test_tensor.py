@@ -4753,6 +4753,40 @@ def test_gather(ndim, engines, monkeypatch):
         _gather_check(X.vindex[tuple(keys)], xv[nkeys], xp[nkeys])
 
 
+def test_gather_graphblas_past_2_63_positions(monkeypatch):
+    """The GraphBLAS lookup (no Numba, or a UDT) on a stored Matrix of 2^63 positions or more,
+    where one int64 key per point would overflow: hits are found by binary search. It matched
+    each hit by scanning every distinct point, O(hits x points): 64000 points took 2.6 s,
+    and the 400000 here about half a minute.
+    """
+    import time
+
+    from graphblas.core import tensor_index
+
+    monkeypatch.setattr(tensor_index, "_GATHER_ENGINES", ("graphblas",))
+    shape = (2902330, 2143368, 25495389)  # NELL-1
+    rng = np.random.default_rng(54)
+    k = 200000
+    coords = np.array([rng.integers(0, n, k) for n in shape])
+    coords = np.unique(coords, axis=1)
+    X = Tensor.from_coo(coords, 1.0 + np.arange(coords.shape[1]), shape=shape)
+    M = X.ss.matrix
+    assert M.nrows * M.ncols >= 2**63
+    xd = _as_dict(X)
+    # Hits (some repeated) and misses
+    hits = coords[:, rng.integers(0, coords.shape[1], 250000)]
+    misses = np.array([rng.integers(0, n, 150000) for n in shape])
+    points = np.concatenate([hits, misses], axis=1)[:, rng.permutation(400000)]
+    t = time.perf_counter()
+    R = X.vindex[tuple(points)]
+    elapsed = time.perf_counter() - t
+    want = [xd.get(tuple(int(c) for c in pt)) for pt in points.T]
+    present = np.array([w is not None for w in want])
+    values = np.array([0.0 if w is None else w for w in want])
+    check(R, values, present)
+    assert elapsed < 10, elapsed  # (0.2 s here)
+
+
 def test_gather_errors_and_options():
     X = Tensor.from_dense(np.arange(24.0).reshape(2, 3, 4))
     with pytest.raises(IndexError, match="out of bounds"):
