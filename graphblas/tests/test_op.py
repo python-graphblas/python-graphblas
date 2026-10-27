@@ -2001,6 +2001,25 @@ def test_udt_tuple_return_monoid(record_udt):
 
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
+def test_udt_monoid_op_must_return_its_input_type(record_udt):
+    """A UDT monoid whose op returns another type fails up front, with a message.
+
+    It used to reach ``GrB_Monoid_new_UDT``, which raised DomainMismatch with an
+    empty message, also from ``udt in monoid``.
+    """
+
+    def _sum_a(x, y):
+        return x["a"] + y["a"]  # pragma: no cover (numba)
+
+    sum_a = BinaryOp.register_anonymous(_sum_a, "test_sum_a_mon", is_udt=True)
+    sum_a_monoid = Monoid.register_anonymous(sum_a, 0)
+    with pytest.raises(TypeError, match="must return its input type, _BuiltinOpsRec, not INT64"):
+        sum_a_monoid[record_udt]
+    assert record_udt not in sum_a_monoid
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
 def test_udt_tuple_return_semiring(record_udt):
     """A Semiring built from tuple-returning ops drives mxm correctly."""
     v, _ = _record_pair(record_udt)

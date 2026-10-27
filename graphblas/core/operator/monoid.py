@@ -349,6 +349,13 @@ class Monoid(OpBase):
         from ..scalar import Scalar
 
         ret_type = binaryop.return_type
+        if ret_type != dtype:
+            # Checked here because GrB_Monoid_new_UDT reports it as a DomainMismatch
+            # with no message.
+            raise TypeError(
+                f"monoid.{self.name} does not work with {dtype}: a monoid's binary operator "
+                f"must return its input type, {dtype}, not {ret_type}"
+            )
         identity_val = self._identity
         if identity_val is None and self.name in _BUILTIN_UDT_MONOIDS:
             # Auto-generate the identity for built-in monoids on UDTs.
