@@ -348,7 +348,8 @@ engine runs, it raises SuiteSparse's JIT control from its default ``"run"`` to `
 user-defined types do (see :doc:`udt`); a case it leaves to another engine leaves the
 control as it was. If a compile fails, it warns once, another engine runs, and the control
 stays at ``"load"``, as after any failed compile, so later operations do not try to compile
-again. Every engine gives the same results; only the speed differs.
+again. Every engine gives the same results, up to the order of floating-point sums; only the
+speed differs.
 
 Limits
 ------
