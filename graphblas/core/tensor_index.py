@@ -28,8 +28,8 @@ from .tensor_layout import Layout
 
 
 def _resolve(t, keys):
-    """``(keys, sel)`` as extraction resolves them: one entry per axis, an int (axis dropped)
-    or an int64 array of coordinates (negatives wrapped once).
+    """``(keys, sel)`` as extraction resolves them: one entry per axis, an int (axis dropped),
+    a range (a slice) or an int64 array of coordinates (negatives wrapped once).
     """
     keys = keys if isinstance(keys, tuple) else (keys,)
     if any(k is None for k in keys):
@@ -454,14 +454,16 @@ def _scalar_index(index, axis):
 
 
 def _axis_index(index, size, axis):
-    """An int (axis dropped) or a sorted-or-not int64 array of coordinates (axis kept)."""
+    """An int (axis dropped), a range (a slice: kept as one, so that indexing costs follow the
+    entries rather than the axis lengths) or a sorted-or-not int64 array of coordinates.
+    """
     if isinstance(index, (int, np.integer)):
         i = int(index)
         if not -size <= i < size:
             raise IndexOutOfBound(f"index {i} is out of bounds for axis {axis} of size {size}")
         return i + size if i < 0 else i
     if isinstance(index, slice):
-        return np.arange(*index.indices(size), dtype=np.int64)
+        return range(*index.indices(size))
     arr = np.asarray(index)
     if arr.dtype == bool:
         raise TypeError("boolean indices are not supported for Tensor")
@@ -503,10 +505,13 @@ def _extract_expr(self, keys):
     return expr
 
 
-def _group_index(shape, axes, sel, keys):
+def _group_index(shape, axes, sel, keys, *, build=True):
     """The rows (or columns) of one group to extract: ``slice(None)`` for all of them, a slice
     when they are a contiguous range of raveled positions (a leading int or range with the
-    rest of the group whole), else an array of raveled positions.
+    rest of the group whole), else an array of raveled positions (None past ``_MAX_LISTED``).
+    With ``build=False``, the number of those positions instead of the array: it is sized by
+    the index, not the data (a reversed full slice lists every row), so it is built only once
+    the extract is chosen.
     """
     full = [isinstance(keys[a], slice) and keys[a] == slice(None) for a in axes]
     if all(full):
@@ -517,7 +522,10 @@ def _group_index(shape, axes, sel, keys):
         k += 1
     if k < len(axes):
         x = sel[axes[k]]
-        contiguous = x.size > 0 and (x.size == 1 or bool(np.all(np.diff(x) == 1)))
+        if isinstance(x, range):
+            contiguous = len(x) == 1 or len(x) > 0 and x.step == 1
+        else:
+            contiguous = x.size > 0 and (x.size == 1 or bool(np.all(np.diff(x) == 1)))
         tail_full = all(full[k + 1 :])
     else:
         contiguous, tail_full = True, True
@@ -529,15 +537,44 @@ def _group_index(shape, axes, sel, keys):
         if k < len(axes):
             x = sel[axes[k]]
             start = (start * shape[axes[k]] + int(x[0])) * tail
-            return slice(start, start + x.size * tail)
+            return slice(start, start + len(x) * tail)
         return slice(start, start + 1)
-    lists = [np.array([s]) if isinstance(s, int) else s for s in (sel[a] for a in axes)]
-    if math.prod(len(x) for x in lists) > _t._MAX_LISTED:
+    listed = math.prod(1 if isinstance(s, int) else len(s) for s in (sel[a] for a in axes))
+    if listed > _t._MAX_LISTED:
         return None
+    if not build:
+        return listed
     idx = np.zeros(1, np.int64)
-    for a, x in zip(axes, lists, strict=True):
+    for a in axes:
+        x = _as_array(sel[a])
         idx = (idx[:, None] * shape[a] + x[None, :]).ravel()
     return idx
+
+
+def _as_array(s):
+    """An axis selection (int, range or array) as an int64 array."""
+    if isinstance(s, int):
+        return np.array([s], np.int64)
+    if isinstance(s, range):
+        return np.arange(s.start, s.stop, s.step, dtype=np.int64)
+    return s
+
+
+def _positions(s, coord):
+    """For coordinates ``coord`` along an axis selected by ``s`` (a range, or an array without
+    repeats), whether each is selected and its position in ``s``. Arithmetic for a range, a
+    binary search for an array: sized by ``s`` and the coordinates, not the axis length.
+    """
+    if isinstance(s, range):
+        d = coord - s.start
+        q = d // s.step
+        return (d % s.step == 0) & (q >= 0) & (q < len(s)), q
+    order = np.argsort(s, kind="stable")
+    ss = s[order]
+    i = np.minimum(np.searchsorted(ss, coord), max(ss.size - 1, 0))
+    if not ss.size:
+        return np.zeros(coord.size, bool), i
+    return ss[i] == coord, order[i]
 
 
 # Extraction costs (ns, 8 / 1 threads, measured 2026-10-20): a GraphBLAS extract pays per
@@ -562,12 +599,13 @@ def _extract_recipe(updater, t, sel, keys):
         tuple(renum[a] for a in rows if a in renum), tuple(renum[a] for a in cols if a in renum)
     )
     shape = tuple(len(sel[a]) for a in kept)
-    ridx = _group_index(t._shape, rows, sel, keys)
-    cidx = _group_index(t._shape, cols, sel, keys)
+    # (positions to list are counted here, and listed only if the extract is chosen)
+    ridx = _group_index(t._shape, rows, sel, keys, build=False)
+    cidx = _group_index(t._shape, cols, sel, keys, build=False)
     listed = None
     if ridx is not None and cidx is not None:
-        listed = sum(x.size for x in (ridx, cidx) if isinstance(x, np.ndarray))
-        if not listed:
+        listed = sum(x for x in (ridx, cidx) if isinstance(x, int))
+        if not any(isinstance(x, int) for x in (ridx, cidx)):
             if census.on:
                 census.note("extract", "slices: extract")
             _store(updater, t._M[ridx, cidx], shape, layout)
@@ -593,7 +631,7 @@ def _extract_recipe(updater, t, sel, keys):
         # (NELL-2's (0,1|2), j in a range: the extract listed 1.1e7 rows, the filter read 7.7e7
         # entries). Numpy work per nonempty row, then P @ M over the kept ones.
         frac = math.prod(
-            1 / t._shape[a] if isinstance(sel[a], int) else sel[a].size / t._shape[a] for a in axes
+            1 / t._shape[a] if isinstance(sel[a], int) else len(sel[a]) / t._shape[a] for a in axes
         )
         hrows = tl.nonempty_rows(t._M)
         cost = (
@@ -608,6 +646,10 @@ def _extract_recipe(updater, t, sel, keys):
                           nvals=nv, repeated=bool(repeated))  # fmt: skip
     _, how = options[i]
     if how == "extract":
+        if isinstance(ridx, int):
+            ridx = _group_index(t._shape, rows, sel, keys)
+        if isinstance(cidx, int):
+            cidx = _group_index(t._shape, cols, sel, keys)
         _store(updater, t._M[ridx, cidx], shape, layout)
         return
     if how == "rows":
@@ -627,9 +669,7 @@ def _extract_recipe(updater, t, sel, keys):
         if isinstance(s, int):
             keep &= coord == s
         else:
-            pos = np.full(t._shape[a], -1, np.int64)
-            pos[s] = np.arange(s.size)
-            keep &= pos[coord] >= 0
+            keep &= _positions(s, coord)[0]
     r, c, vals = r[keep], c[keep], vals[keep]
     out = {}
     for a in kept:
@@ -649,9 +689,7 @@ def _extract_recipe(updater, t, sel, keys):
             out = {k: v[rep] for k, v in out.items()}
             out[renum[a]] = order[left[rep] + offs]
         else:
-            pos = np.full(t._shape[a], -1, np.int64)
-            pos[s] = np.arange(s.size)
-            out[renum[a]] = pos[coord]
+            out[renum[a]] = _positions(s, coord)[1]
     n = vals.size
     rr = tl.ravel(out, shape, layout.rows, n=n)
     cc = tl.ravel(out, shape, layout.cols, n=n)
@@ -674,16 +712,14 @@ def _hyper_rows_pick(t, sel, keys, renum, shape, layout):
         if isinstance(s, int):
             keep &= co[i] == s
         elif not (isinstance(keys[a], slice) and keys[a] == slice(None)):
-            pos = np.full(t._shape[a], -1, np.int64)
-            pos[s] = np.arange(s.size)
-            positions[a] = pos
-            keep &= pos[co[i]] >= 0
+            positions[a] = _positions(s, co[i])
+            keep &= positions[a][0]
     n = int(np.count_nonzero(keep))
     out = {}
     for i, a in enumerate(rows):
         if a in renum:
             c = co[i][keep]
-            out[renum[a]] = positions[a][c] if a in positions else c
+            out[renum[a]] = positions[a][1][keep] if a in positions else c
     dst = tl.ravel(out, shape, layout.rows, n=n)
     nrows = tl.prod(shape, layout.rows)
     return tl.from_coo(dst, h[keep], True, BOOL, nrows, t._M._nrows)
