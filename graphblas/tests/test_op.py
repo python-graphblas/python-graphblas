@@ -1206,6 +1206,9 @@ def test_lazy_op():
     Monoid.register_new("lazy2", binary.lazy, 0, lazy=True)
     assert isinstance(op.lazy2, Monoid)
     assert isinstance(monoid.lazy2, Monoid)
+    BinaryOp.register_new("lazy_idem", _isidem_pick_first, lazy=True)
+    Monoid.register_new("lazy_idem", "lazy_idem", 0, is_idempotent=True, lazy=True)
+    assert monoid.lazy_idem.is_idempotent
     Semiring.register_new("lazy", "lazy", "lazy", lazy=True)
     assert isinstance(semiring.lazy, Semiring)
     Semiring.register_new("lazy_lazy", monoid.lazy, binary.lazy, lazy=True)

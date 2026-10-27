@@ -455,7 +455,12 @@ class Monoid(OpBase):
         if lazy:
             module._delayed[funcname] = (
                 cls.register_new,
-                {"name": name, "binaryop": binaryop, "identity": identity},
+                {
+                    "name": name,
+                    "binaryop": binaryop,
+                    "identity": identity,
+                    "is_idempotent": is_idempotent,
+                },
             )
         elif type(binaryop) is ParameterizedBinaryOp:
             monoid = ParameterizedMonoid(name, binaryop, identity, is_idempotent=is_idempotent)
