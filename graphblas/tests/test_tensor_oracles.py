@@ -697,6 +697,49 @@ def oracle_reshape(rng, n, teeth=False):
             o.stats["copy-on-write"] += 1
             if not matches(R, *before):
                 o.fail(what, "writing the source changed the result")
+    for _ in range(max(1, n // 4)):
+        # C << V, V a view (axes of equal size permuted) of the store C shares: C is X, a dup
+        # of X, or a Tensor assigned from X; the others keep their values
+        ndim = int(rng.integers(2, 5))
+        if rng.random() < 0.5:
+            shape = (int(rng.integers(1, 4)),) * ndim
+        else:
+            shape = tuple(int(x) for x in rng.integers(1, 4, ndim))
+        xv, xp = rand_model(rng, shape, 0.5)
+        X = build(rng, xv, xp)
+        if rng.random() < 0.7:  # the same store and layout, not pinned (as build's are)
+            X, X0 = Tensor(X.dtype, shape), X
+            X << X0
+        perm = np.arange(ndim)
+        for size in set(shape):
+            at = np.flatnonzero(np.array(shape) == size)
+            perm[at] = rng.permutation(at)
+        perm = tuple(int(a) for a in perm)
+        kind = str(rng.choice(["itself", "dup", "assigned"]))
+        if kind == "itself":
+            C = X
+        elif kind == "dup":
+            C = X.dup()
+        else:
+            C = Tensor(X.dtype, shape)
+            C << X
+        if rng.random() < 0.5:
+            V = X.permute_dims(perm)
+        else:
+            letters = "abcd"[:ndim]
+            V = gb.einsum(f"{letters}->{''.join(letters[a] for a in perm)}", X)
+        what = f"{kind} << view {shape} {X.layout} {perm}"
+        o.stats["view of a shared store"] += 1
+        try:
+            C << V
+        except Exception as exc:
+            o.fail(what, f"raised {type(exc).__name__}: {exc}")
+            continue
+        # (the teeth forget the permutation)
+        if not matches(C, *(m if teeth else m.transpose(perm) for m in (xv, xp))):
+            o.fail(what, "values or presence differ from the model")
+        if kind != "itself" and not matches(X, xv, xp):
+            o.fail(what, "the source changed")
     for _ in range(max(1, n // 8)):
         shape = tuple(int(rng.integers(1, 5)) for _ in range(int(rng.integers(1, 5))))
         xv, xp = rand_model(rng, shape, 0.5)
