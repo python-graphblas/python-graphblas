@@ -32,20 +32,30 @@ result records the 1-minute load average, and each table below states the load i
 | Finch                 | [Finch.jl](https://github.com/finch-tensor/Finch.jl) 1.4.0 on Julia 1.12.6, one thread                                                          |
 | hand-written Numba    | parallel TTV, TTM and MTTKRP kernels over per-mode sorted copies (the copies are built outside the timing)                                      |
 
-The Tensor changed while it was measured, so each number below names its run:
+The Tensor changed while it was measured, so each number below names its run, and each run
+the commit it measured (by letter; the commits are named below by subject, which a rebase
+keeps, unlike a commit id):
 
-| run                | Tensor commit        | what it measured                                                                                                                                            | 1-minute load  |
-| ------------------ | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| 2026-10-20 morning | b8865048             | pydata/sparse, scipy, torch, hand-written Numba and the Tensor, every kernel group on every data set. The other libraries' numbers below come from this run | 3-100 (bursts) |
-| 2026-10-20 16:50   | 0e9ef41f             | the Tensor again, on every data set and group                                                                                                               | 4.5 median     |
-| 2026-10-20 evening | 0e9ef41f             | SPLATT, TACO and Finch, and the Tensor's rows on u7 and NELL-2 again                                                                                        | 1.3-3.3        |
-| 2026-10-20 19:50   | d75d0c38             | the n-d MTTKRP kernel on u7, NELL-2, Uber, NIPS and Enron                                                                                                   | 3.0-5.2        |
-| 2026-10-21 04:30   | 25305cb9             | TTM and MTTKRP with each engine forced, on u7 and NELL-2                                                                                                    | 3.8-6.4        |
-| 2026-10-21         | ed078e55 to f9f4ffcf | the census of decision points (every alternative forced and timed), and the refits it led to                                                                | 2-18           |
-| 2026-10-21 evening | 2749e5a3             | the kit from a fresh clone: u7 and Uber, the Tensor against pydata/sparse and scipy (last section)                                                          | 1.4-2.7        |
+| run                | Tensor at | what it measured                                                                                                                                            | 1-minute load  |
+| ------------------ | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| 2026-10-20 morning | A         | pydata/sparse, scipy, torch, hand-written Numba and the Tensor, every kernel group on every data set. The other libraries' numbers below come from this run | 3-100 (bursts) |
+| 2026-10-20 16:50   | B         | the Tensor again, on every data set and group                                                                                                               | 4.5 median     |
+| 2026-10-20 evening | B         | SPLATT, TACO and Finch, and the Tensor's rows on u7 and NELL-2 again                                                                                        | 1.3-3.3        |
+| 2026-10-20 19:50   | C         | the n-d MTTKRP kernel on u7, NELL-2, Uber, NIPS and Enron                                                                                                   | 3.0-5.2        |
+| 2026-10-21 04:30   | D         | TTM and MTTKRP with each engine forced, on u7 and NELL-2                                                                                                    | 3.8-6.4        |
+| 2026-10-21         | E to F    | the census of decision points (every alternative forced and timed), and the refits it led to                                                                | 2-18           |
+| 2026-10-21 evening | G         | the kit from a fresh clone: u7 and Uber, the Tensor against pydata/sparse and scipy (last section)                                                          | 1.4-2.7        |
 
-The commits after f9f4ffcf split `tensor.py` into modules and edited text only; an AST
-comparison with the docstrings removed found no code change.
+- A: "Tensor: lift broadcast operands to the result's rank before choosing a strategy"
+- B: "Tensor: price a sorted REBUILD fallback only where reshape is unavailable"
+- C: "Tensor: test MTTKRP on layouts with an empty group"
+- D: "Tensor: UDT engine, no bitmap request on the empty output; test a new kernel failing"
+- E: "Tensor: a private census of the decision points (off by default, for measurement)"
+- F: "Tensor broadcast: a split move into hypersparse rows pays the diagonal's row lookups"
+- G: "scripts/tensor_bench: a portable benchmark kit for the experimental Tensor"
+
+The commits after F split `tensor.py` into modules and edited text only; an AST comparison
+with the docstrings removed found no code change.
 
 ## Correctness: fingerprints
 
@@ -71,7 +81,7 @@ the bugs they found were in other libraries (see "What wins and what loses").
 
 ## Against pydata/sparse, scipy and torch
 
-From the 2026-10-20 16:50 run (the Tensor at 0e9ef41f), against the morning's other libraries.
+From the 2026-10-20 16:50 run (the Tensor at B), against the morning's other libraries.
 For each row, the fastest of torch at 8 threads, scipy, pydata COO and GCXS, over the Tensor
 at 8 threads; geometric means:
 
@@ -117,13 +127,13 @@ best tree allocation per row: usually one CSF tree per mode, rooted at that mode
 copy rooted at the output mode, built outside its timing. GB / SPLATT, geometric mean per data
 set:
 
-| data set     | 8 threads | 1 thread | run                                        |
-| ------------ | --------- | -------- | ------------------------------------------ |
-| u7 (3-d)     | 1.13      | 0.98     | 2026-10-21 04:30 (25305cb9), R = 16 and 64 |
-| NELL-2 (3-d) | 0.75      | 0.88     | same                                       |
-| Uber (4-d)   | 1.31      | 1.09     | 2026-10-20 19:50 (d75d0c38)                |
-| NIPS (4-d)   | 1.38      | 0.99     | same                                       |
-| Enron (4-d)  | 1.00      | 0.90     | same                                       |
+| data set     | 8 threads | 1 thread | run                                 |
+| ------------ | --------- | -------- | ----------------------------------- |
+| u7 (3-d)     | 1.13      | 0.98     | 2026-10-21 04:30 (D), R = 16 and 64 |
+| NELL-2 (3-d) | 0.75      | 0.88     | same                                |
+| Uber (4-d)   | 1.31      | 1.09     | 2026-10-20 19:50 (C)                |
+| NIPS (4-d)   | 1.38      | 0.99     | same                                |
+| Enron (4-d)  | 1.00      | 0.90     | same                                |
 
 Selected rows (ms, 8 / 1 threads):
 
@@ -290,7 +300,7 @@ kernels are `--libs numba`; the Tensor with one engine forced is `graphblas-numb
 
 ### A check from a fresh clone
 
-The kit was run from a fresh clone of this branch (commit 2749e5a3, 2026-10-21 evening, load
+The kit was run from a fresh clone of this branch (commit G, 2026-10-21 evening, load
 1.4-2.7), on u7 and on Uber downloaded by `fetch_data.py`, against pydata/sparse and scipy.
 `report.py --teeth` passed. Geometric mean speedup of the Tensor over the faster of the two:
 
