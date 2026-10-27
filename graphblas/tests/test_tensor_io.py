@@ -71,13 +71,22 @@ def _c_order(coords, shape):
     return bool((np.diff(lin) > 0).all())
 
 
+def _todense(s):
+    """``s.todense()``, but a 0-d COO with an entry gives its value: pydata sparse before
+    0.16 fails to make that one dense (``x[()] = data`` with ``data`` of length 1).
+    """
+    if s.shape == () and s.nnz and isinstance(s, sparse.COO):
+        return np.asarray(s.data[0])
+    return s.todense()
+
+
 def _same_pydata(got, want):
     """Same shape, dtype, entries (explicit zeros too) and values; COO in C order."""
     assert got.shape == want.shape
     assert got.dtype == want.dtype
     assert got.fill_value == 0
     assert got.nnz == want.nnz
-    np.testing.assert_array_equal(got.todense(), want.todense())
+    np.testing.assert_array_equal(_todense(got), _todense(want))
     g, w = got.asformat("coo"), want.asformat("coo")
     np.testing.assert_array_equal(g.coords, w.coords)
     np.testing.assert_array_equal(g.data, w.data)
@@ -95,7 +104,7 @@ def test_pydata_round_trip(shape, dtype):
     T = Tensor.from_pydata_sparse(s)
     assert T.dtype == dtypes.lookup_dtype(dtype)
     check(T, dense, present)
-    np.testing.assert_array_equal(T.to_dense(fill_value=0), s.todense())
+    np.testing.assert_array_equal(T.to_dense(fill_value=0), _todense(s))
     # (pydata cannot turn a 0-d GCXS or DOK back into COO)
     for fmt in ["coo", "gcxs", "dok"] if shape else ["coo"]:
         _same_pydata(T.to_pydata_sparse(fmt), s)
