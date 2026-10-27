@@ -13,6 +13,10 @@ or the entry's (mode in the column group: one add per entry or per run).
 When the mode is the first row axis, chunks of rows start where it changes, so no two chunks
 write the same output row. Otherwise each thread has its own output buffer, summed at the end;
 ``mttkrp_nd`` returns None when those buffers would be too large.
+
+The row pointers ``p`` are uint32, or uint64 past 2^32 entries; the indices ``h`` and ``ci``
+int32 or int64. The kernels read every offset as ``np.int64(p[s])``: Numba types uint64 plus
+int64 as float64, which no array takes as an index.
 """
 
 import hashlib
@@ -213,8 +217,8 @@ def _kernel_source(R, P, Q, kind, mpos, owner, runs, colblock=False):
         add("        hi = bin_ptr[bb + 1]")
         add("        for cc in range(1):")
         add("          for s in range(p.size - 1):")
-        add("            q0 = p[s]")
-        add("            q1 = p[s + 1]")
+        add("            q0 = np.int64(p[s])")
+        add("            q1 = np.int64(p[s + 1])")
         add("            if q0 == q1:")
         add("                continue")
         add("            q1 = q0 + np.searchsorted(ci[q0:q1], hi)")
@@ -225,8 +229,8 @@ def _kernel_source(R, P, Q, kind, mpos, owner, runs, colblock=False):
         add("        for cc in range(bin_ptr[bb], bin_ptr[bb + 1]):")
         add("          c = bins[cc]")
         add("          for s in range(starts[c], starts[c + 1]):")
-        add("            q0 = p[s]")
-        add("            q1 = p[s + 1]")
+        add("            q0 = np.int64(p[s])")
+        add("            q1 = np.int64(p[s + 1])")
         add("            if q0 == q1:")
         add("                continue")
     add("            rem = h[s] if h.size > 0 else s")
@@ -461,8 +465,8 @@ def kernel(p, h, ci, x, iso, nlast, npre, U, offs, hout, cols, V, B, starts, bin
         for cc in range(bin_ptr[bb], bin_ptr[bb + 1]):
             c = bins[cc]
             for s in range(starts[c], starts[c + 1]):
-                q0 = p[s]
-                q1 = p[s + 1]
+                q0 = np.int64(p[s])
+                q1 = np.int64(p[s + 1])
                 if q0 == q1:
                     continue
                 row = np.int64(h[s]) if h.size > 0 else np.int64(s)
@@ -509,7 +513,7 @@ def _count_runs(p, ci, nlast, counts):
     for s in prange(p.size - 1):
         n = 0
         last = -1
-        for q in range(p[s], p[s + 1]):
+        for q in range(np.int64(p[s]), np.int64(p[s + 1])):
             pre = np.int64(ci[q]) // nlast
             if pre != last:
                 n += 1
