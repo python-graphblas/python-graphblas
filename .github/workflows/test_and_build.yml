@@ -295,6 +295,9 @@ jobs:
       - name: JIT diagnostics
         run: python scripts/jit_diagnostics.py || true
       - name: Unit tests
+        # A hang (e.g. two libomp copies deadlocking in an OpenMP barrier on macOS) would
+        # otherwise hold the runner for GitHub's 6-hour limit.
+        timeout-minutes: 120
         run: |
           A=${{ needs.rngs.outputs.mapnumpy == 'A' || '' }} ; B=${{ needs.rngs.outputs.mapnumpy == 'B' || '' }}
           C=${{ needs.rngs.outputs.mapnumpy == 'C' || '' }} ; D=${{ needs.rngs.outputs.mapnumpy == 'D' || '' }}
@@ -327,6 +330,7 @@ jobs:
           coverage run -m pytest --color=yes --randomly -v ${args} \
             ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
       - name: Unit tests (bizarro scalars)
+        timeout-minutes: 120
         run: |
           # Run tests again with Scalars being C scalars by default
           find graphblas -type f -name "*.py" -print0 | xargs -0 sed -i -s \
@@ -426,6 +430,7 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
       - name: Notebooks Execution check
         if: matrix.slowtask == 'notebooks'
+        timeout-minutes: 30
         run: |
           # Run notebooks only if numba is installed
           if python -c 'import numba' 2> /dev/null ; then
