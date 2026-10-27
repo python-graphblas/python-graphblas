@@ -195,6 +195,56 @@ def test_pydata_views_and_layouts(ndim):
 
 
 @needs_sparse
+def test_pydata_gcxs_repeated_or_unsorted_columns():
+    """A GCXS whose rows repeat a column, or list them out of order (pydata checks neither),
+    imports as pydata's todense reads it: repeats summed (or combined with ``dup_op``). Its
+    arrays were imported as they were, which made a Matrix SuiteSparse finds invalid
+    (``GxB_Matrix_fprint``: GrB_INVALID_OBJECT) holding both entries.
+    """
+    from graphblas.core import ffi, lib
+
+    def valid(T):
+        M = T.ss.matrix
+        return lib.GxB_Matrix_fprint(M._carg, b"M", lib.GxB_SILENT, ffi.NULL) == lib.GrB_SUCCESS
+
+    data = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+    for indices, indptr in [
+        ([1, 1, 0, 2, 3, 3], [0, 2, 3, 6]),  # repeats, sorted
+        ([1, 0, 1, 2, 3, 2], [0, 3, 3, 6]),  # repeats, unsorted; an empty row
+        ([2, 0, 1, 3, 1, 0], [0, 3, 4, 6]),  # unsorted, no repeat
+        ([0, 1, 2, 0, 1, 3], [0, 3, 3, 6]),  # sorted and distinct: imported as it is
+    ]:
+        arrays = (data, np.array(indices), np.array(indptr))
+        g = sparse.GCXS(arrays, shape=(3, 4), compressed_axes=(0,))
+        T = Tensor.from_pydata_sparse(g)
+        assert valid(T)
+        assert T.layout == Layout((0,), (1,))
+        want = g.todense()
+        check(T, want, want != 0)
+        # dup_op combines the repeats; BOOL ORs them
+        T = Tensor.from_pydata_sparse(g, dup_op=binary.max)
+        assert valid(T)
+        r = np.repeat(np.arange(3), np.diff(indptr))
+        want = np.zeros((3, 4))
+        np.maximum.at(want, (r, np.array(indices)), data)
+        check(T, want, want != 0)
+        T = Tensor.from_pydata_sparse(g.astype(bool))
+        assert valid(T)
+        check(T, want != 0, want != 0)
+    # 3-d, compressed along axis 1: rows of axis 1, columns of (0, 2) raveled
+    g = sparse.GCXS(
+        (data, np.array([5, 5, 0, 1, 1, 2]), np.array([0, 3, 6])),
+        shape=(2, 2, 3),
+        compressed_axes=(1,),
+    )
+    T = Tensor.from_pydata_sparse(g)
+    assert valid(T)
+    assert T.layout == Layout((1,), (0, 2))
+    want = g.todense()
+    check(T, want, want != 0)
+
+
+@needs_sparse
 def test_pydata_options_and_errors():
     rng = np.random.default_rng(3)
     shape = (3, 4, 5)
