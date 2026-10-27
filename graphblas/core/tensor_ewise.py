@@ -199,7 +199,7 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
             src = big._M.apply(op, left=value)
         _store(updater, src, shape, big._layout)
         return
-    flip = getattr(untyped_op, "commutes_to", None)
+    flip = getattr(untyped_op, "commutes_to", None) if _flipped(op) is not None else None
     # M @ diag(v) multiplies (big, small); diag(v) @ M multiplies (small, big)
     col_op = untyped_op if big_left else flip
     row_op = flip if big_left else untyped_op
@@ -407,6 +407,7 @@ from .tensor import (  # noqa: E402
     TensorExpression,
     _as_tensor,
     _choose_layout,
+    _flipped,
     _in_layout,
     _rs_cost,
     _store,
