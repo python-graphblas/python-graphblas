@@ -45,6 +45,7 @@ keeps, unlike a commit id):
 | 2026-10-21 04:30   | D         | TTM and MTTKRP with each engine forced, on u7 and NELL-2                                                                                                    | 3.8-6.4        |
 | 2026-10-21         | E to F    | the census of decision points (every alternative forced and timed), and the refits it led to                                                                | 2-18           |
 | 2026-10-21 evening | G         | the kit from a fresh clone: u7 and Uber, the Tensor against pydata/sparse and scipy (last section)                                                          | 1.4-2.7        |
+| 2026-10-27         | H, and I  | the Tensor with the SuiteSparse JIT "on", "run" and "off" on every data set but Enron, every group (section "JIT modes"); other dtypes before and after I   | 1-4, median 2  |
 
 - A: "Tensor: lift broadcast operands to the result's rank before choosing a strategy"
 - B: "Tensor: price a sorted REBUILD fallback only where reshape is unavailable"
@@ -53,6 +54,10 @@ keeps, unlike a commit id):
 - E: "Tensor: a private census of the decision points (off by default, for measurement)"
 - F: "Tensor broadcast: a split move into hypersparse rows pays the diagonal's row lookups"
 - G: "scripts/tensor_bench: a portable benchmark kit for the experimental Tensor"
+- H: "tensor_bench: run the Tensor at a chosen SuiteSparse JIT mode"
+- I: "Tensor: BOOL selector products with lor_land, which SuiteSparse precompiles"
+- J: "Tensor: the UDT TTM engine leaves the JIT control alone when it declines" (not measured;
+  it changes what "run" does, see "JIT modes")
 
 The commits after F split `tensor.py` into modules and edited text only; an AST comparison
 with the docstrings removed found no code change.
@@ -239,6 +244,35 @@ the per-Matrix code python-graphblas users write today (ms, 1 / 8 threads, 2026-
 The Tensor wins these mostly by making one call where the loop pays Python overhead per
 Matrix (the minute windows), or by one batched product in place of many small ones. Where
 the layers are few and large (Higgs), the loop of `vxm` is faster.
+
+## JIT modes
+
+SuiteSparse compiles a kernel for each new combination of operator and types when its JIT is
+"on" and a C compiler works. Without it ("off", as in python-suitesparse-graphblas's wheels, or
+a conda install with no compiler), it runs its precompiled "factory" kernels and, for anything
+else, a generic kernel that calls the operator through a function pointer. `run.py --jit
+{on,run,off}` measures each mode.
+
+At H (1-minute load about 2, a warm JIT cache for "on"), over u6, u7, skew, hyper, Zipf,
+NELL-2, Uber and NIPS, both thread counts and every kernel group, "off" took 1.00-1.03 times as
+long as "on" (geometric mean per data set and thread count), and every result matched. The
+Tensor picks semirings that SuiteSparse precompiles for FP64, so the one generic kernel these
+cases meet is the extract behind slices (SuiteSparse has no precompiled one): slices are up to
+1.45x slower without the JIT, and NELL-2's broadcast by a dense (s1, s2) matrix 1.3x at 1
+thread. The array-UDT TTM engine needs the JIT; without it NELL-2's TTM mode 2 runs the Numba
+kernel, 1.26x slower. "run", SuiteSparse's default, measured like "off" until a TTM: at H, a
+TTM raised the control to "on" for the rest of the process even when the array-UDT engine then
+left the case to Numba (58 of the 60 synthetic TTM rows), so NELL-2's TTM mode 2 was as fast
+at "run" as at "on". Since J, only a TTM that engine takes raises it.
+
+The JIT's own cost is the first call: about 0.3 s per new extract kernel and 0.8 s for the
+array-UDT engine's, 17 kernels for the whole set, compiled once per machine into the JIT cache.
+Other dtypes depend on the JIT more: with it off, BOOL, UINT32 / UINT64 sums and the 8- and
+16-bit integers meet kernels compiled out of SuiteSparse's factory set (up to 2-3.5x slower;
+`suitesparse-wishlist.md`, P4). Since I, the Tensor uses `lor_land` for BOOL selector
+products, a factory kernel where `lor_second` is generic: on u7 cast to BOOL at 8 threads and
+"off", `any` over one axis went from 9.96 and 7.51 ms to 5.28 and 3.46 (5.41 and 3.49 at
+"on"), and FP64 did not change.
 
 ## What wins and what loses
 
