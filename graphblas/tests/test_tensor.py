@@ -1895,7 +1895,8 @@ def test_mttkrp_kernel_layouts(shape, nthreads, monkeypatch):
     per-thread buffers, or blocks of the first column axis; runs of column entries read both
     ways), iso values too: 3-, 4- and 5-d against numpy's einsum.
     """
-    pytest.importorskip("numba")
+    if not gb.core._has_numba:
+        pytest.skip("needs numba")
     from graphblas.core import tensor_numba
 
     calls, _ = _kernel_spy(monkeypatch)
@@ -1924,7 +1925,8 @@ def test_mttkrp_kernel_layouts(shape, nthreads, monkeypatch):
 @pytest.mark.usefixtures("numba_boundscheck")
 def test_mttkrp_kernel_paths(monkeypatch):
     """Views, R = 1, the relayout handover and the GraphBLAS fallbacks of the MTTKRP kernel."""
-    pytest.importorskip("numba")
+    if not gb.core._has_numba:
+        pytest.skip("needs numba")
     from graphblas.core import tensor, tensor_numba
 
     calls, spy = _kernel_spy(monkeypatch)
@@ -2289,7 +2291,8 @@ def test_ttm_kernel_layouts(shape, nthreads, monkeypatch):
     column axis, its leading column axes making the output fibers; else after a relayout),
     either side of the factor, iso values: 3-, 4- and 5-d against numpy.
     """
-    pytest.importorskip("numba")
+    if not gb.core._has_numba:
+        pytest.skip("needs numba")
     calls = _ttm_spy(monkeypatch)
     rng = np.random.default_rng(76 + len(shape))
     ndim = len(shape)
@@ -2314,7 +2317,8 @@ def test_ttm_kernel_paths(monkeypatch):
     """TTM outputs in every storage (hypersparse rows, bitmap, full), views, empty groups,
     R = 1, and the GraphBLAS product where the kernel cannot run.
     """
-    pytest.importorskip("numba")
+    if not gb.core._has_numba:
+        pytest.skip("needs numba")
     from graphblas.core import tensor
 
     calls = _ttm_spy(monkeypatch)
@@ -2670,7 +2674,8 @@ def test_engines_selectable(monkeypatch):
     """
     if backend != "suitesparse":
         pytest.skip("SuiteSparse only")
-    pytest.importorskip("numba")
+    if not gb.core._has_numba:
+        pytest.skip("needs numba")
     _require_jit_compile()
     from graphblas.core import tensor
 
@@ -2795,7 +2800,8 @@ def test_ttm_engine_choice(monkeypatch):
     """
     if backend != "suitesparse":
         pytest.skip("SuiteSparse only")
-    pytest.importorskip("numba")
+    if not gb.core._has_numba:
+        pytest.skip("needs numba")
     _require_jit_compile()
     from graphblas.core import tensor, tensor_numba
 
@@ -2932,7 +2938,8 @@ def test_kernel_disk_cache(tmp_path):
     compiled code from Numba's cache; two processes may fill one cache at once; a read-only or
     disabled cache compiles in memory.
     """
-    pytest.importorskip("numba")
+    if not gb.core._has_numba:
+        pytest.skip("needs numba")
     cache = tmp_path / "kernels"
     # Two processes at once on an empty cache: both work
     procs = [_run_kernel_cache_script(str(cache)) for _ in range(2)]
@@ -2962,7 +2969,8 @@ def test_kernel_disk_cache_guards(tmp_path, monkeypatch):
     rename leaves no temporary file behind; one that failed because another process wrote the
     same file first uses that file.
     """
-    pytest.importorskip("numba")
+    if not gb.core._has_numba:
+        pytest.skip("needs numba")
     from graphblas.core import tensor_numba
 
     source = (
@@ -4081,8 +4089,8 @@ def test_gather(ndim, engines, monkeypatch):
     """
     from graphblas.core import tensor_index
 
-    if "numba" in engines:
-        pytest.importorskip("numba")
+    if "numba" in engines and not gb.core._has_numba:
+        pytest.skip("needs numba")
     monkeypatch.setattr(tensor_index, "_GATHER_ENGINES", engines)
     rng = np.random.default_rng(400 + ndim)
     layouts = all_layouts(ndim)[:: 1 if ndim < 4 else 9]
