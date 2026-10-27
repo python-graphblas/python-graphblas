@@ -260,7 +260,7 @@ def matrix_from_arrays(dtype, nrows, ncols, fmt, *, x, h=None, p=None, i=None, b
     is "hypercsr" (h, p, i, x), "bitmapr" (b, x) or "fullr" (x); each array must come from an
     allocator GraphBLAS can free (``numpy.empty`` by default) and is a read-only view after.
     """
-    from suitesparse_graphblas.utils import give_buffer
+    from .utils import _give_buffer
 
     M = new_matrix(dtype, nrows, ncols)
     with _Unloaded(M) as cont:
@@ -269,7 +269,7 @@ def matrix_from_arrays(dtype, nrows, ncols, fmt, *, x, h=None, p=None, i=None, b
                 continue
             arr = np.ascontiguousarray(arr)
             gtype = dtype if vec == cont.x else lookup_dtype(arr.dtype)
-            with give_buffer(arr) as (ptr, nbytes, arena):
+            with _give_buffer(arr) as (ptr, nbytes, arena):
                 _check(
                     lib.GxB_Vector_load(
                         vec, ptr, gtype.gb_obj, arr.size, nbytes, lib.GrB_DEFAULT + arena, NULL
