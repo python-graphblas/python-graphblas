@@ -648,6 +648,43 @@ def test_binaryop_udf():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udf_skips_dtypes_numba_cannot_lower():
+    """A UDF is built for the dtypes Numba can lower it for, and skips the rest.
+
+    Numba types ``max`` on complex values, then has no lowering for the ``>`` in
+    it and raises a bare NotImplementedError. The per-dtype build loops caught
+    only TypingError, so registering such a UDF failed for every dtype.
+    """
+
+    def unary_max(x):
+        return max(x, 0)  # pragma: no cover (numba)
+
+    def binary_max(x, y):
+        return max(x, y)  # pragma: no cover (numba)
+
+    def indexunary_max(x, row, col, thunk):
+        return max(x, thunk)  # pragma: no cover (numba)
+
+    def select_max(x, row, col, thunk):
+        return max(x, thunk) > 0  # pragma: no cover (numba)
+
+    unary_op = UnaryOp.register_anonymous(unary_max)
+    binary_op = BinaryOp.register_anonymous(binary_max)
+    indexunary_op = IndexUnaryOp.register_anonymous(indexunary_max)
+    select_op = SelectOp.register_anonymous(select_max)
+    for udf in [unary_op, binary_op, indexunary_op, select_op]:
+        assert FP64 in udf.types
+        if dtypes._supports_complex:
+            assert FC64 not in udf.types
+    v = Vector.from_coo([0, 1], [-1.5, 2.5])
+    w = Vector.from_coo([0, 1], [1.0, 1.0])
+    assert v.apply(unary_op).new().isequal(Vector.from_coo([0, 1], [0.0, 2.5]))
+    assert v.ewise_mult(w, binary_op).new().isequal(Vector.from_coo([0, 1], [1.0, 2.5]))
+    assert v.apply(indexunary_op, 1.0).new().isequal(Vector.from_coo([0, 1], [1.0, 2.5]))
+    assert v.select(select_op, 0.0).new().isequal(Vector.from_coo([1], [2.5], size=2))
+
+
+@pytest.mark.skipif("not supports_udfs")
 def test_monoid_udf():
     def plus_plus_one(x, y):
         return x + y + 1  # pragma: no cover (numba)
