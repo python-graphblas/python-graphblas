@@ -26,9 +26,10 @@ It is not used under an explicit "off". The type and ops of each R are made once
 A compile can still fail with the control "on" (a compiler that stopped working, a full
 disk, an unwritable cache): SuiteSparse then returns ``GxB_JIT_ERROR`` rather than run the
 generic kernel, and drops the control to "load" (``GB_jitifyer.c``). ``run`` catches that:
-the control goes back to what it was before the engine raised it, a ``NoJITWarning`` says
-what happened, the engine stays off for the rest of the process, and the caller takes
-another engine.
+the control stays at "load", as after a failed compile anywhere in python-graphblas (UDT
+auto-lift raises "run" to "on" again but leaves "load" alone, so putting back "run" made
+the next UDT operation retry the compile and raise), a ``NoJITWarning`` says what happened,
+the engine stays off for the rest of the process, and the caller takes another engine.
 """
 
 import warnings
@@ -82,7 +83,8 @@ def jit_ready():
 def run(before, func, *args, **kwargs):
     """``func(*args, **kwargs)``: engine code that may JIT-compile, with ``before`` the JIT
     control from before ``jit_ready`` raised it. None when a compile fails (see the module
-    notes): the control is set back to ``before``, and a ``NoJITWarning`` says so.
+    notes): the control is left at "load" (set so, should SuiteSparse have left one that
+    still compiles), and a ``NoJITWarning`` says so.
     """
     global _FAILURE
     from ..exceptions import JitError, NoJITWarning, NullPointer
@@ -92,16 +94,17 @@ def run(before, func, *args, **kwargs):
     except (JitError, NullPointer) as exc:
         # (an op made from a NULL function and C source reports a failed compile as either)
         left = jit_control()
-        if left != before:
+        if left not in {"off", "pause", "load"}:
             from .. import ss
 
-            ss.config["jit_c_control"] = before
+            ss.config["jit_c_control"] = "load"
         _FAILURE = (before, left, exc)
         warnings.warn(
             f"The Tensor's array-UDT engine could not compile its kernels with the SuiteSparse "
             f"JIT ({type(exc).__name__}: {exc}); it is off for the rest of this process, and "
-            f"another engine runs. jit_c_control is back to {before!r} (SuiteSparse had set "
-            f"{left!r}).",
+            f"another engine runs. jit_c_control is now {jit_control()!r} (it was {before!r} "
+            f"before the engine raised it): as after any failed compile, later operations do "
+            f"not try to compile again. Set it back once the compiler works.",
             NoJITWarning,
             stacklevel=2,
         )
