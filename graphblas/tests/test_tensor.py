@@ -2620,6 +2620,8 @@ def test_ttm_udt_jit_failure(control, numba, tmp_path):
     """
     if backend != "suitesparse":
         pytest.skip("SuiteSparse only")
+    if numba == "numba" and not gb.core._has_numba:
+        pytest.skip("needs numba")
     repo_root = Path(__file__).resolve().parents[2]
     env = dict(os.environ, PYTHONPATH=str(repo_root), GRAPHBLAS_CACHE_PATH=str(tmp_path / "jit"))
     result = subprocess.run(
