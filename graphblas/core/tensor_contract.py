@@ -9,7 +9,6 @@ import operator
 import numpy as np
 
 from .. import semiring
-from ..dtypes import BOOL
 from ..exceptions import DimensionMismatch
 from . import tensor_census as census
 from . import tensor_layout as tl
@@ -337,7 +336,7 @@ def _ttv(updater, x, w, axis, op, x_left):
         # S[kept, g] = w[axis coordinate of g] over the positions g of the group
         e = Vector(wv.dtype, tl.prod(x._shape, group))
         St = tl.selector(gshape, (pos,), transposed=True)
-        e << St.mxv(wv, semiring.lor_second if wv.dtype == BOOL else semiring.plus_second)
+        e << St.mxv(wv, tl._perm_semiring(wv))
         if kind == "rowsel":
             S = tl.selector(gshape, kept_pos)
             Sw = tl.new_matrix(e.dtype, S._nrows, S._ncols)
