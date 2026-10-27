@@ -609,7 +609,8 @@ Every path must stay correct with it off.
     `operator/udt_codegen.py` generates (`GxB_BinaryOp_new`), so no Numba is involved.
   - Like UDT auto-lift, it raises `jit_c_control` from SuiteSparse's default `"run"` to
     `"on"` when a compiler works (`jit_ready`), and honors an explicit `"off"`, `"pause"` or
-    `"load"`.
+    `"load"`. It raises it only once it has decided to run: before that, `jit_possible`
+    answers with no side effect, so a TTM it leaves to Numba leaves the control at `"run"`.
 - **A failed compile** returns `GxB_JIT_ERROR`, and SuiteSparse drops the control to
   `"load"`. `tensor_udt.run` catches that: it restores the control, warns once
   (`NoJITWarning`), and turns the engine off for the process. The next engine then runs.

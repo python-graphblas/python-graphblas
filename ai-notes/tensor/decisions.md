@@ -78,11 +78,11 @@ the API settles. `design.md` describes how the code implements these.
     over the stored arrays. Every operation also has a pure-GraphBLAS path, and the Tensor
     tests pass with Numba unavailable (see `verification.md`).
 16. **The SuiteSparse JIT is assumed to be on for speed,** not for correctness. Every path is
-    correct with the JIT off. The array-UDT TTM engine needs the JIT. It raises
+    correct with the JIT off. The array-UDT TTM engine needs the JIT. When it runs, it raises
     `jit_c_control` from SuiteSparse's default "run" to "on", as python-graphblas's UDT
-    auto-lift does. If a compile fails, it restores the previous setting, warns once, and
-    turns itself off for the process. _Why restore:_ the engine changed a user-visible
-    setting itself, so it puts it back.
+    auto-lift does; a case it declines leaves the control alone. If a compile fails, it
+    restores the previous setting, warns once, and turns itself off for the process. _Why
+    restore:_ the engine changed a user-visible setting itself, so it puts it back.
 17. **Alternative engines are kept only where measurements justify them,** and every engine
     stays selectable so that tests and benchmarks can force each one. A census of every
     decision point, over the test suite, benchmark rows and real workloads, decides what
