@@ -2950,13 +2950,15 @@ def test_kernel_disk_cache(tmp_path):
     assert not list(cache.glob("*.tmp"))
     # A later process loads the compiled code
     assert int(_kernel_cache_lines(_run_kernel_cache_script(str(cache)))["cache_hits"]) > 0
-    # Read-only: compiles in memory, writes nothing
+    # Read-only: compiles in memory, writes nothing. Not on Windows, whose directories are
+    # never read-only (``os.access`` agrees, and the cache asks it), nor as root.
     ro = tmp_path / "readonly"
     ro.mkdir()
     ro.chmod(0o555)
     try:
-        assert int(_kernel_cache_lines(_run_kernel_cache_script(str(ro)))["cache_hits"]) == 0
-        assert not list(ro.iterdir())
+        if not os.access(ro, os.W_OK):
+            assert int(_kernel_cache_lines(_run_kernel_cache_script(str(ro)))["cache_hits"]) == 0
+            assert not list(ro.iterdir())
     finally:
         ro.chmod(0o755)
     # Disabled
