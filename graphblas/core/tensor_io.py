@@ -79,15 +79,31 @@ def from_pydata_sparse(cls, s, *, dup_op=None, layout=None, name=None):
         if tl._valid_split(shape, lay.seq, len(rows)):
             from .matrix import Matrix
 
-            M = Matrix.ss.import_csr(
-                nrows=tl.prod(shape, lay.rows),
-                ncols=tl.prod(shape, lay.cols),
-                indptr=s.indptr,
-                col_indices=s.indices,
-                values=s.data,
-                dtype=dtype,
-                sorted_cols=False,  # (GCXS does not promise sorted columns)
-            )
+            nrows, ncols = tl.prod(shape, lay.rows), tl.prod(shape, lay.cols)
+            indptr, indices = np.asarray(s.indptr), np.asarray(s.indices)
+            # GCXS promises neither sorted columns nor distinct ones (pydata checks neither),
+            # and SuiteSparse takes its arrays unchecked: a repeat would make an invalid
+            # Matrix. Rows strictly increasing (the usual case) import as they are; others
+            # are built, with repeats combined by dup_op.
+            increasing = indices[1:] > indices[:-1]
+            ends = indptr[1:-1]
+            increasing[ends[(ends > 0) & (ends < indices.size)] - 1] = True  # (row boundaries)
+            if increasing.all():
+                M = Matrix.ss.import_csr(
+                    nrows=nrows,
+                    ncols=ncols,
+                    indptr=indptr,
+                    col_indices=indices,
+                    values=s.data,
+                    dtype=dtype,
+                    sorted_cols=True,
+                )
+            else:
+                if dup_op is None:
+                    # As pydata's todense: repeated coordinates add up
+                    dup_op = binary.lor if dtype == BOOL else binary.plus
+                r = np.repeat(np.arange(nrows, dtype=np.int64), np.diff(indptr))
+                M = tl.from_coo(r, indices, s.data, dtype, nrows, ncols, dup_op=dup_op)
             return _with_layout(cls, M, shape, lay, layout, name)
     if not isinstance(s, sparse.COO):
         s = s.asformat("coo")
