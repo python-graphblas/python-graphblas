@@ -53,7 +53,7 @@ def _region_value(value, shape, dtype):
     """
     from .base import BaseExpression
     from .scalar import Scalar
-    from .tensor import Tensor, _as_tensor, _expand
+    from .tensor import Tensor, _as_tensor, _broadcast_shapes, _expand
 
     if isinstance(value, Scalar) or np.isscalar(value) and not isinstance(value, (str, bytes)):
         return value
@@ -70,7 +70,7 @@ def _region_value(value, shape, dtype):
         # (a GrB_Scalar, which may be empty when assigned; a C scalar may not)
         return t._M[0, 0].new(is_cscalar=False)  # pragma: is_grbscalar
     try:
-        broadcast = np.broadcast_shapes(t._shape, shape)
+        broadcast = _broadcast_shapes(t._shape, shape)
     except ValueError:
         broadcast = None
     if broadcast != shape:

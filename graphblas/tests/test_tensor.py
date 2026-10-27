@@ -561,6 +561,61 @@ def test_relayout_4d_and_big():
         T.relayout(((0, 1, 2, 3), ()))
 
 
+def _as_dict(T):
+    coords, values = T.to_coo()
+    return {tuple(int(c[k]) for c in coords): v for k, v in enumerate(values.tolist())}
+
+
+def test_past_2_63_positions():
+    """A Tensor of 2^63 positions or more (FROSTT's NELL-1 shape, 1.6e20, each group under
+    2^60) broadcasts, takes TTVs and assigns regions. numpy's ``broadcast_shapes`` refuses
+    such shapes (its size is an intp), which read as shapes that "do not broadcast"; and TTV
+    and broadcasting moved the split with ``ss.reshape``, which refuses 2^60 positions in
+    total (the planner replaces such moves by REBUILDs).
+    """
+    shape = (2902330, 2143368, 25495389)  # NELL-1
+    coords = [[0, 5, 9, 2902329], [1, 2, 3, 2143367], [7, 8, 9, 25495388]]
+    xd = {(0, 1, 7): 1.0, (5, 2, 8): 2.0, (9, 3, 9): 3.0, (2902329, 2143367, 25495388): 4.0}
+    for layout in [((0,), (1, 2)), ((2,), (0, 1)), ((1, 2), (0,)), ((0, 2), (1,))]:
+        X = Tensor.from_coo(coords, list(xd.values()), shape=shape, layout=layout)
+        for axis in range(3):
+            # One value at the first and the last entry's coordinate along the axis
+            at = (coords[axis][0], coords[axis][3])
+            w = Tensor.from_coo([list(at)], [10.0, 100.0], shape=(shape[axis],))
+            scale = dict(zip(at, [10.0, 100.0], strict=True))
+            prod = {k: v * scale[k[axis]] for k, v in xd.items() if k[axis] in scale}
+            ttv = {k[:axis] + k[axis + 1 :]: v for k, v in prod.items()}
+            assert _as_dict(X.tensordot(w, ([axis], [0])).new()) == ttv, (layout, axis)
+            assert _as_dict(w.tensordot(X, ([0], [axis])).new()) == ttv, (layout, axis)
+            bshape = tuple(n if a == axis else 1 for a, n in enumerate(shape))
+            bcoords = [list(at) if a == axis else [0, 0] for a in range(3)]
+            b = Tensor.from_coo(bcoords, [10.0, 100.0], shape=bshape)
+            assert _as_dict((X * b).new()) == prod, (layout, axis)
+            assert _as_dict((b * X).new()) == prod, (layout, axis)
+    assert _as_dict((X * w).new()) == prod  # (a Tensor of lower rank)
+    assert _as_dict((X + X).new()) == {k: 2 * v for k, v in xd.items()}
+    with pytest.raises(DimensionMismatch, match="do not broadcast"):
+        X * Tensor(float, (3,))
+    with pytest.raises(ValueError, match="replicate"):
+        X.ewise_add(w).new()  # (numpy's union fills every broadcast position)
+    # Region assignment, the value as large as the region or broadcast into it
+    Z = Tensor(float, shape)
+    Z[...] = X
+    assert _as_dict(Z) == xd
+    v = Tensor.from_coo([[0], [1], [7]], [5.0], shape=(1, *shape[1:]))
+    Z = Tensor(float, shape)
+    Z[0:200000] = v  # (2^63 positions or more in the region)
+    (i, j, k), values = Z.to_coo()
+    np.testing.assert_array_equal(np.sort(i), np.arange(200000))
+    assert set(j.tolist()) == {1}
+    assert set(k.tolist()) == {7}
+    assert set(values.tolist()) == {5.0}
+    # matmul's batch axes now broadcast; they must then fit in one Matrix dimension
+    X5 = Tensor.from_coo([*coords, [0, 1, 0, 1], [0, 1, 2, 0]], 1.0, shape=(*shape, 2, 3))
+    with pytest.raises(ValueError, match="do not fit"):
+        (X5 @ Tensor.from_dense(np.ones((3, 2)))).new()
+
+
 def test_relayout_6d_rebuilds():
     rng = np.random.default_rng(8)
     T, values, present = random_tensor((2, 3, 1, 2, 2, 3), rng)

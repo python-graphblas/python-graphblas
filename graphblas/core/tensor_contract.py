@@ -4,6 +4,7 @@ Private: part of ``graphblas.core.tensor``, which imports it at its end.
 """
 
 import itertools
+import math
 import operator
 
 import numpy as np
@@ -186,7 +187,7 @@ def _matmul_expr(self, other, op):
             f"matmul: the last axis of {self._shape} does not match {other._shape}"
         )
     try:
-        bshape = tuple(int(n) for n in np.broadcast_shapes(x._shape[:-2], y._shape[:-2]))
+        bshape = _broadcast_shapes(x._shape[:-2], y._shape[:-2])
     except ValueError:
         raise DimensionMismatch(
             f"matmul: batch axes of {self._shape} and {other._shape} do not broadcast"
@@ -286,8 +287,11 @@ def _ttv(updater, x, w, axis, op, x_left):
         # vxm writes into the whole column group: fine up to a few times the data (at 2.6x,
         # 36 ms vs 56), slow into a hypersparse one (hyper 2^38: 87 ms vs 23)
         options.append((0.0, "vxm", p))
+    # SuiteSparse's reshape refuses 2^60 positions or more in total: no split moves then (the
+    # planner's general option replaces them by REBUILDs, see tensor_layout._neighbors)
+    total_ok = math.prod(x._shape) < tl.MAX_GROUP
     for q in range(n + 1) if not options else ():
-        if not tl._valid_split(x._shape, seq, q):
+        if not tl._valid_split(x._shape, seq, q) or q != p and not total_ok:
             continue
         move = 0.0 if q == p else _rs_cost(x._shape, seq, q, nv, ti)
         rows, cols = seq[:q], seq[q:]
@@ -425,6 +429,7 @@ from .tensor import (  # noqa: E402
     Tensor,
     TensorExpression,
     _as_tensor,
+    _broadcast_shapes,
     _fixed_layout,
     _flipped,
     _healthy,
