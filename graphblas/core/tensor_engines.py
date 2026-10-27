@@ -402,6 +402,14 @@ def _krp_embedding(F, R):
 
 
 def _mttkrp_recipe(updater, x, mats, mode, R, op):
+    if x._M._nvals == 0 or any(F._nvals == 0 for F in mats.values()):
+        # SuiteSparse (seen from 8.2 through 10.5.1): a product over a dimension of size 0
+        # returns every output position when both operands are iso and full (see
+        # tensor_reduce._reduce_matrix). Every term needs an entry of each, so none gives
+        # no entries.
+        out = tl.new_matrix(op.return_type, x._shape[mode], R)
+        _store(updater, out, (x._shape[mode], R), Layout((0,), (1,)), fresh=True)
+        return
     nthreads = updater.opts.get("nthreads")
     kernel = op.name == "plus_times" and op.return_type == FP64
     numba_kernel = kernel and "numba" in _t._MTTKRP_ENGINES

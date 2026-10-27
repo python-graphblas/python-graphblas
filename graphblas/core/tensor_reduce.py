@@ -124,6 +124,15 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
     """
     ndim = len(shape)
     dtype = op.return_type
+    if M._nvals == 0:
+        # SuiteSparse (seen from 8.2 through 10.5.1): a reduction or product over a
+        # dimension of size 0 returns every output position (value 0) when its operands are
+        # iso and full, as an empty region of an iso Tensor and the iso selectors are. No
+        # entries reduce to none.
+        rows = tuple(x for x in layout.rows if x not in A)
+        cols = tuple(x for x in layout.cols if x not in A)
+        out = tl.new_matrix(dtype, tl.prod(shape, rows), tl.prod(shape, cols))
+        return out, Layout(rows, cols)
     if len(A) == ndim:
         if census.on:
             census.note("reduce", "all axes: reduce_scalar")
