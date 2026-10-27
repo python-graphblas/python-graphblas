@@ -153,7 +153,7 @@ Two notebooks run the Tensor end to end, committed with their outputs:
 - `notebooks/Tensor Multiplex PageRank.ipynb`: a multilayer PageRank over the 37
   airline layers of the EU airline multiplex, as one Tensor and one einsum per step, checked
   against scipy's sparse direct solve. It downloads the data (24 KB) from Netzschleuder and
-  checks its SHA-256.
+  checks the SHA-256 of the CSV files it reads (not of the zip, which the server may rebuild).
 
 CI's notebook job executes every notebook, the Tensor ones only where SuiteSparse:GraphBLAS 10
 or later is installed. To rerun them in place, with Jupyter installed:
