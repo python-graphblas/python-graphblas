@@ -4829,6 +4829,67 @@ def test_take_along_axis_size1_axes(engines, monkeypatch):
             tensor_index.gather(X, [np.array(c) for c in coords], (1,))
 
 
+def _outer_model(xd, n, key):
+    """Outer indexing of the entries ``xd`` (coordinates to values) of an (n, n, n) model; a
+    repeated index repeats the entries.
+    """
+    key = key + (slice(None),) * (3 - len(key))
+    out = {}
+    for coord, v in xd.items():
+        pos = []
+        for k, x in zip(key, coord, strict=True):
+            if isinstance(k, int):
+                pos.append([()] if k % n == x else [])
+            elif isinstance(k, slice):
+                sel = range(*k.indices(n))
+                pos.append([(sel.index(x),)] if x in sel else [])
+            else:
+                pos.append([(i,) for i, y in enumerate(k) if y % n == x])
+        for p in itertools.product(*pos):
+            out[sum(p, ())] = v
+    return out
+
+
+@pytest.mark.parametrize("log2n", [26, 30])
+def test_index_long_axes(log2n):
+    """Extraction, assignment and deletion on a Tensor with long axes and few entries cost by
+    the entries, not by the axis lengths. Every slice became ``np.arange`` of its length and
+    extraction ran ``np.unique`` on each (``X[n - 1]`` of a (2^30)^3 Tensor passed 33 GB).
+    Measured with tracemalloc (numpy's allocations); 2^26 shows the old cost too.
+    """
+    import tracemalloc
+
+    n = 2**log2n
+    shape = (n, n, n)
+    xd = {(0, n - 1, 3): 1.0, (n - 1, 0, 7): 2.0, (n - 1, 5, n - 2): 3.0, (2, 2, 2): 4.0}
+    coords = [list(c) for c in zip(*xd, strict=True)]
+    for layout in [((0,), (1, 2)), ((2,), (0, 1)), ((1, 2), (0,))]:
+        X = Tensor.from_coo(coords, list(xd.values()), shape=shape, layout=layout)
+        keys = [
+            (n - 1,),
+            (slice(None), 0),
+            (0, n - 1, 3),
+            (slice(n - 2, None),),
+            (slice(None, 3), slice(None), slice(3, None, 4)),
+            ([n - 1, 2], slice(None), slice(None, 8)),
+            ([n - 1, 0, -1], [5, 0, n - 1]),
+            (slice(None, None, -1), 0),
+        ]
+        tracemalloc.start()
+        try:
+            for key in keys:
+                assert _as_dict(X[key].new()) == _outer_model(xd, n, key), (layout, key)
+            Z = X.dup()
+            Z[n - 1] = Tensor.from_coo([[0, 9], [7, 9]], [5.0, 6.0], shape=(n, n))
+            Z(Z.S)[n - 1] << 8.0
+            del Z[0, n - 1]
+            assert _as_dict(Z) == {(2, 2, 2): 4.0, (n - 1, 0, 7): 8.0, (n - 1, 9, 9): 8.0}
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        assert peak < 2**24, (layout, peak)  # (2^26 int64 positions alone are 2^29 bytes)
+
+
 @pytest.mark.parametrize("max_listed", [None, 0])
 @pytest.mark.parametrize("ndim", [2, 3, 4])
 def test_extract_repeated_indices(ndim, max_listed, monkeypatch):
