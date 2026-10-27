@@ -61,6 +61,8 @@ def test_tensor_exports(backend):
     import subprocess
     import sys
 
+    from graphblas.core.tensor import _has_container as tensor_has_container
+
     repo_root = pathlib.Path(gb.__file__).resolve().parents[1]
     result = subprocess.run(
         [sys.executable, "-c", _TENSOR_IMPORT_SCRIPT, backend],
@@ -79,8 +81,11 @@ def test_tensor_exports(backend):
     assert lines["engines"] == ["[]"], report
     if backend == "vanilla":
         assert lines["use"] == ["Tensor requires the suitesparse backend"] * 2, report
-    else:
+    elif tensor_has_container():
         assert lines["use"] == ["ok", "ok"], report
+    else:  # (an older SuiteSparse: see test_tensor_old_suitesparse)
+        assert len(lines["use"]) == 2, report
+        assert all(use.startswith("Tensor requires ") for use in lines["use"]), report
 
 
 _TENSOR_OLD_SS_SCRIPT = """
