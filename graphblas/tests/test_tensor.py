@@ -1136,6 +1136,47 @@ def test_reduce_dtypes(dtype):
             check(R, ev & ep, ep)
 
 
+def test_bool_selector_products():
+    """BOOL data through each product with a selector or a one-term vector (lor_land, as
+    SuiteSparse precompiles no lor_first or lor_second), stored False values included.
+    """
+    from graphblas.core import tensor_census as census
+
+    rng = np.random.default_rng(705)
+    X, xv, xp = random_tensor((4, 5, 6), rng, dtype=dtypes.BOOL, density=0.6, layout=((0, 1), (2,)))
+    Y, yv, yp = random_tensor((4, 5, 6), rng, dtype=dtypes.BOOL, density=0.6, layout=((0,), (1, 2)))
+    v = rng.random(5) < 0.5
+    forced = {
+        "reduce": "row selector",
+        "bcast": "diagonal rows, selector-expanded",
+        "ttv": "rowsel",
+    }
+    census.start()
+    try:
+        census.force.update(forced)
+        R = X.any(0).new()
+        B = X.ewise_mult(Tensor.from_dense(v.reshape(5, 1)), binary.land).new()
+        T = X.tensordot(Vector.from_dense(v), ([1], [0]), op=gb.semiring.lor_land).new()
+        census.force["reduce"] = "column selector"
+        S = Y.any(1).new()
+        recs = census.stop()
+    finally:
+        census.stop()
+        census.force.clear()
+        census.records.clear()
+    taken = {(r["point"], r["choice"]) for r in recs}
+    for point, label in [*forced.items(), ("reduce", "column selector")]:
+        assert (point, label) in taken
+    ep = xp.any(0)
+    check(R, np.logical_or.reduce(xp & xv, axis=0) & ep, ep)
+    vb = v[None, :, None]
+    check(B, xv & vb, xp)
+    ep = xp.any(1)
+    check(T, np.logical_or.reduce(xp & xv & vb, axis=1) & ep, ep)
+    ep = yp.any(1)
+    check(S, np.logical_or.reduce(yp & yv, axis=1) & ep, ep)
+
+
 def test_reduce_scalar():
     rng = np.random.default_rng(24)
     T, values, present = random_tensor((3, 4, 5), rng, layout=((2,), (0, 1)))

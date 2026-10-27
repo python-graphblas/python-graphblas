@@ -669,15 +669,20 @@ def plan(shape, src, targets, nnz, nthreads, *, hyper1=False, allow_perm=True, s
 
 
 def _perm_semiring(M):
-    # P has one entry per row, so the monoid never combines two values; pick a factory kernel
+    # For P @ M (or S @ v) where P (a permutation or a selector) has one True entry per row:
+    # the monoid never combines two values, so pick one with a factory kernel (the JIT at
+    # "off" or "run" runs a generic kernel otherwise, about 2x slower). M may be a Vector.
     # min_second is one for the 32- and 64-bit integer and floating types, and
     # it keeps an iso M iso; SuiteSparse 10 compiled out any_second, and plus_second is generic
     # for UINT32 / UINT64 and drops iso (as SuiteSparse's burble shows).
-    # BOOL and the 8- and 16-bit integers have no factory SECOND kernel; complex has no min.
+    # BOOL has no factory SECOND kernel, but lor_land has one, and land(True, m) is m.
+    # The 8- and 16-bit integers have no factory kernels at all; complex has no min.
+    if M.dtype._is_udt:
+        return _semiring.plus_second  # (a UDT never moves by P @ M; this is for S @ v)
     if M.dtype.name in {"FC32", "FC64"}:
         return _semiring.any_second if M.ss.is_iso else _semiring.plus_second
-    if M.dtype == BOOL and not M.ss.is_iso:
-        return _semiring.lor_second
+    if M.dtype == BOOL:
+        return _semiring.lor_land
     return _semiring.min_second
 
 
