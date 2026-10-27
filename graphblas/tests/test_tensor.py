@@ -3795,6 +3795,7 @@ def test_user_guide_examples():
     prints what the page shows.
     """
     import doctest
+    import re
 
     if backend != "suitesparse":
         pytest.skip("SuiteSparse only")
@@ -3815,12 +3816,25 @@ def test_user_guide_examples():
                     example.options[doctest.SKIP] = True
             return test
 
-    failed, attempted = doctest.testfile(
-        str(path),
-        module_relative=False,
-        optionflags=doctest.NORMALIZE_WHITESPACE | doctest.ELLIPSIS,
-        parser=Parser(),
+    class Checker(doctest.OutputChecker):
+        """Ignores ``, dtype=int64`` in the output where numpy's default int is not int64
+        (Windows with numpy 1.x): there numpy shows the dtype of int64 arrays, and the page
+        shows them as other platforms print them.
+        """
+
+        def check_output(self, want, got, optionflags):
+            if np.dtype(int) != np.int64:
+                got = re.sub(r",\s*dtype=int64", "", got)
+            return super().check_output(want, got, optionflags)
+
+    # (doctest.testfile takes no checker)
+    test = Parser().get_doctest(
+        path.read_text(encoding="utf-8"), {"__name__": "__main__"}, path.name, str(path), 0
     )
+    runner = doctest.DocTestRunner(
+        Checker(), optionflags=doctest.NORMALIZE_WHITESPACE | doctest.ELLIPSIS
+    )
+    failed, attempted = runner.run(test)
     assert attempted >= 40
     assert failed == 0
 
