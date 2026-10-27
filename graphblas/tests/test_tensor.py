@@ -3797,13 +3797,27 @@ def test_user_guide_examples():
     if backend != "suitesparse":
         pytest.skip("SuiteSparse only")
     pytest.importorskip("scipy")
+    from graphblas.core.tensor_io import _scipy_coo_needs
+
     path = Path(__file__).resolve().parents[2] / "docs" / "user_guide" / "tensor.rst"
     if not path.exists():  # pragma: no cover (an installed package has no docs)
         pytest.skip("no docs directory")
+
+    class Parser(doctest.DocTestParser):
+        """Skips the scipy.sparse examples (n-d arrays) with a scipy older than 1.15."""
+
+        def get_doctest(self, *args, **kwargs):
+            test = super().get_doctest(*args, **kwargs)
+            for example in test.examples:
+                if "scipy_sparse" in example.source and _scipy_coo_needs(3):
+                    example.options[doctest.SKIP] = True
+            return test
+
     failed, attempted = doctest.testfile(
         str(path),
         module_relative=False,
         optionflags=doctest.NORMALIZE_WHITESPACE | doctest.ELLIPSIS,
+        parser=Parser(),
     )
     assert attempted >= 40
     assert failed == 0
@@ -3815,6 +3829,7 @@ def test_expression_methods():
     says to call ``.new()``, as for Matrix.
     """
     from graphblas.core.tensor import TensorExpression
+    from graphblas.core.tensor_io import _scipy_coo_needs
 
     rng = np.random.default_rng(13)
     X, _, _ = random_tensor((3, 4, 5), rng, density=0.4)
@@ -3860,6 +3875,8 @@ def test_expression_methods():
             return rv.toarray()
         return rv
 
+    if _scipy_coo_needs(3):  # (scipy before 1.15 has no 3-d arrays)
+        del calls["to_scipy_sparse"]
     E = X * X
     D = E.new()
     with gb.config.set(autocompute=True):

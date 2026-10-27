@@ -933,6 +933,8 @@ def oracle_io(rng, n, teeth=False):
     except ImportError:  # (pydata sparse needs Numba)
         pytest.skip("needs pydata sparse")
     ssp = pytest.importorskip("scipy.sparse")
+    from graphblas.core.tensor_io import _scipy_coo_needs
+
     o = Oracle("io")
 
     def compare(what, shape, coords, vals, got_shape, got_coords, got_vals):
@@ -986,9 +988,17 @@ def oracle_io(rng, n, teeth=False):
             compare("to GCXS", shape, coords, vals, gc.shape, gc.coords, gc.data)
             Y = Tensor.from_pydata_sparse(g)
             compare("from GCXS", shape, coords, vals, Y.shape, *Y.to_coo())
-        a = X.to_scipy_sparse()
-        compare("to scipy COO", shape, coords, vals, a.shape, a.coords, a.data)
-        if nnz and vals.dtype != bool:  # duplicates add up
+        if need := _scipy_coo_needs(ndim):  # (this scipy has no such array)
+            o.stats["to scipy refused"] += 1
+            try:
+                X.to_scipy_sparse()
+                o.fail(f"to scipy COO {shape}", f"accepted without scipy {need}")
+            except NotImplementedError:
+                pass
+        else:
+            a = X.to_scipy_sparse()
+            compare("to scipy COO", shape, coords, vals, a.shape, a.coords, a.data)
+        if nnz and vals.dtype != bool and not need:  # duplicates add up
             dup = rng.integers(0, nnz, max(1, nnz // 3))
             cc = [np.concatenate([c, c[dup]]) for c in coords]
             vv = np.concatenate([vals, vals[dup]])
