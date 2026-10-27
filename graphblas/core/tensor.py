@@ -1666,6 +1666,18 @@ def _fill(updater, value):
     target._M(mask=mask, accum=accum, replace=replace, **opts) << value
 
 
+def _flipped(op):
+    """The typed op that gives ``op(x, y)`` as ``flipped(y, x)``, for a product that puts the
+    operands the other way round; or None. Only a flip of the same kind and result type gives
+    the same values: pow's is rpow, a Numba UDF that wraps on integer overflow where
+    GraphBLAS's pow saturates (and gives INT8 on BOOL).
+    """
+    flip = getattr(op, "commutes_to", None)
+    if flip is None or type(flip) is not type(op) or flip.return_type != op.return_type:
+        return None
+    return flip
+
+
 def _same_layout(a, b):
     """The stored Matrices of ``a`` and ``b`` in one layout (moving the smaller one)."""
     if a._layout == b._layout:

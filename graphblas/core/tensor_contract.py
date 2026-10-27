@@ -256,7 +256,7 @@ def _ttv(updater, x, w, axis, op, x_left):
     mxm (returns False for that).
     """
     mult = op.binaryop
-    flip = getattr(mult, "commutes_to", None)
+    flip = _flipped(mult)
     # (x, w) is the order the multiply must see: mxv and a column selector give (x, w), vxm
     # and a row selector give (w, x)
     xw_op = mult if x_left else flip
@@ -426,6 +426,7 @@ from .tensor import (  # noqa: E402
     TensorExpression,
     _as_tensor,
     _fixed_layout,
+    _flipped,
     _healthy,
     _in_layout,
     _insert_unit_axes,
