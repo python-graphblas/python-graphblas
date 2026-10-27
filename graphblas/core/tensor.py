@@ -1097,7 +1097,10 @@ class Tensor(BaseType):
         computed as one TTM and then one product per remaining axis against an (I_n R x R)
         embedding of its factor, never materializing the Khatri-Rao product.
         With Numba installed, a 3-d FP64 tensor with full FP64 factors and ``plus_times``
-        takes a kernel over the stored arrays instead, in the layout it is stored in.
+        takes a kernel over the stored arrays instead, in the layout it is stored in. Both
+        sum over one axis before multiplying by the next factor, which needs a semiring
+        whose multiply distributes over its monoid and commutes (see ``einsum``); others
+        take einsum's way, ``mult(mult(X, F_0), F_1)``... in axis order for each term.
         """
         return _mttkrp_expr(self, factors, mode, op)
 
