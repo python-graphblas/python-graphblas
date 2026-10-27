@@ -8,7 +8,7 @@ import math
 
 import numpy as np
 
-from .. import binary, config, monoid, semiring
+from .. import binary, config, monoid
 from ..dtypes import BOOL, unify
 from ..exceptions import DimensionMismatch
 from . import tensor_census as census
@@ -335,7 +335,7 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
             transposed=True,
         )
         e = Vector(v.dtype, St._nrows)
-        e << St.mxv(v, semiring.lor_second if v.dtype == BOOL else semiring.plus_second)
+        e << St.mxv(v, tl._perm_semiring(v))
         v = e
     D = v.diag()
     if side == "cols":

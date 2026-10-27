@@ -707,7 +707,8 @@ Each of these was an ask until a combination of existing calls turned out to do 
 1. **`min_second` for permutation and selection products** [measured]. A factory kernel for
    INT32, INT64, UINT32, UINT64, FP32 and FP64, and it keeps an iso operand iso; UINT32
    `plus_second` is generic (2.26 against 1.02 ms on 1e6 entries at 4 threads). BOOL has no
-   factory SECOND semiring. The Tensor uses it (`design.md`, "States and edges").
+   factory SECOND semiring, but has `lor_land`, which gives the same where the permutation or
+   selector holds True. The Tensor uses both (`design.md`, "States and edges").
 2. **A column permutation through the Container** [measured]. Unload, gather the column
    indices through the map with `GxB_Vector_extract_Vector` (`GraphBLAS.h:5457`), set
    `jumbled`, load; SuiteSparse sorts each row only when something needs it. On a 1e6 x 1e3

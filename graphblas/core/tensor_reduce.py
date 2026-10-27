@@ -5,7 +5,8 @@ Private: part of ``graphblas.core.tensor``, which imports it at its end.
 
 import math
 
-from .. import binary
+from .. import binary, monoid, semiring
+from ..dtypes import BOOL
 from . import tensor_census as census
 from . import tensor_layout as tl
 from .operator import get_semiring, get_typed_op
@@ -94,6 +95,18 @@ def _selector_ok(n, nvals):
     return n <= max(4 * nvals, 2**16)
 
 
+def _selector_semiring(op, mult):
+    """The semiring of monoid ``op`` and ``mult`` (first or second) that multiplies by a
+    selector, whose entries are True.
+    """
+    if op is monoid.lor[BOOL]:
+        # land(True, x) is x, as first and second give, and SuiteSparse 10 has a factory
+        # kernel for lor_land only: BOOL has no factory FIRST or SECOND semiring (Tensor.any
+        # ran about 2x slower with the JIT at "off" or "run")
+        return semiring.lor_land[BOOL]
+    return get_semiring(op, mult)
+
+
 def _row_reducer(M, shape, rows, kept):
     """S with S @ M reducing the row axes not in ``kept`` (positions in ``rows``)."""
     if M.ss.format == "hypercsr":
@@ -155,7 +168,7 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
                 kept = tuple(i for i, x in enumerate(cols) if x not in Ac)
                 St = tl.selector(gshape, kept, transposed=True)
                 out = tl.new_matrix(dtype, M._nrows, St._ncols)
-                out(**opts) << M.mxm(St, get_semiring(op, binary.first))
+                out(**opts) << M.mxm(St, _selector_semiring(op, binary.first))
                 M = out
                 layout = Layout(rows, tuple(cols[i] for i in kept))
             A -= Ac
@@ -213,7 +226,7 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
             kept = tuple(i for i, x in enumerate(rows) if x not in Ar)
             S = _row_reducer(M, shape, rows, kept)
             out = tl.new_matrix(dtype, S._nrows, M._ncols)
-            out(**opts) << S.mxm(M, get_semiring(op, binary.second))
+            out(**opts) << S.mxm(M, _selector_semiring(op, binary.second))
             M = out
             layout = Layout(tuple(rows[i] for i in kept), cols)
         A -= Ar
