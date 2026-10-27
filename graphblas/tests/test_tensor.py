@@ -616,6 +616,19 @@ def test_past_2_63_positions():
         (X5 @ Tensor.from_dense(np.ones((3, 2)))).new()
 
 
+def test_default_layout_axis_too_long():
+    """A 1-d or 2-d Tensor with an axis past 2^60 positions gets the error a layout gets, not
+    SuiteSparse's InvalidValue from making the Matrix (default_layout did not check them).
+    """
+    for shape in [(2**61,), (2**61, 2), (3, 2**61)]:
+        with pytest.raises(ValueError, match="more than one Matrix dimension can hold"):
+            Tensor(dtypes.FP64, shape)
+        with pytest.raises(ValueError, match="more than one Matrix dimension can hold"):
+            Tensor.from_coo([[0]] * len(shape), [1.0], shape=shape)
+    assert Tensor(dtypes.FP64, (2**60,)).shape == (2**60,)
+    assert Tensor(dtypes.FP64, (2**60, 2**60)).shape == (2**60, 2**60)
+
+
 def test_relayout_6d_rebuilds():
     rng = np.random.default_rng(8)
     T, values, present = random_tensor((2, 3, 1, 2, 2, 3), rng)

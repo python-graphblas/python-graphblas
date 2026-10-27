@@ -1100,8 +1100,9 @@ class Tensor(BaseType):
         ``mode`` is ignored). For 3-d mode 0 this is ``einsum('ijk,jr,kr->ir', X, B, C)``,
         computed as one TTM and then one product per remaining axis against an (I_n R x R)
         embedding of its factor, never materializing the Khatri-Rao product.
-        With Numba installed, a 3-d FP64 tensor with full FP64 factors and ``plus_times``
-        takes a kernel over the stored arrays instead, in the layout it is stored in. Both
+        With Numba installed, an FP64 tensor of 3 or more axes and 2^16 entries or more, with
+        full FP64 factors and ``plus_times``, takes a kernel over the stored arrays instead,
+        in the layout it is stored in (or after a relayout). Both
         sum over one axis before multiplying by the next factor, which needs a semiring
         whose multiply distributes over its monoid and commutes (see ``einsum``); others
         take einsum's way, ``mult(mult(X, F_0), F_1)``... in axis order for each term.
@@ -1530,7 +1531,8 @@ class _TensorSS:
     @property
     def matrix(self):
         """The stored Matrix itself. Use it read-only: the Tensor copies its data before its
-        next in-place change, but changes made through this Matrix reach the Tensor.
+        next in-place change, but changes made through this Matrix reach the Tensor, and every
+        Tensor that shares its storage (its views, ``dup()``, Tensors assigned from it).
         """
         parent = self._parent
         parent._store.exported = True

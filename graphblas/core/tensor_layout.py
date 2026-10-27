@@ -127,10 +127,15 @@ def default_layout(shape, nnz=None):
     seq = tuple(range(ndim))
     if ndim == 0:
         return Layout((), ())
-    if ndim == 1:
-        return Layout((), (0,))
-    if ndim == 2:
-        return Layout((0,), (1,))
+    if ndim <= 2:
+        # (each axis is a group of its own, or its group in any layout: none can be wider)
+        for a, n in enumerate(shape):
+            if n > MAX_GROUP:
+                raise ValueError(
+                    f"axis {a} of shape {shape} has {n} positions, more than one Matrix "
+                    "dimension can hold (2**60)"
+                )
+        return Layout((), (0,)) if ndim == 1 else Layout((0,), (1,))
     p = ndim - 1 if nnz is None else full_split(shape, seq, nnz)
     if _valid_split(shape, seq, p):
         return Layout(seq[:p], seq[p:])
@@ -270,6 +275,9 @@ def matrix_from_arrays(dtype, nrows, ncols, fmt, *, x, h=None, p=None, i=None, b
     O(1) (no copy, no check: an import scans the values for iso, 210 ms for 265e6). ``fmt``
     is "hypercsr" (h, p, i, x), "bitmapr" (b, x) or "fullr" (x); each array must come from an
     allocator GraphBLAS can free (``numpy.empty`` by default) and is a read-only view after.
+    For "hypercsr", every row in ``h`` must hold at least one entry: the Matrix records
+    ``h.size`` nonempty rows without counting them (the one caller, the Numba TTM, lists
+    only the fibers it wrote, R values each).
     """
     from .utils import _give_buffer
 
