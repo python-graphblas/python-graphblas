@@ -2358,6 +2358,56 @@ def test_ttm_kernel_layouts(shape, nthreads, monkeypatch):
 
 
 @pytest.mark.usefixtures("numba_boundscheck")
+def test_numba_kernels_uint64_row_pointers(monkeypatch):
+    """The TTM and MTTKRP kernels read 64-bit row pointers, which SuiteSparse uses past 2^32
+    entries (crafted here: ``p`` handed over as uint64). The kernels did ``q = p[s]`` and
+    ``q += 1``, which Numba types as float64 (uint64 plus int64), so they did not compile.
+    """
+    if not gb.core._has_numba:
+        pytest.skip("needs numba")
+    from graphblas.core import tensor_numba
+
+    seen = []
+
+    def widen(kernel):
+        def run(arrays, *args, **kwargs):
+            p, *rest = arrays
+            seen.append(p.dtype)
+            return kernel((p.astype(np.uint64), *rest), *args, **kwargs)
+
+        return run
+
+    ttm_calls = _ttm_spy(monkeypatch)
+    mttkrp_calls, _ = _kernel_spy(monkeypatch)
+    monkeypatch.setattr(tensor_numba, "ttm", widen(tensor_numba.ttm))
+    monkeypatch.setattr(tensor_numba, "mttkrp_nd", widen(tensor_numba.mttkrp_nd))
+    rng = np.random.default_rng(81)
+    nmttkrp = 0
+    for shape, layout in [
+        ((6, 7, 8, 9), ((0,), (1, 2, 3))),
+        ((6, 7, 8, 9), ((0, 1), (2, 3))),
+        ((6, 7, 8, 9), ((2, 0, 1), (3,))),
+        ((4, 5, 300), ((0, 1), (2,))),  # every fiber along axis 2 nonempty: a full output
+    ]:
+        X, xv, xp = random_tensor(shape, rng, density=0.03, layout=layout)
+        for mode in range(X.ndim):
+            U = rng.random((shape[mode], 3))
+            R = X.tensordot(Matrix.from_dense(U), ([mode], [0])).new(nthreads=4)
+            check(R, *_ttm_model(xv, xp, U, mode), approx=True)
+        dense = [rng.random((n, 3)) for n in shape]
+        factors = [Matrix.from_dense(d) for d in dense]
+        for mode, runs, colblock in itertools.product(range(X.ndim), [True, False], [True, False]):
+            monkeypatch.setattr(tensor_numba, "_FORCE_RUNS", runs)
+            monkeypatch.setattr(tensor_numba, "_FORCE_COLBLOCK", colblock)
+            R = X.mttkrp(factors, mode).new(nthreads=4)
+            check(R, *_mttkrp_model(xv, xp, dense, mode), approx=True)
+            nmttkrp += 1
+    assert set(ttm_calls) == {"hyper", "full"}, ttm_calls
+    assert mttkrp_calls == [True] * nmttkrp
+    assert len(seen) == len(ttm_calls) + len(mttkrp_calls)
+
+
+@pytest.mark.usefixtures("numba_boundscheck")
 def test_ttm_kernel_paths(monkeypatch):
     """TTM outputs in every storage (hypersparse rows, bitmap, full), views, empty groups,
     R = 1, and the GraphBLAS product where the kernel cannot run.
