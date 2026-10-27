@@ -529,8 +529,7 @@ def _infer_ret_types_typing_only(func):
                 )
                 numba_ret_type = result.return_type
             except numba.TypingError:
-                # This dtype does not type-check; skip it, matching the eager
-                # loop's ``except numba.TypingError: continue``.
+                # This dtype does not type-check; skip it, as the eager loop does.
                 continue
             ret_type = _adjust_ret_type(type_, lookup_dtype(numba_ret_type), return_types)
             return_types[type_] = ret_type
@@ -714,7 +713,11 @@ class BinaryOp(OpBase):
                     sig = (type_.numba_type, type_.numba_type)
                     try:
                         binary_udf.compile(sig)
-                    except numba.TypingError:
+                    except (numba.TypingError, NotImplementedError):
+                        # Numba types some ops it cannot lower, such as ``>`` (so
+                        # ``max``) on complex values, and then raises a bare
+                        # NotImplementedError. Skip that dtype like one that fails
+                        # to type.
                         continue
                     ret_type = lookup_dtype(binary_udf.overloads[sig].signature.return_type)
                     ret_type = _adjust_ret_type(type_, ret_type, return_types)

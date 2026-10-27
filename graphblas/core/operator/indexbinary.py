@@ -267,7 +267,8 @@ class IndexBinaryOp(OpBase):
                 )
                 try:
                     indexbinary_udf.compile(sig)
-                except numba.TypingError:
+                except (numba.TypingError, NotImplementedError):
+                    # A dtype Numba types but cannot lower; see ``BinaryOp._build``.
                     continue
                 ret_type = lookup_dtype(indexbinary_udf.overloads[sig].signature.return_type)
                 if ret_type != type_ and (
