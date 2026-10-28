@@ -46,6 +46,7 @@ keeps, unlike a commit id):
 | 2026-10-21         | E to F    | the census of decision points (every alternative forced and timed), and the refits it led to                                                                | 2-18           |
 | 2026-10-21 evening | G         | the kit from a fresh clone: u7 and Uber, the Tensor against pydata/sparse and scipy (last section)                                                          | 1.4-2.7        |
 | 2026-10-27         | H, and I  | the Tensor with the SuiteSparse JIT "on", "run" and "off" on every data set but Enron, every group (section "JIT modes"); other dtypes before and after I   | 1-4, median 2  |
+| 2026-10-27 night   | K, and on | A/B of each change in "Performance work after K" against K                                                                                                  | 4-7            |
 
 - A: "Tensor: lift broadcast operands to the result's rank before choosing a strategy"
 - B: "Tensor: price a sorted REBUILD fallback only where reshape is unavailable"
@@ -58,6 +59,7 @@ keeps, unlike a commit id):
 - I: "Tensor: BOOL selector products with lor_land, which SuiteSparse precompiles"
 - J: "Tensor: the UDT TTM engine leaves the JIT control alone when it declines" (not measured;
   it changes what "run" does, see "JIT modes")
+- K: "Tensor: a TTV past 2^60 positions goes through the entries"
 
 The commits after F split `tensor.py` into modules and edited text only; an AST comparison
 with the docstrings removed found no code change.
@@ -290,9 +292,10 @@ It loses, with the cause:
   order (TACO: 1.8-6.6x at 1 thread). The Tensor relayouts inside its timing; an in-place
   kernel for those modes is on the roadmap.
 - **Hypersparse broadcasts and slices** against torch (hyper `X * v[j]`: 7.1 ms against torch's
-  1.33 at 8 threads; slabs along the last stored axis, 2-23x), and Uber's slices against
-  pydata/sparse and scipy (2.2-16x at 1 thread). Each touches a few entries of many rows, which
-  costs per row in a Matrix and per entry in COO.
+  1.33 at 8 threads; slabs along the last stored axis, 2-23x), and Uber's slabs along its last
+  axis against scipy and torch (one index: 31 / 7.1 ms at 1 / 8 threads, scipy 2.3, torch 0.66
+  at 8). Each touches a few entries of many rows, which costs per row in a Matrix and per
+  entry in COO.
 - **Small tensors against scipy** (u6's sums and TTVs: scipy 2.3-3.2 ms against the Tensor's
   3.1-6.3 at 8 threads): fixed costs, and scipy returns dense arrays there.
 - **Export to COO** (a copy; free for COO libraries), and **sums over all axes** against torch
@@ -309,6 +312,27 @@ The comparisons also found problems in other libraries:
 - pydata/sparse's `einsum` materializes the full broadcast product for MTTKRP;
 - TACO's command-line tool cannot run kernels at the measured commit (its generated module
   defines `compute` twice).
+
+## Performance work after K
+
+Each change below was measured A/B against K, in one process per (tree, data set), the trees
+interleaved (A, B, A, B) at 8 and 1 threads, over the kernel groups it can affect on u6, u7,
+skew, hyper, Zipf, NELL-2, Uber and NIPS. Times are medians of 7 calls, and the medians of the
+repetitions are given; every result's fingerprint matched its A.
+
+- **The extract priced by the rows it visits** (`tensor_index._extract_cost`). It was priced
+  as visiting every row of the Matrix, so slabs inside a sparse row group filtered the
+  coordinates instead. Of the 104 slice rows, 10 changed strategy, each to the fastest of the
+  forced options; the others stayed within noise (load 6.1-6.7, rechecked at 4.2):
+
+  | case (ms)     | 1 thread, before | after | 8 threads, before | after |
+  | ------------- | ---------------- | ----- | ----------------- | ----- |
+  | Uber `slice1` | 24.5             | 2.28  | 14.0              | 1.34  |
+  | Uber `slice2` | 23.5             | 0.125 | 13.2              | 0.149 |
+  | Uber `range1` | 36.2             | 4.20  | 26.7              | 2.70  |
+  | Uber `range2` | 33.4             | 4.59  | 23.9              | 2.71  |
+  | u6 `slice2`   | 14.5             | 4.62  | 2.43              | 2.37  |
+  | Zipf `slice2` | 103.8            | 40.8  | 18.9              | 19.0  |
 
 ## Reproducing the numbers
 

@@ -580,7 +580,7 @@ def _positions(s, coord):
 
 
 # Extraction costs (ns, 8 / 1 threads, measured 2026-10-20): a GraphBLAS extract pays per
-# nonempty row and per listed index of each group (u7 X[:, :, k]: 1e6 rows, one index, 3.9 ms;
+# row it visits and per listed column index (u7 X[:, :, k]: 1e6 rows, one index, 3.9 ms;
 # hyper (2^19)^3 X[:, :, k]: 4.5e5 rows, 2^19 indices, 8.6 ms); filtering the coordinates pays
 # per stored entry and per indexed axis (hyper 2.4 ms for 1e6 entries; u6 X[:, :, k0:k1] at
 # 1 thread 8.4 ms for 1e6, where the extract took 3.6).
@@ -588,9 +588,42 @@ C_X_ROW = (3.9, 19.0)
 
 C_X_LIST = (13.0, 74.0)
 
+# A column list shorter than 1/32 of the columns is looked up by hash at each entry of the
+# visited rows (2026-10-27: u6 X[:, :, k], 1000 listed of 1e6, 2.3 / 14 ms for 1e6 entries;
+# Zipf's, 1e5 of 1e10, 20 / 104 ms for 1e7)
+C_X_HASH = (2.0, 12.0)
+
 C_FILTER = (2.4, 7.0)
 
 C_FILTER_AXIS = (1.0, 1.5)
+
+
+def _extract_cost(M, ridx, cidx, ti):
+    """The cost of SuiteSparse's extract ``M[ridx, cidx]``, each index a slice or the number
+    of positions it lists (``_group_index`` with ``build=False``).
+
+    It visits only the rows the row index names: a listed row directly, or by a hash lookup
+    when ``M`` is hypersparse (Uber's slabs on (0, 1, 2 | 3) list 4392 to 5e5 of 5e6 rows:
+    0.32 to 5.1 ms at 1 thread, where the filter took 25 to 36). A column list is inverted
+    once (SuiteSparse's ``GB_I_inverse``); when it lists under 1/32 of the columns, the inverse
+    is hashed, and each entry of a visited row pays a lookup.
+    """
+    nonempty = tl.nonempty_rows(M)
+    if isinstance(ridx, int):
+        visited = ridx
+    elif ridx == slice(None):
+        visited = nonempty
+    elif tl.stored_format(M) == "hypercsr":
+        # A range trims the nonempty rows (h) to it: the uniform estimate
+        visited = nonempty * (ridx.stop - ridx.start) / M._nrows
+    else:
+        visited = ridx.stop - ridx.start
+    cost = C_X_ROW[ti] * visited
+    if isinstance(cidx, int):
+        cost += C_X_LIST[ti] * cidx
+        if M._ncols >= 32 * cidx:
+            cost += C_X_HASH[ti] * M._nvals * min(1.0, visited / max(nonempty, 1))
+    return cost
 
 
 def _extract_recipe(updater, t, sel, keys):
@@ -604,14 +637,11 @@ def _extract_recipe(updater, t, sel, keys):
     # (positions to list are counted here, and listed only if the extract is chosen)
     ridx = _group_index(t._shape, rows, sel, keys, build=False)
     cidx = _group_index(t._shape, cols, sel, keys, build=False)
-    listed = None
-    if ridx is not None and cidx is not None:
-        listed = sum(x for x in (ridx, cidx) if isinstance(x, int))
-        if not any(isinstance(x, int) for x in (ridx, cidx)):
-            if census.on:
-                census.note("extract", "slices: extract")
-            _store(updater, t._M[ridx, cidx], shape, layout)
-            return
+    if isinstance(ridx, slice) and isinstance(cidx, slice):
+        if census.on:
+            census.note("extract", "slices: extract")
+        _store(updater, t._M[ridx, cidx], shape, layout)
+        return
     # Repeated indices repeat the entries, as for Matrix (SuiteSparse's extract does; the
     # filter below expands them; the row pick takes slices and ints only)
     repeated = {
@@ -621,8 +651,8 @@ def _extract_recipe(updater, t, sel, keys):
     axes = [a for a in range(t.ndim) if not (isinstance(keys[a], slice) and keys[a] == slice(None))]
     nv = t._M._nvals
     options = [((C_FILTER[ti] + C_FILTER_AXIS[ti] * len(axes)) * nv, "filter")]
-    if listed is not None:
-        options.append((C_X_ROW[ti] * tl.nonempty_rows(t._M) + C_X_LIST[ti] * listed, "extract"))
+    if ridx is not None and cidx is not None:
+        options.append((_extract_cost(t._M, ridx, cidx, ti), "extract"))
     if (
         nv
         and tl.stored_format(t._M) == "hypercsr"
