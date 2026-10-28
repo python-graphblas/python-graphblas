@@ -122,17 +122,32 @@ def _expand(t, shape):
         return t
     ts, out_of = _squeezed(t, shape)
     bcast = tuple(o for o in range(len(shape)) if o not in out_of)
-    rows = bcast + tuple(out_of[a] for a in ts._layout.rows)
+    rows = tuple(out_of[a] for a in ts._layout.rows)
     cols = tuple(out_of[a] for a in ts._layout.cols)
-    layout = tl.as_layout((rows, cols), shape)
     # (more than one copy, or none: the callers give ``t`` the result's rank first, so a
     # broadcast axis of ``t`` has size 1 and the result's another size)
     reps = tl.prod(shape, bcast)
-    nrows, ncols = tl.prod(shape, rows), tl.prod(shape, cols)
-    ones = Matrix.from_scalar(True, reps, 1)
-    M = tl.new_matrix(t.dtype, nrows, ncols)
-    # kron(ones, M)[(b, r), c] = M[r, c]: the broadcast axes lead the rows
-    M << ones.kronecker(ts._M, binary.second)
+    if reps * ts._M._nvals > tl.MAX_GROUP:
+        raise ValueError(
+            f"broadcasting shape {t._shape} to {shape} replicates its {ts._M._nvals} entries "
+            f"{reps} times, more than a Matrix can hold (2**60 entries)"
+        )
+    # The broadcast axes lead the rows, or, past 2^60 positions there, trail the columns
+    if tl._valid_split(shape, bcast + rows + cols, len(bcast) + len(rows)):
+        layout = Layout(bcast + rows, cols)
+        # kron(ones, M)[(b, r), c] = M[r, c]
+        expr = Matrix.from_scalar(True, reps, 1).kronecker(ts._M, binary.second)
+    elif tl._valid_split(shape, rows + cols + bcast, len(rows)):
+        layout = Layout(rows, cols + bcast)
+        # kron(M, ones)[r, (c, b)] = M[r, c]
+        expr = ts._M.kronecker(Matrix.from_scalar(True, 1, reps), binary.first)
+    else:
+        raise ValueError(
+            f"broadcasting shape {t._shape} to {shape} replicates it {reps} times, more than "
+            "one Matrix dimension can hold (2**60) next to its own axes"
+        )
+    M = tl.new_matrix(t.dtype, tl.prod(shape, layout.rows), tl.prod(shape, layout.cols))
+    M << expr
     return Tensor._from_M(M, shape, layout)
 
 
@@ -276,17 +291,13 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
         cost = tl.plan(shape, L.state, targets, nv, nthreads or tl._nthreads())[0]
         options.append((cost + C_DIAG[ti] * nv, None, None, False))
     if not options:
-        # No diagonal side works (an operator with no flipped form): replicate instead
+        # No diagonal side works (an operator with no flipped form, and past 2^60 positions in
+        # total, where neither split moves nor relayouts that put the small side's axes in one
+        # group fit): look the small side's values up at the big side's entries instead, which
+        # costs by the entries (replicating it would build the broadcast shape's groups)
         if census.on:
-            census.note("bcast", "no diagonal side: replicate")
-        _ewise_recipe(
-            updater,
-            "ewise_mult",
-            _expand(a, shape) if big is b else a,
-            _expand(b, shape) if big is a else b,
-            op,
-            (),
-        )
+            census.note("bcast", "no diagonal side: lookup at the entries")
+        _store(updater, _mult_at_entries(M, shape, L, ts, F, op, big_left), shape, L)
         return
     i = min(range(len(options)), key=lambda k: options[k][0])
     if census.on:
@@ -348,6 +359,24 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
         sr = get_semiring(_one_term_monoid(op.return_type), row_op)
         src = D.mxm(M, sr)
     _store(updater, src, shape, L)
+
+
+def _mult_at_entries(M, shape, layout, ts, F, op, big_left):
+    """``M`` (of ``shape``, stored in ``layout``) times ``ts`` (the small side, whose axes are
+    the output axes ``F``) by ``op``, through the entries: the small side's values at each
+    entry's coordinates along ``F`` (the gather's lookup), as a Matrix of ``M``'s pattern
+    where there is one, then one ewise_mult in the operands' order.
+    """
+    from .tensor_index import lookup
+
+    r, c, _ = M.to_coo(values=False, sort=False)
+    r, c = r.view(np.int64), c.view(np.int64)
+    coords = {}
+    tl.unravel(r, shape, layout.rows, coords)
+    tl.unravel(c, shape, layout.cols, coords)
+    found, vals = lookup(ts, [coords[o] for o in F], r.size)
+    W = tl.from_coo(r[found], c[found], vals[found], ts.dtype, M._nrows, M._ncols)
+    return M.ewise_mult(W, op) if big_left else W.ewise_mult(M, op)
 
 
 def _expand_on_rows(M, shape, rows, sub_pos, v):

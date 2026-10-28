@@ -241,6 +241,16 @@ def gather(t, coords, shape):
             raise IndexError(f"a coordinate is out of bounds for axis {a} of size {size}")
     if t._M._nvals == 0:
         return Tensor(t.dtype, shape)
+    found, vals = lookup(t, coords, n)
+    pos = np.flatnonzero(found)
+    out = np.unravel_index(pos, shape) if shape else ()
+    return Tensor.from_coo(out, vals[pos], t.dtype, shape=shape)
+
+
+def lookup(t, coords, n):
+    """``(found, values)`` of ``t`` at the ``n`` points ``coords`` (an int64 array per axis,
+    in range), by the first lookup engine of ``_GATHER_ENGINES`` that runs.
+    """
     rows = tl.ravel(coords, t._shape, t._layout.rows, n=n)
     cols = tl.ravel(coords, t._shape, t._layout.cols, n=n)
     for engine in _GATHER_ENGINES:
@@ -258,9 +268,7 @@ def gather(t, coords, shape):
         found, vals = _lookup_graphblas(t, rows, cols)
     if census.on:
         census.note("gather", engine, points=int(rows.size), format=t._M.ss.format)
-    pos = np.flatnonzero(found)
-    out = np.unravel_index(pos, shape) if shape else ()
-    return Tensor.from_coo(out, vals[pos], t.dtype, shape=shape)
+    return found, vals
 
 
 def _lookup_numba(t, rows, cols):
