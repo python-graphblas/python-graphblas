@@ -357,7 +357,8 @@ def _ttv(updater, x, w, axis, op, x_left):
     kept_pos = tuple(i for i in range(len(group)) if i != pos)
     if kind == "rowsel" and tl.stored_format(M) == "hypercsr":
         # A weighted selector over the nonempty rows only: S[kept, r] = w[axis coordinate],
-        # w's values found by a binary search (a table over the axis is as long as it is)
+        # w's values found by tl.lookup_sorted (a table over the axis only while the axis is
+        # about as short as the data)
         idx, vals = wv.to_coo()
         Sw = tl.rows_selector(M, x._shape, rows, kept_pos, weights=(idx.view(np.int64), vals, pos))
     else:
