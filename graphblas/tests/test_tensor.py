@@ -724,6 +724,77 @@ def test_broadcast_on_nonempty_rows_sized_by_entries():
         assert peak < 2**24, peak
 
 
+def test_broadcast_wide_groups_onto_nonempty_ids():
+    """A broadcast multiply whose small side's axes lie inside a group far wider than the
+    data takes the small side onto that group's nonempty rows or columns. It built a selector
+    over every position of the group: past 2^60 positions in total, where the columns' may be
+    the one option left, an arange of 2^60 (numpy refuses it: "array is too big"). Below,
+    the planner prices the selector by its positions; forced, the new way agrees with numpy.
+    """
+    import tracemalloc
+
+    from graphblas.core import tensor_census as census
+
+    shape = (2**20, 2**40, 2**20, 2**40)
+    xd = {(0, 3, 1, 4): 2.0, (5, 7, 2, 9): 3.0, (6, 8, 0, 0): 4.0, (6, 8, 2, 4): 0.5}
+    X = Tensor.from_coo(list(zip(*xd, strict=True)), list(xd.values()), shape=shape,
+                        layout=((0, 1), (2, 3)))  # fmt: skip
+    for axis, yd in [(2, {1: 3.0, 2: 5.0}), (3, {4: 2.0, 0: -1.0})]:
+        coords = [[0] * len(yd) for _ in range(4)]
+        coords[axis] = list(yd)
+        yshape = tuple(n if a == axis else 1 for a, n in enumerate(shape))
+        Y = Tensor.from_coo(coords, list(yd.values()), shape=yshape)
+        # (pow has no flipped form, so the big side must come first; times either way)
+        cases = [(binary.pow, operator.pow, True), (binary.times, operator.mul, False)]
+        for op, f, big_left in cases:
+            census.start()
+            tracemalloc.start()
+            try:
+                R = X.ewise_mult(Y, op) if big_left else Y.ewise_mult(X, op)
+                got = _as_dict(R.new())
+                peak = tracemalloc.get_traced_memory()[1]
+            finally:
+                tracemalloc.stop()
+                records = census.stop()
+            want = {
+                k: f(v, yd[k[axis]]) if big_left else f(yd[k[axis]], v)
+                for k, v in xd.items()
+                if k[axis] in yd
+            }
+            assert got == want, (axis, op)
+            assert ("bcast", "diagonal cols, nonempty cols") in {
+                (r["point"], r["choice"]) for r in records
+            }
+            assert peak < 2**24, (axis, op, peak)
+    # Forced below 2^60, against numpy: wide columns (4900 positions), and wide rows, about
+    # 960 of 4900 holding entries (stored sparse) or about 150 (hypersparse)
+    rng = np.random.default_rng(811)
+    yv = rng.random((1, 70, 1))
+    yv[rng.random(yv.shape) < 0.3] = 0
+    yp = yv != 0
+    Y = Tensor.from_dense(yv, missing_value=0)
+    for shape, layout, side, density in [
+        ((3, 70, 70), ((0,), (1, 2)), "cols", 0.02),
+        ((70, 70, 3), ((0, 1), (2,)), "rows", 0.07),
+        ((70, 70, 3), ((0, 1), (2,)), "rows", 0.01),
+    ]:
+        X, xv, xp = random_tensor(shape, rng, density=density, layout=layout)
+        label = f"diagonal {side}, nonempty {side}"
+        census.start()
+        try:
+            census.force["bcast"] = label
+            R1 = X.ewise_mult(Y, binary.minus).new()
+            R2 = Y.ewise_mult(X, binary.minus).new()
+            records = census.stop()
+        finally:
+            census.stop()
+            census.force.clear()
+            census.records.clear()
+        assert [r["choice"] for r in records if r["point"] == "bcast"] == [label, label]
+        check(R1, np.where(xp & yp, xv - yv, 0), xp & yp)
+        check(R2, np.where(xp & yp, yv - xv, 0), xp & yp)
+
+
 @pytest.mark.parametrize("cols_log2", [24, 33])
 def test_ttv_past_2_60_by_entries(cols_log2):
     """A TTV past 2^60 positions with the axis inside a group of several axes goes through
@@ -768,6 +839,43 @@ def test_ttv_past_2_60_by_entries(cols_log2):
                 choices = [r["choice"] for r in records if r["point"] == "ttv"]
                 # (in the rows, the selector over the nonempty rows is sized by the data)
                 assert choices == (["entries"] if axis_in == "cols" else ["rowsel"]), choices
+
+
+def test_ttv_long_axis_in_hypersparse_rows_sized_by_entries():
+    """A TTV along a long axis inside a hypersparse row group weighs the nonempty rows by w's
+    values, found by a binary search. It filled a dense table and a presence mask over the
+    whole axis first: 9 TiB for an axis of 2^40 (lazily zeroed on macOS, which tracemalloc
+    counts; a MemoryError on Linux).
+    """
+    import tracemalloc
+
+    from graphblas.core import tensor_census as census
+
+    shape = (2**20, 2**40, 2**20, 2**40)
+    xd = {(0, 3, 1, 4): 2.0, (5, 7, 2, 9): 3.0, (6, 8, 0, 0): 4.0, (0, 11, 1, 4): 0.5}
+    X = Tensor.from_coo(list(zip(*xd, strict=True)), list(xd.values()), shape=shape,
+                        layout=((0, 1), (2, 3)))  # fmt: skip
+    wd = {3: 2.0, 7: -1.0, 11: 5.0}
+    w = Vector.from_coo(list(wd), list(wd.values()), size=2**40)
+    want = {}
+    for (i, j, k, m), v in xd.items():
+        if j in wd:
+            want[(i, k, m)] = want.get((i, k, m), 0.0) + v * wd[j]
+    for x_left in [True, False]:
+        census.start()
+        tracemalloc.start()
+        try:
+            if x_left:
+                R = X.tensordot(w, ([1], [0])).new()
+            else:
+                R = Tensor.from_vector(w).tensordot(X, ([0], [1])).new()
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+            records = census.stop()
+        assert _as_dict(R) == want, x_left
+        assert [r["choice"] for r in records if r["point"] == "ttv"] == ["rowsel"]
+        assert peak < 2**24, (x_left, peak)
 
 
 def test_relayout_6d_rebuilds():
@@ -4755,6 +4863,43 @@ def test_mttkrp_large_dims():
     )
 
 
+def test_mttkrp_long_mode_sized_by_entries(monkeypatch):
+    """MTTKRP along a mode far longer than the data takes the GraphBLAS products, sized by
+    the entries. The Numba kernel filled a dense (mode x R) output, then kept its reached
+    rows: 8 GiB for a mode of 2^28 at R = 4, 32 TiB for one of 2^40.
+    """
+    import tracemalloc
+
+    from graphblas.core import tensor
+
+    if not gb.core._has_numba:
+        pytest.skip("needs numba")
+    monkeypatch.setattr(tensor, "_MTTKRP_KERNEL_MIN_NNZ", 0)
+    rng = np.random.default_rng(29)
+    # (2^28 first: the old code fails there, before asking for 32 TiB)
+    for log2 in [28, 40]:
+        n = 2**log2
+        xd = {(3, 1, 2): 2.0, (n - 1, 0, 4): -1.0, (3, 3, 0): 0.5, (7, 2, 2): 4.0}
+        X = Tensor.from_coo(list(zip(*xd, strict=True)), list(xd.values()), shape=(n, 4, 5),
+                            layout=((0,), (1, 2)))  # fmt: skip
+        F1, F2 = rng.random((4, 4)), rng.random((5, 4))
+        tracemalloc.start()
+        try:
+            R = X.mttkrp([None, F1, F2], 0).new()
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        want = {}
+        for (i, j, k), v in xd.items():
+            want[i] = want.get(i, 0.0) + v * F1[j] * F2[k]
+        (rows, cols), vals = R.to_coo()
+        assert R.shape == (n, 4)
+        assert sorted(set(rows.tolist())) == sorted(want)
+        for i, r, v in zip(rows.tolist(), cols.tolist(), vals.tolist(), strict=True):
+            assert v == pytest.approx(want[i][r])
+        assert peak < 2**24, (log2, peak)
+
+
 def _small_tensor(shape, rng, layout=None):
     """random_tensor, also for 0-d shapes."""
     if shape:
@@ -5997,6 +6142,67 @@ def test_take_along_axis_size1_axes(engines, monkeypatch):
     for coords in [[[1], [0], [0]], [[0], [0], [-1]]]:
         with pytest.raises(IndexError, match="out of bounds for axis"):
             tensor_index.gather(X, [np.array(c) for c in coords], (1,))
+
+
+def test_take_along_axis_by_entries(monkeypatch):
+    """``take_along_axis`` whose indices broadcast over long axes of the Tensor joins its
+    entries with the indices. It listed every point of the result's shape for the gather:
+    for indices of shape (1, 2, 1) along axis 1 of a (2^20, 4, 4) Tensor, 2^23 points (a peak
+    of 415 MB for 4 entries); for a (2^40, 4, 4) one, 64 TiB per axis. Against numpy at
+    moderate sizes too, where the points outnumber the entries and indices.
+    """
+    import tracemalloc
+
+    from graphblas.core import tensor_index
+
+    xd = {(3, 1, 2): 2.0, (5, 0, 0): -1.0, (3, 3, 2): 0.5, (7, 2, 3): 4.0}
+    idx = np.array([1, -2]).reshape(1, 2, 1)  # (axis 1: coordinates 1 and 2)
+    # (2^20 first: the old code fails there, before asking for 64 TiB)
+    for log2 in [20, 40]:
+        shape = (2**log2, 4, 4)
+        X = Tensor.from_coo(list(zip(*xd, strict=True)), list(xd.values()), shape=shape)
+        tracemalloc.start()
+        try:
+            R = X.take_along_axis(idx, 1)
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        assert R.shape == (2**log2, 2, 4)
+        want = {(i, p, k): v for (i, j, k), v in xd.items() for p, q in enumerate([1, 2]) if j == q}
+        assert _as_dict(R) == want
+        assert peak < 2**24, (log2, peak)
+    # Past 2^63 positions numpy's broadcast_shapes refuses the shape ("broadcast dimensions
+    # too large"), which read as indices that do not broadcast
+    X = Tensor.from_coo(list(zip(*xd, strict=True)), list(xd.values()), shape=(2**40, 2**40, 4))
+    R = X.take_along_axis(np.array([2, -1]).reshape(1, 1, 2), 2)
+    assert R.shape == (2**40, 2**40, 2)
+    assert _as_dict(R) == {(3, 1, 0): 2.0, (3, 3, 0): 0.5, (7, 2, 1): 4.0}
+    # Against numpy: shared axes, a size-1 Tensor axis the indices broadcast over, indices
+    # longer than 1 along the axis only, along each axis, negatives
+    calls = []
+    join = tensor_index._along_by_entries
+    monkeypatch.setattr(tensor_index, "_along_by_entries", lambda *a: calls.append(1) or join(*a))
+    rng = np.random.default_rng(613)
+    for shape, axis, ishape in [
+        ((60, 70, 5), 2, (1, 1, 3)),
+        ((60, 70, 5), 2, (60, 1, 2)),
+        ((5, 60, 70), 0, (2, 1, 1)),
+        ((8, 60, 200), 1, (8, 3, 1)),
+        ((60, 1, 70), 2, (1, 30, 3)),
+        ((60, 70, 1), 2, (1, 70, 2)),
+        ((3000, 40), 1, (1, 3)),
+    ]:
+        for i, layout in enumerate(all_layouts(len(shape))):
+            X, xv, xp = random_tensor(shape, rng, density=[0.01, 0.003][i % 2], layout=layout)
+            ix = rng.integers(-shape[axis], shape[axis], ishape)
+            wrapped = np.where(ix < 0, ix + shape[axis], ix)
+            calls.clear()
+            _gather_check(
+                X.take_along_axis(ix, axis),
+                np.take_along_axis(xv, wrapped, axis),
+                np.take_along_axis(xp, wrapped, axis),
+            )
+            assert calls == [1], (shape, axis, ishape, layout)
 
 
 def _outer_model(xd, n, key):
