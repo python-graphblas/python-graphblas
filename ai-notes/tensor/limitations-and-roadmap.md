@@ -45,6 +45,9 @@ and the data sets are those named in `design.md`.
 - An Array API namespace.
 - `Tensor.dtype` is a python-graphblas type, not a numpy dtype, so libraries that expect
   numpy dtypes (TensorLy, for example) need a small adapter.
+- Broadcast unions (`ewise_add`, `ewise_union`) past 2^60 positions whose broadcast axes
+  would fit only split across the row and column groups: a clear ValueError, by decision
+  (`decisions.md`, 26). Revisit if a workload needs them.
 
 ## Known performance gaps
 
