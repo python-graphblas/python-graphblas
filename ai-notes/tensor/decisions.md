@@ -114,12 +114,14 @@ the API settles. `design.md` describes how the code implements these.
     the interop hooks, the mixed scalar x array-UDT JIT C definitions, and the Windows
     compiler search in `jit_config`.
 24. **`Tensor.wait()` materializes, as `Matrix.wait()` does,** including the hash SuiteSparse
-    builds of a hypersparse Matrix's rows (with more than 1024 nonempty rows). _Why:_ the
-    Tensor's own row lookups (extracts, gathers, `lookup`) use that hash; python-graphblas
-    documents "materialize" as what makes an object safe to read from several threads; and a
-    Tensor should not differ from Matrix silently. `wait("complete")` skips it, and with it
-    everything else (SuiteSparse does no work for "complete"), and the next operation on the
-    Tensor pays it, since the Tensor's operations finish their operands first. Measured on a
+    builds of a hypersparse Matrix's rows (when its hyperlist is longer than the
+    `GxB_HYPER_HASH` setting, 1024 by default). _Why:_ the Tensor's own row lookups
+    (extracts, gathers, `lookup`) use that hash; SuiteSparse documents `GrB_MATERIALIZE` as
+    finishing all work on an object, after which several user threads can use it as an input
+    at the same time (`GraphBLAS.h`, `GrB_WaitMode`); and a Tensor should not differ from
+    Matrix silently. `wait("complete")` skips it, and with it everything else (SuiteSparse
+    does no work for "complete"), and most operations on the Tensor finish their operand
+    first, so the next one pays it. Measured on a
     TTM of NELL-2 (R = 16, 2026-10-28): the hash takes 0.68-0.97 s at 1 thread and 86-116 ms
     at 8 for modes 0 and 1, about 40% and 55% of the TTM at 1 thread and 24% and 37% at 8,
     and it is all the result's wait does (no pending work). After `wait("complete")`, a row
