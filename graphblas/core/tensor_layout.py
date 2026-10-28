@@ -374,6 +374,18 @@ def nonempty_row_ids(M):
     return r[np.r_[True, r[1:] != r[:-1]]] if r.size else r
 
 
+def lookup_sorted(idx, values, at):
+    """``(found, vals)``: which of the positions ``at`` (int64) are among the sorted int64
+    indices ``idx``, and ``values`` at the found ones, by a binary search. Sized by the
+    entries and the positions, where a dense table would be sized by the indices' range (a
+    Vector over an axis of 2^40: 8 TiB of float64).
+    """
+    i = np.searchsorted(idx, at)
+    found = i < idx.size
+    found[found] = idx[i[found]] == at[found]
+    return found, values[i[found]]
+
+
 def count_nonempty_rows(M):
     """The exact number of nonempty rows: O(1) for hypersparse, O(nrows) for sparse."""
     fmt = stored_format(M)
