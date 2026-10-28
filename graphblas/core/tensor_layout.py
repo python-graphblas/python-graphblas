@@ -35,7 +35,7 @@ from .vector import Vector
 
 # GraphBLAS dimensions go up to GrB_INDEX_MAX + 1 = 2^60.
 MAX_GROUP = 2**60
-# SuiteSparse 10.5.2 reshapes in place past 2^32 rows or columns (Issue 462; see reshape_owned)
+# SuiteSparse 10.5.2 reshapes in place past 2^31 rows or columns (Issue 462; see reshape_owned)
 _RESHAPE_IN_PLACE_PAST_2_31 = (version_major, version_minor, version_bug) >= (10, 5, 2)
 # The planner searches states up to this many axes; above it a relayout is one REBUILD.
 MAX_PLANNED_NDIM = 5
