@@ -328,7 +328,10 @@ convert with any scipy.
 
 ``from_pydata_sparse`` and ``to_pydata_sparse`` convert to and from pydata/sparse arrays
 (COO, GCXS, DOK). A GCXS array is the Tensor's own storage (its compressed axes as rows),
-so it converts with one copy of each array.
+so it converts with one copy of each array. Its row pointer has one slot per position of the
+compressed axes, so a GCXS export takes memory by the product of their lengths, not by the
+entries (two compressed axes of 2^20 make 2^40 slots): choose ``compressed_axes`` to keep
+that product small. A COO export takes memory by the entries.
 
 Engines
 -------

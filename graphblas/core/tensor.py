@@ -667,6 +667,13 @@ class Tensor(BaseType):
             (both groups nonempty and in increasing order), else the cheapest such layout.
         compressed_axes : sequence of ints, optional
             The axes GCXS compresses (the rows of a layout), for "gcxs".
+
+        A "coo" array (and "dok", built from it) takes memory by the entries. A "gcxs" array
+        also holds a row pointer with one slot per position of its compressed axes (the
+        product of their lengths, plus one), so its memory follows that product whatever the
+        entries: two compressed axes of 2^20 make a row pointer of 2^40 slots. Choose
+        ``compressed_axes`` to keep their product small; without it, the Tensor's own row
+        axes are compressed when GCXS can hold its layout.
         """
         from .tensor_io import to_pydata_sparse
 
