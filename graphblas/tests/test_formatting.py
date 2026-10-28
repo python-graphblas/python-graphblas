@@ -4624,8 +4624,9 @@ def test_repr_max_rows_below_min_rows():
             ".. .. .. ..\n"
             "2         3"
         )
-    # A dense Matrix stays a grid: the COO form would show no more rows than the grid
-    vals = np.arange(5)[:, None] * 1000 + np.arange(4)[None, :] + 1
+    # A dense Matrix stays a grid: the COO form would show no more rows than the grid.
+    # INT64 on Windows too, where numpy before 2 makes integers int32 by default.
+    vals = np.arange(5, dtype=np.int64)[:, None] * 1000 + np.arange(4)[None, :] + 1
     D = Matrix.from_dense(vals, name="D")
     with display_options("display.max_rows", 3, "display.max_columns", 2):
         repr_printer(D, "D")
