@@ -800,6 +800,66 @@ def test_relayout_fast_path_and_cache():
     assert F.nvals == 0
 
 
+def test_plan_each_matches_plan():
+    """One search toward many targets gives each the cost, path and state of its own search
+    (so a choice among layouts by their cost is unchanged), and caches them as plan does.
+    """
+    from graphblas.core import tensor_census as census
+
+    def states(shape):
+        n = len(shape)
+        return [
+            (perm, p)
+            for perm in itertools.permutations(range(n))
+            for p in range(n + 1)
+            if tl._valid_split(shape, perm, p)
+        ]
+
+    rng = np.random.default_rng(68)
+    cases = [
+        ((3, 4, 5), 40),
+        ((1000, 1000, 1000), 10**7),
+        ((183, 24, 1140, 1717), 3_309_490),
+        ((2**31, 2**31, 4), 10**6),  # past 2^60 positions: no reshapes, sorted REBUILDs
+        ((3, 4, 5, 6, 7), 2000),
+        ((12, 9, 30, 8, 11), 10**7),
+        ((3, 4, 5), 0),
+    ]
+    for shape, nnz in cases:
+        all_states = states(shape)
+        for nthreads in (8, 1):
+            for src in [all_states[0], all_states[int(rng.integers(len(all_states)))]]:
+                if len(shape) == 5:
+                    # The MTTKRP order's targets, and others
+                    mode = int(rng.integers(5))
+                    others = [a for a in range(5) if a != mode]
+                    want = [((mode, *o), 4) for o in itertools.permutations(others)]
+                    want += [all_states[int(i)] for i in rng.integers(len(all_states), size=8)]
+                else:
+                    want = all_states
+                want = [s for s in want if tl._valid_split(shape, *s)]
+                tl.clear_caches()
+                each = tl.plan_each(shape, src, want, nnz, nthreads)
+                census.start()
+                try:
+                    again = [tl.plan(shape, src, frozenset([s]), nnz, nthreads) for s in want]
+                finally:
+                    records = census.stop()
+                assert again == each
+                assert all(r["choice"] == "hit" for r in records if r["point"] == "plan.cache")
+                tl.clear_caches()
+                alone = []
+                for s in want:
+                    alone.append(tl.plan(shape, src, frozenset([s]), nnz, nthreads))
+                    tl.clear_caches()
+                assert each == alone, (shape, nnz, nthreads, src)
+    src, dst = Layout((0,), (1, 2)), Layout((2,), (0, 1))
+    assert tl.relayout_costs((3, 4, 5), src, [dst, src], 40, 1) == [
+        tl.relayout_cost((3, 4, 5), src, dst, 40, 1),
+        0.0,
+    ]
+
+
 def test_flip_orientation_and_helpers():
     A = Matrix.from_coo([0, 1, 2], [1, 2, 0], [1.0, 2.0, 3.0], nrows=3, ncols=5)
     for fmt in ["sparse", "hypersparse", "bitmap"]:
