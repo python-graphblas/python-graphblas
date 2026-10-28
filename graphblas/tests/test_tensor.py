@@ -4910,6 +4910,24 @@ def test_mttkrp_large_dims():
     )
 
 
+def test_reshape_owned_past_2_32(monkeypatch):
+    """``reshape_owned`` reshapes in place past 2^31 rows or columns on SuiteSparse 10.5.2,
+    which fixed Issue 462, and copies before it: 10.5.1's in-place reshape of (4, 2^31) to
+    (1, 2^33) kept 32-bit indices and put the last entry at column 2^32 - 1, not 2^33 - 1.
+    """
+    M = Matrix.from_coo([0, 1, 3], [0, 2**31 - 1, 2**31 - 1], [1.0, 2.0, 3.0], ncols=2**31)
+    M.resize(4, 2**31)
+    expected = Matrix.from_coo(
+        [0, 0, 0], [0, 2**32 - 1, 2**33 - 1], [1.0, 2.0, 3.0], nrows=1, ncols=2**33
+    )
+    for in_place in {tl._RESHAPE_IN_PLACE_PAST_2_31, False}:
+        monkeypatch.setattr(tl, "_RESHAPE_IN_PLACE_PAST_2_31", in_place)
+        A = M.dup()
+        R = tl.reshape_owned(A, 1, 2**33)
+        assert (R is A) is in_place
+        assert R.isequal(expected)
+
+
 def test_mttkrp_long_mode_sized_by_entries(monkeypatch):
     """MTTKRP along a mode far longer than the data takes the GraphBLAS products, sized by
     the entries. The Numba kernel filled a dense (mode x R) output, then kept its reached
