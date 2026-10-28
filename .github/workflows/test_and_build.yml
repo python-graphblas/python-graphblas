@@ -389,6 +389,7 @@ jobs:
           git checkout .  # Undo changes to scalar default
       - name: Miscellaneous tests
         if: matrix.slowtask == 'pytest_normal'
+        timeout-minutes: 30
         run: |
           # Test (and cover) automatic initialization
           coverage run -a graphblas/tests/test_auto_init.py
@@ -412,6 +413,7 @@ jobs:
           # coverage run -a -m pytest --color=yes -x --no-mapnumpy -k test_npmonoid graphblas/tests/test_numpyops.py --runslow
       - name: More tests for coverage
         if: matrix.slowtask == 'notebooks' && matrix.os == 'windows-latest'
+        timeout-minutes: 30
         run: |
           # We use 'notebooks' slow task b/c it should have numba installed
           coverage run -a -m pytest --color=yes --runslow --no-mapnumpy -p no:randomly -v -k 'test_commutes or test_bool_doesnt_get_too_large or test_npbinary or test_npmonoid or test_npsemiring'
@@ -419,6 +421,7 @@ jobs:
           coverage run -a -m pytest --color=yes -x --no-mapnumpy --runslow -k test_binaryop_attributes_numpy graphblas/tests/test_op.py
       - name: JIT tests for coverage
         if: matrix.slowtask == 'notebooks' && matrix.os != 'windows-latest'
+        timeout-minutes: 30
         run: |
           # Most of test_ssjit.py needs the suitesparse backend, --runslow, Numba and a
           # GraphBLAS that can JIT-compile, all in one pytest run. In one run in four or five,
