@@ -904,11 +904,32 @@ def test_flip_orientation_and_helpers():
 
 def test_steal_row_as_vector(monkeypatch):
     """A (1 x n) Matrix held by row becomes a Vector without a copy, in each format (a
-    hypersparse one is made sparse first). Broadcasts and TTV take the small side's row this
-    way; when the relayout returns the operand's own Matrix, they copy it first, so the
-    operand is left as it was.
+    hypersparse one is made sparse first, and the Vector gets the Matrix's sparsity control
+    back, so a full row can be full). Broadcasts and TTV take the small side's row this way;
+    when the relayout returns the operand's own Matrix, they copy it first, so the operand is
+    left as it was.
     """
     w = Vector.from_coo([1, 3], [1.0, 2.0], size=5)
+
+    def _with_control(M):
+        M.ss.config["sparsity_control"] = control
+        return M
+
+    new_matrix = tl.new_matrix
+    for control in [{"auto"}, {"hypersparse", "bitmap"}]:
+        with monkeypatch.context() as m:
+            # (set on the empty Matrix: on a full row, setting it converts the row at once)
+            m.setattr(tl, "new_matrix", lambda *a, **k: _with_control(new_matrix(*a, **k)))
+            M = tl.matrix_from_arrays(dtypes.FP64, 1, 5, "hypercsr", x=np.arange(1.0, 6.0),
+                                      h=np.array([0]), p=np.array([0, 5]), i=np.arange(5),
+                                      nvals=5)  # fmt: skip
+        assert M.ss.format == "hypercsr"
+        assert M.ss.config["sparsity_control"] == control
+        v = tl.steal_row_as_vector(M)
+        want = {"auto"} if control == {"auto"} else {"sparse", "bitmap"}
+        assert v.ss.config["sparsity_control"] == want
+        assert v.ss.format == ("full" if control == {"auto"} else "bitmap")
+        assert v.isequal(Vector.from_dense(np.arange(1.0, 6.0)))
     for fmt in ["sparse", "bitmap", "full", "hypersparse"]:
         x = Vector.from_dense([1.0, 2.0, 3.0, 4.0, 5.0]) if fmt == "full" else w
         if fmt == "hypersparse":
