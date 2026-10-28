@@ -4916,7 +4916,6 @@ def test_reshape_owned_past_2_32(monkeypatch):
     (1, 2^33) kept 32-bit indices and put the last entry at column 2^32 - 1, not 2^33 - 1.
     """
     M = Matrix.from_coo([0, 1, 3], [0, 2**31 - 1, 2**31 - 1], [1.0, 2.0, 3.0], ncols=2**31)
-    M.resize(4, 2**31)
     expected = Matrix.from_coo(
         [0, 0, 0], [0, 2**32 - 1, 2**33 - 1], [1.0, 2.0, 3.0], nrows=1, ncols=2**33
     )
