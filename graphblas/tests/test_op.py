@@ -2016,7 +2016,9 @@ def test_udt_monoid_op_must_return_its_input_type(record_udt):
 
     sum_a = BinaryOp.register_anonymous(_sum_a, "test_sum_a_mon", is_udt=True)
     sum_a_monoid = Monoid.register_anonymous(sum_a, 0)
-    with pytest.raises(TypeError, match="must return its input type, _BuiltinOpsRec, not INT64"):
+    # Not "_BuiltinOpsRec": registering this record dtype again under another name, as
+    # test_udt_op_pickle does, renames the one DataType
+    with pytest.raises(TypeError, match=f"must return its input type, {record_udt}, not INT64"):
         sum_a_monoid[record_udt]
     assert record_udt not in sum_a_monoid
 
