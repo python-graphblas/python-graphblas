@@ -572,6 +572,31 @@ def test_from_scipy_sparse_duplicates():
 
 
 @pytest.mark.skipif("not ss")
+@pytest.mark.parametrize("format", ["csr", "csc"])
+def test_from_scipy_sparse_compressed_duplicates(format):
+    # Outside canonical format an index may repeat within a row (column); importing the
+    # arrays as they are made an invalid Matrix (nvals 4, two entries at one position).
+    cls, shape = (ss.csr_array, (2, 3)) if format == "csr" else (ss.csc_array, (3, 2))
+    a = cls(([1, 2, 3, 4], [1, 1, 0, 2], [0, 3, 4]), shape=shape)
+    assert not a.has_canonical_format
+    with pytest.raises(ValueError, match="Duplicate indices found"):
+        gb.io.from_scipy_sparse(a)
+    A = gb.io.from_scipy_sparse(a, dup_op=gb.binary.plus)
+    assert A.nvals == 3
+    np.testing.assert_array_equal(A.to_dense(fill_value=0), a.toarray())
+    A = gb.io.from_scipy_sparse(a, dup_op=gb.binary.min)
+    expected = np.array([[3, 1, 0], [0, 0, 4]])
+    if format == "csc":
+        expected = expected.T
+    np.testing.assert_array_equal(A.to_dense(fill_value=0), expected)
+    # Unsorted but distinct indices need no dup_op
+    b = cls(([1, 2, 3], [2, 1, 0], [0, 3, 3]), shape=shape)
+    assert not b.has_canonical_format
+    B = gb.io.from_scipy_sparse(b)
+    np.testing.assert_array_equal(B.to_dense(fill_value=0), b.toarray())
+
+
+@pytest.mark.skipif("not ss")
 @pytest.mark.parametrize("engine", ["auto", "scipy", "fast_matrix_market"])
 def test_matrix_market_sparse_duplicates(engine):
     if engine == "fast_matrix_market" and fmm is None:  # pragma: no cover (import)
@@ -765,3 +790,40 @@ def test_matrix_to_from_pydata_sparse():
         gb.io.to_pydata_sparse(w, format="badformat")
     with pytest.raises(TypeError, match="sparse.pydata"):
         gb.io.from_pydata_sparse(w)
+
+
+@pytest.mark.skipif("not sparse")
+@pytest.mark.slow
+@pytest.mark.parametrize("axis", [0, 1])
+@pytest.mark.parametrize("dtype", ["int64", "float64", "bool"])
+def test_from_pydata_sparse_gcxs_duplicates(axis, dtype):
+    # pydata checks neither the order nor the distinctness of the indices in a GCXS row
+    # (column), and todense sums a repeat. Importing the arrays as they are made an invalid
+    # Matrix (nvals 4, two entries at one position).
+    data = np.array([1, 2, 3, 4], dtype=dtype)
+    indptr = np.array([0, 3, 4])
+    shape = (2, 3) if axis == 0 else (3, 2)
+    s = sparse.GCXS((data, np.array([1, 1, 0, 2]), indptr), shape=shape, compressed_axes=[axis])
+    A = gb.io.from_pydata_sparse(s)
+    assert A.nvals == 3
+    assert A.dtype == dtype
+    np.testing.assert_array_equal(A.to_dense(fill_value=0), s.todense())
+    A = gb.io.from_pydata_sparse(s, dup_op=gb.binary.min)
+    expected = np.array([[3, 1, 0], [0, 0, 4]], dtype=dtype)
+    if axis == 1:
+        expected = expected.T
+    np.testing.assert_array_equal(A.to_dense(fill_value=0), expected)
+    # Unsorted but distinct indices need no combining
+    s = sparse.GCXS((data, np.array([2, 1, 0, 2]), indptr), shape=shape, compressed_axes=[axis])
+    A = gb.io.from_pydata_sparse(s)
+    assert A.nvals == 4
+    np.testing.assert_array_equal(A.to_dense(fill_value=0), s.todense())
+    # The default sum needs no binary op for the dtype (complex is a UDT on vanilla),
+    # and it leaves the array alone
+    cdata = data + 1j
+    s = sparse.GCXS((cdata, np.array([1, 1, 0, 2]), indptr), shape=shape, compressed_axes=[axis])
+    indices = s.indices.copy()
+    A = gb.io.from_pydata_sparse(s)
+    assert A.nvals == 3
+    np.testing.assert_array_equal(A.to_dense(fill_value=0), s.todense())
+    np.testing.assert_array_equal(s.indices, indices)
