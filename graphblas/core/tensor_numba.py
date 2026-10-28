@@ -428,7 +428,7 @@ def mttkrp_nd(arrays, row_sizes, col_sizes, mode_pos, F, n_out, nthreads, max_bu
 
 
 @njit(parallel=True, cache=True)
-def _sum_buffers(out, touched, total, any_touched):
+def _sum_buffers(out, touched, total, any_touched):  # pragma: no cover (numba)
     # In parallel over output rows: numpy's sum of Enron's 8 x 244268 x 64 buffers took 27 ms
     # on one thread, this 8
     for i in prange(total.shape[0]):
@@ -508,7 +508,7 @@ def kernel(p, h, ci, x, iso, nlast, npre, U, offs, hout, cols, V, B, starts, bin
 
 
 @njit(parallel=True, cache=True)
-def _count_runs(p, ci, nlast, counts):
+def _count_runs(p, ci, nlast, counts):  # pragma: no cover (numba)
     # The runs of equal leading column axes in each row: the output fibers of a TTM
     for s in prange(p.size - 1):
         n = 0
@@ -584,7 +584,7 @@ def ttm(arrays, col_sizes, U, nrows_out, nthreads):
 
 
 @njit(parallel=True, cache=True)
-def lookup(p, h, ci, x, iso, rows, cols, vals, found):
+def lookup(p, h, ci, x, iso, rows, cols, vals, found):  # pragma: no cover (numba)
     """For each point k, the entry at (rows[k], cols[k]) of a sparse or hypersparse by-row
     Matrix's arrays (columns sorted within rows): ``found[k]`` and ``vals[k]``. Binary
     searches: the row in ``h`` (hypersparse), then the column in the row's segment.
