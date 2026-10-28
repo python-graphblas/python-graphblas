@@ -1157,7 +1157,7 @@ class Tensor(BaseType):
         if input_mask is not None:
             raise TypeError("input_mask is not supported for Tensor")
         updater = Updater(self, mask=mask, accum=accum, replace=replace, opts=opts)
-        if type(expr) is TensorExpression:
+        if isinstance(expr, TensorExpression):  # (an extraction too, as for Matrix)
             expr.args[-2](updater, *expr.args[-1])
         elif type(expr) is Tensor:
             _store(updater, expr._M, expr._shape, expr._layout, share=expr)
