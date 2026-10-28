@@ -137,13 +137,13 @@ def to_pydata_sparse(T, format="coo", *, compressed_axes=None):
                     f"got {compressed_axes!r}"
                 )
             targets = tl.as_layout((rows, cols), shape)
-        if targets:
-            # (no move when the layout is one GCXS holds; else the cheapest move to one)
-            M, lay = tl.relayout(T._M, shape, T._layout, targets)
-            indptr, cols, values = M.to_csr()
-            return sparse.GCXS(
-                (values, cols, indptr), shape=shape, compressed_axes=lay.rows, fill_value=0
-            )
+        # No move when the layout is one GCXS holds; else the cheapest move to one. (There is
+        # one: below 2^60 positions every split is valid; past it, the Tensor's own groups.)
+        M, lay = tl.relayout(T._M, shape, T._layout, targets)
+        indptr, cols, values = M.to_csr()
+        return sparse.GCXS(
+            (values, cols, indptr), shape=shape, compressed_axes=lay.rows, fill_value=0
+        )
     # pydata COO is in C order without duplicates: the sorted coordinates (a relayout when
     # the layout is not the identity axis order), unraveled into the (ndim, nvals) array
     M, lay = T._M, T._layout

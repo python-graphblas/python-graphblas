@@ -89,12 +89,6 @@ def _reduce_recipe(updater, a, op, axes, keepdims, cast):
     _store(updater, M, out_shape, out_layout, fresh=True)
 
 
-def _selector_ok(n, nvals):
-    # A shape-only selector has one entry per position of the group; past this it costs
-    # more than the data, and REBUILD is used instead.
-    return n <= max(4 * nvals, 2**16)
-
-
 def _selector_semiring(op, mult):
     """The semiring of monoid ``op`` and ``mult`` (first or second) that multiplies by a
     selector, whose entries are True.
@@ -139,8 +133,7 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
         s = Scalar(dtype)
         s(**opts) << M.reduce_scalar(op)
         out = tl.new_matrix(dtype, 1, 1)
-        if not s._is_empty:
-            out[0, 0] = s
+        out[0, 0] = s  # (entries reduce to a value)
         return out, Layout((), ())
     nvals = M._nvals
     if M.dtype._is_udt:

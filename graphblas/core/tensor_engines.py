@@ -133,11 +133,7 @@ def _ttm_numba(updater, a, b, op, a_axes, b_axes):
     fiber exists. (One mxm was 2.4-2.7x behind TACO in the stored order: its Gustavson saxpy
     on hypersparse rows, then the output's row hash.)
     """
-    if not _t._has_numba or len(a_axes) != 1 or b.ndim != 2 or a.ndim < 2:
-        return None
-    if op.name != "plus_times" or op.return_type != FP64 or a.dtype != FP64 or b.dtype != FP64:
-        return None
-    if a._M._nvals < max(_t._TTM_KERNEL_MIN_NNZ, 1) or b._M._nvals != math.prod(b._shape):
+    if not _t._has_numba:  # (_ttm_engines checks the operands, as for _ttm_udt)
         return None
     m, kb = a_axes[0], b_axes[0]
     free_a = tuple(x for x in range(a.ndim) if x != m)
@@ -148,8 +144,9 @@ def _ttm_numba(updater, a, b, op, a_axes, b_axes):
         for q in range(1, len(free_a) + 1)  # (with no row axis there is one row: no threads)
         if tl._valid_split(a._shape, (*perm, m), q)
     )
-    if not targets:
-        return None
+    # (never empty: below 2^60 positions every split is valid; past it both stored groups
+    # hold axes, and they are a target with the axis last among the columns, or swapped when
+    # the axis is a row axis)
     _, _, state = tl.plan(a._shape, a._layout.state, targets, a._M._nvals, nthreads)
     layout = Layout.from_state(state)
     X = _in_layout(a, layout, updater.opts.get("nthreads"))
@@ -327,9 +324,7 @@ def _factor_array(M, stack):
     if tl.stored_format(M) == "fullr" and not M.ss.is_iso and nrows * ncols > 0:
         cont = stack.enter_context(tl._Unloaded(M))
         x = stack.enter_context(tl._VectorArray(cont.x, np.float64))
-        if x.array is not None and x.array.size == nrows * ncols:
-            return x.array.reshape(nrows, ncols)
-        # (not expected: a full Matrix holds nrows * ncols values)
+        return x.array.reshape(nrows, ncols)  # (a full Matrix holds nrows * ncols values)
     return np.ascontiguousarray(M.to_dense(fill_value=0.0))
 
 
