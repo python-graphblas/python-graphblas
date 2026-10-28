@@ -260,13 +260,19 @@ Broadcasting follows numpy's shape rules with GraphBLAS semantics:
     Container (`tensor_layout.gather_operand`), then one same-pattern `ewise_mult`.
   - **relayout, diagonal**: a planned relayout to a layout in another axis order whose group
     is exactly the small operand's axes.
+  - **lookup at the entries**, only when none of those fits (past 2^60 positions in total,
+    with an op that has no flipped form of its kind, as pow): the small operand's values at
+    each stored entry's coordinates (the gather's `tensor_index.lookup`), as a Matrix of
+    the big operand's pattern, then one `ewise_mult`. It costs by the entries.
 
   A one-value operand becomes an `apply`. An empty operand gives an empty result.
 
 - **Union (`ewise_add`, `ewise_union`)** replicates the lower-rank operand over the broadcast
   axes (`_expand`), as numpy semantics require. `_check_expansion` predicts the replicated
   entries in O(1). Past `graphblas.config["tensor_max_expansion"]` (1e9 by default) it raises,
-  unless `allow_expansion=True`.
+  unless `allow_expansion=True`. The broadcast axes lead the row group, or trail the column
+  group when the rows would pass 2^60 positions; when neither fits, or the copies would pass
+  2^60 entries, it raises.
 
 `apply` and value `select` run on `_M` in its layout. Index-based selectors are refused
 because they would need logical coordinates.

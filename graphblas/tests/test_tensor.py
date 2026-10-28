@@ -629,6 +629,67 @@ def test_default_layout_axis_too_long():
     assert Tensor(dtypes.FP64, (2**60, 2**60)).shape == (2**60, 2**60)
 
 
+@pytest.mark.parametrize("engines", [("numba", "graphblas"), ("graphblas",)])
+def test_broadcast_mult_past_2_60_no_flip(engines, monkeypatch):
+    """Past 2^60 positions, a broadcast ewise_mult whose op has no flip of its kind (pow) and
+    whose small side is sparse has no diagonal, gather or relayout option. It replicated the
+    small side, which needs a group past 2^60 (as_layout's error); it now looks the small
+    side's values up at the big side's entries. A broadcast union replicates by its nature:
+    the small side's axes go where they fit, or a clear error says they cannot.
+    """
+    from graphblas.core import tensor_census as census
+    from graphblas.core import tensor_index
+
+    if "numba" in engines and not gb.core._has_numba:
+        pytest.skip("needs numba")
+    monkeypatch.setattr(tensor_index, "_GATHER_ENGINES", engines)
+    shape = (2**20, 2**40, 2**20, 2**40)  # rows (0, 1) and cols (2, 3) are 2^60 each
+    xd = {(0, 3, 1, 4): 2.0, (5, 7, 2, 9): 3.0, (6, 8, 0, 0): 4.0}
+    X = Tensor.from_coo(list(zip(*xd, strict=True)), list(xd.values()), shape=shape,
+                        layout=((0, 1), (2, 3)))  # fmt: skip
+    for yshape, yd, choice in [
+        ((1, 2**40, 1, 1), {(0, 3, 0, 0): 2.0, (0, 8, 0, 0): 5.0, (0, 9, 0, 0): 7.0},
+         "no diagonal side: lookup at the entries"),
+        # (axes 1 and 2 fit one group: a relayout puts them there)
+        ((1, 2**40, 2**20, 1), {(0, 3, 1, 0): 2.0, (0, 8, 1, 0): 5.0, (0, 7, 2, 0): 3.0},
+         "relayout, diagonal"),
+    ]:  # fmt: skip
+        Y = Tensor.from_coo(list(zip(*yd, strict=True)), list(yd.values()), shape=yshape)
+
+        def at(k, yshape=yshape):
+            return tuple(0 if n == 1 else c for c, n in zip(k, yshape, strict=True))
+
+        census.start()
+        try:
+            got = _as_dict(X.ewise_mult(Y, binary.pow).new())
+            rev = _as_dict(Y.ewise_mult(X, binary.pow).new())
+        finally:
+            records = census.stop()
+        assert got == {k: v ** yd[at(k)] for k, v in xd.items() if at(k) in yd}
+        assert rev == {k: yd[at(k)] ** v for k, v in xd.items() if at(k) in yd}
+        assert ("bcast", choice) in {(r["point"], r["choice"]) for r in records}
+        with pytest.raises(ValueError, match="would replicate"):
+            X.ewise_add(Y, binary.pow)
+        with pytest.raises(ValueError, match="replicates its 3 entries .* times, more than"):
+            X.ewise_union(Y, binary.pow, 1.0, 1.0, allow_expansion=True).new()
+    # A union that replicates little, whose rows cannot take the broadcast axis: the columns do
+    shape2 = (2, 2**40, 2**20, 2**40)
+    X2 = Tensor.from_coo(([0, 1], [3, 7], [1, 2], [4, 9]), [2.0, 3.0], shape=shape2,
+                         layout=((0, 1), (2, 3)))  # fmt: skip
+    Y2 = Tensor.from_coo(([0], [3], [1], [4]), [5.0], shape=(1, *shape2[1:]),
+                         layout=((0, 1, 2), (3,)))  # fmt: skip
+    want = {(0, 3, 1, 4): 7.0, (1, 3, 1, 4): 5.0, (1, 7, 2, 9): 3.0}
+    assert _as_dict(X2.ewise_add(Y2, binary.plus).new()) == want
+    # Broadcast axes that fit neither next to the rows nor next to the columns (2^60 copies of
+    # one entry, allowed): a clear error
+    X4 = Tensor.from_coo(([1], [2], [3], [4]), [1.0], shape=(2**30, 2**10, 2**30, 2**10),
+                         layout=((0, 1), (2, 3)))  # fmt: skip
+    Y4 = Tensor.from_coo(([0], [2], [0], [4]), [1.0], shape=(1, 2**10, 1, 2**10),
+                         layout=((0, 1), (2, 3)))  # fmt: skip
+    with pytest.raises(ValueError, match="more than one Matrix dimension can hold"):
+        X4.ewise_add(Y4, binary.plus, allow_expansion=True).new()
+
+
 def test_relayout_6d_rebuilds():
     rng = np.random.default_rng(8)
     T, values, present = random_tensor((2, 3, 1, 2, 2, 3), rng)
