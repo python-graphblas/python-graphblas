@@ -392,15 +392,21 @@ def take_along_axis(t, indices, axis, *, wraparound=True):
     if arr.ndim != t.ndim:
         raise ValueError(f"indices must have the Tensor's {t.ndim} dimensions; got {arr.ndim}")
     idx = _index_array(arr, t._shape[axis], axis, wraparound)
-    tshape = list(t._shape)
-    tshape[axis] = 1
-    try:
-        shape = np.broadcast_shapes(tuple(tshape), idx.shape)
-    except ValueError:
-        raise ValueError(
-            f"indices of shape {idx.shape} do not broadcast against {t._shape} along the "
-            f"other axes"
-        ) from None
+    shape = []
+    for a, (n, m) in enumerate(zip(t._shape, idx.shape, strict=True)):
+        if a == axis or n == 1:
+            shape.append(m)
+        elif m in {1, n}:
+            shape.append(n)
+        else:
+            raise ValueError(
+                f"indices of shape {idx.shape} do not broadcast against {t._shape} along the "
+                f"other axes"
+            )
+    shape = tuple(shape)
+    if math.prod(shape) > max(4 * (t._M._nvals + idx.size), 4096):
+        # Indices that broadcast over long axes of the Tensor: far more points than entries
+        return _along_by_entries(t, idx, axis, shape)
     # As numpy's _make_along_axis_idx: each other axis counts over the Tensor's own size, so
     # along a size-1 axis that the indices broadcast over the coordinate stays 0
     coords = []
@@ -413,6 +419,47 @@ def take_along_axis(t, indices, axis, *, wraparound=True):
             grid = np.arange(size, dtype=np.int64).reshape(along)
             coords.append(np.broadcast_to(grid, shape).ravel())
     return gather(t, coords, shape)
+
+
+def _along_by_entries(t, idx, axis, shape):
+    """``take_along_axis`` by joining the Tensor's entries with the indices: position ``k``
+    of ``idx`` and an entry at ``c`` meet when ``c[axis] == idx[k]`` and they agree along
+    each other axis longer than 1 in both. Each meeting is one output entry, at ``k`` along
+    the axes the indices are longer than 1 and ``c`` along the rest. Sized by the entries,
+    the indices and the result, where the points (the gather) are sized by ``shape``: indices
+    that broadcast over a Tensor axis of 2^40 list every position along it.
+    """
+    from .tensor import Tensor
+
+    coords, vals = t.to_coo(sort=False)
+    n = vals.size
+    k = np.unravel_index(np.arange(idx.size, dtype=np.int64), idx.shape)
+    shared = [a for a in range(t.ndim) if a != axis and idx.shape[a] > 1 and t._shape[a] > 1]
+    keys = [np.concatenate([coords[axis], idx.ravel()])]
+    keys += [np.concatenate([coords[a], k[a]]) for a in shared]
+    if shared:
+        # One key per distinct tuple, numbered in sorted order: their raveled positions can
+        # pass int64
+        order = np.lexsort(keys[::-1])
+        step = np.zeros(order.size, bool)
+        for x in keys:
+            xs = x[order]
+            step[1:] |= xs[1:] != xs[:-1]
+        key = np.empty(order.size, np.int64)
+        key[order] = np.cumsum(step)
+    else:
+        key = keys[0]
+    kt, ki = key[:n], key[n:]
+    # Each index position once per entry with its key
+    order = np.argsort(kt, kind="stable")
+    st = kt[order]
+    left = np.searchsorted(st, ki, "left")
+    count = np.searchsorted(st, ki, "right") - left
+    rep = np.repeat(np.arange(ki.size), count)
+    offs = np.arange(rep.size) - np.repeat(np.cumsum(count) - count, count)
+    e = order[left[rep] + offs]
+    out = [k[a][rep] if a == axis or idx.shape[a] > 1 else coords[a][e] for a in range(t.ndim)]
+    return Tensor.from_coo(out, vals[e], t.dtype, shape=shape)
 
 
 def vindex(t, keys, *, wraparound=True):

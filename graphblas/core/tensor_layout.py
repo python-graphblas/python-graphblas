@@ -374,6 +374,14 @@ def nonempty_row_ids(M):
     return r[np.r_[True, r[1:] != r[:-1]]] if r.size else r
 
 
+def nonempty_col_ids(M):
+    """The ids of the nonempty columns of ``M``, sorted, as int64: the distinct column
+    indices, O(nnz log nnz) (a Matrix held by row keeps no list of them).
+    """
+    c = M.to_coo(rows=False, values=False, sort=False)[1].view(np.int64)
+    return np.unique(c)
+
+
 def lookup_sorted(idx, values, at):
     """``(found, vals)``: which of the positions ``at`` (int64) are among the sorted int64
     indices ``idx``, and ``values`` at the found ones, by a binary search. Sized by the
@@ -400,9 +408,10 @@ def count_nonempty_rows(M):
 def rows_selector(M, shape, group, kept_pos, weights=None, dtype=BOOL):
     """``S`` with ``S @ M`` reducing the axes of the row ``group`` not in ``kept_pos``, built
     over the nonempty rows of ``M`` only, so its size follows the data rather than the
-    group's positions (a hypersparse row group). ``weights`` (a dense array and a presence
-    mask over one axis of the group, as ``(values, present, position)``) gives each row its
-    weight instead of 1 (TTV). Without weights, its entries are True, or 1 of ``dtype``.
+    group's positions (a hypersparse row group). ``weights`` (a sparse vector along one axis
+    of the group, as its sorted int64 indices, its values and the axis' position in the
+    group) gives each row its weight instead of 1, and no entry where it has none (TTV).
+    Without weights, its entries are True, or 1 of ``dtype``.
     """
     h = nonempty_row_ids(M)
     gshape = tuple(shape[a] for a in group)
@@ -410,12 +419,11 @@ def rows_selector(M, shape, group, kept_pos, weights=None, dtype=BOOL):
     unravel(h, gshape, tuple(range(len(gshape))), co)
     values = True
     if weights is not None:
-        w, present, pos = weights
-        keep = present[co[pos]]
+        idx, w, pos = weights
+        keep, values = lookup_sorted(idx, w, co[pos])
         if not keep.all():
             h = h[keep]
             co = {k: c[keep] for k, c in co.items()}
-        values = w[co[pos]]
     dst = ravel(co, gshape, kept_pos, n=h.size)
     if weights is not None:
         dtype = lookup_dtype(values.dtype)
