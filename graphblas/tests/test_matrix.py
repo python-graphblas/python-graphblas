@@ -4487,8 +4487,8 @@ def test_subarray_dtype_values_shape():
 
 @pytest.mark.skipif("not suitesparse")
 def test_ss_import_values_size():
-    # GraphBLAS compares the byte size of imported values with the number of entries,
-    # not the bytes they need, so it read past the end of each of these
+    # GraphBLAS before 10.5.2 compares the byte size of imported values with the number
+    # of entries, not the bytes they need, so it read past the end of each of these
     match = "have 3 or more elements of dtype FP64, not 1"
     with pytest.raises(ValueError, match=match):
         Matrix.ss.import_csr(

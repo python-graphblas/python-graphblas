@@ -208,8 +208,9 @@ def check_values_size(values, dtype, count, is_iso, *, indptr=None):
     """Raise unless ``values`` holds ``count`` elements of ``dtype``, or one if ``is_iso``.
 
     With ``indptr``, the count is ``indptr[count]``, as GraphBLAS reads it. GraphBLAS
-    imports compare the byte size of the values with the number of entries, not with
-    the bytes those entries need, so a short array gets through and is read past its end.
+    imports before 10.5.2 compare the byte size of the values with the number of entries,
+    not with the bytes those entries need, so a short array gets through and is read past
+    its end. 10.5.2 raises InvalidValue with no message instead, so this check stays.
     """
     if is_iso:
         count = 1

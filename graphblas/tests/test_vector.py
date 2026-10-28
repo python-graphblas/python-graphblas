@@ -3052,8 +3052,8 @@ def test_subarray_dtype_values_shape():
 
 @pytest.mark.skipif("not suitesparse")
 def test_ss_import_values_size():
-    # GraphBLAS compares the byte size of imported values with the number of entries,
-    # not the bytes they need, so it read past the end of each of these
+    # GraphBLAS before 10.5.2 compares the byte size of imported values with the number
+    # of entries, not the bytes they need, so it read past the end of each of these
     with pytest.raises(ValueError, match="have 4 or more elements of dtype FP64, not 2"):
         Vector.ss.import_sparse(size=5, indices=[0, 1, 2, 3], values=np.ones(2), nvals=4)
     with pytest.raises(ValueError, match="have 5 or more elements of dtype FP64, not 3"):
