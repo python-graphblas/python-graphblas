@@ -156,10 +156,8 @@ def normalize_values(self, values, dtype, shape=None, is_iso=False):
     else:
         dtype = self.dtype
     if is_iso:
-        if dtype.np_type.subdtype is None:
-            values = np.broadcast_to(values, shape)
-        else:
-            values = np.broadcast_to(values, shape + values.shape)
+        # The iso value of an array UDT is exported as shape (1, *subarray shape)
+        values = np.broadcast_to(values, shape + values.shape[1:])
     return values
 
 

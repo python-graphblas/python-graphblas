@@ -4341,6 +4341,19 @@ def test_wait_chains(A):
     assert result == 47
 
 
+def test_subarray_dtypes_iso():
+    # An iso array UDT exports its one value with a leading axis of length 1
+    A = Matrix("INT64[4]", nrows=2, ncols=3)
+    A[:, :] = [0, 1, 2, 3]
+    if suitesparse:
+        assert A.ss.is_iso
+    expected = np.broadcast_to([0, 1, 2, 3], (6, 4))
+    np.testing.assert_array_equal(A.to_dense(), expected.reshape(2, 3, 4))
+    for method in ["coo", "csr", "csc", "dcsr", "dcsc"]:
+        np.testing.assert_array_equal(getattr(A, f"to_{method}")()[-1], expected)
+    assert A.to_dicts() == {i: {j: [0, 1, 2, 3] for j in range(3)} for i in range(2)}
+
+
 @pytest.mark.skipif("not supports_udfs")
 def test_subarray_dtypes():
     a = np.arange(3 * 4, dtype=np.int64).reshape(3, 4)

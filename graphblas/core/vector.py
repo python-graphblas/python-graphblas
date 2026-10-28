@@ -947,7 +947,7 @@ class Vector(BaseType):
                 )
             if backend == "suitesparse":
                 info = self.ss.export("full")
-                return normalize_values(self, info["values"], dtype, self._size, info["is_iso"])
+                return normalize_values(self, info["values"], dtype, (self._size,), info["is_iso"])
             return self.to_coo(dtype, indices=False)[1]
 
         if dtype is None and not self.dtype._is_udt:

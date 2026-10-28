@@ -2928,6 +2928,17 @@ def test_ss_sort(v):
     w, p = v.ss.sort(monoid.lxor)  # Weird, but user-defined monoids may not commute, so okay
 
 
+def test_subarray_dtypes_iso():
+    # An iso array UDT exports its one value with a leading axis of length 1
+    v = Vector("INT64[4]", size=3)
+    v[:] = [0, 1, 2, 3]
+    if suitesparse:
+        assert v.ss.is_iso
+    expected = np.broadcast_to([0, 1, 2, 3], (3, 4))
+    np.testing.assert_array_equal(v.to_dense(), expected)
+    np.testing.assert_array_equal(v.to_coo()[1], expected)
+
+
 @pytest.mark.skipif("not supports_udfs")
 def test_subarray_dtypes():
     a = np.arange(3 * 4, dtype=np.int64).reshape(3, 4)
