@@ -798,14 +798,18 @@ class Tensor(BaseType):
             See GraphBLAS documentation for more details.
 
         "materialize" finishes any pending work and, when the stored Matrix is hypersparse
-        with more than 1024 nonempty rows, builds the hash of its rows that row lookups use.
-        That hash is not free: 0.7-1.0 s at 1 thread for the 1.7e7 to 2.1e7 rows of a TTM of
-        the NELL-2 tensor along mode 0 or 1, 40-55% of the time. "complete" does no work at
-        all, so the next operation on the Tensor, which finishes its operand first, does
-        both then. A result the Tensor builds from arrays (the Numba engines) has no hash until
-        it is materialized, so this can take time in blocking mode too.
+        and its list of rows (the hyperlist) is longer than SuiteSparse's ``GxB_HYPER_HASH``
+        setting (1024 by default), builds the hash of those rows that row lookups use. That
+        hash is not free: 0.7-1.0 s at 1 thread for the 1.7e7 to 2.1e7 rows of a TTM of the
+        NELL-2 tensor along mode 0 or 1, 40-55% of the time. "complete" does no work at all,
+        and most operations on the Tensor finish their operand first, so the next one does
+        both then. A result the Tensor builds from arrays (the Numba engines) has no hash
+        until it is materialized, so this can take time in blocking mode too.
+
+        Returns the Tensor, as ``Matrix.wait`` returns the Matrix.
         """
         self._M.wait(how)
+        return self
 
     def _comparand(self, other, within):
         """``other`` for ``isequal`` / ``isclose``: a Tensor, or a Matrix, Vector or Scalar as
