@@ -1178,6 +1178,10 @@ class Tensor(BaseType):
     def _update(self, expr, mask=None, accum=None, replace=False, input_mask=None, *, opts):
         if input_mask is not None:
             raise TypeError("input_mask is not supported for Tensor")
+        if isinstance(expr, _TensorInfixExpr):
+            # C << (X | Y), (X & Y), (X @ Y): as Matrix takes them (lor, land, the default
+            # semiring), refusing | and & on other dtypes, which need an operator
+            expr = expr._assigned()
         updater = Updater(self, mask=mask, accum=accum, replace=replace, opts=opts)
         if isinstance(expr, TensorExpression):  # (an extraction too, as for Matrix)
             expr.args[-2](updater, *expr.args[-1])
@@ -1236,7 +1240,7 @@ def _make_infix(name, kind):
 
 
 # As for Matrix: `+` is the union, `-` the union with 0 for a missing side, and the others
-# (comparisons included) the intersection.
+# (comparisons included) the intersection. (`^` is below: BOOL only.)
 _INFIX = {
     "add": ("plus", "add"),
     "sub": ("minus", "union"),
@@ -1428,6 +1432,10 @@ class _TensorInfixExpr(InfixExprBase):
     def __repr__(self):
         return f"gb.Tensor infix expression\n{self._format_expr()}"
 
+    def _assigned(self):
+        """The expression ``C << self`` stores."""
+        return self._to_expr()
+
 
 class _TensorEwiseInfixExpr(_TensorInfixExpr):
     __slots__ = ()
@@ -1449,6 +1457,17 @@ class _TensorEwiseInfixExpr(_TensorInfixExpr):
             else:
                 self._expr = getattr(self.left, self.method_name)(self.right)
         return self._expr
+
+    def _assigned(self):
+        if self.left.dtype == BOOL and self.right.dtype == BOOL:
+            return self._to_expr()
+        how = "ewise_add (union) with lor" if self._infix == "|" else "ewise_mult with land"
+        raise TypeError(
+            f"Bad dtypes for `x {self._infix} y`!  Assigning `x {self._infix} y` (`C << (x "
+            f"{self._infix} y)`) is only valid for BOOL dtypes, as for Matrix, where it is "
+            f"{how}.  The argument dtypes are {self.left.dtype} and {self.right.dtype}.\n\n"
+            f"Give an operator instead, such as `C << binary.plus(x {self._infix} y)`."
+        )
 
 
 class TensorEwiseAddExpr(_TensorEwiseInfixExpr):
@@ -1489,6 +1508,32 @@ def _infix_matmul(self, other):
     return TensorMatMulExpr(self, other)
 
 
+def _xor_bool(expr):
+    # As for Matrix: `x ^ y` is the union with lxor, for BOOL only
+    if expr is not NotImplemented and expr.dtype != BOOL:
+        raise TypeError(
+            f"The __xor__ infix operator, `x ^ y`, is not supported for {expr.dtype.name} dtype."
+            "  It is only supported for BOOL dtype (and it uses ewise_add, the union)."
+        )
+    return expr
+
+
+def _infix_xor(self, other):
+    return _xor_bool(_ewise_infix(self, other, binary.lxor, "add"))
+
+
+def _infix_rxor(self, other):
+    return _xor_bool(_ewise_infix(other, self, binary.lxor, "add"))
+
+
+def _infix_ixor(self, other):
+    expr = _infix_xor(self, other)
+    if expr is NotImplemented:
+        raise TypeError(f"unsupported operand type for in-place op: {type(other)}")
+    self << expr
+    return self
+
+
 def _infix_rmatmul(self, other):
     return TensorMatMulExpr(other, self)
 
@@ -1509,6 +1554,8 @@ for _cls in (Tensor, TensorExpression):
     _cls.__rand__ = _infix_rand
     _cls.__matmul__ = _infix_matmul
     _cls.__rmatmul__ = _infix_rmatmul
+    _cls.__xor__ = _infix_xor
+    _cls.__rxor__ = _infix_rxor
     # -X, abs(X) and ~X (BOOL) as for Matrix: apply ainv, abs or lnot
     _cls.__neg__ = infixmethods.__neg__
     _cls.__abs__ = infixmethods.__abs__
@@ -1517,6 +1564,7 @@ for _cls in (Tensor, TensorExpression):
     _cls.__array_ufunc__ = None
 del _name, _op, _kind, _fwd, _ref, _inp, _cls
 
+Tensor.__ixor__ = _infix_ixor
 utils._output_types[Tensor] = Tensor
 utils._output_types[TensorExpression] = Tensor
 utils._output_types[TensorIndexExpr] = Tensor  # (so op(T[i]) and -T[i] apply, as for Matrix)

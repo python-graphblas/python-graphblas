@@ -1580,6 +1580,69 @@ def test_index_expression_operands():
             np.testing.assert_array_equal(f().new().to_dense(), want)
 
 
+def test_update_from_infix_expression():
+    """``C << (X | Y)``, ``(X & Y)``, ``(X ^ Y)`` and ``(X @ Y)`` as Matrix takes them: lor,
+    land and lxor on BOOL (| and & on other dtypes refused, as for Matrix), the default
+    semiring for @; plain and with a mask and an accumulator. ``C << (X | Y)`` raised
+    TypeError ("Assignment value must be a Tensor, ..."), and Tensors had no ``^``.
+    """
+    rng = np.random.default_rng(57)
+
+    def bools(shape):
+        T, _, tp = random_tensor(shape, rng, density=0.6, dtype=dtypes.BOOL)
+        return T, T.to_dense(fill_value=False), tp
+
+    X, Y = bools((3, 4))[0], bools((3, 4))[0]
+    A, B = X.to_matrix(), Y.to_matrix()
+    for infix in [operator.or_, operator.and_, operator.xor]:
+        C = Tensor(dtypes.BOOL, (3, 4))
+        C << infix(X, Y)
+        D = Matrix(dtypes.BOOL, 3, 4)
+        D << infix(A, B)
+        assert C.to_matrix().isequal(D), infix
+        # With a mask and an accumulator
+        C = bools((3, 4))[0]
+        D = C.to_matrix()
+        M = bools((3, 4))[0]
+        C(M.S, accum=binary.lor) << infix(X, Y)
+        D(M.to_matrix().S, accum=binary.lor) << infix(A, B)
+        assert C.to_matrix().isequal(D), infix
+    # 3-d against numpy
+    X3, x3, p3 = bools((2, 3, 4))
+    Y3, y3, q3 = bools((2, 3, 4))
+    for infix, value, present in [
+        (operator.or_, x3 | y3, p3 | q3),
+        (operator.and_, x3 & y3, p3 & q3),
+        (operator.xor, x3 ^ y3, p3 | q3),
+    ]:
+        C = Tensor(dtypes.BOOL, (2, 3, 4))
+        C << infix(X3, Y3)
+        check(C, np.where(present, value, False), present)
+    # Other dtypes: | and & want an operator, as for Matrix; @ and ^ store
+    F = Tensor.from_dense(np.arange(12.0).reshape(3, 4) - 5)
+    G = Tensor.from_dense(np.arange(12.0).reshape(4, 3) % 3)
+    Af, Bf = F.to_matrix(), G.to_matrix()
+    for infix in [operator.or_, operator.and_]:
+        with pytest.raises(TypeError, match="Bad dtypes"):
+            Tensor(dtypes.FP64, (3, 4)) << infix(F, F)
+        with pytest.raises(TypeError, match="Bad dtypes"):
+            Matrix(dtypes.FP64, 3, 4) << infix(Af, Af)
+    C = Tensor(dtypes.FP64, (3, 3))
+    C << (F @ G)
+    D = Matrix(dtypes.FP64, 3, 3)
+    D << (Af @ Bf)
+    assert C.to_matrix().isequal(D)
+    for left, right in [(F, F), (Af, Af)]:
+        with pytest.raises(TypeError, match="only supported for BOOL"):
+            left ^ right
+    # In place, and with a Matrix on the other side
+    Z = X.dup()
+    Z ^= Y
+    assert Z.to_matrix().isequal((A ^ B).new())
+    assert (X ^ B).new().to_matrix().isequal((A ^ B).new())
+    assert (A ^ Y).new().to_matrix().isequal((A ^ B).new())
+
+
 def test_update_from_index_expression():
     """``C << T[idx]`` and ``C(mask, accum) << T[idx]`` store the extraction, as Matrix's
     ``v << A[1, :]`` does. ``_update`` took only an exact TensorExpression and refused an
@@ -2194,10 +2257,10 @@ def test_core_hooks():
         A.ewise_mult(A).new(mask=Tensor.from_matrix(A).S)
     with pytest.raises(TypeError, match="Tensor mask cannot"):
         A.dup(clear=True)(input_mask=Tensor.from_matrix(A).S) << A[:, :]
-    # `^` is not a Tensor operator: a Matrix defers either way, and Python raises
-    with pytest.raises(TypeError, match="unsupported operand"):
+    # `^` is lxor for BOOL only, as for Matrix (a Matrix defers to the Tensor either way)
+    with pytest.raises(TypeError, match="only supported for BOOL"):
         A ^ X
-    with pytest.raises(TypeError, match="unsupported operand"):
+    with pytest.raises(TypeError, match="only supported for BOOL"):
         X ^ A
     # Named operators on a Tensor
     check(gb.unary.abs(X).new(), np.abs(xv), xp)
