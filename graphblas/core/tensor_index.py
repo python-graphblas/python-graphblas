@@ -290,7 +290,9 @@ def _lookup_numba(t, rows, cols):
             with tl._VectorArray(cont.b, np.int8) as b:
                 return b.array[k].astype(bool), vals
         if fmt not in {"csr", "hypercsr"}:
-            return None  # pragma: no cover (safety: a Tensor's Matrix is held by row)
+            # Held by column: only a Matrix the Tensor shares (from_matrix(copy=False),
+            # T.ss.matrix) that the user flipped; the GraphBLAS lookup takes it
+            return None
         from .tensor_numba import lookup
 
         with (
