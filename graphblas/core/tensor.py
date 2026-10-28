@@ -581,10 +581,7 @@ class Tensor(BaseType):
             lay = tl.as_layout(layout, shape)
         nrows, ncols = tl.prod(shape, lay.rows), tl.prod(shape, lay.cols)
         arr = np.transpose(values, lay.rows + lay.cols).reshape(nrows, ncols)
-        M = Matrix.from_dense(arr, missing_value, dtype=dtype)
-        if not tl.is_by_row(M):
-            # A by-column global format, or an n x 1 array (SuiteSparse keeps those by column)
-            M.ss.config["format"] = "by_row"
+        M = Matrix.from_dense(arr, missing_value, dtype=dtype)  # (held by row: import_fullr)
         return cls._from_M(M, shape, lay, pinned=layout is not None, name=name)
 
     def to_dense(self, fill_value=None, dtype=None):
