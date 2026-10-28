@@ -1166,7 +1166,8 @@ def test_copy_on_write_weak_owners():
     # A relayout in place to the layout it has keeps the Matrix (and pins the layout)
     M = T._M
     T.relayout(T.layout, inplace=True)
-    T.wait()
+    assert T.wait() is T  # (as Matrix.wait returns the Matrix)
+    assert T.wait("complete") is T
     assert T._M is M
     assert T.layout_pinned
 

@@ -203,9 +203,9 @@ their timing (2.8-3.3 s per mode on NELL-2). The Tensor starts from its one layo
 - The Tensor's rows end with `wait()`, which also builds the hash SuiteSparse keeps of a
   hypersparse Matrix's rows (`decisions.md`, 24). TACO and Finch have no such structure. On
   NELL-2's TTM along modes 0 and 1 (outputs of 1.7e7 and 2.1e7 rows of 16 values) it takes
-  0.68-0.97 s at 1 thread and 86-116 ms at 8. `wait("complete")` skips it, and the next
-  operation on the result pays it (a row extract, `to_coo` and a sum were each about the
-  hash slower after it).
+  0.68-0.97 s at 1 thread and 86-116 ms at 8. `wait("complete")` skips it, and most
+  operations on the result pay it next (a row extract, `to_coo` and a sum were each about
+  the hash slower after it).
 
 With the relayout done first, outside the timing, as TACO's and Finch's copies are, and the
 hash with (`wait()`) and without it (`wait("complete")`) (NELL-2, R = 16, ms; 2026-10-28, two
