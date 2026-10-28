@@ -245,6 +245,24 @@ def test_pydata_gcxs_repeated_or_unsorted_columns():
 
 
 @needs_sparse
+def test_pydata_gcxs_past_2_60():
+    """Past 2^60 positions: a GCXS whose column group is no Matrix dimension imports
+    through COO, and the GCXS export takes a compressed split whose groups fit.
+    """
+    shape = (2, 2**30, 2**31)
+    coords = np.array([[0, 1], [5, 2**30 - 1], [7, 3]])
+    g = sparse.GCXS.from_coo(sparse.COO(coords, [1.0, 2.0], shape=shape), compressed_axes=(0,))
+    T = Tensor.from_pydata_sparse(g)  # (columns (1, 2): 2^61)
+    assert T.layout.rows != (0,)
+    got_coords, got = T.to_coo()
+    np.testing.assert_array_equal(np.array(got_coords), coords)
+    np.testing.assert_array_equal(got, [1.0, 2.0])
+    out = T.to_pydata_sparse("gcxs")
+    assert out.compressed_axes == (0, 1)
+    np.testing.assert_array_equal(out.tocoo().coords, coords)
+
+
+@needs_sparse
 def test_pydata_options_and_errors():
     rng = np.random.default_rng(3)
     shape = (3, 4, 5)

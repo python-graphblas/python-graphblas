@@ -1427,6 +1427,8 @@ def test_reduce_scalar():
     assert Z.nvals == 0
     with pytest.raises(TypeError):
         T.reduce(binary.minus)
+    # A BinaryOp with a monoid reduces with it
+    check(T.reduce(binary.plus, 1).new(), *np_reduce("plus", values, present, 1), approx=True)
     with pytest.raises(ValueError, match="repeated"):
         T.reduce(axis=(0, 0))
     with pytest.raises(ValueError, match="out of bounds"):
@@ -1572,6 +1574,54 @@ def test_udt_relayout():
     assert got.size == vals.size
 
 
+def test_udt_reduce():
+    """A UDT reduces by REBUILD with dup_op (as the census notes): here one entry per
+    output position, which ``any`` keeps.
+    """
+    from graphblas.core import tensor_census as census
+
+    if not gb.core._has_numba:
+        pytest.skip("UDT monoids need numba")
+    udt = dtypes.register_anonymous(np.dtype([("tensor_red_a", "<i4"), ("tensor_red_b", "<f8")]))
+    i, k = (a.ravel() for a in np.meshgrid(np.arange(3), np.arange(5), indexing="ij"))
+    j = (i + 2 * k) % 4
+    vals = np.zeros(i.size, dtype=udt.np_type)
+    vals["tensor_red_a"] = np.arange(i.size)
+    vals["tensor_red_b"] = np.arange(i.size) / 2
+    T = Tensor.from_coo((i, j, k), vals, udt, shape=(3, 4, 5), layout=((0, 1), (2,)))
+    census.start()
+    try:
+        R = T.reduce(monoid.any, axis=1).new()
+        recs = census.stop()
+    finally:
+        census.stop()
+        census.records.clear()
+    assert ("reduce", "UDT: rebuild") in {(r["point"], r["choice"]) for r in recs}
+    got_coords, got = R.to_coo()
+    np.testing.assert_array_equal(got_coords[0], i)
+    np.testing.assert_array_equal(got_coords[1], k)
+    np.testing.assert_array_equal(got, vals)
+    R = T.reduce(monoid.any, axis=(0, 1)).new()  # (the census off)
+    np.testing.assert_array_equal(R.to_coo()[0][0], np.arange(5))
+
+
+def test_udt_broadcast_inside_a_group():
+    """An array-UDT operand broadcast along one axis of a two-axis group: its values are
+    expanded over the group by a selector (S @ v, with a semiring that takes the UDT).
+    """
+    if not gb.core._has_numba:
+        pytest.skip("UDT ops need numba")
+    udt = dtypes.register_anonymous(np.dtype((np.float64, (2,))), "_TensorBcastArr2")
+    rng = np.random.default_rng(29)
+    xv, xp = rng.random((3, 4, 5, 2)), rng.random((3, 4, 5)) < 0.5
+    X = Tensor.from_coo(np.nonzero(xp), xv[xp], udt, shape=(3, 4, 5), layout=((0,), (1, 2)))
+    yv = rng.random((1, 4, 1, 2))
+    Y = Tensor.from_coo(([0] * 4, range(4), [0] * 4), yv.reshape(4, 2), udt, shape=(1, 4, 1))
+    got_coords, got = X.ewise_mult(Y, binary.plus).new().to_coo()
+    np.testing.assert_array_equal(np.array(got_coords), np.array(np.nonzero(xp)))
+    np.testing.assert_allclose(got, (xv + yv)[xp])
+
+
 @pytest.mark.parametrize("layout", [((0, 1), (2,)), ((2,), (0, 1)), ((1,), (2, 0))])
 def test_size_zero_axes(layout):
     rng = np.random.default_rng(29)
@@ -1623,6 +1673,8 @@ def test_tensordot(xshape, yshape, axes):
 
 
 def test_tensordot_semirings_masks_and_errors():
+    from graphblas.core import tensor_census as census
+
     rng = np.random.default_rng(31)
     X, xv, xp = random_tensor((3, 4, 5), rng, layout=((2,), (0, 1)), density=0.5)
     Y, yv, yp = random_tensor((5, 6), rng, density=0.5)
@@ -1653,6 +1705,26 @@ def test_tensordot_semirings_masks_and_errors():
         X.tensordot(Y, ([2], [0], [1]))
     with pytest.raises(TypeError):
         X.tensordot(Y, 1, op=binary.plus)
+    with pytest.raises(TypeError, match="tensordot"):
+        X.tensordot("x")
+    with pytest.raises(TypeError, match="matmul"):
+        X.matmul("x")
+    # Past 2^60 positions, a TTV with no way to run (its free axes are no Matrix dimension,
+    # and pow has no flipped form for a selector on this side) refuses as the products do
+    H = Tensor.from_coo(([0, 5], [3, 7], [1, 2]), [1.0, 2.0], shape=(2**31, 2**31, 4),
+                        layout=((0,), (1, 2)))  # fmt: skip
+    w = Tensor.from_coo(([1, 2],), [2.0, 3.0], shape=(4,))
+    with pytest.raises(ValueError, match="do not fit"):
+        w.tensordot(H, ([0], [2]), op=gb.semiring.plus_pow).new()
+    census.start()
+    try:
+        with pytest.raises(ValueError, match="do not fit"):
+            w.tensordot(H, ([0], [2]), op=gb.semiring.plus_pow).new()
+        recs = census.stop()
+    finally:
+        census.stop()
+        census.records.clear()
+    assert ("ttv", "no option: general") in {(r["point"], r["choice"]) for r in recs}
 
 
 # --------------------------------------------------------------------------------------------
@@ -2056,6 +2128,11 @@ EINSUM_CASES = [
     ("ijk,ijk->", [(3, 4, 5), (3, 4, 5)]),
     ("ij,jk,kl->il", [(3, 4), (4, 5), (5, 2)]),
     ("ijk,jl,km->ilm", [(3, 4, 5), (4, 2), (5, 3)]),
+    # Near the MTTKRP pattern, not it: two factors on one axis, two rank indices, two axes
+    # without a factor
+    ("ijk,ir,ir->jr", [(3, 4, 5), (3, 2), (3, 2)]),
+    ("ijk,jr,ks->ir", [(3, 4, 5), (4, 2), (5, 3)]),
+    ("ijkl,jr,kr->ir", [(2, 3, 4, 5), (3, 2), (4, 2)]),
 ]
 
 
@@ -2200,6 +2277,31 @@ SEMIRING_EINSUM_CASES = [
     ("ab,bc,cd,da->", [(2, 3), (3, 2), (2, 3), (3, 2)]),
     ("ab,bc,cd->", [(2, 3), (3, 2), (2, 3)]),
 ]
+
+
+@pytest.mark.parametrize("name", ["any_times", "any_minus"])
+def test_einsum_any_monoid(name):
+    """``any`` takes one of the terms, so it may sum early and in steps; a multiply that
+    does not commute keeps its operands in order. One term per output here (the outer
+    operands are permutations), so the result is that term, as with ``plus``.
+    """
+    op = getattr(gb.semiring, name)[dtypes.FP64]
+    ref = getattr(gb.semiring, name.replace("any", "plus"))[dtypes.FP64]
+    rng = np.random.default_rng(53)
+    models = []
+    # (one entry in each row of the first operand, and in each column of the last)
+    for shape, rows, cols in [((3, 4), [0, 1, 2], [2, 0, 3]), ((4, 5), None, None),
+                              ((5, 2), [3, 1], [0, 1])]:  # fmt: skip
+        if rows is None:
+            models.append(random_tensor(shape, rng, density=0.7))
+            continue
+        present = np.zeros(shape, bool)
+        present[rows, cols] = True
+        values = np.where(present, rng.random(shape) + 1, 0)
+        models.append((Tensor.from_dense(values, missing_value=0.0), values, present))
+    sub = "ij,jk,kl->il"
+    R = gb.einsum(sub, *[m[0] for m in models], op=op).new()
+    check(R, *semiring_einsum_model(sub, ref, *models), approx=True)
 
 
 @pytest.mark.parametrize(
@@ -4184,6 +4286,10 @@ def test_hypersparse_row_group_paths():
         diff = np.moveaxis(xv, axis, -1) - wv
         both = np.moveaxis(xp, axis, -1) & wp
         check(R, np.where(both, -diff, 0).sum(-1), both.any(-1), approx=True)
+        # A full weight vector keeps every nonempty row
+        wd = rng.random(X.shape[axis])
+        R = X.tensordot(wd, ([axis], [0])).new()
+        check(R, np.tensordot(xv, wd, ([axis], [0])), xp.any(axis), approx=True)
     for yshape in [(60, 1, 1), (70, 1), (60, 70, 1), (5,)]:
         Y, yv, yp = random_tensor(yshape, rng, density=0.7)
         check((X * Y).new(), *np_bcast("mult", xv, xp, yv, yp, np.multiply), approx=True)
@@ -4477,6 +4583,14 @@ def test_reshape_views_and_moves():
     S = Tensor.from_coo((), [5.0], shape=())
     check(S.reshape(1, 1, 1), np.full((1, 1, 1), 5.0), np.ones((1, 1, 1), bool))
     check(S.reshape(1, 1).reshape(()), np.array(5.0), np.array(True))
+    # Past 2^60 positions, a move only to layouts whose groups fit (axes 0 and 1 fused
+    # with axis 2 would be 2^62)
+    shape = (2**21, 2**21, 2**20, 4)
+    H = Tensor.from_coo(([0, 5], [3, 7], [1, 2], [0, 3]), [1.0, 2.0], shape=shape,
+                        layout=((0, 2), (1, 3)))  # fmt: skip
+    coords, vals = H.reshape(2**42, 2**20, 4).to_coo()
+    np.testing.assert_array_equal(np.array(coords), [[3, 5 * 2**21 + 7], [1, 2], [0, 3]])
+    np.testing.assert_array_equal(vals, [1.0, 2.0])
 
 
 def test_reshape_errors():
@@ -4826,6 +4940,26 @@ def test_assign_views_duplicates_and_matrix_parity():
         T[0, 0, 0, 0] = 1.0
     with pytest.raises(IndexOutOfBound):
         T[2] = 1.0
+    with pytest.raises(TypeError, match="Bad type"):
+        T[0] << "x"
+    with pytest.raises(TypeError, match="bad index"):
+        T[[[0, 1]]]
+    with pytest.raises(TypeError, match="__eq__"):
+        T[0](Tensor(bool, 3, 4).S) == 1  # noqa: B015
+    with pytest.raises(TypeError, match="__bool__"):
+        bool(T[0](Tensor(bool, 3, 4).S))
+    # Values: a Scalar expression, a Tensor or infix expression, a 0-d Tensor (an empty one
+    # deletes the region)
+    T[0, 0] << Vector.from_coo([0, 1], [2.0, 3.0]).reduce()
+    T[1] << Tensor.from_dense(np.ones((3, 4))) * 2
+    B = Tensor.from_dense(np.full(4, 3.0))
+    T[0, 1] << (B | B)
+    T[0, 2] << Tensor.from_coo((), 7.0)
+    T[1, 0].update(Tensor(float))
+    want = np.array([[[5.0] * 4, [6.0] * 4, [7.0] * 4], [[0.0] * 4, [2.0] * 4, [2.0] * 4]])
+    present = np.ones(want.shape, bool)
+    present[1, 0] = False
+    check(T, want, present)
 
 
 def _gather_check(R, wv, wp):
@@ -4952,6 +5086,24 @@ def test_gather_errors_and_options():
         X.take([0], axis=1, mode="clamp")
     with pytest.raises(IndexError, match="out of bounds"):
         Tensor(dtypes.FP64, (2, 0)).take([0], axis=1, mode="wrap")
+    with pytest.raises(TypeError, match="integers"):
+        X.take(np.array([0.5]), axis=0)
+    with pytest.raises(ValueError, match="broadcast"):
+        X.take_along_axis(np.zeros((2, 2, 1), int), 2)
+
+
+def test_gather_when_no_listed_engine_runs(monkeypatch):
+    """With only engines listed that do not run here ("extract" is for ``take``), the
+    GraphBLAS lookup runs.
+    """
+    from graphblas.core import tensor_index
+
+    monkeypatch.setattr(tensor_index, "_GATHER_ENGINES", ("extract",))
+    xv = np.arange(24.0).reshape(2, 3, 4)
+    X = Tensor.from_dense(xv)
+    idx = np.array([[[3, 0]], [[1, 1]]])
+    want = np.take_along_axis(xv, idx, 2)
+    np.testing.assert_array_equal(X.take_along_axis(idx, 2).to_dense(), want)
 
 
 @pytest.mark.parametrize("engines", [("extract", "numba", "graphblas"), ("numba",), ("graphblas",)])
