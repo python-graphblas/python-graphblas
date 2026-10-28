@@ -30,10 +30,13 @@ from ..exceptions import _error_code_lookup
 from . import NULL, ffi, lib
 from . import tensor_census as census
 from .matrix import Matrix
+from .ss import version_bug, version_major, version_minor
 from .vector import Vector
 
 # GraphBLAS dimensions go up to GrB_INDEX_MAX + 1 = 2^60.
 MAX_GROUP = 2**60
+# SuiteSparse 10.5.2 reshapes in place past 2^32 rows or columns (Issue 462; see reshape_owned)
+_RESHAPE_IN_PLACE_PAST_2_31 = (version_major, version_minor, version_bug) >= (10, 5, 2)
 # The planner searches states up to this many axes; above it a relayout is one REBUILD.
 MAX_PLANNED_NDIM = 5
 
@@ -962,14 +965,14 @@ def transpose(M, *, nthreads=None):
 
 def reshape_owned(M, nrows, ncols):
     """``M``, which the caller may change, reshaped to ``nrows`` x ``ncols``: in place, which
-    skips a copy of the values, except past 2^31 rows or columns, where SuiteSparse 10.5.1's
-    in-place reshape keeps 32-bit indices that cannot hold the new ones (Issue 462), and the
-    copying reshape runs.
+    skips a copy of the values, except past 2^31 rows or columns before SuiteSparse 10.5.2,
+    whose in-place reshape keeps 32-bit indices that cannot hold the new ones (Issue 462), and
+    the copying reshape runs.
 
     TODO(SuiteSparse 10.5.2): always in place once 10.5.2, which fixes Issue 462, is the
     oldest supported version; then this helper can go.
     """
-    if nrows <= 2**31 and ncols <= 2**31:
+    if nrows <= 2**31 and ncols <= 2**31 or _RESHAPE_IN_PLACE_PAST_2_31:
         M.ss.reshape(nrows, ncols, inplace=True)
         return M
     return M.ss.reshape(nrows, ncols)
@@ -980,7 +983,7 @@ def execute(M, shape, state, path):
 
     ``M`` itself is never changed; intermediates are reshaped in place, which skips a copy
     of the values (7.1 ms vs 9.6 for 1e7 entries at 8 threads, and less peak memory), except
-    where ``reshape_owned`` must copy (SuiteSparse 10.5.1).
+    where ``reshape_owned`` must copy (before SuiteSparse 10.5.2).
     """
     owned = False
     for edge in path:
