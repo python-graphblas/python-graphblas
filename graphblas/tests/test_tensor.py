@@ -1377,6 +1377,31 @@ def test_index_expression_operands():
             np.testing.assert_array_equal(f().new().to_dense(), want)
 
 
+def test_update_from_index_expression():
+    """``C << T[idx]`` and ``C(mask, accum) << T[idx]`` store the extraction, as Matrix's
+    ``v << A[1, :]`` does. ``_update`` took only an exact TensorExpression and refused an
+    extraction (its subclass) with "Assignment value must be a Tensor, ...".
+    """
+    rng = np.random.default_rng(56)
+    T, tv, tp = random_tensor((3, 4, 5), rng, density=0.6)
+    for key, sel in [
+        ((1,), (1,)),
+        ((slice(None), 2), (slice(None), 2)),
+        (([2, 0], slice(1, 4), [4, 0, 1]), np.ix_([2, 0], range(1, 4), [4, 0, 1])),
+    ]:
+        want_v, want_p = tv[sel], tp[sel]
+        C = Tensor(dtypes.FP64, want_v.shape)
+        C << T[key]
+        check(C, want_v, want_p)
+        # With a mask and an accumulator: the old values survive outside the mask
+        D, dv, dp = random_tensor(want_v.shape, rng, density=0.5)
+        M, _, mp = random_tensor(want_v.shape, rng, density=0.5, dtype=dtypes.BOOL)
+        D(M.S, accum=binary.plus) << T[key]
+        both = dp & want_p
+        zv = np.where(both, dv + want_v, np.where(dp, dv, want_v))
+        check(D, np.where(mp, zv, dv), np.where(mp, dp | want_p, dp))
+
+
 def test_unary_operators_and_select_strings():
     """``-X``, ``abs(X)``, ``~X`` (BOOL) and ``select`` with a string op, as Matrix takes them,
     on Tensors, their expressions and extractions. They raised TypeError ("bad operand
