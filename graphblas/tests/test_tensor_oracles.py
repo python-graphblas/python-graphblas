@@ -53,10 +53,8 @@ def cases(n):
 
 
 def base_seed():
-    for var in ("GRAPHBLAS_TENSOR_ORACLE_SEED", "GRAPHBLAS_TEST_SEED"):
-        if seed := os.environ.get(var):
-            return int(seed)
-    return 0
+    env = os.environ
+    return int(env.get("GRAPHBLAS_TENSOR_ORACLE_SEED") or env.get("GRAPHBLAS_TEST_SEED") or 0)
 
 
 @pytest.fixture
@@ -127,22 +125,12 @@ def build(rng, values, present, *, view=True, dtype=None):
     )  # fmt: skip
 
 
-def model_of(obj, shape=None):
-    """The model of a Tensor, Matrix, Vector or Scalar."""
-    if isinstance(obj, Scalar):
-        values, present = np.zeros(()), np.zeros((), bool)
-        if obj.nvals:
-            values[()], present[()] = obj.value, True
-        return values, present
+def model_of(obj):
+    """The model of a Tensor or Matrix."""
     if isinstance(obj, Matrix):
         r, c, v = obj.to_coo()
         values, present = np.zeros(obj.shape, v.dtype), np.zeros(obj.shape, bool)
         values[r, c], present[r, c] = v, True
-        return values, present
-    if isinstance(obj, Vector):
-        i, v = obj.to_coo()
-        values, present = np.zeros(obj.shape, v.dtype), np.zeros(obj.shape, bool)
-        values[i], present[i] = v, True
         return values, present
     coords, v = obj.to_coo()
     values, present = np.zeros(obj.shape, v.dtype), np.zeros(obj.shape, bool)
@@ -210,7 +198,7 @@ class Oracle:
             rv = thunk()
             if type(rv) not in {Tensor, Matrix, Vector, Scalar} and hasattr(rv, "new"):
                 rv = rv.new()  # an expression
-        except Exception as exc:
+        except Exception as exc:  # pragma: no cover (only on failure)
             self.fail(what, f"raised {type(exc).__name__}: {str(exc)[:200]}")
             return None
         return rv
@@ -293,7 +281,7 @@ def oracle_ewise_reduce(rng, n, teeth=False):
             f"ewise_union {desc}", lambda: B.ewise_union(A, binary.minus, 10.0, -10.0).new(),
             uv, ap | bp,
         )  # fmt: skip
-        if C is not None:
+        if C is not None:  # pragma: no branch (only on failure)
             for k in range(1, ndim + 1):
                 for axes in itertools.combinations(range(ndim), k):
                     op, npop, identity = [
@@ -336,7 +324,9 @@ def oracle_ewise_reduce(rng, n, teeth=False):
             o.run(what, lambda: target(mask_arg, **kw) << A * 10)
         o.stats["update"] += 1
         if not matches(target, wv, wp):
-            o.fail(what, "values or presence differ from the model")
+            o.fail(  # pragma: no cover (only on failure)
+                what, "values or presence differ from the model"
+            )
     return o
 
 
@@ -435,10 +425,12 @@ def oracle_broadcast_contract(rng, n, teeth=False):
     o.stats["guard"] += 1
     try:
         (big + v).new()
-        o.fail("union broadcast guard", "did not refuse")
+        o.fail("union broadcast guard", "did not refuse")  # pragma: no cover (only on failure)
     except ValueError as exc:
         if "allow_expansion" not in str(exc):
-            o.fail("union broadcast guard", f"refused with {exc}")
+            o.fail(  # pragma: no cover (only on failure)
+                "union broadcast guard", f"refused with {exc}"
+            )
     return o
 
 
@@ -516,7 +508,7 @@ def oracle_mttkrp(rng, n, teeth=False):
                 arg = mode - ndim if rng.random() < 0.2 else mode
                 res = o.run(what, lambda: X.mttkrp(factors, arg).new())
                 if res is None:
-                    continue
+                    continue  # pragma: no cover (only on failure)
                 for choice in choices(records, start, "mttkrp"):
                     o.stats[choice] += 1
                 m = (mode + 1) % ndim if teeth else mode
@@ -527,7 +519,9 @@ def oracle_mttkrp(rng, n, teeth=False):
                 fibers[coords[m]] = True
                 o.stats["checks"] += 1
                 if not valid(res):
-                    o.fail(what, "the stored Matrix is malformed")
+                    o.fail(  # pragma: no cover (only on failure)
+                        what, "the stored Matrix is malformed"
+                    )
                 elif not matches(res, want, np.broadcast_to(fibers[:, None], want.shape)):
                     o.fail(what, "values or presence differ from the model")
     if numba_variants:
@@ -605,7 +599,7 @@ def oracle_ttm(rng, n, teeth=False):
                 op = getattr(semiring, semi)
                 res = o.run(what, lambda: X.tensordot(U, axes=([m], [kb]), op=op).new())
                 if res is None:
-                    continue
+                    continue  # pragma: no cover (only on failure)
                 for choice in choices(records, start, "ttm"):
                     o.stats[choice] += 1
                 Uo, Po = (Ud, Up) if kb == 0 else (Ud.T, Up.T)
@@ -619,7 +613,9 @@ def oracle_ttm(rng, n, teeth=False):
                 wantp = np.tensordot(present.astype(int), Po.astype(int), axes=([m], [0])) > 0
                 o.stats["checks"] += 1
                 if not valid(res):
-                    o.fail(what, "the stored Matrix is malformed")
+                    o.fail(  # pragma: no cover (only on failure)
+                        what, "the stored Matrix is malformed"
+                    )
                 elif not matches(res, want, wantp):
                     o.fail(what, "values or presence differ from the model")
     if numba_variants:
@@ -675,9 +671,9 @@ def oracle_reshape(rng, n, teeth=False):
             if copy is False:  # allowed to refuse, never to return a wrong result
                 o.stats["copy=False refused"] += 1
             else:
-                o.fail(what, f"raised ValueError: {exc}")
+                o.fail(what, f"raised ValueError: {exc}")  # pragma: no cover (only on failure)
             continue
-        except Exception as exc:
+        except Exception as exc:  # pragma: no cover (only on failure)
             o.fail(what, f"raised {type(exc).__name__}: {exc}")
             continue
         o.stats["reshape"] += 1
@@ -690,13 +686,17 @@ def oracle_reshape(rng, n, teeth=False):
             R << R.apply(unary.ainv)
             o.stats["copy-on-write"] += 1
             if not matches(X, xv, xp):
-                o.fail(what, "writing the result changed the source")
+                o.fail(  # pragma: no cover (only on failure)
+                    what, "writing the result changed the source"
+                )
         if X.nvals:
             before = model_of(R)
             X << X.apply(unary.ainv)
             o.stats["copy-on-write"] += 1
             if not matches(R, *before):
-                o.fail(what, "writing the source changed the result")
+                o.fail(  # pragma: no cover (only on failure)
+                    what, "writing the source changed the result"
+                )
     for _ in range(max(1, n // 4)):
         # C << V, V a view (axes of equal size permuted) of the store C shares: C is X, a dup
         # of X, or a Tensor assigned from X; the others keep their values
@@ -732,14 +732,14 @@ def oracle_reshape(rng, n, teeth=False):
         o.stats["view of a shared store"] += 1
         try:
             C << V
-        except Exception as exc:
+        except Exception as exc:  # pragma: no cover (only on failure)
             o.fail(what, f"raised {type(exc).__name__}: {exc}")
             continue
         # (the teeth forget the permutation)
         if not matches(C, *(m if teeth else m.transpose(perm) for m in (xv, xp))):
             o.fail(what, "values or presence differ from the model")
         if kind != "itself" and not matches(X, xv, xp):
-            o.fail(what, "the source changed")
+            o.fail(what, "the source changed")  # pragma: no cover (only on failure)
     for _ in range(max(1, n // 8)):
         shape = tuple(int(rng.integers(1, 5)) for _ in range(int(rng.integers(1, 5))))
         xv, xp = rand_model(rng, shape, 0.5)
@@ -1036,17 +1036,15 @@ def oracle_io(rng, n, teeth=False):
 
     def compare(what, shape, coords, vals, got_shape, got_coords, got_vals):
         want_v, want_p = np.zeros(shape), np.zeros(shape, bool)
-        if len(shape):
-            want_v[tuple(coords)], want_p[tuple(coords)] = vals, True
+        want_v[tuple(coords)], want_p[tuple(coords)] = vals, True  # (shapes of 1-5 axes)
         if teeth and len(vals):  # the model drops one entry
             want_p[tuple(c[0] for c in coords)] = False
         got = np.zeros(tuple(got_shape), bool), np.zeros(tuple(got_shape))
         o.stats[what] += 1
-        if tuple(got_shape) != tuple(shape):
+        if tuple(got_shape) != tuple(shape):  # pragma: no cover (only on failure)
             o.fail(what, f"shape {tuple(got_shape)}, not {shape}")
             return
-        if len(shape):
-            got[0][tuple(got_coords)], got[1][tuple(got_coords)] = True, got_vals
+        got[0][tuple(got_coords)], got[1][tuple(got_coords)] = True, got_vals
         if not (got[0] == want_p).all() or not np.allclose(
             got[1][want_p].astype(float), want_v[want_p].astype(float)
         ):
@@ -1080,12 +1078,14 @@ def oracle_io(rng, n, teeth=False):
             axes = tuple(sorted(int(a) for a in axes))
             g = X.to_pydata_sparse(format="gcxs", compressed_axes=axes)
             if tuple(g.compressed_axes) != axes:
-                o.fail("to GCXS", f"compressed axes {g.compressed_axes}, not {axes}")
+                o.fail(  # pragma: no cover (only on failure)
+                    "to GCXS", f"compressed axes {g.compressed_axes}, not {axes}"
+                )
             gc = g.tocoo()
             compare("to GCXS", shape, coords, vals, gc.shape, gc.coords, gc.data)
             Y = Tensor.from_pydata_sparse(g)
             compare("from GCXS", shape, coords, vals, Y.shape, *Y.to_coo())
-        if need := _scipy_coo_needs(ndim):  # (this scipy has no such array)
+        if need := _scipy_coo_needs(ndim):  # pragma: no cover (old scipy)
             o.stats["to scipy refused"] += 1
             try:
                 X.to_scipy_sparse()
@@ -1111,7 +1111,7 @@ def oracle_io(rng, n, teeth=False):
             o.stats["fill_value refused"] += 1
             try:
                 Tensor.from_pydata_sparse(s)
-                o.fail(f"fill_value {shape}", "accepted")
+                o.fail(f"fill_value {shape}", "accepted")  # pragma: no cover (only on failure)
             except ValueError:
                 pass
     return o

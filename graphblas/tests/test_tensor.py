@@ -514,8 +514,6 @@ def test_relayout_hypersparse():
     T = Tensor.from_coo(coords, vals, shape=shape)
     assert T.layout == Layout((0,), (1, 2))
     for dst in all_layouts(3):
-        if not all(math.prod(shape[a] for a in g) <= 2**60 for g in dst):
-            continue
         U = T.relayout(dst)
         U._check_invariants()
         ref = Tensor.from_coo(coords, vals, shape=shape, layout=dst)
@@ -523,8 +521,6 @@ def test_relayout_hypersparse():
     # The planner with the hypersparse density class and real primitives
     src = T.layout.state
     for dst in all_layouts(3)[::3]:
-        if not all(math.prod(shape[a] for a in g) <= 2**60 for g in dst):
-            continue
         _, path, _ = tl.plan(shape, src, frozenset([dst.state]), 10**6, 8, hyper1=True)
         M, state = tl.execute(T.ss.matrix, shape, src, path)
         assert state == dst.state
@@ -2869,8 +2865,6 @@ def test_ttm_udt_layouts(shape, nthreads, monkeypatch):
     layout (after a relayout where the axis is not the column group by itself), either side
     of the factor, iso values, R = 1: 3-, 4- and 5-d against numpy.
     """
-    if backend != "suitesparse":
-        pytest.skip("SuiteSparse only")
     _require_jit_compile()
     calls = _ttm_udt_spy(monkeypatch)
     rng = np.random.default_rng(90 + len(shape))
@@ -2960,8 +2954,6 @@ def test_ttm_udt_raises_run_only_when_it_runs(monkeypatch):
     """At SuiteSparse's default "run", a TTM the array-UDT engine leaves to Numba (R above
     ``_TTM_UDT_MAX_R``) keeps the JIT control at "run"; one it takes raises it to "on".
     """
-    if backend != "suitesparse":
-        pytest.skip("SuiteSparse only")
     from graphblas.core import _has_numba, tensor
 
     if not _has_numba:
@@ -2991,8 +2983,6 @@ def test_ttm_udt_paths(monkeypatch, capfd):
     """UDT engine outputs in every storage, views and empty groups, an empty tensor, the
     JIT kernel (burble), its type and ops made once per R, and JIT off.
     """
-    if backend != "suitesparse":
-        pytest.skip("SuiteSparse only")
     _require_jit_compile()
     from graphblas.core import tensor_udt
 
@@ -3128,8 +3118,6 @@ def test_ttm_udt_jit_failure(control, numba, tmp_path):
     back "run", which UDT auto-lift raised to "on" again, so the next UDT Matrix operation
     retried the compile and raised JitError.
     """
-    if backend != "suitesparse":
-        pytest.skip("SuiteSparse only")
     if numba == "numba" and not gb.core._has_numba:
         pytest.skip("needs numba")
     repo_root = Path(__file__).resolve().parents[2]
@@ -3190,8 +3178,6 @@ def test_engines_selectable(monkeypatch):
     forced, and each gives the numpy result; a forced engine that does not run here falls back
     to the products, which take the hypersparse rows compacted in the stored order.
     """
-    if backend != "suitesparse":
-        pytest.skip("SuiteSparse only")
     if not gb.core._has_numba:
         pytest.skip("needs numba")
     _require_jit_compile()
@@ -3285,8 +3271,6 @@ def test_udt_engine_new_kernel_jit_failure(case, tmp_path):
     MTTKRP products' first step, and the products give the result (Numba blocked, so the
     UDT engine is the one tried).
     """
-    if backend != "suitesparse":
-        pytest.skip("SuiteSparse only")
     repo_root = Path(__file__).resolve().parents[2]
     env = dict(os.environ, PYTHONPATH=str(repo_root), GRAPHBLAS_CACHE_PATH=str(tmp_path / "jit"))
     result = subprocess.run(
@@ -3316,8 +3300,6 @@ def test_ttm_engine_choice(monkeypatch):
     under SuiteSparse's hyper switch) and R <= _TTM_UDT_MAX_R; the Numba one the rest. Without
     Numba, the UDT one takes all.
     """
-    if backend != "suitesparse":
-        pytest.skip("SuiteSparse only")
     if not gb.core._has_numba:
         pytest.skip("needs numba")
     _require_jit_compile()
@@ -3467,7 +3449,7 @@ def test_kernel_disk_cache(tmp_path):
     finally:
         # (when one fails, reap the other: its pipes would fail a later test when collected)
         for proc in procs:
-            if proc.returncode is None:
+            if proc.returncode is None:  # pragma: no cover (only on failure)
                 proc.kill()
                 proc.communicate()
     files = sorted(p.name for p in cache.glob("k_*.py"))
@@ -3552,8 +3534,6 @@ def test_mttkrp_products_udt_first(shape, monkeypatch):
     on the array-UDT engine when the JIT is on: every mode and a sample of layouts, iso
     values, against numpy and the plain products; a sparse factor keeps the product.
     """
-    if backend != "suitesparse":
-        pytest.skip("SuiteSparse only")
     _require_jit_compile()
     from graphblas.core import tensor
 
@@ -4440,8 +4420,6 @@ def test_user_guide_examples():
     import doctest
     import re
 
-    if backend != "suitesparse":
-        pytest.skip("SuiteSparse only")
     pytest.importorskip("scipy")
     from graphblas.core.tensor_io import _scipy_coo_needs
 
