@@ -702,9 +702,41 @@ def test_udt_udf_on_a_dtype_numba_cannot_lower():
     for udf in [unary_op, binary_op]:
         assert FP64 in udf
         if dtypes._supports_complex:
-            with pytest.raises(UdfParseError, match=r"does not work with \(FC64.*lowering"):
+            with pytest.raises(
+                UdfParseError, match=r"does not work with \(FC64.*: No definition for lowering"
+            ):
                 udf[FC64]
             assert FC64 not in udf
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_compile_for_dtype_raises_other_lowering_errors():
+    """Only a missing lowering skips a dtype, in either of Numba's error styles.
+
+    Numba before 0.60 raises a LoweringError from whatever lowering raised, such
+    as the NotImplementedError for a missing lowering; later Numba raises that.
+    """
+    from numba.core.errors import LoweringError
+
+    from graphblas.core.operator.udf import _compile_for_dtype
+
+    class Dispatcher:
+        def __init__(self, exc, old_style):
+            self.exc = exc
+            self.old_style = old_style
+
+        def compile(self, sig):
+            if self.old_style:
+                # Numba raises it inside the ``except`` that caught the error
+                err = LoweringError(str(self.exc))
+                err.__context__ = self.exc
+                raise err
+            raise self.exc
+
+    for old_style in [False, True]:
+        assert not _compile_for_dtype(Dispatcher(NotImplementedError("none"), old_style), ())
+        with pytest.raises(LoweringError if old_style else KeyError):
+            _compile_for_dtype(Dispatcher(KeyError("bug"), old_style), ())
 
 
 @pytest.mark.skipif("not supports_udfs")
