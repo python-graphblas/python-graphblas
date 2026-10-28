@@ -972,6 +972,57 @@ def test_steal_row_as_vector(monkeypatch):
     assert t.to_vector().isequal(Vector.from_dense(t.to_dense()))
 
 
+@pytest.mark.parametrize("sparsity", ["sparse", "bitmap", "full"])
+def test_steal_row_flipped_by_column(sparsity, monkeypatch):
+    """A 1-d Tensor whose shared Matrix the user flipped to by-column (a state the gathers
+    support): ``to_vector``, TTV and a broadcast take its row as a valid Vector of the right
+    size and values, and leave the shared Matrix as it was.
+    """
+    from graphblas.core import ffi, lib
+    from graphblas.core import tensor_census as census
+
+    taken = []
+    steal = tl.steal_row_as_vector
+
+    def checked(M):
+        v = steal(M)
+        assert lib.GxB_Vector_fprint(v._carg, b"v", lib.GxB_SILENT, ffi.NULL) == 0
+        taken.append(v.size)
+        return v
+
+    monkeypatch.setattr(tl, "steal_row_as_vector", checked)
+    x = np.array([0.0, 1.5, 0.0, 2.0, 3.0]) if sparsity != "full" else np.arange(1.0, 6.0)
+    rng = np.random.default_rng(71)
+    X, xv, xp = random_tensor((3, 4, 5), rng, density=0.5, layout=((0, 1), (2,)))
+    for use in ["to_vector", "ttv", "bcast"]:
+        T = Tensor.from_dense(x, missing_value=0.0 if sparsity != "full" else None)
+        A = T.ss.matrix
+        if sparsity == "bitmap":
+            A.ss.config["sparsity_control"] = "bitmap"
+        A.ss.config["format"] = "by_col"
+        before = A.dup()
+        taken.clear()
+        if use == "to_vector":
+            v = T.to_vector()
+            assert v.isequal(Vector.from_dense(x, missing_value=0.0))
+        elif use == "ttv":
+            R = X.tensordot(T, ([2], [0])).new()
+            np.testing.assert_allclose(R.to_dense(fill_value=0), np.where(xp, xv, 0) @ x)
+        else:
+            census.start()
+            census.force["bcast"] = "diagonal cols"
+            try:
+                R = (X * T).new()
+            finally:
+                census.force.clear()
+                records = census.stop()
+            assert [r["choice"] for r in records if r["point"] == "bcast"] == ["diagonal cols"]
+            check(R, xv * x, xp & (x != 0), approx=True)
+        assert taken == [5], use
+        assert T.ss.matrix.ss.orientation == "columnwise"
+        assert T.ss.matrix.isequal(before)
+
+
 # --------------------------------------------------------------------------------------------
 # M3: shape operations and copy-on-write
 
