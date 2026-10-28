@@ -95,6 +95,21 @@ and the data sets are those named in `design.md`.
 - **Moved operands are not kept.** A relayout made for one operation is dropped afterwards, so
   repeated contractions of the same operand repay it. Keeping it on the store needs a memory
   policy.
+- **The Tensor's own waits build the row hash.** Its operations finish an operand with
+  `wait()` (materialize) before testing its format or unloading it into a Container
+  (`tensor_layout.stored_format`, `_Unloaded`), and that also builds SuiteSparse's hash of a
+  hypersparse Matrix's rows (a hyperlist longer than `GxB_HYPER_HASH`, 1024 by default),
+  even where the operation would not use it: SuiteSparse's own extract of a short row list
+  would not build it (`GB_subref_phase0.c`). On NELL-2's TTM output (R = 16, 1.66e7 and
+  2.15e7 rows for modes 0 and 1) the hash takes 0.68-0.97 s at 1 thread and 86-116 ms at 8,
+  about 45 ns a row. After `wait("complete")`, which skips it, a row extract that takes 1-3 ms
+  took 0.68-0.96 s at 1 thread, because the extract's own wait built it (the perf round,
+  2026-10-28). Internal waits cannot simply use "complete": SuiteSparse does no work for it,
+  and Container work needs pending work finished (`tensor_layout.stored_format`). An idea:
+  finish pending work with the hash off for that Matrix (its `GxB_HYPER_HASH` setting, set
+  around the wait and put back), with care, since `GB_wait` frees an existing hash while it
+  is off and pending tuples are assembled. Decision 24 keeps `Tensor.wait()` itself
+  materializing, as `Matrix.wait()` does.
 - **4-d MTTKRP** is within 1.0-1.4x of SPLATT at 8 threads (geometric mean on Uber, NIPS and
   Enron). The worst row is 1.66x (Uber mode 3, R = 16).
 - **Batched products with few large batches** can trail a plain loop: multiplex PageRank on
@@ -123,7 +138,7 @@ and the data sets are those named in `design.md`.
    hand. Then fix the mispricings listed above, and finish the census on NELL-2 and Enron.
 4. **Performance:** TTM along non-stored modes (per-mode copies, if many-mode sweeps such as
    HOOI and Tucker need them: `decisions.md`, 25); einsum's per-call overhead; keeping
-   moved operands on the store.
+   moved operands on the store; internal waits without the row hash (above).
 5. **API:** `pad`, more aggregators, index-based `select`, einsum diagonals, and the open
    questions (Vector and Tensor index arrays, `graphblas.io` dispatch).
 6. **When SuiteSparse 10.5.2 is the oldest supported version:** drop the 10.5.1 reshape
