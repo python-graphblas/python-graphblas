@@ -139,6 +139,17 @@ the API settles. `design.md` describes how the code implements these.
     from its own copy), plus the output's hash in `wait()` (`benchmarks.md`). _Revisit_
     when users run TTMs along many modes in turn, as HOOI and Tucker sweeps do, where a copy
     per mode would be built once and reused every sweep.
+26. **Broadcast unions whose broadcast axes would fit only split across the row and column
+    groups are not supported.** A union (`ewise_add`, `ewise_union`) replicates the
+    lower-rank operand over the broadcast axes (`_expand`): before its row group, or, when
+    that passes 2^60 positions, after its column group. When neither fits but a split of the
+    broadcast axes across both groups would, it raises a clear ValueError ("... more than one
+    Matrix dimension can hold (2**60) next to its own axes"). _Why not:_ splitting them needs
+    a kron on both sides and a layout choice in `_expand`, for a rare case. It takes 2^60
+    positions or more in total, a replication that `tensor_max_expansion` lets through (or
+    `allow_expansion=True`), and an operand whose own groups crowd both sides. An
+    intersection never replicates and has no such limit. Decided 2026-10-28, on Erik's
+    instruction to decide and document. _Revisit_ when a workload meets the error.
 
 ## Deferred, on purpose
 
