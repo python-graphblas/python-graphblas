@@ -5396,6 +5396,37 @@ def test_gather_graphblas_past_2_63_positions(monkeypatch):
     assert elapsed < 10, elapsed  # (0.2 s here)
 
 
+@pytest.mark.parametrize("sparsity", ["sparse", "bitmap"])
+def test_gather_matrix_flipped_by_column(sparsity, monkeypatch):
+    """A Matrix the Tensor shares (``from_matrix(copy=False)``) that the user then flips to
+    by-column: the Numba lookup, which reads by-row arrays only, declines it, and the
+    GraphBLAS lookup gives the right values.
+    """
+    from graphblas.core import tensor_index
+
+    if not gb.core._has_numba:
+        pytest.skip("needs numba")
+    declined = []
+    orig = tensor_index._lookup_numba
+
+    def spy(t, rows, cols):
+        rv = orig(t, rows, cols)
+        declined.append(rv is None)
+        return rv
+
+    monkeypatch.setattr(tensor_index, "_lookup_numba", spy)
+    x = np.array([[0.0, 1.5, 0.0, 2.0], [3.0, 0.0, 0.0, 0.0], [0.0, 4.0, 5.0, 0.0]])
+    A = Matrix.from_dense(x, missing_value=0.0)
+    A.ss.config["sparsity_control"] = sparsity
+    T = Tensor.from_matrix(A, copy=False)
+    A.ss.config["format"] = "by_col"
+    assert T.ss.matrix.ss.orientation == "columnwise"
+    i, j = np.array([0, 2, 1, 2, 0]), np.array([1, 2, 0, 0, 3])
+    R = T.vindex[i, j]
+    assert declined == [True]
+    check(R, x[i, j], x[i, j] != 0)
+
+
 def test_gather_errors_and_options():
     X = Tensor.from_dense(np.arange(24.0).reshape(2, 3, 4))
     with pytest.raises(IndexError, match="out of bounds"):
