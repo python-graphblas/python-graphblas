@@ -137,6 +137,10 @@ def _ttm_numba(updater, a, b, op, a_axes, b_axes):
         return None
     m, kb = a_axes[0], b_axes[0]
     free_a = tuple(x for x in range(a.ndim) if x != m)
+    if tl.prod(a._shape, free_a) > tl.MAX_GROUP:
+        # The output's rows are every free axis (the stored rows, then the leading column
+        # axes): past one Matrix dimension. The products then refuse clearly, as for _ttm_udt
+        return None
     nthreads = _nthreads(updater)
     targets = frozenset(
         ((*perm, m), q)
