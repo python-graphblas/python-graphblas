@@ -54,11 +54,12 @@ and the data sets are those named in `design.md`.
   numbers are for a copy of the tensor already in that mode's order, built outside its timing
   (7.6 s on NELL-2). An in-place kernel for those modes, or opt-in per-mode copies, would
   close it.
-- **Slabs of Uber (4-d, layout (0, 1, 2 | 3)) along its last axis**, a column range of the
-  stored Matrix: 31 / 7.1 ms at 1 / 8 threads for one index, against scipy's 2.3 and torch's
-  0.66 (8 threads). SuiteSparse's extract visits each of the 5e6 rows of the sparse row group
-  (6.9e5 of them nonempty). Its slabs along axes 1 and 2 were also 7-200x slower until the
-  extract was priced by the rows it visits (`benchmarks.md`, "Performance work after K").
+- **Slabs of Uber (4-d, layout (0, 1, 2 | 3)) along its first axis**, a row range of the
+  stored Matrix: 0.17 ms for one index, against pydata/sparse's 0.059, and 3.7 ms at 1 thread
+  for a 10% range against its 1.8 (the Tensor is fastest at 8 threads, 1.3 ms). Its other
+  slabs were 6-30x slower than now until the extract was priced by the rows it visits, and a
+  column range of a sparse row group filtered in place (`benchmarks.md`, "Performance work
+  after K").
 - **einsum's per-call overhead** shows at millisecond scale: about 45 us for one contraction,
   97 us for an MTTKRP through einsum, and 128 us for three operands.
 - **Planning a 5-d MTTKRP** takes about 130 ms on the first call for a shape, even for a

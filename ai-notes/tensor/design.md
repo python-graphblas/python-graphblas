@@ -443,6 +443,11 @@ positions are the raveled outer product of its axes' indices (`_group_index`).
   taken directly. It is priced by the rows it visits (a listed row is found directly, or by a
   hash lookup when the Matrix is hypersparse), plus, for a column list shorter than 1/32 of
   the columns, a hash lookup per entry of those rows (`_extract_cost`).
+- **column range in place**: a range of the columns of every row of a sparse (not
+  hypersparse) Matrix, by one numpy pass over its column indices in place, the kept entries'
+  rows found by a binary search of the row pointers (`_column_range`). The extract visits
+  every row there, empty or not: Uber's 5e6 rows hold 3.3e6 entries, and its slab along the
+  last axis took 31 ms at 1 thread against 1.2.
 - **filter**: `to_coo`, a numpy mask on the coordinates, a rebuild. This is cheaper than
   listing many indices (a slab of a wide column group), and it is the only path when a group
   would list more than 2^26 positions (`_MAX_LISTED`).
