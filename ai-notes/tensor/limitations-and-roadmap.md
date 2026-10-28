@@ -64,14 +64,17 @@ and the data sets are those named in `design.md`.
 
   The last column is SuiteSparse building the hyper hash of the output (1.7e7 and 2.1e7
   nonempty rows of R values) in the `wait()` that the kit, like any user, calls to finish a
-  result; an operation that needs the hash builds it on demand, and none of the other
-  libraries has one. It is also 7-14% of NELL-2's sums, TTVs and broadcasts at 1 thread. A
-  `Tensor.wait` that finishes pending work without building it is a design question
-  (`Matrix.wait` builds it too). An in-place kernel along the first column axis, with a
-  sparse accumulator per row instead of the reshape and second transpose, was prototyped on
-  NELL-2 mode 0: 1354 against 1049 ms at 1 thread (without the hash), 243 against 269 at 8,
-  so not pursued. Opt-in per-mode copies would remove the relayout, at one copy of the data
-  per mode.
+  result. None of the other libraries has such a hash. It is also 7-14% of NELL-2's sums,
+  TTVs and broadcasts at 1 thread. `Tensor.wait()` keeps building it, as `Matrix.wait()`
+  does (`decisions.md`, 24): `wait("complete")` skips it, and the next operation on the
+  result pays it. An in-place kernel along the first column axis, with a sparse accumulator
+  per row instead of the reshape and second transpose, was prototyped on NELL-2 mode 0: 1354
+  against 1049 ms at 1 thread (without the hash), 243 against 269 at 8, so not pursued.
+  Per-mode copies are not kept (`decisions.md`, 25); an explicit `relayout()` before a loop
+  gives one. With it, done outside the timing, NELL-2 modes 0 and 1 take 445 and 548 ms at
+  1 thread without the hash, against TACO's 263 and 262 from its own copy, and 1127 and
+  1433 with it (`benchmarks.md`). To revisit if users run TTMs along many modes in turn
+  (HOOI, Tucker).
 
 - **Slabs of Uber (4-d, layout (0, 1, 2 | 3)) along its first axis**, a row range of the
   stored Matrix: 0.17 ms for one index, against pydata/sparse's 0.059, and 3.7 ms at 1 thread
@@ -115,9 +118,9 @@ and the data sets are those named in `design.md`.
    off there too.
 3. **Refit the cost constants** on x86, and with a script driven by the census instead of by
    hand. Then fix the mispricings listed above, and finish the census on NELL-2 and Enron.
-4. **Performance:** TTM along non-stored modes (opt-in per-mode copies, and whether
-   `Tensor.wait` builds the output's row hash); einsum's per-call overhead; keeping moved
-   operands on the store.
+4. **Performance:** TTM along non-stored modes (per-mode copies, if many-mode sweeps such as
+   HOOI and Tucker need them: `decisions.md`, 25); einsum's per-call overhead; keeping
+   moved operands on the store.
 5. **API:** `pad`, more aggregators, index-based `select`, einsum diagonals, and the open
    questions (Vector and Tensor index arrays, `graphblas.io` dispatch).
 6. **When SuiteSparse 10.5.2 is the oldest supported version:** drop the 10.5.1 reshape
