@@ -431,14 +431,22 @@ def steal_row_as_vector(M):
         # A shared Matrix the user flipped to by-column (as the gathers allow), copied by the
         # caller: flipping it as it is would give an (n x 1) Matrix held by row, no Vector
         M.ss.config["format"] = "by_row"
+    control = None
     if stored_format(M) == "hypercsr":
-        # A Vector is never hypersparse; with one row, converting moves no entries
+        # A Vector is never hypersparse; with one row, converting moves no entries. The
+        # Matrix's control goes back on the Vector (with "sparse" for its hypersparse part,
+        # as SuiteSparse reads it for a vector), else it could never become bitmap or full.
+        control = M.ss.config["sparsity_control"]
+        if "hypersparse" in control:
+            control = (control - {"hypersparse"}) | {"sparse"}
         M.ss.config["sparsity_control"] = "sparse"
     flip_orientation(M)
     v = Vector._from_obj(
         ffi.new("GrB_Vector*", ffi.cast("GrB_Vector", M.gb_obj[0])), M.dtype, M._nrows
     )
     M.gb_obj[0] = NULL
+    if control is not None:
+        v.ss.config["sparsity_control"] = control
     return v
 
 
@@ -720,12 +728,13 @@ def plan_each(shape, src, states, nnz, nthreads):
     """``[plan(shape, src, frozenset([s]), nnz, nthreads) for s in states]``, from one search
     instead of one per state, and cached as those calls cache them.
 
-    A plan's search expands every node cheaper than its target, so the searches toward
-    different targets from one source settle the same nodes in the same order, up to each
-    target; running one search past them all gives each target the cost and path its own
-    search finds. Choosing among many layouts by their cost to reach (a 5-d MTTKRP prices 24)
-    took one search each: the first 5-d MTTKRP on a new shape took 163 ms, and 12 with one
-    search.
+    A plan's search pops nodes cheapest first and expands those within its target's REBUILD
+    cost, so the searches toward different targets from one source settle the same nodes in
+    the same order up to each target, as long as that target is within its own REBUILD cost
+    (past it, both give the REBUILD). Running one search past them all, bounded by the
+    largest of those costs, gives each target the cost and path its own search finds.
+    Choosing among many layouts by their cost to reach (a 5-d MTTKRP prices 24) took one
+    search each: the first 5-d MTTKRP on a new shape took 163 ms, and 12 with one search.
     """
     ti = 0 if nthreads > 1 else 1
     nbits = int(nnz).bit_length()
