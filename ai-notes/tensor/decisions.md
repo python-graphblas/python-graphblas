@@ -113,6 +113,30 @@ the API settles. `design.md` describes how the code implements these.
 23. **Core changes come in their own commits,** when they are justified and easy to review:
     the interop hooks, the mixed scalar x array-UDT JIT C definitions, and the Windows
     compiler search in `jit_config`.
+24. **`Tensor.wait()` materializes, as `Matrix.wait()` does,** including the hash SuiteSparse
+    builds of a hypersparse Matrix's rows (with more than 1024 nonempty rows). _Why:_ the
+    Tensor's own row lookups (extracts, gathers, `lookup`) use that hash; python-graphblas
+    documents "materialize" as what makes an object safe to read from several threads; and a
+    Tensor should not differ from Matrix silently. `wait("complete")` skips it, and with it
+    everything else (SuiteSparse does no work for "complete"), and the next operation on the
+    Tensor pays it, since the Tensor's operations finish their operands first. Measured on a
+    TTM of NELL-2 (R = 16, 2026-10-28): the hash takes 0.68-0.97 s at 1 thread and 86-116 ms
+    at 8 for modes 0 and 1, about 40% and 55% of the TTM at 1 thread and 24% and 37% at 8,
+    and it is all the result's wait does (no pending work). After `wait("complete")`, a row
+    extract that took 1-3 ms took about the hash (0.68-0.96 s at 1 thread, 89-117 ms at 8),
+    and `to_coo` and a sum took about the hash longer. The benchmark kit times
+    `wait()`, so its TTM numbers include the hash (`benchmarks.md`).
+25. **No per-mode copies, for now.** The Tensor keeps one stored Matrix, and a contraction
+    moves an operand stored in another order inside the call: TTM along a mode other than
+    the stored order relayouts the tensor each time, where TACO and SPLATT keep a copy of
+    the data per mode, built ahead. _Why not:_ memory, a full copy per mode (about 0.9 GB
+    per mode for NELL-2); and keeping copies coherent with copy-on-write views and in-place
+    updates would add real complexity to an experimental API. An explicit `relayout()`
+    before a loop already gives a user that copy, and the user guide recommends it. With it,
+    NELL-2's TTM along modes 0 and 1 takes 445 and 548 ms at 1 thread (TACO: 263 and 262
+    from its own copy), plus the output's hash in `wait()` (`benchmarks.md`). _Revisit_
+    when users run TTMs along many modes in turn, as HOOI and Tucker sweeps do, where a copy
+    per mode would be built once and reused every sweep.
 
 ## Deferred, on purpose
 
@@ -123,8 +147,8 @@ the API settles. `design.md` describes how the code implements these.
 - `graphblas.io` returning a Tensor for ndim > 2: depends on how else the Tensor integrates.
   For now the conversions are Tensor methods.
 - Vector and Tensor index arrays, sparse ones included: undecided.
-- Opt-in per-mode copies, for workloads that contract every mode, as
+- Per-mode copies, for workloads that contract every mode, as
   [TACO](https://github.com/tensor-compiler/taco) and
-  [SPLATT](https://github.com/ShadenSmith/splatt) do: only opt-in, if ever.
+  [SPLATT](https://github.com/ShadenSmith/splatt) keep: not now (25), only opt-in if ever.
 - A storage form with dense trailing dimensions (one index per fiber, a dense block of
   values): only if a workload needs it beyond what the TTM engines already give.
