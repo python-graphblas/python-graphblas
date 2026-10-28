@@ -225,8 +225,8 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
     nv = M._nvals
     ti = _ti(nthreads or tl._nthreads())
     seq, p = L.state
-    # Options: (cost, split, group side, expand from the nonempty rows); split "gather" puts
-    # the small side's values on the stored entries, None relayouts
+    # Options: (cost, split, group side, expand onto the nonempty rows or columns); split
+    # "gather" puts the small side's values on the stored entries, None relayouts
     options = []
     if (
         nv > 0
@@ -265,16 +265,21 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
             options.append((move + C_DIAG[ti] * nv, q, "rows", False))
         if q != p:
             continue
+        # A group far wider than the data (more positions than this) takes the small side
+        # onto its nonempty rows or columns, not through a selector, which lists every
+        # position of the group (past 2^60 positions in total it may be the one option
+        # left, over 2^60 columns)
+        limit = max(4 * nv, 4096)
         if row_op is not None and Fset < set(rows):
             hyper = tl.stored_format(M) == "hypercsr"
             if hyper:
                 cost = C_DIAG[ti] * nv + C_HROW[ti] * tl.nonempty_rows(M)
             else:
                 cost = C_DIAG[ti] * nv + C_SEL_POS[ti] * tl.prod(shape, rows)
-            options.append((cost, q, "rows", hyper))
+            options.append((cost, q, "rows", hyper or tl.prod(shape, rows) > limit))
         if col_op is not None and Fset < set(cols):
             cost = C_DIAG[ti] * nv + C_SEL_POS[ti] * tl.prod(shape, cols)
-            options.append((cost, q, "cols", False))
+            options.append((cost, q, "cols", tl.prod(shape, cols) > limit))
     # Or relayout so the small side's axes are exactly one group
     rest = tuple(o for o in range(len(shape)) if o not in Fset)
     targets = set()
@@ -310,14 +315,14 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
             inside = Fset != set(seq[: o[1]] if o[2] == "rows" else seq[o[1] :])
             name = f"diagonal {o[2]}"
             if o[3]:
-                name += ", nonempty rows"
+                name += f", nonempty {o[2]}"
             elif inside:
                 name += ", selector-expanded"
             return name + (", reshape" if o[1] != p else "")
 
         i = census.choose("bcast", [o[0] for o in options], [label(o) for o in options], i,
                           nvals=nv)  # fmt: skip
-    _, q, side, from_rows = options[i]
+    _, q, side, nonempty = options[i]
     if q == "gather":
         values = ts.to_dense().ravel()
         W = tl.gather_operand(M, shape, L, tuple(F), values, ts.dtype)
@@ -341,8 +346,9 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
     )
     # (a relayout returns the operand's own Matrix when it needs no move, else a new one)
     v = tl.steal_row_as_vector(vM.dup() if vM is ts._M else vM)
-    if from_rows:
-        v = _expand_on_rows(M, shape, group, tuple(group.index(o) for o in sub), v)
+    if nonempty:
+        ids = tl.nonempty_row_ids(M) if side == "rows" else tl.nonempty_col_ids(M)
+        v = _expand_on_ids(ids, tuple(shape[o] for o in group), tuple(map(group.index, sub)), v)
     elif len(sub) < len(group):
         St = tl.selector(
             tuple(shape[o] for o in group),
@@ -380,19 +386,18 @@ def _mult_at_entries(M, shape, layout, ts, F, op, big_left):
     return M.ewise_mult(W, op) if big_left else W.ewise_mult(M, op)
 
 
-def _expand_on_rows(M, shape, rows, sub_pos, v):
-    """``v`` (over the row axes at ``sub_pos``) expanded onto the nonempty rows of ``M``: a
-    Vector over the row group with ``e[r] = v[coordinates of r]``, sized by the data. ``v``'s
-    values are found by a binary search: a table over its positions is as long as its axes.
+def _expand_on_ids(ids, gshape, sub_pos, v):
+    """``v`` (over the group's axes at ``sub_pos``) expanded onto the positions ``ids`` of a
+    group of shape ``gshape`` (sorted: its nonempty rows or columns): a Vector over the group
+    with ``e[g] = v[coordinates of g]``, sized by the data. ``v``'s values are found by a
+    binary search: a table over its positions is as long as its axes.
     """
-    h = tl.nonempty_row_ids(M)
-    gshape = tuple(shape[a] for a in rows)
     co = {}
-    tl.unravel(h, gshape, tuple(range(len(gshape))), co)
-    vidx = tl.ravel(co, gshape, sub_pos, n=h.size)
+    tl.unravel(ids, gshape, tuple(range(len(gshape))), co)
+    vidx = tl.ravel(co, gshape, sub_pos, n=ids.size)
     idx, vals = v.to_coo()
     found, vals = tl.lookup_sorted(idx.view(np.int64), vals, vidx)
-    return Vector.from_coo(h[found], vals, v.dtype, size=tl.prod(shape, rows))
+    return Vector.from_coo(ids[found], vals, v.dtype, size=math.prod(gshape))
 
 
 def _ewise_recipe(updater, method, a, b, op, extra):

@@ -356,13 +356,10 @@ def _ttv(updater, x, w, axis, op, x_left):
     pos = group.index(axis)
     kept_pos = tuple(i for i in range(len(group)) if i != pos)
     if kind == "rowsel" and tl.stored_format(M) == "hypercsr":
-        # A weighted selector over the nonempty rows only: S[kept, r] = w[axis coordinate]
+        # A weighted selector over the nonempty rows only: S[kept, r] = w[axis coordinate],
+        # w's values found by a binary search (a table over the axis is as long as it is)
         idx, vals = wv.to_coo()
-        dense = np.zeros(x._shape[axis], vals.dtype)
-        present = np.zeros(x._shape[axis], bool)
-        dense[idx] = vals
-        present[idx] = True
-        Sw = tl.rows_selector(M, x._shape, rows, kept_pos, weights=(dense, present, pos))
+        Sw = tl.rows_selector(M, x._shape, rows, kept_pos, weights=(idx.view(np.int64), vals, pos))
     else:
         # S[kept, g] = w[axis coordinate of g] over the positions g of the group
         e = Vector(wv.dtype, tl.prod(x._shape, group))
