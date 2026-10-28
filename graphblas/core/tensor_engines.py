@@ -264,8 +264,8 @@ def _mttkrp_numba(x, mats, mode, nthreads, *, layout=None):
     """MTTKRP of an FP64 tensor of 3 or more axes with full FP64 factors and plus_times by a
     Numba kernel over the stored arrays (``tensor_numba``) in ``layout`` (default: as stored),
     as a Matrix; or None to use the GraphBLAS products: no Numba, fewer axes, another type or
-    semiring, sparse factors, an empty group, bitmap / full storage, or per-thread buffers too
-    large for this layout.
+    semiring, sparse factors, an empty group, bitmap / full storage, per-thread buffers too
+    large for this layout, or a mode far longer than the data.
     """
     if not _t._has_numba or x.ndim < 3 or x._M._nvals < max(_t._MTTKRP_KERNEL_MIN_NNZ, 1):
         return None
@@ -275,13 +275,18 @@ def _mttkrp_numba(x, mats, mode, nthreads, *, layout=None):
     for M in mats.values():
         if M.dtype != FP64 or M._nvals != M._nrows * M._ncols:
             return None
+    R = next(iter(mats.values()))._ncols
+    if x._shape[mode] * R > max(R * x._M._nvals, 2**22):
+        # The kernel fills a dense (mode x R) output, then keeps its reached rows: a mode far
+        # longer than the entries (a hypersparse output) takes the products, sized by the
+        # entries (a mode of 2^40 at R = 3 asked for 24 TiB)
+        return None
     X = _in_layout(x, layout, nthreads)
     if tl.stored_format(X) not in {"csr", "hypercsr"}:
         return None
     from . import tensor_numba
 
     order = (*layout.rows, *layout.cols)
-    R = next(iter(mats.values()))._ncols
     nnz = X._nvals
     with contextlib.ExitStack() as stack:
         F = {}
