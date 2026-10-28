@@ -2007,14 +2007,17 @@ def test_udt_mixed_jit_c_name_is_its_own():
     ab = dtypes.register_anonymous(np.dtype((np.int8, (19,))), f"{a.jit_c_name}_{b.jit_c_name}")
     assert binary.plus[ab, ab].jit_c_name != binary.plus[a, b].jit_c_name
     n = 50
-    vab = Vector.from_coo(np.arange(n), np.ones((n, 19), np.int8), dtype=ab)
-    va = Vector.from_coo(np.arange(n), np.full((n, 19), 1.5), dtype=a)
-    vb = Vector.from_coo(np.arange(n), np.full((n, 19), 10), dtype=b)
+    # Values that vary, or SuiteSparse before 10.5 builds iso vectors and computes an iso
+    # result without the kernel
+    k = np.broadcast_to(np.arange(n)[:, None] % 7, (n, 19))
+    vab = Vector.from_coo(np.arange(n), k.astype(np.int8), dtype=ab)
+    va = Vector.from_coo(np.arange(n), k + 1.5, dtype=a)
+    vb = Vector.from_coo(np.arange(n), 10 * k, dtype=b)
     with _jit_mode("on"):
         same = vab.ewise_mult(vab, binary.plus).new()
         mixed = va.ewise_mult(vb, binary.plus).new()
-    assert (same.to_dense() == 2).all()
-    assert (mixed.to_dense() == 11.5).all()
+    assert (same.to_dense() == 2 * k).all()
+    assert (mixed.to_dense() == 11 * k + 1.5).all()
 
 
 def _mixed_parity_cases():
