@@ -293,10 +293,9 @@ It loses, with the cause:
   order (TACO: 1.8-6.6x at 1 thread). The Tensor relayouts inside its timing; an in-place
   kernel for those modes is on the roadmap.
 - **Hypersparse broadcasts and slices** against torch (hyper `X * v[j]`: 7.1 ms against torch's
-  1.33 at 8 threads; slabs along the last stored axis, 2-23x), and Uber's slabs along its last
-  axis against scipy and torch (one index: 31 / 7.1 ms at 1 / 8 threads, scipy 2.3, torch 0.66
-  at 8). Each touches a few entries of many rows, which costs per row in a Matrix and per
-  entry in COO.
+  1.33 at 8 threads; slabs along the last stored axis, 2-23x), and a slab of u7 along its last
+  axis against torch at 8 threads (3.75 against 1.90 ms). Each touches a few entries of many
+  rows, which costs per row in a Matrix and per entry in COO.
 - **Small tensors against scipy** (u6's sums and TTVs: scipy 2.3-3.2 ms against the Tensor's
   3.1-6.3 at 8 threads): fixed costs, and scipy returns dense arrays there.
 - **Export to COO** (a copy; free for COO libraries), and **sums over all axes** against torch
@@ -350,6 +349,26 @@ repetitions are given; every result's fingerprint matched its A.
   | NELL-2 `mul_mat12`, 8        | 328          | 276   | 364           | 271   |
   | u6 `mul_mat12`, 1 thread     | 4.29         | 3.63  | 5.77          | 3.56  |
   | hyper `mul_vec0`, 8 threads  | 2.03         | 1.62  | 2.12          | 1.65  |
+
+- **A column range of a sparse row group filtered in place** (`tensor_index._column_range`).
+  `X[..., k]` and `X[..., k0:k1]` along the column group of a sparse Matrix ran SuiteSparse's
+  extract, which visits every row, empty or not. Over the 104 slice rows, 6 changed strategy,
+  each to within 10% of the fastest forced option, and the others stayed within noise
+  (rechecked with 41 calls; load 4.6-5.2). With the extract's pricing above, at "on" / "off":
+
+  | case (ms)      | 1 thread, before | after       | 8 threads, before | after       |
+  | -------------- | ---------------- | ----------- | ----------------- | ----------- |
+  | Uber `slice3`  | 31.8 / 32.8      | 1.20 / 1.18 | 7.34 / 7.32       | 1.21 / 1.20 |
+  | Uber `range3`  | 31.1 / 31.9      | 1.34 / 1.35 | 11.9 / 12.8       | 1.41 / 1.53 |
+  | u7 `slice2`    | 19.7 / 20.3      | 3.53 / 3.55 | (extract kept)    |             |
+  | hyper `slice1` | 6.56 / 6.81      | 0.48 / 0.43 | 2.05 / 2.17       | 0.35 / 0.40 |
+  | hyper `range1` | 7.40 / 7.61      | 4.23 / 4.01 | (extract kept)    |             |
+
+  Against the fastest of pydata/sparse, scipy and torch on Uber's 8 slices (the kit, load
+  4-5), the Tensor's geometric mean was 0.52x at 1 thread and 0.93x at 8 with the extract's
+  pricing alone, and is 1.19x and 1.68x with this. What is left: `slice0` (0.17 ms against
+  pydata/sparse's 0.059), `range0` at 1 thread (3.7 against 1.8) and `slice3` against torch
+  at 8 threads (1.03 against 0.64).
 
 ## Reproducing the numbers
 

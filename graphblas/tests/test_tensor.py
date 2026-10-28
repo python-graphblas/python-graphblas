@@ -4929,6 +4929,47 @@ def test_extract_cost_visits_listed_rows():
         check(R, np_outer_index(tv, key), np_outer_index(tp, key))
 
 
+def test_extract_column_range_in_place():
+    """A column range of every row filters the stored column indices in place when the rows
+    outnumber the entries (Uber's slab along its last axis: 31 against 1.4 ms at 1 thread);
+    the extract stays where the rows are few, or hypersparse. Iso values, BOOL, and a range
+    after a leading index in a column group.
+    """
+    from graphblas.core import tensor_census as census
+
+    rng = np.random.default_rng(69)
+    filt, ext = "column range: filter in place", "slices: extract"
+    X, xv, xp = random_tensor((40, 50, 60, 30), rng, density=0.01, layout=((0, 1, 2), (3,)))
+    H, hv, hp = random_tensor((40, 50, 60, 30), rng, density=0.0005, layout=((0, 1, 2), (3,)))
+    S, sv, sp = random_tensor((40, 50, 60, 30), rng, density=0.01, layout=((0, 1, 2), (3,)),
+                              iso=True)  # fmt: skip
+    B, bv, bp = random_tensor((40, 50, 60, 30), rng, density=0.01, dtype=dtypes.BOOL,
+                              layout=((0, 1, 2), (3,)))  # fmt: skip
+    G, gv, gp = random_tensor((300, 40, 8, 9), rng, density=0.003, layout=((0, 1), (2, 3)))
+    D, dv, dp = random_tensor((4, 50, 60), rng, density=0.5, layout=((0,), (1, 2)))
+    assert [T.ss.format for T in (X, H, S, B, G)] == ["csr", "hypercsr", "csr", "csr", "csr"]
+    assert S.ss.is_iso
+    cases = [
+        (X, xv, xp, (slice(None), slice(None), slice(None), 17), filt),
+        (X, xv, xp, (slice(None), slice(None), slice(None), slice(3, 12)), filt),
+        (H, hv, hp, (slice(None), slice(None), slice(None), 29), ext),
+        (S, sv, sp, (slice(None), slice(None), slice(None), slice(0, 2)), filt),
+        (B, bv, bp, (slice(None), slice(None), slice(None), 4), filt),
+        (G, gv, gp, (slice(None), slice(None), 5, slice(2, 7)), filt),
+        (D, dv, dp, (slice(None), 7, slice(None)), ext),
+    ]
+    for T, tv, tp, key, want in cases:
+        for nthreads in (8, 1):
+            census.start()
+            try:
+                R = T[key].new(nthreads=nthreads)
+            finally:
+                records = census.stop()
+            assert [r["choice"] for r in records if r["point"] == "extract"] == [want], key
+            check(R, np_outer_index(tv, key), np_outer_index(tp, key))
+            assert R.ss.is_iso == (T is S)
+
+
 def _random_reshape(shape, rng):
     """A random target shape of the same size: the sizes' prime factors regrouped, with
     some size-1 axes, up to 6 axes.
