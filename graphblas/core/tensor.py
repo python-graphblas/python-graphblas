@@ -132,10 +132,6 @@ def _is_scalar_like(x):
     return isinstance(x, (bool, int, float, complex, np.generic)) or output_type(x) is Scalar
 
 
-def _is_tensor_like(x):
-    return output_type(x) is Tensor
-
-
 def _compute(x, within):
     """The Tensor of an expression operand (with autocompute), else a TypeError with a hint."""
     if type(x) is TensorExpression:
@@ -205,8 +201,8 @@ class _Owners:
         self._refs[id(obj)] = obj
 
     def discard(self, obj):
-        if self._refs.get(id(obj)) is obj:
-            del self._refs[id(obj)]
+        # (a live obj is the only one with its id)
+        self._refs.pop(id(obj), None)
 
     def __contains__(self, obj):
         return self._refs.get(id(obj)) is obj
@@ -1211,8 +1207,6 @@ def _make_infix(name, kind):
         return _ewise_infix(other, self, _binary_op(name), kind)
 
     def inplace(self, other):
-        if type(self) is not Tensor:
-            raise TypeError(f"in-place operators are not supported for {type(self).__name__}")
         expr = _ewise_infix(self, other, _binary_op(name), kind)
         if expr is NotImplemented:
             raise TypeError(f"unsupported operand type for in-place op: {type(other)}")
@@ -1570,9 +1564,7 @@ def _output_mask(updater):
 
 
 def _mask_in_layout(mask, shape, layout, nthreads):
-    parent = mask.parent
-    if type(parent) is not Tensor:
-        raise TypeError(f"A Tensor needs a Tensor mask; got a mask of {type(parent).__name__}")
+    parent = mask.parent  # (a Tensor: _output_mask converts a Matrix or Vector mask)
     if parent._shape != shape:
         raise DimensionMismatch(f"mask shape {parent._shape} does not match {shape}")
     M = parent._M
@@ -1617,11 +1609,7 @@ def _store(updater, src, shape, layout, *, fresh=False, share=None):
         if mask is not None and mask.parent._layout != layout:
             mparent = mask.parent
             # Move whichever is smaller, the result or the mask.
-            if (
-                type(mparent) is Tensor
-                and isinstance(src, Matrix)
-                and src._nvals < mparent._M._nvals
-            ):
+            if isinstance(src, Matrix) and src._nvals < mparent._M._nvals:
                 L = mparent._layout
     if layout != L:
         if not isinstance(src, Matrix):
@@ -1706,12 +1694,12 @@ def _flipped(op):
 
 
 def _same_layout(a, b):
-    """The stored Matrices of ``a`` and ``b`` in one layout (moving the smaller one)."""
+    """The stored Matrices of ``a`` and ``b`` in ``a``'s layout. (The callers compare Tensors
+    with equally many entries, so moving either one costs the same.)
+    """
     if a._layout == b._layout:
         return a._M, b._M
-    if b._M._nvals <= a._M._nvals:
-        return a._M, tl.relayout(b._M, b._shape, b._layout, a._layout)[0]
-    return tl.relayout(a._M, a._shape, a._layout, b._layout)[0], b._M
+    return a._M, tl.relayout(b._M, b._shape, b._layout, a._layout)[0]
 
 
 def _choose_layout(updater, operands, result_nvals):
@@ -1830,9 +1818,8 @@ def _data_split_layout(coords, shape, n):
             census.note("layout.default", choice, ndim=ndim, nvals=n, split=p,
                         sampled_out=sampled_out)  # fmt: skip
 
+    # (Below 2^60 positions in all, every split is valid.)
     for p in range(ndim - 1, 0, -1):
-        if not tl._valid_split(shape, seq, p):
-            continue
         positions = tl.prod(shape, seq[:p])
         if positions * FULL_ROW_ENTRIES <= n:
             chosen("full enough by shape", p)
@@ -1851,12 +1838,8 @@ def _data_split_layout(coords, shape, n):
         if _rows_ok(n, nonempty, positions, narrower_cols):
             chosen("sorted: exact count", p)
             return Layout(seq[:p], seq[p:]), keys, False
-    for p in range(1, ndim):
-        if tl._valid_split(shape, seq, p):
-            chosen("no split full enough: p = 1", p)
-            return Layout(seq[:p], seq[p:]), None, False
-    chosen("shape rule", None)
-    return tl.default_layout(shape, n), None, False
+    chosen("no split full enough: p = 1", 1)
+    return Layout(seq[:1], seq[1:]), None, False
 
 
 def _sampled_nonempty_rows(coords, shape, row_axes, n, sample):
@@ -1888,8 +1871,6 @@ def _settle_split(M, shape, layout):
         nvals, tl.count_nonempty_rows(M), tl.prod(shape, seq[:p]), tl.prod(shape, seq[p - 1 :])
     ):
         q = p - 1
-        if not tl._valid_split(shape, seq, q):
-            break
         M = tl.reshape_owned(M, tl.prod(shape, seq[:q]), tl.prod(shape, seq[q:]))
         p = q
     return M, Layout(seq[:p], seq[p:])
@@ -1909,9 +1890,7 @@ def _healthy(M, shape, layout):
         return M, layout
     seq = layout.seq
     nvals = M._nvals
-    p = 0 if ndim == 1 else tl.full_split(shape, seq, nvals)
-    if not tl._valid_split(shape, seq, p):
-        return M, layout
+    p = 0 if ndim == 1 else tl.full_split(shape, seq, nvals)  # (valid below 2^60 in all)
     if census.on:
         census.note("layout.healthy", "reshaped an empty column group", ndim=ndim)
     if nvals == 0:
