@@ -52,8 +52,27 @@ and the data sets are those named in `design.md`.
   kernel. In the last full measurement, made before the latest planner refits, it was
   1.9-2.7x behind TACO at 1 thread on u7, and 6.8-7.4x on NELL-2 modes 0 and 1. TACO's
   numbers are for a copy of the tensor already in that mode's order, built outside its timing
-  (7.6 s on NELL-2). An in-place kernel for those modes, or opt-in per-mode copies, would
-  close it.
+  (7.6 s on NELL-2). Where the time goes (2026-10-27, R = 16, the kit's timing, ms at 1 / 8
+  threads):
+
+  | case          | total      | relayout  | kernel    | `wait()`: the output's row hash |
+  | ------------- | ---------- | --------- | --------- | ------------------------------- |
+  | u7 mode 0     | 85 / 23    | 45 / 14   | 39 / 7.3  | none (a full output)            |
+  | u7 mode 1     | 58 / 14    | 17 / 5.6  | 39 / 7.2  | none (a full output)            |
+  | NELL-2 mode 0 | 1870 / 371 | 689 / 162 | 440 / 99  | 733 / 88                        |
+  | NELL-2 mode 1 | 1772 / 342 | 243 / 68  | 511 / 122 | 969 / 115                       |
+
+  The last column is SuiteSparse building the hyper hash of the output (1.7e7 and 2.1e7
+  nonempty rows of R values) in the `wait()` that the kit, like any user, calls to finish a
+  result; an operation that needs the hash builds it on demand, and none of the other
+  libraries has one. It is also 7-14% of NELL-2's sums, TTVs and broadcasts at 1 thread. A
+  `Tensor.wait` that finishes pending work without building it is a design question
+  (`Matrix.wait` builds it too). An in-place kernel along the first column axis, with a
+  sparse accumulator per row instead of the reshape and second transpose, was prototyped on
+  NELL-2 mode 0: 1354 against 1049 ms at 1 thread (without the hash), 243 against 269 at 8,
+  so not pursued. Opt-in per-mode copies would remove the relayout, at one copy of the data
+  per mode.
+
 - **Slabs of Uber (4-d, layout (0, 1, 2 | 3)) along its first axis**, a row range of the
   stored Matrix: 0.17 ms for one index, against pydata/sparse's 0.059, and 3.7 ms at 1 thread
   for a 10% range against its 1.8 (the Tensor is fastest at 8 threads, 1.3 ms). Its other
@@ -96,8 +115,9 @@ and the data sets are those named in `design.md`.
    off there too.
 3. **Refit the cost constants** on x86, and with a script driven by the census instead of by
    hand. Then fix the mispricings listed above, and finish the census on NELL-2 and Enron.
-4. **Performance:** TTM along non-stored modes (an in-place kernel, or opt-in per-mode copies);
-   einsum's per-call overhead; keeping moved operands on the store.
+4. **Performance:** TTM along non-stored modes (opt-in per-mode copies, and whether
+   `Tensor.wait` builds the output's row hash); einsum's per-call overhead; keeping moved
+   operands on the store.
 5. **API:** `pad`, more aggregators, index-based `select`, einsum diagonals, and the open
    questions (Vector and Tensor index arrays, `graphblas.io` dispatch).
 6. **When SuiteSparse 10.5.2 is the oldest supported version:** drop the 10.5.1 reshape
