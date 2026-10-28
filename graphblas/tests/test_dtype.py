@@ -368,6 +368,14 @@ def test_register_anonymous_from_dataclass():
         dtypes.register_anonymous(_Empty)
 
 
+def test_register_anonymous_zero_size():
+    for dtype in [str, bytes, np.dtype("U"), np.dtype([]), np.dtype((np.int64, (0,)))]:
+        with pytest.raises(ValueError, match="size of 0"):
+            dtypes.register_anonymous(dtype)
+    with pytest.raises(ValueError, match="Unknown dtype"):
+        dtypes.lookup_dtype(str)
+
+
 def test_register_anonymous_from_dataclass_deferred_annotations():
     """Dataclass fields annotated as strings (PEP 563 / 649) resolve through ``lookup_dtype``."""
     from dataclasses import make_dataclass

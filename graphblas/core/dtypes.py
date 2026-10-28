@@ -293,6 +293,10 @@ def register_anonymous(dtype, name=None):
         return rv
     if dtype.hasobject:
         raise ValueError("dtype must not allow Python objects")
+    if dtype.itemsize == 0:
+        # SuiteSparse 7 takes a size of 0 as 1 (later versions raise InvalidValue), which
+        # made ``str`` a UDT that holds nothing, so a str literal was not a TypeError
+        raise ValueError(f"dtype must not have a size of 0: {dtype}")
 
     from ..exceptions import check_status_carg
 
