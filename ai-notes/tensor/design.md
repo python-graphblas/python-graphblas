@@ -194,7 +194,10 @@ and can be further off on clustered data (see "Fitted constants").
 - **Plans** are cached in an LRU of 4096 (`_plan_cache`). The key is the shape, the source,
   the target set, 1 thread or more, the one-entry-per-row flag, `allow_perm`, and the bit
   lengths of the entry count and of the sampled column count. A 3-d plan costs about 35 us
-  to search and 0.13 us from the cache.
+  to search and 0.13 us from the cache. A choice among many layouts by their cost to reach
+  (`_mttkrp_order`) prices them all from one search (`plan_each`): searches from one source
+  settle the same nodes in the same order up to each target, so each gets the plan its own
+  search would, and is cached as such.
 - **Shape-only matrices** (permutation matrices `P`, reduction selectors, column maps) depend
   only on the shape, so they are cached too (`_matrix_cache`). It is bounded at 64 items and
   2^25 stored entries in all, about 400 MB. A `P` for a group far larger than the data is

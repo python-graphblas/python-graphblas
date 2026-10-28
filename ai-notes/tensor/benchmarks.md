@@ -370,6 +370,14 @@ repetitions are given; every result's fingerprint matched its A.
   pydata/sparse's 0.059), `range0` at 1 thread (3.7 against 1.8) and `slice3` against torch
   at 8 threads (1.03 against 0.64).
 
+- **One planner search for many targets** (`tensor_layout.plan_each`). Choosing an MTTKRP's
+  axis order prices a relayout to each candidate order (24 in 5-d), one search each. One
+  search past all of them gives each the plan its own search finds (a test compares them on
+  3-d to 5-d shapes, sizes and thread counts), and every decision of the kit's `mttkrp`,
+  `ttm`, `ewise` and `contract` cases on u7, Uber, NIPS and NELL-2 (144 rows) is unchanged.
+  The first MTTKRP on a new shape (tiny tensors, plan cache cleared, each mode, median over
+  6 shapes): 5-d 163 to 12 ms, 4-d 4.4 to 2.2 ms, 3-d 0.38 either way.
+
 ## Reproducing the numbers
 
 With the kit (`scripts/tensor_bench/README.md`):
