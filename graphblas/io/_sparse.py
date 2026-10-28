@@ -15,7 +15,9 @@ def from_pydata_sparse(s, *, dup_op=None, name=None):
     s : sparse
         PyData sparse array or matrix (see https://sparse.pydata.org)
     dup_op : BinaryOp, optional
-        Aggregation function for formats that allow duplicate entries (e.g. coo)
+        Combines the values of an index repeated within a row (or column) of a
+        two-dimensional gcxs array. By default they are summed, as pydata's todense does.
+        (A coo array sums repeated coordinates when it is built.)
     name : str, optional
         Name of resulting Matrix
 
@@ -45,7 +47,14 @@ def from_pydata_sparse(s, *, dup_op=None, name=None):
         )
     # handle two-dimensional arrays
     if isinstance(s, sparse.GCXS):
-        return from_scipy_sparse(s.to_scipy_sparse(), dup_op=dup_op, name=name)
+        A = s.to_scipy_sparse()
+        if dup_op is None and not A.has_canonical_format:
+            # pydata lets an index repeat within a row (column) and means the sum. scipy
+            # sums in any dtype it holds, which binary.plus may not take (a UDT). Copy
+            # first: A shares its arrays with s.
+            A = A.copy()
+            A.sum_duplicates()
+        return from_scipy_sparse(A, dup_op=dup_op, name=name)
     if isinstance(s, (sparse.DOK, sparse.COO)):
         _s = s.asformat("coo")
         return Matrix.from_coo(
