@@ -337,7 +337,8 @@ def _ttv(updater, x, w, axis, op, x_left):
     shape = tuple(m for a, m in enumerate(x._shape) if a != axis)
     renum = {a: i for i, a in enumerate(a for a in range(n) if a != axis)}
     opt_nthreads = updater.opts.get("nthreads")
-    wv = _in_layout(w, Layout((), (0,)), opt_nthreads)[0, :].new()
+    W = _in_layout(w, Layout((), (0,)), opt_nthreads)
+    wv = tl.steal_row_as_vector(W.dup() if W is w._M else W)
     if kind in {"mxv", "vxm"}:
         v = Vector(op.return_type, M._nrows if kind == "mxv" else M._ncols)
         if kind == "mxv":
