@@ -202,6 +202,8 @@ def test_from_coo_errors_and_edges():
         Tensor.from_coo(([0.5], [0], [0]), [1.0], shape=(2, 4, 3))
     with pytest.raises(ValueError, match="1-d"):
         Tensor.from_coo(np.zeros((2, 2, 2), int), [1.0], shape=(2, 4, 3))
+    with pytest.raises(ValueError, match="1-d"):
+        Tensor.from_coo([np.zeros((1, 1), int)] * 3, [1.0], shape=(2, 4, 3))
     E = Tensor.from_coo(([], [], []), [], dtypes.FP64, shape=(2, 3, 4))
     assert E.nvals == 0
     E._check_invariants()
@@ -216,6 +218,8 @@ def test_from_coo_errors_and_edges():
     assert v.layout == Layout((), (0,))
     w = v.to_vector()
     assert w.isequal(Vector.from_coo([1, 3], [2, 1], size=6))
+    v = Tensor.from_coo(([3, 1],), [1, 2], shape=(6,), layout=((0,), ()))  # (6 x 1 stored)
+    assert v.to_vector().isequal(w)
     # Size-1 axes and an n x 1 stored Matrix (held by row, unlike SuiteSparse's default)
     U = Tensor.from_coo(([0, 1], [0, 2], [0, 0]), [1.0, 2.0], shape=(2, 3, 1))
     U._check_invariants()
@@ -846,6 +850,12 @@ def test_copy_on_write_weak_owners():
     check(T, values * 2, present)
     T << T
     check(T, values * 2, present)
+    # A relayout in place to the layout it has keeps the Matrix (and pins the layout)
+    M = T._M
+    T.relayout(T.layout, inplace=True)
+    T.wait()
+    assert T._M is M
+    assert T.layout_pinned
 
 
 def _views_of_same_shape(B):
@@ -923,14 +933,18 @@ def test_expression_basics():
     assert expr.ndim == 3
     assert expr.size == 24
     assert expr.dtype == dtypes.FP64
-    if not gb.config.get("autocompute"):
-        with pytest.raises(TypeError, match="new"):
-            expr.nvals
+    with pytest.raises(TypeError, match="new"):
+        expr.nvals
     with gb.config.set(autocompute=True):
         e2 = T + T
         assert e2.nvals == present.sum()
         assert e2.layout == T.layout
         check(e2.new(), values * 2, present)
+        e3 = T + T
+        assert e3.nvals == present.sum()
+        R = e3.new(name="R3")  # (the value computed for nvals, named)
+        assert R.name == "R3"
+        check(R, values * 2, present)
         assert e2.isequal(T * 2)
         assert e2.to_coo()[1].tolist() == (values * 2)[present].tolist()
         check((e2 * 2).new(), values * 4, present)
@@ -946,6 +960,22 @@ def test_expression_basics():
     check(R, values * 2, present)
     R = expr.dup()
     check(R, values * 2, present)
+
+
+def test_masked_update_moves_the_smaller_side():
+    """With replace and no accumulator, a masked update into a target whose layout is not
+    pinned moves the smaller of the result and the mask to the other's layout.
+    """
+    rng = np.random.default_rng(16)
+    shape = (3, 4, 5)
+    A, av, ap = random_tensor(shape, rng, density=0.1, layout=((0, 1), (2,)))
+    Mk, mv, mp = random_tensor(shape, rng, dtype=dtypes.BOOL, density=0.9, layout=((2,), (0, 1)))
+    # A small result under a large mask, then a large result under a small mask
+    for (src, sv, sp), (mask, kp) in [((A, av, ap), (Mk, mp)), ((Mk, mv, mp), (A, ap))]:
+        C = Tensor(src.dtype, shape)
+        C(mask.S, replace=True) << src
+        check(C, np.where(kp, sv, 0), sp & kp)
+        assert C.layout == Mk.layout
 
 
 @pytest.mark.parametrize("target_layout", [None, ((2,), (0, 1)), ((0, 1), (2,))])
@@ -1074,6 +1104,12 @@ def test_in_place_infix():
         expr += B
     with pytest.raises(TypeError):
         A + "x"
+    with pytest.raises(TypeError, match="in-place"):
+        C += "x"
+    with pytest.raises(TypeError, match="from_matrix"):
+        C << Matrix(float, 3, 4)
+    with pytest.raises(TypeError, match="Assignment value"):
+        C << "x"
 
 
 # --------------------------------------------------------------------------------------------
@@ -1163,9 +1199,39 @@ def test_ewise_infix_and_scalars():
         A.ewise_add("x")
     with pytest.raises(TypeError):
         A.ewise_add(B, gb.semiring.plus_times)
-    if not gb.config.get("autocompute"):
-        with pytest.raises(TypeError, match="autocompute"):
-            (A + B) + A
+    with pytest.raises(TypeError, match="autocompute"):
+        (A + B) + A
+    # A Matrix expression operand broadcasts as its Matrix would, with autocompute
+    md = rng.random((3, 4))
+    neg = Matrix.from_dense(md).apply(gb.unary.ainv)
+    with pytest.raises(TypeError, match="not an expression"):
+        A + neg
+    with gb.config.set(autocompute=True):
+        check((A + neg).new(), a0 - md, np.ones(shape, bool), approx=True)
+    # `op(X | Y, left_default=, right_default=)` is ewise_union, as for Matrix
+    uv = np.where(ap, av, 10.0) - np.where(bp, bv, -1.0)
+    check(
+        binary.minus(A | B, left_default=10.0, right_default=-1.0).new(),
+        np.where(ap | bp, uv, 0),
+        ap | bp,
+        approx=True,
+    )
+    # ewise_union with a Monoid, and with defaults of another dtype (the op is unified)
+    check(A.ewise_union(B, monoid.plus, 0, 0).new(), a0 + b0, ap | bp, approx=True)
+    ai, bi = av.astype(np.int64), bv.astype(np.int64)
+    R = A.dup(dtypes.INT64).ewise_union(B.dup(dtypes.INT64), binary.minus, 0.5, 2).new()
+    assert R.dtype == dtypes.FP64
+    uv = np.where(ap, ai, 0.5) - np.where(bp, bi, 2)
+    check(R, np.where(ap | bp, uv, 0), ap | bp)
+    # A Monoid in a broadcast multiply
+    v4 = rng.random(4)
+    check(A.ewise_mult(v4, monoid.plus).new(), np.where(ap, av + v4, 0), ap, approx=True)
+    # `%` is numpy's mod (a UDF: it needs Numba)
+    if gb.core._has_numba:
+        check((A % 3).new(), np.where(ap, np.mod(av, 3), 0), ap, approx=True)
+    else:
+        with pytest.raises(AttributeError, match="numba"):
+            A % 3
     # An operand that is the target itself
     C = A.dup()
     C << C + B
@@ -1625,6 +1691,15 @@ def test_core_hooks():
         A << X
     with pytest.raises(TypeError):
         Scalar.from_value(1.0) & X
+    with pytest.raises(TypeError, match="Tensor mask cannot"):
+        A.ewise_mult(A).new(mask=Tensor.from_matrix(A).S)
+    with pytest.raises(TypeError, match="Tensor mask cannot"):
+        A.dup(clear=True)(input_mask=Tensor.from_matrix(A).S) << A[:, :]
+    # `^` is not a Tensor operator: a Matrix defers either way, and Python raises
+    with pytest.raises(TypeError, match="unsupported operand"):
+        A ^ X
+    with pytest.raises(TypeError, match="unsupported operand"):
+        X ^ A
     # Named operators on a Tensor
     check(gb.unary.abs(X).new(), np.abs(xv), xp)
     check(binary.plus(X, 1).new(), np.where(xp, xv + 1, 0), xp, approx=True)
@@ -2608,6 +2683,7 @@ def test_infix_bool_and_operator_waits():
     B = Matrix.from_coo(*np.nonzero(bv >= 0), bv[bv >= 0] > 1, nrows=5, ncols=6)
     TA, TB = Tensor.from_matrix(A), Tensor.from_matrix(B)
     for expr, ref in [(TA | TB, A | B), (TA & TB, A & B)]:
+        assert expr.ndim == 2
         got = expr.new()
         assert got.dtype == dtypes.BOOL
         assert got.to_matrix().isequal(ref.new())
@@ -3753,6 +3829,15 @@ def test_dense_and_matrices():
         T._check_invariants()
         assert T.nvals == d.size
         np.testing.assert_array_equal(T.to_dense(), d)
+    # Under a global by-column format, the stored Matrix is still held by row
+    prev = gb.ss.config["format"]
+    gb.ss.config["format"] = "by_col"
+    try:
+        T = Tensor.from_dense(d)
+    finally:
+        gb.ss.config["format"] = prev
+    T._check_invariants()
+    np.testing.assert_array_equal(T.to_dense(), d)
     d0 = np.where(d < 0.5, 0, d)
     T = Tensor.from_dense(d0, missing_value=0)
     check(T, d0, d0 != 0)
