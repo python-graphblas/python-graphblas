@@ -385,12 +385,12 @@ def count_nonempty_rows(M):
     return M._nrows
 
 
-def rows_selector(M, shape, group, kept_pos, weights=None):
+def rows_selector(M, shape, group, kept_pos, weights=None, dtype=BOOL):
     """``S`` with ``S @ M`` reducing the axes of the row ``group`` not in ``kept_pos``, built
     over the nonempty rows of ``M`` only, so its size follows the data rather than the
     group's positions (a hypersparse row group). ``weights`` (a dense array and a presence
     mask over one axis of the group, as ``(values, present, position)``) gives each row its
-    weight instead of 1 (TTV).
+    weight instead of 1 (TTV). Without weights, its entries are True, or 1 of ``dtype``.
     """
     h = nonempty_row_ids(M)
     gshape = tuple(shape[a] for a in group)
@@ -405,7 +405,8 @@ def rows_selector(M, shape, group, kept_pos, weights=None):
             co = {k: c[keep] for k, c in co.items()}
         values = w[co[pos]]
     dst = ravel(co, gshape, kept_pos, n=h.size)
-    dtype = BOOL if weights is None else lookup_dtype(values.dtype)
+    if weights is not None:
+        dtype = lookup_dtype(values.dtype)
     return from_coo(dst, h, values, dtype, prod(gshape, kept_pos), prod(shape, group))
 
 
@@ -1150,14 +1151,15 @@ def relayout_costs(shape, src, dsts, nnz, nthreads):
 # Selectors: kron-structured 0/1 matrices that reduce a subset of a group's axes in one mxm
 
 
-def selector(group_shape, kept, *, transposed=False):
+def selector(group_shape, kept, *, transposed=False, dtype=BOOL):
     """S with ``S[ravel(x[kept]), ravel(x)] = True`` over the positions ``x`` of a group, as a
-    BOOL iso Matrix (``prod(kept) x prod(group)``); its transpose if ``transposed``.
+    BOOL iso Matrix (``prod(kept) x prod(group)``); its transpose if ``transposed``. With
+    another ``dtype``, its entries are 1 of that type.
 
     ``kept`` are positions within the group, in group order. ``S @ M`` reduces the other row
     axes and ``M @ S.T`` the other column axes, with semiring ``(monoid, second/first)``.
     """
-    key = ("S", group_shape, kept, transposed)
+    key = ("S", group_shape, kept, transposed) + (() if dtype == BOOL else (dtype,))
     if (S := _matrix_cache.get(key)) is not None:
         return S
     n = math.prod(group_shape)
@@ -1168,9 +1170,9 @@ def selector(group_shape, kept, *, transposed=False):
     dst = ravel(co, group_shape, kept, n=n)
     nkept = prod(group_shape, kept)
     if transposed:
-        S = from_coo(src, dst, True, BOOL, n, nkept)
+        S = from_coo(src, dst, True, dtype, n, nkept)
     else:
-        S = from_coo(dst, src, True, BOOL, nkept, n)
+        S = from_coo(dst, src, True, dtype, nkept, n)
     _matrix_cache.put(key, S, n)
     return S
 

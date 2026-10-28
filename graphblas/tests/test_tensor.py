@@ -1698,6 +1698,71 @@ def test_bool_selector_products():
     check(S, np.logical_or.reduce(yp & yv, axis=1) & ep, ep)
 
 
+def test_unsigned_sums_use_typed_selectors(monkeypatch):
+    """Sums of UINT32 and UINT64 data multiply by row selectors of their type with
+    plus_times, which SuiteSparse precompiles (plus_second it does not); other types and
+    monoids, and column selectors, keep BOOL. Sparse and hypersparse rows, and sums that wrap
+    around.
+    """
+    from graphblas.core import tensor_census as census
+    from graphblas.core import tensor_reduce
+
+    seen = []
+    selector, rows_selector = tl.selector, tl.rows_selector
+
+    def record(f):
+        def inner(*args, **kwargs):
+            S = f(*args, **kwargs)
+            seen.append(S.dtype)
+            return S
+
+        return inner
+
+    monkeypatch.setattr(tl, "selector", record(selector))
+    monkeypatch.setattr(tl, "rows_selector", record(rows_selector))
+    rng = np.random.default_rng(70)
+    for dtype, want in [
+        (dtypes.UINT32, dtypes.UINT32),
+        (dtypes.UINT64, dtypes.UINT64),
+        (dtypes.INT64, dtypes.BOOL),
+    ]:
+        top = 2**31 if dtype == dtypes.UINT32 else 50
+        for layout, density, label, fmt, typed in [
+            (((0, 1), (2,)), 0.1, "row selector", "csr", True),
+            (((0, 1), (2,)), 0.0005, "row selector", "hypercsr", True),
+            (((0,), (1, 2)), 0.1, "column selector", "csr", False),
+        ]:
+            shape = (20, 30, 40) if density > 0.01 else (200, 300, 40)
+            present = rng.random(shape) < density
+            coords = np.nonzero(present)
+            vals = rng.integers(0, top, present.sum()).astype(dtype.np_type)
+            T = Tensor.from_coo(coords, vals, dtype, shape=shape, layout=layout)
+            assert T.ss.format == fmt
+            dense = np.zeros(shape, dtype.np_type)
+            dense[coords] = vals
+            for name, meth, sel in [
+                ("plus", "sum", want if typed else dtypes.BOOL),
+                ("max", "max", dtypes.BOOL),
+            ]:
+                seen.clear()
+                census.start()
+                census.force["reduce"] = label
+                try:
+                    R = getattr(T, meth)(1).new()
+                finally:
+                    census.force.clear()
+                    records = census.stop()
+                assert [r["choice"] for r in records if r["point"] == "reduce"] == [label]
+                assert seen == [sel], (dtype, layout, density, name)
+                # (dense is 0 where absent and the values are not negative; numpy sums
+                # unsigned values in 64 bits, and the cast wraps as UINT32 arithmetic does)
+                ev = getattr(dense, meth)(axis=1).astype(dtype.np_type)
+                check(R, ev, present.any(1))
+    sr = tensor_reduce._selector_semiring
+    assert sr(monoid.plus[dtypes.UINT64], binary.second) is gb.semiring.plus_times[dtypes.UINT64]
+    assert sr(monoid.plus[dtypes.UINT64], binary.first) is gb.semiring.plus_first[dtypes.UINT64]
+
+
 def test_reduce_scalar():
     rng = np.random.default_rng(24)
     T, values, present = random_tensor((3, 4, 5), rng, layout=((2,), (0, 1)))
