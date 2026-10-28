@@ -16,7 +16,7 @@ _VALUE_OPS = {"valueeq", "valuene", "valuelt", "valuele", "valuegt", "valuege"}
 def _value_select_in_own_type(op, dtype, thunk, given):
     """Return ``op`` and ``thunk`` for ``select`` on built-in ``dtype``, as a value op of ``dtype``.
 
-    SuiteSparse:GraphBLAS (8.0 to 10.5, at least) runs ``select`` with a value
+    SuiteSparse:GraphBLAS 8.0 to 10.5.1 runs ``select`` with a value
     op typed for another type than the input's by reading the thunk's bytes as
     the input's type, where the spec casts both to the op's type: on an INT8
     vector, ``valueeq`` with ``1.0`` compared with 0, and ``valuelt`` with
@@ -31,10 +31,11 @@ def _value_select_in_own_type(op, dtype, thunk, given):
     it (an int beyond 64 bits is FP64). Other ops and types are returned
     unchanged.
     """
-    # MAINT 2026-10-07: works around the SuiteSparse:GraphBLAS bug above (seen in
-    # 8.0.2 through 10.6.0; fix proposed in DrTimothyAldenDavis/GraphBLAS#463).
-    # Once every supported version has the fix, pass the typed op and thunk
-    # through and delete this function.
+    # MAINT 2026-10-28: works around the SuiteSparse:GraphBLAS bug above (seen in
+    # 8.0.2 through 10.5.1; fixed in 10.5.2 by DrTimothyAldenDavis/GraphBLAS#463).
+    # The fix casts both to the op's type, which can round the thunk: beside FP32
+    # values, an INT64 thunk of 2**53 + 1 is FP64 2**53 and equals 2**53. Once
+    # every supported version has the fix, keep only what makes the comparison exact.
     if op.type is dtype or dtype._is_udt or op.parent.name not in _VALUE_OPS:
         return op, thunk
     import math

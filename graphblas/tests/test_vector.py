@@ -1665,11 +1665,12 @@ def test_python_int_beyond_64_bit_element_compares_exactly():
 def test_select_value_thunk_of_another_type():
     """Select with a value op compares exactly when the thunk's type differs from the values'.
 
-    SuiteSparse:GraphBLAS's select reads such a thunk's bytes as the values'
-    type: on an INT8 vector, ``valueeq`` with 1.0 compared with 0 and kept
+    SuiteSparse:GraphBLAS's select before 10.5.2 read such a thunk's bytes as the
+    values' type: on an INT8 vector, ``valueeq`` with 1.0 compared with 0 and kept
     nothing, ``valuelt`` with 300 compared with 44, and ``valueeq`` with 356
     kept 100. python-graphblas now compares in the values' own type with a
-    thunk that keeps the same elements.
+    thunk that keeps the same elements. 10.5.2 casts both to the op's type,
+    which rounds the 2**53 + 1 thunks below to 2**53 and keeps that element.
     """
     i8 = Vector.from_coo([0, 1, 2, 3], [-5, 1, 2, 100], dtype=dtypes.INT8)
     u8 = Vector.from_coo([0, 1], [0, 255], dtype=dtypes.UINT8)
