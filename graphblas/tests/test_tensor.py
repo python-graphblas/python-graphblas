@@ -2028,6 +2028,8 @@ def test_matmul(xshape, yshape, nthreads):
 
 
 def test_matmul_semirings_operands_and_errors(monkeypatch):
+    from graphblas.core import tensor_census as census
+
     rng = np.random.default_rng(46)
     X, xv, xp = random_tensor((3, 2, 4), rng, density=0.6)
     Y, yv, yp = random_tensor((3, 4, 5), rng, density=0.6)
@@ -2048,6 +2050,16 @@ def test_matmul_semirings_operands_and_errors(monkeypatch):
     # The embedding falls back to a rebuild when it cannot change the indices in place
     monkeypatch.setattr(tl, "embed_block_diagonal", lambda *args: False)
     check(X.matmul(Y).new(nthreads=8), *np_matmul(xv, xp, yv, yp), approx=True)
+    census.start()
+    try:
+        check(X.matmul(Y).new(), *np_matmul(xv, xp, yv, yp), approx=True)
+        recs = census.stop()
+    finally:
+        census.stop()
+        census.records.clear()
+    assert ("contract", "embedding by rebuild (wider indices)") in {
+        (r["point"], r["choice"]) for r in recs
+    }
     monkeypatch.undo()
     with pytest.raises(DimensionMismatch, match="last axis"):
         X @ Tensor(float, 5, 2)
@@ -5599,6 +5611,33 @@ def test_census():
     assert not census.on
 
 
+def test_census_from_the_environment(tmp_path, monkeypatch):
+    """``GRAPHBLAS_TENSOR_CENSUS`` turns the census on at import; its records are appended
+    to that file as JSON lines at exit. A choice's costs keep each label's cheapest.
+    """
+    import atexit
+    import importlib
+    import json
+
+    from graphblas.core import tensor_census as census
+
+    path = tmp_path / "census.jsonl"
+    monkeypatch.setenv("GRAPHBLAS_TENSOR_CENSUS", str(path))
+    try:
+        importlib.reload(census)
+        assert census.on
+        assert census.choose("pt", [2.0, 1.0, 3.0], ["a", "b", "a"], 1, n=4) == 1
+        census._dump(path)
+    finally:
+        atexit.unregister(census._dump)
+        monkeypatch.delenv("GRAPHBLAS_TENSOR_CENSUS")
+        importlib.reload(census)
+    assert not census.on
+    assert [json.loads(line) for line in path.read_text().splitlines()] == [
+        {"point": "pt", "choice": "b", "costs": {"a": 2.0, "b": 1.0}, "forced": False, "n": 4}
+    ]
+
+
 def test_bcast_options_offered_once():
     """A broadcast multiply offers the relayout option only for layouts in another axis order:
     one already in place, or one a reshape reaches, is the diagonal option (no duplicate).
@@ -5621,9 +5660,91 @@ def test_bcast_options_offered_once():
     assert recs
     for r in recs:
         costs = r["costs"]
-        if "relayout, diagonal" in costs:
-            others = [c for k, c in costs.items() if k != "relayout, diagonal"]
-            assert costs["relayout, diagonal"] not in others
+        others = [c for k, c in costs.items() if k != "relayout, diagonal"]
+        assert costs["relayout, diagonal"] not in others
+
+
+def test_census_notes_and_forced_paths():
+    """Paths the census notes (or a forced choice takes) give the same results: the default
+    layout of unsorted coordinates and past 2^60 positions, one ewise layout, a union
+    broadcast, an empty or one-value small side, the hypersparse-rows diagonal, a gather
+    that falls back to a relayout, reductions by rebuild or after a reshape, extraction by
+    the row pick, and relayouts without permutations or by REBUILD.
+    """
+    from graphblas.core import tensor_census as census
+
+    rng = np.random.default_rng(708)
+    X, xv, xp = random_tensor((4, 5, 6), rng, density=0.6, layout=((0, 1), (2,)))
+    H, hv, hp = _hyper_rows_tensor(rng, (60, 70, 5), 150)
+    # A full Tensor held as a sparse Matrix: its gather copy goes full, so the gather declines
+    F, fv, fp = random_tensor((4, 5, 6), rng, density=1.0)
+    F.ss.matrix.ss.config["sparsity_control"] = "sparse"
+    F._store.exported = False
+    v6, y60 = rng.random(6), rng.random((60, 1, 1))
+    # About one entry per row of the row group (past 2^16 entries), and a wide column group
+    lin = np.unique(rng.integers(0, 300 * 300 * 4, 80000))
+    D = Tensor.from_coo(np.unravel_index(lin, (300, 300, 4)), 1.0, shape=(300, 300, 4),
+                        layout=((0, 1), (2,)))  # fmt: skip
+    W, wv, wp = random_tensor((2, 400, 500), rng, density=0.02, layout=((0,), (1, 2)))
+    coords = [rng.integers(0, n, 50) for n in (6, 7, 8)]
+    census.start()
+    try:
+        U = Tensor.from_coo([c[::-1] for c in coords], 1.0, shape=(6, 7, 8))  # unsorted
+        B = Tensor.from_coo(([0, 1], [2, 3], [4, 5]), [1.0, 2.0], shape=(2**21,) * 3)
+        check((X + X).new(), xv * 2, xp)
+        R1 = X.ewise_add(v6).new()
+        R2 = (X * Tensor(float, 1, 1, 6)).new()
+        R3 = (X * Tensor.from_coo(([0], [0], [0]), [2.0], shape=(1, 1, 1))).new()
+        R4 = (H * y60).new()
+        census.force["bcast"] = "gather"
+        R5 = (F * v6).new()
+        census.force["reduce"] = "rebuild"
+        R6 = X.sum(0).new()
+        del census.force["reduce"]
+        R7 = D.sum((0, 1)).new()
+        R8 = W.sum(0).new(nthreads=8)
+        census.force["extract"] = "rows"
+        R9 = H[2:50, 3].new()
+        census.force["relayout"] = "no PERM"
+        R10 = X.relayout(((2,), (1, 0)))
+        census.force["relayout"] = "REBUILD"
+        R11 = X.relayout(((1,), (0, 2)))
+        recs = census.stop()
+    finally:
+        census.stop()
+        census.force.clear()
+        census.records.clear()
+    taken = {(r["point"], r["choice"]) for r in recs}
+    for want in [
+        ("layout.default", "past 2^60: shape rule"),
+        ("ewise.layout", "one layout"),
+        ("bcast", "union: replicate"),
+        ("bcast", "empty operand"),
+        ("bcast", "one value: apply"),
+        ("bcast", "gather"),
+        ("reduce", "rebuild"),
+        ("reduce", "row group, ~1 entry per row: rebuild"),
+        ("reduce", "row group, wide: reshape, then a selector"),
+        ("extract", "rows"),
+    ]:
+        assert want in taken, want
+    assert any(r["point"] == "layout.settle" for r in recs)
+    assert any("diagonal rows, nonempty rows" in (r["costs"] or {}) for r in recs)
+    uv, up = np.zeros((6, 7, 8)), np.zeros((6, 7, 8), bool)
+    uv[tuple(coords)], up[tuple(coords)] = 1.0, True
+    check(U, uv, up)
+    assert B.nvals == 2
+    check(R1, *np_bcast("add", xv, xp, v6, np.ones(6, bool), np.add), approx=True)
+    check(R2, np.zeros(xv.shape), np.zeros(xp.shape, bool))
+    check(R3, xv * 2, xp)
+    check(R4, hv * y60, hp, approx=True)
+    check(R5, fv * v6, fp, approx=True)
+    check(R6, *np_reduce("plus", xv, xp, 0), approx=True)
+    assert R7.nvals == np.unique(lin % 4).size
+    check(R8, *np_reduce("plus", wv, wp, 0), approx=True)
+    check(R9, hv[2:50, 3], hp[2:50, 3])
+    check(R10, xv, xp)
+    check(R11, xv, xp)
 
 
 def test_relayout_allow_perm():
