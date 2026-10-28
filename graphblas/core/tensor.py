@@ -737,7 +737,7 @@ class Tensor(BaseType):
             raise ValueError(f"to_vector needs a 1-d Tensor; this one has shape {self._shape}")
         if self._layout.rows:
             return self._M[:, 0].new()
-        return self._M[0, :].new()
+        return tl.steal_row_as_vector(self._M.dup())
 
     def to_scalar(self):
         """The Scalar of a 0-d Tensor."""
