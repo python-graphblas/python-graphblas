@@ -260,8 +260,9 @@ NELL-2, Uber and NIPS, both thread counts and every kernel group, "off" took 1.0
 long as "on" (geometric mean per data set and thread count), and every result matched. The
 Tensor picks semirings that SuiteSparse precompiles for FP64, so the one generic kernel these
 cases meet is the extract behind slices (SuiteSparse has no precompiled one): slices are up to
-1.45x slower without the JIT, and NELL-2's broadcast by a dense (s1, s2) matrix 1.3x at 1
-thread. The array-UDT TTM engine needs the JIT; without it NELL-2's TTM mode 2 runs the Numba
+1.45x slower without the JIT, and NELL-2's broadcast by a dense (s1, s2) matrix was 1.3x at 1
+thread, until broadcasts and TTV took their row without an extract (see "Performance work
+after K"). The array-UDT TTM engine needs the JIT; without it NELL-2's TTM mode 2 runs the Numba
 kernel, 1.26x slower. "run", SuiteSparse's default, measured like "off" until a TTM: at H, a
 TTM raised the control to "on" for the rest of the process even when the array-UDT engine then
 left the case to Numba (58 of the 60 synthetic TTM rows), so NELL-2's TTM mode 2 was as fast
@@ -333,6 +334,22 @@ repetitions are given; every result's fingerprint matched its A.
   | Uber `range2` | 33.4             | 4.59  | 23.9              | 2.71  |
   | u6 `slice2`   | 14.5             | 4.62  | 2.43              | 2.37  |
   | Zipf `slice2` | 103.8            | 40.8  | 18.9              | 19.0  |
+
+- **A row to a Vector without a copy** (`tensor_layout.steal_row_as_vector`, the inverse of
+  `steal_vector_as_row`). Broadcasts made the small side's row a Vector by `M[0, :].new()`, an
+  extract that runs SuiteSparse's generic kernel without the JIT, and so did TTV and
+  `Tensor.to_vector`. They take it over now, or copy it with `dup` where the relayout returned
+  the operand's own Matrix. Over the `bcast` and `ttv` groups (112 rows per mode), the
+  geometric mean of after over before is 0.98 at "on" and 0.975 at "off" (load 4.5-7.7),
+  and no row is slower beyond noise (u6 `mul_vec1` and `mul_vec2` at 1 thread, 1.09x in the
+  first run at load 7.7, were 0.995 and 1.008 in a rerun):
+
+  | case (ms)                    | "on", before | after | "off", before | after |
+  | ---------------------------- | ------------ | ----- | ------------- | ----- |
+  | NELL-2 `mul_mat12`, 1 thread | 1124         | 967   | 1509          | 964   |
+  | NELL-2 `mul_mat12`, 8        | 328          | 276   | 364           | 271   |
+  | u6 `mul_mat12`, 1 thread     | 4.29         | 3.63  | 5.77          | 3.56  |
+  | hyper `mul_vec0`, 8 threads  | 2.03         | 1.62  | 2.12          | 1.65  |
 
 ## Reproducing the numbers
 

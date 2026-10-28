@@ -842,6 +842,76 @@ def test_flip_orientation_and_helpers():
     assert lru.weight == 40
 
 
+def test_steal_row_as_vector(monkeypatch):
+    """A (1 x n) Matrix held by row becomes a Vector without a copy, in each format (a
+    hypersparse one is made sparse first). Broadcasts and TTV take the small side's row this
+    way; when the relayout returns the operand's own Matrix, they copy it first, so the
+    operand is left as it was.
+    """
+    w = Vector.from_coo([1, 3], [1.0, 2.0], size=5)
+    for fmt in ["sparse", "bitmap", "full", "hypersparse"]:
+        x = Vector.from_dense([1.0, 2.0, 3.0, 4.0, 5.0]) if fmt == "full" else w
+        if fmt == "hypersparse":
+            M = tl.matrix_from_arrays(dtypes.FP64, 1, 5, "hypercsr", x=np.array([1.0, 2.0]),
+                                      h=np.array([0]), p=np.array([0, 2]), i=np.array([1, 3]),
+                                      nvals=2)  # fmt: skip
+            assert M.ss.format == "hypercsr"
+        else:
+            M = tl.steal_vector_as_row(x.dup())
+            M.ss.config["sparsity_control"] = fmt
+        v = tl.steal_row_as_vector(M)
+        assert type(v) is Vector
+        assert v.isequal(x)
+        assert M.gb_obj[0] == gb.core.NULL
+        v << v + 1  # (a valid Vector)
+    stolen = []
+
+    def steal(M):
+        stolen.append(M)
+        return steal_row_as_vector(M)
+
+    steal_row_as_vector = tl.steal_row_as_vector
+    monkeypatch.setattr(tl, "steal_row_as_vector", steal)
+    from graphblas.core import tensor_census as census
+
+    rng = np.random.default_rng(67)
+    X, xv, xp = random_tensor((4, 5, 6), rng, density=0.5, layout=((0, 1), (2,)))
+    # The small side already one row in the diagonal's order (its own Matrix, copied), or
+    # moved there by a reshape (a new Matrix, taken over)
+    s = Tensor.from_dense(rng.random(6) + 1).reshape(1, 1, 6)
+    m = Tensor.from_dense(rng.random((5, 6)) + 1)
+    for small, label in [(s, "diagonal cols"), (m, "diagonal cols, reshape")]:
+        small_M = small._M
+        before = small_M.dup()
+        stolen.clear()
+        census.start()
+        census.force["bcast"] = label
+        try:
+            R = (X * small).new()
+        finally:
+            census.force.clear()
+            records = census.stop()
+        assert [r["choice"] for r in records if r["point"] == "bcast"] == [label]
+        check(R, xv * small.to_dense(), xp, approx=True)
+        assert len(stolen) == 1
+        assert stolen[0] is not small_M
+        assert small._M is small_M
+        assert small_M.isequal(before)
+    # TTV with a 1-d Tensor stored as one row: its own Matrix, copied
+    t = Tensor.from_dense(rng.random(6))
+    t_M = t._M
+    before = t_M.dup()
+    stolen.clear()
+    R = X.tensordot(t, ([2], [0])).new()
+    assert len(stolen) == 1
+    assert stolen[0] is not t_M
+    assert t._M is t_M
+    assert t_M.isequal(before)
+    ref = np.einsum("ijk,k->ij", np.where(xp, xv, 0), t.to_dense())
+    np.testing.assert_allclose(R.to_dense(fill_value=0), ref)
+    assert t.to_vector().isequal(Vector.from_dense(t.to_dense()))
+
+
 # --------------------------------------------------------------------------------------------
 # M3: shape operations and copy-on-write
 
