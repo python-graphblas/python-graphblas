@@ -2,6 +2,7 @@ import functools
 import gc
 import itertools
 import math
+import operator
 import os
 import subprocess
 import sys
@@ -688,6 +689,52 @@ def test_broadcast_mult_past_2_60_no_flip(engines, monkeypatch):
                          layout=((0, 1), (2, 3)))  # fmt: skip
     with pytest.raises(ValueError, match="more than one Matrix dimension can hold"):
         X4.ewise_add(Y4, binary.plus, allow_expansion=True).new()
+
+
+@pytest.mark.parametrize("cols_log2", [24, 33])
+def test_ttv_past_2_60_by_entries(cols_log2):
+    """A TTV past 2^60 positions with the axis inside a group of several axes goes through
+    the entries: w at each entry's coordinate, one ewise_mult, the axis reduced. It took the
+    one option left there, a selector over the whole column group, whose time and memory
+    grow with the group's positions however few the entries (cols 2^24: 0.2 s; (2^31, 2^31,
+    4), cols 2^33: minutes and about 10 GB). Measured with tracemalloc; only the 2^24 case
+    was run on the old code.
+    """
+    import tracemalloc
+
+    from graphblas.core import tensor_census as census
+
+    shape = (2**61 // 2 ** (cols_log2 - 2), 2 ** (cols_log2 - 2), 4)
+    xd = {(0, 3, 1): 1.0, (5, 7, 2): 2.0, (5, 7, 3): 4.0, (9, 1, 0): 8.0}
+    coords = list(zip(*xd, strict=True))
+    wd = {1: 2.0, 2: 3.0, 0: -1.0}
+    w = Vector.from_coo(list(wd), list(wd.values()), size=4)
+    for layout, axis_in in [(((0,), (1, 2)), "cols"), (((1, 2), (0,)), "rows")]:
+        X = Tensor.from_coo(coords, list(xd.values()), shape=shape, layout=layout)
+        for op, mult in [(gb.semiring.plus_times, operator.mul), (gb.semiring.plus_minus, None)]:
+            for x_left in [True, False]:
+                census.start()
+                tracemalloc.start()
+                try:
+                    if x_left:
+                        R = X.tensordot(w, ([2], [0]), op).new()
+                    else:
+                        R = Tensor.from_vector(w).tensordot(X, ([0], [2]), op).new()
+                    peak = tracemalloc.get_traced_memory()[1]
+                finally:
+                    tracemalloc.stop()
+                    records = census.stop()
+                want = {}
+                for (i, j, k), v in xd.items():
+                    if k in wd:
+                        f = mult or operator.sub
+                        term = f(v, wd[k]) if x_left else f(wd[k], v)
+                        want[(i, j)] = want.get((i, j), 0.0) + term
+                assert _as_dict(R) == want, (layout, op, x_left)
+                assert peak < 2**24, (layout, op, x_left, peak)
+                choices = [r["choice"] for r in records if r["point"] == "ttv"]
+                # (in the rows, the selector over the nonempty rows is sized by the data)
+                assert choices == (["entries"] if axis_in == "cols" else ["rowsel"]), choices
 
 
 def test_relayout_6d_rebuilds():
@@ -1773,22 +1820,20 @@ def test_tensordot_semirings_masks_and_errors():
         X.tensordot("x")
     with pytest.raises(TypeError, match="matmul"):
         X.matmul("x")
-    # Past 2^60 positions, a TTV with no way to run (its free axes are no Matrix dimension,
-    # and pow has no flipped form for a selector on this side) refuses as the products do
+    # Past 2^60 positions, a TTV with no selector on this side (pow has no flipped form) and
+    # whose free axes are no Matrix dimension (no general path) runs through the entries
     H = Tensor.from_coo(([0, 5], [3, 7], [1, 2]), [1.0, 2.0], shape=(2**31, 2**31, 4),
                         layout=((0,), (1, 2)))  # fmt: skip
     w = Tensor.from_coo(([1, 2],), [2.0, 3.0], shape=(4,))
-    with pytest.raises(ValueError, match="do not fit"):
-        w.tensordot(H, ([0], [2]), op=gb.semiring.plus_pow).new()
     census.start()
     try:
-        with pytest.raises(ValueError, match="do not fit"):
-            w.tensordot(H, ([0], [2]), op=gb.semiring.plus_pow).new()
+        R = w.tensordot(H, ([0], [2]), op=gb.semiring.plus_pow).new()
         recs = census.stop()
     finally:
         census.stop()
         census.records.clear()
-    assert ("ttv", "no option: general") in {(r["point"], r["choice"]) for r in recs}
+    assert R.to_coo()[1].tolist() == [2.0, 9.0]  # (2 ** 1, 3 ** 2)
+    assert ("ttv", "entries") in {(r["point"], r["choice"]) for r in recs}
 
 
 # --------------------------------------------------------------------------------------------
