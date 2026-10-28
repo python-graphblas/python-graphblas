@@ -291,8 +291,9 @@ three or four.
 It loses, with the cause:
 
 - **TTM along an axis other than the stored order**, against a library given a copy in that
-  order (TACO: 1.8-6.6x at 1 thread). The Tensor relayouts inside its timing; an in-place
-  kernel for those modes is on the roadmap.
+  order (TACO: 1.8-6.6x at 1 thread). The Tensor relayouts inside its timing, and on NELL-2
+  the `wait()` that ends each timing builds SuiteSparse's hash of the output's rows, 39-55%
+  of modes 0 and 1 at 1 thread (`limitations-and-roadmap.md` has the breakdown).
 - **Hypersparse broadcasts and slices** against torch (hyper `X * v[j]`: 7.1 ms against torch's
   1.33 at 8 threads; slabs along the last stored axis, 2-23x), and a slab of u7 along its last
   axis against torch at 8 threads (3.75 against 1.90 ms). Each touches a few entries of many
@@ -398,6 +399,14 @@ repetitions are given; every result's fingerprint matched its A.
   These match INT64 and FP64 (27-29 and 20-22 ms at 1 thread) and the times with the JIT on.
   A sum over the whole column group still meets `GrB_reduce`'s compiled-out
   `PLUS_FIRST_UINT*` without the JIT (u7 `sum(2)`: 37.9 ms at 1 thread against INT64's 8.3).
+
+All five together, against K, with the JIT on: every kernel group but `bmm` on the 8 data
+sets, 762 rows at 8 and 1 threads, 2 interleaved repetitions (load 1.7-7.3, median 4.5). The
+geometric mean of after over before is 0.949; every result's fingerprint matched. The rows
+that came out more than 8% slower (broadcasts, NIPS's sums and a permutation, u6's MTTKRP at
+R = 64, some sub-millisecond slices) were the trees run in blocks while the load changed; run
+again with the trees alternating per data set, 3 repetitions each, they were within 2%, and
+a run of each commit on its own showed no step.
 
 ## Reproducing the numbers
 
