@@ -54,9 +54,11 @@ and the data sets are those named in `design.md`.
   numbers are for a copy of the tensor already in that mode's order, built outside its timing
   (7.6 s on NELL-2). An in-place kernel for those modes, or opt-in per-mode copies, would
   close it.
-- **Slices of Uber (4-d, layout (0, 1, 2 | 3))** are 2.2-16x behind pydata/sparse and scipy at 1
-  thread, and 2.9-11x at 8 (`benchmarks.md`, the fresh-clone run). Each slab touches a few
-  entries in many rows of the stored Matrix.
+- **Slabs of Uber (4-d, layout (0, 1, 2 | 3)) along its last axis**, a column range of the
+  stored Matrix: 31 / 7.1 ms at 1 / 8 threads for one index, against scipy's 2.3 and torch's
+  0.66 (8 threads). SuiteSparse's extract visits each of the 5e6 rows of the sparse row group
+  (6.9e5 of them nonempty). Its slabs along axes 1 and 2 were also 7-200x slower until the
+  extract was priced by the rows it visits (`benchmarks.md`, "Performance work after K").
 - **einsum's per-call overhead** shows at millisecond scale: about 45 us for one contraction,
   97 us for an MTTKRP through einsum, and 128 us for three operands.
 - **Planning a 5-d MTTKRP** takes about 130 ms on the first call for a shape, even for a
@@ -79,9 +81,8 @@ and the data sets are those named in `design.md`.
   - the TTM engine rule: on u7 mode 2 at 1 thread and skew mode 0 at 8, the array-UDT engine
     is 1.27-1.38x faster than the one chosen, and on hyper mode 0 at 8 threads the products
     are 1.2x faster than Numba;
-  - Uber's two-axis sums (a REBUILD where the column selector is 4x faster), NIPS's TTV
-    column selector (1.6x behind mxv after a reshape), and Zipf's extract against the
-    coordinate filter (2.2x).
+  - Uber's two-axis sums (a REBUILD where the column selector is 4x faster), and NIPS's TTV
+    column selector (1.6x behind mxv after a reshape).
 
 ## Roadmap, in order
 
