@@ -125,10 +125,10 @@ def _expand(t, shape):
     rows = bcast + tuple(out_of[a] for a in ts._layout.rows)
     cols = tuple(out_of[a] for a in ts._layout.cols)
     layout = tl.as_layout((rows, cols), shape)
+    # (more than one copy, or none: the callers give ``t`` the result's rank first, so a
+    # broadcast axis of ``t`` has size 1 and the result's another size)
     reps = tl.prod(shape, bcast)
     nrows, ncols = tl.prod(shape, rows), tl.prod(shape, cols)
-    if reps == 1:
-        return Tensor._from_M(ts._M, shape, layout, store=ts._store)
     ones = Matrix.from_scalar(True, reps, 1)
     M = tl.new_matrix(t.dtype, nrows, ncols)
     # kron(ones, M)[(b, r), c] = M[r, c]: the broadcast axes lead the rows
