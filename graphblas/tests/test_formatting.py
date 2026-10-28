@@ -4155,11 +4155,29 @@ def test_repr_max_colwidth():
             "index  0  1 2 3 4 5 6 7 8 9 10 11\n"
             "value  1  2                     3"
         )
+    # The row labels are still padded to one width, so the "..." label of truncated rows
+    # keeps all three dots
+    A = Matrix.from_coo(
+        [0, 9999, 9999], [9999, 1, 9999], [1, 2, 3], nrows=10000, ncols=10000, name="A"
+    )
+    small = ("display.max_rows", 4, "display.min_rows", 4, "display.max_columns", 4)
+    with display_options("display.max_colwidth", 3, *small):
+        repr_printer(A, "A")
+        assert repr(A) == (
+            '"A"        nvals  nrows  ncols  dtype    format\n'
+            "gb.Matrix      3  10000  10000  INT64  hypercsr\n"
+            "-----------------------------------------------\n"
+            "     0  1   ... 9998 9999\n"
+            "0           ...        1 \n"
+            "1           ...          \n"
+            "...  .. ..  ...  ..   .. \n"
+            "9998        ...          \n"
+            "9999     2  ...        3 "
+        )
     # Longer integer labels are cut short as cells are, counting the sign column pandas
     # gives them, in the text and the HTML
     A = Matrix(int, 10**6, 10**6, name="A")
     A[:, :] << 1
-    small = ("display.max_rows", 4, "display.min_rows", 4, "display.max_columns", 4)
     with display_options("display.max_colwidth", 6, *small):
         repr_printer(A, "A")
         assert repr(A) == (
