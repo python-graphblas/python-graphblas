@@ -148,9 +148,8 @@ def _ttm_numba(updater, a, b, op, a_axes, b_axes):
         for q in range(1, len(free_a) + 1)  # (with no row axis there is one row: no threads)
         if tl._valid_split(a._shape, (*perm, m), q)
     )
-    # (never empty: below 2^60 positions every split is valid; past it both stored groups
-    # hold axes, and they are a target with the axis last among the columns, or swapped when
-    # the axis is a row axis)
+    # (never empty: the free axes fit one group, checked above, and the axis fits another,
+    # so (free axes | axis), every free axis in the rows, is always a target)
     _, _, state = tl.plan(a._shape, a._layout.state, targets, a._M._nvals, nthreads)
     layout = Layout.from_state(state)
     X = _in_layout(a, layout, updater.opts.get("nthreads"))
