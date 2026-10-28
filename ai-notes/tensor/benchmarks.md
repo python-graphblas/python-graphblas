@@ -352,9 +352,10 @@ repetitions are given; every result's fingerprint matched its A.
   | u6 `mul_mat12`, 1 thread     | 4.29         | 3.63  | 5.77          | 3.56  |
   | hyper `mul_vec0`, 8 threads  | 2.03         | 1.62  | 2.12          | 1.65  |
 
-- **A column range of a sparse row group filtered in place** (`tensor_index._column_range`).
-  `X[..., k]` and `X[..., k0:k1]` along the column group of a sparse Matrix ran SuiteSparse's
-  extract, which visits every row, empty or not. Over the 104 slice rows, 6 changed strategy,
+- **A column range of a sparse row group filtered from the stored arrays**
+  (`tensor_index._column_range`, which reads the arrays where they are and copies the entries
+  it keeps). `X[..., k]` and `X[..., k0:k1]` along the column group of a sparse Matrix ran
+  SuiteSparse's extract, which visits every row, empty or not. Over the 104 slice rows, 6 changed strategy,
   each to within 10% of the fastest forced option, and the others stayed within noise
   (rechecked with 41 calls; load 4.6-5.2). With the extract's pricing above, at "on" / "off":
 

@@ -77,8 +77,8 @@ and the data sets are those named in `design.md`.
   stored Matrix: 0.17 ms for one index, against pydata/sparse's 0.059, and 3.7 ms at 1 thread
   for a 10% range against its 1.8 (the Tensor is fastest at 8 threads, 1.3 ms). Its other
   slabs were 6-30x slower than now until the extract was priced by the rows it visits, and a
-  column range of a sparse row group filtered in place (`benchmarks.md`, "Performance work
-  after K").
+  column range of a sparse row group was filtered from the stored arrays (`benchmarks.md`,
+  "Performance work after K").
 - **einsum's per-call overhead** shows at millisecond scale: about 45 us for one contraction,
   97 us for an MTTKRP through einsum, and 128 us for three operands.
 - **Planning a 5-d MTTKRP** takes about 12 ms on the first call for a shape, even for a tiny
