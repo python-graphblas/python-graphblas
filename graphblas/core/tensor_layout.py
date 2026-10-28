@@ -1237,4 +1237,4 @@ def _abort_embed(empty, cont, new_ncols, M):
         cont.ncols_nonempty = -1
         M._ncols = new_ncols
         return True
-    return False
+    return False  # pragma: no cover (safety: a read-only array, which we never make)
