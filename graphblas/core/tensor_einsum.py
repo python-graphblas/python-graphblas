@@ -35,7 +35,9 @@ def einsum(subscripts, *operands, op=semiring.plus_times, optimize="greedy"):
     multiply is also commutative, else left to right. The MTTKRP pattern (``'ijk,jr,kr->ir'``)
     then goes to ``Tensor.mttkrp``, which never forms the Khatri-Rao product. Other semirings
     (``plus_pair``, ``plus_first``, ``max_times``, ...) form every term, left to right, and sum
-    only at the end, which takes more memory.
+    only at the end, which takes more memory. The regrouping is exact up to floating-point
+    rounding and integer overflow: an integer ``min_plus`` or ``max_plus`` sum that overflows
+    may wrap in another place than in the term-by-term sum.
 
     ``optimize`` picks the pairwise order: an ``opt_einsum`` strategy (default ``"greedy"``,
     or True), used through ``opt_einsum.contract_path`` when it is installed, else a greedy
@@ -118,6 +120,11 @@ def einsum(subscripts, *operands, op=semiring.plus_times, optimize="greedy"):
 # (monoid, multiply) pairs whose multiply distributes over the monoid on both sides,
 # a (x) (b (+) c) = (a (x) b) (+) (a (x) c) and likewise on the right, so summing an index out
 # early, or contracting in steps, gives the sum of the terms. Each multiply here is associative.
+# Exact up to rounding and integer overflow: plus_times stays exact when it wraps (wrapping
+# arithmetic is a ring), but a min_plus or max_plus sum that overflows can wrap in another
+# place once regrouped. They stay here (a common semiring, whose overflowing sums are no
+# meaningful answer either way); max_times and min_times do not distribute on signed values
+# even without overflow, so they are not here.
 _DISTRIBUTIVE = frozenset(
     {("plus", "times"), ("min", "plus"), ("max", "plus"), ("min", "max"), ("max", "min"),
      ("lor", "land"), ("land", "lor"), ("lxor", "land"), ("bor", "band"), ("band", "bor"),
