@@ -597,6 +597,13 @@ C_FILTER = (2.4, 7.0)
 
 C_FILTER_AXIS = (1.0, 1.5)
 
+# A column range filtered in place (numpy, so one thread): per stored entry, and per entry
+# kept (its row found and the result built). 2026-10-27: Uber X[:, :, :, k], 3.3e6 entries,
+# 1.2-1.4 ms (3.7 in a first version); u7 X[:, :, k0:k1], 1e6 of 1e7 kept, 23-28 ms
+C_CFILTER = 1.0
+
+C_CFILTER_OUT = 20.0
+
 
 def _extract_cost(M, ridx, cidx, ti):
     """The cost of SuiteSparse's extract ``M[ridx, cidx]``, each index a slice or the number
@@ -638,9 +645,32 @@ def _extract_recipe(updater, t, sel, keys):
     ridx = _group_index(t._shape, rows, sel, keys, build=False)
     cidx = _group_index(t._shape, cols, sel, keys, build=False)
     if isinstance(ridx, slice) and isinstance(cidx, slice):
-        if census.on:
+        M = t._M
+        if (
+            ridx == slice(None)
+            and cidx != slice(None)
+            and M._nvals
+            and not t.dtype._is_udt
+            and C_X_ROW[ti := _ti(_nthreads(updater))] * M._nrows > C_CFILTER * M._nvals
+            and tl.stored_format(M) == "csr"
+        ):
+            # A column range of every row: the extract visits each row of a sparse Matrix
+            # (Uber's 5e6, most of them empty: 31 ms at 1 thread), the filter each entry
+            # (3.3e6: 1.4 ms). (Hypersparse rows are visited only when nonempty, and the
+            # default layouts give them 32 entries or more: the extract.)
+            out = M._nvals * (cidx.stop - cidx.start) / M._ncols
+            costs = [C_X_ROW[ti] * M._nrows, C_CFILTER * M._nvals + C_CFILTER_OUT * out]
+            i = int(costs[1] < costs[0])
+            if census.on:
+                i = census.choose("extract", costs,
+                                  ["slices: extract", "column range: filter in place"], i,
+                                  nvals=M._nvals)  # fmt: skip
+            if i == 1:
+                _store(updater, _column_range(M, cidx.start, cidx.stop), shape, layout, fresh=True)
+                return
+        elif census.on:
             census.note("extract", "slices: extract")
-        _store(updater, t._M[ridx, cidx], shape, layout)
+        _store(updater, M[ridx, cidx], shape, layout)
         return
     # Repeated indices repeat the entries, as for Matrix (SuiteSparse's extract does; the
     # filter below expands them; the row pick takes slices and ints only)
@@ -727,6 +757,26 @@ def _extract_recipe(updater, t, sel, keys):
     cc = tl.ravel(out, shape, layout.cols, n=n)
     M = tl.from_coo(rr, cc, vals, t.dtype, tl.prod(shape, layout.rows), tl.prod(shape, layout.cols))
     _store(updater, M, shape, layout, fresh=True)
+
+
+def _column_range(M, c0, c1):
+    """``M[:, c0:c1]`` (``M`` held by row, sparse, with entries) by one numpy pass over its
+    column indices in place; the kept entries' rows by a binary search of the row pointers.
+    """
+    with (
+        tl._Unloaded(M) as cont,
+        tl._VectorArray(cont.p) as p,
+        tl._VectorArray(cont.i) as ci,
+        tl._VectorArray(cont.x, M.dtype.np_type) as x,
+    ):
+        c = ci.array
+        keep = c >= c0
+        keep &= c < c1
+        at = np.flatnonzero(keep)
+        r = np.searchsorted(p.array, at.astype(p.array.dtype), side="right") - 1
+        cols = c[at].astype(np.int64) - c0
+        vals = x.array[0] if cont.iso else x.array[at]
+    return tl.from_coo(r, cols, vals, M.dtype, M._nrows, c1 - c0)
 
 
 def _hyper_rows_pick(t, sel, keys, renum, shape, layout):
