@@ -6,7 +6,7 @@ Private: part of ``graphblas.core.tensor``, which imports it at its end.
 import math
 
 from .. import binary, monoid, semiring
-from ..dtypes import BOOL
+from ..dtypes import BOOL, UINT32, UINT64
 from . import tensor_census as census
 from . import tensor_layout as tl
 from .operator import get_semiring, get_typed_op
@@ -91,21 +91,39 @@ def _reduce_recipe(updater, a, op, axes, keepdims, cast):
 
 def _selector_semiring(op, mult):
     """The semiring of monoid ``op`` and ``mult`` (first or second) that multiplies by a
-    selector, whose entries are True.
+    selector, whose entries are True, or for a row selector (second) 1 of the type
+    ``_selector_dtype`` gives.
     """
     if op is monoid.lor[BOOL]:
         # land(True, x) is x, as first and second give, and SuiteSparse 10 has a factory
         # kernel for lor_land only: BOOL has no factory FIRST or SECOND semiring (Tensor.any
         # ran about 2x slower with the JIT at "off" or "run")
         return semiring.lor_land[BOOL]
+    if mult is binary.second and _selector_dtype(op) is not BOOL:
+        return semiring.plus_times[op.type]
     return get_semiring(op, mult)
 
 
-def _row_reducer(M, shape, rows, kept):
+def _selector_dtype(op):
+    """The type of the row selector that monoid ``op`` reduces with (``S @ M``): BOOL, except
+    for sums of UINT32 and UINT64, where 1 * x with a selector of that type is a factory
+    kernel (plus_times) and plus_second is not: u7 summed over axis 0 or 1 at 1 thread with
+    the JIT off, 53-64 ms against 20-28, as with the JIT on.
+
+    Column selectors (``M @ S.T``) stay BOOL: with the JIT on, the plus_first kernel does
+    not read the selector, and was 2x faster there than plus_times (0.87 against 1.73 ms for
+    1e6 entries at 1 thread).
+    """
+    if op is monoid.plus[UINT32] or op is monoid.plus[UINT64]:
+        return op.type
+    return BOOL
+
+
+def _row_reducer(M, shape, rows, kept, dtype=BOOL):
     """S with S @ M reducing the row axes not in ``kept`` (positions in ``rows``)."""
     if tl.stored_format(M) == "hypercsr":
-        return tl.rows_selector(M, shape, rows, kept)
-    return tl.selector(tuple(shape[x] for x in rows), kept)
+        return tl.rows_selector(M, shape, rows, kept, dtype=dtype)
+    return tl.selector(tuple(shape[x] for x in rows), kept, dtype=dtype)
 
 
 def _vector_to_row(v):
@@ -226,7 +244,7 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
             if sel > reb:
                 return _reduce_rebuild(M, shape, layout, A, op)
             kept = tuple(i for i, x in enumerate(rows) if x not in Ar)
-            S = _row_reducer(M, shape, rows, kept)
+            S = _row_reducer(M, shape, rows, kept, _selector_dtype(op))
             out = tl.new_matrix(dtype, S._nrows, M._ncols)
             out(**opts) << S.mxm(M, _selector_semiring(op, binary.second))
             M = out
