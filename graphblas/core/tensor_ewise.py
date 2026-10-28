@@ -382,7 +382,8 @@ def _mult_at_entries(M, shape, layout, ts, F, op, big_left):
 
 def _expand_on_rows(M, shape, rows, sub_pos, v):
     """``v`` (over the row axes at ``sub_pos``) expanded onto the nonempty rows of ``M``: a
-    Vector over the row group with ``e[r] = v[coordinates of r]``, sized by the data.
+    Vector over the row group with ``e[r] = v[coordinates of r]``, sized by the data. ``v``'s
+    values are found by a binary search: a table over its positions is as long as its axes.
     """
     h = tl.nonempty_row_ids(M)
     gshape = tuple(shape[a] for a in rows)
@@ -390,12 +391,8 @@ def _expand_on_rows(M, shape, rows, sub_pos, v):
     tl.unravel(h, gshape, tuple(range(len(gshape))), co)
     vidx = tl.ravel(co, gshape, sub_pos, n=h.size)
     idx, vals = v.to_coo()
-    dense = np.zeros(v._size, vals.dtype)
-    present = np.zeros(v._size, bool)
-    dense[idx] = vals
-    present[idx] = True
-    keep = present[vidx]
-    return Vector.from_coo(h[keep], dense[vidx[keep]], v.dtype, size=tl.prod(shape, rows))
+    found, vals = tl.lookup_sorted(idx.view(np.int64), vals, vidx)
+    return Vector.from_coo(h[found], vals, v.dtype, size=tl.prod(shape, rows))
 
 
 def _ewise_recipe(updater, method, a, b, op, extra):
