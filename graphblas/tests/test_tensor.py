@@ -4421,6 +4421,8 @@ def test_hypersparse_row_group_paths():
     """Reductions, TTV and broadcasts over a hypersparse row group use selectors built from
     its nonempty rows (sized by the data, not the group's positions).
     """
+    from graphblas.core import tensor_census as census
+
     rng = np.random.default_rng(62)
     X, xv, xp = _hyper_rows_tensor(rng, (60, 70, 5), 150)
     assert X.ss.format == "hypercsr"
@@ -4440,9 +4442,16 @@ def test_hypersparse_row_group_paths():
         diff = np.moveaxis(xv, axis, -1) - wv
         both = np.moveaxis(xp, axis, -1) & wp
         check(R, np.where(both, -diff, 0).sum(-1), both.any(-1), approx=True)
-        # A full weight vector keeps every nonempty row
+        # A full weight vector keeps every nonempty row (by the row selector, where offered)
         wd = rng.random(X.shape[axis])
-        R = X.tensordot(wd, ([axis], [0])).new()
+        census.start()
+        census.force["ttv"] = "rowsel"
+        try:
+            R = X.tensordot(wd, ([axis], [0])).new()
+        finally:
+            census.stop()
+            census.force.clear()
+            census.records.clear()
         check(R, np.tensordot(xv, wd, ([axis], [0])), xp.any(axis), approx=True)
     for yshape in [(60, 1, 1), (70, 1), (60, 70, 1), (5,)]:
         Y, yv, yp = random_tensor(yshape, rng, density=0.7)
