@@ -196,8 +196,9 @@ and can be further off on clustered data (see "Fitted constants").
   lengths of the entry count and of the sampled column count. A 3-d plan costs about 35 us
   to search and 0.13 us from the cache. A choice among many layouts by their cost to reach
   (`_mttkrp_order`) prices them all from one search (`plan_each`): searches from one source
-  settle the same nodes in the same order up to each target, so each gets the plan its own
-  search would, and is cached as such.
+  settle the same nodes in the same order up to each target, as long as the target is within
+  its own REBUILD cost (past it, both give the REBUILD), so each gets the plan its own search
+  would, and is cached as such.
 - **Shape-only matrices** (permutation matrices `P`, reduction selectors, column maps) depend
   only on the shape, so they are cached too (`_matrix_cache`). It is bounded at 64 items and
   2^25 stored entries in all, about 400 MB. A `P` for a group far larger than the data is
@@ -446,9 +447,10 @@ positions are the raveled outer product of its axes' indices (`_group_index`).
   taken directly. It is priced by the rows it visits (a listed row is found directly, or by a
   hash lookup when the Matrix is hypersparse), plus, for a column list shorter than 1/32 of
   the columns, a hash lookup per entry of those rows (`_extract_cost`).
-- **column range in place**: a range of the columns of every row of a sparse (not
-  hypersparse) Matrix, by one numpy pass over its column indices in place, the kept entries'
-  rows found by a binary search of the row pointers (`_column_range`). The extract visits
+- **column range from the stored arrays**: a range of the columns of every row of a sparse
+  (not hypersparse) Matrix, by one numpy pass over its column indices, read where they are
+  through the Container (the Matrix is not changed, and only the kept entries are copied),
+  the kept entries' rows found by a binary search of the row pointers (`_column_range`). The extract visits
   every row there, empty or not: Uber's 5e6 rows hold 3.3e6 entries, and its slab along the
   last axis took 31 ms at 1 thread against 1.2.
 - **filter**: `to_coo`, a numpy mask on the coordinates, a rebuild. This is cheaper than
