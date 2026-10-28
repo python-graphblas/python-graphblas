@@ -66,8 +66,8 @@ and the data sets are those named in `design.md`.
   nonempty rows of R values) in the `wait()` that the kit, like any user, calls to finish a
   result. None of the other libraries has such a hash. It is also 7-14% of NELL-2's sums,
   TTVs and broadcasts at 1 thread. `Tensor.wait()` keeps building it, as `Matrix.wait()`
-  does (`decisions.md`, 24): `wait("complete")` skips it, and the next operation on the
-  result pays it. An in-place kernel along the first column axis, with a sparse accumulator
+  does (`decisions.md`, 24): `wait("complete")` skips it, and most operations on the result
+  pay it next. An in-place kernel along the first column axis, with a sparse accumulator
   per row instead of the reshape and second transpose, was prototyped on NELL-2 mode 0: 1354
   against 1049 ms at 1 thread (without the hash), 243 against 269 at 8, so not pursued.
   Per-mode copies are not kept (`decisions.md`, 25); an explicit `relayout()` before a loop
