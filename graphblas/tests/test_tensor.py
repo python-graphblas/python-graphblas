@@ -1643,6 +1643,47 @@ def test_update_from_infix_expression():
     assert (A ^ Y).new().to_matrix().isequal((A ^ B).new())
 
 
+def test_infix_or_and_need_bool():
+    """``X | Y`` and ``X & Y`` on their own (``.new()``, ``C << ...``, a region's value, an
+    operand, an expression method) are lor and land of BOOL Tensors, and other dtypes raise
+    Matrix's "Bad dtypes" TypeError, as for Matrix (decisions.md, 27); they computed plus or
+    times. With an operator (``binary.plus(X | Y)``) every dtype works, and ``shape`` does too.
+    """
+    rng = np.random.default_rng(58)
+    uses = [
+        lambda X, Y, infix: infix(X, Y).new(),
+        lambda X, Y, infix: Tensor(X.dtype, X.shape) << infix(X, Y),
+        lambda X, Y, infix: X.dup().__setitem__(slice(None), infix(X, Y)),
+        lambda X, Y, infix: X.ewise_add(infix(X, Y), binary.plus),
+        lambda X, Y, infix: X + infix(X, Y),
+        lambda X, Y, infix: gb.einsum("ij,ij->i", infix(X, Y), X),
+        lambda X, Y, infix: infix(X, Y).to_dense(),
+    ]
+    for dtype in [dtypes.FP64, dtypes.INT64]:
+        X, xv, xp = random_tensor((3, 4), rng, density=0.6, dtype=dtype)
+        Y, yv, yp = random_tensor((3, 4), rng, density=0.6, dtype=dtype)
+        A, B = X.to_matrix(), Y.to_matrix()
+        for infix, name in [(operator.or_, r"\|"), (operator.and_, "&")]:
+            match = f"Bad dtypes for `x {name} y`"
+            for use in uses:
+                with pytest.raises(TypeError, match=match):
+                    use(X, Y, infix)
+                with gb.config.set(autocompute=True), pytest.raises(TypeError, match=match):
+                    use(X, Y, infix)
+            with pytest.raises(TypeError, match=match):
+                infix(A, B).new()  # (the same for Matrix)
+            assert infix(X, Y).shape == (3, 4)
+        check(binary.plus(X | Y).new(), *np_bcast("add", xv, xp, yv, yp, np.add))
+        check(binary.times(X & Y).new(), *np_bcast("mult", xv, xp, yv, yp, np.multiply))
+    # BOOL: lor and land, as before
+    Xb, Yb = (random_tensor((3, 4), rng, density=0.6, dtype=dtypes.BOOL)[0] for _ in range(2))
+    Ab, Bb = Xb.to_matrix(), Yb.to_matrix()
+    for infix in [operator.or_, operator.and_]:
+        assert infix(Xb, Yb).new().to_matrix().isequal(infix(Ab, Bb).new())
+        with gb.config.set(autocompute=True):
+            assert (Xb + infix(Xb, Yb)).new().to_matrix().isequal((Ab + infix(Ab, Bb)).new())
+
+
 def test_update_from_index_expression():
     """``C << T[idx]`` and ``C(mask, accum) << T[idx]`` store the extraction, as Matrix's
     ``v << A[1, :]`` does. ``_update`` took only an exact TensorExpression and refused an
@@ -5704,7 +5745,9 @@ def test_assign_views_duplicates_and_matrix_parity():
     T[0, 0] << Vector.from_coo([0, 1], [2.0, 3.0]).reduce()
     T[1] << Tensor.from_dense(np.ones((3, 4))) * 2
     B = Tensor.from_dense(np.full(4, 3.0))
-    T[0, 1] << (B | B)
+    with pytest.raises(TypeError, match="Bad dtypes"):
+        T[0, 1] << (B | B)  # (an operator is needed for FP64, as for Matrix)
+    T[0, 1] << binary.plus(B | B)
     T[0, 2] << Tensor.from_coo((), 7.0)
     T[1, 0].update(Tensor(float))
     want = np.array([[[5.0] * 4, [6.0] * 4, [7.0] * 4], [[0.0] * 4, [2.0] * 4, [2.0] * 4]])

@@ -150,6 +150,17 @@ the API settles. `design.md` describes how the code implements these.
     `allow_expansion=True`), and an operand whose own groups crowd both sides. An
     intersection never replicates and has no such limit. Decided 2026-10-28, on Erik's
     instruction to decide and document. _Revisit_ when a workload meets the error.
+27. **`X | Y` and `X & Y` on their own follow Matrix:** lor and land of BOOL Tensors, and a
+    TypeError ("Bad dtypes for `x | y`", Matrix's message) for other dtypes, whichever way
+    the expression is used: `.new()`, `C << (X | Y)`, a region's value, an operand,
+    autocompute. With an operator (`binary.plus(X | Y)`, `monoid.max(X & Y)`) every dtype
+    works, as for Matrix. They used to compute the default operator, plus or times, for
+    other dtypes. _Why:_ the user guide says infix operators work "as for Matrix"; with
+    numpy, `|` on integers is bitwise or and on floats raises, so quietly computing plus
+    would surprise numpy users; `+` and `*` already give plus and times; and nothing
+    recorded a reason for the old default. A behavior change to the experimental API,
+    toward the parity it claims. Decided 2026-10-28 by the coordinator, on Erik's
+    instruction to decide and document. _Revisit_ if users ask for a default operator.
 
 ## Deferred, on purpose
 
