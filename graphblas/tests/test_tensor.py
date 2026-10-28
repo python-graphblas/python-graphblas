@@ -691,6 +691,39 @@ def test_broadcast_mult_past_2_60_no_flip(engines, monkeypatch):
         X4.ewise_add(Y4, binary.plus, allow_expansion=True).new()
 
 
+def test_broadcast_on_nonempty_rows_sized_by_entries():
+    """A broadcast multiply onto the nonempty rows of a hypersparse row group finds the small
+    side's values by a binary search. It filled a dense table over the small side's Vector:
+    9 TiB for an axis of 2^40, a MemoryError on Linux and Windows. macOS hands out zeroed
+    memory lazily, so it passed there; tracemalloc counts it.
+    """
+    import tracemalloc
+
+    from graphblas.core import tensor_census as census
+
+    shape = (2**20, 2**40, 2**20, 2**40)
+    xd = {(0, 3, 1, 4): 2.0, (5, 7, 2, 9): 3.0, (6, 8, 0, 0): 4.0}
+    X = Tensor.from_coo(list(zip(*xd, strict=True)), list(xd.values()), shape=shape,
+                        layout=((0, 1), (2, 3)))  # fmt: skip
+    yd = {3: 2.0, 8: 5.0, 9: 7.0}  # (along axis 1)
+    Y = Tensor.from_coo(([0, 0, 0], list(yd), [0, 0, 0], [0, 0, 0]), list(yd.values()),
+                        shape=(1, 2**40, 1, 1))  # fmt: skip
+    for op, f in [(binary.pow, operator.pow), (binary.minus, operator.sub)]:
+        census.start()
+        tracemalloc.start()
+        try:
+            got = _as_dict(Y.ewise_mult(X, op).new())
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+            records = census.stop()
+        assert got == {k: f(yd[k[1]], v) for k, v in xd.items() if k[1] in yd}
+        assert ("bcast", "diagonal rows, nonempty rows") in {
+            (r["point"], r["choice"]) for r in records
+        }
+        assert peak < 2**24, peak
+
+
 @pytest.mark.parametrize("cols_log2", [24, 33])
 def test_ttv_past_2_60_by_entries(cols_log2):
     """A TTV past 2^60 positions with the axis inside a group of several axes goes through
