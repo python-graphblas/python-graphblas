@@ -4829,6 +4829,36 @@ def test_extract_filter_path():
             check(R, np_outer_index(xv, key), np_outer_index(xp, key))
 
 
+def test_extract_cost_visits_listed_rows():
+    """The extract is priced by the rows it visits: a slab inside a sparse (not hypersparse)
+    row group lists few of the rows, and extracts (it was priced as visiting every row, and
+    filtered, 7-80x slower on Uber). A short column list over a wide column group is hashed,
+    and each visited entry pays a lookup: the filter, at 1 thread (3x faster on u6).
+    """
+    from graphblas.core import tensor_census as census
+
+    rng = np.random.default_rng(66)
+    X, xv, xp = random_tensor((20, 24, 50, 30), rng, density=0.04, layout=((0, 1, 2), (3,)))
+    assert X.ss.format == "csr"
+    Y, yv, yp = random_tensor((10, 1000, 1000), rng, density=0.002, layout=((0,), (1, 2)))
+    cases = [
+        (X, xv, xp, (slice(None), 7, slice(None), slice(None)), 8, "extract"),
+        (X, xv, xp, (slice(None), 7, slice(None), slice(None)), 1, "extract"),
+        (X, xv, xp, (3, slice(None), [4, 40, 2], slice(None)), 1, "extract"),
+        (X, xv, xp, (slice(None), slice(2, 20, 3), slice(None), 5), 1, "extract"),
+        (Y, yv, yp, (slice(None), slice(None), 123), 1, "filter"),
+        (Y, yv, yp, (slice(None), slice(None), 123), 8, "extract"),
+    ]
+    for T, tv, tp, key, nthreads, want in cases:
+        census.start()
+        try:
+            R = T[key].new(nthreads=nthreads)
+        finally:
+            records = census.stop()
+        assert [r["choice"] for r in records if r["point"] == "extract"] == [want], key
+        check(R, np_outer_index(tv, key), np_outer_index(tp, key))
+
+
 def _random_reshape(shape, rng):
     """A random target shape of the same size: the sizes' prime factors regrouped, with
     some size-1 axes, up to 6 axes.
