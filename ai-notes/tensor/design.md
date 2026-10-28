@@ -328,7 +328,11 @@ can. The options, by cost:
 - `vxm` when it is the row group, if the column group is at most about 4x the data;
 - a weighted **row selector** or **column selector** when the axis lies inside a group;
 - each of these possibly after a reshape that moves the split;
-- the **general** path (a relayout, then mxm) when it is cheaper.
+- the **general** path (a relayout, then mxm) when it is cheaper;
+- past 2^60 positions in total, where neither split moves nor the general relayout exist
+  and a selector costs by its group's positions, **entries**: `w` at each entry's
+  coordinate (the gather's lookup), one `ewise_mult`, then the axis reduced
+  (`_ttv_by_entries`), which costs by the entries.
 
 `mxv` or `vxm` on the stored layout is taken outright, without letting relayouts compete,
 because their estimates run low (a relayout plus mxm measured 56 ms against vxm's 36).

@@ -304,6 +304,12 @@ def _ttv(updater, x, w, axis, op, x_left):
         elif q == p and axis in cols and len(cols) > 1 and xw_op is not None:
             cost = _shape_selector_cost(nv, tl.prod(x._shape, cols), ti) + C_DIAG[ti] * nv
             options.append((cost, "colsel", q))
+    if not total_ok:
+        # Past 2^60 the split moves and the general relayout are gone, and a selector costs by
+        # its group's positions (2^33 for a (2^31, 2^31, 4) Tensor stored as (0|1, 2), however
+        # few the entries): w at each entry's coordinate instead, then the axis reduced, which
+        # costs by the entries (a lookup and about a REBUILD)
+        options.append((2 * tl.rebuild_cost(nv, ti), "entries", p))
     others = tuple(a for a in range(n) if a != axis)
     targets = frozenset(
         ((*o, axis), n - 1)
@@ -313,10 +319,7 @@ def _ttv(updater, x, w, axis, op, x_left):
     if targets and (not options or options[0][0] > 0):
         general = tl.plan(x._shape, layout.state, targets, nv, nthreads)[0] + C_MXV[ti] * nv
         options.append((general, "general", None))
-    if not options:
-        if census.on:
-            census.note("ttv", "no option: general")
-        return False
+    # (never empty: below 2^60 positions the general targets are valid, past it "entries")
     i = min(range(len(options)), key=lambda k: options[k][0])
     if census.on:
         labels = [o[1] + (", reshape" if o[2] not in {None, p} else "") for o in options]
@@ -324,6 +327,10 @@ def _ttv(updater, x, w, axis, op, x_left):
     _, kind, q = options[i]
     if kind == "general":
         return False
+    if kind == "entries":
+        src, out_shape, out = _ttv_by_entries(x, w, axis, op, x_left, updater.opts)
+        _store(updater, src, out_shape, out, fresh=True)
+        return True
     if q != p:
         M = M.ss.reshape(tl.prod(x._shape, seq[:q]), tl.prod(x._shape, seq[q:]))
     rows, cols = seq[:q], seq[q:]
@@ -376,6 +383,29 @@ def _ttv(updater, x, w, axis, op, x_left):
         out = Layout(tuple(renum[a] for a in rows), tuple(renum[a] for a in cols if a != axis))
     _store(updater, src, shape, out)
     return True
+
+
+def _ttv_by_entries(x, w, axis, op, x_left, opts):
+    """TTV through the entries: ``w``'s value at each entry's coordinate along ``axis`` (the
+    gather's lookup) as a Matrix of ``x``'s pattern, one ewise_mult in the operands' order,
+    then ``axis`` reduced by the monoid. ``(src, shape, layout)`` over the other axes.
+    """
+    from .tensor_index import lookup
+    from .tensor_reduce import _reduce_matrix
+
+    M, layout, shape = x._M, x._layout, x._shape
+    r, c, _ = M.to_coo(values=False, sort=False)
+    r, c = r.view(np.int64), c.view(np.int64)
+    group, lin = (layout.rows, r) if axis in layout.rows else (layout.cols, c)
+    coords = {}
+    tl.unravel(lin, shape, group, coords)
+    found, vals = lookup(w, [coords[axis]], r.size)
+    W = tl.from_coo(r[found], c[found], vals[found], w.dtype, M._nrows, M._ncols)
+    P = (M.ewise_mult(W, op.binaryop) if x_left else W.ewise_mult(M, op.binaryop)).new()
+    R, lay = _reduce_matrix(P, shape, layout, {axis}, op.monoid, opts)
+    renum = {a: i for i, a in enumerate(a for a in range(len(shape)) if a != axis)}
+    out = Layout(tuple(renum[a] for a in lay.rows), tuple(renum[a] for a in lay.cols))
+    return R, tuple(m for a, m in enumerate(shape) if a != axis), out
 
 
 def _tensordot_recipe(updater, a, b, op, a_axes, b_axes):
