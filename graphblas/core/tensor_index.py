@@ -480,19 +480,7 @@ def _axis_index(index, size, axis):
 
 
 def _extract_expr(self, keys):
-    keys = keys if isinstance(keys, tuple) else (keys,)
-    if any(k is None for k in keys):
-        raise NotImplementedError("None (a new axis) in a Tensor index; use expand_dims")
-    if (n_ellipsis := sum(k is Ellipsis for k in keys)) > 1:
-        raise IndexError("an index can only have a single ellipsis")
-    if n_ellipsis:
-        at = next(i for i, k in enumerate(keys) if k is Ellipsis)
-        keys = keys[:at] + (slice(None),) * (self.ndim - len(keys) + 1) + keys[at + 1 :]
-    if len(keys) > self.ndim:
-        raise IndexError(f"too many indices for a Tensor of {self.ndim} dimensions")
-    keys = keys + (slice(None),) * (self.ndim - len(keys))
-    keys = tuple(_scalar_index(k, a) for a, k in enumerate(keys))
-    sel = [_axis_index(k, n, a) for a, (k, n) in enumerate(zip(keys, self._shape, strict=True))]
+    keys, sel = _resolve(self, keys)
     shape = tuple(len(x) for x in sel if not isinstance(x, int))
     expr = TensorIndexExpr(
         "extract",

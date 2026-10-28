@@ -69,13 +69,11 @@ def _reshape_layout(old_shape, layout, new_shape):
         groups.append([a for a in group if old_shape[a] != 1])
     out = ([], [])
     for ia, jb in _reshape_chunks(old_shape, new_shape):
-        for g, group in enumerate(groups):
-            if ia[0] in group:
-                k = group.index(ia[0])
-                if group[k : k + len(ia)] != ia:
-                    return None
-                out[g].append((k, jb))
-                break
+        g = 0 if ia[0] in groups[0] else 1  # (a run starts at an axis of size other than 1)
+        k = groups[g].index(ia[0])
+        if groups[g][k : k + len(ia)] != ia:
+            return None
+        out[g].append((k, jb))
     rows, cols = (tuple(b for _, jb in sorted(runs) for b in jb) for runs in out)
     units = [b for b, n in enumerate(new_shape) if n == 1]
     return _insert_unit_axes(Layout(rows, cols), units)
