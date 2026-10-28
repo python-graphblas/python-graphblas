@@ -259,9 +259,13 @@ class About(Mapping):
     _modes = {
         lib.GrB_NONBLOCKING: "nonblocking",
         lib.GrB_BLOCKING: "blocking",
-        lib.GxB_NONBLOCKING_GPU: "nonblocking_gpu",
-        lib.GxB_BLOCKING_GPU: "blocking_gpu",
     }
+    # GxB_NONBLOCKING_GPU and GxB_BLOCKING_GPU were modes of their own in SS:GraphBLAS <=10.5.1.
+    # In 10.5.2 they became aliases of GrB_NONBLOCKING and GrB_BLOCKING, which python-suitesparse-
+    # graphblas leaves out; `setdefault` keeps "nonblocking" and "blocking" if they are aliases.
+    if hasattr(lib, "GxB_NONBLOCKING_GPU"):
+        _modes.setdefault(lib.GxB_NONBLOCKING_GPU, "nonblocking_gpu")
+        _modes.setdefault(lib.GxB_BLOCKING_GPU, "blocking_gpu")
     _mode_options = {
         "mode": lib.GxB_MODE,
     }

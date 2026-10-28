@@ -2084,6 +2084,9 @@ def test_ss_import_export(A, do_iso, methods):
         assert A5.isequal(A)
         assert A5.ss.is_iso is do_iso
     d["bitmap"] = np.concatenate([d["bitmap"], d["bitmap"]], axis=0)
+    if not do_iso:
+        # Values for the whole bitmap; GraphBLAS reads them all
+        d["values"] = np.concatenate([d["values"], d["values"]], axis=0)
     B5b = Matrix.ss.import_any(**d)
     if in_method == "import":
         # B5b == [A, A] (i.e, get 2d shape from bitmap first if possible)

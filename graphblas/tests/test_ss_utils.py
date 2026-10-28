@@ -223,6 +223,8 @@ def test_about():
     with pytest.raises(KeyError):
         about["badkey"]
     assert "SuiteSparse" in about["library_name"]
+    # SS:GraphBLAS 10.5.2 made the GPU modes aliases of these; neither may read as a GPU mode
+    assert about["mode"] == ("blocking" if gb._init_params["blocking"] else "nonblocking")
     with pytest.raises(TypeError):
         del about["library_name"]  # pylint: disable=unsupported-delete-operation
     assert "library_name" in repr(about)
