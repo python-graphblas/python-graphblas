@@ -3029,6 +3029,36 @@ def test_give_buffer_fallback(monkeypatch):
         assert calls == ["hypercsr"]
 
 
+def test_ttm_numba_free_axes_past_2_60(monkeypatch):
+    """The Numba TTM declines when the free axes pass 2^60 positions: its output's rows are
+    all of them, which no Matrix dimension holds. It ran and GraphBLAS refused the output
+    with a bare InvalidValue; the products now refuse clearly ("do not fit"). When the free
+    axes fit, the kernel still runs.
+    """
+    if not gb.core._has_numba:
+        pytest.skip("needs numba")
+    from graphblas.core import tensor
+
+    calls = _ttm_spy(monkeypatch)  # (no entry minimum for the kernel)
+    monkeypatch.setattr(tensor, "_TTM_ENGINES", ("numba", "products"))
+    U = np.arange(12.0).reshape(4, 3)
+    xd = {(0, 5, 1): 1.0, (7, 3, 2): 2.0, (7, 4, 2): 3.0}
+    coords = list(zip(*xd, strict=True))
+    X = Tensor.from_coo(coords, list(xd.values()), shape=(2**31, 2**31, 4), layout=((0,), (1, 2)))
+    with pytest.raises(ValueError, match="do not fit in a Matrix dimension"):
+        X.tensordot(U, ([2], [0])).new()
+    assert calls == []
+    # Free axes of 2^60 positions: the kernel's output fits
+    X = Tensor.from_coo(coords, list(xd.values()), shape=(2**31, 2**29, 4), layout=((0,), (1, 2)))
+    R = X.tensordot(U, ([2], [0])).new()
+    assert calls == ["hyper"]
+    want = {}
+    for (i, j, k), v in xd.items():
+        for r in range(3):
+            want[(i, j, r)] = want.get((i, j, r), 0.0) + v * U[k, r]
+    assert _as_dict(R) == want
+
+
 @pytest.mark.usefixtures("numba_boundscheck")
 def test_ttm_kernel_paths(monkeypatch):
     """TTM outputs in every storage (hypersparse rows, bitmap, full), views, empty groups,
