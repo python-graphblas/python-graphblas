@@ -1352,6 +1352,31 @@ def test_ewise_infix_and_scalars():
     check(C, np.where(ap, av * av, 0), ap, approx=True)
 
 
+def test_index_expression_operands():
+    """An extraction (``T[i]``, a TensorIndexExpr) as an operand: with autocompute off a
+    TypeError that says to call ``.new()``, with it on numpy's result. Since TensorIndexExpr
+    counts as giving a Tensor (for ``-T[i]``), ``_compute`` passed it on uncomputed, as if it
+    were a Tensor: AttributeError ("no attribute '_M'").
+    """
+    x = np.arange(1.0, 13.0).reshape(3, 4)
+    T = Tensor.from_dense(x)
+    cases = [
+        (lambda: T + T[0], x + x[0]),
+        (lambda: T[0] * T[1], x[0] * x[1]),
+        (lambda: T.ewise_add(T[1]), x + x[1]),
+        (lambda: binary.plus(T[0] | T[1]), x[0] + x[1]),
+        (lambda: T.tensordot(T[0], ([1], [0])), x @ x[0]),
+        (lambda: gb.einsum("ij,j->i", T, T[0]), x @ x[0]),
+        (lambda: T @ T[0], x @ x[0]),
+    ]
+    for f, _ in cases:
+        with pytest.raises(TypeError, match=r"use `\.new\(\)` first"):
+            f()
+    with gb.config.set(autocompute=True):
+        for f, want in cases:
+            np.testing.assert_array_equal(f().new().to_dense(), want)
+
+
 def test_unary_operators_and_select_strings():
     """``-X``, ``abs(X)``, ``~X`` (BOOL) and ``select`` with a string op, as Matrix takes them,
     on Tensors, their expressions and extractions. They raised TypeError ("bad operand

@@ -134,7 +134,7 @@ def _is_scalar_like(x):
 
 def _compute(x, within):
     """The Tensor of an expression operand (with autocompute), else a TypeError with a hint."""
-    if type(x) is TensorExpression:
+    if isinstance(x, TensorExpression):  # (an extraction too: TensorIndexExpr)
         if not config.get("autocompute"):
             raise TypeError(
                 f"{within} needs a Tensor, not a TensorExpression; use `.new()` first.\n\n"
