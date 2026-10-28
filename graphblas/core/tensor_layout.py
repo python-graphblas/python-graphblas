@@ -420,6 +420,23 @@ def steal_vector_as_row(v):
     return flip_orientation(M)
 
 
+def steal_row_as_vector(M):
+    """Turn a (1 x n) Matrix held by row into a Vector, O(1); the inverse of
+    ``steal_vector_as_row``, with no copy where ``M[0, :].new()`` copies by an extract
+    (SuiteSparse's generic one, without the JIT). ``M`` is left empty and must not be used
+    again.
+    """
+    if stored_format(M) == "hypercsr":
+        # A Vector is never hypersparse; with one row, converting moves no entries
+        M.ss.config["sparsity_control"] = "sparse"
+    flip_orientation(M)
+    v = Vector._from_obj(
+        ffi.new("GrB_Vector*", ffi.cast("GrB_Vector", M.gb_obj[0])), M.dtype, M._nrows
+    )
+    M.gb_obj[0] = NULL
+    return v
+
+
 # ---------------------------------------------------------------------------------------------
 # Small LRU caches for plans and shape-only matrices
 

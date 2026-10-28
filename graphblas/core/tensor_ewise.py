@@ -339,7 +339,8 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
     vM, _ = tl.relayout(
         ts._M, ts._shape, ts._layout, Layout((), tuple(inv[o] for o in sub)), nthreads=nthreads
     )
-    v = vM[0, :].new()
+    # (a relayout returns the operand's own Matrix when it needs no move, else a new one)
+    v = tl.steal_row_as_vector(vM.dup() if vM is ts._M else vM)
     if from_rows:
         v = _expand_on_rows(M, shape, group, tuple(group.index(o) for o in sub), v)
     elif len(sub) < len(group):
