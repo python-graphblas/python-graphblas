@@ -672,32 +672,98 @@ def plan(shape, src, targets, nnz, nthreads, *, hyper1=False, allow_perm=True, s
     rebuild = rebuild_cost(nnz, ti, sorted_keys=fallback[0] == src[0] and not total_ok)
     rv = (rebuild, [("REBUILD", fallback)], fallback)
     if len(shape) <= MAX_PLANNED_NDIM and nnz > 0:
-        # Nodes are (state, whether its rows come straight from a reshape)
-        node = (src, False)
-        best = {node: 0.0}
-        counter = itertools.count()
-        heap = [(0.0, next(counter), node, ())]
-        while heap:
-            cost, _, node, path = heapq.heappop(heap)
-            state, reshaped = node
+        for cost, state, path in _search(
+            shape, src, nnz, ti, hyper1, allow_perm, total_ok, src_cols, rebuild
+        ):
             if state in targets:
                 if cost <= rebuild:
                     rv = (cost, list(path), state)
                 else:
                     rv = (rebuild, [("REBUILD", state)], state)
                 break
-            if cost > best.get(node, math.inf) or cost > rebuild:
-                continue
-            for edge, nxt, w, flag in _neighbors(
-                state, shape, nnz, ti, hyper1, allow_perm, total_ok, reshaped,
-                None if src_cols is None else (src, src_cols),
-            ):  # fmt: skip
-                nc = cost + w
-                if nc < best.get((nxt, flag), math.inf):
-                    best[nxt, flag] = nc
-                    heapq.heappush(heap, (nc, next(counter), (nxt, flag), (*path, edge)))
     _plan_cache.put(key, rv)
     return rv
+
+
+def _search(shape, src, nnz, ti, hyper1, allow_perm, total_ok, src_cols, bound):
+    """Dijkstra's search from state ``src``: yield ``(cost, state, path)`` for each node as
+    it leaves the heap, cheapest first (a node can leave more than once, the first time at
+    its least cost). Nodes past ``bound`` (a REBUILD's cost) are not expanded.
+    """
+    # Nodes are (state, whether its rows come straight from a reshape)
+    node = (src, False)
+    best = {node: 0.0}
+    counter = itertools.count()
+    heap = [(0.0, next(counter), node, ())]
+    while heap:
+        cost, _, node, path = heapq.heappop(heap)
+        state, reshaped = node
+        yield cost, state, path
+        if cost > best.get(node, math.inf) or cost > bound:
+            continue
+        for edge, nxt, w, flag in _neighbors(
+            state, shape, nnz, ti, hyper1, allow_perm, total_ok, reshaped,
+            None if src_cols is None else (src, src_cols),
+        ):  # fmt: skip
+            nc = cost + w
+            if nc < best.get((nxt, flag), math.inf):
+                best[nxt, flag] = nc
+                heapq.heappush(heap, (nc, next(counter), (nxt, flag), (*path, edge)))
+
+
+def plan_each(shape, src, states, nnz, nthreads):
+    """``[plan(shape, src, frozenset([s]), nnz, nthreads) for s in states]``, from one search
+    instead of one per state, and cached as those calls cache them.
+
+    A plan's search expands every node cheaper than its target, so the searches toward
+    different targets from one source settle the same nodes in the same order, up to each
+    target; running one search past them all gives each target the cost and path its own
+    search finds. Choosing among many layouts by their cost to reach (a 5-d MTTKRP prices 24)
+    took one search each: the first 5-d MTTKRP on a new shape took 163 ms, and 12 with one
+    search.
+    """
+    ti = 0 if nthreads > 1 else 1
+    nbits = int(nnz).bit_length()
+
+    def key(targets):  # (plan's, with its defaults)
+        return (shape, src, targets, ti, False, True, nbits, None)
+
+    out = {}
+    todo = {}
+    for s in states:
+        targets = frozenset([s])
+        if s == src:
+            out[s] = (0.0, [], src)
+        elif (rv := _plan_cache.get(key(targets))) is not None:
+            out[s] = rv
+        else:
+            todo[s] = targets
+    if census.on:
+        census.note("plan.cache", f"each: {len(states) - len(todo)} hit, {len(todo)} miss",
+                    ndim=len(shape))  # fmt: skip
+    if todo:
+        total_ok = math.prod(shape) < MAX_GROUP
+        rebuild = {s: rebuild_cost(nnz, ti, sorted_keys=s[0] == src[0] and not total_ok)
+                   for s in todo}  # fmt: skip
+        found = {}
+        if len(shape) <= MAX_PLANNED_NDIM and nnz > 0:
+            search = _search(
+                shape, src, nnz, ti, False, True, total_ok, None, max(rebuild.values())
+            )
+            for cost, state, path in search:
+                if state in todo and state not in found:
+                    found[state] = (cost, path)
+                    if len(found) == len(todo):
+                        break
+        for s, targets in todo.items():
+            cost, path = found.get(s, (math.inf, None))
+            if cost <= rebuild[s]:
+                rv = (cost, list(path), s)
+            else:
+                rv = (rebuild[s], [("REBUILD", s)], s)
+            _plan_cache.put(key(targets), rv)
+            out[s] = rv
+    return [out[s] for s in states]
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1072,6 +1138,12 @@ def relayout_cost(shape, src, dst, nnz, nthreads):
     if src == dst:
         return 0.0
     return plan(shape, src.state, frozenset([dst.state]), nnz, nthreads)[0]
+
+
+def relayout_costs(shape, src, dsts, nnz, nthreads):
+    """``[relayout_cost(shape, src, dst, nnz, nthreads) for dst in dsts]``, by one search."""
+    plans = plan_each(shape, src.state, [dst.state for dst in dsts], nnz, nthreads)
+    return [rv[0] for rv in plans]
 
 
 # ---------------------------------------------------------------------------------------------

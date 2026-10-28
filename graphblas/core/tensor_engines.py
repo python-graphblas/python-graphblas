@@ -352,10 +352,10 @@ def _mttkrp_order(x, mode, R, nthreads, *, products):
         groups = {(mode, *order[:k]) for order in orders for k in range(1, len(order))}
         fibers = _sampled_fibers(x, groups)
     ti = 0 if nthreads > 1 else 1
+    dsts = [Layout((mode, *order[:-1]), (order[-1],)) for order in orders]
+    costs = tl.relayout_costs(x._shape, x._layout, dsts, nnz, nthreads)
     best = None
-    for order in orders:
-        dst = Layout((mode, *order[:-1]), (order[-1],))
-        cost = tl.relayout_cost(x._shape, x._layout, dst, nnz, nthreads)
+    for order, cost in zip(orders, costs, strict=True):
         for k in range(1, len(order)):
             cost += C_MTTKRP_INTER[ti] * R * fibers.get((mode, *order[:k]), 0.0)
         if best is None or cost < best[0]:
