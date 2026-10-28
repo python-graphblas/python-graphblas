@@ -440,7 +440,9 @@ positions are the raveled outer product of its axes' indices (`_group_index`).
 `_extract_recipe` chooses by cost among:
 
 - **extract**: one SuiteSparse extract with those index lists. With slices only, this is
-  taken directly.
+  taken directly. It is priced by the rows it visits (a listed row is found directly, or by a
+  hash lookup when the Matrix is hypersparse), plus, for a column list shorter than 1/32 of
+  the columns, a hash lookup per entry of those rows (`_extract_cost`).
 - **filter**: `to_coo`, a numpy mask on the coordinates, a rebuild. This is cheaper than
   listing many indices (a slab of a wide column group), and it is the only path when a group
   would list more than 2^26 positions (`_MAX_LISTED`).
