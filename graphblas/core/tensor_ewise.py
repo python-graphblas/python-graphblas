@@ -182,6 +182,13 @@ def _bcast_recipe(updater, method, a, b, op, untyped_op, extra, shape):
         _ewise_recipe(updater, method, _expand(a, shape), _expand(b, shape), op, extra)
 
 
+# Taking the small side onto a wide column group's nonempty columns, per stored entry, on top
+# of the diagonal product: the distinct column indices (a sort) and the expansion over them,
+# ns at 8 / 1 threads (2026-10-28: hyper and Zipf, forced, 1e6 entries 76 / 340 ms, 1e7 entries
+# 640 / 2050 ms)
+C_NONEMPTY_COLS = (70.0, 250.0)
+
+
 def _bcast_mult(updater, a, b, op, untyped_op, shape):
     fa = _broadcast_factor(a._shape, shape)
     fb = _broadcast_factor(b._shape, shape)
@@ -265,11 +272,15 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
             options.append((move + C_DIAG[ti] * nv, q, "rows", False))
         if q != p:
             continue
-        # A group far wider than the data (more positions than this) takes the small side
-        # onto its nonempty rows or columns, not through a selector, which lists every
-        # position of the group (past 2^60 positions in total it may be the one option
-        # left, over 2^60 columns)
-        limit = max(4 * nv, 4096)
+        # A group far wider than the data takes the small side onto its nonempty rows or
+        # columns, not through a selector, which lists every position of the group (past
+        # 2^60 positions in total it may be the one option left, over 2^60 columns). Below
+        # the cache's bound the selector is kept: it is shape-only and cached, so a repeated
+        # broadcast pays only a product over the group, where the nonempty columns are found
+        # again each call (1e6 entries over 8 to 32 times as many columns: 7-21 against
+        # 200 ms at 8 threads; past the bound the selector is rebuilt each call, 655 ms
+        # against 198 at 128 times)
+        limit = max(4 * nv, 4096, tl._matrix_cache.maxweight)
         if row_op is not None and Fset < set(rows):
             hyper = tl.stored_format(M) == "hypercsr"
             if hyper:
@@ -278,8 +289,12 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
                 cost = C_DIAG[ti] * nv + C_SEL_POS[ti] * tl.prod(shape, rows)
             options.append((cost, q, "rows", hyper or tl.prod(shape, rows) > limit))
         if col_op is not None and Fset < set(cols):
-            cost = C_DIAG[ti] * nv + C_SEL_POS[ti] * tl.prod(shape, cols)
-            options.append((cost, q, "cols", tl.prod(shape, cols) > limit))
+            wide = tl.prod(shape, cols) > limit
+            if wide:
+                cost = (C_DIAG[ti] + C_NONEMPTY_COLS[ti]) * nv
+            else:
+                cost = C_DIAG[ti] * nv + C_SEL_POS[ti] * tl.prod(shape, cols)
+            options.append((cost, q, "cols", wide))
     # Or relayout so the small side's axes are exactly one group
     rest = tuple(o for o in range(len(shape)) if o not in Fset)
     targets = set()
@@ -389,14 +404,15 @@ def _mult_at_entries(M, shape, layout, ts, F, op, big_left):
 def _expand_on_ids(ids, gshape, sub_pos, v):
     """``v`` (over the group's axes at ``sub_pos``) expanded onto the positions ``ids`` of a
     group of shape ``gshape`` (sorted: its nonempty rows or columns): a Vector over the group
-    with ``e[g] = v[coordinates of g]``, sized by the data. ``v``'s values are found by a
-    binary search: a table over its positions is as long as its axes.
+    with ``e[g] = v[coordinates of g]``, sized by the data. ``v``'s values are found by
+    ``tl.lookup_sorted``: a table over its positions only while it is about as short as the
+    data, since it is as long as ``v``'s axes.
     """
     co = {}
     tl.unravel(ids, gshape, tuple(range(len(gshape))), co)
     vidx = tl.ravel(co, gshape, sub_pos, n=ids.size)
     idx, vals = v.to_coo()
-    found, vals = tl.lookup_sorted(idx.view(np.int64), vals, vidx)
+    found, vals = tl.lookup_sorted(idx.view(np.int64), vals, vidx, v._size)
     return Vector.from_coo(ids[found], vals, v.dtype, size=math.prod(gshape))
 
 

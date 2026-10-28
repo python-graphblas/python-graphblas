@@ -376,18 +376,45 @@ def nonempty_row_ids(M):
 
 def nonempty_col_ids(M):
     """The ids of the nonempty columns of ``M``, sorted, as int64: the distinct column
-    indices, O(nnz log nnz) (a Matrix held by row keeps no list of them).
+    indices, O(nnz log nnz) (a Matrix held by row keeps no list of them). A sort and a mask
+    of the changes, which took 22 ms for 1e6 indices where ``np.unique`` took 146-153.
     """
-    c = M.to_coo(rows=False, values=False, sort=False)[1].view(np.int64)
-    return np.unique(c)
+    c = np.sort(M.to_coo(rows=False, values=False, sort=False)[1].view(np.int64))
+    return c[np.r_[True, c[1:] != c[:-1]]] if c.size else c
 
 
-def lookup_sorted(idx, values, at):
-    """``(found, vals)``: which of the positions ``at`` (int64) are among the sorted int64
-    indices ``idx``, and ``values`` at the found ones, by a binary search. Sized by the
-    entries and the positions, where a dense table would be sized by the indices' range (a
-    Vector over an axis of 2^40: 8 TiB of float64).
+def _lookup_way(nidx, nat, size):
+    """How ``lookup_sorted`` finds ``nat`` positions among ``nidx`` sorted indices of a
+    vector of ``size`` positions: "full" (every position has a value: index directly),
+    "table" (a dense table, while ``size`` is within a few times the indices and positions,
+    so its memory follows the data), else "search" (a binary search).
     """
+    if nidx == size:
+        return "full"
+    if size <= max(4 * (nidx + nat), 4096):
+        return "table"
+    return "search"
+
+
+def lookup_sorted(idx, values, at, size):
+    """``(found, vals)``: which of the positions ``at`` (int64, each below ``size``) are among
+    the sorted int64 indices ``idx`` of a vector of ``size`` positions, and ``values`` at the
+    found ones. A full vector is indexed directly and a short one through a dense table; a
+    long one by a binary search, sized by the entries and the positions, where a table is
+    sized by ``size`` (a Vector over an axis of 2^40: 8 TiB of float64). For NELL-2's 337,365
+    nonempty rows against a dense vector of 12,092: 0.25 ms indexed, 0.6 by a table, 3.5 by
+    the search.
+    """
+    way = _lookup_way(idx.size, at.size, size)
+    if way == "full":
+        return np.ones(at.size, bool), values[at]
+    if way == "table":
+        table = np.zeros((size, *values.shape[1:]), values.dtype)
+        present = np.zeros(size, bool)
+        table[idx] = values
+        present[idx] = True
+        found = present[at]
+        return found, table[at[found]]
     i = np.searchsorted(idx, at)
     found = i < idx.size
     found[found] = idx[i[found]] == at[found]
@@ -420,7 +447,7 @@ def rows_selector(M, shape, group, kept_pos, weights=None, dtype=BOOL):
     values = True
     if weights is not None:
         idx, w, pos = weights
-        keep, values = lookup_sorted(idx, w, co[pos])
+        keep, values = lookup_sorted(idx, w, co[pos], gshape[pos])
         if not keep.all():
             h = h[keep]
             co = {k: c[keep] for k, c in co.items()}

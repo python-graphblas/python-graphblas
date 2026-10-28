@@ -724,12 +724,14 @@ def test_broadcast_on_nonempty_rows_sized_by_entries():
         assert peak < 2**24, peak
 
 
-def test_broadcast_wide_groups_onto_nonempty_ids():
+def test_broadcast_wide_groups_onto_nonempty_ids(monkeypatch):
     """A broadcast multiply whose small side's axes lie inside a group far wider than the
     data takes the small side onto that group's nonempty rows or columns. It built a selector
     over every position of the group: past 2^60 positions in total, where the columns' may be
     the one option left, an arange of 2^60 (numpy refuses it: "array is too big"). Below,
-    the planner prices the selector by its positions; forced, the new way agrees with numpy.
+    the planner prices the selector by its positions, and up to the selector cache's bound
+    the (cached) selector is kept; forced, with that bound lowered, the new way agrees with
+    numpy.
     """
     import tracemalloc
 
@@ -779,20 +781,65 @@ def test_broadcast_wide_groups_onto_nonempty_ids():
         ((70, 70, 3), ((0, 1), (2,)), "rows", 0.01),
     ]:
         X, xv, xp = random_tensor(shape, rng, density=density, layout=layout)
-        label = f"diagonal {side}, nonempty {side}"
-        census.start()
+        hyper = X.ss.format == "hypercsr"
+        assert hyper == (density == 0.01)
+        for lowered in [False, True]:
+            # (hypersparse rows always take the nonempty rows; a wide group of 4900 positions
+            # keeps the cached selector unless the cache's bound is below it)
+            way = "nonempty" if lowered or hyper else "selector-expanded"
+            label = f"diagonal {side}, {way}" + (f" {side}" if way == "nonempty" else "")
+            with monkeypatch.context() as m:
+                if lowered:
+                    m.setattr(tl._matrix_cache, "maxweight", 0)
+                census.start()
+                try:
+                    census.force["bcast"] = label
+                    R1 = X.ewise_mult(Y, binary.minus).new()
+                    R2 = Y.ewise_mult(X, binary.minus).new()
+                    records = census.stop()
+                finally:
+                    census.stop()
+                    census.force.clear()
+                    census.records.clear()
+            assert [r["choice"] for r in records if r["point"] == "bcast"] == [label, label]
+            check(R1, np.where(xp & yp, xv - yv, 0), xp & yp)
+            check(R2, np.where(xp & yp, yv - xv, 0), xp & yp)
+
+
+def test_lookup_sorted_ways():
+    """``lookup_sorted`` indexes a full vector directly, uses a dense table while the vector
+    is within a few times its entries and the positions looked up, and a binary search past
+    that, whose memory follows the data; the three agree.
+    """
+    import tracemalloc
+
+    assert tl._lookup_way(10, 5, 10) == "full"
+    assert tl._lookup_way(3, 5, 4096) == "table"
+    assert tl._lookup_way(1000, 100, 4400) == "table"
+    assert tl._lookup_way(1000, 100, 4401) == "search"
+    assert tl._lookup_way(3, 5, 2**40) == "search"
+    rng = np.random.default_rng(72)
+    for size, nidx, nat, way in [
+        (50, 50, 30, "full"),
+        (4000, 400, 300, "table"),
+        (16000, 5000, 300, "table"),
+        (10**6, 50, 300, "search"),
+        (2**40, 3, 5, "search"),
+    ]:
+        idx = np.arange(size) if way == "full" else np.unique(rng.integers(0, size, nidx))
+        vals = rng.random(idx.size)
+        at = np.concatenate([rng.choice(idx, nat // 2), rng.integers(0, size, nat - nat // 2)])
+        assert tl._lookup_way(idx.size, at.size, size) == way
+        tracemalloc.start()
         try:
-            census.force["bcast"] = label
-            R1 = X.ewise_mult(Y, binary.minus).new()
-            R2 = Y.ewise_mult(X, binary.minus).new()
-            records = census.stop()
+            found, got = tl.lookup_sorted(idx, vals, at, size)
+            peak = tracemalloc.get_traced_memory()[1]
         finally:
-            census.stop()
-            census.force.clear()
-            census.records.clear()
-        assert [r["choice"] for r in records if r["point"] == "bcast"] == [label, label]
-        check(R1, np.where(xp & yp, xv - yv, 0), xp & yp)
-        check(R2, np.where(xp & yp, yv - xv, 0), xp & yp)
+            tracemalloc.stop()
+        table = dict(zip(idx.tolist(), vals.tolist(), strict=True))
+        assert found.tolist() == [int(a) in table for a in at]
+        assert got.tolist() == [table[int(a)] for a in at if int(a) in table]
+        assert peak < 2**20, (size, peak)
 
 
 @pytest.mark.parametrize("cols_log2", [24, 33])
