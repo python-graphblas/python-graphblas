@@ -275,7 +275,8 @@ Other dtypes depend on the JIT more: with it off, BOOL, UINT32 / UINT64 sums and
 `suitesparse-wishlist.md`, P4). Since I, the Tensor uses `lor_land` for BOOL selector
 products, a factory kernel where `lor_second` is generic: on u7 cast to BOOL at 8 threads and
 "off", `any` over one axis went from 9.96 and 7.51 ms to 5.28 and 3.46 (5.41 and 3.49 at
-"on"), and FP64 did not change.
+"on"), and FP64 did not change. Sums of UINT32 and UINT64 data through a row selector use a
+selector of their type with `plus_times` (factory) since "Performance work after K".
 
 ## What wins and what loses
 
@@ -377,6 +378,26 @@ repetitions are given; every result's fingerprint matched its A.
   `ttm`, `ewise` and `contract` cases on u7, Uber, NIPS and NELL-2 (144 rows) is unchanged.
   The first MTTKRP on a new shape (tiny tensors, plan cache cleared, each mode, median over
   6 shapes): 5-d 163 to 12 ms, 4-d 4.4 to 2.2 ms, 3-d 0.38 either way.
+
+- **Unsigned sums through a row selector typed like the data** (`tensor_reduce._selector_dtype`).
+  A row selector (`S @ M`) held True and reduced with `plus_second`, which SuiteSparse
+  compiles out for UINT32 and UINT64, so those sums ran its generic kernel without the JIT.
+  A selector of 1s of the data's type with `plus_times` is a factory kernel. Column
+  selectors (`M @ S.T`) keep BOOL: with the JIT on, `plus_first` does not read the selector,
+  and was 2x faster there than `plus_times` (0.87 against 1.73 ms for 1e6 entries at 1
+  thread). u7 cast to each type, every sum over one or two axes (48 rows per mode; load
+  3.3-3.8; no other row changed beyond noise, rechecked with 41 calls), "off":
+
+  | case (ms)       | 1 thread, before | after | 8 threads, before | after |
+  | --------------- | ---------------- | ----- | ----------------- | ----- |
+  | UINT32 `sum(0)` | 63.2             | 25.9  | 12.3              | 6.26  |
+  | UINT32 `sum(1)` | 55.7             | 20.3  | 8.93              | 3.88  |
+  | UINT64 `sum(0)` | 64.3             | 28.4  | 13.0              | 6.98  |
+  | UINT64 `sum(1)` | 53.0             | 21.2  | 8.64              | 4.11  |
+
+  These match INT64 and FP64 (27-29 and 20-22 ms at 1 thread) and the times with the JIT on.
+  A sum over the whole column group still meets `GrB_reduce`'s compiled-out
+  `PLUS_FIRST_UINT*` without the JIT (u7 `sum(2)`: 37.9 ms at 1 thread against INT64's 8.3).
 
 ## Reproducing the numbers
 
