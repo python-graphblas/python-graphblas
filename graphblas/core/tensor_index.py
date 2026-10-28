@@ -282,7 +282,7 @@ def _lookup_numba(t, rows, cols):
             with tl._VectorArray(cont.b, np.int8) as b:
                 return b.array[k].astype(bool), vals
         if fmt not in {"csr", "hypercsr"}:
-            return None
+            return None  # pragma: no cover (safety: a Tensor's Matrix is held by row)
         from .tensor_numba import lookup
 
         with (
