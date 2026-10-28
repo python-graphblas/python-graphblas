@@ -115,9 +115,10 @@ Element-wise operations and broadcasting
 Element-wise operations follow the Matrix and Vector ones, with numpy broadcasting:
 ``ewise_mult`` works on the intersection of entries, ``ewise_add`` on the union, and
 ``ewise_union`` on the union with a default for a missing side. Infix operators are
-available as for Matrix (``*`` and ``&`` intersect, ``+``, ``|`` and, for BOOL, ``^`` unite;
-``C << (X | Y)`` takes lor, and ``&`` land, on BOOL), and operations are lazy: ``.new()``
-computes them.
+available as for Matrix: ``*`` and ``&`` intersect, ``+``, ``|`` and ``^`` unite. On their
+own, ``X | Y``, ``X & Y`` and ``X ^ Y`` are lor, land and lxor of BOOL Tensors, and other
+dtypes raise; give ``|`` and ``&`` an operator instead, as in ``binary.plus(X | Y)``.
+Operations are lazy: ``.new()`` computes them.
 
 .. code-block:: python
 

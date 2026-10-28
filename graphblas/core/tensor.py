@@ -134,6 +134,8 @@ def _is_scalar_like(x):
 
 def _compute(x, within):
     """The Tensor of an expression operand (with autocompute), else a TypeError with a hint."""
+    if isinstance(x, _TensorInfixExpr):
+        x = x._to_expr()  # (`X | Y` of other dtypes than BOOL raises, as for Matrix)
     if isinstance(x, TensorExpression):  # (an extraction too: TensorIndexExpr)
         if not config.get("autocompute"):
             raise TypeError(
@@ -1181,7 +1183,7 @@ class Tensor(BaseType):
         if isinstance(expr, _TensorInfixExpr):
             # C << (X | Y), (X & Y), (X @ Y): as Matrix takes them (lor, land, the default
             # semiring), refusing | and & on other dtypes, which need an operator
-            expr = expr._assigned()
+            expr = expr._to_expr()
         updater = Updater(self, mask=mask, accum=accum, replace=replace, opts=opts)
         if isinstance(expr, TensorExpression):  # (an extraction too, as for Matrix)
             expr.args[-2](updater, *expr.args[-1])
@@ -1399,7 +1401,9 @@ del _name
 
 class _TensorInfixExpr(InfixExprBase):
     """``X | Y``, ``X & Y`` or ``X @ Y`` waiting for an operator, as in ``binary.plus(X | Y)``
-    or ``semiring.min_plus(X @ Y)``; ``.new()`` uses the default operator.
+    or ``semiring.min_plus(X @ Y)``. Used on its own (``.new()``, ``C << ...``, an operand),
+    as for Matrix: ``X | Y`` and ``X & Y`` are lor and land of BOOL Tensors and raise for
+    other dtypes, and ``X @ Y`` uses the default semiring.
     """
 
     __slots__ = ()
@@ -1432,9 +1436,11 @@ class _TensorInfixExpr(InfixExprBase):
     def __repr__(self):
         return f"gb.Tensor infix expression\n{self._format_expr()}"
 
-    def _assigned(self):
-        """The expression ``C << self`` stores."""
-        return self._to_expr()
+    def __getattr__(self, name):
+        # As for Matrix: a TensorExpression's methods (``to_dense``, ...) on the expression
+        if name.startswith("_") or not hasattr(TensorExpression, name):
+            raise AttributeError(name)
+        return getattr(self._to_expr(), name)
 
 
 class _TensorEwiseInfixExpr(_TensorInfixExpr):
@@ -1448,26 +1454,31 @@ class _TensorEwiseInfixExpr(_TensorInfixExpr):
         except KeyError:
             pass  # (no `first` for this pair of dtypes; the operator call checks)
 
+    @property
+    def shape(self):
+        # (without the expression, which | and & refuse for other dtypes than BOOL)
+        return _broadcast_shapes(self.left._shape, self.right._shape)
+
     def _to_expr(self):
         if self._expr is None:
-            if self.left.dtype == BOOL and self.right.dtype == BOOL:
-                # As for Matrix: `x | y` is lor, `x & y` land
-                op = binary.lor if self.method_name == "ewise_add" else binary.land
-                self._expr = getattr(self.left, self.method_name)(self.right, op)
-            else:
-                self._expr = getattr(self.left, self.method_name)(self.right)
+            if self.left.dtype != BOOL or self.right.dtype != BOOL:
+                # As for Matrix (`infix._ewise_add_to_expr`): an operator is needed
+                if self._infix == "|":
+                    what, how, example = "ewise_add (union)", "LOR", "monoid.plus"
+                else:
+                    what, how, example = "ewise_mult (intersection)", "LAND", "monoid.times"
+                raise TypeError(
+                    f"Bad dtypes for `x {self._infix} y`!  Automatic computation of "
+                    f"`x {self._infix} y` infix expressions is only valid for BOOL dtypes.  "
+                    f"The argument dtypes are {self.left.dtype} and {self.right.dtype}.\n\n"
+                    f"When auto-computed for boolean dtypes, `x {self._infix} y` performs "
+                    f"{what} using {how}.\n\nTypical usage is to create an "
+                    f"{self.method_name} expression such as `{example}(x {self._infix} y)`."
+                )
+            # `x | y` is lor, `x & y` land
+            op = binary.lor if self.method_name == "ewise_add" else binary.land
+            self._expr = getattr(self.left, self.method_name)(self.right, op)
         return self._expr
-
-    def _assigned(self):
-        if self.left.dtype == BOOL and self.right.dtype == BOOL:
-            return self._to_expr()
-        how = "ewise_add (union) with lor" if self._infix == "|" else "ewise_mult with land"
-        raise TypeError(
-            f"Bad dtypes for `x {self._infix} y`!  Assigning `x {self._infix} y` (`C << (x "
-            f"{self._infix} y)`) is only valid for BOOL dtypes, as for Matrix, where it is "
-            f"{how}.  The argument dtypes are {self.left.dtype} and {self.right.dtype}.\n\n"
-            f"Give an operator instead, such as `C << binary.plus(x {self._infix} y)`."
-        )
 
 
 class TensorEwiseAddExpr(_TensorEwiseInfixExpr):
