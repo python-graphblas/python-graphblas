@@ -215,7 +215,9 @@ The cost constants are measured, not derived. Each comment says what was timed. 
 - `tensor.py`, the strategy costs shared by the families: `C_SEL_ENTRY`, `C_SEL_POS`,
   `C_SEL_BUILD`, `C_HROW`, `C_MXV`, `C_VXM`, `C_DIAG`, `C_GATHER`, `C_EWISE_SAME`,
   `C_EWISE_HROW`;
-- `tensor_index.py`: `C_X_ROW`, `C_X_LIST`, `C_FILTER`, `C_FILTER_AXIS`;
+- `tensor_index.py`: `C_X_ROW`, `C_X_LIST`, `C_FILTER`, `C_FILTER_AXIS`, `C_CFILTER`,
+  `C_CFILTER_OUT`;
+- `tensor_ewise.py`: `C_NONEMPTY_COLS`;
 - `tensor_engines.py`: `C_MTTKRP_INTER`.
 
 **All of them were fitted on one machine**: an Apple M5 Pro (6 performance + 12 efficiency
@@ -257,9 +259,16 @@ Broadcasting follows numpy's shape rules with GraphBLAS semantics:
     a split move (a reshape). The split move pays the per-row lookups of hypersparse rows if
     it creates them.
   - **selector-expanded**: the small operand's axes lie inside a group, and its values are
-    expanded over that group by a shape-only selector.
-  - **nonempty rows**: the same inside a hypersparse row group, built over the nonempty rows
-    only.
+    expanded over that group by a shape-only selector, cached (`_matrix_cache`).
+  - **nonempty rows / nonempty cols**: the same inside a hypersparse row group, or a group
+    wider than `max(4 * nnz, 4096)` positions and than what the selector cache holds (2^25
+    entries), expanded over the nonempty rows or columns only. Below the cache's bound the
+    cached selector is kept: a repeated broadcast pays only a product over the group, where
+    the nonempty columns are found again each call (a sort of the column indices; priced
+    per entry, `C_NONEMPTY_COLS`). The small operand's values at those rows or columns come
+    from `tensor_layout.lookup_sorted`: indexed directly when it is full, through a dense
+    table while its positions are within `max(4 * (entries + lookups), 4096)`, else by a
+    binary search, so the memory follows the data however long the axis.
   - **gather**: the small operand's values are gathered onto the stored entries through the
     Container (`tensor_layout.gather_operand`), then one same-pattern `ewise_mult`.
   - **relayout, diagonal**: a planned relayout to a layout in another axis order whose group
