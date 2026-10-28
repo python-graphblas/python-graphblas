@@ -787,6 +787,24 @@ class Tensor(BaseType):
         )
 
     def wait(self, how="materialize"):
+        """Wait for a computation to complete or establish a "happens-before" relation, as
+        ``Matrix.wait`` does for the stored Matrix.
+
+        Parameters
+        ----------
+        how : {"materialize", "complete"}
+            "materialize" fully computes an object.
+            "complete" establishes a "happens-before" relation useful with multi-threading.
+            See GraphBLAS documentation for more details.
+
+        "materialize" finishes any pending work and, when the stored Matrix is hypersparse
+        with more than 1024 nonempty rows, builds the hash of its rows that row lookups use.
+        That hash is not free: 0.7-1.0 s at 1 thread for the 1.7e7 to 2.1e7 rows of a TTM of
+        the NELL-2 tensor along mode 0 or 1, 40-55% of the time. "complete" does no work at
+        all, so the next operation on the Tensor, which finishes its operand first, does
+        both then. A result the Tensor builds from arrays (the Numba engines) has no hash until
+        it is materialized, so this can take time in blocking mode too.
+        """
         self._M.wait(how)
 
     def _comparand(self, other, within):
