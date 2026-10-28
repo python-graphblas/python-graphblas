@@ -62,10 +62,11 @@ and the data sets are those named in `design.md`.
   after K").
 - **einsum's per-call overhead** shows at millisecond scale: about 45 us for one contraction,
   97 us for an MTTKRP through einsum, and 128 us for three operands.
-- **Planning a 5-d MTTKRP** takes about 130 ms on the first call for a shape, even for a
-  tiny tensor: choosing the products' axis order prices a relayout for every candidate order
-  (`_mttkrp_order`), and each is a planner search over the 5-d states. Later calls hit the
-  plan cache (0.3 ms); 3-d and 4-d first calls take about 3 ms.
+- **Planning a 5-d MTTKRP** takes about 12 ms on the first call for a shape, even for a tiny
+  tensor: choosing the products' axis order prices a relayout for each of 24 candidate orders
+  (`_mttkrp_order`), from one planner search over the 5-d states (`tensor_layout.plan_each`;
+  one search per order took about 160 ms). Later calls hit the plan cache (0.3 ms); 4-d first
+  calls take about 2 ms and 3-d ones 0.4.
 - **Moved operands are not kept.** A relayout made for one operation is dropped afterwards, so
   repeated contractions of the same operand repay it. Keeping it on the store needs a memory
   policy.
