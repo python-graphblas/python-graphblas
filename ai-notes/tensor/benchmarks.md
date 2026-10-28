@@ -200,6 +200,26 @@ their timing (2.8-3.3 s per mode on NELL-2). The Tensor starts from its one layo
   and NELL-2 TTM modes 0 and 1.
 - Along the other axes TACO's prepared copy wins at 1 thread: 2.8-5.6x on TTV and sums, and
   1.8-6.6x on TTM. The Tensor relayouts there, inside its timing.
+- The Tensor's rows end with `wait()`, which also builds the hash SuiteSparse keeps of a
+  hypersparse Matrix's rows (`decisions.md`, 24). TACO and Finch have no such structure. On
+  NELL-2's TTM along modes 0 and 1 (outputs of 1.7e7 and 2.1e7 rows of 16 values) it takes
+  0.68-0.97 s at 1 thread and 86-116 ms at 8. `wait("complete")` skips it, and the next
+  operation on the result pays it (a row extract, `to_coo` and a sum were each about the
+  hash slower after it).
+
+With the relayout done first, outside the timing, as TACO's and Finch's copies are, and the
+hash with (`wait()`) and without it (`wait("complete")`) (NELL-2, R = 16, ms; 2026-10-28, two
+runs, load 3.8-6.6; Tensor at K plus the changes in "Performance work after K"):
+
+| case              | Tensor 1t, as the kit times it | relayout first, 1t: with / without the hash | 8t: with / without | TACO 1t | Finch 1t | the relayout / TACO's copy (s) |
+| ----------------- | ------------------------------ | ------------------------------------------- | ------------------ | ------- | -------- | ------------------------------ |
+| NELL-2 TTM mode 0 | 1772-1816                      | 1127-1172 / 445-452                         | 215 / 120          | 263     | 390      | 0.63-0.66 / 3.3                |
+| NELL-2 TTM mode 1 | 1632-1728                      | 1433-1494 / 548-563                         | 273 / 158          | 262     | 466      | 0.23-0.25 / 2.8                |
+
+The relayout puts the axis last among the columns, as the Numba engine wants it ((1|2,0) and
+(2|0,1)); a user does it once with `relayout()` before a loop (`decisions.md`, 25). Without
+the hash and with the copy made ahead, the Tensor is 1.7x and 2.1x behind TACO at 1 thread,
+and ahead at 8 (TACO runs these on one thread).
 
 ## The census: what each engine and strategy is worth
 
@@ -293,7 +313,9 @@ It loses, with the cause:
 - **TTM along an axis other than the stored order**, against a library given a copy in that
   order (TACO: 1.8-6.6x at 1 thread). The Tensor relayouts inside its timing, and on NELL-2
   the `wait()` that ends each timing builds SuiteSparse's hash of the output's rows, 39-55%
-  of modes 0 and 1 at 1 thread (`limitations-and-roadmap.md` has the breakdown).
+  of modes 0 and 1 at 1 thread (`limitations-and-roadmap.md` has the breakdown). With the
+  relayout made ahead and without the hash, it is 1.7x and 2.1x behind TACO at 1 thread
+  (above).
 - **Hypersparse broadcasts and slices** against torch (hyper `X * v[j]`: 7.1 ms against torch's
   1.33 at 8 threads; slabs along the last stored axis, 2-23x), and a slab of u7 along its last
   axis against torch at 8 threads (3.75 against 1.90 ms). Each touches a few entries of many
