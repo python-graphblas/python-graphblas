@@ -338,14 +338,21 @@ Engines
 
 Some operations have more than one implementation, chosen per call:
 
-- **MTTKRP** runs a Numba kernel over the stored arrays when Numba is installed (float64
-  values, ``plus_times``), else GraphBLAS products.
-- **TTM** (``tensordot`` of one axis with a full float64 factor and ``plus_times``) runs
-  one SuiteSparse product with array-valued entries when the SuiteSparse JIT is on, a Numba
-  kernel, or GraphBLAS products; the choice follows measurements.
+- **MTTKRP** runs a Numba kernel over the stored arrays when Numba is installed, else
+  GraphBLAS products.
+- **TTM** (``tensordot`` of one axis with a factor) runs one SuiteSparse product with
+  array-valued entries when the SuiteSparse JIT is on, a Numba kernel, or GraphBLAS
+  products; the choice follows measurements.
 - **Gathers** run one SuiteSparse extract when the result is a product of index lists
   (``take``), else a Numba binary search over the stored arrays, else (without Numba)
   a SuiteSparse intersection with the points as a pattern Matrix.
+
+The MTTKRP and TTM engines other than the products need full float64 factors and
+``plus_times`` with a float64 result. The tensor's values may be bool, integers, float32 or
+float64 (count data often loads as int64 or bool), each converted to float64 as GraphBLAS's
+typecast does; there is no need to cast first. Integer factors give an integer result,
+which wraps on overflow, and complex values a complex one: those take the GraphBLAS
+products, as do other semirings.
 
 The Numba kernels are compiled on first use and cached on disk, under
 ``$GRAPHBLAS_KERNEL_CACHE`` (by default ``python-graphblas/tensor-kernels`` under

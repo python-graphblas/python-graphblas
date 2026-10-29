@@ -48,6 +48,11 @@ and the data sets are those named in `design.md`.
 - Broadcast unions (`ewise_add`, `ewise_union`) past 2^60 positions whose broadcast axes
   would fit only split across the row and column groups: a clear ValueError, by decision
   (`decisions.md`, 26). Revisit if a workload needs them.
+- A `ttm(U, mode)` method that keeps the contracted axis in place (Kolda and Bader's
+  `X x_n U`), and a `ttmc(factors, skip=mode)` for the chain. `tensordot(U, ([a], [0]))`
+  appends the rank axis last (numpy's rule), so Tucker code tracks axis positions by hand
+  (the SAPS pilot's HOOI port, friction 4 in `runs/2026-10-28-saps-pilot/report.md` in the
+  grblas-ai repo). An API proposal for Erik, not done.
 
 ## Known performance gaps
 
@@ -76,8 +81,26 @@ and the data sets are those named in `design.md`.
   Per-mode copies are not kept (`decisions.md`, 25); an explicit `relayout()` before a loop
   gives one. With it, done outside the timing, NELL-2 modes 0 and 1 take 445 and 548 ms at
   1 thread without the hash, against TACO's 263 and 262 from its own copy, and 1127 and
-  1433 with it (`benchmarks.md`). To revisit if users run TTMs along many modes in turn
-  (HOOI, Tucker).
+  1433 with it (`benchmarks.md`). The SAPS pilot's HOOI on FROSTT data (2026-10-28) found
+  copies worth it only on Uber's first-axis chain, so decision 25 stands; moving a chain's
+  intermediates costs more (next point).
+
+- **A chain of TTMs (the projection of HOOI and Tucker) has no route or kernel of its own.**
+  From the SAPS pilot (2026-10-28; friction 2 and 3 and section 5 of
+  `runs/2026-10-28-saps-pilot/report.md` in the grblas-ai repo), HOOI on FROSTT data at 18
+  threads:
+  - Each mode's projection is n - 1 TTMs, and each TTM's output is relaid out for the next.
+    On Chicago's first-axis chain one 13e6-entry intermediate (6186 x 77 x 32 x 5) costs
+    187 ms per sweep. At 1 thread the projection is 85-97% of a sweep.
+  - einsum cannot tell which route is right. opt_einsum's greedy order, from dense sizes,
+    often multiplies two factors into a dense outer product first: on Uber, 684e3 entries
+    for mode 0 and 5.2e6 for mode 1, each then contracted over two axes, whose relayouts
+    cost 71 ms of a 221 ms sweep. That route is the best on Chicago and NIPS but 1.4x
+    behind the best on Uber, and an explicit chain is up to 2.7x slower on Chicago.
+  - The fix: einsum recognizes TTM-chain subscripts, as it already does MTTKRP's, and routes
+    them to a TTMc Numba kernel in the MTTKRP kernel's style (fibers of the stored arrays,
+    Kronecker products of the factor rows instead of Khatri-Rao ones), which forms no
+    intermediates.
 
 - **Slabs of Uber (4-d, layout (0, 1, 2 | 3)) along its first axis**, a row range of the
   stored Matrix: 0.17 ms for one index, against pydata/sparse's 0.059, and 3.7 ms at 1 thread
@@ -87,6 +110,11 @@ and the data sets are those named in `design.md`.
   "Performance work after K").
 - **einsum's per-call overhead** shows at millisecond scale: about 45 us for one contraction,
   97 us for an MTTKRP through einsum, and 128 us for three operands.
+- **Per-call overhead dominates tiny problems.** SAPS's CP-ALS on its dense 20^3 data set
+  (300 MTTKRPs) took 48.7 ms on the Tensor against NumPy's 17.2, about 0.1 ms more per
+  call. On 20^4 and 200^3 the Tensor was 5.1x and 3.8x faster (191 against 977 ms; 2719
+  against 10253). Friction 7 in `runs/2026-10-28-saps-pilot/report.md` in the grblas-ai
+  repo.
 - **Planning a 5-d MTTKRP** takes about 12 ms on the first call for a shape, even for a tiny
   tensor: choosing the products' axis order prices a relayout for each of 24 candidate orders
   (`_mttkrp_order`), from one planner search over the 5-d states (`tensor_layout.plan_each`;
@@ -136,11 +164,13 @@ and the data sets are those named in `design.md`.
    off there too.
 3. **Refit the cost constants** on x86, and with a script driven by the census instead of by
    hand. Then fix the mispricings listed above, and finish the census on NELL-2 and Enron.
-4. **Performance:** TTM along non-stored modes (per-mode copies, if many-mode sweeps such as
-   HOOI and Tucker need them: `decisions.md`, 25); einsum's per-call overhead; keeping
-   moved operands on the store; internal waits without the row hash (above).
-5. **API:** `pad`, more aggregators, index-based `select`, einsum diagonals, and the open
-   questions (Vector and Tensor index arrays, `graphblas.io` dispatch).
+4. **Performance:** a TTM-chain route in einsum and a TTMc kernel (above); TTM along
+   non-stored modes (not by per-mode copies: `decisions.md`, 25); per-call overhead, in
+   einsum and on tiny problems; keeping moved operands on the store; internal waits without
+   the row hash (above).
+5. **API:** `pad`, more aggregators, index-based `select`, einsum diagonals, a `ttm` method
+   that keeps the axis in place (a proposal, above), and the open questions (Vector and
+   Tensor index arrays, `graphblas.io` dispatch).
 6. **When SuiteSparse 10.5.2 is the oldest supported version:** drop the 10.5.1 reshape
    workaround (`tensor_layout.reshape_owned`, marked `TODO(SuiteSparse 10.5.2)`).
 7. **Backports** to Matrix and Vector (`backport-candidates.md`).

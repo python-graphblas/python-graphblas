@@ -353,9 +353,14 @@ because their estimates run low (a relayout plus mxm measured 56 ms against vxm'
 ## TTM engines
 
 A TTM is `tensordot` of one axis with a 2-d factor. `tensor_engines._ttm_engines` tries the
-engines in `_TTM_ENGINES = ("udt", "numba", "products")`. The first two run only for FP64
-values, a full FP64 factor, `plus_times`, and at least 2^16 entries
-(`_TTM_KERNEL_MIN_NNZ`), because they compile per R on first use.
+engines in `_TTM_ENGINES = ("udt", "numba", "products")`. The first two run only for a
+full FP64 factor under `plus_times[FP64]` (an FP64 result), values of a real built-in type
+(`_KERNEL_VALUE_TYPES`: bool, integers, FP32, FP64), and at least 2^16 entries
+(`_TTM_KERNEL_MIN_NNZ`), because they compile per R on first use. They read the values in
+their own type and convert them as SuiteSparse's typecast does (C's `(double)`), with the
+products' results. FROSTT's count tensors load as INT64 or BOOL; when the engines took FP64
+values only, CP-ALS on them ran 13-18x slower per sweep (the SAPS pilot's friction 1,
+`runs/2026-10-28-saps-pilot/report.md` in the grblas-ai repo).
 
 - **`udt`** (`_ttm_udt`, `tensor_udt.ttm`): one `GrB_mxv` whose values are arrays of R
   doubles. The factor's rows become a full Vector of FP64[R]. The product gives, for each
@@ -385,8 +390,9 @@ Khatri-Rao product. `tensor_engines._mttkrp_recipe` tries
 
 - **`numba`** (`_mttkrp_numba`, `tensor_numba.mttkrp_nd`): kernels generated per R, per
   layout and per mode position, for any number of axes (3 or more). They read the stored
-  arrays in place, with both groups nonempty, and need FP64 values, full FP64 factors,
-  `plus_times`, and at least 2^16 entries.
+  arrays in place, with both groups nonempty, and need values of a real built-in type
+  (`_KERNEL_VALUE_TYPES`, read in their own type), full FP64 factors, `plus_times[FP64]`,
+  and at least 2^16 entries.
   - Each row of the stored Matrix is a fiber of the row axes: its factors multiply once per
     row, and runs of entries that share leading column axes multiply once per run, as a CSF
     tree would.
