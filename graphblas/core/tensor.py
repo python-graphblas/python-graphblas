@@ -1136,9 +1136,10 @@ class Tensor(BaseType):
         ``mode`` is ignored). For 3-d mode 0 this is ``einsum('ijk,jr,kr->ir', X, B, C)``,
         computed as one TTM and then one product per remaining axis against an (I_n R x R)
         embedding of its factor, never materializing the Khatri-Rao product.
-        With Numba installed, an FP64 tensor of 3 or more axes and 2^16 entries or more, with
-        full FP64 factors and ``plus_times``, takes a kernel over the stored arrays instead,
-        in the layout it is stored in (or after a relayout). Both
+        With Numba installed, a tensor of 3 or more axes and 2^16 entries or more, of bool,
+        integer, FP32 or FP64 values, with full FP64 factors and ``plus_times`` (an FP64
+        result), takes a kernel over the stored arrays instead, in the layout it is stored in
+        (or after a relayout). Both
         sum over one axis before multiplying by the next factor, which needs a semiring
         whose multiply distributes over its monoid and commutes (see ``einsum``); others
         take einsum's way, ``mult(mult(X, F_0), F_1)``... in axis order for each term.

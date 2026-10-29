@@ -16,7 +16,9 @@ write the same output row. Otherwise each thread has its own output buffer, summ
 
 The row pointers ``p`` are uint32, or uint64 past 2^32 entries; the indices ``h`` and ``ci``
 int32 or int64. The kernels read every offset as ``np.int64(p[s])``: Numba types uint64 plus
-int64 as float64, which no array takes as an index.
+int64 as float64, which no array takes as an index. The values ``x`` are of the tensor's type
+(bool, an integer, float32 or float64), converted to float64 in each multiply by a factor:
+C's (double) cast, as SuiteSparse's typecast does.
 """
 
 import hashlib

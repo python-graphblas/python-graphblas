@@ -241,9 +241,10 @@ def _retype(vec, gtype, n):
 def ttm(M, U, desc=None):
     """``M @ U`` as an (nrows x R) FP64 Matrix held by row, by one ``mxv`` with values of R
     doubles: full rows where ``M`` has a nonempty row, none elsewhere (bitmap, or full, when
-    at least half the rows are nonempty, else hypersparse). ``M`` is an FP64 Matrix held by row,
-    ``U`` a C-contiguous (ncols x R) float64 array that is taken over. None when the engine
-    is not available (no JIT), or when the product came back iso.
+    at least half the rows are nonempty, else hypersparse). ``M`` is a Matrix held by row, of
+    FP64 or another real built-in type (SuiteSparse's kernel casts its values to FP64), ``U``
+    a C-contiguous (ncols x R) float64 array that is taken over. None when the engine is not
+    available (no JIT), or when the product came back iso.
     """
     K, R = U.shape
     if (ops := semiring(R)) is None:
