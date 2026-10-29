@@ -83,6 +83,14 @@ PANDAS_VERSIONS = {
     "2.x": ["2.2", "2.3", "3.0", ""],
 }
 
+# Caps on an unpinned ("" = latest) pick, as conda specs. Pins in the pools are not
+# affected; a capped package's newest release stays out of CI until the cap goes.
+# MAINT: 2026-10-22 pandas 3.1.0 fits fewer columns in a repr's auto-width
+# (display.max_columns=0), and warns (Pandas4Warning) when the pandas-based repr renderer
+# appends its "..." row to a numeric column; both fail test_formatting.py. Remove the cap
+# once #605 (the repr renderer that does not use pandas) is on main.
+LATEST_CEILINGS = {"pandas": "<3.1"}
+
 # The "2.x" pool starts at 2.6 because awkward <2.6 still uses numpy.AxisError,
 # which numpy 2.0 removed. Only >=2.10 pins survive numpy >=2.5; see the awkward
 # constraints in `apply_constraints`.
@@ -557,14 +565,17 @@ def format_output(v):
     """Format version dict as bash-eval-safe key=value lines.
 
     Values use '=X.Y' prefix for conda install (e.g., npver='=2.2').
-    Empty means latest, NA means skip.
+    Empty means latest, NA means skip. Latest is capped by LATEST_CEILINGS
+    (e.g., pdver='<3.1').
     psg already has its prefix baked in.
     """
     lines = []
     for key in ("numpy", "scipy", "pandas", "awkward", "networkx", "pyyaml", "sparse", "numba"):
         var = _VAR_NAMES[key]
         val = v[key]
-        if val in ("NA", ""):
+        if val == "" and key in LATEST_CEILINGS:
+            lines.append(f"{var}='{LATEST_CEILINGS[key]}'")
+        elif val in ("NA", ""):
             lines.append(f"{var}='{val}'")
         else:
             lines.append(f"{var}='={val}'")
@@ -598,7 +609,7 @@ def format_summary(v):
         if val == "NA":
             parts.append(f"{name}=NA")
         elif val == "":
-            parts.append(f"{name}=latest")
+            parts.append(f"{name}=latest{LATEST_CEILINGS.get(key, '')}")
         else:
             parts.append(f"{name}={val}")
     return "versions: " + " ".join(parts)
