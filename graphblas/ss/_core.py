@@ -143,7 +143,13 @@ class GlobalConfig(BaseConfig):
         "run" : run JIT kernels if already loaded, but don't load or compile
         "load" : able to load and run JIT kernels; may not compile
         "on" : full JIT: able to compile, load, and run
-        Only available for SuiteSparse:GraphBLAS >=8
+        Only available for SuiteSparse:GraphBLAS >=8.
+        python-graphblas sets it at init from ``graphblas.config["jit_c_control"]``,
+        or to "run" when that is not set, and UDT work raises that default "run" to
+        "on" when it needs a kernel compiled. A "run" configured there is kept, and
+        so is one set here over another configured value; with nothing configured,
+        "run" set here is the default again, as None is in any case. The user
+        guide's initialization page covers the trade-offs, and when "on" is safe.
     jit_use_cmake : bool
         Whether to use cmake to compile the JIT kernels.
         Only available for SuiteSparse:GraphBLAS >=8

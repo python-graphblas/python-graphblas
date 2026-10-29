@@ -24,6 +24,8 @@ from ``graphblas.config["jit_c_control"]`` (``'run'`` unless configured
 otherwise; see :func:`_set_jit_c_control_at_init`). UDT work raises that
 default ``'run'`` to ``'on'`` when it needs C compiled, but keeps a ``'run'``
 the user set (:func:`_enable_jit_for_udt`).
+The trade-offs of the JIT, and what to do when it misbehaves, are in the user
+guide's initialization page (docs/user_guide/init.rst).
 """
 
 import contextlib

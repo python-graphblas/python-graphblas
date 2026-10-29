@@ -4,4 +4,5 @@ mapnumpy: True
 # backend: "on", "load", "run", "pause" or "off". Environment variable: GRAPHBLAS_JIT_C_CONTROL.
 # Unset (null) is "run", raised to "on" when UDT work needs a kernel compiled; a value set
 # through this key is kept.
+# See "The SuiteSparse:GraphBLAS JIT" in the user guide's initialization page.
 jit_c_control: null
