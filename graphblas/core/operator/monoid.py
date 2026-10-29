@@ -69,7 +69,8 @@ def _udt_identity_np(monoid_name, np_type, top_dtype):
     if np_type.subdtype is not None:
         base_dtype, shape = np_type.subdtype
         val = _scalar_identity(monoid_name, base_dtype)
-        if val is None:
+        # The binary op compiled first, and min and max compile for arrays of real numbers only
+        if val is None:  # pragma: no cover (safety)
             raise KeyError(
                 f"monoid.{monoid_name} does not work with {top_dtype}: "
                 f"base dtype {base_dtype} is not numeric"
@@ -90,7 +91,10 @@ def _udt_identity_np(monoid_name, np_type, top_dtype):
                     )
             vals.append(val)
         return tuple(vals)
-    raise KeyError(f"monoid.{monoid_name} does not work with {top_dtype}")
+    # The binary op compiled first, and lifted ops refuse a UDT neither a record nor an array
+    raise KeyError(  # pragma: no cover (safety)
+        f"monoid.{monoid_name} does not work with {top_dtype}"
+    )
 
 
 ffi_new = ffi.new

@@ -5671,11 +5671,18 @@ def test_udt_literal_rules_edge_cases():
     # a field, not broadcastable), or not a number, has no type of its own, so
     # it is converted into the UDT, and numpy says why it cannot be. A record
     # says so itself for a part that does not broadcast to its array field.
+    # So too for a comparison, which first looks for an int beyond its leaf, a
+    # part holding numpy values, and text a bytes field cannot hold.
     rec = dtypes.register_anonymous(
         np.dtype([("edge_v", np.float64, (3,)), ("edge_n", np.int8)]), "_EdgeRec"
     )
     r = Vector(rec, size=1)
     r[0] = ([1, 2, 3], 4)
+    nested = dtypes.register_anonymous(
+        np.dtype([("edge_in", [("edge_p", np.int8), ("edge_q", np.int8)]), ("edge_m", np.int8)]),
+        "_EdgeNested",
+    )
+    text = dtypes.register_anonymous(np.dtype([("edge_s", "S3"), ("edge_k", np.int8)]), "_EdgeText")
     for expr, reason in [
         (lambda: binary.plus(v, [1, [2, 3]]), "with a sequence"),
         (lambda: v + np.array([1, 2]), "could not broadcast"),
@@ -5683,6 +5690,12 @@ def test_udt_literal_rules_edge_cases():
         (lambda: v.apply(udf, right="abc"), "invalid literal"),
         (lambda: binary.plus(r, (1, 2, 3)), "tuple of length 3"),
         (lambda: binary.plus(r, ((1, 2), 3)), "does not fit field 'edge_v'"),
+        (lambda: r == (1, 2, 3), "tuple of length 3"),
+        (lambda: Vector(nested, size=1) == ((1, 2, 3), 300), "tuple of length 3"),
+        (lambda: binary.plus(r, ([np.float64(1), [2, 3]], 4)), "with a sequence"),
+        (lambda: binary.plus(r, ([np.zeros((3, 2)), np.zeros((3, 1))], 4)), "with a sequence"),
+        (lambda: binary.plus(r, (np.array(["a", "b", "c"]), 4)), "could not convert string"),
+        (lambda: Vector(text, size=1) == ("\xe9", 1), "can't encode"),
     ]:
         with pytest.raises(ValueError, match=reason):
             expr()
@@ -6121,6 +6134,12 @@ def test_udt_numba_error_summary_is_never_empty():
         "Something else went wrong"
     )
     assert summarize(ValueError("")) == "Numba could not compile the function for these input types"
+    # From a lifted op: Numba cannot add two records, so not an array of records either
+    arr_rec = dtypes.register_anonymous(
+        np.dtype(([("sum_p", np.int32), ("sum_q", np.float64)], (2,))), "_SumArrRec"
+    )
+    with pytest.raises(UdfParseError, match=r"plus does not work with \(_SumArrRec, _SumArrRec\)"):
+        binary.plus[arr_rec]
 
 
 @pytest.mark.skipif("not supports_udfs")

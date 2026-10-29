@@ -2,6 +2,7 @@ import itertools
 import pickle
 import string
 import sys
+import warnings
 
 import numpy as np
 import pytest
@@ -469,6 +470,10 @@ def test_udt_with_macro_field_name_falls_back_to_cfunc():
     with pytest.warns(NoJITWarning, match="without JIT"):
         plus_udt = gb.binary.plus[udt]
     assert plus_udt.jit_c_source is None
+    # Once per (op, dtype): the same pair again is silent
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        jit_config._maybe_warn_no_jit(op_name="plus", dtype_name=udt.name)
 
 
 @pytest.mark.skipif("not supports_udfs")
