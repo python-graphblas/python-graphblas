@@ -498,8 +498,8 @@ def test_udt_with_c_reserved_field_name_falls_back_to_cfunc():
     with pytest.warns(NoJITWarning, match="without JIT") as record:
         plus_udt = gb.binary.plus[udt]
     # The cause has to name the UDT, on every host. Nothing armed a kernel for
-    # this dtype, so ``jit_c_control`` is still whatever SuiteSparse set, and
-    # blaming it would send the reader to a setting that cannot fix anything.
+    # this dtype, so ``jit_c_control`` is still whatever init set, and blaming
+    # it would send the reader to a setting that cannot fix anything.
     assert "not expressible as a C struct" in str(record[0].message)
     assert plus_udt.jit_c_source is None  # no JIT
     # ``eq`` has a separate JIT codegen path from arithmetic (BOOL output, leaf
@@ -521,8 +521,8 @@ def test_udt_with_c_reserved_field_name_falls_back_to_cfunc():
 def test_no_jit_warning_blames_the_udt_not_the_host_jit_state():
     """The cause named must not move with the host's JIT state.
 
-    On a runner whose JIT probe fails, SuiteSparse leaves ``jit_c_control``
-    at ``'run'`` and ``_enable_jit_for_udt`` caches its ``False``. Codegen
+    On a runner whose JIT probe fails, init leaves ``jit_c_control`` at
+    ``'run'`` and caches the probe's ``False``. Codegen
     for this UDT read neither, so naming either as the cause points the
     reader at a setting that cannot fix it. CI hit exactly that: on
     ubuntu-latest the message blamed ``jit_c_control``.
@@ -592,13 +592,14 @@ def test_udt_layouts_under_one_name_get_their_own_jit_c_names():
     with pytest.raises(ValueError, match="unavailable"):
         dtypes.ss.register_new("_SameJitName", "typedef struct { int8_t q ; } _SameJitName ;")
     # The rest compiles kernels for both layouts, which needs a C compiler the JIT can use.
+    # Asked under 'on': a 'run' the session set (GRAPHBLAS_JIT_C_CONTROL) would answer no.
     from graphblas.core.ss.jit_config import _enable_jit_for_udt
 
-    if not _enable_jit_for_udt():
-        pytest.skip("the JIT cannot compile here (no usable C compiler)")
     jit_c_control = gb.ss.config["jit_c_control"]
     gb.ss.config["jit_c_control"] = "on"
     try:
+        if not _enable_jit_for_udt():
+            pytest.skip("the JIT cannot compile here (no usable C compiler)")
         for udt in [small, big]:
             shape = udt.np_type.shape
             one = np.full(shape, 1, np.int16)

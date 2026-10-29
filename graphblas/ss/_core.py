@@ -254,6 +254,25 @@ class GlobalConfig(BaseConfig):
             "on": lib.GxB_JIT_ON,
         }
 
+    def __setitem__(self, key, val):
+        key = key.lower()
+        if key != "jit_c_control":
+            super().__setitem__(key, val)
+            return
+        from ..core.ss import jit_config
+
+        # UDT work keeps a 'run' the user set. One written here counts when it
+        # changes the configured control (graphblas.config, read at init) or repeats
+        # a configured 'run'. With nothing configured it is the default 'run' again,
+        # which UDT work raises, so saving and restoring the default changes nothing.
+        # None is that default whatever is configured.
+        super().__setitem__(key, "run" if val is None else val)
+        if isinstance(val, str):
+            val = val.lower()
+        elif val is not None:
+            val = self._reverse_enumerations[key].get(val, val)
+        jit_config._user_set_run = val == "run" and jit_config._configured_jit_c_control is not None
+
 
 class About(Mapping):
     _modes = {

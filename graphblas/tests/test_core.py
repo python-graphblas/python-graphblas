@@ -41,6 +41,27 @@ def test_bad_init():
         gb.init(**params)
 
 
+def test_jit_c_control_config():
+    """``config["jit_c_control"]``, which init sets SuiteSparse's JIT control to."""
+    import yaml
+
+    path = pathlib.Path(gb.__file__).parent / "graphblas.yaml"
+    # Unset by default, which init takes as a 'run' that UDT work may raise
+    assert yaml.safe_load(path.read_text())["jit_c_control"] is None
+    # YAML 1.1 reads an unquoted on/off in a user's config file as a bool
+    cases = [("on", "on"), ("LOAD", "load"), ("run", "run"), ("pause", "pause"), ("off", "off")]
+    cases += [(True, "on"), (False, "off"), (None, None)]
+    for val, expected in cases:
+        with gb.config.set(jit_c_control=val):
+            assert gb._jit_c_control_config() == expected
+    for val in ["of", "", 1]:
+        with (
+            gb.config.set(jit_c_control=val),
+            pytest.raises(ValueError, match="GRAPHBLAS_JIT_C_CONTROL"),
+        ):
+            gb._jit_c_control_config()
+
+
 def test_bad_libget():
     with pytest.raises(AttributeError, match="GrB_bad_name"):
         gb.core.base.libget("GrB_bad_name")
