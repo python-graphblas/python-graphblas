@@ -94,3 +94,48 @@ def test_packages():
 
 def test_index_max():
     assert gb.MAX_SIZE == 2**60  # True for all current backends
+
+
+def test_config_attribute_assignment_raises():
+    # Setting an option by plain attribute assignment used to silently no-op:
+    # donfig has no __setattr__ for options, so it created a dead instance
+    # attribute and left the real option alone. It should raise and name the
+    # canonical API instead.
+    orig = gb.config["autocompute"]
+    try:
+        with pytest.raises(AttributeError, match=r"config\.set\(autocompute"):
+            gb.config.autocompute = not orig
+        assert gb.config["autocompute"] == orig  # the failed write changed nothing
+        # An unknown name is a mistaken write too, not a new attribute
+        with pytest.raises(AttributeError, match="not_a_real_option"):
+            gb.config.not_a_real_option = 5
+        assert "not_a_real_option" not in vars(gb.config)
+        # Canonical idioms still work: read by item, write by set()
+        gb.config.set(autocompute=not orig)
+        assert gb.config["autocompute"] == (not orig)
+        with gb.config.set(autocompute=orig):
+            assert gb.config["autocompute"] == orig
+        assert gb.config["autocompute"] == (not orig)  # restored on exit
+    finally:
+        gb.config.set(autocompute=orig)
+
+
+def test_config_donfig_attrs_are_derived(monkeypatch):
+    # The allowlist of writable attributes must come from what donfig's
+    # __init__ actually set, not a hardcoded list. Simulate a future donfig
+    # that grows a field: the derived allowlist absorbs it, where a
+    # hardcoded list would start rejecting donfig's own writes.
+    import donfig
+
+    real_init = donfig.Config.__init__
+
+    def init_with_extra_field(self, *args, **kwargs):
+        real_init(self, *args, **kwargs)
+        self.hypothetical_future_field = 1
+
+    monkeypatch.setattr(donfig.Config, "__init__", init_with_extra_field)
+    probe = type(gb.config)("test_derived_allowlist")
+    assert "hypothetical_future_field" in probe._donfig_attrs
+    probe.hypothetical_future_field = 2  # writable, not rejected
+    with pytest.raises(AttributeError, match="autocompute"):
+        probe.autocompute = False
