@@ -4641,6 +4641,84 @@ def test_repr_max_rows_below_min_rows():
         )
 
 
+@pytest.mark.parametrize("use_pandas", [True, False])
+def test_repr_display_options_none(monkeypatch, use_pandas):
+    # pandas takes None for max_rows, min_rows and max_columns as no limit. A repr shows up
+    # to 150 rows or columns instead, and the first and last 75 of more: max_rows=None is
+    # max_rows=151 with min_rows=150, so the COO form can show 150 entries and its "..." row.
+    # A min_rows of None is max_rows, as in pandas. Before, each raised TypeError.
+    if use_pandas and pd is None:  # pragma: no cover (no pandas)
+        pytest.skip("needs pandas")
+    if not use_pandas:
+        monkeypatch.setattr(formatting, "has_pandas", False)
+
+    def lines(x):
+        return repr(x).split("\n")[3:]  # skip the info header
+
+    A = Matrix.from_coo([0, 1], [0, 1], [1, 2], nrows=100, ncols=3, name="A")
+    with display_options("display.max_rows", None):
+        assert len(lines(A)) == 1 + 100  # every row, though min_rows is 10
+    # Past 151 rows, the rows shown are read, and the rest are not shown
+    A = Matrix.from_dense(np.arange(152 * 2).reshape(152, 2), name="A")
+    with display_options("display.max_rows", None):
+        rows = lines(A)
+        assert len(rows) == 1 + 75 + 1 + 75
+        assert rows[1].split() == ["0", "0", "1"]
+        assert rows[75].split() == ["74", "148", "149"]
+        assert rows[76].split() == ["..", "...", "..."]
+        assert rows[77].split() == ["77", "154", "155"]
+        assert rows[-1].split() == ["151", "302", "303"]
+        text, html = repr(A), repr_html(A)
+    with display_options("display.max_rows", 151, "display.min_rows", 150):
+        assert repr(A) == text
+        assert repr_html(A) == html
+    with display_options("display.max_rows", None):
+        assert len(lines(A[:151, :].new(name="A"))) == 1 + 151
+    # The COO form of more entries than 151
+    v = Vector.from_coo(np.arange(0, 10000, 10), np.arange(1000), size=10000, name="v")
+    with display_options("display.max_rows", None):
+        rows = lines(v)
+        assert len(rows) == 1 + 150 + 1
+        assert rows[-2].split() == ["149", "1490", "149"]
+        assert rows[-1].split() == ["...", "...", "..."]
+
+    # The columns shown: 0 to 74 and 125 to 199
+    expected = [*map(str, range(75)), "...", *map(str, range(125, 200))]
+    B = Matrix.from_dense(np.arange(2 * 200).reshape(2, 200), name="B")
+    with display_options("display.max_columns", None, "display.expand_frame_repr", False):
+        assert lines(B)[0].split() == expected
+        html = repr_html(B)
+        header = html[html.index('class="dataframe"') :].split("</thead>")[0]
+        assert header.count("<th>") == 1 + 151
+        text = repr(B)
+    with display_options("display.max_columns", 150, "display.expand_frame_repr", False):
+        assert repr(B) == text
+    # As with any max_columns, a wide frame wraps at display.width
+    with display_options("display.max_columns", None, "display.width", 80):
+        assert len(lines(B)) > 3
+
+    # min_rows=None is max_rows, as pandas has it, for the grid and the COO form
+    w = Vector.from_coo(np.arange(0, 10000, 100), np.arange(100), size=10000, name="w")
+    for x in [A, w]:
+        with display_options("display.max_rows", 6, "display.min_rows", None):
+            text, html = repr(x), repr_html(x)
+        with display_options("display.max_rows", 6, "display.min_rows", 6):
+            assert repr(x) == text
+            assert repr_html(x) == html
+
+    # A Matrix too large to read whole
+    C = Matrix(int, 2**60, 2**60, name="C")
+    C[0, 0] = 1
+    C[2**60 - 1, 2**60 - 1] = 2
+    options = ("display.max_rows", None, "display.min_rows", None, "display.max_columns", None)
+    with display_options(*options, "display.expand_frame_repr", False):
+        rows = lines(C)
+        assert len(rows) == 1 + 75 + 1 + 75
+        assert rows[0].split()[75] == "..."
+        assert rows[1].split()[:2] == ["0", "1"]
+        assert rows[-1].split()[-1] == "2"
+
+
 def test_repr_max_columns_one():
     # With room for a single column, the first column is shown instead of both ends
     A = Matrix.from_coo(
