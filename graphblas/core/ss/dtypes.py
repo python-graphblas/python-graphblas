@@ -89,7 +89,7 @@ def register_new(name, jit_c_definition, *, np_type=None):
             np_type = np.dtype((np.uint8, size))
             save_np_type = False
         if _has_numba:
-            numba_type = numba.typeof(np_type).dtype
+            numba_type = core.dtypes._numba_type(np_type)
         else:
             numba_type = None
 

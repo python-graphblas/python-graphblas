@@ -173,6 +173,45 @@ def _set_udt_jit_c_definition(datatype):
     datatype._jit_c_info = info
 
 
+# Elements Numba cannot type in an array (its NestedArray needs a bitwidth they lack), and
+# what to store instead
+_NUMBA_UNTYPED_ARRAY_ELEMENTS = {
+    "b": ("bool", "uint8"),
+    "M": ("datetime64", "int64"),
+    "m": ("timedelta64", "int64"),
+    "U": ("str", "uint32 (one per character)"),
+    "S": ("bytes", "uint8 (one per byte)"),
+}
+
+
+def _numba_untyped_array_element(dtype):
+    """The kind of the first array element in dtype that Numba cannot type, or None."""
+    if dtype.subdtype is not None:
+        base = dtype.subdtype[0]
+        if base.kind in _NUMBA_UNTYPED_ARRAY_ELEMENTS:
+            return base.kind
+        return _numba_untyped_array_element(base)
+    for field_dtype, *_ in (dtype.fields or {}).values():
+        if (kind := _numba_untyped_array_element(field_dtype)) is not None:
+            return kind
+    return None
+
+
+def _numba_type(dtype):
+    try:
+        return numba.typeof(dtype).dtype
+    except AttributeError as exc:
+        # Numba's own error is "'Boolean' object has no attribute 'bitwidth'" and the like
+        kind = _numba_untyped_array_element(dtype)
+        if kind is None:  # pragma: no cover (safety)
+            raise
+        element, instead = _NUMBA_UNTYPED_ARRAY_ELEMENTS[kind]
+        raise ValueError(
+            f"Numba, which python-graphblas uses for UDTs, cannot type an array of {element}, "
+            f"as in {dtype}; use an array of {instead} instead"
+        ) from exc
+
+
 def register_new(name, dtype=None):
     """Register a user-defined type and put it on the ``gb.dtypes`` namespace.
 
@@ -297,6 +336,8 @@ def register_anonymous(dtype, name=None):
         # SuiteSparse 7 takes a size of 0 as 1 (later versions raise InvalidValue), which
         # made ``str`` a UDT that holds nothing, so a str literal was not a TypeError
         raise ValueError(f"dtype must not have a size of 0: {dtype}")
+    # Before GrB_Type_new, so a dtype Numba cannot type does not leave a GrB_Type behind
+    numba_type = _numba_type(dtype) if _has_numba else None
 
     from ..exceptions import check_status_carg
 
@@ -334,7 +375,6 @@ def register_anonymous(dtype, name=None):
     # For now, let's use "opaque" unsigned bytes for the c type.
     if name is None:
         name = _default_name(dtype)
-    numba_type = numba.typeof(dtype).dtype if _has_numba else None
     rv = DataType(name, gb_obj, None, f"uint8_t[{dtype.itemsize}]", numba_type, dtype)
     _registry[gb_obj] = rv
     _registry[dtype] = rv

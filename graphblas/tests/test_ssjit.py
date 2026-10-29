@@ -591,6 +591,19 @@ def test_jit_udt():
     assert dtype.np_type == np_type
 
 
+@pytest.mark.skipif("_IS_SSGB7 or numba is None")
+def test_jit_udt_np_type_numba_cannot_type():
+    # The np_type gets the error register_anonymous gives for an array Numba cannot type
+    _require_jit_on()
+    np_type = np.dtype([("x", np.bool_, (2,))])
+    with pytest.raises(ValueError, match="cannot type an array of bool") as exc_info:
+        dtypes.ss.register_new(
+            "_jit_bool_pair", "typedef struct { uint8_t x [2] ; } _jit_bool_pair ;", np_type=np_type
+        )
+    assert isinstance(exc_info.value.__cause__, AttributeError)
+    assert not hasattr(dtypes.ss, "_jit_bool_pair")
+
+
 @pytest.mark.skipif("_IS_SSGB7")
 def test_jit_udt_name_leaves_room_for_the_nul():
     """A type name as long as ``GxB_MAX_NAME_LEN`` is rejected before SuiteSparse sees it.

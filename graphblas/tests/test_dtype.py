@@ -376,6 +376,27 @@ def test_register_anonymous_zero_size():
         dtypes.lookup_dtype(str)
 
 
+def test_register_anonymous_array_numba_cannot_type():
+    # Numba cannot type an array of these, alone or in a record. Its own error was
+    # "AttributeError: 'Boolean' object has no attribute 'bitwidth'" and the like.
+    for np_type, element, instead in [
+        (np.dtype((np.bool_, (2,))), "bool", "uint8"),
+        (np.dtype(("M8[s]", (2, 3))), "datetime64", "int64"),
+        (np.dtype([("_nbt_a", np.int8), ("_nbt_b", "m8[ns]", (2,))]), "timedelta64", "int64"),
+        (np.dtype(("U3", (2,))), "str", "uint32"),
+        (np.dtype([("_nbt_c", [("_nbt_d", "S2", (2,))])]), "bytes", "uint8"),
+    ]:
+        if not supports_udfs:
+            # Nothing types it without Numba, and it registers
+            assert dtypes.register_anonymous(np_type).np_type == np_type
+            continue
+        match = f"cannot type an array of {element}.*use an array of {instead}"
+        with pytest.raises(ValueError, match=match) as exc_info:
+            dtypes.register_anonymous(np_type)
+        assert isinstance(exc_info.value.__cause__, AttributeError)
+        assert np_type not in core.dtypes._registry
+
+
 def test_register_anonymous_from_dataclass_deferred_annotations():
     """Dataclass fields annotated as strings (PEP 563 / 649) resolve through ``lookup_dtype``."""
     from dataclasses import make_dataclass

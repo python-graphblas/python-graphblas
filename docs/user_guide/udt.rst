@@ -74,6 +74,9 @@ Field type rules:
   struct) are supported as fields, and built-in operators lift through them.
   In the dict and dataclass forms, write an array field as ``"FP64[3]"``; the
   dict form also takes an existing UDT, such as ``{"id": int, "pos": point3}``.
+- Numba cannot type an array of ``bool``, ``datetime64`` or ``timedelta64``, so
+  with Numba installed, registering a UDT that holds one raises ``ValueError``.
+  Use an array of ``uint8`` for ``bool``, and of ``int64`` for the others.
 - Strings and Python objects are not supported.
 - Dataclass annotation strings (e.g., ``"int"``) resolve through
   ``lookup_dtype``.
