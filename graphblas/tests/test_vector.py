@@ -3048,3 +3048,30 @@ def test_subarray_dtype_values_shape():
     # A scalar fills whole elements
     v = Vector.from_coo([0, 1, 2], 1.5, "FP64[2]")
     assert v.to_coo()[1].tolist() == [[1.5, 1.5]] * 3
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_ss_import_values_size():
+    # GraphBLAS before 10.5.2 compares the byte size of imported values with the number
+    # of entries, not the bytes they need, so it read past the end of each of these
+    with pytest.raises(ValueError, match="have 4 or more elements of dtype FP64, not 2"):
+        Vector.ss.import_sparse(size=5, indices=[0, 1, 2, 3], values=np.ones(2), nvals=4)
+    with pytest.raises(ValueError, match="have 5 or more elements of dtype FP64, not 3"):
+        Vector.ss.import_full(values=np.ones(3), size=5)
+    v = Vector(float, 5)
+    with pytest.raises(ValueError, match="have 5 or more elements of dtype FP64, not 3"):
+        v.ss.pack_full(values=np.ones(3))
+    # The dtype's name is whichever another test gave this anonymous dtype
+    with pytest.raises(ValueError, match=r"have 2 or more elements of dtype \S+, not 1"):
+        Vector.ss.import_sparse(size=3, indices=[0, 1], values=np.ones(2), dtype="FP64[2]")
+    with pytest.raises(ValueError, match=r"have 3 or more elements of dtype \S+, not 1"):
+        Vector.ss.import_bitmap(bitmap=[True, True, True], values=np.ones(3), dtype="FP64[2]")
+    # One element is enough for iso
+    v = Vector.ss.import_full(values=[4.0], size=5, is_iso=True)
+    assert v.ss.is_iso
+    assert v.to_coo()[1].tolist() == [4.0] * 5
+    v = Vector.ss.import_sparse(
+        size=3, indices=[0, 1], values=[2.0, 3.0], dtype="FP64[2]", is_iso=True
+    )
+    assert v.ss.is_iso
+    assert v.to_coo()[1].tolist() == [[2.0, 3.0]] * 2
