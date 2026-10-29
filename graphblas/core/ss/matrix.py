@@ -201,9 +201,18 @@ class ss:
 
     @property
     def iso_value(self):
+        """The value every entry of an iso-valued Matrix holds, as a Scalar.
+
+        SuiteSparse can mark a Matrix with no entries iso. It then holds no value,
+        and the Scalar is empty, as for an empty reduction. Raises ValueError if
+        the Matrix is not iso-valued.
+        """
         if self.is_iso:
+            parent = self._parent
+            if parent.nvals == 0:
+                return Scalar(parent.dtype, name="")
             # This may not be thread-safe if the parent is being modified in another thread
-            return Scalar.from_value(next(self.itervalues()), dtype=self._parent.dtype, name="")
+            return Scalar.from_value(next(self.itervalues()), dtype=parent.dtype, name="")
         raise ValueError("Matrix is not iso-valued")
 
     @property
