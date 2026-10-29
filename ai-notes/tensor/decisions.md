@@ -136,9 +136,16 @@ the API settles. `design.md` describes how the code implements these.
     updates would add real complexity to an experimental API. An explicit `relayout()`
     before a loop already gives a user that copy, and the user guide recommends it. With it,
     NELL-2's TTM along modes 0 and 1 takes 445 and 548 ms at 1 thread (TACO: 263 and 262
-    from its own copy), plus the output's hash in `wait()` (`benchmarks.md`). _Revisit_
-    when users run TTMs along many modes in turn, as HOOI and Tucker sweeps do, where a copy
-    per mode would be built once and reused every sweep.
+    from its own copy), plus the output's hash in `wait()` (`benchmarks.md`). _Checked_
+    on such sweeps by the SAPS pilot (2026-10-28: HOOI and CP-ALS on FROSTT's Uber, Chicago
+    and NIPS; `runs/2026-10-28-saps-pilot/report.md`, section 5, in the grblas-ai repo), and
+    kept. Copies built once saved 1-19% on HOOI: only Uber's first-axis TTM chain gained
+    much (173 to 156 ms per sweep; the 45 ms build repaid in about 1.3 sweeps; a full SAPS
+    run 8.97 to 7.26 s), and at 1 thread Chicago and NIPS gained 1.4% and 1.1%. They made
+    CP-ALS 1.6-6x slower per sweep, because the Numba MTTKRP runs in the stored layout for
+    every mode (Uber 7.2 to 11.6 ms, Chicago 7.7 to 48.9, NIPS 9.7 to 41.1). Where copies
+    help, `relayout()` already gives them (six lines in the pilot's HOOI). _Revisit_ if a
+    TTM-chain (TTMc) kernel turns out to need each mode's data stored mode first.
 26. **Broadcast unions whose broadcast axes would fit only split across the row and column
     groups are not supported.** A union (`ewise_add`, `ewise_union`) replicates the
     lower-rank operand over the broadcast axes (`_expand`): before its row group, or, when
