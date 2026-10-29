@@ -252,6 +252,22 @@ def test_from_coo_shape_passed_as_dtype():
         Matrix.from_coo([0, 1], [0, 1], [1.0, 2.0], (2, 2))
 
 
+def test_no_implicit_dense_conversion_names_to_dense():
+    """``np.asarray(T)`` refuses, as for Matrix, since a missing entry has no value. The
+    message named only ``to_coo()``; a dense algorithm (an SVD) wants the missing entries as
+    zeros, so it also names ``to_dense(fill_value=0)``, for a Tensor small enough.
+    """
+    T = Tensor.from_coo(([0, 1], [0, 1], [0, 1]), [1.0, 2.0], name="X")
+    for convert in [np.asarray, np.array, np.linalg.norm]:
+        with pytest.raises(TypeError, match="directly converted") as exc:
+            convert(T)
+        assert "`X.to_coo()`" in str(exc.value)
+        assert "`X.to_dense(fill_value=0)`" in str(exc.value)
+    dense = T.to_dense(fill_value=0)
+    assert dense.shape == (2, 2, 2)
+    assert dense.sum() == 3.0
+
+
 @pytest.mark.parametrize("layout", all_layouts(3))
 def test_to_coo_order(layout):
     rng = np.random.default_rng(1)
