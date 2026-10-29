@@ -387,7 +387,7 @@ _warned_no_jit_for = set()
 def _maybe_warn_no_jit(*, op_name="", dtype_name=""):
     """Emit a ``NoJITWarning`` (once per ``(op_name, dtype_name)``) when UDT auto-lift falls back.
 
-    The only caller is ``udt_utils._maybe_warn_jit_skipped``, which fires
+    The only caller is ``udt_codegen._maybe_warn_jit_skipped``, which fires
     after C codegen returned nothing. Codegen reads the dtype and neither the
     compiler path nor ``jit_c_control``, so the dtype is the cause here even
     on a host that could not have compiled a kernel anyway. Do not re-derive
