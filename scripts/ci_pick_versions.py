@@ -216,6 +216,7 @@ PSG_VERSIONS_NP2 = [
     "10.4.1.0",
     "10.5.0.0",
     "10.5.1.1",
+    "10.5.2.0",
 ]
 
 # Oldest psg release that installs on a given Python, by where psg comes from.
@@ -231,7 +232,7 @@ PSG_VERSIONS_NP2 = [
 # py3.15 starts at 10.5.1.1 everywhere: it is psg's first release with py315 builds on
 # conda-forge and cp315 wheels on PyPI, and its sdist is the first from after psg added
 # Python 3.15 support.
-# MAINT: 2026-10-18 checked conda-forge build strings and PyPI wheel tags for psg 9-10
+# MAINT: 2026-10-28 checked conda-forge build strings and PyPI wheel tags for psg 9-10
 PSG_MIN_PYTHON = {
     "3.14": {"conda-forge": "10.0.1.1", "wheel": "10.3.1.0", "source": "10.3.1.0"},
     "3.15": {"conda-forge": "10.5.1.1", "wheel": "10.5.1.1", "source": "10.5.1.1"},
