@@ -183,14 +183,18 @@ jobs:
           # step's shell variables no longer exist, so psgver goes there as an output.
           echo "psgver=$psgver" >> "$GITHUB_OUTPUT"
 
-          # Wheels bundle their own GraphBLAS. A source draw compiles psg's sdist against
-          # conda-forge's, so give it the one conda-forge pairs with that psg release:
-          # python-suitesparse-graphblas X.Y.Z.W depends on graphblas >=X.Y.Z,<X.(Y+1).
-          # psg's 9.x sdists do not compile against GraphBLAS 10.
+          # Wheels bundle their own GraphBLAS. Otherwise give a pinned psg the GraphBLAS it was
+          # built for: python-suitesparse-graphblas X.Y.Z.W wraps SuiteSparse:GraphBLAS X.Y.Z,
+          # and psg's test_version_tracks_libgraphblas checks that they match. conda-forge's
+          # psg X.Y.Z.W accepts any graphblas >=X.Y.Z,<X.(Y+1), so without this pin a
+          # conda-forge draw gets the newest patch release (psg 10.5.1.1 got graphblas 10.5.2).
+          # A source draw compiles psg's sdist against it, and psg's 9.x sdists do not compile
+          # against GraphBLAS 10.
           graphblas=""
-          if [[ $SOURCETYPE == "source" && -n $psgver ]] ; then
+          if [[ ($SOURCETYPE == "conda-forge" || $SOURCETYPE == "source") && -n $psgver ]] ; then
             IFS=. read -r gbmajor gbminor gbpatch _ <<< "${psgver##*=}"
-            graphblas="graphblas>=${gbmajor}.${gbminor}.${gbpatch},<${gbmajor}.$((gbminor + 1))"
+            gbseries="${gbmajor}.${gbminor}"
+            graphblas="graphblas>=${gbseries}.${gbpatch},<${gbseries}.$((gbpatch + 1))"
           elif [[ $SOURCETYPE != "wheel" ]] ; then
             graphblas="graphblas>=7.4"
           fi
