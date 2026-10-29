@@ -4149,6 +4149,17 @@ def test_to_dicts_from_dicts(A):
     assert D.to_dicts() == d
 
 
+@pytest.mark.parametrize("shape", [(3, 2), (0, 0)])
+@pytest.mark.parametrize("order", ["rowwise", "columnwise"])
+def test_to_dicts_of_a_matrix_with_no_entries(shape, order):
+    # The compressed indptr of a Matrix with no entries is [0], which
+    # sliding_window_view(indptr, 2) refused with a ValueError.
+    A = Matrix(int, *shape)
+    assert A.to_dicts(order) == {}
+    assert A.T.to_dicts(order) == {}
+    assert Matrix.from_dicts({}, nrows=shape[0], ncols=shape[1]).isequal(A)
+
+
 def test_from_list_of_dicts():
     list_of_dicts = [{1: 1}, {}, {0: 10, 2: 3}, {}]
     A1 = Matrix.from_dicts(list_of_dicts)
