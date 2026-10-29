@@ -32,11 +32,22 @@ _BUILTIN_UDT_MONOIDS = {"plus", "times", "min", "max"}
 def _is_builtin_binaryop(binaryop):
     """True if ``binaryop`` wraps built-in GraphBLAS operators rather than a UDF.
 
-    Built-ins are the only binary ops constructed with neither a Python func nor
-    a numba func. That covers ``binary.numpy.float_power`` too, which is
-    assembled out of ``binary.pow``'s typed ops.
+    Most built-ins are constructed with neither a Python func nor a numba func.
+    That covers ``binary.numpy.float_power`` too, which is assembled out of
+    ``binary.pow``'s typed ops. A few built-ins (``any``, ``first``, ``pair``,
+    ``second``) carry a Python ``orig_func`` as their UDT fallback, so the func
+    test alone misses them; their typed ops are still ``TypedBuiltinBinaryOp``,
+    which is the authoritative signal. A UDF's typed ops are never
+    ``TypedBuiltinBinaryOp``. Under ``mapnumpy=True`` the mapped numpy binary
+    ops hold the built-in's typed ops and no funcs, so both tests agree they
+    are built-in; the numpy monoids themselves are mapped without passing
+    through ``Monoid._build``.
     """
-    return binaryop.orig_func is None and binaryop._numba_func is None
+    return (
+        binaryop.orig_func is None
+        and binaryop._numba_func is None
+        or any(type(typed) is TypedBuiltinBinaryOp for typed in binaryop._typed_ops.values())
+    )
 
 
 def _scalar_identity(monoid_name, scalar_dtype):
@@ -53,7 +64,9 @@ def _scalar_identity(monoid_name, scalar_dtype):
         return scalar_dtype.type(1)
     if monoid_name not in {"min", "max"}:
         return None
-    if np.issubdtype(scalar_dtype, np.integer):
+    # Not ``np.issubdtype(scalar_dtype, np.integer)``: numpy files timedelta64
+    # under ``np.integer``, and ``np.iinfo`` rejects it.
+    if scalar_dtype.kind in "iu":
         info = np.iinfo(scalar_dtype)
         return info.max if monoid_name == "min" else info.min
     if np.issubdtype(scalar_dtype, np.floating):
@@ -336,9 +349,18 @@ class Monoid(OpBase):
         from ..scalar import Scalar
 
         ret_type = binaryop.return_type
+        if ret_type != dtype:
+            # Checked here because GrB_Monoid_new_UDT reports it as a DomainMismatch
+            # with no message.
+            raise TypeError(
+                f"monoid.{self.name} does not work with {dtype}: a monoid's binary operator "
+                f"must return its input type, {dtype}, not {ret_type}"
+            )
         identity_val = self._identity
-        if identity_val is None and self.name in _BUILTIN_UDT_MONOIDS:
-            # Auto-generate the identity for built-in monoids on UDTs.
+        if identity_val is None and self._binaryop is None and self.name in _BUILTIN_UDT_MONOIDS:
+            # Auto-generate the identity for built-in monoids on UDTs. Only built-in
+            # monoids have no ``_binaryop``: a user monoid named like one (after its
+            # op's function, or by ``name=``) must not get that identity.
             identity_val = _udt_identity(self.name, ret_type)
         if identity_val is None:
             raise KeyError(
@@ -435,7 +457,12 @@ class Monoid(OpBase):
         if lazy:
             module._delayed[funcname] = (
                 cls.register_new,
-                {"name": name, "binaryop": binaryop, "identity": identity},
+                {
+                    "name": name,
+                    "binaryop": binaryop,
+                    "identity": identity,
+                    "is_idempotent": is_idempotent,
+                },
             )
         elif type(binaryop) is ParameterizedBinaryOp:
             monoid = ParameterizedMonoid(name, binaryop, identity, is_idempotent=is_idempotent)
