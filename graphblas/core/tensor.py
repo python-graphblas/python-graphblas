@@ -471,6 +471,15 @@ class Tensor(BaseType):
         name : str, optional
         """
         _check_backend()
+        if isinstance(dtype, (tuple, list)) and all(
+            isinstance(n, (int, np.integer)) for n in dtype
+        ):
+            # numpy, scipy.sparse and pydata/sparse take the shape third: lookup_dtype would
+            # say only "Unknown dtype"
+            raise TypeError(
+                f"from_coo's third argument is dtype, not the shape {dtype!r}; pass the shape "
+                f"as shape={tuple(dtype)!r}"
+            )
         if isinstance(indices, np.ndarray):
             if indices.ndim != 2:
                 raise ValueError(
