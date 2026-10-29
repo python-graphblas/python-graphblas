@@ -9,7 +9,7 @@ import math
 
 import numpy as np
 
-from ..dtypes import FP64
+from ..dtypes import BOOL, FP32, FP64, INT8, INT16, INT32, INT64, UINT8, UINT16, UINT32, UINT64
 from ..exceptions import DimensionMismatch
 from . import lib
 from . import tensor_census as census
@@ -18,6 +18,17 @@ from .matrix import Matrix
 from .operator import get_typed_op
 from .tensor_layout import Layout
 from .utils import output_type
+
+# The tensor value types the TTM and MTTKRP kernels take, multiplied by FP64 factors under
+# plus_times[FP64]. FROSTT's count tensors load as INT64 or BOOL. The kernels read the values
+# in their stored type (Numba compiles each kernel per type, SuiteSparse's JIT the UDT
+# engine's), and C's (double) conversion is SuiteSparse's typecast to FP64, so the results
+# are the products'. On Uber (3.3e6 entries, R = 10) an MTTKRP took 1.7-2.1 ms for INT64 or
+# FP64 values and 2.0-2.5 for BOOL; a cast to FP64 in every call would add 1.2-1.3 ms to each.
+# Complex values give a complex result and integer results wrap, so both take the products.
+_KERNEL_VALUE_TYPES = frozenset(
+    {BOOL, INT8, INT16, INT32, INT64, UINT8, UINT16, UINT32, UINT64, FP32, FP64}
+)
 
 
 def _ttm_engines(updater, a, b, op, a_axes, b_axes):
@@ -31,7 +42,7 @@ def _ttm_engines(updater, a, b, op, a_axes, b_axes):
         and a.ndim >= 2
         and op.name == "plus_times"
         and op.return_type == FP64
-        and a.dtype == FP64
+        and a.dtype in _KERNEL_VALUE_TYPES
         and b.dtype == FP64
         and a._M._nvals >= max(_t._TTM_KERNEL_MIN_NNZ, 1)
         and b._M._nvals == math.prod(b._shape)
@@ -123,11 +134,12 @@ def _ttm_udt(updater, a, b, op, a_axes, b_axes):
 
 
 def _ttm_numba(updater, a, b, op, a_axes, b_axes):
-    """TTM (an FP64 tensor's axis contracted with a full FP64 factor, plus_times) by a Numba
-    kernel over the stored arrays (``tensor_numba.ttm``): ``(src, layout, shape)`` as from
-    ``_contract``, or None to use the product. The contracted axis must be the last column
-    axis; the tensor stays as it is when it is (with leading column axes too: their runs are
-    the output fibers), else it moves to the cheapest layout that has it there.
+    """TTM (an axis of a tensor of a type in ``_KERNEL_VALUE_TYPES`` contracted with a full
+    FP64 factor, plus_times[FP64]) by a Numba kernel over the stored arrays
+    (``tensor_numba.ttm``): ``(src, layout, shape)`` as from ``_contract``, or None to use
+    the product. The contracted axis must be the last column axis; the tensor stays as it is
+    when it is (with leading column axes too: their runs are the output fibers), else it
+    moves to the cheapest layout that has it there.
 
     The output is today's storage: hypersparse rows of R values, or full when every output
     fiber exists. (One mxm was 2.4-2.7x behind TACO in the stored order: its Gustavson saxpy
@@ -166,7 +178,7 @@ def _ttm_numba(updater, a, b, op, a_axes, b_axes):
     with contextlib.ExitStack() as stack:
         cont = stack.enter_context(tl._Unloaded(X))
         p, h, ci = (stack.enter_context(tl._VectorArray(v)) for v in (cont.p, cont.h, cont.i))
-        xv = stack.enter_context(tl._VectorArray(cont.x, np.float64))
+        xv = stack.enter_context(tl._VectorArray(cont.x, a.dtype.np_type))
         kind, *parts = tensor_numba.ttm(
             (p.array, np.empty(0, np.int64) if h.array is None else h.array, ci.array, xv.array,
              bool(cont.iso)),
@@ -261,16 +273,17 @@ def _mttkrp_expr(self, factors, mode, op):
 
 
 def _mttkrp_numba(x, mats, mode, nthreads, *, layout=None):
-    """MTTKRP of an FP64 tensor of 3 or more axes with full FP64 factors and plus_times by a
-    Numba kernel over the stored arrays (``tensor_numba``) in ``layout`` (default: as stored),
-    as a Matrix; or None to use the GraphBLAS products: no Numba, fewer axes, another type or
-    semiring, sparse factors, an empty group, bitmap / full storage, per-thread buffers too
-    large for this layout, or a mode far longer than the data.
+    """MTTKRP of a tensor of 3 or more axes (of a type in ``_KERNEL_VALUE_TYPES``) with full
+    FP64 factors and plus_times[FP64] by a Numba kernel over the stored arrays
+    (``tensor_numba``) in ``layout`` (default: as stored), as a Matrix; or None to use the
+    GraphBLAS products: no Numba, fewer axes, another type or semiring, sparse factors, an
+    empty group, bitmap / full storage, per-thread buffers too large for this layout, or a
+    mode far longer than the data.
     """
     if not _t._has_numba or x.ndim < 3 or x._M._nvals < max(_t._MTTKRP_KERNEL_MIN_NNZ, 1):
         return None
     layout = x._layout if layout is None else layout
-    if not layout.rows or not layout.cols or x.dtype != FP64:
+    if not layout.rows or not layout.cols or x.dtype not in _KERNEL_VALUE_TYPES:
         return None
     for M in mats.values():
         if M.dtype != FP64 or M._nvals != M._nrows * M._ncols:
@@ -298,7 +311,7 @@ def _mttkrp_numba(x, mats, mode, nthreads, *, layout=None):
         Fs = [F[ax] if ax != mode else np.empty((0, R)) for ax in order]
         cont = stack.enter_context(tl._Unloaded(X))
         p, h, ci = (stack.enter_context(tl._VectorArray(v)) for v in (cont.p, cont.h, cont.i))
-        xv = stack.enter_context(tl._VectorArray(cont.x, np.float64))
+        xv = stack.enter_context(tl._VectorArray(cont.x, x.dtype.np_type))
         rv = tensor_numba.mttkrp_nd(
             (p.array, np.empty(0, np.int64) if h.array is None else h.array, ci.array, xv.array,
              bool(cont.iso)),
@@ -467,7 +480,7 @@ def _mttkrp_recipe(updater, x, mats, mode, R, op):
     if (
         kernel
         and "udt" in _t._MTTKRP_ENGINES
-        and x.dtype == FP64
+        and x.dtype in _KERNEL_VALUE_TYPES
         and mats[last]._nvals == mats[last]._nrows * R
     ):
         from . import tensor_udt
