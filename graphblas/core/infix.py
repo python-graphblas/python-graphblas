@@ -12,7 +12,7 @@ from .literals import _LITERAL_KINDS, _literal_operand
 from .mask import Mask
 from .matrix import Matrix, MatrixExpression, TransposedMatrix
 from .scalar import Scalar, ScalarExpression, _literal_scalar
-from .utils import output_type, wrapdoc
+from .utils import _tensor_types, output_type, wrapdoc
 from .vector import Vector, VectorExpression
 
 InfixExprBase._expect_op = _expect_op
@@ -574,6 +574,9 @@ def _check_literal(scalar, value, *, within, argname):
 def _ewise_infix_expr(left, right, *, method, within):
     left_type = output_type(left)
     right_type = output_type(right)
+    if left_type in _tensor_types or right_type in _tensor_types:
+        # Tensor rules apply; Python then tries the Tensor's reflected operator
+        return NotImplemented
 
     types = {Vector, Matrix, TransposedMatrix}
     if left_type in types and right_type in types:
@@ -620,6 +623,8 @@ def _ewise_infix_expr(left, right, *, method, within):
 def _matmul_infix_expr(left, right, *, within):
     left_type = output_type(left)
     right_type = output_type(right)
+    if left_type in _tensor_types or right_type in _tensor_types:
+        return NotImplemented
 
     if left_type is Vector:
         if right_type is Matrix or right_type is TransposedMatrix:

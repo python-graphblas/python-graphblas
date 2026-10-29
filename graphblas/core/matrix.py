@@ -51,6 +51,7 @@ from .utils import (
     _CArray,
     _Pointer,
     _repeated_value,
+    _tensor_types,
     check_element_shape,
     class_property,
     get_order,
@@ -505,8 +506,9 @@ class Matrix(BaseType):
 
         Parameters
         ----------
-        other : Matrix
-            The matrix to compare against
+        other : Matrix or Tensor
+            The matrix to compare against. A Tensor compares this Matrix as the
+            2-d Tensor of its shape (``Tensor.isequal``).
         check_dtype : bool
             If True, also checks that dtypes match
 
@@ -524,6 +526,9 @@ class Matrix(BaseType):
         :meth:`isclose` : For equality check of floating point dtypes
 
         """
+        if output_type(other) in _tensor_types:
+            # The Tensor compares this Matrix as the 2-d Tensor of its shape
+            return other.isequal(self, check_dtype=check_dtype, **opts)
         other = self._expect_type(
             other, (Matrix, TransposedMatrix), within="isequal", argname="other"
         )
@@ -558,8 +563,9 @@ class Matrix(BaseType):
 
         Parameters
         ----------
-        other : Matrix
-            The matrix to compare against.
+        other : Matrix or Tensor
+            The matrix to compare against. A Tensor compares this Matrix as the
+            2-d Tensor of its shape (``Tensor.isclose``).
         rel_tol : float
             Relative tolerance.
         abs_tol : float
@@ -573,6 +579,11 @@ class Matrix(BaseType):
             Whether all values of the Matrix are close to the values in ``other``.
 
         """
+        if output_type(other) in _tensor_types:
+            # The Tensor compares this Matrix as the 2-d Tensor of its shape
+            return other.isclose(
+                self, rel_tol=rel_tol, abs_tol=abs_tol, check_dtype=check_dtype, **opts
+            )
         other = self._expect_type(
             other, (Matrix, TransposedMatrix), within="isclose", argname="other"
         )

@@ -7,7 +7,7 @@ from ... import agg, backend, binary, monoid, semiring, unary
 from ...dtypes import INT64, lookup_dtype
 from ...exceptions import UdfParseError
 from .. import _supports_udfs
-from ..utils import output_type
+from ..utils import _tensor_types, output_type
 
 
 def _get_types(ops, initdtype):
@@ -171,6 +171,10 @@ class Aggregator:
         from ..vector import Vector
 
         typ = output_type(val)
+        if typ in _tensor_types:
+            if rowwise or columnwise:
+                raise ValueError("rowwise and columnwise do not apply to a Tensor; use T.reduce")
+            return val.reduce_scalar(self)
         if typ is Vector:
             if rowwise or columnwise:
                 raise ValueError(

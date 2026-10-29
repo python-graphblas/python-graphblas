@@ -30,6 +30,167 @@ def test_import_special_attrs():
             gb.ss
 
 
+_TENSOR_IMPORT_SCRIPT = """
+import sys
+import graphblas as gb
+print("package:", gb.__file__)
+print("after import:", sorted(m for m in ("numba", "graphblas.core.tensor") if m in sys.modules))
+if sys.argv[1] == "vanilla":
+    gb.init("suitesparse-vanilla")
+T = gb.Tensor
+from graphblas.core import tensor
+print("same:", T is tensor.Tensor and gb.einsum is tensor.einsum)
+loaded = ("tensor_numba", "tensor_udt", "tensor_io")
+print("engines:", sorted(m for m in loaded if f"graphblas.core.{m}" in sys.modules))
+print("container:", tensor._has_container())
+import numpy as np
+for call in (lambda: gb.Tensor(gb.dtypes.FP64, (2, 3)), lambda: gb.einsum("ij->ji", np.eye(2))):
+    try:
+        call()
+        print("use: ok")
+    except NotImplementedError as exc:
+        print("use:", exc)
+"""
+
+
+@pytest.mark.parametrize("backend", ["suitesparse", "vanilla"])
+def test_tensor_exports(backend):
+    """``gb.Tensor`` and ``gb.einsum`` (experimental) load lazily, like Matrix: ``import
+    graphblas`` imports neither them nor Numba, and the Tensor's engines load on use. On the
+    vanilla backend they import, and using them raises.
+    """
+    import subprocess
+    import sys
+
+    repo_root = pathlib.Path(gb.__file__).resolve().parents[1]
+    result = subprocess.run(
+        [sys.executable, "-c", _TENSOR_IMPORT_SCRIPT, backend],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**__import__("os").environ, "PYTHONPATH": str(repo_root)},
+    )
+    report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert result.returncode == 0, report
+    lines = [line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line]
+    lines = {key: [v for k, v in lines if k == key] for key, _ in lines}
+    assert lines["package"] == [str(repo_root / "graphblas" / "__init__.py")], report
+    assert lines["after import"] == ["[]"], report
+    assert lines["same"] == ["True"], report
+    assert lines["engines"] == ["[]"], report
+    # The subprocess reports its own SuiteSparse: this process may be on another backend
+    assert lines["container"] in (["True"], ["False"]), report
+    if backend == "vanilla":
+        assert lines["use"] == ["Tensor requires the suitesparse backend"] * 2, report
+    elif lines["container"] == ["True"]:
+        assert lines["use"] == ["ok", "ok"], report
+    else:  # (an older SuiteSparse: see test_tensor_old_suitesparse)
+        assert lines["use"] == ["Tensor requires SuiteSparse:GraphBLAS 10 or later"] * 2, report
+
+
+_TENSOR_OLD_SS_SCRIPT = """
+import sys
+import numpy as np
+import pytest
+
+
+class OldLib:
+    # SuiteSparse's cffi lib as one without the Container API (SuiteSparse:GraphBLAS 9 and
+    # older) would be
+    def __init__(self, lib):
+        self._lib = lib
+
+    def __getattr__(self, name):
+        if "Container" in name:
+            raise AttributeError(name)
+        return getattr(self._lib, name)
+
+
+def old_suitesparse():
+    from graphblas.core import tensor
+
+    tensor.lib = OldLib(tensor.lib)
+
+
+if sys.argv[1] == "calls":
+    import graphblas as gb
+
+    print("package:", gb.__file__)
+    old_suitesparse()
+    M = gb.Matrix.from_dense(np.eye(2))
+    calls = {
+        "Tensor": lambda: gb.Tensor(gb.dtypes.FP64, (2, 3)),
+        "from_coo": lambda: gb.Tensor.from_coo([[0], [1]], [1.0], shape=(2, 2)),
+        "from_dense": lambda: gb.Tensor.from_dense(np.eye(2)),
+        "from_matrix": lambda: gb.Tensor.from_matrix(M),
+        "from_vector": lambda: gb.Tensor.from_vector(gb.Vector.from_dense([1.0, 2.0])),
+        "from_matrices": lambda: gb.Tensor.from_matrices([M, M]),
+        "einsum": lambda: gb.einsum("ij->ji", np.eye(2)),
+    }
+    try:
+        import scipy.sparse
+
+        calls["from_scipy_sparse"] = lambda: gb.Tensor.from_scipy_sparse(scipy.sparse.eye(2))
+    except ImportError:
+        pass
+    for name, call in calls.items():
+        try:
+            call()
+            print("use:", name, "ok")
+        except NotImplementedError as exc:
+            print("use:", name, exc)
+else:
+
+    class Patch:
+        # after the conftest has initialized graphblas, before collection
+        def pytest_sessionstart(self, session):
+            old_suitesparse()
+
+    tests = sys.argv[2]
+    rc = pytest.main(
+        [f"{tests}/test_tensor.py", f"{tests}/test_tensor_io.py", "-q", "-rs", "-p",
+         "no:cacheprovider"],
+        plugins=[Patch()],
+    )
+    print("pytest:", int(rc))
+"""
+
+
+@pytest.mark.skipif(gb.backend != "suitesparse", reason="SuiteSparse only")
+def test_tensor_old_suitesparse():
+    """With a SuiteSparse that has no Container API (before 10), every public way to make a
+    Tensor, and einsum, raises one NotImplementedError naming the version, and the Tensor test
+    modules skip. Run in subprocesses with the Tensor module's ``lib`` patched.
+    """
+    import subprocess
+    import sys
+
+    repo_root = pathlib.Path(gb.__file__).resolve().parents[1]
+    tests = repo_root / "graphblas" / "tests"
+    out = {}
+    for what in ["calls", "pytest"]:
+        result = subprocess.run(
+            [sys.executable, "-c", _TENSOR_OLD_SS_SCRIPT, what, str(tests)],
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=str(repo_root),
+            env={**__import__("os").environ, "PYTHONPATH": str(repo_root)},
+        )
+        out[what] = report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        assert result.returncode == 0, report
+    report = out["calls"]
+    assert f"package: {repo_root / 'graphblas' / '__init__.py'}" in report, report
+    uses = [line for line in report.splitlines() if line.startswith("use: ")]
+    assert len(uses) >= 7, report
+    for line in uses:
+        assert line.endswith("Tensor requires SuiteSparse:GraphBLAS 10 or later"), report
+    report = out["pytest"]
+    assert "pytest: 5" in report, report  # (pytest's "no tests collected": both modules skip)
+    assert "2 skipped" in report, report
+    assert "passed" not in report, report
+
+
 def test_bad_init():
     # same params is okay
     params = dict(gb._init_params)
