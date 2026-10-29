@@ -7,7 +7,7 @@ import graphblas as gb
 
 from ... import binary, monoid
 from ...dtypes import _INDEX, INT64, UINT64, lookup_dtype
-from ...exceptions import _error_code_lookup, check_status, check_status_carg
+from ...exceptions import InvalidValue, _error_code_lookup, check_status, check_status_carg
 from .. import NULL, ffi, lib
 from ..base import call
 from ..operator import get_typed_op
@@ -604,6 +604,12 @@ class ss:
             if raw:
                 rv["size"] = size
         elif format == "full":
+            if parent._nvals != size:
+                # SuiteSparse refuses with GrB_INVALID_VALUE and no message.
+                raise InvalidValue(
+                    f"Vector with {parent._nvals} of {size} entries is not full, "
+                    f"so it cannot {method} to format 'full'"
+                )
             check_status(
                 getattr(lib, f"GxB_Vector_{method}_Full")(
                     vhandle,
