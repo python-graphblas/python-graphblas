@@ -4,6 +4,7 @@ import numpy as np
 from .. import backend, config, monoid, unary
 from ..dtypes import BOOL
 from ..exceptions import OutOfMemory
+from .infix import _is_literal
 from .matrix import Matrix, TransposedMatrix
 from .vector import Vector
 
@@ -717,11 +718,7 @@ def _format_infix_expression(expr, header, expr_name):
     )
 
     computed = ""
-    if config.get("autocompute") and (
-        expr.method_name not in {"ewise_add", "ewise_mult"}
-        or expr.left.dtype == BOOL
-        and expr.right.dtype == BOOL
-    ):
+    if config.get("autocompute") and _computes_itself(expr):
         computed = get_expr_result(expr, html=True)
         if "__EXPR__" in computed:
             return computed.replace("<tt>__EXPR__</tt>", topline)
@@ -740,17 +737,42 @@ def _format_infix_expression(expr, header, expr_name):
     )
 
 
+def _operand_dtype(operand):
+    """The dtype to show for an operand of a Scalar infix expression.
+
+    A literal, as in ``s & 1``, has no dtype until an op types it, so its own
+    type is shown.
+    """
+    if _is_literal(operand):
+        return type(operand).__name__
+    return operand.dtype
+
+
+def _computes_itself(expr):
+    """Whether infix ``expr`` computes without an op, as ``x @ y`` and BOOL ``x & y`` do."""
+    if expr.method_name not in {"ewise_add", "ewise_mult"}:
+        return True
+    return _is_bool(expr.left) and _is_bool(expr.right)
+
+
+def _is_bool(operand):
+    if _is_literal(operand):
+        # Beside a Scalar, as in `s & True`, a literal is BOOL beside BOOL if it is a bool
+        return type(operand) in {bool, np.bool_}
+    return operand.dtype == BOOL
+
+
 def format_scalar_infix_expression(expr):
     expr_repr = expr._format_expr()
     name = f"gb.{type(expr).__name__}"
     header = create_header(
         expr_repr,
         ["left_dtype", "right_dtype"],
-        [expr.left.dtype, expr.right.dtype],
+        [_operand_dtype(expr.left), _operand_dtype(expr.right)],
         name=name,
         quote=False,
     )
-    arg_string = get_result_string(expr)
+    arg_string = get_infix_result_string(expr)
     return (
         f"{header}\n\n"
         f"{arg_string}"
@@ -764,17 +786,13 @@ def format_scalar_infix_expression_html(expr):
     header = create_header_html(
         expr_html,
         ["left_dtype", "right_dtype"],
-        [expr.left.dtype, expr.right.dtype],
+        [_operand_dtype(expr.left), _operand_dtype(expr.right)],
     )
     return _format_infix_expression(expr, header, expr_html)
 
 
 def get_infix_result_string(expr):
-    if (
-        expr.method_name not in {"ewise_add", "ewise_mult"}
-        or expr.left.dtype == BOOL
-        and expr.right.dtype == BOOL
-    ):
+    if _computes_itself(expr):
         arg_string = get_result_string(expr)
     else:
         arg_string = ""

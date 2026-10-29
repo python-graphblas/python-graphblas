@@ -4011,6 +4011,64 @@ def test_infix_expr_repr(A, B, v):
 
 
 @pytest.mark.skipif("not pd")
+def test_scalar_infix_expr_repr_literal():
+    # A literal shows its value and its own type, as it has no dtype until an op types it
+    s = Scalar.from_value(5, dtype=dtypes.INT8, name="s_1")
+    repr_printer(s & 1, "s & 1")
+    assert repr(s & 1) == (
+        "gb.ScalarEwiseMultExpr  left_dtype  right_dtype\n"
+        "s_1 & 1                       INT8          int\n"
+        "\n"
+        "Do op(expr) to create a ScalarExpression for ewise_mult.\n"
+        "For example: times(s_1 & 1)"
+    )
+    repr_printer(0.5 | s, "0.5 | s")
+    assert repr(0.5 | s) == (
+        "gb.ScalarEwiseAddExpr  left_dtype  right_dtype\n"
+        "0.5 | s_1                   float         INT8\n"
+        "\n"
+        "Do op(expr) to create a ScalarExpression for ewise_add.\n"
+        "For example: plus(0.5 | s_1)"
+    )
+    html = repr_html(s & 1)
+    assert "<pre>s<sub>1</sub> & 1</pre>" in html
+    assert "<td>INT8</td>\n    <td>int</td>" in html
+
+
+@autocompute
+def test_scalar_infix_expr_repr_auto():
+    if not pd:  # pragma: no cover (import)
+        pytest.skip("needs pandas")
+    # As for Vector, only BOOL `x & y` and `x | y` compute without an op, to show the result
+    s = Scalar.from_value(5, dtype=dtypes.INT8, name="s_1")
+    repr_printer(s & s, "s & s")
+    assert repr(s & s) == (
+        "gb.ScalarEwiseMultExpr  left_dtype  right_dtype\n"
+        "s_1 & s_1                     INT8         INT8\n"
+        "\n"
+        "Do op(expr) to create a ScalarExpression for ewise_mult.\n"
+        "For example: times(s_1 & s_1)"
+    )
+    assert "Result" not in repr(s | 1)
+    assert '<div class="gb-scalar">' not in repr_html(s & s)
+    t = Scalar.from_value(True, name="t")
+    repr_printer(t & True, "t & True")
+    assert repr(t & True) == (
+        "gb.ScalarEwiseMultExpr  left_dtype  right_dtype\n"
+        "t & True                      BOOL         bool\n"
+        "\n"
+        '"Result"   value  dtype\n'
+        "gb.Scalar   True   BOOL\n"
+        "\n"
+        "Do op(expr) to create a ScalarExpression for ewise_mult.\n"
+        "For example: times(t & True)"
+    )
+    html = repr_html(False | t)
+    assert '<div class="gb-scalar">' in html
+    assert "<td>True</td>\n    <td>BOOL</td>" in html
+
+
+@pytest.mark.skipif("not pd")
 def test_inner_outer_repr_html(v):
     html_printer(v.inner(v), "v.inner(v)")
     assert repr_html(v.inner(v)) == (

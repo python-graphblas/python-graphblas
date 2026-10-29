@@ -2,7 +2,7 @@ from .. import binary, unary
 from ..dtypes import BOOL
 from .infix import MatrixInfixExpr, ScalarInfixExpr, VectorInfixExpr
 from .matrix import Matrix, MatrixExpression, MatrixIndexExpr, TransposedMatrix
-from .scalar import Scalar, ScalarExpression, ScalarIndexExpr
+from .scalar import Scalar, ScalarExpression, ScalarIndexExpr, _literal_scalar
 from .udt import _ewise_add_casts_udt, _plus_zero
 from .utils import output_type
 from .vector import Vector, VectorExpression, VectorIndexExpr
@@ -32,18 +32,16 @@ def call_op(self, other, op, *, outer=False, union=False):
         return op(self, other)
     if type2 in types:
         return op(self, other)
-    # Scalars
+    # Scalars. A literal on the left stays there: `1 - s` is minus(1, s), typed as
+    # `binary.minus(1 & s)` is, since rminus may not exist for s's dtype (a UDT).
+    method = "ewise_add" if outer else "ewise_union" if union else "ewise_mult"
+    if type1 is not Scalar:
+        self = _literal_scalar(other, self, op, within=method, argname="left")
     if outer:
-        if type1 is Scalar:
-            return self.ewise_add(other, op)
-        return other.ewise_add(self, op.commutes_to)
+        return self.ewise_add(other, op)
     if union:
-        if type1 is Scalar:
-            return self.ewise_union(other, op, False, False)
-        return other.ewise_union(self, op.commutes_to, False, False)
-    if type1 is Scalar:
-        return self.ewise_mult(other, op)
-    return other.ewise_mult(self, op.commutes_to)
+        return self.ewise_union(other, op, False, False)
+    return self.ewise_mult(other, op)
 
 
 def __divmod__(self, other):

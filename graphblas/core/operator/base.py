@@ -111,9 +111,7 @@ def _call_op(op, left, right=None, thunk=None, **kwargs):
     if right is None and thunk is None:
         if isinstance(left, InfixExprBase):
             # op(A & B), op(A | B), op(A @ B)
-            return getattr(left.left, f"_{left.method_name}")(
-                left.right, op, is_infix=True, **kwargs
-            )
+            return left._call_left(f"_{left.method_name}", op, is_infix=True, **kwargs)
         if find_opclass(op)[1] == "Semiring":
             raise TypeError(
                 f"Bad type when calling {op!r}.  Got type: {type(left)}.\n"
