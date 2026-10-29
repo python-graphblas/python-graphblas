@@ -245,13 +245,48 @@ def _update_vector_array(arr, vector, columns, column_offset, *, mask=None):
         arr[0, cols[np.isnan(vals)]] = "nan"
 
 
-def _get_max_columns():
+# The most rows or columns a repr reads when the display options set no limit: a max_columns of
+# 0 (as many as fit the terminal, which the renderer then cuts to its width) or None. pandas
+# takes None as no limit at all, but a repr cannot read every row of a Matrix with 2**60.
+_NO_LIMIT = 150
+
+
+def _display_limits():
+    """display.max_rows, min_rows and max_columns as the renderer uses them, None capped.
+
+    A max_rows of None reads as ``_NO_LIMIT + 1`` with a min_rows of ``_NO_LIMIT``, whatever
+    min_rows is (pandas ignores it then): a longer frame shows its first and last
+    ``_NO_LIMIT // 2`` rows, and a COO form its first ``_NO_LIMIT`` entries and the "..." row,
+    which a max_rows of ``_NO_LIMIT`` would cut again. A min_rows of None is max_rows, as in
+    pandas, and a max_columns of None is ``_NO_LIMIT``.
+    """
+    max_rows = _display_option("max_rows")
+    min_rows = _display_option("min_rows")
     max_columns = _display_option("max_columns")
-    if max_columns == 0:
-        # We are probably in a terminal and pandas will automatically size the data correctly.
-        # In this case, let's get a sufficiently large amount of data to show and defer to pandas.
-        max_columns = 150
-    return max_columns
+    if max_rows is None:
+        max_rows = _NO_LIMIT + 1
+        min_rows = _NO_LIMIT
+    elif min_rows is None:
+        min_rows = max_rows
+    if max_columns is None:
+        max_columns = _NO_LIMIT
+    return max_rows, min_rows, max_columns
+
+
+def _get_limits(max_rows, min_rows, max_columns):
+    """The limits of the rows and columns to read: the display options for any not given."""
+    display_max_rows, display_min_rows, display_max_columns = _display_limits()
+    if max_rows is None:  # pragma: no branch
+        max_rows = display_max_rows
+    if min_rows is None:  # pragma: no branch
+        min_rows = display_min_rows
+    if max_columns is None:  # pragma: no branch
+        max_columns = display_max_columns
+        if max_columns == 0:
+            # We are probably in a terminal and the renderer will size the data to fit it.
+            # In this case, let's get a sufficiently large amount of data to show.
+            max_columns = _NO_LIMIT
+    return max_rows, min_rows, max_columns
 
 
 def _terminal_rows():
@@ -814,9 +849,8 @@ class _TextFormatter:
 
 
 def _render_text(frame):
-    max_cols = _display_option("max_columns")
     line_width = _console_width() if _display_option("expand_frame_repr") else None
-    fmt = _TextFormatter(frame, _display_option("max_rows"), _display_option("min_rows"), max_cols)
+    fmt = _TextFormatter(frame, *_display_limits())
     return fmt.to_string(line_width)
 
 
@@ -916,22 +950,12 @@ class _HtmlBuilder:
 
 
 def _render_html(frame):
-    fmt = _TextFormatter(
-        frame,
-        _display_option("max_rows"),
-        _display_option("min_rows"),
-        _display_option("max_columns"),
-    )
+    fmt = _TextFormatter(frame, *_display_limits())
     return _HtmlBuilder(fmt).render()
 
 
 def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None):
-    if max_rows is None:  # pragma: no branch
-        max_rows = _display_option("max_rows")
-    if min_rows is None:  # pragma: no branch
-        min_rows = _display_option("min_rows")
-    if max_columns is None:  # pragma: no branch
-        max_columns = _get_max_columns()
+    max_rows, min_rows, max_columns = _get_limits(max_rows, min_rows, max_columns)
     if max_rows == 0:
         # The renderer fits the rows to the terminal; read at least the first row
         fit_rows = max(_terminal_rows(), 1)
@@ -995,12 +1019,7 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
 
 
 def _get_vector_dataframe(vector, max_rows, min_rows, max_columns, *, mask=None):
-    if max_rows is None:  # pragma: no branch
-        max_rows = _display_option("max_rows")
-    if min_rows is None:  # pragma: no branch
-        min_rows = _display_option("min_rows")
-    if max_columns is None:  # pragma: no branch
-        max_columns = _get_max_columns()
+    max_rows, min_rows, max_columns = _get_limits(max_rows, min_rows, max_columns)
     columns, column_groups = _get_chunk(vector._size, max_columns, max_columns)
     arr = np.full((1, len(columns)), np.nan, dtype=object)
     for column_group, column_offset in column_groups:
