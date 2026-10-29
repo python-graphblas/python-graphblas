@@ -12,6 +12,7 @@ from .. import NULL, _has_numba, ffi, lib
 from ..base import call
 from ..operator import get_typed_op
 from ..scalar import Scalar, _as_scalar, _scalar_index
+from ..udt import _element_value
 from ..utils import (
     _CArray,
     _distinct_buffers,
@@ -43,6 +44,19 @@ else:
 ffi_new = ffi.new
 
 
+def _iterator_value_getter(dtype):
+    """The function returning the value of the entry an iterator is on."""
+    if not dtype._is_udt:
+        return getattr(lib, f"GxB_Iterator_get_{dtype.name}")
+    buf = ffi_new("char[]", dtype.np_type.itemsize)
+
+    def get_udt(it):
+        lib.GxB_Iterator_get_UDT(it, buf)
+        return _element_value(dtype, buf)
+
+    return get_udt
+
+
 def head(matrix, n=10, dtype=None, *, sort=False):
     """Like ``matrix.to_coo()``, but only returns the first n elements.
 
@@ -61,7 +75,11 @@ def head(matrix, n=10, dtype=None, *, sort=False):
     else:
         dtype = lookup_dtype(dtype)
     rows, cols, vals = zip(*itertools.islice(matrix.ss.iteritems(), n), strict=True)
-    return np.array(rows, np.uint64), np.array(cols, np.uint64), np.array(vals, dtype.np_type)
+    # Filled from a list: numpy reads a tuple of records as one record, and an array
+    # UDT's dtype would add its shape to that of each value.
+    values = np.empty(len(vals), dtype.np_type)
+    values[...] = list(vals)
+    return np.array(rows, np.uint64), np.array(cols, np.uint64), values
 
 
 def _concat_mn(tiles, *, is_matrix=None):
@@ -493,7 +511,7 @@ class ss:
             return
         it = it_ptr[0]
         info = success = lib.GrB_SUCCESS
-        val_func = getattr(lib, f"GxB_Iterator_get_{self._parent.dtype.name}")
+        val_func = _iterator_value_getter(self._parent.dtype)
         next_func = lib.GxB_Matrix_Iterator_next
         try:
             while info == success:
@@ -528,7 +546,7 @@ class ss:
         it = it_ptr[0]
         info = success = lib.GrB_SUCCESS
         key_func = lib.GxB_Matrix_Iterator_getIndex
-        val_func = getattr(lib, f"GxB_Iterator_get_{self._parent.dtype.name}")
+        val_func = _iterator_value_getter(self._parent.dtype)
         next_func = lib.GxB_Matrix_Iterator_next
         row_ptr = ffi_new("GrB_Index*")
         col_ptr = ffi_new("GrB_Index*")

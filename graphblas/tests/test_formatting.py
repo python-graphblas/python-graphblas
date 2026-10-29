@@ -1,3 +1,5 @@
+import contextlib
+
 import numpy as np
 import pytest
 
@@ -81,6 +83,21 @@ def html_printer(x, name="", indent=4):
     return _printer(repr_html(x), name, "repr_html", indent)
 
 
+@contextlib.contextmanager
+def display_options(*args):
+    """Set display options as ``pd.option_context`` does, with or without pandas.
+
+    The renderer reads pandas' display options when pandas is installed and its own
+    copy of their defaults otherwise. Setting both lets a test expect the same output
+    in either environment.
+    """
+    with pytest.MonkeyPatch.context() as mp:
+        for key, val in zip(args[::2], args[1::2], strict=True):
+            mp.setitem(formatting._DISPLAY_DEFAULTS, key.removeprefix("display."), val)
+        with pd.option_context(*args) if pd is not None else contextlib.nullcontext():
+            yield
+
+
 @pytest.fixture(autouse=True)
 def _stable_repr_width(monkeypatch):
     """Pin terminal width so pandas-rendered reprs are deterministic.
@@ -146,41 +163,26 @@ def t():
 
 
 def test_no_pandas_repr(A, C, v, w):
-    # This is a bit of a hack...
+    # The rich repr is hand-rendered, so it no longer depends on pandas: with
+    # pandas marked absent the output is byte-identical to the pandas-present
+    # output, data grid and all. (When pandas is genuinely absent both branches
+    # use the same pandas-free path, so this still exercises that code.)
+    objs = [A, A.T, C, C.S, ~C.V, v, v.S, ~w.V, w]
+    expected = [repr(x) for x in objs]
     has_pandas_prev = formatting.has_pandas
     formatting.has_pandas = False
     try:
-        repr_printer(A, "A", indent=8)
-        assert repr(A) == (
-            '"A_1"      nvals  nrows  ncols  dtype   format\n'
-            "gb.Matrix      3      1      5  INT64  bitmapr"
-        )
-        repr_printer(A.T, "A.T", indent=8)
-        assert repr(A.T) == (
-            '"A_1.T"              nvals  nrows  ncols  dtype   format\n'
-            "gb.TransposedMatrix      3      5      1  INT64  bitmapc"
-        )
-        repr_printer(C.S, "C.S", indent=8)
-        assert repr(C.S) == (
-            '"C.S"           nvals  nrows  ncols  dtype    format\n'
-            "StructuralMask\n"
-            "of gb.Matrix        8     70     77  INT64  hypercsr"
-        )
-        repr_printer(v, "v", indent=8)
-        assert repr(v) == (
-            '"v"        nvals  size  dtype  format\ngb.Vector      3     5   FP64  bitmap'
-        )
-        repr_printer(~w.V, "~w.V", indent=8)
-        assert repr(~w.V) == (
-            '"~w.V"                 nvals  size  dtype  format\n'
-            "ComplementedValueMask\n"
-            "of gb.Vector               4    77  INT64  bitmap"
-        )
+        actual = [repr(x) for x in objs]
     finally:
         formatting.has_pandas = has_pandas_prev
+    assert actual == expected
+    # The data grid is rendered, not just the header: the border line and the
+    # values are present.
+    lines = repr(A).split("\n")
+    assert lines[2].startswith("----")
+    assert lines[-1] == "0  0    1    2"
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_repr_small(A, B):
     repr_printer(A, "A")
     assert repr(A) == (
@@ -212,7 +214,6 @@ def test_matrix_repr_small(A, B):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_mask_repr_small(A):
     repr_printer(A.S, "A.S")
     assert repr(A.S) == (
@@ -404,7 +405,6 @@ def test_matrix_mask_repr_large(C):
         )
 
 
-@pytest.mark.skipif("not pd")
 def test_vector_repr_small(v):
     repr_printer(v, "v")
     assert repr(v) == (
@@ -429,7 +429,6 @@ def test_vector_repr_large(w):
         )
 
 
-@pytest.mark.skipif("not pd")
 def test_vector_mask_repr_small(v):
     repr_printer(v.S, "v.S")
     assert repr(v.S) == (
@@ -517,140 +516,23 @@ def test_scalar_repr(s, t):
 
 
 def test_no_pandas_repr_html(A, C, v, w):
-    # This is a bit of a hack...
+    # _repr_html_ is hand-rendered too: marking pandas absent yields output that
+    # is byte-identical to the pandas-present output, data table included.
+    objs = [A, A.T, C, C.S, ~C.V, v, v.S, ~w.V, w]
+    expected = [repr_html(x) for x in objs]
     has_pandas_prev = formatting.has_pandas
     formatting.has_pandas = False
     try:
-        html_printer(A, "A", indent=8)
-        assert repr_html(A) == (
-            "<div>"
-            f"{CSS_STYLE}"
-            '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub></tt><div>\n'
-            '<table class="gb-info-table">\n'
-            "  <tr>\n"
-            '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Matrix</pre></td>\n'
-            "    <td><pre>nvals</pre></td>\n"
-            "    <td><pre>nrows</pre></td>\n"
-            "    <td><pre>ncols</pre></td>\n"
-            "    <td><pre>dtype</pre></td>\n"
-            "    <td><pre>format</pre></td>\n"
-            "  </tr>\n"
-            "  <tr>\n"
-            "    <td>3</td>\n"
-            "    <td>1</td>\n"
-            "    <td>5</td>\n"
-            "    <td>INT64</td>\n"
-            "    <td>bitmapr</td>\n"
-            "  </tr>\n"
-            "</table>\n"
-            "</div>\n"
-            "</summary><em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em></details></div>"
-        )
-        html_printer(A.T, "A.T", indent=8)
-        assert repr_html(A.T) == (
-            "<div>"
-            f"{CSS_STYLE}"
-            '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>A<sub>1</sub>.T</tt><div>\n'
-            '<table class="gb-info-table">\n'
-            "  <tr>\n"
-            '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.TransposedMatrix</pre></td>\n'
-            "    <td><pre>nvals</pre></td>\n"
-            "    <td><pre>nrows</pre></td>\n"
-            "    <td><pre>ncols</pre></td>\n"
-            "    <td><pre>dtype</pre></td>\n"
-            "    <td><pre>format</pre></td>\n"
-            "  </tr>\n"
-            "  <tr>\n"
-            "    <td>3</td>\n"
-            "    <td>5</td>\n"
-            "    <td>1</td>\n"
-            "    <td>INT64</td>\n"
-            "    <td>bitmapc</td>\n"
-            "  </tr>\n"
-            "</table>\n"
-            "</div>\n"
-            "</summary><em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em></details></div>"
-        )
-        html_printer(C.S, "C.S", indent=8)
-        assert repr_html(C.S) == (
-            "<div>"
-            f"{CSS_STYLE}"
-            '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>C.S</tt><div>\n'
-            '<table class="gb-info-table">\n'
-            "  <tr>\n"
-            '    <td rowspan="2" class="gb-info-name-cell"><pre>StructuralMask\n'
-            "of\n"
-            "gb.Matrix</pre></td>\n"
-            "    <td><pre>nvals</pre></td>\n"
-            "    <td><pre>nrows</pre></td>\n"
-            "    <td><pre>ncols</pre></td>\n"
-            "    <td><pre>dtype</pre></td>\n"
-            "    <td><pre>format</pre></td>\n"
-            "  </tr>\n"
-            "  <tr>\n"
-            "    <td>8</td>\n"
-            "    <td>70</td>\n"
-            "    <td>77</td>\n"
-            "    <td>INT64</td>\n"
-            "    <td>hypercsr</td>\n"
-            "  </tr>\n"
-            "</table>\n"
-            "</div>\n"
-            "</summary><em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em></details></div>"
-        )
-        html_printer(v, "v", indent=8)
-        assert repr_html(v) == (
-            "<div>"
-            f"{CSS_STYLE}"
-            '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
-            '<table class="gb-info-table">\n'
-            "  <tr>\n"
-            '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Vector</pre></td>\n'
-            "    <td><pre>nvals</pre></td>\n"
-            "    <td><pre>size</pre></td>\n"
-            "    <td><pre>dtype</pre></td>\n"
-            "    <td><pre>format</pre></td>\n"
-            "  </tr>\n"
-            "  <tr>\n"
-            "    <td>3</td>\n"
-            "    <td>5</td>\n"
-            "    <td>FP64</td>\n"
-            "    <td>bitmap</td>\n"
-            "  </tr>\n"
-            "</table>\n"
-            "</div>\n"
-            "</summary><em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em></details></div>"
-        )
-        html_printer(~w.V, "~w.V", indent=8)
-        assert repr_html(~w.V) == (
-            "<div>"
-            f"{CSS_STYLE}"
-            '<details class="gb-arg-details"><summary class="gb-arg-summary"><tt>~w.V</tt><div>\n'
-            '<table class="gb-info-table">\n'
-            "  <tr>\n"
-            '    <td rowspan="2" class="gb-info-name-cell"><pre>ComplementedValueMask\n'
-            "of\n"
-            "gb.Vector</pre></td>\n"
-            "    <td><pre>nvals</pre></td>\n"
-            "    <td><pre>size</pre></td>\n"
-            "    <td><pre>dtype</pre></td>\n"
-            "    <td><pre>format</pre></td>\n"
-            "  </tr>\n"
-            "  <tr>\n"
-            "    <td>4</td>\n"
-            "    <td>77</td>\n"
-            "    <td>INT64</td>\n"
-            "    <td>bitmap</td>\n"
-            "  </tr>\n"
-            "</table>\n"
-            "</div>\n"
-            "</summary><em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em></details></div>"
-        )
+        actual = [repr_html(x) for x in objs]
     finally:
         formatting.has_pandas = has_pandas_prev
+    assert actual == expected
+    # The data table is rendered, not the "install pandas" placeholder.
+    html = repr_html(A)
+    assert "install" not in html.lower()
+    assert '<table border="1" class="dataframe">' in html
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_repr_html_small(A, B):
     html_printer(A, "A")
     assert repr_html(A) == (
@@ -845,7 +727,6 @@ def test_matrix_repr_html_small(A, B):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_mask_repr_html_small(A):
     html_printer(A.S, "A.S")
     assert repr_html(A.S) == (
@@ -2121,7 +2002,6 @@ def test_matrix_mask_repr_html_large(C):
         )
 
 
-@pytest.mark.skipif("not pd")
 def test_vector_repr_html_small(v):
     html_printer(v, "v")
     assert repr_html(v) == (
@@ -2267,7 +2147,6 @@ def test_vector_repr_html_large(w):
         )
 
 
-@pytest.mark.skipif("not pd")
 def test_vector_mask_repr_html_small(v):
     html_printer(v.S, "v.S")
     assert repr_html(v.S) == (
@@ -2889,7 +2768,6 @@ def test_apply_repr(v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_apply_repr_html(v):
     html_printer(v.apply(unary.one), "v.apply(unary.one)")
     assert repr_html(v.apply(unary.one)) == (
@@ -2922,7 +2800,6 @@ def test_mxm_repr(A, B):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_mxm_repr_html(A, B):
     html_printer(A.mxm(B), "A.mxm(B)")
     assert repr_html(A.mxm(B)) == (
@@ -2957,7 +2834,6 @@ def test_mxv_repr(A, v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_mxv_repr_html(A, v):
     html_printer(A.mxv(v), "A.mxv(v)")
     assert repr_html(A.mxv(v)) == (
@@ -2980,7 +2856,6 @@ def test_mxv_repr_html(A, v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_reduce_columns_repr_html(A):
     # This is implemented using the transpose of A, so make sure we're oriented correctly!
     html_printer(A.reduce_columnwise(), "A.reduce_columnwise()")
@@ -3014,7 +2889,6 @@ def test_matrix_reduce_repr(C, v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_reduce_repr_html(C, v):
     html_printer(C.reduce_scalar(), "C.reduce_scalar()", indent=8)
     assert repr_html(C.reduce_scalar()) == (
@@ -3035,7 +2909,6 @@ def test_matrix_reduce_repr_html(C, v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_huge():
     M = Matrix(int, nrows=2**60, ncols=2**60, name="M")
     repr_printer(M, "M")
@@ -3061,7 +2934,6 @@ def test_matrix_huge():
     assert M.isequal(M2)
 
 
-@pytest.mark.skipif("not pd")
 def test_matrix_huge_html():
     M = Matrix(int, nrows=2**60, ncols=2**60, name="M")
     html_printer(M, "M")
@@ -3254,7 +3126,6 @@ def test_matrix_huge_html():
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_vector_huge():
     v = Vector(int, size=2**60)
     repr_printer(v, "v")
@@ -3269,7 +3140,6 @@ def test_vector_huge():
     assert v2.isequal(v)
 
 
-@pytest.mark.skipif("not pd")
 def test_vector_huge_html():
     v = Vector(int, size=2**60)
     html_printer(v, "v")
@@ -3407,7 +3277,6 @@ def test_vector_huge_html():
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_sparse_vector_repr():
     v = Vector.from_coo([100 * i for i in range(100)], [10 * i for i in range(100)], name="v")
     repr_printer(v, "v")
@@ -3561,7 +3430,6 @@ def test_sparse_vector_repr():
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_sparse_matrix_repr():
     A = Matrix.from_coo(
         [100 * i for i in range(100)], [10 * i for i in range(100)], list(range(100)), name="A"
@@ -3735,7 +3603,1152 @@ def test_sparse_matrix_repr():
     )
 
 
-@pytest.mark.skipif("not pd")
+def test_sparse_float_repr():
+    # A sparse float object whose nvals fit in display.max_rows is shown in COO form
+    # with a float column: every value gets the same number of decimals, less the
+    # trailing zeros they all share, and NaN shows as "NaN" where the dense grid shows
+    # "nan".
+    indices = [100, 161, 222, 283, 344, 405, 466]
+    values = [1.5, -2.25, 0.0, 100.0, np.nan, np.inf, -np.inf]
+    v = Vector.from_coo(indices, values, size=1000, name="v")
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size  dtype  format\n'
+        "gb.Vector      7  1000   FP64  sparse\n"
+        "-------------------------------------\n"
+        "   index     val\n"
+        "0    100    1.50\n"
+        "1    161   -2.25\n"
+        "2    222    0.00\n"
+        "3    283  100.00\n"
+        "4    344     NaN\n"
+        "5    405     inf\n"
+        "6    466    -inf"
+    )
+    html_printer(v, "v")
+    assert repr_html(v) == (
+        "<div>"
+        f"{CSS_STYLE}"
+        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Vector</pre></td>\n'
+        "    <td><pre>nvals</pre></td>\n"
+        "    <td><pre>size</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>7</td>\n"
+        "    <td>1000</td>\n"
+        "    <td>FP64</td>\n"
+        "    <td>sparse</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary><div>\n"
+        "<style scoped>\n"
+        "    .dataframe tbody tr th:only-of-type {\n"
+        "        vertical-align: middle;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe tbody tr th {\n"
+        "        vertical-align: top;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe thead th {\n"
+        "        text-align: right;\n"
+        "    }\n"
+        "</style>\n"
+        '<table border="1" class="dataframe">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        "      <th></th>\n"
+        "      <th>index</th>\n"
+        "      <th>val</th>\n"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        "    <tr>\n"
+        "      <th>0</th>\n"
+        "      <td>100</td>\n"
+        "      <td>1.50</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>1</th>\n"
+        "      <td>161</td>\n"
+        "      <td>-2.25</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>2</th>\n"
+        "      <td>222</td>\n"
+        "      <td>0.00</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>3</th>\n"
+        "      <td>283</td>\n"
+        "      <td>100.00</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>4</th>\n"
+        "      <td>344</td>\n"
+        "      <td>NaN</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>5</th>\n"
+        "      <td>405</td>\n"
+        "      <td>inf</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>6</th>\n"
+        "      <td>466</td>\n"
+        "      <td>-inf</td>\n"
+        "    </tr>\n"
+        "  </tbody>\n"
+        "</table>\n"
+        "</div></details></div>"
+    )
+    A = Matrix.from_coo(
+        [3, 104, 205, 306, 407, 508, 609],
+        [900, 811, 722, 633, 544, 455, 366],
+        values,
+        nrows=1000,
+        ncols=1000,
+        name="A",
+    )
+    repr_printer(A, "A")
+    assert repr(A) == (
+        '"A"        nvals  nrows  ncols  dtype    format\n'
+        "gb.Matrix      7   1000   1000   FP64  hypercsr\n"
+        "-----------------------------------------------\n"
+        "   row  col     val\n"
+        "0    3  900    1.50\n"
+        "1  104  811   -2.25\n"
+        "2  205  722    0.00\n"
+        "3  306  633  100.00\n"
+        "4  407  544     NaN\n"
+        "5  508  455     inf\n"
+        "6  609  366    -inf"
+    )
+    v = Vector.from_coo([100, 161, 222], [1.0, -2.0, 30.0], size=1000, name="v")
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size  dtype  format\n'
+        "gb.Vector      3  1000   FP64  sparse\n"
+        "-------------------------------------\n"
+        "   index   val\n"
+        "0    100   1.0\n"
+        "1    161  -2.0\n"
+        "2    222  30.0"
+    )
+    v = Vector.from_coo(
+        [100, 161, 222, 283], [0.1, 1 / 3, -2.5, np.nan], dtype="FP32", size=1000, name="v"
+    )
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size  dtype  format\n'
+        "gb.Vector      4  1000   FP32  sparse\n"
+        "-------------------------------------\n"
+        "   index       val\n"
+        "0    100  0.100000\n"
+        "1    161  0.333333\n"
+        "2    222 -2.500000\n"
+        "3    283       NaN"
+    )
+
+
+def test_sparse_float_repr_scientific():
+    # Scientific notation when a value is smaller than the precision shows, or when
+    # one is above 1e6 and the fixed-point column would be too wide.
+    v = Vector.from_coo([100, 161, 222], [1e-8, 2.5, -3.0], size=1000, name="v")
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size  dtype  format\n'
+        "gb.Vector      3  1000   FP64  sparse\n"
+        "-------------------------------------\n"
+        "   index           val\n"
+        "0    100  1.000000e-08\n"
+        "1    161  2.500000e+00\n"
+        "2    222 -3.000000e+00"
+    )
+    v = Vector.from_coo([100, 161, 222], [1.5e10, 2.0, -0.125], size=1000, name="v")
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size  dtype  format\n'
+        "gb.Vector      3  1000   FP64  sparse\n"
+        "-------------------------------------\n"
+        "   index           val\n"
+        "0    100  1.500000e+10\n"
+        "1    161  2.000000e+00\n"
+        "2    222 -1.250000e-01"
+    )
+    # Too wide for fixed point but not large: stays fixed point
+    v = Vector.from_coo([100, 161, 222], [123456.789, 0.5, -7.0], size=1000, name="v")
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size  dtype  format\n'
+        "gb.Vector      3  1000   FP64  sparse\n"
+        "-------------------------------------\n"
+        "   index         val\n"
+        "0    100  123456.789\n"
+        "1    161       0.500\n"
+        "2    222      -7.000"
+    )
+    v = Vector.from_coo(
+        [100, 161, 222, 283], [1e-3, 12345.678, -9.5e5, np.nan], size=1000, name="v"
+    )
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size  dtype  format\n'
+        "gb.Vector      4  1000   FP64  sparse\n"
+        "-------------------------------------\n"
+        "   index         val\n"
+        "0    100       0.001\n"
+        "1    161   12345.678\n"
+        "2    222 -950000.000\n"
+        "3    283         NaN"
+    )
+    v = Vector.from_coo([100, 161, 222], [1.23456, -0.5, 1e-4], size=1000, name="v")
+    with display_options("display.precision", 3):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      3  1000   FP64  sparse\n"
+            "-------------------------------------\n"
+            "   index        val\n"
+            "0    100  1.235e+00\n"
+            "1    161 -5.000e-01\n"
+            "2    222  1.000e-04"
+        )
+
+
+def test_sparse_complex_repr():
+    values = [
+        1 + 2j,
+        -1.5 - 0.25j,
+        3j,
+        complex(np.nan, 1),
+        complex(1, np.nan),
+        complex(np.nan, -2),
+        complex(np.nan, np.nan),
+        1 + 100j,
+    ]
+    v = Vector.from_coo([100, 161, 222, 283, 344, 405, 466, 527], values, size=1000, name="v")
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size  dtype  format\n'
+        "gb.Vector      8  1000   FC64  sparse\n"
+        "-------------------------------------\n"
+        "   index           val\n"
+        "0    100  1.00+  2.00j\n"
+        "1    161 -1.50-  0.25j\n"
+        "2    222  0.00+  3.00j\n"
+        "3    283   NaN+  1.00j\n"
+        "4    344  1.00+   NaNj\n"
+        "5    405   NaN-  2.00j\n"
+        "6    466   NaN+   NaNj\n"
+        "7    527  1.00+100.00j"
+    )
+    html_printer(v, "v")
+    assert repr_html(v) == (
+        "<div>"
+        f"{CSS_STYLE}"
+        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Vector</pre></td>\n'
+        "    <td><pre>nvals</pre></td>\n"
+        "    <td><pre>size</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>8</td>\n"
+        "    <td>1000</td>\n"
+        "    <td>FC64</td>\n"
+        "    <td>sparse</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary><div>\n"
+        "<style scoped>\n"
+        "    .dataframe tbody tr th:only-of-type {\n"
+        "        vertical-align: middle;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe tbody tr th {\n"
+        "        vertical-align: top;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe thead th {\n"
+        "        text-align: right;\n"
+        "    }\n"
+        "</style>\n"
+        '<table border="1" class="dataframe">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        "      <th></th>\n"
+        "      <th>index</th>\n"
+        "      <th>val</th>\n"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        "    <tr>\n"
+        "      <th>0</th>\n"
+        "      <td>100</td>\n"
+        "      <td>1.00+&nbsp;&nbsp;2.00j</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>1</th>\n"
+        "      <td>161</td>\n"
+        "      <td>-1.50-&nbsp;&nbsp;0.25j</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>2</th>\n"
+        "      <td>222</td>\n"
+        "      <td>0.00+&nbsp;&nbsp;3.00j</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>3</th>\n"
+        "      <td>283</td>\n"
+        "      <td>NaN+&nbsp;&nbsp;1.00j</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>4</th>\n"
+        "      <td>344</td>\n"
+        "      <td>1.00+&nbsp;&nbsp; NaNj</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>5</th>\n"
+        "      <td>405</td>\n"
+        "      <td>NaN-&nbsp;&nbsp;2.00j</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>6</th>\n"
+        "      <td>466</td>\n"
+        "      <td>NaN+&nbsp;&nbsp; NaNj</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>7</th>\n"
+        "      <td>527</td>\n"
+        "      <td>1.00+100.00j</td>\n"
+        "    </tr>\n"
+        "  </tbody>\n"
+        "</table>\n"
+        "</div></details></div>"
+    )
+    v = Vector.from_coo([100, 161], [1e-8 + 1j, 2 - 3j], size=1000, name="v")
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size  dtype  format\n'
+        "gb.Vector      2  1000   FC64  sparse\n"
+        "-------------------------------------\n"
+        "   index       val\n"
+        "0    100  0.0+1.0j\n"
+        "1    161  2.0-3.0j"
+    )
+    v = Vector.from_coo([100, 161], [0.1 + 0.2j, -1 - 1j], dtype="FC32", size=1000, name="v")
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size  dtype  format\n'
+        "gb.Vector      2  1000   FC32  sparse\n"
+        "-------------------------------------\n"
+        "   index       val\n"
+        "0    100  0.1+0.2j\n"
+        "1    161 -1.0-1.0j"
+    )
+
+
+def test_sparse_repr_chop_threshold():
+    # A value no larger than display.chop_threshold shows as zero. Whether the column
+    # uses scientific notation is decided from the values before they are chopped.
+    v = Vector.from_coo([100, 161, 222, 283], [1e-8, 0.5, -1e-9, np.nan], size=1000, name="v")
+    with display_options("display.chop_threshold", 1e-6):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      4  1000   FP64  sparse\n"
+            "-------------------------------------\n"
+            "   index           val\n"
+            "0    100  0.000000e+00\n"
+            "1    161  5.000000e-01\n"
+            "2    222  0.000000e+00\n"
+            "3    283           NaN"
+        )
+    v = Vector.from_coo([100, 161], [1.5, -0.25], size=1000, name="v")
+    with display_options("display.chop_threshold", 1e-6):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      2  1000   FP64  sparse\n"
+            "-------------------------------------\n"
+            "   index   val\n"
+            "0    100  1.50\n"
+            "1    161 -0.25"
+        )
+    # A complex value is compared by its magnitude, so a small part is not chopped
+    v = Vector.from_coo([100, 161], [1e-8 + 1j, 2 - 1e-9j], size=1000, name="v")
+    with display_options("display.chop_threshold", 1e-6):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      2  1000   FC64  sparse\n"
+            "-------------------------------------\n"
+            "   index       val\n"
+            "0    100  0.0+1.0j\n"
+            "1    161  2.0-0.0j"
+        )
+
+
+def test_repr_float_format():
+    # A float_format callable replaces the fixed-point and scientific formatting.
+    # A missing value is "NaN" in COO form; the dense grid already holds it as "nan".
+    v = Vector.from_coo([100, 161, 222], [1234.5, np.nan, -0.001], size=1000, name="v")
+    with display_options("display.float_format", "{:,.2f}".format):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      3  1000   FP64  sparse\n"
+            "-------------------------------------\n"
+            "   index      val\n"
+            "0    100 1,234.50\n"
+            "1    161      NaN\n"
+            "2    222    -0.00"
+        )
+    v = Vector.from_coo([0, 1, 3], [1234.5, np.nan, -0.001], size=4, name="v")
+    with display_options("display.float_format", "{:,.2f}".format):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      3     4   FP64  bitmap\n"
+            "-------------------------------------\n"
+            "index        0    1 2     3\n"
+            "value 1,234.50  nan   -0.00"
+        )
+    v = Vector.from_coo([100, 161], [1 + 2j, complex(np.nan, 1)], size=1000, name="v")
+    with display_options("display.float_format", "{:.2f}".format):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      2  1000   FC64  sparse\n"
+            "-------------------------------------\n"
+            "   index        val\n"
+            "0    100 1.00+2.00j\n"
+            "1    161        NaN"
+        )
+
+
+def test_sparse_bool_repr():
+    v = Vector.from_coo([100, 161, 222], [True, False, True], size=1000, name="v")
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size  dtype  format\n'
+        "gb.Vector      3  1000   BOOL  sparse\n"
+        "-------------------------------------\n"
+        "   index    val\n"
+        "0    100   True\n"
+        "1    161  False\n"
+        "2    222   True"
+    )
+
+
+def test_sparse_float_repr_truncated():
+    # Past display.max_rows the COO form ends in a "..." row, which makes every column
+    # an object column: each float is formatted on its own, and NaN shows as "NaN".
+    v = Vector.from_coo(
+        [100, 161, 222, 283, 344], [np.nan, 1.5, 2.0, 3.0, 4.0], size=1000, name="v"
+    )
+    with display_options("display.max_rows", 4, "display.min_rows", 2):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      5  1000   FP64  sparse\n"
+            "-------------------------------------\n"
+            "    index  val\n"
+            "0     100  NaN\n"
+            "1     161  1.5\n"
+            "...   ...  ..."
+        )
+        html_printer(v, "v")
+        assert repr_html(v) == (
+            "<div>"
+            f"{CSS_STYLE}"
+            '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+            '<table class="gb-info-table">\n'
+            "  <tr>\n"
+            '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Vector</pre></td>\n'
+            "    <td><pre>nvals</pre></td>\n"
+            "    <td><pre>size</pre></td>\n"
+            "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
+            "  </tr>\n"
+            "  <tr>\n"
+            "    <td>5</td>\n"
+            "    <td>1000</td>\n"
+            "    <td>FP64</td>\n"
+            "    <td>sparse</td>\n"
+            "  </tr>\n"
+            "</table>\n"
+            "</div>\n"
+            "</summary><div>\n"
+            "<style scoped>\n"
+            "    .dataframe tbody tr th:only-of-type {\n"
+            "        vertical-align: middle;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe tbody tr th {\n"
+            "        vertical-align: top;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe thead th {\n"
+            "        text-align: right;\n"
+            "    }\n"
+            "</style>\n"
+            '<table border="1" class="dataframe">\n'
+            "  <thead>\n"
+            '    <tr style="text-align: right;">\n'
+            "      <th></th>\n"
+            "      <th>index</th>\n"
+            "      <th>val</th>\n"
+            "    </tr>\n"
+            "  </thead>\n"
+            "  <tbody>\n"
+            "    <tr>\n"
+            "      <th>0</th>\n"
+            "      <td>100</td>\n"
+            "      <td>NaN</td>\n"
+            "    </tr>\n"
+            "    <tr>\n"
+            "      <th>1</th>\n"
+            "      <td>161</td>\n"
+            "      <td>1.5</td>\n"
+            "    </tr>\n"
+            "    <tr>\n"
+            "      <th>...</th>\n" + "      <td>...</td>\n" * 2 + "    </tr>\n"
+            "  </tbody>\n"
+            "</table>\n"
+            "</div></details></div>"
+        )
+
+
+def test_repr_max_colwidth():
+    # Cells wider than display.max_colwidth are cut short with "..."
+    v = Vector.from_coo([100, 161], [1e10, -0.5], size=1000, name="v")
+    with display_options("display.max_colwidth", 8):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      2  1000   FP64  sparse\n"
+            "-------------------------------------\n"
+            "   index      val\n"
+            "0    100  1.00...\n"
+            "1    161 -5.00..."
+        )
+    # With a max_colwidth of 3 or less, integer labels are narrowed but not cut
+    v = Vector.from_coo([0, 1, 11], [1, 2, 3], size=12, name="v")
+    with display_options("display.max_colwidth", 2):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      3    12  INT64  bitmap\n"
+            "-------------------------------------\n"
+            "index  0  1 2 3 4 5 6 7 8 9 10 11\n"
+            "value  1  2                     3"
+        )
+    # The row labels are still padded to one width, so the "..." label of truncated rows
+    # keeps all three dots
+    A = Matrix.from_coo(
+        [0, 9999, 9999], [9999, 1, 9999], [1, 2, 3], nrows=10000, ncols=10000, name="A"
+    )
+    small = ("display.max_rows", 4, "display.min_rows", 4, "display.max_columns", 4)
+    with display_options("display.max_colwidth", 3, *small):
+        repr_printer(A, "A")
+        assert repr(A) == (
+            '"A"        nvals  nrows  ncols  dtype    format\n'
+            "gb.Matrix      3  10000  10000  INT64  hypercsr\n"
+            "-----------------------------------------------\n"
+            "     0  1   ... 9998 9999\n"
+            "0           ...        1 \n"
+            "1           ...          \n"
+            "...  .. ..  ...  ..   .. \n"
+            "9998        ...          \n"
+            "9999     2  ...        3 "
+        )
+    # Longer integer labels are cut short as cells are, counting the sign column pandas
+    # gives them, in the text and the HTML
+    A = Matrix(int, 10**6, 10**6, name="A")
+    A[:, :] << 1
+    with display_options("display.max_colwidth", 6, *small):
+        repr_printer(A, "A")
+        assert repr(A) == (
+            '"A"                nvals    nrows    ncols  dtype       format\n'
+            "gb.Matrix  1000000000000  1000000  1000000  INT64  fullr (iso)\n"
+            "--------------------------------------------------------------\n"
+            "      0     1      ... 99... 99...\n"
+            "0         1     1  ...     1     1\n"
+            "1         1     1  ...     1     1\n"
+            "...     ...   ...  ...   ...   ...\n"
+            "99...     1     1  ...     1     1\n"
+            "99...     1     1  ...     1     1"
+        )
+        html_printer(A, "A")
+        assert repr_html(A) == (
+            "<div>"
+            f"{CSS_STYLE}"
+            '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A</tt><div>\n'
+            '<table class="gb-info-table">\n'
+            "  <tr>\n"
+            '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Matrix</pre></td>\n'
+            "    <td><pre>nvals</pre></td>\n"
+            "    <td><pre>nrows</pre></td>\n"
+            "    <td><pre>ncols</pre></td>\n"
+            "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
+            "  </tr>\n"
+            "  <tr>\n"
+            "    <td>1000000000000</td>\n" + "    <td>1000000</td>\n" * 2 + "    <td>INT64</td>\n"
+            "    <td>fullr (iso)</td>\n"
+            "  </tr>\n"
+            "</table>\n"
+            "</div>\n"
+            "</summary><div>\n"
+            "<style scoped>\n"
+            "    .dataframe tbody tr th:only-of-type {\n"
+            "        vertical-align: middle;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe tbody tr th {\n"
+            "        vertical-align: top;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe thead th {\n"
+            "        text-align: right;\n"
+            "    }\n"
+            "</style>\n"
+            '<table border="1" class="dataframe">\n'
+            "  <thead>\n"
+            '    <tr style="text-align: right;">\n'
+            "      <th></th>\n"
+            "      <th>0</th>\n"
+            "      <th>1</th>\n"
+            "      <th>...</th>\n" + "      <th>99...</th>\n" * 2 + "    </tr>\n"
+            "  </thead>\n"
+            "  <tbody>\n"
+            "    <tr>\n"
+            "      <th>0</th>\n"
+            + "      <td>1</td>\n" * 2
+            + "      <td>...</td>\n"
+            + "      <td>1</td>\n" * 2
+            + "    </tr>\n"
+            "    <tr>\n"
+            "      <th>1</th>\n"
+            + "      <td>1</td>\n" * 2
+            + "      <td>...</td>\n"
+            + "      <td>1</td>\n" * 2
+            + "    </tr>\n"
+            "    <tr>\n"
+            "      <th>...</th>\n" + "      <td>...</td>\n" * 5 + "    </tr>\n"
+            "    <tr>\n"
+            "      <th>99...</th>\n"
+            + "      <td>1</td>\n" * 2
+            + "      <td>...</td>\n"
+            + "      <td>1</td>\n" * 2
+            + "    </tr>\n"
+            "    <tr>\n"
+            "      <th>99...</th>\n"
+            + "      <td>1</td>\n" * 2
+            + "      <td>...</td>\n"
+            + "      <td>1</td>\n" * 2
+            + "    </tr>\n"
+            "  </tbody>\n"
+            "</table>\n"
+            "</div></details></div>"
+        )
+
+
+def test_repr_colheader_justify():
+    v = Vector.from_coo([100, 161], [1.5, -2.25], size=1000, name="v")
+    with display_options("display.colheader_justify", "left"):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      2  1000   FP64  sparse\n"
+            "-------------------------------------\n"
+            "   index  val \n"
+            "0  100    1.50\n"
+            "1  161   -2.25"
+        )
+    with display_options("display.colheader_justify", "center"):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      2  1000   FP64  sparse\n"
+            "-------------------------------------\n"
+            "   index   val\n"
+            "0   100   1.50\n"
+            "1   161  -2.25"
+        )
+        html_printer(v, "v")
+        assert repr_html(v) == (
+            "<div>"
+            f"{CSS_STYLE}"
+            '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+            '<table class="gb-info-table">\n'
+            "  <tr>\n"
+            '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Vector</pre></td>\n'
+            "    <td><pre>nvals</pre></td>\n"
+            "    <td><pre>size</pre></td>\n"
+            "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
+            "  </tr>\n"
+            "  <tr>\n"
+            "    <td>2</td>\n"
+            "    <td>1000</td>\n"
+            "    <td>FP64</td>\n"
+            "    <td>sparse</td>\n"
+            "  </tr>\n"
+            "</table>\n"
+            "</div>\n"
+            "</summary><div>\n"
+            "<style scoped>\n"
+            "    .dataframe tbody tr th:only-of-type {\n"
+            "        vertical-align: middle;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe tbody tr th {\n"
+            "        vertical-align: top;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe thead th {\n"
+            "        text-align: right;\n"
+            "    }\n"
+            "</style>\n"
+            '<table border="1" class="dataframe">\n'
+            "  <thead>\n"
+            '    <tr style="text-align: center;">\n'
+            "      <th></th>\n"
+            "      <th>index</th>\n"
+            "      <th>val</th>\n"
+            "    </tr>\n"
+            "  </thead>\n"
+            "  <tbody>\n"
+            "    <tr>\n"
+            "      <th>0</th>\n"
+            "      <td>100</td>\n"
+            "      <td>1.50</td>\n"
+            "    </tr>\n"
+            "    <tr>\n"
+            "      <th>1</th>\n"
+            "      <td>161</td>\n"
+            "      <td>-2.25</td>\n"
+            "    </tr>\n"
+            "  </tbody>\n"
+            "</table>\n"
+            "</div></details></div>"
+        )
+
+
+def test_repr_html_no_mathjax():
+    v = Vector.from_coo([100, 161], [1.5, -2.25], size=1000, name="v")
+    with display_options("display.html.use_mathjax", False):
+        html_printer(v, "v")
+        assert repr_html(v) == (
+            "<div>"
+            f"{CSS_STYLE}"
+            '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+            '<table class="gb-info-table">\n'
+            "  <tr>\n"
+            '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Vector</pre></td>\n'
+            "    <td><pre>nvals</pre></td>\n"
+            "    <td><pre>size</pre></td>\n"
+            "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
+            "  </tr>\n"
+            "  <tr>\n"
+            "    <td>2</td>\n"
+            "    <td>1000</td>\n"
+            "    <td>FP64</td>\n"
+            "    <td>sparse</td>\n"
+            "  </tr>\n"
+            "</table>\n"
+            "</div>\n"
+            "</summary><div>\n"
+            "<style scoped>\n"
+            "    .dataframe tbody tr th:only-of-type {\n"
+            "        vertical-align: middle;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe tbody tr th {\n"
+            "        vertical-align: top;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe thead th {\n"
+            "        text-align: right;\n"
+            "    }\n"
+            "</style>\n"
+            '<table border="1" class="dataframe tex2jax_ignore mathjax_ignore">\n'
+            "  <thead>\n"
+            '    <tr style="text-align: right;">\n'
+            "      <th></th>\n"
+            "      <th>index</th>\n"
+            "      <th>val</th>\n"
+            "    </tr>\n"
+            "  </thead>\n"
+            "  <tbody>\n"
+            "    <tr>\n"
+            "      <th>0</th>\n"
+            "      <td>100</td>\n"
+            "      <td>1.50</td>\n"
+            "    </tr>\n"
+            "    <tr>\n"
+            "      <th>1</th>\n"
+            "      <td>161</td>\n"
+            "      <td>-2.25</td>\n"
+            "    </tr>\n"
+            "  </tbody>\n"
+            "</table>\n"
+            "</div></details></div>"
+        )
+
+
+def test_repr_html_ignores_notebook_repr_html(v):
+    # Deliberately not pandas' output: with display.notebook_repr_html off, pandas'
+    # DataFrame._repr_html_ returns None, which the pandas-based renderer embedded as
+    # the text "None" where the table goes. The table is shown either way now.
+    expected = repr_html(v)
+    with display_options("display.notebook_repr_html", False):
+        assert repr_html(v) == expected
+
+
+def test_repr_wraps_wide_frame():
+    # A frame wider than display.width wraps into blocks, each but the last ending in a
+    # backslash column. With expand_frame_repr off it is never wrapped.
+    A = Matrix.from_coo(
+        [0, 0, 1, 1], [0, 11, 3, 7], [1.5, -2.0, 1e3, 0.25], nrows=2, ncols=12, name="A"
+    )
+    with display_options("display.max_columns", 30, "display.width", 40):
+        repr_printer(A, "A")
+        assert repr(A) == (
+            '"A"        nvals  nrows  ncols  dtype   format\n'
+            "gb.Matrix      4      2     12   FP64  bitmapr\n"
+            "----------------------------------------------\n"
+            "    0  1  2       3  4  5  6     7   \\\n"
+            "0  1.5                                \n"
+            "1             1000.0           0.25   \n"
+            "\n"
+            "  8  9  10   11  \n"
+            "0          -2.0  \n"
+            "1                "
+        )
+    with display_options("display.max_columns", 30, "display.width", 20):
+        repr_printer(A, "A")
+        assert repr(A) == (
+            '"A"        nvals  nrows  ncols  dtype   format\n'
+            "gb.Matrix      4      2     12   FP64  bitmapr\n"
+            "----------------------------------------------\n"
+            "    0  1  2   \\\n"
+            "0  1.5         \n"
+            "1              \n"
+            "\n"
+            "       3  4  5   \\\n"
+            "0                 \n"
+            "1  1000.0         \n"
+            "\n"
+            "  6     7  8  9   \\\n"
+            "0                  \n"
+            "1     0.25         \n"
+            "\n"
+            "  10   11  \n"
+            "0    -2.0  \n"
+            "1          "
+        )
+    with display_options("display.max_columns", 30, "display.expand_frame_repr", False):
+        repr_printer(A, "A")
+        assert repr(A) == (
+            '"A"        nvals  nrows  ncols  dtype   format\n'
+            "gb.Matrix      4      2     12   FP64  bitmapr\n"
+            "----------------------------------------------\n"
+            "    0  1  2       3  4  5  6     7  8  9  10   11\n"
+            "0  1.5                                       -2.0\n"
+            "1             1000.0           0.25              "
+        )
+
+
+def test_repr_max_rows_zero(monkeypatch):
+    # display.max_rows=0 fits the rows to the terminal's height (LINES), less three
+    # lines for the header, the dots and the prompt.
+    v = Vector.from_coo([100, 161, 222], [1.5, -2.25, np.nan], size=1000, name="v")
+    monkeypatch.setenv("LINES", "30")
+    with display_options("display.max_rows", 0):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      3  1000   FP64  sparse\n"
+            "-------------------------------------\n"
+            "   index   val\n"
+            "0    100  1.50\n"
+            "1    161 -2.25\n"
+            "2    222   NaN"
+        )
+    v = Vector.from_coo(
+        [100 + 61 * i for i in range(14)], [1.5 * i for i in range(14)], size=1000, name="v"
+    )
+    monkeypatch.setenv("LINES", "8")
+    with display_options("display.max_rows", 0):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector     14  1000   FP64  sparse\n"
+            "-------------------------------------\n"
+            "    index   val\n"
+            "0     100   0.0\n"
+            "1     161   1.5\n"
+            "..    ...   ...\n"
+            "9     649  13.5\n"
+            "...   ...   ..."
+        )
+    # A terminal with room for one row leaves none to show. main's pandas renderer
+    # raised TypeError here (pandas fails on a frame truncated to no rows).
+    v = Vector.from_coo([100, 161, 222], [1 + 2j, -1j, 2.5], size=1000, name="v")
+    monkeypatch.setenv("LINES", "4")
+    with display_options("display.max_rows", 0):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      3  1000   FC64  sparse\n"
+            "-------------------------------------\n"
+            "    index  val\n"
+            "..    ...  ..."
+        )
+    # A Matrix shown as a grid reads the rows that fit, not min_rows of them
+    rows = [0, 1, 2, 3, 36, 37, 38, 39]
+    A = Matrix.from_coo(
+        rows, [0, 1, 2, 0, 1, 2, 0, 1], [r * 10 + 1 for r in rows], nrows=40, ncols=3, name="A"
+    )
+    monkeypatch.setenv("LINES", "8")
+    with display_options("display.max_rows", 0):
+        repr_printer(A, "A")
+        assert repr(A) == (
+            '"A"        nvals  nrows  ncols  dtype   format\n'
+            "gb.Matrix      8     40      3  INT64  bitmapr\n"
+            "----------------------------------------------\n"
+            "      0    1 2 \n"
+            "0     1        \n"
+            "1         11   \n"
+            "..  ...  ... ..\n"
+            "38  381        \n"
+            "39       391   "
+        )
+
+
+def test_repr_max_rows_one():
+    # With room for a single row, the first row is shown instead of a head and a tail
+    v = Vector.from_coo(
+        [100 + 61 * i for i in range(14)], [1.5 * i for i in range(14)], size=1000, name="v"
+    )
+    with display_options("display.max_rows", 1, "display.min_rows", 1):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector     14  1000   FP64  sparse\n"
+            "-------------------------------------\n"
+            "   index  val\n"
+            "0    100  0.0\n"
+            "..   ...  ..."
+        )
+    # display.min_rows=1 leaves room for one row too, so the first max_rows rows are shown
+    B = Matrix.from_coo(
+        [0, 1, 3, 20, 39], [0, 1, 2, 0, 2], [1, 2, 3, 4, 5], nrows=40, ncols=3, name="B"
+    )
+    with display_options("display.max_rows", 5, "display.min_rows", 1):
+        repr_printer(B, "B")
+        assert repr(B) == (
+            '"B"        nvals  nrows  ncols  dtype    format\n'
+            "gb.Matrix      5     40      3  INT64  hypercsr\n"
+            "-----------------------------------------------\n"
+            "    0  1  2\n"
+            "0   1      \n"
+            "1      2   \n"
+            "2          \n"
+            "3         3\n"
+            "4          \n"
+            ".. .. .. .."
+        )
+
+
+def test_repr_max_rows_below_min_rows():
+    # The rows shown are the first and last half of min(min_rows, max_rows), or of
+    # max_rows when min_rows is 0, so only those rows are read, each under its label
+    rows = [0, 1, 2, 3, 36, 37, 38, 39]
+    A = Matrix.from_coo(
+        rows, [0, 1, 2, 0, 1, 2, 0, 1], [r * 10 + 1 for r in rows], nrows=40, ncols=3, name="A"
+    )
+    with display_options("display.max_rows", 4):
+        repr_printer(A, "A")
+        assert repr(A) == (
+            '"A"        nvals  nrows  ncols  dtype   format\n'
+            "gb.Matrix      8     40      3  INT64  bitmapr\n"
+            "----------------------------------------------\n"
+            "      0    1 2 \n"
+            "0     1        \n"
+            "1         11   \n"
+            "..  ...  ... ..\n"
+            "38  381        \n"
+            "39       391   "
+        )
+    with display_options("display.max_rows", 6, "display.min_rows", 0):
+        repr_printer(A, "A")
+        assert repr(A) == (
+            '"A"        nvals  nrows  ncols  dtype   format\n'
+            "gb.Matrix      8     40      3  INT64  bitmapr\n"
+            "----------------------------------------------\n"
+            "      0    1    2\n"
+            "0     1          \n"
+            "1         11     \n"
+            "2              21\n"
+            "..  ...  ...  ...\n"
+            "37            371\n"
+            "38  381          \n"
+            "39       391     "
+        )
+    # Fewer rows than min_rows
+    C = Matrix.from_coo([0, 1, 2], [0, 1, 2], [1, 2, 3], nrows=3, ncols=3, name="C")
+    with display_options("display.max_rows", 2):
+        repr_printer(C, "C")
+        assert repr(C) == (
+            '"C"        nvals  nrows  ncols  dtype   format\n'
+            "gb.Matrix      3      3      3  INT64  bitmapr\n"
+            "----------------------------------------------\n"
+            "    0 1   2\n"
+            "0   1      \n"
+            ".. .. .. ..\n"
+            "2         3"
+        )
+    # A dense Matrix stays a grid: the COO form would show no more rows than the grid.
+    # INT64 on Windows too, where numpy before 2 makes integers int32 by default.
+    vals = np.arange(5, dtype=np.int64)[:, None] * 1000 + np.arange(4)[None, :] + 1
+    D = Matrix.from_dense(vals, name="D")
+    with display_options("display.max_rows", 3, "display.max_columns", 2):
+        repr_printer(D, "D")
+        assert repr(D) == (
+            '"D"        nvals  nrows  ncols  dtype  format\n'
+            "gb.Matrix     20      5      4  INT64   fullr\n"
+            "---------------------------------------------\n"
+            "       0  ...     3\n"
+            "0      1  ...     4\n"
+            "..   ...  ...   ...\n"
+            "4   4001  ...  4004"
+        )
+
+
+def test_repr_max_columns_one():
+    # With room for a single column, the first column is shown instead of both ends
+    A = Matrix.from_coo(
+        [100, 300, 500], [0, 0, 0], [1.5, -2.25, np.nan], nrows=1000, ncols=1, name="A"
+    )
+    with display_options("display.max_columns", 1):
+        repr_printer(A, "A")
+        assert repr(A) == (
+            '"A"        nvals  nrows  ncols  dtype  format\n'
+            "gb.Matrix      3   1000      1   FP64     csc\n"
+            "---------------------------------------------\n"
+            "   row  ...\n"
+            "0  100  ...\n"
+            "1  300  ...\n"
+            "2  500  ..."
+        )
+        html_printer(A, "A")
+        assert repr_html(A) == (
+            "<div>"
+            f"{CSS_STYLE}"
+            '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A</tt><div>\n'
+            '<table class="gb-info-table">\n'
+            "  <tr>\n"
+            '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Matrix</pre></td>\n'
+            "    <td><pre>nvals</pre></td>\n"
+            "    <td><pre>nrows</pre></td>\n"
+            "    <td><pre>ncols</pre></td>\n"
+            "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
+            "  </tr>\n"
+            "  <tr>\n"
+            "    <td>3</td>\n"
+            "    <td>1000</td>\n"
+            "    <td>1</td>\n"
+            "    <td>FP64</td>\n"
+            "    <td>csc</td>\n"
+            "  </tr>\n"
+            "</table>\n"
+            "</div>\n"
+            "</summary><div>\n"
+            "<style scoped>\n"
+            "    .dataframe tbody tr th:only-of-type {\n"
+            "        vertical-align: middle;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe tbody tr th {\n"
+            "        vertical-align: top;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe thead th {\n"
+            "        text-align: right;\n"
+            "    }\n"
+            "</style>\n"
+            '<table border="1" class="dataframe">\n'
+            "  <thead>\n"
+            '    <tr style="text-align: right;">\n'
+            "      <th></th>\n"
+            "      <th>row</th>\n"
+            "      <th>...</th>\n"
+            "    </tr>\n"
+            "  </thead>\n"
+            "  <tbody>\n"
+            "    <tr>\n"
+            "      <th>0</th>\n"
+            "      <td>100</td>\n"
+            "      <td>...</td>\n"
+            "    </tr>\n"
+            "    <tr>\n"
+            "      <th>1</th>\n"
+            "      <td>300</td>\n"
+            "      <td>...</td>\n"
+            "    </tr>\n"
+            "    <tr>\n"
+            "      <th>2</th>\n"
+            "      <td>500</td>\n"
+            "      <td>...</td>\n"
+            "    </tr>\n"
+            "  </tbody>\n"
+            "</table>\n"
+            "</div></details></div>"
+        )
+    # The same for a Matrix and a Vector shown as a grid
+    A = Matrix.from_coo(
+        [0, 1, 2, 0, 2], [0, 0, 0, 3, 4], [1, 2, 3, 4, 5], nrows=3, ncols=5, name="A"
+    )
+    with display_options("display.max_columns", 1):
+        repr_printer(A, "A")
+        assert repr(A) == (
+            '"A"        nvals  nrows  ncols  dtype   format\n'
+            "gb.Matrix      5      3      5  INT64  bitmapr\n"
+            "----------------------------------------------\n"
+            "   0  ...\n"
+            "0  1  ...\n"
+            "1  2  ...\n"
+            "2  3  ..."
+        )
+    v = Vector.from_coo([0, 4], [1, 2], size=5, name="v")
+    with display_options("display.max_columns", 1):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      2     5  INT64  bitmap\n"
+            "-------------------------------------\n"
+            "index  0  ...\n"
+            "value  1  ..."
+        )
+
+
 def test_infix_expr_repr_html(A, B, v):
     html_printer(v & v, "v & v")
     assert repr_html(v & v) == (
@@ -3831,8 +4844,8 @@ def test_infix_expr_repr_html(A, B, v):
         '    <td rowspan="2" class="gb-info-name-cell"><pre>A<sub>1</sub> & B<sub>1</sub>.T</pre></td>\n'
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
-        "    <td><pre>right_dtype</pre></td>\n"
         "    <td><pre>left_dtype</pre></td>\n"
+        "    <td><pre>right_dtype</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>1</td>\n"
@@ -3854,14 +4867,39 @@ def test_infix_expr_repr_html(A, B, v):
         '    <td rowspan="2" class="gb-info-name-cell"><pre>A<sub>1</sub> | A<sub>1</sub></pre></td>\n'
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
-        "    <td><pre>right_dtype</pre></td>\n"
         "    <td><pre>left_dtype</pre></td>\n"
+        "    <td><pre>right_dtype</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>1</td>\n"
         "    <td>5</td>\n"
         "    <td>INT64</td>\n"
         "    <td>INT64</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary></details></div>"
+    )
+    # Operands of two dtypes, so each dtype must sit under its own side's label
+    F = Matrix.from_coo([0], [1], [2.5], nrows=1, ncols=5, name="F")
+    html_printer(A | F, "A | F")
+    assert repr_html(A | F) == (
+        "<div>"
+        f"{CSS_STYLE}"
+        '<details class="gb-expr-details"><summary class="gb-expr-summary"><tt><b>gb.MatrixEwiseAddExpr</b></tt>&nbsp;<span class="expr-tooltip"><span class="tooltip-circle">?</span><span class="tooltip-text"><em>Do <code>op(expr)</code> to create a <tt>MatrixExpression</tt> for <tt>ewise_add</tt>.<br>For example: <code>plus(A<sub>1</sub> | F)</code></em></span></span><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>A<sub>1</sub> | F</pre></td>\n'
+        "    <td><pre>nrows</pre></td>\n"
+        "    <td><pre>ncols</pre></td>\n"
+        "    <td><pre>left_dtype</pre></td>\n"
+        "    <td><pre>right_dtype</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>1</td>\n"
+        "    <td>5</td>\n"
+        "    <td>INT64</td>\n"
+        "    <td>FP64</td>\n"
         "  </tr>\n"
         "</table>\n"
         "</div>\n"
@@ -3877,8 +4915,8 @@ def test_infix_expr_repr_html(A, B, v):
         '    <td rowspan="2" class="gb-info-name-cell"><pre>A<sub>1</sub> @ B<sub>1</sub></pre></td>\n'
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
-        "    <td><pre>right_dtype</pre></td>\n"
         "    <td><pre>left_dtype</pre></td>\n"
+        "    <td><pre>right_dtype</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>1</td>\n"
@@ -3900,8 +4938,8 @@ def test_infix_expr_repr_html(A, B, v):
         '    <td rowspan="2" class="gb-info-name-cell"><pre>A<sub>1</sub>.T @ B<sub>1</sub>.T</pre></td>\n'
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
-        "    <td><pre>right_dtype</pre></td>\n"
         "    <td><pre>left_dtype</pre></td>\n"
+        "    <td><pre>right_dtype</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>5</td>\n"
@@ -3934,7 +4972,6 @@ def test_infix_expr_repr_html(A, B, v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_infix_expr_repr(A, B, v):
     repr_printer(v & v, "v & v")
     assert repr(v & v) == (
@@ -4010,7 +5047,6 @@ def test_infix_expr_repr(A, B, v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_scalar_infix_expr_repr_literal():
     # A literal shows its value and its own type, as it has no dtype until an op types it
     s = Scalar.from_value(5, dtype=dtypes.INT8, name="s_1")
@@ -4037,8 +5073,6 @@ def test_scalar_infix_expr_repr_literal():
 
 @autocompute
 def test_scalar_infix_expr_repr_auto():
-    if not pd:  # pragma: no cover (import)
-        pytest.skip("needs pandas")
     # As for Vector, only BOOL `x & y` and `x | y` compute without an op, to show the result
     s = Scalar.from_value(5, dtype=dtypes.INT8, name="s_1")
     repr_printer(s & s, "s & s")
@@ -4068,7 +5102,6 @@ def test_scalar_infix_expr_repr_auto():
     assert "<td>True</td>\n    <td>BOOL</td>" in html
 
 
-@pytest.mark.skipif("not pd")
 def test_inner_outer_repr_html(v):
     html_printer(v.inner(v), "v.inner(v)")
     assert repr_html(v.inner(v)) == (
@@ -4110,7 +5143,6 @@ def test_inner_outer_repr_html(v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_inner_outer_repr(v):
     # XXX: hmm, having `(GrB_Matrix)` here isn't so pretty
     repr_printer(v.inner(v), "v.inner(v)")
@@ -4131,8 +5163,6 @@ def test_inner_outer_repr(v):
 
 @autocompute
 def test_autocompute(A, B, v):
-    if not pd:  # pragma: no cover (import)
-        pytest.skip("needs pandas")
     repr_printer(A & A, "A & A")
     assert repr(A & A) == (
         "gb.MatrixEwiseMultExpr  nrows  ncols  left_dtype  right_dtype\n"
@@ -4213,8 +5243,6 @@ def test_autocompute(A, B, v):
 
 @autocompute
 def test_autocompute_html(A, B, v):
-    if not pd:  # pragma: no cover (import)
-        pytest.skip("needs pandas")
     html_printer(A & A, "A & A")
     assert repr_html(A & A) == (
         "<div>"
@@ -4225,8 +5253,8 @@ def test_autocompute_html(A, B, v):
         '    <td rowspan="2" class="gb-info-name-cell"><pre>A<sub>1</sub> & A<sub>1</sub></pre></td>\n'
         "    <td><pre>nrows</pre></td>\n"
         "    <td><pre>ncols</pre></td>\n"
-        "    <td><pre>right_dtype</pre></td>\n"
         "    <td><pre>left_dtype</pre></td>\n"
+        "    <td><pre>right_dtype</pre></td>\n"
         "  </tr>\n"
         "  <tr>\n"
         "    <td>1</td>\n"
@@ -4536,7 +5564,6 @@ def test_autocompute_html(A, B, v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_display_nan():
     v = Vector.from_coo([0, 1], [1.0, np.nan], size=3, name="v")
     repr_printer(v, "v")
@@ -4670,7 +5697,6 @@ def test_display_nan():
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_large_iso():
     A = Matrix(int, nrows=2**60, ncols=2**60)
     A[:, :] << 1
@@ -4899,7 +5925,6 @@ def test_index_expr_matrix_html(A):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_scalar_as_vector():
     s = Scalar.from_value(5, is_cscalar=False)  # pragma: is_grbscalar
     v = s._as_vector()
@@ -4958,8 +5983,6 @@ def test_scalar_as_vector():
 
 @autocompute
 def test_index_expr_autocompute(v):
-    if not pd:  # pragma: no cover (import)
-        pytest.skip("needs pandas")
     html_printer(v[[0, 1]], "v[[0, 1]]")
     assert repr_html(v[[0, 1]]) == (
         "<div>"
@@ -5013,7 +6036,6 @@ def test_index_expr_autocompute(v):
     )
 
 
-@pytest.mark.skipif("not pd")
 def test_udt():
     record_dtype = np.dtype([("x", np.bool_), ("y", np.int64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "record_dtype")
@@ -5063,7 +6085,333 @@ def test_udt():
     )
 
 
-@pytest.mark.skipif("not pd")
+def test_udt_one_field_repr():
+    # A record with one field shows as a 1-tuple, trailing comma included
+    udt = dtypes.register_anonymous(np.dtype([("one_field_x", np.int16)]), "one_field")
+    v = Vector(udt, size=3, name="v")
+    v[0] = (5,)
+    v[2] = (-7,)
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size      dtype  format\n'
+        "gb.Vector      2     3  one_field  bitmap\n"
+        "-----------------------------------------\n"
+        "index     0 1      2\n"
+        "value  (5,)    (-7,)"
+    )
+    # In COO form too, where main's pandas renderer raised TypeError on the record column
+    v = Vector(udt, size=1000, name="v")
+    v[100] = (5,)
+    v[500] = (-7,)
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size      dtype  format\n'
+        "gb.Vector      2  1000  one_field  sparse\n"
+        "-----------------------------------------\n"
+        "   index    val\n"
+        "0    100   (5,)\n"
+        "1    500  (-7,)"
+    )
+
+
+def test_truncated_udt_repr():
+    # The rows and columns shown are read with extract and assign, which need no
+    # operator, so a UDT object too large to show whole also shows without Numba
+    udt = dtypes.register_anonymous(np.dtype([("tr_x", np.int16)]), "tr_rec")
+    v = Vector(udt, size=300, name="v")
+    v[:] = (1,)
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size   dtype      format\n'
+        "gb.Vector    300   300  tr_rec  full (iso)\n"
+        "------------------------------------------\n"
+        "index   0     1     2     3     4     5    ...   294   295   296   297   298   299\n"
+        "value  (1,)  (1,)  (1,)  (1,)  (1,)  (1,)  ...  (1,)  (1,)  (1,)  (1,)  (1,)  (1,)"
+    )
+    A = Matrix(udt, nrows=100, ncols=300, name="A")
+    A[0, :] = (2,)
+    A[99, 299] = (3,)
+    repr_printer(A, "A")
+    assert repr(A) == (
+        '"A"        nvals  nrows  ncols   dtype    format\n'
+        "gb.Matrix    301    100    300  tr_rec  hypercsr\n"
+        "------------------------------------------------\n"
+        "     0     1     2     3     4     5    ...   294   295   296   297   298   299\n"
+        "0   (2,)  (2,)  (2,)  (2,)  (2,)  (2,)  ...  (2,)  (2,)  (2,)  (2,)  (2,)  (2,)\n"
+        "1                                       ...                                    \n"
+        "2                                       ...                                    \n"
+        "3                                       ...                                    \n"
+        "4                                       ...                                    \n"
+        "..   ...   ...   ...   ...   ...   ...  ...   ...   ...   ...   ...   ...   ...\n"
+        "95                                      ...                                    \n"
+        "96                                      ...                                    \n"
+        "97                                      ...                                    \n"
+        "98                                      ...                                    \n"
+        "99                                      ...                                (3,)"
+    )
+    repr_printer(A.T, "A.T")
+    assert repr(A.T) == (
+        '"A.T"                nvals  nrows  ncols   dtype    format\n'
+        "gb.TransposedMatrix    301    300    100  tr_rec  hypercsc\n"
+        "----------------------------------------------------------\n"
+        "       0  1  2  3  4  5  6  7  8  9  10  ... 89 90 91 92 93 94 95 96 97 98    99\n"
+        "0    (2,)                                ...                                    \n"
+        "1    (2,)                                ...                                    \n"
+        "2    (2,)                                ...                                    \n"
+        "3    (2,)                                ...                                    \n"
+        "4    (2,)                                ...                                    \n"
+        "..    ... .. .. .. .. .. .. .. .. .. ..  ... .. .. .. .. .. .. .. .. .. ..   ...\n"
+        "295  (2,)                                ...                                    \n"
+        "296  (2,)                                ...                                    \n"
+        "297  (2,)                                ...                                    \n"
+        "298  (2,)                                ...                                    \n"
+        "299  (2,)                                ...                                (3,)"
+    )
+
+
+def test_sparse_array_udt_repr():
+    # An array UDT in COO form shows a list per entry, as the dense grid does
+    udt = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "int8x3")
+    v = Vector(udt, size=1000, name="v")
+    v[100] = (1, 2, 3)
+    v[500] = (-1, 0, 1)
+    repr_printer(v, "v")
+    assert repr(v) == (
+        '"v"        nvals  size   dtype  format\n'
+        "gb.Vector      2  1000  int8x3  sparse\n"
+        "--------------------------------------\n"
+        "   index         val\n"
+        "0    100   [1, 2, 3]\n"
+        "1    500  [-1, 0, 1]"
+    )
+    html_printer(v, "v")
+    assert repr_html(v) == (
+        "<div>"
+        f"{CSS_STYLE}"
+        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Vector</pre></td>\n'
+        "    <td><pre>nvals</pre></td>\n"
+        "    <td><pre>size</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>2</td>\n"
+        "    <td>1000</td>\n"
+        "    <td>int8x3</td>\n"
+        "    <td>sparse</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary><div>\n"
+        "<style scoped>\n"
+        "    .dataframe tbody tr th:only-of-type {\n"
+        "        vertical-align: middle;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe tbody tr th {\n"
+        "        vertical-align: top;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe thead th {\n"
+        "        text-align: right;\n"
+        "    }\n"
+        "</style>\n"
+        '<table border="1" class="dataframe">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        "      <th></th>\n"
+        "      <th>index</th>\n"
+        "      <th>val</th>\n"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        "    <tr>\n"
+        "      <th>0</th>\n"
+        "      <td>100</td>\n"
+        "      <td>[1, 2, 3]</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>1</th>\n"
+        "      <td>500</td>\n"
+        "      <td>[-1, 0, 1]</td>\n"
+        "    </tr>\n"
+        "  </tbody>\n"
+        "</table>\n"
+        "</div></details></div>"
+    )
+    A = Matrix(udt, nrows=1000, ncols=1000, name="A")
+    A[100, 5] = (1, 2, 3)
+    A[300, 7] = (4, -5, 6)
+    repr_printer(A, "A")
+    assert repr(A) == (
+        '"A"        nvals  nrows  ncols   dtype    format\n'
+        "gb.Matrix      2   1000   1000  int8x3  hypercsr\n"
+        "------------------------------------------------\n"
+        "   row  col         val\n"
+        "0  100    5   [1, 2, 3]\n"
+        "1  300    7  [4, -5, 6]"
+    )
+    html_printer(A, "A")
+    assert repr_html(A) == (
+        "<div>"
+        f"{CSS_STYLE}"
+        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A</tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Matrix</pre></td>\n'
+        "    <td><pre>nvals</pre></td>\n"
+        "    <td><pre>nrows</pre></td>\n"
+        "    <td><pre>ncols</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>2</td>\n" + "    <td>1000</td>\n" * 2 + "    <td>int8x3</td>\n"
+        "    <td>hypercsr</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary><div>\n"
+        "<style scoped>\n"
+        "    .dataframe tbody tr th:only-of-type {\n"
+        "        vertical-align: middle;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe tbody tr th {\n"
+        "        vertical-align: top;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe thead th {\n"
+        "        text-align: right;\n"
+        "    }\n"
+        "</style>\n"
+        '<table border="1" class="dataframe">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        "      <th></th>\n"
+        "      <th>row</th>\n"
+        "      <th>col</th>\n"
+        "      <th>val</th>\n"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        "    <tr>\n"
+        "      <th>0</th>\n"
+        "      <td>100</td>\n"
+        "      <td>5</td>\n"
+        "      <td>[1, 2, 3]</td>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>1</th>\n"
+        "      <td>300</td>\n"
+        "      <td>7</td>\n"
+        "      <td>[4, -5, 6]</td>\n"
+        "    </tr>\n"
+        "  </tbody>\n"
+        "</table>\n"
+        "</div></details></div>"
+    )
+
+
+def test_sparse_udt_repr_past_max_rows():
+    # More values than display.max_rows: the first min_rows are read with an iterator
+    rec = dtypes.register_anonymous(
+        np.dtype([("rh_x", np.int16), ("rh_y", np.float32)]), "rec_head"
+    )
+    arr = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "int8x3")
+    v = Vector(rec, size=1000, name="v")
+    A = Matrix(arr, nrows=1000, ncols=1000, name="A")
+    for i in range(5):
+        v[100 + 100 * i] = (i, i / 2)
+        A[100 + 100 * i, i] = (i, -i, 2 * i)
+    with display_options("display.max_rows", 4, "display.min_rows", 2):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size     dtype  format\n'
+            "gb.Vector      5  1000  rec_head  sparse\n"
+            "----------------------------------------\n"
+            "    index       val\n"
+            "0     100  (0, 0.0)\n"
+            "1     200  (1, 0.5)\n"
+            "...   ...       ..."
+        )
+        repr_printer(A, "A")
+        assert repr(A) == (
+            '"A"        nvals  nrows  ncols   dtype    format\n'
+            "gb.Matrix      5   1000   1000  int8x3  hypercsr\n"
+            "------------------------------------------------\n"
+            "     row  col         val\n"
+            "0    100    0   [0, 0, 0]\n"
+            "1    200    1  [1, -1, 2]\n"
+            "...  ...  ...         ..."
+        )
+        html_printer(A, "A")
+        assert repr_html(A) == (
+            "<div>"
+            f"{CSS_STYLE}"
+            '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A</tt><div>\n'
+            '<table class="gb-info-table">\n'
+            "  <tr>\n"
+            '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Matrix</pre></td>\n'
+            "    <td><pre>nvals</pre></td>\n"
+            "    <td><pre>nrows</pre></td>\n"
+            "    <td><pre>ncols</pre></td>\n"
+            "    <td><pre>dtype</pre></td>\n"
+            "    <td><pre>format</pre></td>\n"
+            "  </tr>\n"
+            "  <tr>\n"
+            "    <td>5</td>\n" + "    <td>1000</td>\n" * 2 + "    <td>int8x3</td>\n"
+            "    <td>hypercsr</td>\n"
+            "  </tr>\n"
+            "</table>\n"
+            "</div>\n"
+            "</summary><div>\n"
+            "<style scoped>\n"
+            "    .dataframe tbody tr th:only-of-type {\n"
+            "        vertical-align: middle;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe tbody tr th {\n"
+            "        vertical-align: top;\n"
+            "    }\n"
+            "\n"
+            "    .dataframe thead th {\n"
+            "        text-align: right;\n"
+            "    }\n"
+            "</style>\n"
+            '<table border="1" class="dataframe">\n'
+            "  <thead>\n"
+            '    <tr style="text-align: right;">\n'
+            "      <th></th>\n"
+            "      <th>row</th>\n"
+            "      <th>col</th>\n"
+            "      <th>val</th>\n"
+            "    </tr>\n"
+            "  </thead>\n"
+            "  <tbody>\n"
+            "    <tr>\n"
+            "      <th>0</th>\n"
+            "      <td>100</td>\n"
+            "      <td>0</td>\n"
+            "      <td>[0, 0, 0]</td>\n"
+            "    </tr>\n"
+            "    <tr>\n"
+            "      <th>1</th>\n"
+            "      <td>200</td>\n"
+            "      <td>1</td>\n"
+            "      <td>[1, -1, 2]</td>\n"
+            "    </tr>\n"
+            "    <tr>\n"
+            "      <th>...</th>\n" + "      <td>...</td>\n" * 3 + "    </tr>\n"
+            "  </tbody>\n"
+            "</table>\n"
+            "</div></details></div>"
+        )
+
+
 def test_empty():
     v = Vector(int, 0)
     repr_printer(v, "v")
@@ -5088,7 +6436,173 @@ def test_empty():
     )
 
 
-@pytest.mark.skipif("not pd")
+def test_empty_repr_html():
+    # The text repr of an object with no rows or columns stops at the header; the
+    # HTML repr still shows the table, with its row and column labels.
+    A = Matrix(int, 0, 5, name="A")
+    html_printer(A, "A")
+    assert repr_html(A) == (
+        "<div>"
+        f"{CSS_STYLE}"
+        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A</tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Matrix</pre></td>\n'
+        "    <td><pre>nvals</pre></td>\n"
+        "    <td><pre>nrows</pre></td>\n"
+        "    <td><pre>ncols</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n" + "    <td>0</td>\n" * 2 + "    <td>5</td>\n"
+        "    <td>INT64</td>\n"
+        "    <td>csr</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary><div>\n"
+        "<style scoped>\n"
+        "    .dataframe tbody tr th:only-of-type {\n"
+        "        vertical-align: middle;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe tbody tr th {\n"
+        "        vertical-align: top;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe thead th {\n"
+        "        text-align: right;\n"
+        "    }\n"
+        "</style>\n"
+        '<table border="1" class="dataframe">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        "      <th></th>\n"
+        "      <th>0</th>\n"
+        "      <th>1</th>\n"
+        "      <th>2</th>\n"
+        "      <th>3</th>\n"
+        "      <th>4</th>\n"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        "  </tbody>\n"
+        "</table>\n"
+        "</div></details></div>"
+    )
+    A = Matrix(int, 5, 0, name="A")
+    html_printer(A, "A")
+    assert repr_html(A) == (
+        "<div>"
+        f"{CSS_STYLE}"
+        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>A</tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Matrix</pre></td>\n'
+        "    <td><pre>nvals</pre></td>\n"
+        "    <td><pre>nrows</pre></td>\n"
+        "    <td><pre>ncols</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>0</td>\n"
+        "    <td>5</td>\n"
+        "    <td>0</td>\n"
+        "    <td>INT64</td>\n"
+        "    <td>hypercsr</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary><div>\n"
+        "<style scoped>\n"
+        "    .dataframe tbody tr th:only-of-type {\n"
+        "        vertical-align: middle;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe tbody tr th {\n"
+        "        vertical-align: top;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe thead th {\n"
+        "        text-align: right;\n"
+        "    }\n"
+        "</style>\n"
+        '<table border="1" class="dataframe">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        "      <th></th>\n"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        "    <tr>\n"
+        "      <th>0</th>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>1</th>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>2</th>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>3</th>\n"
+        "    </tr>\n"
+        "    <tr>\n"
+        "      <th>4</th>\n"
+        "    </tr>\n"
+        "  </tbody>\n"
+        "</table>\n"
+        "</div></details></div>"
+    )
+    v = Vector(int, 0, name="v")
+    html_printer(v, "v")
+    assert repr_html(v) == (
+        "<div>"
+        f"{CSS_STYLE}"
+        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt>v</tt><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>gb.Vector</pre></td>\n'
+        "    <td><pre>nvals</pre></td>\n"
+        "    <td><pre>size</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "    <td><pre>format</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n" + "    <td>0</td>\n" * 2 + "    <td>INT64</td>\n"
+        "    <td>sparse</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary><div>\n"
+        "<style scoped>\n"
+        "    .dataframe tbody tr th:only-of-type {\n"
+        "        vertical-align: middle;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe tbody tr th {\n"
+        "        vertical-align: top;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe thead th {\n"
+        "        text-align: right;\n"
+        "    }\n"
+        "</style>\n"
+        '<table border="1" class="dataframe">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        "      <th></th>\n"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        "    <tr>\n"
+        "      <th></th>\n"
+        "    </tr>\n"
+        "  </tbody>\n"
+        "</table>\n"
+        "</div></details></div>"
+    )
+
+
 def test_vector_as_matrix():
     # Built iso outright: the repr asserted below names the format, and
     # SuiteSparse 10.5.0 no longer infers iso from a build whose values happen
