@@ -154,6 +154,24 @@ def _distinct_buffers(*arrays):
     return rv
 
 
+def _repeated_value(values, dtype):
+    """Return the one value a stride-0 1-d array repeats, as a 0-d array, or None.
+
+    ``np.broadcast_to(x, n)`` spells n copies of ``x`` without making them.
+    Values of a UDT (from ``values`` or ``dtype``) give None.
+    """
+    if (
+        type(values) is np.ndarray
+        and values.ndim == 1
+        and values.size > 0
+        and values.strides == (0,)
+        and values.dtype.kind in "biufc"
+        and (dtype is None or not lookup_dtype(dtype)._is_udt)
+    ):
+        return values[0, ...]
+    return None
+
+
 def _get_subdtype(dtype):
     while dtype.subdtype is not None:
         dtype = dtype.subdtype[0]
