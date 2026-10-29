@@ -15,7 +15,8 @@ def from_scipy_sparse(A, *, dup_op=None, name=None):
     A : scipy.sparse
         Scipy sparse array or matrix
     dup_op : BinaryOp, optional
-        Aggregation function for formats that allow duplicate entries (e.g. coo)
+        Aggregation function for duplicate entries, which coo allows (as do csr and csc
+        not in canonical format). Duplicates without it raise ValueError.
     name : str, optional
         Name of resulting Matrix
 
@@ -28,6 +29,11 @@ def from_scipy_sparse(A, *, dup_op=None, name=None):
     dtype = lookup_dtype(A.dtype)
     if A.nnz == 0:
         return Matrix(dtype, nrows=nrows, ncols=ncols, name=name)
+    if A.format in {"csr", "csc"} and not A.has_canonical_format:
+        # An index may repeat within a row (column), and an import takes the indices
+        # unchecked: a repeat would make an invalid Matrix. Build from coo instead, where
+        # dup_op combines repeats.
+        A = A.tocoo()
     if backend == "suitesparse" and A.format in {"csr", "csc"}:
         data = A.data
         is_iso = (data[[0]] == data).all()
