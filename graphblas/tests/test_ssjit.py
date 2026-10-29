@@ -519,22 +519,131 @@ def test_public_fix_jit_config_repairs_a_broken_compiler():
 
 
 @pytest.mark.skipif("_IS_SSGB7")
-def test_public_fix_jit_config_returns_none_without_env():
+def test_public_fix_jit_config_returns_none_without_env(monkeypatch):
     """With no ``CONDA_PREFIX`` and ``use_sysconfig=False``, the helper signals no-environment."""
-    if os.environ.get("CONDA_PREFIX"):
-        # Drop the env for this call only.
-        prev_env = os.environ.pop("CONDA_PREFIX")
-    else:
-        prev_env = None
+    monkeypatch.delenv("CONDA_PREFIX", raising=False)
     prev_cc = gb.ss.config["jit_c_compiler_name"]
     try:
         gb.ss.config["jit_c_compiler_name"] = "/nonexistent/path/to/cc"
         result = gb.ss.fix_jit_config(use_sysconfig=False)
         assert result is None
     finally:
-        if prev_env is not None:
-            os.environ["CONDA_PREFIX"] = prev_env
         gb.ss.config["jit_c_compiler_name"] = prev_cc
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_fix_jit_config_takes_the_compiler_from_sysconfig(monkeypatch):
+    """Without ``CONDA_PREFIX``, the compiler is the one Python was built with.
+
+    Driven through a stand-in config and ``sysconfig``, as for a pip-installed
+    Python, and with ``probe=False``, which repairs and enables without trying
+    a compile.
+    """
+    import sysconfig
+
+    from graphblas.core.ss import jit_config
+
+    monkeypatch.delenv("CONDA_PREFIX", raising=False)
+    monkeypatch.setattr(jit_config, "_jit_enabled_for_udt", None)
+    monkeypatch.setattr(jit_config, "_warned_no_jit_for", set())
+    probes = []
+    monkeypatch.setattr(jit_config, "_probe_jit", probes.append)
+    monkeypatch.setattr(sysconfig, "get_path", {"include": "/py/include"}.get)
+    baked = {
+        "jit_c_control": "run",
+        "jit_c_compiler_name": "/build/host/cc",
+        "jit_c_compiler_flags": "-O2",
+        "jit_c_libraries": "-lm",
+    }
+    for config_vars, expected in [
+        (
+            {"CC": "gcc -pthread", "CFLAGS": "-O3", "LIBS": "-ldl"},
+            {"jit_c_compiler_name": "gcc -pthread", "jit_c_compiler_flags": "-O3 -I/py/include"},
+        ),
+        # Without LIBS, the libraries SuiteSparse was built with stay.
+        ({"CC": "cc", "CFLAGS": "-O1"}, {"jit_c_compiler_name": "cc"}),
+    ]:
+        fake = dict(baked)
+        monkeypatch.setattr(jit_config, "_ss_config", lambda fake=fake: fake)
+        monkeypatch.setattr(sysconfig, "get_config_var", config_vars.get)
+        assert gb.ss.fix_jit_config(probe=False) is True
+        assert fake["jit_c_control"] == "on"
+        assert fake["jit_c_compiler_name"] == expected["jit_c_compiler_name"]
+        assert fake["jit_c_compiler_flags"].startswith(config_vars["CFLAGS"])
+        assert fake["jit_c_libraries"] == config_vars.get("LIBS", "-lm")
+    assert probes == []
+    # A Python that records no compiler (Windows) has none to offer.
+    fake = dict(baked)
+    monkeypatch.setattr(jit_config, "_ss_config", lambda: fake)
+    monkeypatch.setattr(sysconfig, "get_config_var", {"CFLAGS": "-O3"}.get)
+    assert gb.ss.fix_jit_config() is None
+    assert fake == baked
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_fix_jit_config_replaces_a_missing_sdk(monkeypatch, tmp_path):
+    """A baked-in ``-isysroot`` that does not exist here takes xcrun's SDK, or goes.
+
+    Without xcrun (Linux, or macOS without the command line tools) the flag is
+    dropped. Driven through a stand-in config, with the compiler taken from
+    a stand-in ``CONDA_PREFIX``.
+    """
+    import subprocess
+
+    from graphblas.core.ss import jit_config
+
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "cc").touch()
+    monkeypatch.setenv("CONDA_PREFIX", str(tmp_path))
+    monkeypatch.setattr(jit_config, "_jit_enabled_for_udt", None)
+    monkeypatch.setattr(jit_config, "_warned_no_jit_for", set())
+
+    def no_xcrun(*args, **kwargs):
+        raise FileNotFoundError("xcrun")
+
+    for check_output, flags in [
+        (
+            lambda *args, **kwargs: "/Library/SDKs/MacOSX.sdk\n",
+            "-O2 -isysroot /Library/SDKs/MacOSX.sdk -fPIC",
+        ),
+        (no_xcrun, "-O2 -fPIC"),
+    ]:
+        fake = {
+            "jit_c_control": "run",
+            "jit_c_compiler_name": "/build/host/bin/cc",
+            "jit_c_compiler_flags": "-O2 -isysroot /build/host/MacOSX.sdk -fPIC",
+        }
+        monkeypatch.setattr(jit_config, "_ss_config", lambda fake=fake: fake)
+        monkeypatch.setattr(subprocess, "check_output", check_output)
+        assert gb.ss.fix_jit_config(probe=False) is True
+        assert fake["jit_c_compiler_name"] == str(tmp_path / "bin" / "cc")
+        assert fake["jit_c_compiler_flags"].split() == flags.split()
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_auto_fix_jit_at_import_without_jit_options(monkeypatch):
+    """A SuiteSparse with no JIT options (7.x) is left as it is at import."""
+    from graphblas.core.ss import jit_config
+
+    fake = {"nthreads": 1}
+    monkeypatch.setattr(jit_config, "_ss_config", lambda: fake)
+    jit_config._auto_fix_jit_at_import()
+    assert fake == {"nthreads": 1}
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_compiling_c_source_reraises_an_error_the_control_does_not_explain(monkeypatch):
+    """A failure while the JIT stays on is not about compiling, so it is raised as it came."""
+    from graphblas.core.ss import jit_config
+    from graphblas.exceptions import NullPointer
+
+    fake = {"jit_c_control": "on"}
+    monkeypatch.setattr(jit_config, "_ss_config", lambda: fake)
+    monkeypatch.setattr(jit_config, "_jit_enabled_for_udt", True)
+    error = NullPointer("from SuiteSparse")
+    with pytest.raises(NullPointer) as info, jit_config._compiling_c_source("gb.unary.ss.op"):
+        raise error
+    assert info.value is error
 
 
 @pytest.fixture
@@ -604,6 +713,19 @@ def test_jit_udt_name_leaves_room_for_the_nul():
     name = "n" * limit
     with pytest.raises(ValueError, match=f"Max size is {limit - 1}; got {limit}"):
         dtypes.ss.register_new(name, f"typedef struct {{ int64_t a ; }} {name} ;")
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_jit_udt_name_and_typedef_are_checked():
+    """The name and the C typedef are checked before SuiteSparse is asked to compile them."""
+    with pytest.raises(ValueError, match="must be a valid Python identifier; got: 'chk-dash'"):
+        dtypes.ss.register_new("chk-dash", "typedef struct { int64_t a ; } chk_dash ;")
+    with pytest.raises(ValueError, match="must be same name as the typedef"):
+        dtypes.ss.register_new("chk_named", "typedef struct { int64_t a ; } chk_other ;")
+    with pytest.raises(ValueError, match="Only struct typedefs"):
+        dtypes.ss.register_new("chk_scalar", "typedef int64_t chk_scalar ;")
+    assert not hasattr(dtypes.ss, "chk_named")
+    assert not hasattr(dtypes.ss, "chk_scalar")
 
 
 def test_jit_unary(v):
@@ -770,6 +892,24 @@ def test_jit_indexunary(v):
     assert diffy_mixed is diffy
     assert ("FP64", "FP32") in diffy
     assert ("FP32", "FP64") not in diffy
+
+
+@pytest.mark.skipif(_has_idxbinop, reason="SuiteSparse:GraphBLAS has IndexBinaryOp")
+def test_indexbinary_needs_suitesparse_9_4():
+    """Before SuiteSparse:GraphBLAS 9.4, both ways to make an IndexBinaryOp say what is missing."""
+    cdef = (
+        "void ibo_first (double *z, double *x, GrB_Index ix, GrB_Index jx, "
+        "double *y, GrB_Index iy, GrB_Index jy, double *theta) { (*z) = (*x) ; }"
+    )
+    with pytest.raises(RuntimeError, match="requires SuiteSparse:GraphBLAS 9.4"):
+        indexbinary.ss.register_new("ibo_first", cdef, "FP64", "FP64", "FP64", "FP64")
+    if supports_udfs:
+
+        def ibo_first(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+            return x
+
+        with pytest.raises(RuntimeError, match="requires SuiteSparse:GraphBLAS 9.4"):
+            indexbinary.register_anonymous(ibo_first)
 
 
 @pytest.mark.slow
@@ -975,6 +1115,8 @@ def test_udt_jit_c_source_introspection():
     # Monoid-based aggregator walks to its monoid; composite agg has no kernel.
     assert gb.agg.sum[udt].jit_c_source == plus_binop_src
     assert gb.agg.count[udt].jit_c_source is None
+    assert gb.agg.sum[udt].jit_c_name == "plus__IntrospectUDT"
+    assert gb.agg.count[udt].jit_c_name is None
 
 
 @pytest.mark.skipif("not supports_udfs")
@@ -1446,9 +1588,11 @@ def test_udt_op_jit_cfunc_parity(udt_kind):
         # unequal under ``isequal``, so ``isequal`` can't distinguish "JIT and
         # cfunc agree on a NaN bit-pattern" from "they disagree". Byte-equality
         # of the dense numpy view captures the parity question correctly.
-        if j.dtype != c.dtype or j.nvals != c.nvals:
-            return False
-        return j.to_dense().tobytes() == c.to_dense().tobytes()
+        return (
+            j.dtype == c.dtype
+            and j.nvals == c.nvals
+            and j.to_dense().tobytes() == c.to_dense().tobytes()
+        )
 
     for op in binary_ops:
         assert values_equal(

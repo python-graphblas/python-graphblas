@@ -200,6 +200,19 @@ def test_unaryop_udf_no_support():
         unary.register_new("plus_one", plus_one)
 
 
+@pytest.mark.skipif("supports_udfs")
+def test_unaryop_on_udt_needs_numba():
+    # identity and one apply to any UDT through a Numba function
+    udt = dtypes.register_anonymous(
+        np.dtype([("nn_a", np.int64), ("nn_b", np.float64)]), "_NoNumbaUnary"
+    )
+    v = Vector(udt, size=2)
+    v[0] = (1, 2.0)
+    for unop in [unary.identity, unary.one]:
+        with pytest.raises(KeyError, match=f"{unop.name} does not work with _NoNumbaUnary"):
+            v.apply(unop).new()
+
+
 @pytest.mark.skipif("not supports_udfs")
 def test_unaryop_udf():
     def plus_one(x):
@@ -3317,7 +3330,7 @@ def test_udt_array_udf_known_extents_never_match_by_rank(monkeypatch):
     def refuse_nested(key, value=None):
         if isinstance(key, numba.core.types.NestedArray):
             raise ValueError("simulated: SuiteSparse refused to register this UDT")
-        return real_lookup(key, value)
+        return real_lookup(key, value)  # pragma: no cover (defensive)
 
     monkeypatch.setattr(_udf, "lookup_dtype", refuse_nested)
     with pytest.raises(UdfParseError, match="matches no input array UDT"):
@@ -4439,6 +4452,23 @@ def test_udt_array_pair_promotes_the_base():
         v.ewise_add(w)
     assert v.ewise_union(w, binary.plus, 0, 0.0).new().dtype == floats
     assert (v + w).new().isequal(v.ewise_union(w, binary.plus, 0, 0.0).new())
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_scalar_operand_is_named_in_reprs():
+    # apply passes a UDT C scalar to GraphBLAS through a pointer, which the reprs name
+    rec = dtypes.register_anonymous(
+        np.dtype([("srp_a", np.int64), ("srp_b", np.float64)]), "_ReprRec"
+    )
+    v = Vector(rec, size=3, name="v")
+    v[0] = (1, 2.0)
+    s = gb.Scalar.from_value((3, 4.0), rec, is_cscalar=True, name="s")
+    for expr, text in [
+        (v.apply(binary.first, left=s), "v.apply(binary.first[_ReprRec, _ReprRec], left=s)"),
+        (v.apply(binary.second, right=s), "v.apply(binary.second[_ReprRec, _ReprRec], right=s)"),
+    ]:
+        assert text in repr(expr)
+        assert text in expr._repr_html_()
 
 
 @pytest.mark.skipif("not supports_udfs")
@@ -6353,6 +6383,45 @@ def test_udt_aggregators():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udt_monoid_identity_follows_each_field_type():
+    # A bool field counts as 0 or 1: min (logical and) starts from True, max from False.
+    flags = dtypes.register_anonymous(
+        np.dtype([("idf_flag", np.bool_), ("idf_count", np.int16)]), "_IdentityFlags"
+    )
+    assert monoid.min[flags].identity.value.tolist() == (True, np.iinfo(np.int16).max)
+    assert monoid.max[flags].identity.value.tolist() == (False, np.iinfo(np.int16).min)
+    v = Vector(flags, size=3)
+    v[0] = (True, 3)
+    v[1] = (False, 5)
+    assert v.reduce(agg.min).new().value.tolist() == (False, 3)
+    assert v.reduce(agg.max).new().value.tolist() == (True, 5)
+
+    # binary.min compares dates and text, but no identity is generated for them, so the
+    # monoid names the field, and the aggregator built on it does not work with the UDT.
+    for np_type, field in [
+        (np.dtype([("idf_when", "M8[s]"), ("idf_n", np.int32)]), "idf_when"),
+        (np.dtype([("idf_label", "S4"), ("idf_m", np.int32)]), "idf_label"),
+    ]:
+        udt = dtypes.register_anonymous(np_type)
+        with pytest.raises(KeyError, match=f"field '{field}' has unsupported dtype"):
+            monoid.min[udt]
+        with pytest.raises(KeyError, match="min does not work with"):
+            agg.min[udt]
+        assert udt not in agg.min
+
+    # Without an identity, a monoid on a user op cannot be made.
+    def add_pairs(x, y):  # pragma: no cover (numba)
+        return (x["idf_flag"] | y["idf_flag"], x["idf_count"] + y["idf_count"])
+
+    no_identity = Monoid.register_anonymous(
+        BinaryOp.register_anonymous(add_pairs, is_udt=True), None
+    )
+    with pytest.raises(KeyError, match="no identity value"):
+        no_identity[flags]
+    assert flags not in no_identity
+
+
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_lazy_registration():
     """``lazy=True`` must preserve ``is_udt`` so registration succeeds when fired.
@@ -6546,6 +6615,7 @@ def test_op_ss():
         gb.semiring.ss.max_secondj
         gb.op.ss.positionj
         gb.agg.ss.argmin
+        gb.indexbinary.ss.register_new
     else:
         with pytest.raises(AttributeError, match="suitesparse"):
             gb.unary.ss
@@ -6557,6 +6627,8 @@ def test_op_ss():
             gb.op.ss
         with pytest.raises(AttributeError, match="suitesparse"):
             gb.agg.ss
+        with pytest.raises(AttributeError, match="suitesparse"):
+            gb.indexbinary.ss
 
 
 def test_deprecated():

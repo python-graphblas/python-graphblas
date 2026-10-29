@@ -36,7 +36,8 @@ def _resolve_serialized_dtype(data_obj, data_nbytes, obj_kind):
             raise _error_code_lookup[info](f"{obj_kind} deserialize failed to get the size of name")
         dtype_char = ffi.new(f"char[{dtype_size[0]}]")
         info = lib.GxB_Serialized_get_String(data_obj, dtype_char, lib.GrB_NAME, data_nbytes)
-        if info != lib.GrB_SUCCESS:
+        # This checks the blob as GxB_Serialized_get_SIZE just did, so it cannot fail now.
+        if info != lib.GrB_SUCCESS:  # pragma: no cover (safety)
             raise _error_code_lookup[info](f"{obj_kind} deserialize failed to get the name")
         return _string_to_dtype(ffi.string(dtype_char).decode())
     # No GrB_NAME fallback available (older SS); surface the original

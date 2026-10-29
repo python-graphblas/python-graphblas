@@ -291,7 +291,7 @@ class TypedOpBase:
         if getattr(self, "_gb_obj_owner", None) is not None:
             return
         gb_obj = getattr(self, "gb_obj", None)
-        if gb_obj is None or lib is None or ffi is None:
+        if gb_obj is None or lib is None or ffi is None:  # pragma: no cover (defensive)
             # Interpreter shutdown can clear ``lib`` / ``ffi`` before
             # finalizers run; SS will clean up the handles at process exit.
             return
@@ -299,7 +299,7 @@ class TypedOpBase:
         if c_type_name is None:  # pragma: no cover (defensive)
             return
         free_fn = getattr(lib, f"{c_type_name}_free", None)
-        if free_fn is None:
+        if free_fn is None:  # pragma: no cover (defensive)
             # ``GxB_IndexBinaryOp_free`` is absent on SS < 9.4; that build
             # also can't allocate one in the first place, so this path is
             # unreachable in practice but guarded for safety.

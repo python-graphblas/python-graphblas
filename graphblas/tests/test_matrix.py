@@ -3973,6 +3973,20 @@ def test_udt():
         info = A.ss.export("coor")
         result = A.ss.import_any(**info)
         assert result.isequal(A)
+        # Without nrows and ncols, the shape comes from values of three dimensions,
+        # which an iso export (one element) does not have.
+        B = A.dup()
+        B[0, 0] = (4, 5, 6)
+        info = B.ss.export("fullr")
+        assert info["values"].shape == (2, 2, 3)
+        assert "nrows" not in info
+        assert "ncols" not in info
+        assert Matrix.ss.import_any(**info).isequal(B)
+        info = A.ss.export("fullr")
+        assert info["values"].shape == (1, 3)
+        del info["nrows"], info["ncols"]
+        with pytest.raises(ValueError, match="nrows and ncols must be provided"):
+            Matrix.ss.import_any(**info)
     assert Matrix.from_csr(*A.to_csr()).isequal(A)
     A.clear()
     A[[0, 1], 1] = [(2, 3, 4), [5, 6, 7]]
@@ -3989,6 +4003,55 @@ def test_udt():
     A = Matrix(udt, nrows=2, ncols=3)
     with pytest.raises(ValueError, match="include dtype shape"):
         A[[0, 1], :] = [[2, 3, 4], [5, 6, 7]]
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_ss_serialize_udt_with_a_long_name():
+    # The numpy repr of these UDTs is too long to keep in a serialized blob.
+    def register(register, *args):
+        if hasattr(lib, "GrB_Type_set_String"):
+            return register(*args)
+        with pytest.warns(UserWarning, match="too large"):
+            return register(*args)
+
+    def assert_same(A, B):
+        # Compared by the arrays, since isequal on a record UDT needs Numba.
+        assert B.dtype == A.dtype
+        for a, b in zip(A.to_coo(), B.to_coo(), strict=True):
+            assert_array_equal(a, b)
+
+    long_dtype = np.dtype([("x", np.bool_), ("z" * 1000, np.float64)], align=True)
+    long_udt = register(dtypes.register_anonymous, long_dtype)
+    A = Matrix(long_udt, nrows=2, ncols=3)
+    A[0, 0] = 0
+    A[1, 2] = (1, 5.6)
+    assert_same(A, Matrix.ss.deserialize(A.ss.serialize(), dtype=long_udt))
+    # An anonymous one needs dtype= (see test_vector.py's test_udt for the errors)
+    with pytest.raises(SyntaxError if hasattr(lib, "GxB_Serialized_get_String") else ValueError):
+        Matrix.ss.deserialize(A.ss.serialize())
+    # A named one is found by its name
+    named_long_dtype = np.dtype([("x", np.bool_), ("z" * 1000, np.float64)], align=False)
+    named_long_udt = register(dtypes.register_new, "LongMatrixUDT", named_long_dtype)
+    A = Matrix(named_long_udt, nrows=2, ncols=3)
+    A[0, 0] = 0
+    A[1, 2] = (1, 5.6)
+    assert_same(A, Matrix.ss.deserialize(A.ss.serialize()))
+
+
+@pytest.mark.skipif("not suitesparse or not hasattr(lib, 'GxB_Serialized_get_String')")
+def test_ss_deserialize_integer_sizes_it_cannot_read():
+    # Byte 9 is in the blob's encoding word. There SuiteSparse 10 keeps the integer size of
+    # the column pointers, and refuses a size above what it knows, as from a later version;
+    # SuiteSparse 9 keeps a type code, which this makes invalid. The dtype name of this UDT
+    # does not resolve, so its GrB_NAME is read too: 9 refuses the blob when the dtype name
+    # is read, and 10 when GrB_NAME is.
+    udt = dtypes.register_anonymous(np.dtype([("isz_a", np.int64), ("isz_b", np.float64)]))
+    blob = Matrix(udt, nrows=3, ncols=3).ss.serialize()
+    blob[9] = (blob[9] & 0x0F) | 0x20
+    with pytest.raises(
+        InvalidObject, match="Matrix deserialize failed to get the (dtype name|size of name)"
+    ):
+        Matrix.ss.deserialize(blob)
 
 
 def test_reposition(A):
@@ -4271,12 +4334,14 @@ def test_ss_pack_hyperhash(A):
 
     C = Matrix(int, 20000, 200000)
     C.ss.config["sparsity_control"] = "hypersparse"
-    C[100, 2000] = 2
-    C[10, 20] = 1
+    # More rows than the 1024 below which SuiteSparse 10 skips the hash
+    rows = np.arange(1025) * 3
+    C << Matrix.from_coo(rows, rows * 7, 1, nrows=20000, ncols=200000)
     Y = C.ss.unpack_hyperhash()
     Y = C.ss.unpack_hyperhash(compute=True)
     assert C.ss.unpack_hyperhash() is None
-    if Y is not None:  # hyperhash may or may not be computed
+    # The hash is optional, but every SuiteSparse we test computes this one
+    if Y is not None:  # pragma: no branch (suitesparse)
         assert Y.nrows == C.nrows
         C.ss.pack_hyperhash(Y)
         assert Y.gb_obj[0] == gb.core.NULL

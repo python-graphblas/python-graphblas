@@ -119,7 +119,8 @@ def _get_udt_c_type_info(datatype):
     """
     from .operator.udt_codegen import _udt_c_typedef
 
-    if datatype.np_type is None:
+    # Every UDT registered from numpy has its np_type; one from C source never comes here.
+    if datatype.np_type is None:  # pragma: no cover (safety)
         return None
     return _udt_c_typedef(datatype.name, datatype.np_type)
 
@@ -787,7 +788,8 @@ def _dtype_to_explicit_dict(np_type):
         else:
             base_repr = base.str
         return (base_repr, shape)
-    return np_type.str
+    # Only records and arrays get here: any other dtype round-trips through its ``.str``.
+    return np_type.str  # pragma: no cover (safety)
 
 
 def _string_to_dtype(s):
