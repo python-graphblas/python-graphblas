@@ -149,6 +149,8 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
 def to_networkx(m, edge_attribute="weight"):
     """Create a networkx DiGraph from a square adjacency Matrix.
 
+    Every row is a node, numbered by its index, including rows with no entries.
+
     Parameters
     ----------
     m : Matrix
@@ -168,6 +170,9 @@ def to_networkx(m, edge_attribute="weight"):
     rows = rows.tolist()
     cols = cols.tolist()
     G = nx.DiGraph()
+    # Added first and in order, so a node with no edges is kept and the nodes
+    # iterate in index order: from_networkx then gives back the same matrix.
+    G.add_nodes_from(range(m.nrows))
     if edge_attribute is None:
         G.add_edges_from(zip(rows, cols, strict=True))
     else:
