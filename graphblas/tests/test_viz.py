@@ -172,7 +172,7 @@ def test_draw_without_networkx_curved_label_support(monkeypatch):
     real = nx.draw_networkx_edge_labels
 
     def pre_33_draw_networkx_edge_labels(g, pos, edge_labels=None, **kwargs):
-        if "connectionstyle" in kwargs:
+        if "connectionstyle" in kwargs:  # pragma: no cover (only on failure)
             raise TypeError(
                 "draw_networkx_edge_labels() got an unexpected keyword argument "
                 "'connectionstyle'"
