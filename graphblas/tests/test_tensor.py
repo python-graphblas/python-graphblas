@@ -233,6 +233,25 @@ def test_from_coo_errors_and_edges():
     assert U.ss.matrix.shape == (6, 1)
 
 
+def test_from_coo_shape_passed_as_dtype():
+    """numpy, scipy.sparse and pydata/sparse take the shape third; from_coo takes dtype there.
+    A shape in its place raised ``ValueError: Unknown dtype: (3, 3, 3)``; now a TypeError
+    that says to pass ``shape=``.
+    """
+    coords = ([0, 1, 2], [0, 1, 2], [0, 1, 2])
+    for shape in [(3, 3, 3), [3, 3, 3], (np.int64(3), 3, 3), ()]:
+        with pytest.raises(TypeError, match=r"pass the shape as shape=\(") as exc:
+            Tensor.from_coo(coords, [1.0, 2.0, 3.0], shape)
+        assert f"shape={tuple(shape)!r}" in str(exc.value)
+    # A dtype still works there, a numpy subarray dtype spec (a tuple) is not mistaken for a
+    # shape, and Matrix's from_coo is unchanged
+    assert Tensor.from_coo(coords, [1, 2, 3], dtypes.FP32, shape=(3, 3, 3)).dtype == dtypes.FP32
+    T = Tensor.from_coo(coords, np.ones((3, 2)), (np.float64, (2,)))
+    assert T.dtype.np_type == np.dtype((np.float64, (2,)))
+    with pytest.raises(ValueError, match="Unknown dtype"):
+        Matrix.from_coo([0, 1], [0, 1], [1.0, 2.0], (2, 2))
+
+
 @pytest.mark.parametrize("layout", all_layouts(3))
 def test_to_coo_order(layout):
     rng = np.random.default_rng(1)
