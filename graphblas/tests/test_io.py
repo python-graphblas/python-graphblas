@@ -160,6 +160,187 @@ def test_matrix_to_from_networkx():
     assert M.shape == (1, 1)
 
 
+@pytest.mark.skipif("not nx")
+def test_from_networkx_undirected():
+    # Undirected graphs go through from_networkx's direct COO path (no scipy),
+    # which symmetrizes off-diagonal entries and keeps self-loops single-counted.
+    G = nx.Graph()
+    G.add_weighted_edges_from([(0, 1, 2.0), (0, 0, 7.0), (1, 2, 3.0)])
+    M = gb.io.from_networkx(G)
+    expected = gb.Matrix.from_coo([0, 0, 1, 1, 2], [0, 1, 0, 2, 1], [7.0, 2.0, 2.0, 3.0, 3.0])
+    assert M.isequal(expected, check_dtype=True)
+
+    # weight=None ignores edge weights (all entries 1) and yields an int Matrix
+    M_none = gb.io.from_networkx(G, weight=None)
+    expected_none = gb.Matrix.from_coo([0, 0, 1, 1, 2], [0, 1, 0, 2, 1], 1)
+    assert M_none.isequal(expected_none, check_dtype=True)
+
+
+def _uniform_adjacency(G, nodelist, value):
+    # The adjacency of G over nodelist with every entry ``value``, built entry by
+    # entry from coo arrays (not iso), to compare from_networkx against.
+    index = {node: i for i, node in enumerate(nodelist)}
+    coords = {(index[u], index[v]) for u, v in G.subgraph(nodelist).edges}
+    if not G.is_directed():
+        coords |= {(j, i) for i, j in coords}
+    rows, cols = zip(*sorted(coords), strict=True)
+    n = len(nodelist)
+    return gb.Matrix.from_coo(rows, cols, [value] * len(rows), nrows=n, ncols=n)
+
+
+@pytest.mark.skipif("not nx")
+@pytest.mark.parametrize("graph_cls", [nx.Graph, nx.DiGraph] if nx else [])
+@pytest.mark.parametrize("selfloop", [False, True])
+@pytest.mark.parametrize("weight", [None, "weight"])
+def test_from_networkx_uniform_weights_are_iso(graph_cls, selfloop, weight):
+    # Every stored entry is the same value, so the matrix is stored iso, as
+    # from_scipy_sparse stored it. An undirected self-loop used to put both wt and
+    # -wt (the diagonal correction) into the values the uniformity test reads.
+    G = graph_cls()
+    G.add_weighted_edges_from([(0, 1, 2.5), (1, 2, 2.5)])
+    if selfloop:
+        G.add_edge(1, 1, weight=2.5)
+    value = 1 if weight is None else 2.5
+    for nodelist in [None, [2, 1]]:  # all nodes; a subset in another order
+        M = gb.io.from_networkx(G, nodelist=nodelist, weight=weight)
+        expected = _uniform_adjacency(G, list(G) if nodelist is None else nodelist, value)
+        assert M.isequal(expected, check_dtype=True)
+        if suitesparse:
+            assert M.ss.is_iso
+
+
+@pytest.mark.skipif("not nx")
+@pytest.mark.parametrize("wt", [np.inf, -np.inf, 1e308])
+def test_from_networkx_undirected_selfloop_keeps_its_weight(wt):
+    # Summing wt + wt - wt on the diagonal, as nx.to_scipy_sparse_array does,
+    # gives nan for an infinite self-loop and inf for 1e308.
+    G = nx.Graph()
+    G.add_weighted_edges_from([(0, 1, 1.0), (1, 1, wt)])
+    M = gb.io.from_networkx(G)
+    expected = gb.Matrix.from_coo([0, 1, 1], [1, 0, 1], [1.0, 1.0, wt])
+    assert M.isequal(expected, check_dtype=True)
+
+
+@pytest.mark.skipif("not nx")
+def test_from_networkx_undirected_selfloop_dtype():
+    # A self-loop needs no diagonal correction -wt, which cannot be written in an
+    # unsigned dtype (numpy 2 raises OverflowError).
+    G = nx.Graph()
+    G.add_weighted_edges_from([(0, 1, 2), (1, 1, 5)])
+    M = gb.io.from_networkx(G, dtype="uint8")
+    expected = gb.Matrix.from_coo([0, 1, 1], [1, 0, 1], [2, 2, 5], dtype="uint8")
+    assert M.isequal(expected, check_dtype=True)
+    # Nor does a self-loop change the inferred dtype (-True made bool weights int64).
+    G = nx.Graph()
+    G.add_weighted_edges_from([(0, 1, True), (1, 2, False), (1, 1, True)])
+    M = gb.io.from_networkx(G)
+    expected = gb.Matrix.from_coo(
+        [0, 1, 1, 1, 2], [1, 0, 1, 2, 1], [True, True, True, False, False]
+    )
+    assert M.isequal(expected, check_dtype=True)
+    # Nor is an unsigned numpy weight negated: -np.uint8(1) wraps to 255, so beside
+    # an int weight (the values infer int64) the self-loop summed to 257.
+    G = nx.Graph()
+    G.add_weighted_edges_from([(0, 1, 2), (1, 1, np.uint8(1))])
+    M = gb.io.from_networkx(G)
+    expected = gb.Matrix.from_coo([0, 1, 1], [1, 0, 1], [2, 2, 1])
+    assert M.isequal(expected, check_dtype=True)
+
+
+@pytest.mark.skipif("not nx")
+def test_from_networkx_int32_weights_widen_like_from_coo():
+    # np.int32 scalar weights infer an int32 array from the edge sequence on
+    # every platform (python ints do too on win64 with numpy < 2), and from_coo
+    # widens int32 inferred from sequence input to INT64. from_networkx must
+    # widen the same way or identical weights would produce different dtypes
+    # depending on which constructor they came through.
+    G = nx.DiGraph()
+    G.add_weighted_edges_from([(0, 1, np.int32(2)), (1, 0, np.int32(3))])
+    M = gb.io.from_networkx(G)
+    expected = gb.Matrix.from_coo([0, 1], [1, 0], [np.int32(2), np.int32(3)])
+    assert expected.dtype == dtypes.INT64
+    assert M.isequal(expected, check_dtype=True)
+    # An explicit dtype bypasses inference and is preserved exactly.
+    assert gb.io.from_networkx(G, dtype="int32").dtype == dtypes.INT32
+    # Narrower ints are not special-cased; this also matches from_coo.
+    H = nx.DiGraph()
+    H.add_weighted_edges_from([(0, 1, np.int16(2))])
+    assert gb.io.from_networkx(H).dtype == dtypes.INT16
+    assert gb.Matrix.from_coo([0], [1], [np.int16(2)]).dtype == dtypes.INT16
+
+
+@pytest.mark.skipif("not nx or not ss")
+@pytest.mark.parametrize(
+    "graph_cls", [nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph] if nx else []
+)
+def test_from_networkx_rejects_array_weights(graph_cls):
+    # Sequence weights of uniform length infer a 2-D numeric array, which passes
+    # a dtype-kind test but which from_coo would happily read as a UDT. scipy has
+    # always rejected these, so the direct path must defer rather than quietly
+    # widen what from_networkx accepts.
+    G = graph_cls()
+    G.add_edge(0, 1, weight=[1, 2])
+    G.add_edge(1, 0, weight=[3, 4])
+    with pytest.raises(ValueError, match="must be 1-D"):
+        gb.io.from_networkx(G)
+
+
+@pytest.mark.skipif("not nx or not ss")
+@pytest.mark.parametrize(
+    "graph_cls", [nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph] if nx else []
+)
+def test_from_networkx_matches_scipy(graph_cls):
+    # Both simple graphs and multigraphs now build the coo directly (no scipy
+    # round-trip); the result must reproduce nx.to_scipy_sparse_array exactly,
+    # including parallel-edge and parallel-self-loop weight sums.
+    G = graph_cls()
+    G.add_weighted_edges_from([(0, 1, 2.0), (1, 2, 3.0), (2, 0, 4.0), (0, 0, 5.0)])
+    if G.is_multigraph():
+        G.add_edge(0, 1, weight=1.5)  # parallel edge -> weights summed
+        G.add_edge(0, 0, weight=2.5)  # parallel self-loop -> diagonal summed
+    G.add_edge(3, 4)  # missing weight attr -> default 1
+    G.add_node(9)  # isolated node
+
+    A = nx.to_scipy_sparse_array(G, weight="weight")
+    reference = gb.io.from_scipy_sparse(A)
+    M = gb.io.from_networkx(G, weight="weight")
+    assert M.isequal(reference, check_dtype=True)
+    assert M.shape == reference.shape
+
+
+@pytest.mark.skipif("not nx")
+def test_from_networkx_rejects_bad_nodelist():
+    # The checks and messages of nx.to_scipy_sparse_array, without scipy. A missing
+    # node is reported before a duplicate.
+    G = nx.path_graph(3)
+    cases = [
+        ([], "nodelist has no nodes"),
+        ([0, 5], "Node 5 in nodelist is not in G"),
+        ([0, 0, 5], "Node 5 in nodelist is not in G"),
+        ([0, 1, 0], "nodelist contains duplicates."),
+    ]
+    for nodelist, message in cases:
+        with pytest.raises(nx.NetworkXError, match=message):
+            gb.io.from_networkx(G, nodelist=nodelist)
+
+
+@pytest.mark.skipif("not nx")
+def test_from_networkx_multigraph_is_scipy_free(monkeypatch):
+    # A numeric-weight multigraph must ingest via the direct coo path, not the
+    # scipy fallback, so networkx ingest no longer requires scipy for this case.
+    import graphblas.io._networkx as _gnx
+
+    def _boom(*args, **kwargs):  # pragma: no cover (only runs if the direct path regresses)
+        raise AssertionError("scipy fallback should not be used for a numeric multigraph")
+
+    monkeypatch.setattr(_gnx, "_from_networkx_via_scipy", _boom)
+    G = nx.MultiDiGraph()
+    G.add_weighted_edges_from([(0, 1, 2.0), (0, 1, 3.0), (2, 0, 1.0), (1, 1, 4.0), (1, 1, 0.5)])
+    M = gb.io.from_networkx(G)
+    assert M[0, 1].new().value == 5.0  # parallel edges summed
+    assert M[1, 1].new().value == 4.5  # parallel self-loops summed
+
+
 @pytest.mark.skipif("not ss")
 @pytest.mark.parametrize("engine", ["auto", "scipy", "fmm"])
 def test_mmread_mmwrite(engine):
