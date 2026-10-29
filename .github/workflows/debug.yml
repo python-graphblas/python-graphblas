@@ -9,6 +9,9 @@ on:
         required: false
         default: false
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -26,7 +29,7 @@ jobs:
           # - "conda-forge"
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -71,5 +74,5 @@ jobs:
           ( for attr in Matrix Scalar Vector Recorder _agg agg base binary descriptor dtypes exceptions expr ffi formatting infix init io lib mask matrix monoid op operator scalar semiring tests unary vector recorder _ss ss ; do echo python -c \"from graphblas import $attr\" ; if ! python -c "from graphblas import $attr" ; then exit 1 ; fi ; done )
 
       - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.debug_enabled }}
