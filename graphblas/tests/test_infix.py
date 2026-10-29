@@ -1,8 +1,11 @@
+import operator
+
 import numpy as np
 import pytest
 
-from graphblas import binary, dtypes, monoid, op
-from graphblas.core import _supports_udfs as supports_udfs  # noqa: F401 (used in skipif)
+from graphblas import binary, dtypes, monoid, op, unary
+from graphblas.core import _supports_udfs as supports_udfs
+from graphblas.core.utils import output_type
 from graphblas.exceptions import DimensionMismatch
 
 from .conftest import autocompute
@@ -878,6 +881,89 @@ def test_scalar_infix_literal_keeps_its_side_udt():
         result = binary.plus(expr).new()
     assert len(record) == 1
     np.testing.assert_array_equal(result.value, [np.inf, 3])
+
+
+@autocompute
+def test_numpy_value_on_the_left():
+    # numpy's operators defer to ours (__array_priority__), so a numpy scalar or 0-d array on
+    # the left is a literal operand, as on the right, and numpy does not compute the result
+    s = Scalar.from_value(5, dtype=dtypes.INT8)
+    v = Vector.from_coo([0, 2], [5, 6], dtype=dtypes.INT8, size=3)
+    A = Matrix.from_coo([0, 1], [1, 0], [5, 6], dtype=dtypes.INT8)
+    ops = [
+        (operator.add, binary.plus),
+        (operator.sub, binary.minus),
+        (operator.mul, binary.times),
+        (operator.truediv, binary.truediv),
+        (operator.pow, binary.pow),
+        (operator.lt, binary.lt),
+        (operator.le, binary.le),
+        (operator.gt, binary.gt),
+        (operator.ge, binary.ge),
+    ]
+    if supports_udfs:  # integer floordiv and numpy.mod are Numba functions
+        ops += [(operator.floordiv, binary.floordiv), (operator.mod, binary.numpy.mod)]
+    operands = [
+        (s, s),
+        (s.apply(unary.identity), s),
+        (v[0], s),
+        (v @ v, (v @ v).new()),
+        (v, v),
+        (v.apply(unary.identity), v),
+        (v[[0, 1, 2]], v),
+        (A, A),
+        (A.T, A.T.new()),
+        (A.apply(unary.identity), A),
+        (A[:, :], A),
+        (A @ A, (A @ A).new()),
+    ]
+    for x, computed in operands:
+        is_scalar = output_type(x) is Scalar
+        cases = ops if is_scalar else [*ops, (operator.eq, binary.eq), (operator.ne, binary.ne)]
+        for lit in [np.int16(2), np.float32(0.5), np.array(3)]:
+            for infix, binop in cases:
+                expected = binop(lit, computed).new()
+                assert infix(lit, x).new().isequal(expected, check_dtype=True)
+        if is_scalar:
+            # A Scalar's `==` is a bool, not numpy's np.bool_
+            assert (np.int16(computed.value) == x) is True
+            assert (np.int16(computed.value) != x) is False
+            with pytest.raises(TypeError, match="unsupported operand"):
+                np.int16(2) @ x
+        else:
+            with pytest.raises(TypeError, match="Bad type for argument `left`"):
+                np.int16(2) @ x
+            with pytest.raises(TypeError, match="Bad type for argument `left`"):
+                np.ones(x.shape[0]) @ x
+        # Before, numpy computed these from s.__array__() and raised for v and A
+        with pytest.raises(TypeError, match="Bad type"):
+            np.array([1, 2]) - x
+        with pytest.raises(TypeError, match="unsupported operand"):
+            np.int16(2) << x
+
+    # `&`, `|` and `^` as with a Python literal
+    t = Scalar.from_value(True)
+    bv = Vector.from_coo([0, 2], [True, False], size=3)
+    for infix in [operator.and_, operator.or_, operator.xor]:
+        assert infix(np.False_, t).new().isequal(infix(False, t).new(), check_dtype=True)
+    assert (np.True_ ^ bv).new().isequal((True ^ bv).new(), check_dtype=True)
+    for infix in [operator.and_, operator.or_]:
+        with pytest.raises(TypeError, match="Bad type for argument `left`"):
+            infix(np.True_, bv)
+    with pytest.raises(TypeError, match="only valid for BOOL"):
+        (np.int16(2) & s).new()
+
+    # In place, numpy no longer computes an array minus a Scalar
+    arr = np.array([1, 2])
+    with pytest.raises(TypeError, match="Bad type"):
+        arr -= s
+    np.testing.assert_array_equal(arr, [1, 2])
+    # Ufuncs still convert a Scalar with __array__
+    assert np.sin(s) == np.sin(np.int8(5))
+    np.testing.assert_array_equal(np.asarray(s), np.array(5, np.int8))
+    result = np.subtract(np.int16(2), s)
+    assert isinstance(result, np.int16)
+    assert result == -3
 
 
 @autocompute

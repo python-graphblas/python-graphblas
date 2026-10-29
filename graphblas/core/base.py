@@ -190,6 +190,12 @@ class BaseType:
     __slots__ = "gb_obj", "dtype", "name", "__weakref__"
     # Flag for operations which depend on scalar vs vector/matrix
     _is_scalar = False
+    # numpy's operators return NotImplemented for an operand of higher priority than theirs
+    # (ndarray's is 0, np.matrix's 10), so with a numpy scalar or array on the left Python calls
+    # our reflected method, and `np.int16(2) - s` is the expression `s - np.int16(2)` would be,
+    # not numpy's value of `s.__array__()`. Ufuncs such as `np.sin(s)` still use __array__.
+    # Expressions, TransposedMatrix and the index expressions set it too.
+    __array_priority__ = 1000
 
     def __call__(
         self,
@@ -577,6 +583,7 @@ class BaseExpression:
     )
     output_type = None
     _is_scalar = False
+    __array_priority__ = BaseType.__array_priority__  # numpy's operators defer to ours
 
     def __init__(
         self,
