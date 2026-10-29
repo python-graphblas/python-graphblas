@@ -290,6 +290,7 @@ class Assigner:
 class AmbiguousAssignOrExtract:
     __slots__ = "parent", "resolved_indexes", "_value", "__weakref__"
     _is_scalar = False
+    __array_priority__ = 1000  # numpy's operators defer to ours; see BaseType
 
     def __init__(self, parent, resolved_indexes):
         self.parent = parent
@@ -484,6 +485,7 @@ class Updater:
 class InfixExprBase:
     __slots__ = "left", "right", "_expr", "__weakref__"
     _is_scalar = False
+    __array_priority__ = 1000  # numpy's operators defer to ours; see BaseType
 
     def __init__(self, left, right):
         self.left = left
