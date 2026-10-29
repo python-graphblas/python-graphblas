@@ -127,14 +127,19 @@ def _repair_jit_compiler(cfg, *, use_sysconfig=True):
 
 
 def _fix_from_conda(cfg, conda_prefix):
-    """Conda-aware fix; swap the compiler path with one from $CONDA_PREFIX/bin/."""
+    """Conda-aware fix; swap the compiler path with one from the environment's binaries:
+    ``$CONDA_PREFIX/bin/``, or ``$CONDA_PREFIX/Library/bin/`` with ``.exe`` names (Windows).
+    """
     jit_cc = cfg["jit_c_compiler_name"]
     if not pathlib.Path(jit_cc).exists():
-        cc_basename = pathlib.Path(jit_cc).name
-        bin_dir = pathlib.Path(conda_prefix) / "bin"
-        for candidate in [cc_basename, "cc", "clang", "gcc"]:
-            local_cc = bin_dir / candidate
-            if local_cc.exists():
+        # (a Windows path's basename, also when read on another system)
+        cc_basename = re.split(r"[\\/]", jit_cc)[-1]
+        prefix = pathlib.Path(conda_prefix)
+        names = [cc_basename, "cc", "clang", "gcc"]
+        names += [n + ".exe" for n in names if not n.lower().endswith(".exe")]
+        for bin_dir in [prefix / "bin", prefix / "Library" / "bin"]:
+            local_cc = next((bin_dir / n for n in names if (bin_dir / n).exists()), None)
+            if local_cc is not None:
                 cfg["jit_c_compiler_name"] = str(local_cc)
                 break
         else:
