@@ -106,6 +106,8 @@ def _literal_operand(dtype, value, op):
             if is_comparison and not isinstance(value, (np.generic, np.ndarray)):
                 np_type = dtype.np_type
                 parts = _dict_to_record(np_type, value) if isinstance(value, dict) else value
+                # First: making an int beyond its leaf infinity reshapes the part.
+                _refuse_misfit_fields(dtype, np_type, parts)
                 if _int_beyond_leaf(np_type, parts) is not None:
                     # As infinity in its leaf, it still equals no element, and it
                     # stays out of an array numpy makes of numpy values beside it.
@@ -238,6 +240,7 @@ def _literal_type(dtype, value, *, exact=False):
     np_type = dtype.np_type
     if isinstance(value, dict) and np_type.names is not None:
         value = _dict_to_record(np_type, value)
+    _refuse_misfit_fields(dtype, np_type, value)
     if np_type.names is None and np_type.kind in "SU" and isinstance(value, (str, bytes)):
         if _keeps_value(value, np_type):
             return dtype
@@ -663,6 +666,45 @@ def _holds_numpy_values(value):
     except (TypeError, ValueError):  # ragged
         return False
     return any(isinstance(x, (np.number, np.bool_)) for x in items)
+
+
+def _refuse_misfit_fields(dtype, np_type, value):
+    """Raise ValueError if a part of literal ``value`` does not broadcast to its array field.
+
+    ``value`` is laid out like an element of record ``np_type`` (UDT ``dtype``,
+    or a record field in it), as :func:`_weak_literal_udt` reads it, a dict
+    already a tuple; any other value has no parts to check. An array UDT's
+    element takes the shape it broadcasts to with a literal, as numpy does, so
+    ``INT8[3]`` and ``np.array([[1, 300, 3]])`` give ``INT64[1, 3]``. A
+    record's field keeps its shape, so a part for it must broadcast to that
+    shape. Converted into the field, as a store converts it,
+    ``np.array([[1, 300, 3]])`` would lose its leading axis and wrap 300 to 44.
+    """
+    if np_type.names is None or not isinstance(value, (tuple, list)):
+        return
+    if len(value) != len(np_type.names):
+        return  # not laid out like an element; typing it reports that
+    for name, part in zip(np_type.names, value, strict=True):
+        field = np_type.fields[name][0]
+        if field.names is not None:
+            _refuse_misfit_fields(dtype, field, part)
+            continue
+        if field.subdtype is None or field.subdtype[0].names is not None:
+            continue
+        shape = field.subdtype[1]
+        try:
+            given = np.shape(part)
+        except ValueError:  # ragged; converting it reports that
+            continue
+        try:
+            fits = np.broadcast_shapes(given, shape) == shape
+        except ValueError:
+            fits = False
+        if not fits:
+            raise ValueError(
+                f"{part!r} has shape {given}, which does not fit field {name!r} of {dtype}, "
+                f"of shape {shape}: a literal for an array field must broadcast to its shape."
+            )
 
 
 def _int_beyond_leaf(np_type, value):

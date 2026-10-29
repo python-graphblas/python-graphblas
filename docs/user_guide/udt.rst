@@ -167,7 +167,11 @@ dtype, so it never narrows. Below, ``v`` is a Vector of an ``INT8[3]`` UDT.
        ``{x: FP64, y: FP64}``
    * - A built-in Vector, ``Scalar``, numpy scalar or numpy array
      - Strong: keeps its dtype. A scalar combines with every field or element;
-       an array pairs as an array UDT of its own shape.
+       an array pairs as an array UDT of its own shape. A record's array field
+       keeps its shape, so a literal for it must broadcast to that shape, or
+       ``ValueError`` names both: ``np.array([[1, 2, 3]])`` does not fit an
+       ``INT8[3]`` field, though beside an ``INT8[3]`` UDT it gives
+       ``INT64[1, 3]``.
      - ``v + np.int64(1)`` is ``INT64[3]``
    * - A Python number, or a tuple, list or dict of them laid out like an
        element

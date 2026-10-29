@@ -4883,6 +4883,72 @@ def test_udt_sequence_and_array_literals_type_like_numbers():
     assert (s * ones).new().dtype == int8s
 
 
+def test_udt_record_array_field_refuses_literal_of_another_shape():
+    """A literal for a record's array field must broadcast to the field's shape.
+
+    An array UDT's element takes the shape a literal broadcasts it to, as numpy
+    does: ``INT8[3]`` plus ``np.array([[1, 300, 3]])`` is ``INT64[1, 3]``. A
+    record's field keeps its shape, so the record refuses such a literal and
+    names both shapes. Before, its typing gave up and the literal was converted
+    into the field as numpy assigns it, dropping the leading axis and wrapping
+    300 to 44, through ``+`` and through a user's op alike; a nested list
+    raised numpy's ValueError. A store still converts as numpy assigns.
+    """
+    arr = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_ShapeArrI8")
+    rec = dtypes.register_anonymous(
+        np.dtype([("shp_a", np.int8, (3,)), ("shp_b", np.int64)]), "_ShapeRec"
+    )
+    nest = dtypes.register_anonymous(
+        np.dtype([("shp_n", np.int64), ("shp_in", rec.np_type)]), "_ShapeNest"
+    )
+    v = Vector(arr, size=1)
+    v[0] = [1, 2, 3]
+    r = Vector(rec, size=1)
+    r[0] = ([1, 2, 3], 0)
+    n = Vector(nest, size=1)
+    n[0] = (0, ([1, 2, 3], 0))
+    exprs = [
+        lambda L: r == (L, 0),
+        lambda L: r.apply(binary.second, right=(L, 0)),
+        lambda L: r.apply(binary.first, left={"shp_a": L, "shp_b": 0}),
+        lambda L: r[0].new() == (L, 0),
+        lambda L: n == (0, (L, 0)),
+    ]
+    if supports_udfs:
+        udf = BinaryOp.register_anonymous(lambda x, y: y, "_shape_right", is_udt=True)
+        exprs += [
+            lambda L: binary.plus(r, (L, 0)),
+            lambda L: r.apply(udf, right=(L, 0)),
+            lambda L: r.ewise_union(r, udf, (L, 0), (L, 0)),
+        ]
+    for literal in [
+        np.array([[1, 300, 3]]),
+        [[1, 300, 3]],
+        np.array([[1, 2, 3]], np.int8),
+        [1, 2],
+        np.zeros((2, 3), np.int8),
+    ]:
+        reason = f"has shape {np.shape(literal)}, which does not fit field 'shp_a'"
+        for expr in exprs:
+            with pytest.raises(ValueError, match="of shape \\(3,\\): a literal for an array") as e:
+                expr(literal)
+            assert reason in str(e.value)
+    # A store converts as numpy assigns, on both sides
+    v[0] = np.array([[1, 300, 3]])
+    r[0] = (np.array([[1, 300, 3]]), 0)
+    assert v[0].new().value.tolist() == [1, 44, 3]
+    assert r[0].new().value["shp_a"].tolist() == [1, 44, 3]
+    if supports_udfs:
+        # The array UDT keeps numpy's arithmetic shape
+        result = (v + np.array([[1, 300, 3]])).new()
+        assert result.dtype.np_type == np.dtype((np.array([1]).dtype, (1, 3)))
+        assert result[0].new().value.tolist() == [[2, 344, 6]]
+        # and a literal that broadcasts to the field is typed as before
+        value = binary.plus(r, (np.array([5]), 1)).new()[0].new().value
+        assert value["shp_a"].tolist() == [6, 49, 8]
+        assert value["shp_b"] == 1
+
+
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_ewise_union_defaults_are_typed_not_converted():
     """An ``ewise_union`` default beside a UDT is typed as a literal and must fit the operand.
@@ -5603,7 +5669,8 @@ def test_udt_literal_rules_edge_cases():
         v.apply(udf, right=Fraction(1, 2))
     # A literal not laid out like an element (ragged, too long or too short for
     # a field, not broadcastable), or not a number, has no type of its own, so
-    # it is converted into the UDT, and numpy says why it cannot be.
+    # it is converted into the UDT, and numpy says why it cannot be. A record
+    # says so itself for a part that does not broadcast to its array field.
     rec = dtypes.register_anonymous(
         np.dtype([("edge_v", np.float64, (3,)), ("edge_n", np.int8)]), "_EdgeRec"
     )
@@ -5615,7 +5682,7 @@ def test_udt_literal_rules_edge_cases():
         (lambda: v + "abc", "invalid literal"),
         (lambda: v.apply(udf, right="abc"), "invalid literal"),
         (lambda: binary.plus(r, (1, 2, 3)), "tuple of length 3"),
-        (lambda: binary.plus(r, ((1, 2), 3)), "could not broadcast"),
+        (lambda: binary.plus(r, ((1, 2), 3)), "does not fit field 'edge_v'"),
     ]:
         with pytest.raises(ValueError, match=reason):
             expr()
