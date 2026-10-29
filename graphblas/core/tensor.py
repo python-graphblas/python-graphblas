@@ -595,6 +595,14 @@ class Tensor(BaseType):
         M = Matrix.from_dense(arr, missing_value, dtype=dtype)  # (held by row: import_fullr)
         return cls._from_M(M, shape, lay, pinned=layout is not None, name=name)
 
+    def __array__(self, dtype=None, *, copy=None):
+        # A dense algorithm (an SVD, a solve) usually wants the missing entries as zeros
+        raise TypeError(
+            f"Tensor can't be directly converted to a numpy array; perhaps use "
+            f"`{self.name}.to_coo()` method instead, or `{self.name}.to_dense(fill_value=0)` "
+            f"(missing entries as 0) for a Tensor small enough to hold densely."
+        )
+
     def to_dense(self, fill_value=None, dtype=None):
         """A numpy array; raises if an entry is missing and ``fill_value`` is not given."""
         M, lay = self._M, self._layout
