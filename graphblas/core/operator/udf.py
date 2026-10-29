@@ -640,17 +640,19 @@ def _get_udt_wrapper(
     return wrapper, wrapper_sig
 
 
-def _get_udt_wrapper_indexbinary(numba_func, return_type, dtype, dtype2, *, numba_ret_type=None):
+def _get_udt_wrapper_indexbinary(
+    numba_func, return_type, dtype, dtype2, theta_type, *, numba_ret_type=None
+):
     """Build a Numba cfunc wrapper for IndexBinaryOp UDFs on UDTs.
 
-    Signature: ``f(x, ix, jx, y, iy, jy, theta) -> z``. ``dtype2`` is the
-    shared type of ``y`` and ``theta``.
+    Signature: ``f(x, ix, jx, y, iy, jy, theta) -> z``, where ``x``, ``y``
+    and ``theta`` have types ``dtype``, ``dtype2`` and ``theta_type``.
     """
     nt = numba.types
     zsetup, zptr_type, zkind, zinfo = _output_handler(return_type, numba_ret_type)
     xsetup, xderef, xptr_type = _input_operand(dtype, "x")
     ysetup, yderef, yptr_type = _input_operand(dtype2, "y")
-    tsetup, tderef, tptr_type = _input_operand(dtype2, "t")
+    tsetup, tderef, tptr_type = _input_operand(theta_type, "t")
     wrapper_sig = nt.void(
         zptr_type,
         xptr_type,
@@ -661,7 +663,7 @@ def _get_udt_wrapper_indexbinary(numba_func, return_type, dtype, dtype2, *, numb
         UINT64.numba_type,
         tptr_type,
     )
-    arg_dtypes = [dtype, UINT64, UINT64, dtype2, UINT64, UINT64, dtype2]
+    arg_dtypes = [dtype, UINT64, UINT64, dtype2, UINT64, UINT64, theta_type]
     _check_udf_fills_output(numba_func, numba_ret_type, return_type, zkind, arg_dtypes)
 
     signature_line = "def wrapper(z_ptr, x_ptr, ix, jx, y_ptr, iy, jy, t_ptr):"
@@ -672,7 +674,9 @@ def _get_udt_wrapper_indexbinary(numba_func, return_type, dtype, dtype2, *, numb
     wrapper = _compile_codegen(
         text,
         func_name="wrapper",
-        source_label=f"<gb-udt-wrapper indexbinary dtype={dtype} dtype2={dtype2}>",
+        source_label=(
+            f"<gb-udt-wrapper indexbinary dtype={dtype} dtype2={dtype2} theta={theta_type}>"
+        ),
         extra_ns={"numba_func": numba_func},
     )
     return wrapper, wrapper_sig

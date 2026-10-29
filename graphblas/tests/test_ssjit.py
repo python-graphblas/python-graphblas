@@ -799,7 +799,7 @@ def test_jit_indexbinary(v):
     assert not hasattr(indexbinary, "add_theta")
     assert indexbinary.ss.add_theta is add_theta
     assert add_theta.name == "ss.add_theta"
-    assert add_theta.types == {(dtypes.FP64, dtypes.FP64): dtypes.FP64}
+    assert add_theta.types == {(dtypes.FP64, dtypes.FP64, dtypes.FP64): dtypes.FP64}
     assert "FP64" in add_theta
     assert add_theta["FP64"].return_type == dtypes.FP64
     assert add_theta["FP64"].jit_c_definition == cdef
@@ -812,6 +812,13 @@ def test_jit_indexbinary(v):
     # ewise_mult: x+y+theta = 2*val + 10
     expected = Vector.from_coo([1, 3, 4, 6], [12.0, 12.0, 14.0, 10.0], dtype="FP64")
     assert expected.isequal(res)
+    # Bound with no type, it runs at the inputs' types and theta's, which a JIT op must
+    # have: like a JIT IndexUnaryOp's thunk, theta is not cast to the op's theta type.
+    assert expected.isequal(v64.ewise_mult(v64, add_theta(10.0)).new(), check_dtype=True)
+    with pytest.raises(KeyError, match="add_theta does not work with .FP64, FP64, INT64. types"):
+        v64.ewise_mult(v64, add_theta(10))
+    with pytest.raises(KeyError, match="add_theta does not work with .INT64, INT64, FP64. types"):
+        v.ewise_mult(v, add_theta(10.0))
     # Test duplicate registration fails
     assert "FP32" not in add_theta
     with burble():
@@ -827,7 +834,7 @@ def test_jit_indexbinary(v):
     assert "FP32" in add_theta
     with pytest.raises(
         TypeError,
-        match="IndexBinaryOp gb.indexbinary.ss.add_theta already defined for .FP64, FP64. input",
+        match="gb.indexbinary.ss.add_theta already defined for .FP64, FP64, FP64. input",
     ):
         indexbinary.ss.register_new("add_theta", cdef, "FP64", "FP64", "FP64", "FP64")
     # Test nested names
@@ -844,8 +851,12 @@ def test_jit_indexbinary(v):
         "add_theta", mixed_cdef, "FP64", "FP64", "FP32", "FP64"
     )
     assert add_theta_mixed is add_theta
-    assert ("FP64", "FP32") in add_theta
-    assert ("FP32", "FP64") not in add_theta
+    assert ("FP64", "FP64", "FP32") in add_theta
+    assert ("FP64", "FP32") not in add_theta  # theta of y's type, FP32
+    assert repr(add_theta["FP64", "FP64", "FP32"]) == "indexbinary.add_theta[FP64, FP64, FP32]"
+    # An FP32 theta picks it. Not computed here: SuiteSparse's JIT knows a user op's kernel
+    # by its name and x, y, z types, so in this process it would run the FP64 theta's kernel.
+    assert v64.ewise_mult(v64, add_theta(np.float32(10))).op._theta_type == dtypes.FP32
 
 
 @pytest.mark.slow

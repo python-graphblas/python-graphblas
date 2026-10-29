@@ -432,8 +432,8 @@ class SelectOp(OpBase):
         self.is_positional = is_positional
         self._is_udt = is_udt
         if is_udt:
-            self._udt_types = {}  # {dtype: DataType}
-            self._udt_ops = {}  # {dtype: TypedUserIndexUnaryOp}
+            self._udt_types = {}  # {(dtype, thunk_type): DataType}
+            self._udt_ops = {}  # {(dtype, thunk_type): TypedUserSelectOp}
 
     __call__ = TypedBuiltinSelectOp.__call__
 

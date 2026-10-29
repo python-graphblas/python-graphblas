@@ -232,7 +232,8 @@ receives both values, the indices of *each* value, and a thunk parameter:
 There are no built-in IndexBinary operators; all are user-defined (see
 :doc:`udf`). Binding a ``theta`` value to an IndexBinaryOp produces a
 regular BinaryOp usable directly in ``ewise_mult`` / ``ewise_add``, or as
-the multiplier of a Semiring for ``mxm`` / ``mxv`` / ``vxm``.
+the multiplier of a Semiring for ``mxm`` / ``mxv`` / ``vxm``. Like other
+BinaryOps, its type is chosen when it runs, from both inputs and ``theta``.
 
 Example usage:
 
@@ -243,11 +244,10 @@ Example usage:
 
     gb.indexbinary.register_new("discounted_sum", discounted_sum)
 
-    binop = gb.indexbinary.discounted_sum[float](0.5)   # bind theta
+    binop = gb.indexbinary.discounted_sum(0.5)   # bind theta
     C << A.ewise_mult(B, binop)
 
-    # For mxm, wrap in a Semiring; the additive monoid must accept the
-    # bound op's return type.
+    # For mxm, wrap in a Semiring
     sr = gb.semiring.register_anonymous(gb.monoid.plus, binop)
     D << A.mxm(B, sr)
 

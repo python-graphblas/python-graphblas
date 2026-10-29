@@ -6,26 +6,27 @@ from ..operator.base import TypedOpBase
 from ..operator.indexbinary import (
     IndexBinaryOp,
     TypedBuiltinIndexBinaryOp,
-    TypedUserIndexBinaryOp,
     _has_idxbinop,
+    _TypedIndexBinaryOpMixin,
 )
 
 ffi_new = ffi.new
 
 
-class TypedJitIndexBinaryOp(TypedOpBase):
-    __slots__ = "_jit_c_definition"
+class TypedJitIndexBinaryOp(_TypedIndexBinaryOpMixin, TypedOpBase):
+    __slots__ = "_jit_c_definition", "_theta_type"
     opclass = "IndexBinaryOp"
 
-    def __init__(self, parent, name, type_, return_type, gb_obj, jit_c_definition, dtype2=None):
+    def __init__(
+        self, parent, name, type_, return_type, gb_obj, jit_c_definition, dtype2, theta_type
+    ):
         super().__init__(parent, name, type_, return_type, gb_obj, name, dtype2=dtype2)
         self._jit_c_definition = jit_c_definition
+        self._theta_type = theta_type
 
     @property
     def jit_c_definition(self):
         return self._jit_c_definition
-
-    thunk_type = TypedUserIndexBinaryOp.thunk_type
 
     def __call__(self, theta=None):
         return TypedBuiltinIndexBinaryOp.__call__(self, theta)
@@ -101,13 +102,13 @@ def register_new(name, jit_c_definition, x_type, y_type, theta_type, ret_type):
         if not isinstance(rv, IndexBinaryOp):
             IndexBinaryOp._remove_nesting(name)
         if (
-            (x_type, theta_type) in rv.types
+            (x_type, y_type, theta_type) in rv.types
             or rv._udt_types is not None
-            and (x_type, theta_type) in rv._udt_types
+            and (x_type, y_type, theta_type) in rv._udt_types
         ):
             raise TypeError(
                 f"IndexBinaryOp gb.indexbinary.{name} already defined for "
-                f"({x_type}, {theta_type}) input types"
+                f"({x_type}, {y_type}, {theta_type}) input types"
             )
     else:
         rv = IndexBinaryOp(name, is_udt=True)
@@ -130,7 +131,7 @@ def register_new(name, jit_c_definition, x_type, y_type, theta_type, ret_type):
             gb_obj[0],
         )
     op = TypedJitIndexBinaryOp(
-        rv, funcname, x_type, ret_type, gb_obj[0], jit_c_definition, dtype2=theta_type
+        rv, funcname, x_type, ret_type, gb_obj[0], jit_c_definition, y_type, theta_type
     )
     rv._add(op, is_jit=True)
     setattr(module, funcname, rv)

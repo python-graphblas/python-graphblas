@@ -603,7 +603,8 @@ _builtin_to_op = {}  # Populated in .utils
 
 def find_opclass(gb_op):
     if isinstance(gb_op, OpBase):
-        opclass = type(gb_op).__name__
+        # A subclass may name the class it is (``ibo(theta)`` is a BinaryOp).
+        opclass = getattr(gb_op, "opclass", type(gb_op).__name__)
     elif isinstance(gb_op, TypedOpBase):
         opclass = gb_op.opclass
     elif isinstance(gb_op, ParameterizedUdf):
