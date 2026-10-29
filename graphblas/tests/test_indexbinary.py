@@ -445,6 +445,21 @@ def test_bad_udf():
         indexbinary.register_anonymous(lambda x, ix, jx, y, iy, jy, theta: result)  # noqa: F821
 
 
+def test_udf_skips_dtypes_numba_cannot_lower():
+    """Numba types ``max`` on complex values but cannot lower it; build the other dtypes."""
+
+    def max_vals(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+        return max(x, y)
+
+    op = indexbinary.register_anonymous(max_vals)
+    assert dtypes.FP64 in op.types
+    if dtypes._supports_complex:
+        assert dtypes.FC64 not in op.types
+    A = Matrix.from_coo([0, 1], [0, 1], [-1.5, 2.5])
+    B = Matrix.from_coo([0, 1], [0, 1], [1.0, 1.0])
+    assert A.ewise_mult(B, op(0.0)).new().isequal(Matrix.from_coo([0, 1], [0, 1], [1.0, 2.5]))
+
+
 def test_bad_type():
     with pytest.raises(TypeError, match="UDF argument must be a function"):
         indexbinary.register_anonymous(42)

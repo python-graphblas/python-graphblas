@@ -15,6 +15,7 @@ if _has_numba:
 
     from .udf import (
         _bool_to_int8,
+        _compile_for_dtype,
         _compile_udf_for_udt,
         _get_udt_wrapper_indexbinary,
         _resolve_udt_return_type,
@@ -265,9 +266,7 @@ class IndexBinaryOp(OpBase):
                     UINT64.numba_type,
                     type_.numba_type,
                 )
-                try:
-                    indexbinary_udf.compile(sig)
-                except numba.TypingError:
+                if not _compile_for_dtype(indexbinary_udf, sig):
                     continue
                 ret_type = lookup_dtype(indexbinary_udf.overloads[sig].signature.return_type)
                 if ret_type != type_ and (

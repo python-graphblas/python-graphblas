@@ -648,6 +648,98 @@ def test_binaryop_udf():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udf_skips_dtypes_numba_cannot_lower():
+    """A UDF is built for the dtypes Numba can lower it for, and skips the rest.
+
+    Numba types ``max`` on complex values, then has no lowering for the ``>`` in
+    it and raises a bare NotImplementedError. The per-dtype build loops caught
+    only TypingError, so registering such a UDF failed for every dtype.
+    """
+
+    def unary_max(x):
+        return max(x, 0)  # pragma: no cover (numba)
+
+    def binary_max(x, y):
+        return max(x, y)  # pragma: no cover (numba)
+
+    def indexunary_max(x, row, col, thunk):
+        return max(x, thunk)  # pragma: no cover (numba)
+
+    def select_max(x, row, col, thunk):
+        return max(x, thunk) > 0  # pragma: no cover (numba)
+
+    unary_op = UnaryOp.register_anonymous(unary_max)
+    binary_op = BinaryOp.register_anonymous(binary_max)
+    indexunary_op = IndexUnaryOp.register_anonymous(indexunary_max)
+    select_op = SelectOp.register_anonymous(select_max)
+    for udf in [unary_op, binary_op, indexunary_op, select_op]:
+        assert FP64 in udf.types
+        if dtypes._supports_complex:
+            assert FC64 not in udf.types
+    v = Vector.from_coo([0, 1], [-1.5, 2.5])
+    w = Vector.from_coo([0, 1], [1.0, 1.0])
+    assert v.apply(unary_op).new().isequal(Vector.from_coo([0, 1], [0.0, 2.5]))
+    assert v.ewise_mult(w, binary_op).new().isequal(Vector.from_coo([0, 1], [1.0, 2.5]))
+    assert v.apply(indexunary_op, 1.0).new().isequal(Vector.from_coo([0, 1], [1.0, 2.5]))
+    assert v.select(select_op, 0.0).new().isequal(Vector.from_coo([1], [2.5], size=2))
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_udf_on_a_dtype_numba_cannot_lower():
+    """An ``is_udt=True`` UDF on a dtype Numba types but cannot lower does not work with it.
+
+    It used to raise Numba's bare NotImplementedError, from ``in`` too.
+    """
+
+    def unary_max(x):
+        return max(x, 0)  # pragma: no cover (numba)
+
+    def binary_max(x, y):
+        return max(x, y)  # pragma: no cover (numba)
+
+    unary_op = UnaryOp.register_anonymous(unary_max, is_udt=True)
+    binary_op = BinaryOp.register_anonymous(binary_max, is_udt=True)
+    for udf in [unary_op, binary_op]:
+        assert FP64 in udf
+        if dtypes._supports_complex:
+            with pytest.raises(
+                UdfParseError, match=r"does not work with \(FC64.*: No definition for lowering"
+            ):
+                udf[FC64]
+            assert FC64 not in udf
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_compile_for_dtype_raises_other_lowering_errors():
+    """Only a missing lowering skips a dtype, in either of Numba's error styles.
+
+    Numba before 0.60 raises a LoweringError from whatever lowering raised, such
+    as the NotImplementedError for a missing lowering; later Numba raises that.
+    """
+    from numba.core.errors import LoweringError
+
+    from graphblas.core.operator.udf import _compile_for_dtype
+
+    class Dispatcher:
+        def __init__(self, exc, old_style):
+            self.exc = exc
+            self.old_style = old_style
+
+        def compile(self, sig):
+            if self.old_style:
+                # Numba raises it inside the ``except`` that caught the error
+                err = LoweringError(str(self.exc))
+                err.__context__ = self.exc
+                raise err
+            raise self.exc
+
+    for old_style in [False, True]:
+        assert not _compile_for_dtype(Dispatcher(NotImplementedError("none"), old_style), ())
+        with pytest.raises(LoweringError if old_style else KeyError):
+            _compile_for_dtype(Dispatcher(KeyError("bug"), old_style), ())
+
+
+@pytest.mark.skipif("not supports_udfs")
 def test_monoid_udf():
     def plus_plus_one(x, y):
         return x + y + 1  # pragma: no cover (numba)
@@ -6665,3 +6757,104 @@ def test_builtin_udfs_are_disk_cached():
 
     user_op = BinaryOp.register_anonymous(_uncached_probe)
     assert isinstance(user_op._numba_func._cache, NullCache)
+
+
+# The built-in UDF binops advertise every dtype in ``.types`` up front but
+# compile none of them until asked. Run in a subprocess: any earlier test may
+# already have materialized them in this process.
+_DEFERRED_BUILD_PROBE = """
+import graphblas as gb
+
+op = gb.binary.floordiv
+print("package: " + gb.__file__)
+print("types: %d" % len(op.types))
+print("compiled before: %d" % len(op._typed_ops))
+op[gb.dtypes.INT64]
+print("compiled after: %d" % len(op._typed_ops))
+"""
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_builtin_udf_types_precede_compilation():
+    repo_root = Path(__file__).resolve().parents[2]
+    env = dict(os.environ, PYTHONPATH=str(repo_root))
+    result = subprocess.run(
+        [sys.executable, "-c", _DEFERRED_BUILD_PROBE],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert result.returncode == 0, report
+
+    lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
+    assert lines.get("package") == str(repo_root / "graphblas" / "__init__.py"), report
+
+    assert int(lines["types"]) == len(binary.floordiv.types), report
+    assert int(lines["compiled before"]) == 0, report
+    assert int(lines["compiled after"]) == 1, report
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_builtin_udf_builds_one_dtype_when_indexed():
+    # conftest builds every dtype of binary.floordiv before the tests run, so
+    # build a new op from the same function, as _initialize does
+    floordiv = BinaryOp._build("floordiv", operator.binary._floordiv, anonymous=True, cache=True)
+    assert floordiv.types[INT64] == INT64
+    assert floordiv.types[BOOL] == INT8
+    assert not floordiv._typed_ops
+    typed = floordiv[INT64]
+    assert floordiv._typed_ops == {INT64: typed}
+    assert floordiv[INT64] is typed
+    v = Vector.from_coo([0, 1, 2], [7, -7, 7])
+    w = Vector.from_coo([0, 1, 2], [2, 2, -2])
+    assert v.ewise_mult(w, typed).new().isequal(Vector.from_coo([0, 1, 2], [3, -4, -4]))
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_builtin_udf_types_without_typing_only(monkeypatch):
+    # A Numba whose typing internals moved compiles every dtype up front instead,
+    # and must advertise the same types
+    func = operator.binary._floordiv
+    deferred = BinaryOp._build("floordiv", func, anonymous=True, cache=True)
+    monkeypatch.setattr(operator.binary, "_HAS_TYPING_ONLY", False)
+    eager = BinaryOp._build("floordiv", func, anonymous=True, cache=True)
+    assert eager.types == deferred.types
+    assert eager._typed_ops.keys() == eager.types.keys()
+
+
+_DEFERRED_COMMUTES_PROBE = """
+import graphblas as gb
+
+print("package: " + gb.__file__)
+ct = gb.binary.floordiv[gb.dtypes.INT64].commutes_to
+print("floordiv_ok: " + str(ct is gb.binary.rfloordiv[gb.dtypes.INT64]))
+ct = gb.binary.absfirst[gb.dtypes.INT64].commutes_to
+print("absfirst_ok: " + str(ct is gb.binary.abssecond[gb.dtypes.INT64]))
+"""
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_deferred_commutes_to():
+    # A deferred partner op must still answer commutes_to. The membership
+    # test consults .types, not ._typed_ops: with the latter, a fresh process
+    # answered None for floordiv[INT64].commutes_to until rfloordiv happened
+    # to be compiled, so the answer depended on access order. Subprocess for
+    # the same reason as test_initialize_does_not_build_lazy_udfs: in this
+    # process the partners may already be built.
+    repo_root = Path(__file__).resolve().parents[2]
+    env = dict(os.environ, PYTHONPATH=str(repo_root))
+    result = subprocess.run(
+        [sys.executable, "-c", _DEFERRED_COMMUTES_PROBE],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert result.returncode == 0, report
+    lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
+    assert lines.get("package") == str(repo_root / "graphblas" / "__init__.py"), report
+    assert lines.get("floordiv_ok") == "True", report
+    assert lines.get("absfirst_ok") == "True", report
