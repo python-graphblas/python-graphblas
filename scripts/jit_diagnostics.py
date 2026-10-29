@@ -68,7 +68,7 @@ def main():
         print("\nSuiteSparse:GraphBLAS 7.x: JIT not available")
         return 0
 
-    print("\n--- GraphBLAS JIT defaults (from compiled C library) ---")
+    print("\n--- GraphBLAS JIT settings after graphblas init ---")
     for key in [
         "jit_c_control",
         "jit_c_compiler_name",
