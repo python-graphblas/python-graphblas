@@ -73,3 +73,13 @@ Here are instructions for two popular environment managers:
   pre-commit install
   # to trigger manual check use:
   # pre-commit run --all-files
+
+* If you are using `pixi <https://pixi.sh>`_, then you can use the following pre-defined tasks:
+
+::
+
+  # run pytest
+  pixi run test
+
+  # run pre-commit on all files
+  pixi run pre-commit
