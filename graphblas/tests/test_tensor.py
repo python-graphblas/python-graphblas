@@ -3267,8 +3267,8 @@ def test_mttkrp_kernel_paths(monkeypatch):
         check(R, *_mttkrp_model(xv, xp, dense, mode), approx=True)
         assert calls == ([True] if mode == 2 else [False, True])
     monkeypatch.setattr(tensor_numba, "mttkrp_nd", spy)
-    # The GraphBLAS products: no Numba, an empty tensor, a sparse factor, another dtype or
-    # semiring; the kernel never runs
+    # The GraphBLAS products: no Numba, an empty tensor, a sparse factor, a result other than
+    # FP64 (see test_kernels_take_real_value_types) or another semiring; the kernel never runs
     calls.clear()
     with monkeypatch.context() as m:
         m.setattr(tensor, "_has_numba", False)
@@ -3281,10 +3281,15 @@ def test_mttkrp_kernel_paths(monkeypatch):
     dense_sparse = [d.copy() for d in dense]
     dense_sparse[1][0, 0] = 0
     sparse_result = X.mttkrp(sparse, 0).new()
-    for dtype in [dtypes.INT64, dtypes.FP32]:
-        Xi, xiv, xip = random_tensor(shape, rng, density=0.02, dtype=dtype)
-        R = Xi.mttkrp(factors, 3).new()
-        check(R, *_mttkrp_model(xiv, xip, dense, 3), approx=True)
+    Xi, xiv, xip = random_tensor(shape, rng, density=0.02, dtype=dtypes.INT64)
+    idense = [rng.integers(-3, 4, (n, 3)) for n in shape]
+    R = Xi.mttkrp([Matrix.from_dense(d) for d in idense], 3).new()
+    assert R.dtype == dtypes.INT64
+    check(R, *_mttkrp_model(xiv, xip, idense, 3))
+    if dtypes._supports_complex:
+        R = X.dup(dtypes.FC64).mttkrp(factors, 3).new()
+        assert R.dtype == dtypes.FC64
+        check(R, *_mttkrp_model(xv.astype(np.complex128), xp, dense, 3), approx=True)
     R = X.mttkrp(factors, 0, op=gb.semiring.max_times).new()
     assert R.dtype == dtypes.FP64
     assert calls == []
@@ -3783,7 +3788,8 @@ def test_ttm_kernel_paths(monkeypatch):
     calls.clear()
     check(X.tensordot(U, ([2], [0])).new(), *_ttm_model(xv, xp, U, 2), approx=True)
     assert calls
-    # The product: no Numba, a sparse factor, another dtype or semiring, an empty tensor
+    # The product: no Numba, a sparse factor, a result other than FP64, another semiring, an
+    # empty tensor
     calls.clear()
     U = rng.random((13, 3))
     with monkeypatch.context() as m:
@@ -3809,11 +3815,14 @@ def test_ttm_kernel_paths(monkeypatch):
     )
     check(got, np.where(present, vals, 0), present, approx=True)
     Xi, xiv, xip = random_tensor((10, 11, 12, 13), rng, density=0.02, dtype=dtypes.INT64)
-    check(
-        Xi.tensordot(Matrix.from_dense(U), ([3], [0])).new(),
-        *_ttm_model(xiv, xip, U, 3),
-        approx=True,
-    )
+    Ui = rng.integers(-3, 4, (13, 3))
+    R = Xi.tensordot(Matrix.from_dense(Ui), ([3], [0])).new()
+    assert R.dtype == dtypes.INT64
+    check(R, *_ttm_model(xiv, xip, Ui, 3))
+    if dtypes._supports_complex:
+        R = X.dup(dtypes.FC64).tensordot(Matrix.from_dense(U), ([3], [0])).new()
+        assert R.dtype == dtypes.FC64
+        check(R, *_ttm_model(xv.astype(np.complex128), xp, U, 3), approx=True)
     X.tensordot(Matrix.from_dense(U), ([3], [0]), op=gb.semiring.max_times).new()
     E = Tensor.from_coo([np.empty(0, np.int64)] * 4, np.empty(0), shape=(10, 11, 12, 13))
     check(
@@ -4138,7 +4147,7 @@ def test_ttm_udt_jit_failure(control, numba, tmp_path):
 
 def _engine_spies(monkeypatch):
     """Spies on every TTM and MTTKRP engine: the names of those that produced a result."""
-    from graphblas.core import tensor, tensor_contract, tensor_numba, tensor_udt
+    from graphblas.core import tensor, tensor_contract, tensor_udt
 
     ran = []
 
@@ -4154,8 +4163,11 @@ def _engine_spies(monkeypatch):
         monkeypatch.setattr(module, attr, wrapper)
 
     spy("udt", tensor_udt, "ttm")
-    spy("numba", tensor_numba, "ttm")
-    spy("numba", tensor_numba, "mttkrp_nd")
+    if gb.core._has_numba:
+        from graphblas.core import tensor_numba
+
+        spy("numba", tensor_numba, "ttm")
+        spy("numba", tensor_numba, "mttkrp_nd")
     spy("compacted", tensor, "_ttm_compacted")
     spy("products", tensor_contract, "_contract", ok=lambda rv: True)
     monkeypatch.setattr(tensor, "_TTM_KERNEL_MIN_NNZ", 0)
@@ -4197,6 +4209,105 @@ def test_engines_selectable(monkeypatch):
             ran.clear()
             check(X.mttkrp(factors, mode).new(), *_mttkrp_model(xv, xp, dense, mode), approx=True)
             assert ran == expected, (engine, mode)
+
+
+@pytest.mark.usefixtures("numba_boundscheck")
+@pytest.mark.parametrize(
+    "dtype",
+    ["BOOL", "INT8", "INT16", "INT32", "INT64", "UINT8", "UINT16", "UINT32", "UINT64", "FP32"],
+)
+def test_kernels_take_real_value_types(dtype, monkeypatch):
+    """A tensor of a real built-in type other than FP64, with FP64 factors and plus_times (an
+    FP64 result), takes the TTM and MTTKRP kernels, Numba's and the array-UDT engine. They took
+    FP64 values only, so FROSTT's count tensors (INT64 or BOOL) took the products, 13-18x
+    slower per CP-ALS sweep. The kernels read the values in their own type and convert them
+    as SuiteSparse's typecast does, so their results equal the products': exactly, here
+    (integer factors, so every sum is exact), in and out of the stored layout, iso, and for
+    INT64 and UINT64 values past 2^53, which round. Integer factors give an integer result,
+    which wraps: the products.
+    """
+    from graphblas.core import tensor, tensor_udt
+
+    engines = ["numba"] if gb.core._has_numba else []
+    if tensor_udt.jit_ready() and tensor_udt.semiring(2) is not None:
+        engines.append("udt")
+    if not engines:
+        pytest.skip("needs Numba, or the SuiteSparse JIT with a compiler")
+    dt = getattr(dtypes, dtype)
+    ran = _engine_spies(monkeypatch)
+
+    def each_op(X, F):
+        # Every TTM and every MTTKRP of X, each with the engines that ran it
+        for m in range(X.ndim):
+            ran.clear()
+            yield X.tensordot(F[m], ([m], [0])).new(), list(ran)
+        for m in range(X.ndim):
+            ran.clear()
+            yield X.mttkrp(F, m).new(), list(ran)
+
+    def compare(X, F):
+        monkeypatch.setattr(tensor, "_TTM_ENGINES", ("products",))
+        monkeypatch.setattr(tensor, "_MTTKRP_ENGINES", ("products",))
+        want = list(each_op(X, F))
+        for engine in engines:
+            monkeypatch.setattr(tensor, "_TTM_ENGINES", (engine,))
+            monkeypatch.setattr(tensor, "_MTTKRP_ENGINES", (engine,))
+            for (R, by), (W, _) in zip(each_op(X, F), want, strict=True):
+                assert by == [engine], (engine, X.layout, X.ss.is_iso)
+                assert W.dtype == dtypes.FP64
+                assert R.isequal(W), (engine, X.layout, X.ss.is_iso)
+        return [W for W, _ in want]
+
+    rng = np.random.default_rng(100)
+    shape = (8, 9, 10, 11)
+    F = [rng.integers(-3, 4, (n, 3)).astype(np.float64) for n in shape]
+    for layout, iso in [
+        (((0, 1), (2, 3)), False),
+        (((0, 1), (2, 3)), True),
+        (((), (3, 0, 1, 2)), False),
+    ]:
+        coords = np.nonzero(rng.random(shape) < 0.03)
+        n = coords[0].size
+        if dt == dtypes.BOOL:
+            vals = rng.random(n) < 0.5  # (False values stored too)
+        elif dt == dtypes.FP32:
+            vals = rng.integers(-800, 801, n) / 8
+        else:
+            info = np.iinfo(dt.np_type)
+            vals = rng.integers(max(info.min, -(2**31)), min(info.max, 2**32), n, endpoint=True)
+        vals = vals.astype(dt.np_type)
+        X = Tensor.from_coo(coords, vals.max() if iso else vals, dt, shape=shape, layout=layout)
+        assert X.ss.format in {"csr", "hypercsr"}
+        assert X.ss.is_iso == iso
+        compare(X, F)
+    if dt not in {dtypes.INT64, dtypes.UINT64}:
+        return
+    # Past 2^53 each value rounds to the nearest double (2^53 + 3 to 2^53 + 4: not truncated).
+    # One entry per fiber and per output row, and factors of powers of two: exact sums again.
+    if dt == dtypes.INT64:
+        big = [2**53 + 1, 2**53 + 3, 2**63 - 1, -(2**63), -(2**53 + 3), 2**62 + 1]
+    else:
+        big = [2**53 + 1, 2**53 + 3, 2**64 - 1, 2**63 + 1, 2**62 + 1, 7]
+    big = np.array(big, dt.np_type)
+    idx = np.arange(6)
+    X = Tensor.from_coo([idx, idx, idx], big, dt, shape=(6, 6, 6))
+    F = [np.tile([1.0, 2.0, -0.5], (6, 1))] * 3
+    want = compare(X, F)
+    np.testing.assert_array_equal(
+        want[3].to_dense(fill_value=0), big.astype(np.float64)[:, None] * F[1] * F[2]
+    )
+    # Integer factors: plus_times of the integer type, which wraps (2^62 + 1 times 4)
+    monkeypatch.setattr(tensor, "_TTM_ENGINES", ("udt", "numba", "products"))
+    monkeypatch.setattr(tensor, "_MTTKRP_ENGINES", ("numba", "udt", "products"))
+    Fi = [np.tile(np.array([1, 2, 4], dt.np_type), (6, 1))] * 3
+    ran.clear()
+    R = X.mttkrp(Fi, 0).new()
+    T = X.tensordot(Fi[2], ([2], [0])).new()
+    assert R.dtype == T.dtype == dt
+    assert "numba" not in ran
+    assert "udt" not in ran
+    with np.errstate(over="ignore"):
+        np.testing.assert_array_equal(R.to_dense(fill_value=0), big[:, None] * Fi[1] * Fi[2])
 
 
 _JIT_NEW_KERNEL_SCRIPT = """
