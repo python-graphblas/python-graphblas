@@ -1477,7 +1477,8 @@ def _make_jit_c_mixed_definition(op_name, py_op, dtype, dtype2, ret_type, input_
         leaves_y = list(_iter_record_leaves(np_y)) if np_y.names is not None else None
         stmts = []
         for i, (_py, c, leaf) in enumerate(leaves_z):
-            if leaf.shape:
+            # A record with an array leaf has no C type name, so it returned above
+            if leaf.shape:  # pragma: no cover (safety)
                 return None
             x_path, x_stored = (None, np_x) if leaves_x is None else (c, leaves_x[i][2])
             y_path, y_stored = (None, np_y) if leaves_y is None else (c, leaves_y[i][2])
