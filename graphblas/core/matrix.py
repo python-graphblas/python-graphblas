@@ -922,7 +922,11 @@ class Matrix(BaseType):
         the computations may be delayed and not yet safe to use by multiple threads.
         Use wait to force completion of the Matrix.
 
-        Has no effect in `blocking mode <../user_guide/init.html#graphblas-modes>`__.
+        In `blocking mode <../user_guide/init.html#graphblas-modes>`__, computations are
+        already complete, but with SuiteSparse:GraphBLAS, "materialize" may still build the
+        hyper_hash of a hypersparse Matrix that lacks one, such as one from ``from_coo`` or
+        an import (on recent versions, only with more non-empty rows or columns than the
+        ``GxB_HYPER_HASH`` setting, 1024 by default); see ``Matrix.ss.unpack_hyperhash``.
 
         """
         how = how.lower()
@@ -1015,6 +1019,12 @@ class Matrix(BaseType):
         name=None,
     ):
         """Create a new Matrix from row and column indices and values.
+
+        .. warning::
+            When ``nrows`` or ``ncols`` is omitted, the shape is inferred from
+            the largest row or column index, so trailing all-empty rows or
+            columns are dropped. Pass ``nrows`` and ``ncols`` explicitly to pin
+            the shape.
 
         Parameters
         ----------

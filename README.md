@@ -178,7 +178,7 @@ s(accum) << v.reduce(op)
 ## Creating new Vectors / Matrices
 
 ```python
-A = Matrix.new(dtype, num_rows, num_cols)   # new_type
+A = Matrix(dtype, num_rows, num_cols)       # new_type
 B = A.dup()                                 # dup
 A = Matrix.from_coo([row_indices], [col_indices], [values])  # build
 ```
@@ -225,7 +225,7 @@ Python-graphblas requires `numba` which enables compiling user-defined Python fu
 Example customized UnaryOp:
 
 ```python
-from graphblas import unary
+from graphblas import unary, Vector
 
 def force_odd_func(x):
     if x % 2 == 0:
