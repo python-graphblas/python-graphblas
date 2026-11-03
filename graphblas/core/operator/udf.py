@@ -265,14 +265,15 @@ def _check_declared_ret_type(ret_dtype, numba_ret_type):
 
 
 def _refuse_complex_into_real(ret_dtype, element, numba_ret_type):
-    """Raise unless a complex return goes into complex ``element``s of ``ret_dtype``.
+    """Raise unless a complex return goes into complex, or bool, ``element``s of ``ret_dtype``.
 
     Numba has no cast from complex to real, so the wrapper fails to compile,
-    with a message that loses why (``Failed in nopython mode pipeline``).
+    with a message that loses why (``Failed in nopython mode pipeline``). A
+    bool output is written as ``bool(...)``, which takes a complex value.
     """
     nt = numba.core.types
     returned = numba_ret_type.dtype if isinstance(numba_ret_type, nt.Array) else numba_ret_type
-    if isinstance(returned, nt.Complex) and element.kind != "c":
+    if isinstance(returned, nt.Complex) and element.kind not in "cb":
         raise UdfParseError(
             f"UDT UDF returned {numba_ret_type}, which cannot be written as "
             f"ret_dtype={ret_dtype}. Return a real value, or declare a complex ret_dtype."
