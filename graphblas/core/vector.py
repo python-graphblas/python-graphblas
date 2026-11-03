@@ -1441,7 +1441,7 @@ class Vector(BaseType):
             expr_repr = None
         elif right is None:
             if type(left) is not Scalar:
-                left, dtype = _literal_operand(self.dtype, left, op)
+                left, dtype = _literal_operand(self.dtype, left, op, left=True)
                 try:
                     left = Scalar.from_value(left, dtype, is_cscalar=None, name="")
                 except TypeError:

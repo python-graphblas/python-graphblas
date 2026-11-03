@@ -38,12 +38,19 @@ from .udt import (
 )
 
 
-def _literal_operand(dtype, value, op):
+def _literal_operand(dtype, value, op, *, left=False):
     """Return literal ``value`` and the dtype to make it, as ``op``'s operand beside ``dtype``.
 
     A dtype of ``None`` means the value's own dtype. This is where
     python-graphblas decides how a literal operand is typed; beside a built-in
     dtype, see :func:`_weak_builtin_literal_dtype`.
+
+    A typed op (``op[T]``) takes each operand in its own input type, so the
+    literal is typed beside that instead of beside ``dtype``: the op's first
+    input type when the literal is its left operand (``left``), else its
+    second input or thunk type. GraphBLAS converts a value to a built-in input
+    type; a UDT input type it cannot, so the literal becomes an element of
+    that UDT.
 
     Beside a UDT, a literal becomes an element of that UDT, as it must for a
     user's op, when its type allows it (:func:`_check_literal_fits`). With a
@@ -76,6 +83,8 @@ def _literal_operand(dtype, value, op):
     """
     if getattr(op, "is_positional", False):
         return value, None
+    if isinstance(op, TypedOpBase):
+        dtype = op.type if left or op._type2 is None else op._type2
     if not dtype._is_udt:
         literal_dtype = _weak_builtin_literal_dtype(dtype, value, op)
         if (

@@ -1202,7 +1202,9 @@ def _union_default(obj, default, input_dtype, op, keyword_name):
     if dtype is not None:
         _check_literal_fits(dtype, default)
     else:
-        default, dtype = _literal_operand(input_dtype, default, op)
+        default, dtype = _literal_operand(
+            input_dtype, default, op, left=keyword_name == "left_default"
+        )
     try:
         return Scalar.from_value(
             default,

@@ -4986,6 +4986,47 @@ def test_udt_record_date_literals_compare_as_numpy():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udt_typed_op_takes_a_literal_in_its_own_input_type():
+    """A literal beside a typed op is typed by the op's input type on its side, not by the UDT's.
+
+    ``op[A, INT64]`` takes its second input or thunk as INT64, so a literal
+    ``2`` there is an INT64, as a Scalar would be, and ``2.5`` is converted to
+    it by GraphBLAS, as for a typed op on built-in types. Before, the literal
+    became an element of A, whose bytes the op read as an int64.
+    """
+    A = dtypes.register_anonymous(np.dtype([("tl_a", "f8"), ("tl_b", "f8")]), "_TypedLitA")
+    B = dtypes.register_anonymous(np.dtype([("tl_a", "i8"), ("tl_b", "i8")]), "_TypedLitB")
+    v = Vector(A, size=2)
+    v[0] = (1.0, 2.0)
+    v[1] = (3.0, 4.0)
+    M = Matrix(A, nrows=2, ncols=1)
+    M[0, 0] = (1.0, 2.0)
+    M[1, 0] = (3.0, 4.0)
+    iu = IndexUnaryOp.register_anonymous(
+        lambda x, i, j, th: x.tl_a > th, "_typed_lit_iu", is_udt=True
+    )
+    iu_rec = IndexUnaryOp.register_anonymous(
+        lambda x, i, j, th: x.tl_a > th.tl_a, "_typed_lit_iu_rec", is_udt=True
+    )
+    se = SelectOp.register_anonymous(lambda x, i, j, th: x.tl_a > th, "_typed_lit_se", is_udt=True)
+    right = BinaryOp.register_anonymous(lambda x, y: x.tl_a + y, "_typed_lit_right", is_udt=True)
+    left = BinaryOp.register_anonymous(lambda x, y: x + y.tl_a, "_typed_lit_left", is_udt=True)
+    for thunk in [2, 2.5, np.int8(2), gb.Scalar.from_value(2)]:
+        assert v.apply(iu[A, INT64], thunk).new().to_coo()[1].tolist() == [False, True]
+        assert v.select(se[A, INT64], thunk).new().to_coo()[0].tolist() == [1]
+        assert M.select(se[A, INT64], thunk).new().to_coo()[0].tolist() == [1]
+        assert v[0].new().apply(iu[A, INT64], thunk).new().value is False
+    assert v.apply(iu_rec[A, B], (2, 0)).new().to_coo()[1].tolist() == [False, True]
+    assert v.apply(right[A, INT64], right=2).new().to_coo()[1].tolist() == [3, 5]
+    assert v.apply(left[INT64, A], left=2).new().to_coo()[1].tolist() == [3, 5]
+    assert M.apply(left[INT64, A], left=2).new().to_coo()[2].tolist() == [3, 5]
+    assert v[1].new().ewise_mult(2, right[A, INT64]).new().value == 5
+    # A UDT input type still takes only a literal that fits it.
+    with pytest.raises(ValueError, match="does not fit _TypedLitB"):
+        v.apply(iu_rec[A, B], (2.5, 0))
+
+
+@pytest.mark.skipif("not supports_udfs")
 def test_udt_ewise_union_defaults_are_typed_not_converted():
     """An ``ewise_union`` default beside a UDT is typed as a literal and must fit the operand.
 
