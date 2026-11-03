@@ -3097,6 +3097,21 @@ def test_constructor_rejects_arraylike_first_arg():
     # A non-array-like bad dtype keeps the original ValueError
     with pytest.raises(ValueError, match="Unknown dtype"):
         Vector("not_a_dtype", size=3)
+    # A malformed structured dtype spec gets the hint, and the lookup's reason stays
+    # attached as the cause
+    with pytest.raises(TypeError, match="If you meant to pass values") as excinfo:
+        Vector([("a", "zzz")], 3)
+    assert excinfo.value.__cause__ is not None
+
+
+def test_property_attribute_error_keeps_its_message():
+    # A property that raises AttributeError sends Python to BaseType.__getattr__,
+    # which must not replace the property's own message with its generic one.
+    with pytest.raises(AttributeError, match="only has `__index__` for integral dtypes"):
+        Scalar.from_value(1.5).__index__
+    if not suitesparse:
+        with pytest.raises(AttributeError, match='only available with "suitesparse" backend'):
+            Vector(int, 2).ss
 
 
 # Without SuiteSparse, building a UDT uses dup_op=binary.any, which needs Numba.
