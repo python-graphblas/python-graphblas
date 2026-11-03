@@ -1316,6 +1316,12 @@ def test_select_row_and_column_compare_indices_with_the_bound_given():
     # was AttributeError ('Matrix' object has no attribute 'value')
     with pytest.raises(TypeError, match="Bad type for keyword argument `thunk=`"):
         select.row(A.apply(binary.le, left=3))
+    # NaN compares False with every index, so it keeps none; NaN cast to the INT64 thunk
+    # was 0, so < and <= kept row 0, and > and >= every other row (main too)
+    nan = float("nan")
+    for expr in [A < nan, A <= nan, A > nan, A >= nan, A < Scalar.from_value(nan)]:
+        assert select.row(expr).new().nvals == 0, expr
+    assert select.column(A.T >= np.float32(nan)).new().nvals == 0
 
 
 @autocompute

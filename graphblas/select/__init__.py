@@ -77,9 +77,9 @@ def _index_bound(literal, thunk, name):
     ``i < t`` is ``i <= ceil(t) - 1``, ``i >= t`` is ``i > ceil(t) - 1``, and ``i <= t``
     and ``i > t`` take ``floor(t)``, where GraphBLAS would truncate a float toward zero
     (``i > -0.5`` dropped index 0). A whole number beyond INT64, which holds every index,
-    is clamped to it. An empty Scalar goes to the op as it is, which raises EmptyObject,
-    and so does a thunk that is no Scalar (from ``A.apply(binary.le, left=3)``), which
-    raises the op's TypeError.
+    is clamped to it. NaN compares False with every index, so it keeps none. An empty
+    Scalar goes to the op as it is, which raises EmptyObject, and so does a thunk that is
+    no Scalar (from ``A.apply(binary.le, left=3)``), which raises the op's TypeError.
     """
     shift = name in {"lt", "ge"}
     if shift:
@@ -94,6 +94,8 @@ def _index_bound(literal, thunk, name):
         return thunk, name
     if not isinstance(bound, numbers.Real):
         return thunk, name
+    if math.isnan(bound):
+        return (-1 if name == "le" else 2**63 - 1), name  # no index is <= -1 or > INT64_MAX
     if math.isfinite(bound):
         bound = math.ceil(bound) - 1 if shift else math.floor(bound)
         bound = min(max(bound, -(2**63)), 2**63 - 1)
