@@ -107,6 +107,21 @@ def test_int_theta_beyond_its_type():
     assert v.ewise_mult(v, op(2**70, dtype="FP64")).new()[0].new() == 2.0**70
 
 
+def test_index_with_too_many_types():
+    """``op[a, b, c, d]`` names what the op takes; it was ValueError from unpacking a pair."""
+
+    def add_theta(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+        return x + y + theta
+
+    op = indexbinary.register_anonymous(add_theta)
+    types = ("INT64",) * 4
+    for parent in [op, op(1)]:
+        with pytest.raises(TypeError, match=r"takes one dtype, two \(x and y\), or three .* not 4"):
+            parent[types]
+    assert types not in op
+    assert types[:3] in op
+
+
 def test_untyped_call_is_typed_when_it_runs():
     """``op(theta)`` takes its type from both inputs and theta each time it runs.
 
