@@ -19,7 +19,7 @@ from ...dtypes import (
     UINT64,
     lookup_dtype,
 )
-from ...exceptions import check_status_carg
+from ...exceptions import EmptyObject, check_status_carg
 from .. import _has_numba, ffi, lib
 from ..utils import libget
 from .base import OpBase, ParameterizedUdf, TypedOpBase, _BinaryopJitDelegate, _hasop
@@ -304,6 +304,12 @@ class Monoid(OpBase):
                 "a new BinaryOp (BinaryOp.register_new or BinaryOp.register_anonymous) "
                 "and pass that."
             )
+        from ..scalar import Scalar
+
+        identities = identity.values() if isinstance(identity, Mapping) else [identity]
+        if any(isinstance(ident, Scalar) and ident._is_empty for ident in identities):
+            # A UDT monoid would get an identity of zero bytes, a wrong one for ``times``.
+            raise EmptyObject("identity is an empty Scalar; give a Scalar that holds a value")
         if name is None:
             name = binaryop.name
         new_type_obj = cls(
