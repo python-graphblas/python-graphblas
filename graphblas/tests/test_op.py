@@ -3191,7 +3191,7 @@ def test_udt_udf_shape_check_runs_udf_only_for_built_arrays(monkeypatch):
     assert op[udt].return_type is udt
     assert probed == ["_sum"]
 
-    # A UDF that raises on the probe's values is not checked, and still types.
+    # A UDF that raises on the probe's ones is run again on twos, and types.
     def _no_ones(x, y):  # pragma: no cover (numba)
         if x[0] == 1:
             raise ValueError("the probe's values")
@@ -3200,6 +3200,39 @@ def test_udt_udf_shape_check_runs_udf_only_for_built_arrays(monkeypatch):
     op = BinaryOp.register_anonymous(_no_ones, "_probe_when_raises", is_udt=True)
     assert op[udt].return_type is udt
     assert probed == ["_sum", "_no_ones"]
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_udf_raising_for_its_operand_types_raises_when_typed():
+    """A UDF that raises on any values of its operand types is refused when the op is typed.
+
+    The probe gave up on any exception, so the op typed, and its cfunc raised
+    for every element, where Numba prints and swallows the error: the result
+    held zeros. Here ``x[:2] * t`` cannot broadcast when ``t`` is a 6-element
+    array, as it is for an ``(R6, R6)`` op.
+    """
+    r6 = dtypes.register_anonymous(np.dtype((np.float64, (6,))), "_RaiseTyped6")
+    r2 = dtypes.register_anonymous(np.dtype((np.float64, (2,))), "_RaiseTyped2")
+    iu = IndexUnaryOp.register_anonymous(
+        lambda x, i, j, t: x[:2] * t, "_raise_typed_iu", is_udt=True, ret_dtype=r2
+    )
+    bop = BinaryOp.register_anonymous(
+        lambda x, y: x[:2] * y, "_raise_typed_b", is_udt=True, ret_dtype=r2
+    )
+    for parent, types in [
+        (iu, "_RaiseTyped6, UINT64, UINT64, _RaiseTyped6"),
+        (bop, "_RaiseTyped6, _RaiseTyped6"),
+    ]:
+        with pytest.raises(
+            UdfParseError, match=rf"raised ValueError when run on sample values of \({types}\)"
+        ):
+            parent[r6, r6]
+    # With a scalar operand the op types and runs
+    v = Vector(r6, size=2)
+    v[0] = np.arange(6.0)
+    three = gb.Scalar.from_value(3.0)
+    assert v.apply(iu, three).new()[0].new().value.tolist() == [0.0, 3.0]
+    assert v.apply(bop, right=three).new()[0].new().value.tolist() == [0.0, 3.0]
 
 
 @pytest.mark.skipif("not supports_udfs")
