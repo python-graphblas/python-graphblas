@@ -4533,6 +4533,9 @@ def test_subarray_dtype_values_shape():
     assert A.to_coo()[2].tolist() == expected
     A = Matrix.from_csr([0, 1, 2], [0, 1], 1.5, "FP64[2]")
     assert A.to_coo()[2].tolist() == expected
+    # The lengths compared are the number of elements, not of numbers (it said 6)
+    with pytest.raises(ValueError, match="lengths must match: 2, 2, 3$"):
+        Matrix.from_coo([0, 1], [0, 1], np.ones((3, 2)), "FP64[2]")
 
 
 def test_power(A):

@@ -544,9 +544,7 @@ class Vector(BaseType):
         values, _dtype = values_to_numpy_buffer(values, self.dtype)
         n = values.shape[0]
         if indices.size != n:
-            raise ValueError(
-                f"`indices` and `values` lengths must match: {indices.size} != {values.size}"
-            )
+            raise ValueError(f"`indices` and `values` lengths must match: {indices.size} != {n}")
         check_element_shape(values, self.dtype, 1)
         if clear:
             self.clear()
