@@ -147,21 +147,15 @@ def _is_signed_int(np_dtype):
 # ``hasattr`` would lie; gate on the backend too.
 _has_jit_set = backend == "suitesparse" and hasattr(lib, "GxB_JIT_C_NAME")
 
-# Names that can't be used as UDT type names or record field names in the
-# JIT C source. Covers two failure modes from the JIT include chain
-# (``GraphBLAS.h`` transitively pulls in ``<math.h>``, ``<complex.h>``,
-# ``<stddef.h>``, ``<stdio.h>``, ``<errno.h>``, ``<stdint.h>``):
-#
-#   1. **Macro names**: the preprocessor expands them inside any declarator
-#      or expression they appear in, so a field declared ``double M_PI ;``
-#      becomes ``double 3.14159... ;`` and won't compile. The C-standard
-#      separate namespace for struct members doesn't help here.
-#   2. **Typedef names** at the *outer* type-name position: emitting
-#      ``typedef struct { ... } FILE ;`` collides with the existing
-#      ``FILE`` typedef in scope (most compilers reject as a redefinition).
-#      Struct member names of the same spelling are fine (members live in
-#      their own namespace), but our gate runs the same check at both
-#      positions for simplicity.
+# Names that can't be used as record field names in the JIT C source: C
+# keywords, and the macros of the JIT include chain (``GraphBLAS.h``
+# transitively pulls in ``<math.h>``, ``<complex.h>``, ``<stddef.h>``,
+# ``<stdio.h>``, ``<errno.h>``, ``<stdint.h>`` and more). The preprocessor
+# expands a macro inside any declarator or expression it appears in, so a field
+# declared ``double M_PI ;`` becomes ``double 3.14159... ;`` and won't compile;
+# the separate namespace for struct members doesn't help. (A UDT's own name
+# never collides: its C name has a prefix, ``_C_TYPE_NAME_PREFIX``. The typedef
+# names listed here mattered when the type's C name was its Python name.)
 #
 # Either way the JIT compile fails. SuiteSparse 9.4 and later then raise
 # JitError for that call and set ``jit_c_control`` to 'load', so the process
@@ -340,8 +334,8 @@ def _is_valid_c_identifier(name):
 
 
 # Process-global counter for synthesizing C names when the user-supplied
-# Python name isn't a valid C identifier (or is a C reserved word, or the
-# UDT was registered without ``name=`` at all). The Python-side ``DataType.name``
+# Python name doesn't make a valid C identifier of 127 characters or fewer (or
+# the UDT was registered without ``name=`` at all). The Python-side ``DataType.name``
 # is left alone; this only affects ``GxB_JIT_C_NAME``. ``itertools.count`` is
 # atomic enough for our purposes; collisions across processes are harmless
 # because the SS JIT cache files are keyed by ``(c_name, content_hash)`` per
@@ -355,19 +349,33 @@ _synthetic_udt_counter = itertools.count(1)
 _jit_c_type_defs = {}
 
 
-def _pick_c_type_name(python_name):
-    """Return a valid C identifier for use as ``GxB_JIT_C_NAME`` on a UDT.
+# The C name of a UDT is its name after this prefix. SuiteSparse's JIT puts the type's name in
+# a kernel beside its own identifiers, so a UDT named like one of them did not compile: a
+# local of its templates (``A``, ``C``, ``p``, ``i``, ``result``), a parameter of the op
+# definitions made here (``z``, ``x``), or anything the C headers declare (``div``,
+# ``index``, ``GB_void``). No identifier there starts with the prefix.
+_C_TYPE_NAME_PREFIX = "gbudt_"
 
-    When ``python_name`` is already a valid C identifier (and not reserved),
-    return it unchanged so introspection and JIT cache filenames remain
-    readable. Otherwise mint a fresh ``_gbudt_NNN`` name. This lets UDTs
-    that were anonymous in the Python sense (no ``name=`` passed, name with
-    dots / special chars, name that collides with a C keyword) still take
-    the JIT path; users never see the synthetic name unless they read
-    ``DataType.jit_c_name``.
+
+def _pick_c_type_name(python_name):
+    """Return a valid C identifier for use as ``GxB_JIT_C_NAME`` on a UDT named ``python_name``.
+
+    ``gbudt_`` and the name (see ``_C_TYPE_NAME_PREFIX``), which stays readable in
+    introspection and JIT cache file names. A name made here (``gbudt_...``, or a synthetic
+    ``_gbudt_NNN`` or ``_gbnest_NNN``) is kept as it is, so a pinned C name maps to itself.
+    When the result is not a C identifier (a name with dots, or none given), or would not fit
+    SuiteSparse's ``GxB_MAX_NAME_LEN`` (it refuses a name of 128 characters or more, and the
+    type is left with an empty one), mint a fresh ``_gbudt_NNN`` name instead, so the UDT
+    still takes the JIT path.
     """
-    if _is_valid_c_identifier(python_name):
-        return python_name
+    if not isinstance(python_name, str):
+        c_name = ""
+    elif python_name.startswith((_C_TYPE_NAME_PREFIX, "_gbudt_", "_gbnest_")):
+        c_name = python_name
+    else:
+        c_name = _C_TYPE_NAME_PREFIX + python_name
+    if c_name.isidentifier() and len(c_name) < lib.GxB_MAX_NAME_LEN:
+        return c_name
     return f"_gbudt_{next(_synthetic_udt_counter)}"
 
 
@@ -375,9 +383,8 @@ def _udt_c_typedef(python_name, np_type):
     """Build the JIT C typedef for a record or array UDT, or return ``None``.
 
     Returns ``(type_name, typedef)`` on success, where ``type_name`` is the
-    C identifier we register with SuiteSparse (may differ from
-    ``python_name`` if that wasn't a valid C identifier; see
-    ``_pick_c_type_name``). Returns ``None`` when the UDT still can't be
+    C identifier we register with SuiteSparse (``gbudt_`` and ``python_name``, or
+    a synthetic name; see ``_pick_c_type_name``). Returns ``None`` when the UDT still can't be
     expressed in C after synthesizing the top-level name (a field name
     collides with a C reserved word, or a leaf field type isn't in
     ``NP_TO_C_TYPES``, e.g. object or datetime).
@@ -1425,8 +1432,8 @@ def _make_jit_c_definition(op_name, py_op, dtype, arity):
     # propagate to SS. If the op's signature referenced ``dtype.name`` it would
     # use an undefined struct name, and SS would silently fall back to the
     # Numba cfunc instead of JIT-compiling. ``jit_c_name`` is also where the
-    # synthetic ``_gbudt_NNN`` name (for UDTs whose Python name isn't a valid
-    # C identifier) is recorded; using it keeps op codegen consistent.
+    # ``gbudt_`` or synthetic ``_gbudt_NNN`` name (see ``_pick_c_type_name``) is
+    # recorded; using it keeps op codegen consistent.
     pinned_name = dtype.jit_c_name
     typedef_info = _udt_c_typedef(pinned_name or dtype.name, dtype.np_type)
     if typedef_info is None:
