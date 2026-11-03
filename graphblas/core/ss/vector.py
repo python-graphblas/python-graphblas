@@ -1,7 +1,7 @@
 import itertools
 
 import numpy as np
-from suitesparse_graphblas.utils import claim_buffer, unclaim_buffer
+from suitesparse_graphblas.utils import claim_buffer
 
 import graphblas as gb
 
@@ -21,7 +21,7 @@ from ..utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
-from ._utils import _resolve_serialized_dtype
+from ._utils import _resolve_serialized_dtype, _unclaim_taken
 from .config import BaseConfig
 from .descriptor import get_descriptor
 from .matrix import _concat_mn, njit
@@ -1012,6 +1012,7 @@ class ss:
             not sorted_index,
             NULL if desc is None else desc._carg,
         )
+        _unclaim_taken((indices, vi), (values, vx))
         if method == "import":
             check_status_carg(
                 status,
@@ -1021,8 +1022,6 @@ class ss:
             vector = gb.Vector._from_obj(vhandle, dtype, size, name=name)
         else:
             check_status(status, vector)
-        unclaim_buffer(indices)
-        unclaim_buffer(values)
         return vector
 
     @classmethod
@@ -1198,6 +1197,7 @@ class ss:
             nvals,
             NULL if desc is None else desc._carg,
         )
+        _unclaim_taken((bitmap, vb), (values, vx))
         if method == "import":
             check_status_carg(
                 status,
@@ -1207,8 +1207,6 @@ class ss:
             vector = gb.Vector._from_obj(vhandle, dtype, size, name=name)
         else:
             check_status(status, vector)
-        unclaim_buffer(bitmap)
-        unclaim_buffer(values)
         return vector
 
     @classmethod
@@ -1357,6 +1355,7 @@ class ss:
             is_iso,
             NULL if desc is None else desc._carg,
         )
+        _unclaim_taken((values, vx))
         if method == "import":
             check_status_carg(
                 status,
@@ -1366,7 +1365,6 @@ class ss:
             vector = gb.Vector._from_obj(vhandle, dtype, size, name=name)
         else:
             check_status(status, vector)
-        unclaim_buffer(values)
         return vector
 
     @wrapdoc(head)
