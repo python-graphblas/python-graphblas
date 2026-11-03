@@ -805,8 +805,7 @@ def _element_bytes(dtype, value):
     # as junk however it writes the record.
     if np_type.subdtype is None:
         arr = np.zeros(1, dtype=np_type)
-        if isinstance(value, dict) and np_type.names is not None:
-            value = _dict_to_record(np_type, value)
+        value = _as_record_parts(np_type, value)
     else:
         arr = np.zeros(np_type.subdtype[1], dtype=np_type.subdtype[0])
     value = _nats_in_leaf_units(_view_if_same_layout(value, arr.dtype), arr.dtype)
@@ -838,16 +837,27 @@ def _element_value(dtype, data):
     return rv.view(base).reshape(shape)
 
 
-def _dict_to_record(np_type, d):
-    """Converts e.g. ``{"x": 1, "y": 2.3}`` to ``(1, 2.3)``."""
-    rv = []
-    for name, (dtype, _) in np_type.fields.items():
-        val = d[name]
-        if dtype.names is not None and isinstance(val, dict):
-            rv.append(_dict_to_record(dtype, val))
-        else:
-            rv.append(val)
-    return tuple(rv)
+def _as_record_parts(np_type, value):
+    """Return ``value`` for an element of ``np_type`` with each record in it as a tuple.
+
+    A record literal may be a tuple, list or dict laid out like the element, but
+    numpy takes only a tuple: ``{"x": 1, "y": 2.3}`` and ``[1, 2.3]`` become
+    ``(1, 2.3)``, at every level of a nested record. A list of another length
+    becomes a tuple too, which numpy refuses by its length; an array field
+    keeps its list.
+    """
+    if np_type.names is None:
+        return value
+    if isinstance(value, dict):
+        value = [value[name] for name in np_type.names]
+    elif isinstance(value, list) and len(value) != len(np_type.names):
+        return tuple(value)
+    elif not isinstance(value, (list, tuple)) or len(value) != len(np_type.names):
+        return value
+    return tuple(
+        _as_record_parts(np_type.fields[name][0], part)
+        for name, part in zip(np_type.names, value, strict=True)
+    )
 
 
 def _leaf_arrays(arr):

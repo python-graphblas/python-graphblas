@@ -5712,6 +5712,45 @@ def test_udt_array_literal_broadcasts_with_an_array_udt():
         v.ewise_union(v, binary.plus, pair, 0)
 
 
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_record_literal_may_be_a_list():
+    """A list laid out like a record converts as a tuple does, as udt.rst promises.
+
+    numpy takes only a tuple for a record, so a list raised "could not broadcast
+    input array from shape (2,) into shape (1,)" from every op and store.
+    """
+    rec = dtypes.register_anonymous(np.dtype([("rl_x", np.int8), ("rl_y", np.int8)]), "_ListRec")
+    nested = dtypes.register_anonymous(
+        np.dtype([("rl_p", [("rl_a", np.int8), ("rl_b", np.float64)]), ("rl_v", np.float64, (2,))]),
+        "_ListNested",
+    )
+    v = Vector(rec, size=2)
+    v[0] = [1, 2]
+    v[1] = (3, 4)
+    assert v[0].new().value.tolist() == (1, 2)
+    assert gb.Scalar.from_value([1, 2], rec) == (1, 2)
+    assert binary.plus(v, [1, 2]).new()[0].new().value.tolist() == (2, 4)
+    float_y = np.dtype([("rl_x", np.int8), ("rl_y", np.float64)])
+    assert binary.plus(v, [1, 2.5]).new().dtype.np_type == float_y
+    assert (v == [1, 2]).new().to_coo()[1].tolist() == [True, False]
+    assert gb.Scalar.from_value((1, 2), rec).isequal([1, 2])
+    first = BinaryOp.register_anonymous(lambda x, y: y, "_list_rec_second", is_udt=True)
+    assert v.apply(first, right=[5, 6]).new()[1].new().value.tolist() == (5, 6)
+    # In a nested record too, where a list for an array field stays the field's value
+    n = Vector(nested, size=1)
+    n[0] = [[1, 2.0], [3.0, 4.0]]
+    for value, expected in [
+        (n[0].new().value, [(1, 2.0), [3.0, 4.0]]),
+        (binary.plus(n, [[1, 1], [1, 1]]).new()[0].new().value, [(2, 3.0), [4.0, 5.0]]),
+    ]:
+        assert [value["rl_p"].tolist(), value["rl_v"].tolist()] == expected
+    assert (n == {"rl_p": [1, 2.0], "rl_v": [3.0, 4.0]}).new()[0].new().value
+    # A list of another length is refused by its length, as a tuple is
+    for expr in [lambda: binary.plus(v, [1, 2, 3]), lambda: gb.Scalar.from_value([1, 2, 3], rec)]:
+        with pytest.raises(ValueError, match="tuple of length 3 to structure with 2 fields"):
+            expr()
+
+
 def test_udt_record_date_literals_compare_as_numpy():
     """A Python date or duration, or a date as text, in a record literal is typed as numpy types it.
 
