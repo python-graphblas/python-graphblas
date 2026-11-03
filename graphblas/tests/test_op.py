@@ -230,7 +230,12 @@ def test_udt_isequal_needs_numba():
     v[0] = (1, 2.0)
     t = Matrix(text, nrows=1, ncols=1)
     t[0, 0] = b"ab"
-    for expr in [lambda: v.isequal(v), lambda: t.isequal(t), lambda: v == v]:
+    for expr in [
+        lambda: v.isequal(v),
+        lambda: t.isequal(t),
+        lambda: v == v,
+        lambda: v.select("==", (1, 2.0)),
+    ]:
         with pytest.raises(KeyError, match="work on UDTs only with Numba installed"):
             expr()
     assert gb.Scalar.from_value((1, 2.0), rec).isequal(v[0].new())
@@ -5817,6 +5822,13 @@ def test_udt_select_by_equality():
     # Ordering does not lift to UDTs
     with pytest.raises(KeyError, match="valuelt does not work with _SelEq"):
         v.select("<", x)
+    # Errors raise at the call, as for any select, not when the expression runs
+    other = dtypes.register_anonymous(np.dtype([("se_c", np.int8), ("se_d", np.float64)]))
+    with pytest.raises(KeyError, match="record UDTs must share field names"):
+        v.select("==", gb.Scalar.from_value((1, 2.0), other))
+    for thunk in [Vector.from_coo([0], [1]), object()]:
+        with pytest.raises(TypeError, match="Bad type for keyword argument `thunk=`"):
+            v.select("==", thunk)
 
 
 def test_udt_record_date_literals_compare_as_numpy():
