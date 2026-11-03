@@ -3203,6 +3203,117 @@ def test_udt_udf_shape_check_runs_udf_only_for_built_arrays(monkeypatch):
 
 
 @pytest.mark.skipif("not supports_udfs")
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
+def test_udf_raising_for_some_elements_gives_zeros_there():
+    """An element the UDF raises for holds 0, and a select does not keep it.
+
+    Numba prints and swallows an exception raised in a cfunc, so the wrapper
+    wrote nothing there. A select then read SuiteSparse's ``bool keep``, an
+    uninitialized local, which could keep the entry and add a stray byte to
+    the entry count (r612 saw nvals from 6 to 256 in a Vector of size 2). The
+    wrappers now write 0, or False, into a built-in output before they call
+    the UDF. What this checks held by chance before (the stray byte was 0);
+    test_udt_wrapper_zeros_a_builtin_output_before_the_udf checks the wrapper
+    itself.
+    """
+
+    def keep_above(x, i, j, t):  # pragma: no cover (numba)
+        if x < 0:
+            raise ValueError("negative")
+        return x > t
+
+    def times_ten(x):  # pragma: no cover (numba)
+        if x < 0:
+            raise ValueError("negative")
+        return x * 10
+
+    v = Vector.from_coo([0, 1, 2, 3, 4], [-1, 5, 2, -3, 7])
+    # -1 and -3 raise, so they are not kept; of the others, 5 and 7 are above 3
+    kept = v.select(SelectOp.register_anonymous(keep_above, "_raise_keep_above"), 3).new()
+    assert kept.nvals == 2
+    assert kept.to_coo()[0].tolist() == [1, 4]
+    assert kept.to_coo()[1].tolist() == [5, 7]
+    # -1 and -3 raise, so they hold 0
+    tens = v.apply(UnaryOp.register_anonymous(times_ten, "_raise_times_ten")).new()
+    assert tens.to_coo()[1].tolist() == [0, 50, 20, 0, 70]
+
+    rec = dtypes.register_anonymous(np.dtype([("rz_a", np.int64), ("rz_b", np.float64)]))
+
+    def keep_rec(x, i, j, t):  # pragma: no cover (numba)
+        if x.rz_a < 0:
+            raise ValueError("negative")
+        return x.rz_b > t
+
+    r = Vector(rec, size=4)
+    r[0] = (-1, 9.0)
+    r[1] = (1, 9.0)
+    r[2] = (1, 0.0)
+    r[3] = (-2, 9.0)
+    # Entries 0 and 3 raise; of the others, only 1 has rz_b above 1
+    sel = SelectOp.register_anonymous(keep_rec, "_raise_keep_rec", is_udt=True)
+    kept = r.select(sel, gb.Scalar.from_value(1.0)).new()
+    assert kept.nvals == 1
+    assert kept.to_coo()[0].tolist() == [1]
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
+def test_udt_wrapper_zeros_a_builtin_output_before_the_udf():
+    """A UDT op's wrapper sets a built-in output to 0 (False) before it calls the UDF.
+
+    Called on an output full of 0xAB with an input the UDF raises for, it
+    leaves 0: a select's bool, and an FP64. It left the 0xAB bytes, which a
+    select read as "keep". (A UDT output is not zeroed; see
+    ``udf._compose_wrapper_body``.)
+    """
+    import ctypes
+
+    import numba
+
+    from graphblas.core.operator.udf import _get_udt_wrapper
+
+    rec = dtypes.register_anonymous(
+        np.dtype([("zo_n", np.int8), ("zo_s", "S3"), ("zo_d", "M8[s]")], align=True)
+    )
+
+    def keep(x, i, j, t):  # pragma: no cover (numba)
+        if x.zo_n < 0:
+            raise ValueError("negative")
+        return True
+
+    def half(x):  # pragma: no cover (numba)
+        if x.zo_n < 0:
+            raise ValueError("negative")
+        return 0.5
+
+    x = np.zeros(1, dtype=rec.np_type)
+    x["zo_n"] = -1
+    thunk = np.zeros(1, np.float64)
+    index = np.zeros(1, np.uint64)
+    for func, out, kwargs in [
+        (keep, dtypes.BOOL, {"include_indexes": True, "dtype2": FP64}),
+        (half, FP64, {}),
+    ]:
+        numba_func = numba.njit(func)
+        arg_types = (rec.numba_type,)
+        if kwargs:
+            arg_types += (numba.types.uint64, numba.types.uint64, numba.types.float64)
+        numba_func.compile(arg_types)
+        ret = numba_func.overloads[arg_types].signature.return_type
+        wrapper, sig = _get_udt_wrapper(numba_func, out, rec, numba_ret_type=ret, **kwargs)
+        cfunc = numba.cfunc(sig, nopython=True)(wrapper)
+        z = np.full(
+            np.dtype(np.int8 if out is dtypes.BOOL else out.np_type).itemsize, 0xAB, np.uint8
+        )
+        args = [ctypes.cast(z.ctypes.data, cfunc.ctypes.argtypes[0])]
+        args.append(ctypes.cast(x.ctypes.data, cfunc.ctypes.argtypes[1]))
+        if kwargs:
+            args += [index[0], index[0], ctypes.cast(thunk.ctypes.data, cfunc.ctypes.argtypes[4])]
+        cfunc.ctypes(*args)
+        assert not z.any(), out
+
+
+@pytest.mark.skipif("not supports_udfs")
 def test_udt_udf_raising_on_stand_ins_still_types():
     """A UDF that raises on the probe's stand-in operands still types, and runs on real data.
 

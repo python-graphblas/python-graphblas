@@ -221,26 +221,38 @@ class UnaryOp(OpBase):
                     nt.CPointer(input_type.numba_type),
                 )
 
+                # Each wrapper writes 0 (False) before it calls the UDF: if the UDF raises, Numba
+                # prints the error and returns, and GraphBLAS uses the output as it is (for a
+                # select, an unwritten bool decides whether to keep the entry). The operands are
+                # read first, since the output can be one of them (z = f(z, y) in a reduce).
                 if type_ == BOOL:
                     if ret_type == BOOL:
 
                         def unary_wrapper(z, x):
-                            z[0] = bool(unary_udf(bool(x[0])))  # pragma: no cover (numba)
+                            x0 = x[0]  # pragma: no cover (numba)
+                            z[0] = 0  # pragma: no cover (numba)
+                            z[0] = bool(unary_udf(bool(x0)))  # pragma: no cover (numba)
 
                     else:
 
                         def unary_wrapper(z, x):
-                            z[0] = unary_udf(bool(x[0]))  # pragma: no cover (numba)
+                            x0 = x[0]  # pragma: no cover (numba)
+                            z[0] = 0  # pragma: no cover (numba)
+                            z[0] = unary_udf(bool(x0))  # pragma: no cover (numba)
 
                 elif ret_type == BOOL:
 
                     def unary_wrapper(z, x):
-                        z[0] = bool(unary_udf(x[0]))  # pragma: no cover (numba)
+                        x0 = x[0]  # pragma: no cover (numba)
+                        z[0] = 0  # pragma: no cover (numba)
+                        z[0] = bool(unary_udf(x0))  # pragma: no cover (numba)
 
                 else:
 
                     def unary_wrapper(z, x):
-                        z[0] = unary_udf(x[0])  # pragma: no cover (numba)
+                        x0 = x[0]  # pragma: no cover (numba)
+                        z[0] = 0  # pragma: no cover (numba)
+                        z[0] = unary_udf(x0)  # pragma: no cover (numba)
 
                 unary_wrapper = numba.cfunc(wrapper_sig, nopython=True, error_model="numpy")(
                     unary_wrapper

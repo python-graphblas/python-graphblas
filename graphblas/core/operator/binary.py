@@ -465,26 +465,38 @@ def _finalize_typed_binaryop(parent, binary_udf, name, type_, ret_type):
         nt.CPointer(input_type.numba_type),
     )
 
+    # Each wrapper writes 0 (False) before it calls the UDF: if the UDF raises, Numba
+    # prints the error and returns, and GraphBLAS uses the output as it is (for a
+    # select, an unwritten bool decides whether to keep the entry). The operands are
+    # read first, since the output can be one of them (z = f(z, y) in a reduce).
     if type_ == BOOL:
         if ret_type == BOOL:
 
             def binary_wrapper(z, x, y):  # pragma: no cover (numba)
-                z[0] = bool(binary_udf(bool(x[0]), bool(y[0])))
+                x0, y0 = x[0], y[0]
+                z[0] = 0
+                z[0] = bool(binary_udf(bool(x0), bool(y0)))
 
         else:
 
             def binary_wrapper(z, x, y):  # pragma: no cover (numba)
-                z[0] = binary_udf(bool(x[0]), bool(y[0]))
+                x0, y0 = x[0], y[0]
+                z[0] = 0
+                z[0] = binary_udf(bool(x0), bool(y0))
 
     elif ret_type == BOOL:
 
         def binary_wrapper(z, x, y):  # pragma: no cover (numba)
-            z[0] = bool(binary_udf(x[0], y[0]))
+            x0, y0 = x[0], y[0]
+            z[0] = 0
+            z[0] = bool(binary_udf(x0, y0))
 
     else:
 
         def binary_wrapper(z, x, y):  # pragma: no cover (numba)
-            z[0] = binary_udf(x[0], y[0])
+            x0, y0 = x[0], y[0]
+            z[0] = 0
+            z[0] = binary_udf(x0, y0)
 
     binary_wrapper = numba.cfunc(wrapper_sig, nopython=True, error_model="numpy")(binary_wrapper)
     new_binary = ffi_new("GrB_BinaryOp*")
