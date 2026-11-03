@@ -217,6 +217,28 @@ def _numba_type(dtype):
             f"Numba, which python-graphblas uses for UDTs, cannot type an array of {element}, "
             f"as in {dtype}; use an array of {instead} instead"
         ) from exc
+    except numba.core.errors.NumbaError as exc:
+        # Numba's own error is "NumbaNotImplementedError: |V4", with terminal colors
+        raw = _raw_bytes_element(dtype)
+        if raw is None:  # pragma: no cover (safety)
+            raise
+        raise ValueError(
+            f"Numba, which python-graphblas uses for UDTs, cannot type raw bytes ({raw}), "
+            f"as in {dtype}; use an array of uint8 instead, np.dtype((np.uint8, "
+            f"{raw.itemsize}))"
+        ) from exc
+
+
+def _raw_bytes_element(dtype):
+    """The first void dtype with no fields (raw bytes) in dtype, or None."""
+    if dtype.subdtype is not None:
+        return _raw_bytes_element(dtype.subdtype[0])
+    if dtype.names is None:
+        return dtype if dtype.kind == "V" else None
+    for field_dtype, *_ in dtype.fields.values():
+        if (raw := _raw_bytes_element(field_dtype)) is not None:
+            return raw
+    return None
 
 
 def register_new(name, dtype=None):
