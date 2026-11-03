@@ -96,7 +96,9 @@ later to ``gb.ss.config`` is that same default, so to keep UDT work from compili
 directory and compiler), and falls back to ``"run"``, with no error, where the JIT cannot
 work: SuiteSparse built without the JIT (as in the PyPI wheels), SuiteSparse 7, no working
 C compiler (in an activated conda environment, ``conda install c-compiler``), or a cache
-directory it cannot write to.
+directory it cannot write to. On Windows, SuiteSparse built with MSVC (as conda-forge
+builds it) compiles JIT kernels only through cmake, and python-graphblas does not turn the
+JIT on there yet, so a configured ``"on"`` becomes ``"run"``.
 
 With the JIT on:
 

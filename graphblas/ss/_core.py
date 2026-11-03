@@ -152,6 +152,8 @@ class GlobalConfig(BaseConfig):
         guide's initialization page covers the trade-offs, and when "on" is safe.
     jit_use_cmake : bool
         Whether to use cmake to compile the JIT kernels.
+        Always True for SuiteSparse built with MSVC (on Windows), where
+        python-graphblas does not turn the JIT on yet.
         Only available for SuiteSparse:GraphBLAS >=8
     jit_c_compiler_name : str
         C compiler for JIT kernels.
