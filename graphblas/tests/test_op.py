@@ -7491,6 +7491,62 @@ def test_udt_ret_dtype_errors():
         )
 
 
+def _ret_dtype_class_cases():
+    """(class, namespace, UDF giving the first 3 of x, typed lookup) per class with ret_dtype."""
+    cases = [
+        (UnaryOp, "unary", lambda x: x[:3], lambda o, t: o[t]),
+        (BinaryOp, "binary", lambda x, y: x[:3] + y[:3], lambda o, t: o[t, t]),
+        (IndexUnaryOp, "indexunary", lambda x, i, j, th: x[:3] + i, lambda o, t: o[t, INT64]),
+    ]
+    if lib.__dict__.get("GxB_IndexBinaryOp_new") is not None:
+        from graphblas.core.operator import IndexBinaryOp
+
+        cases.append(
+            (
+                IndexBinaryOp,
+                "indexbinary",
+                lambda x, ix, jx, y, iy, jy, th: x[:3] + y[:3],
+                lambda o, t: o[t, t],
+            )
+        )
+    return cases
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_ret_dtype_lazy_and_parameterized_for_each_op_class():
+    """``lazy=True`` keeps ``ret_dtype``, and ``parameterized=True`` refuses it, for every class.
+
+    Only UnaryOp was tested, so dropping ``ret_dtype`` from BinaryOp's or
+    IndexUnaryOp's deferred registration, or BinaryOp's parameterized check,
+    left every test passing.
+    """
+    twelve = dtypes.register_anonymous(np.dtype((np.float64, (12,))), "_RetDCls12")
+    three = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "_RetDCls3")
+    for cls, modname, func, typed in _ret_dtype_class_cases():
+        module = getattr(gb, modname)
+        name = f"_ret_dtype_lazy_{modname}"
+        cls.register_new(name, func, is_udt=True, lazy=True, ret_dtype=three)
+        try:
+            assert typed(getattr(module, name), twelve).return_type is three
+        finally:
+            for ns in (module, op):
+                vars(ns).pop(name, None)
+                ns._delayed.pop(name, None)
+        with pytest.raises(ValueError, match="does not work with parameterized=True"):
+            cls.register_anonymous(
+                lambda t=1, func=func: func, is_udt=True, parameterized=True, ret_dtype=three
+            )
+        with pytest.raises(ValueError, match="parameterized=True"):
+            cls.register_new(
+                f"{name}_param",
+                lambda t=1, func=func: func,
+                is_udt=True,
+                parameterized=True,
+                lazy=True,
+                ret_dtype=three,
+            )
+
+
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_ret_dtype_index_ops():
@@ -7508,6 +7564,12 @@ def test_udt_ret_dtype_index_ops():
         _head_plus_row, "_ret_dtype_indexunary", is_udt=True, ret_dtype=out2
     )
     assert iu[in11, INT64].return_type is out2
+    v = Vector(in11, size=3)
+    v[1] = np.arange(11.0)
+    v[2] = np.arange(11.0) + 10
+    result = v.apply(iu, gb.Scalar.from_value(0)).new()
+    assert result.dtype is out2
+    assert result.to_coo()[1].tolist() == [[1.0, 2.0], [12.0, 13.0]]
 
     if lib.__dict__.get("GxB_IndexBinaryOp_new") is not None:
         from graphblas.core.operator import IndexBinaryOp
@@ -7519,6 +7581,9 @@ def test_udt_ret_dtype_index_ops():
             _head_sum, "_ret_dtype_indexbinary", is_udt=True, ret_dtype=out2
         )
         assert ib[in11, in11].return_type is out2
+        result = v.ewise_mult(v, ib(0.0)).new()
+        assert result.dtype is out2
+        assert result.to_coo()[1].tolist() == [[0.0, 2.0], [20.0, 22.0]]
 
     # register_new also adds an IndexUnaryOp to ``select`` when it returns BOOL.
     # A UDT op has no types until it is compiled, so a declared non-BOOL
