@@ -4583,6 +4583,9 @@ def test_ss_import_values_size():
     # A scalar is not a whole element of a sub-array dtype (it said "not 0")
     with pytest.raises(ValueError, match=r"a scalar does not fill one element of dtype \S+, of"):
         Matrix.ss.import_fullr(values=1.5, nrows=2, ncols=2, dtype="FP64[2]", is_iso=True)
+    # A scalar that is one whole element, where more are needed, is just too few values
+    with pytest.raises(ValueError, match=r"have 4 or more elements of dtype FP64, not 1"):
+        Matrix.ss.import_fullr(values=1.5, nrows=2, ncols=2)
     # More entries than indices is an indptr problem; it was reported as too few values
     match = "index pointers give 4611686018427387904 entries, more than the number of indices, 1"
     with pytest.raises(ValueError, match=match):
