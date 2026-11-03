@@ -205,6 +205,12 @@ def test_isclose():
     assert not s.isclose(Scalar.from_value(5), check_dtype=True)
     assert not s.isclose(Scalar.from_value(None, dtype=s.dtype))
     assert Scalar.from_value(None, dtype="FP64").isclose(Scalar.from_value(None, dtype="FP32"))
+    # An int that INT64 cannot hold compares in Python, as in isequal; it raised OverflowError
+    assert not Scalar.from_value(1, dtype="INT8").isclose(2**63)
+    assert Scalar.from_value(2.0**64).isclose(2**64 + 1)
+    assert Scalar.from_value(2**63, dtype="UINT64").isclose(2**63)
+    assert not Scalar.from_value(1.0).isclose(10**400)
+    assert not Scalar(dtype="INT8").isclose(2**63)
 
 
 def test_isclose_udt_raises():
