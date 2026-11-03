@@ -175,6 +175,12 @@ pair of built-in types:
      - Computed in its own type, then cast. With an accumulator, the value is cast before
        it accumulates, as GraphBLAS casts a built-in value: an ``INT8[3]`` Scalar's
        ``s += 0.5`` adds 0, as an INT8 Scalar's does.
+   * - A literal: ``v[0] = (1.5, 1)``, ``Scalar.from_value``, ``Vector.from_scalar``
+     - Converted as numpy assigns it to an element, so, unlike a literal that an operator
+       makes an element, it need not fit: ``1.5`` in an integer field truncates, text too
+       long for its field is cut, and a datetime in a date field loses its time of day. An
+       ``int`` out of an integer field's range raises ``OverflowError``, where an INT8
+       Vector wraps it.
    * - Between a UDT and a built-in type, or layouts that do not correspond
      - ``DomainMismatch``.
 
