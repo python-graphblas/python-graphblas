@@ -1301,9 +1301,17 @@ def test_select_row_and_column_compare_indices_with_the_bound_given():
         (A < -0.5, []),
         (A < float("inf"), [0, 1, 2, 3, 4]),
         (A < Scalar.from_value(2.5), [0, 1, 2]),
+        # A bound that is not a Python or numpy number: the thunk keeps its own type
+        (A < np.array(3), [0, 1, 2]),
+        (A >= np.array(3), [3, 4]),
+        (A < np.True_, [0]),
     ]:
         assert select.row(expr).new().to_coo()[0].tolist() == expected, expr
     assert select.column(A.T < 2.5).new().to_coo()[1].tolist() == [0, 1, 2]
+    w = Vector.from_coo([0], [3])
+    with gb.config.set(autocompute=True):
+        assert select.row(A < w[0]).new().to_coo()[0].tolist() == [0, 1, 2]
+        assert select.row(A >= w[0]).new().to_coo()[0].tolist() == [3, 4]
 
 
 @autocompute
