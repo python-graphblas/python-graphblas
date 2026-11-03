@@ -7042,12 +7042,36 @@ def test_udt_numba_error_summary_is_never_empty():
         "Something else went wrong"
     )
     assert summarize(ValueError("")) == "Numba could not compile the function for these input types"
-    # From a lifted op: Numba cannot add two records, so not an array of records either
+    # From a lifted op: Numba cannot compare two records, so not an array of records either
     arr_rec = dtypes.register_anonymous(
         np.dtype(([("sum_p", np.int32), ("sum_q", np.float64)], (2,))), "_SumArrRec"
     )
-    with pytest.raises(UdfParseError, match=r"plus does not work with \(_SumArrRec, _SumArrRec\)"):
-        binary.plus[arr_rec]
+    with pytest.raises(UdfParseError, match=r"eq does not work with \(_SumArrRec, _SumArrRec\)"):
+        binary.eq[arr_rec]
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_records_in_an_array_have_no_arithmetic():
+    """A lifted op refuses records in an array with a KeyError that says so.
+
+    It reached Numba, which cannot add two records, and its UdfParseError
+    quoted Numba's ``add(Record(...), Record(...))``.
+    """
+    rec = [("ria_p", np.int16), ("ria_q", np.float32)]
+    arr_rec = dtypes.register_anonymous(np.dtype((rec, (2,))), "_RecsInArr")
+    field = dtypes.register_anonymous(np.dtype([("ria_r", rec, (2,)), ("ria_s", np.float64)]))
+    match = "a built-in op lifts to the numbers in an array or a record, not to records in"
+    for udt in [arr_rec, field]:
+        v = Vector(udt, size=2)
+        for parent in [binary.plus, binary.min, unary.ainv, unary.abs, monoid.plus]:
+            with pytest.raises(KeyError, match=match):
+                parent[udt]
+            assert udt not in parent
+        with pytest.raises(KeyError, match=match):
+            v + v
+        # Ops that do not touch the values still work.
+        assert v.ewise_mult(v, binary.first).new().dtype == udt
+        assert v.apply(unary.identity).new().dtype == udt
 
 
 @pytest.mark.skipif("not supports_udfs")
