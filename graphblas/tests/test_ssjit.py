@@ -803,11 +803,11 @@ def test_jit_indexbinary(v):
     assert "FP64" in add_theta
     assert add_theta["FP64"].return_type == dtypes.FP64
     assert add_theta["FP64"].jit_c_definition == cdef
-    # SuiteSparse compiles it under a C name of its own types
-    assert add_theta["FP64"].jit_c_name == "add_theta_4_FP64_4_FP64_FP64"
-    assert add_theta["FP64"].jit_c_source == cdef.replace(
-        "add_theta", "add_theta_4_FP64_4_FP64_FP64"
-    )
+    # SuiteSparse compiles it under a C name of its types, name and definition
+    c_name = add_theta["FP64"].jit_c_name
+    assert c_name.startswith("add_theta_4_FP64_4_FP64_4_FP64_")
+    assert len(c_name) == len("add_theta_4_FP64_4_FP64_4_FP64_") + 12
+    assert add_theta["FP64"].jit_c_source == cdef.replace("add_theta", c_name)
     # Bind theta and use as BinaryOp
     v64 = v.dup("FP64")
     binop = add_theta["FP64"](10.0)
@@ -862,7 +862,9 @@ def test_jit_indexbinary(v):
     # An FP32 theta picks it, and its kernel runs. SuiteSparse finds a compiled kernel by its
     # op's name, and its encoding has no theta type, so with one C name for both theta types
     # this ran the FP64 theta's kernel, which read the float as a double: [2, 2, 4, 0].
-    assert add_theta["FP64", "FP64", "FP32"].jit_c_name == "add_theta_4_FP64_4_FP64_FP32"
+    assert add_theta["FP64", "FP64", "FP32"].jit_c_name.startswith(
+        "add_theta_4_FP64_4_FP64_4_FP32_"
+    )
     expected_mixed = Vector.from_coo([1, 3, 4, 6], [22.0, 22.0, 24.0, 20.0])
     res = v64.ewise_mult(v64, add_theta(np.float32(10))).new()
     assert expected_mixed.isequal(res, check_dtype=True)
@@ -876,6 +878,66 @@ def test_jit_indexbinary(v):
     assert len(c_name) == 117
     assert c_name.startswith(long_name[:100])
     assert expected.isequal(v64.ewise_mult(v64, long_op(10.0)).new(), check_dtype=True)
+
+
+@pytest.mark.slow
+def test_jit_c_name_per_name_and_definition(v):
+    """An op registered from C is compiled under a C name of its full name and definition.
+
+    SuiteSparse finds a compiled kernel in memory by its op's name, and checks a definition
+    only when it loads a kernel from disk. When the C name was the op's last name, an op
+    defined again after ``delattr``, or one of the same last name in another namespace, ran
+    the kernel compiled first.
+    """
+    if _IS_SSGB7:
+        return
+    _require_jit_on()
+    v64 = v.dup("FP64")
+    # One last name in two namespaces
+    plus = "void jcn_f (double *z, double *x, double *y) { (*z) = (*x) + (*y) ; }"
+    f = binary.ss.register_new("jcn_f", plus, "FP64", "FP64", "FP64")
+    g = binary.ss.register_new("jcn_ns.jcn_f", plus.replace("+", "-"), "FP64", "FP64", "FP64")
+    try:
+        expected = Vector.from_coo([1, 3, 4, 6], [2.0, 2.0, 4.0, 0.0])
+        assert v64.ewise_mult(v64, f).new().isequal(expected, check_dtype=True)
+        expected = Vector.from_coo([1, 3, 4, 6], [0.0, 0.0, 0.0, 0.0])
+        assert v64.ewise_mult(v64, g).new().isequal(expected, check_dtype=True)
+        assert f["FP64"].jit_c_name != g["FP64"].jit_c_name
+    finally:
+        delattr(binary.ss, "jcn_f")
+        delattr(binary.ss, "jcn_ns")
+    # One name defined again, after delattr, with another definition and then the first
+    square = "void jcn_u (double *z, double *x) { (*z) = (*x) * (*x) ; }"
+    add10 = square.replace("* (*x)", "+ 10")
+    names = []
+    for cdef, values in [(square, [1, 1, 4, 0]), (add10, [11, 11, 12, 10]), (square, [1, 1, 4, 0])]:
+        op = unary.ss.register_new("jcn_u", cdef, "FP64", "FP64")
+        try:
+            expected = Vector.from_coo([1, 3, 4, 6], values, dtype="FP64")
+            assert v64.apply(op).new().isequal(expected, check_dtype=True)
+            names.append(op["FP64"].jit_c_name)
+        finally:
+            delattr(unary.ss, "jcn_u")
+    assert names[0] != names[1]
+    assert names[0] == names[2]  # one definition, one kernel
+    # A struct member of the op's name is not renamed
+    rec = dtypes.ss.register_new(
+        "JcnRec",
+        "typedef struct { int64_t jcn_m ; double b ; } JcnRec ;",
+        np_type=np.dtype([("jcn_m", "<i8"), ("b", "<f8")], align=True),
+    )
+    cdef = "void jcn_m (double *z, const JcnRec *x) { (*z) = x->jcn_m + (*x) . b ; }"
+    op = unary.ss.register_new("jcn_m", cdef, rec, "FP64")
+    try:
+        c_name = op[rec].jit_c_name
+        assert op[rec].jit_c_source == cdef.replace("void jcn_m", f"void {c_name}")
+        w = Vector(rec, 2)
+        w[0] = (3, 0.5)
+        w[1] = (4, 0.25)
+        expected = Vector.from_coo([0, 1], [3.5, 4.25])
+        assert w.apply(op).new().isequal(expected, check_dtype=True)
+    finally:
+        delattr(unary.ss, "jcn_m")
 
 
 @pytest.mark.slow

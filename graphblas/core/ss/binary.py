@@ -5,6 +5,7 @@ from .. import NULL, ffi, lib
 from ..operator.base import TypedOpBase
 from ..operator.binary import BinaryOp, TypedUserBinaryOp
 from . import _IS_SSGB7
+from ._utils import _jit_c_source
 
 ffi_new = ffi.new
 
@@ -44,7 +45,12 @@ def register_new(name, jit_c_definition, left_type, right_type, ret_type):
     see the SuiteSparse:GraphBLAS user guide.
 
     Only one type signature may be registered at a time, but repeated calls using
-    the same name with different input types is allowed.
+    the same name with different input types is allowed. The C function must have the
+    operator's name (the last part of ``name``). It is compiled under a C name made from
+    the full name and the definition, which the op's ``jit_c_name`` and ``jit_c_source``
+    show, so another definition, or the same last name in another namespace, gets its own
+    kernel. Registering one name with one definition again (after ``delattr``) reuses its
+    C name, and the kernel already compiled for it.
 
     Parameters
     ----------
@@ -108,6 +114,7 @@ def register_new(name, jit_c_definition, left_type, right_type, ret_type):
         rv = BinaryOp(name, is_udt=True)
     from .jit_config import _compiling_c_source
 
+    c_name, c_definition = _jit_c_source(name, funcname, jit_c_definition)
     gb_obj = ffi_new("GrB_BinaryOp*")
     with _compiling_c_source(f"gb.binary.{name}"):
         check_status_carg(
@@ -117,8 +124,8 @@ def register_new(name, jit_c_definition, left_type, right_type, ret_type):
                 ret_type._carg,
                 left_type._carg,
                 right_type._carg,
-                ffi_new("char[]", funcname.encode()),
-                ffi_new("char[]", jit_c_definition.encode()),
+                ffi_new("char[]", c_name.encode()),
+                ffi_new("char[]", c_definition.encode()),
             ),
             "BinaryOp",
             gb_obj[0],
@@ -126,6 +133,7 @@ def register_new(name, jit_c_definition, left_type, right_type, ret_type):
     op = TypedJitBinaryOp(
         rv, funcname, left_type, ret_type, gb_obj[0], jit_c_definition, dtype2=right_type
     )
+    op._jit_c_info = (c_name, c_definition)
     rv._add(op, is_jit=True)
     setattr(module, funcname, rv)
     return rv

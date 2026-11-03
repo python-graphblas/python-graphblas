@@ -1,6 +1,3 @@
-import hashlib
-import re
-
 from ... import backend
 from ...dtypes import lookup_dtype
 from ...exceptions import check_status_carg
@@ -12,27 +9,9 @@ from ..operator.indexbinary import (
     _has_idxbinop,
     _TypedIndexBinaryOpMixin,
 )
+from ._utils import _jit_c_source
 
 ffi_new = ffi.new
-
-
-def _jit_c_name(funcname, x_type, y_type, theta_type):
-    """The C name of ``funcname`` registered for these types, unique to the types.
-
-    SuiteSparse finds a compiled kernel in memory by its op's name and the types in the
-    kernel's encoding, which has x's, y's and z's types but not theta's. So two ops of one
-    name that differ only in theta's type would run each other's kernel. The name carries
-    all three types, as ``{funcname}_{len(x)}_{x}_{len(y)}_{y}_{theta}`` (built-in types by
-    name, UDTs by their C name); the lengths keep a type name with an underscore from
-    reading as two. SuiteSparse keeps a name of at most 127 characters, so a longer one is
-    ``funcname``'s start and a digest of the long name.
-    """
-    x, y, theta = (re.sub(r"\W", "_", t.jit_c_name or t.name) for t in (x_type, y_type, theta_type))
-    c_name = f"{funcname}_{len(x)}_{x}_{len(y)}_{y}_{theta}"
-    if len(c_name) >= lib.GxB_MAX_NAME_LEN:
-        digest = hashlib.sha256(c_name.encode()).hexdigest()[:16]
-        c_name = f"{funcname[:100]}_{digest}"
-    return c_name
 
 
 class TypedJitIndexBinaryOp(_TypedIndexBinaryOpMixin, TypedOpBase):
@@ -71,8 +50,11 @@ def register_new(name, jit_c_definition, x_type, y_type, theta_type, ret_type):
 
     Only one type signature may be registered at a time, but repeated calls using
     the same name with different input types is allowed. The C function must have the
-    operator's name (the last part of ``name``). Each type signature compiles it under its
-    own C name, which the op's ``jit_c_name`` and ``jit_c_source`` show.
+    operator's name (the last part of ``name``). It is compiled under a C name made from
+    the full name and the definition, which the op's ``jit_c_name`` and ``jit_c_source``
+    show, so another definition, or the same last name in another namespace, gets its own
+    kernel. Registering one name with one definition again (after ``delattr``) reuses its
+    C name, and the kernel already compiled for it.
 
     Parameters
     ----------
@@ -138,9 +120,10 @@ def register_new(name, jit_c_definition, x_type, y_type, theta_type, ret_type):
         rv = IndexBinaryOp(name, is_udt=True)
     from .jit_config import _compiling_c_source
 
-    c_name = _jit_c_name(funcname, x_type, y_type, theta_type)
-    # The function is renamed everywhere it is named, so a recursive call still finds it
-    c_definition = re.sub(rf"\b{re.escape(funcname)}\b", c_name, jit_c_definition)
+    # Theta's type is not in the kernel's encoding, so the C name carries the types
+    c_name, c_definition = _jit_c_source(
+        name, funcname, jit_c_definition, (x_type, y_type, theta_type)
+    )
     gb_obj = ffi_new("GxB_IndexBinaryOp*")
     with _compiling_c_source(f"gb.indexbinary.{name}"):
         check_status_carg(
