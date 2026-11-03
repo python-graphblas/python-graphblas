@@ -3165,3 +3165,15 @@ def test_udt_long_name_gets_a_c_name_that_fits():
         with _jit_mode("on"):
             B = A.T.new()
         assert B.to_coo()[2].tolist() == [(3.0, 4), (1.0, 2)], length
+
+
+def test_udt_c_name_keeps_python_graphblas_own_names():
+    # A type python-graphblas makes itself has a name starting with _gb, which no kernel
+    # identifier starts with either, so it keeps that name as its C name; a user's name gets
+    # the gbudt_ prefix.
+    from graphblas.core.operator.udt_codegen import _pick_c_type_name
+
+    assert _pick_c_type_name("Edge") == "gbudt_Edge"
+    assert _pick_c_type_name("gbudt_Edge") == "gbudt_Edge"
+    for name in ["_gbudt_7", "_gbnest_3", "_gbinternal_fp64x16"]:
+        assert _pick_c_type_name(name) == name
