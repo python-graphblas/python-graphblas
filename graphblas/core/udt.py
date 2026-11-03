@@ -311,6 +311,33 @@ def _udt_op_types(op_name, dtype, dtype2):
     return lookup_dtype(result), [(in_x, in_y)]
 
 
+def _unary_op_type(op_name, dtype):
+    """Return the type ``unary.{op_name}`` gives on UDT ``dtype``: each leaf as on its built-in.
+
+    Of the ops that lift, only ``abs`` changes a leaf's type: a complex number's
+    magnitude is real, as ``unary.abs`` on FC64 gives FP64 (and numpy's ``abs``
+    a float), also where the backend has no complex types.
+    """
+    if op_name != "abs":
+        return dtype
+
+    def leaf_type(leaf):
+        base, shape = leaf.subdtype or (leaf, ())
+        if base.kind == "c":
+            base = np.empty(0, base).real.dtype
+        return np.dtype((base, shape)) if shape else base
+
+    np_type = dtype.np_type
+    if np_type.names is None:
+        result = leaf_type(np_type)
+        return dtype if result == np_type else lookup_dtype(result)
+    leaves = [leaf for _py, _c, leaf in _iter_record_leaves(np_type)]
+    result_leaves = [leaf_type(leaf) for leaf in leaves]
+    if result_leaves == leaves:
+        return dtype
+    return lookup_dtype(_promoted_record([np_type], iter(result_leaves)))
+
+
 def _promoted_record(records, result_leaves):
     """Build a record laid out like ``records`` with ``result_leaves`` for its leaves.
 

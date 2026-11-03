@@ -2494,6 +2494,41 @@ def test_udt_unary_ainv_abs_array(array_udt):
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udt_abs_of_complex_leaves_is_real():
+    """``unary.abs`` types a complex leaf as on FC64 or FC32: FP64 or FP32, as numpy's abs.
+
+    It kept the complex type, as ``(5+0j)``.
+    """
+    c3 = dtypes.register_anonymous(np.dtype((np.complex128, (3,))), "_AbsC16x3")
+    c2 = dtypes.register_anonymous(np.dtype((np.complex64, (2,))), "_AbsC8x2")
+    rec = dtypes.register_anonymous(
+        np.dtype([("abs_c", np.complex128), ("abs_f", np.complex64), ("abs_i", np.int8)]),
+        "_AbsCRec",
+    )
+    v = Vector(c3, size=1)
+    v[0] = [3 + 4j, -1, -2j]
+    w = Vector(c2, size=1)
+    w[0] = [3 + 4j, 1j]
+    r = Vector(rec, size=1)
+    r[0] = (3 + 4j, 6 - 8j, -3)
+    for x, expected_type in [
+        (v, np.dtype((np.float64, (3,)))),
+        (w, np.dtype((np.float32, (2,)))),
+        (r, np.dtype([("abs_c", np.float64), ("abs_f", np.float32), ("abs_i", np.int8)])),
+    ]:
+        assert unary.abs[x.dtype].return_type.np_type == expected_type
+        assert x.apply(unary.abs).new().dtype.np_type == expected_type
+    np.testing.assert_array_equal(v.apply(unary.abs).new()[0].new().value, [5, 1, 2])
+    np.testing.assert_array_equal(w.apply(unary.abs).new()[0].new().value, [5, 1])
+    assert r.apply(unary.abs).new()[0].new().value.tolist() == (5.0, 10.0, 3)
+    assert unary.ainv[c3].return_type == c3
+    # Stored into the complex type, as an FP64 result is
+    stored = Vector(c3, size=1)
+    stored << v.apply(unary.abs)
+    np.testing.assert_array_equal(stored[0].new().value, [5, 1, 2])
+
+
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_jit_typedef():
     """Registering a UDT sets GxB_JIT_C_NAME and GxB_JIT_C_DEFINITION."""
