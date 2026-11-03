@@ -598,10 +598,11 @@ def _run_udf_probe(numba_func, arg_dtypes):
     that does not fit, that is left to the wrapper, whose output then keeps
     its zeros (see :func:`_compose_wrapper_body`). Such a UDF may raise only
     for some values, so it still types (``np.linalg.inv`` raises on a matrix
-    of ones). ``error`` is the exception when it raised on twos as well, and
-    it was no ``ArithmeticError``; only the literal rule reads it (see
-    :data:`_RAISES_ON_SAMPLES`). Only the call is guarded, so a mistake in
-    building the operands still surfaces.
+    of ones). ``error`` names the exception (as text) when it raised on twos
+    as well, and it was no ``ArithmeticError``; only the literal rule reads it
+    (see :data:`_RAISES_ON_SAMPLES`). The exception itself is not kept: its
+    traceback holds the frames that hold the op. Only the call is guarded, so
+    a mistake in building the operands still surfaces.
 
     This is where typing an op for a UDT runs the user's function rather
     than only compiling it, and ``OpBase.__contains__`` is a typed lookup,
@@ -621,14 +622,14 @@ def _run_udf_probe(numba_func, arg_dtypes):
         except ArithmeticError:
             return None, None
         except Exception as exc:
-            error = exc
+            error = f"{type(exc).__name__}: {exc}"
             continue
         return ((result,) if fill == 1 else None), None
     return None, error
 
 
 # The UDT ops whose UDF raised, other than an ArithmeticError, on both sets of stand-in
-# operands, with the exception. Such an op still types, since the UDF may raise only
+# operands, with the exception as text. Such an op still types, since the UDF may raise only
 # for some values, but beside it a number is typed as itself rather than as an element
 # (``literals._own_scalar_type_for_user_op``), as a Scalar of it would be.
 _RAISES_ON_SAMPLES = weakref.WeakKeyDictionary()
@@ -709,7 +710,7 @@ def _check_udf_fills_output(numba_func, numba_ret_type, return_type, zkind, arg_
     length exactly (:func:`_raise_unless_sequence_fits`); a tuple's length
     is in its type, and a list's is learned the same way as a built
     array's. A UDF that returns no built array or list is never run.
-    Returns the exception the UDF raised on every stand-in (see
+    Returns what the UDF raised on every stand-in, as text (see
     :func:`_run_udf_probe`), or None.
     """
     if zkind == "array_elements":
@@ -732,7 +733,7 @@ def _check_udf_fills_output(numba_func, numba_ret_type, return_type, zkind, arg_
         # since its shape may depend on the values (``x[x > 0]``).
         ran, error = _run_udf_probe(numba_func, arg_dtypes)
         if ran is not None and np.size(ran[0]) != 1:
-            error = ValueError(f"returned an array of shape {np.shape(ran[0])} for a scalar")
+            error = f"returned an array of shape {np.shape(ran[0])} for a scalar"
         return error
     else:
         return None
