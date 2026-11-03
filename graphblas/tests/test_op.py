@@ -4949,6 +4949,46 @@ def test_udt_record_array_field_refuses_literal_of_another_shape():
         assert value["shp_b"] == 1
 
 
+def test_udt_record_date_literals_compare_as_numpy():
+    """A Python date or duration, or a date as text, in a record literal is typed as numpy types it.
+
+    It takes its field's type only when it converts into the field and back
+    unchanged, as a numpy date does; otherwise it keeps numpy's type for it (a
+    ``datetime`` is in microseconds), so ``==`` compares it whole: noon is not
+    the day, and 5 s and 1 us is not 5 s. Before, it always took the field's
+    type, so it was cut to the field's unit and compared equal.
+    """
+    import datetime
+
+    rec = dtypes.register_anonymous(np.dtype([("dl_d", "M8[D]"), ("dl_t", "m8[s]")]), "_DateLit")
+    day, secs = np.datetime64("2020-01-01"), np.timedelta64(5, "s")
+    v = Vector(rec, size=1)
+    v[0] = (day, secs)
+    s = v[0].new()
+    # numpy's dates have no time zone, so neither do these.
+    midnight = datetime.datetime(2020, 1, 1)  # noqa: DTZ001
+    noon = datetime.datetime(2020, 1, 1, 12)  # noqa: DTZ001
+    for literal, equal in [
+        ((noon, secs), False),
+        ((day, datetime.timedelta(seconds=5, microseconds=1)), False),
+        (("2020-01-01T12:00", secs), False),
+        ((datetime.date(2020, 1, 1), datetime.timedelta(seconds=5)), True),
+        ((midnight, secs), True),
+        (("2020-01-01", secs), True),
+    ]:
+        assert (s == literal) is equal
+        if supports_udfs:
+            assert (v == literal).new()[0].new().value == equal
+            assert (v != literal).new()[0].new().value != equal
+    if supports_udfs:
+        # A user's op refuses what its field would cut short, as for a numpy date.
+        second = BinaryOp.register_anonymous(lambda x, y: y, "_date_lit_second", is_udt=True)
+        with pytest.raises(ValueError, match="does not fit _DateLit"):
+            v.apply(second, right=(noon, secs))
+        result = v.apply(second, right=(midnight, secs)).new()
+        assert result[0].new().value.tolist() == (day, secs)
+
+
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_ewise_union_defaults_are_typed_not_converted():
     """An ``ewise_union`` default beside a UDT is typed as a literal and must fit the operand.

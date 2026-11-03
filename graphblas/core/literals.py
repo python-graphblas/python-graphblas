@@ -589,12 +589,15 @@ def _weak_literal_udt(dtype, value, *, exact=False):
             # beside it are. It takes the field's own type when it converts into
             # the field and back unchanged, so ops pair the field with itself;
             # otherwise its own type, which does not fit: text as the field's
-            # kind at its own length, a numpy date or duration in its unit.
-            # Other dates (datetime, str) take the field's type.
+            # kind at its own length, a date or duration in numpy's unit for it
+            # (a datetime is microseconds), so == compares it as numpy does.
+            # Text in a duration field, or text numpy cannot read as a date,
+            # takes the field's type, and converting it reports what is wrong.
             if isinstance(part, (str, bytes)) and base.kind in "SU":
                 own = np.dtype(f"{base.kind}{max(len(part), 1)}")
-            elif isinstance(part, (np.datetime64, np.timedelta64)):
-                own = part.dtype
+            elif (date := _as_numpy_date(part, base.kind)) is not None:
+                part = date
+                own = date.dtype
                 if own.kind != base.kind:
                     return own
             elif isinstance(part, (str, bytes, datetime.date, datetime.timedelta)):
@@ -653,6 +656,27 @@ def _weak_literal_udt(dtype, value, *, exact=False):
     except _LiteralDoesNotFit:
         return None
     return dtype if literal_type == np_type else lookup_dtype(literal_type)
+
+
+def _as_numpy_date(value, kind):
+    """Return ``value`` as numpy's ``datetime64`` or ``timedelta64``, or ``None`` if it is neither.
+
+    A numpy date or duration is itself; a Python ``datetime.date`` or
+    ``datetime.datetime`` is a date in days or microseconds and a
+    ``datetime.timedelta`` a duration in microseconds, as numpy makes them;
+    text is a date in the unit it is written to (``"2020-01-01T12:00"`` is in
+    minutes) when ``kind``, the leaf's, is ``"M"`` and numpy can read it.
+    """
+    if isinstance(value, (np.datetime64, np.timedelta64)):
+        return value
+    try:
+        if isinstance(value, datetime.timedelta):
+            return np.timedelta64(value)
+        if isinstance(value, datetime.date) or (kind == "M" and isinstance(value, (str, bytes))):
+            return np.datetime64(value)
+    except ValueError:  # text that is not a date; converting it reports that
+        pass
+    return None
 
 
 def _holds_numpy_values(value):
