@@ -7001,3 +7001,19 @@ def test_builtin_udfs_are_disk_cached():
 
     user_op = BinaryOp.register_anonymous(_uncached_probe)
     assert isinstance(user_op._numba_func._cache, NullCache)
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_builtin_udf_compiles_uncached_where_numba_cannot_cache(monkeypatch):
+    # A read-only install whose user has no writable cache directory either
+    # leaves Numba no cache locator, and njit(cache=True) raises RuntimeError.
+    # The op then compiles uncached instead of failing.
+    from numba.core import caching
+
+    from graphblas.core.operator.binary import _floordiv
+
+    monkeypatch.setattr(caching.CacheImpl, "_locator_classes", [])
+    op = BinaryOp._build("floordiv", _floordiv, anonymous=True, cache=True)
+    assert isinstance(op._numba_func._cache, caching.NullCache)
+    v = Vector.from_coo([0, 1], [-3, 4])
+    assert v.ewise_mult(v, op).new().isequal(Vector.from_coo([0, 1], [1, 1]))
