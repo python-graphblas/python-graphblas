@@ -6355,7 +6355,7 @@ def test_udt_pair_is_never_unified():
     then named that third type in its KeyError, and ``ewise_add`` with a monoid
     passed GraphBLAS two operands it rejected with GrB_DOMAIN_MISMATCH. A
     Monoid takes one type, so on a mixed pair it runs as its BinaryOp, and
-    indexed with the pair it takes the type its BinaryOp gives them, as
+    indexed with the pair it takes the type the pair promotes to, as
     ``monoid.plus["INT8", "INT16"]`` is ``monoid.plus["INT16"]``.
     """
     X = dtypes.register_anonymous(np.dtype([("uni_a", np.float32), ("uni_b", np.int64)]), "_UniX")
@@ -6384,6 +6384,11 @@ def test_udt_pair_is_never_unified():
     R16 = dtypes.register_anonymous(np.dtype([("uni_c", np.int16)]), "_UniR16")
     assert monoid.plus[R8, R16] is monoid.plus[R16]
     assert monoid.plus[R8, "INT16"] is monoid.plus[R16]
+    # binary.any gives the second operand's type, but monoid.any promotes the pair in
+    # either order, as main did (``monoid.any[R16, R8]`` was ``monoid.any[R8]``)
+    for pair in [(R8, R16), (R16, R8), (R8, "INT16"), ("INT16", R8)]:
+        assert monoid.any[pair] is monoid.any[R16], pair
+    assert monoid.any[X, Y] is monoid.any[Y, X] is monoid.any[XY]
     with pytest.raises(KeyError, match="plus does not work with"):
         monoid.plus[X, R8]
 
