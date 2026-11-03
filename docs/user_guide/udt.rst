@@ -368,7 +368,11 @@ array returned into an array-typed field of a record UDT. A tuple or list also
 fills such a field, but only a one-dimensional one and only at its exact
 length; unlike an array, it does not broadcast. Numba does not know the shape
 of an array the UDF builds, or the length of a list, so the check runs the UDF
-once on sample values; a UDF that raises on those values is not checked.
+on sample values; a UDF that raises on those values is not checked, since it
+may raise only for some values. An exception the UDF raises when the op runs
+is printed and goes no further (Numba cannot pass it to GraphBLAS), so that
+element is not written; a built-in output, such as a select's bool, is 0 or
+``False`` there.
 
 If your UDF references a field that doesn't exist, or returns the wrong arity,
 you'll get a ``UdfParseError`` with the actionable diagnostic line surfaced
