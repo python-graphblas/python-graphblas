@@ -2963,6 +2963,25 @@ def test_context_importable():
     assert gb.ss.global_context is global_context
 
 
+@pytest.mark.parametrize("kind", ["binary", "unary"])
+def test_ss_op_module_can_be_the_first_import(kind):
+    """``graphblas.core.ss.binary`` (or ``unary``) imports as a process's first graphblas import.
+
+    Importing the operator package initializes the operators, which imports
+    ``graphblas.binary.ss``, which takes ``register_new`` from this module. With
+    the operator imports at its top, that raised ImportError ("partially
+    initialized module"), on main too.
+    """
+    script = (
+        f"import graphblas.core.ss.{kind} as mod\n"
+        "import graphblas as gb\n"
+        "print('package: ' + gb.__file__)\n"
+        f"print('same: ' + str(gb.{kind}.ss.register_new is mod.register_new))\n"
+    )
+    lines, report = _run_in_fresh_process(script)
+    assert lines["same"] == "True", report
+
+
 def test_fix_from_conda_finds_windows_compilers(tmp_path):
     """The conda repair looks in ``bin`` and, as Windows conda installs them, ``Library/bin``
     with ``.exe`` names; a baked-in Windows path's basename is found too. Nothing there: None.
