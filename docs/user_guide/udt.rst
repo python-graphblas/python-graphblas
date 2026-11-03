@@ -487,11 +487,16 @@ JIT is skipped when:
   keep the Numba cfunc without a warning.
 
 SuiteSparse knows a UDT by ``gbudt_`` and its name, which cannot collide with
-an identifier in the C code of a kernel, whatever the name. A UDT without a
-name, or whose name is not a C identifier or would make that C name too long
-for SuiteSparse (128 characters or more), gets a synthetic ``_gbudt_NNN`` C
-name and still takes the JIT path. Pass ``name=`` only for readable JIT cache
-filenames and introspection.
+an identifier in the C code of a kernel, whatever the name. A name starting
+with ``_gb``, which python-graphblas keeps for the types it makes itself, is
+the exception: it is the C name as it is. A UDT without a name, or whose name
+is not a C identifier or would make that C name too long to leave room for its
+ops' names (over 118 characters), gets a synthetic ``_gbudt_NNN`` C name and
+still takes the JIT path. Pass ``name=`` only for
+readable JIT cache filenames and introspection. To name such a UDT in C source
+of your own, as for ``gb.binary.ss.register_new``, use its ``jit_c_name``, not
+its Python name, which SuiteSparse does not know. A type registered from C
+source (``gb.dtypes.ss.register_new``) keeps the name you give it.
 
 When the cause is the UDT itself (the first four cases above), the first time
 auto-lift produces a non-JIT'd op for a given ``(op, dtype)`` pair in a

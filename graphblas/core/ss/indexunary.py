@@ -60,6 +60,8 @@ def register_new(name, jit_c_definition, input_type, thunk_type, ret_type):
         The C definition as a string of the user-defined function. For example:
         ``"void diffy (double *z, double *x, GrB_Index i, GrB_Index j, double *y) "``
         ``"{ (*z) = (i + j) * fabs ((*x) - (*y)) ; }"``
+        A UDT made from a numpy dtype is named in C by its ``jit_c_name`` (``gbudt_`` and
+        its name), not its Python name.
     input_type : dtype
         The dtype of the operand of the indexunary operator.
     thunk_type : dtype
