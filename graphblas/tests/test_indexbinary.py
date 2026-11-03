@@ -662,6 +662,23 @@ def test_with_accumulator():
     assert C.to_coo()[2][0] == 118  # 100 + (3+5+10)
 
 
+def test_reduce_refuses_a_bound_op():
+    """A bound IndexBinaryOp gets the TypeError reduce gives a BinaryOp that is in no Monoid.
+
+    It raised AttributeError: neither the bound op nor its IndexBinaryOp had
+    ``monoid``, which reduce and its error message read.
+    """
+
+    def add_vals(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+        return x + y + theta
+
+    op = indexbinary.register_anonymous(add_vals)
+    v = Vector.from_coo([0, 1], [1, 2])
+    for binop in [op(1), op[int](1)]:
+        with pytest.raises(TypeError, match="is not known to be part of a Monoid"):
+            v.reduce(binop)
+
+
 def test_ewise_with_bound_binop():
     """Confirm bound IndexBinaryOp works in all ewise operations."""
 

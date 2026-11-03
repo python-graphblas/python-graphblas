@@ -113,6 +113,9 @@ class _BoundIndexBinaryOp(TypedOpBase):
     _semiring_commutes_to = None
     commutes_to = None
     is_commutative = False
+    # No Monoid is made of it, so reduce refuses it as it refuses a BinaryOp
+    # that is not part of one.
+    monoid = None
     # ``is_positional`` and ``_custom_dtype`` are BinaryOp-specific dispatch
     # hints: when a polymorphic BinaryOp is queried for a type it doesn't
     # support, the resolver in ``utils.get_typed_op`` falls back through
@@ -333,6 +336,8 @@ class IndexBinaryOp(OpBase):
     # Read by ``OpBase.__getitem__`` for a type the op does not have; no
     # IndexBinaryOp is positional.
     is_positional = False
+    # Read by the error for a bound op where a Monoid is expected (reduce).
+    monoid = None
     _typed_class = TypedBuiltinIndexBinaryOp
     _typed_user_class = TypedUserIndexBinaryOp
     # No built-in IndexBinaryOps; no parse config needed
