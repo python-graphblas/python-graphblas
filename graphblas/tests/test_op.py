@@ -3191,7 +3191,7 @@ def test_udt_udf_shape_check_runs_udf_only_for_built_arrays(monkeypatch):
     assert op[udt].return_type is udt
     assert probed == ["_sum"]
 
-    # A UDF that raises on the probe's ones is run again on twos, and types.
+    # A UDF that raises on the probe's values is not checked, and still types.
     def _no_ones(x, y):  # pragma: no cover (numba)
         if x[0] == 1:
             raise ValueError("the probe's values")
@@ -3203,36 +3203,55 @@ def test_udt_udf_shape_check_runs_udf_only_for_built_arrays(monkeypatch):
 
 
 @pytest.mark.skipif("not supports_udfs")
-def test_udt_udf_raising_for_its_operand_types_raises_when_typed():
-    """A UDF that raises on any values of its operand types is refused when the op is typed.
+def test_udt_udf_raising_on_stand_ins_still_types():
+    """A UDF that raises on the probe's stand-in operands still types, and runs on real data.
 
-    The probe gave up on any exception, so the op typed, and its cfunc raised
-    for every element, where Numba prints and swallows the error: the result
-    held zeros. Here ``x[:2] * t`` cannot broadcast when ``t`` is a 6-element
-    array, as it is for an ``(R6, R6)`` op.
+    Stand-ins of ones and twos are degenerate: a matrix of ones is singular,
+    and an interval check fails on equal fields. The index and thunk
+    stand-ins do not vary at all. So no UDF is refused for raising on them;
+    "Refuse a UDT UDF that raises for its operand types when the op is typed"
+    refused each of these. Only the literal rule reads that a UDF raised on
+    every stand-in: beside such an op a number is typed as itself.
     """
-    r6 = dtypes.register_anonymous(np.dtype((np.float64, (6,))), "_RaiseTyped6")
-    r2 = dtypes.register_anonymous(np.dtype((np.float64, (2,))), "_RaiseTyped2")
-    iu = IndexUnaryOp.register_anonymous(
-        lambda x, i, j, t: x[:2] * t, "_raise_typed_iu", is_udt=True, ret_dtype=r2
-    )
-    bop = BinaryOp.register_anonymous(
-        lambda x, y: x[:2] * y, "_raise_typed_b", is_udt=True, ret_dtype=r2
-    )
-    for parent, types in [
-        (iu, "_RaiseTyped6, UINT64, UINT64, _RaiseTyped6"),
-        (bop, "_RaiseTyped6, _RaiseTyped6"),
-    ]:
-        with pytest.raises(
-            UdfParseError, match=rf"raised ValueError when run on sample values of \({types}\)"
-        ):
-            parent[r6, r6]
-    # With a scalar operand the op types and runs
-    v = Vector(r6, size=2)
-    v[0] = np.arange(6.0)
-    three = gb.Scalar.from_value(3.0)
-    assert v.apply(iu, three).new()[0].new().value.tolist() == [0.0, 3.0]
-    assert v.apply(bop, right=three).new()[0].new().value.tolist() == [0.0, 3.0]
+    m22 = dtypes.register_anonymous(np.dtype((np.float64, (2, 2))), "_StandIn22")
+    p2 = dtypes.register_anonymous(np.dtype((np.float64, (2,))), "_StandIn2")
+    p3 = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "_StandIn3")
+    p6 = dtypes.register_anonymous(np.dtype((np.float64, (6,))), "_StandIn6")
+
+    def inverse(x):  # pragma: no cover (numba)
+        return np.linalg.inv(x)
+
+    def widths(x):  # pragma: no cover (numba)
+        if x[0] >= x[1]:
+            raise ValueError("empty interval")
+        return x * 2.0
+
+    def rows(x, i, j, t):  # pragma: no cover (numba)
+        return x.reshape((int(t), -1)).sum(axis=0)
+
+    def need_t(x, i, j, t):  # pragma: no cover (numba)
+        if t < 1.0:
+            raise ValueError("t must be at least 1")
+        return x[:2] * t
+
+    m = Vector(m22, size=1)
+    m[0] = [[2.0, 1.0], [1.0, 3.0]]
+    result = m.apply(UnaryOp.register_anonymous(inverse, is_udt=True)).new()
+    np.testing.assert_allclose(result[0].new().value, [[0.6, -0.2], [-0.2, 0.4]])
+    p = Vector(p2, size=1)
+    p[0] = [1.0, 4.0]
+    result = p.apply(UnaryOp.register_anonymous(widths, is_udt=True)).new()
+    assert result[0].new().value.tolist() == [2.0, 8.0]
+    s = Vector(p6, size=1)
+    s[0] = np.arange(6.0)
+    by_rows = IndexUnaryOp.register_anonymous(rows, is_udt=True, ret_dtype=p3)
+    assert s.apply(by_rows, gb.Scalar.from_value(2.0)).new()[0].new().value.tolist() == [3, 5, 7]
+    checked = IndexUnaryOp.register_anonymous(need_t, is_udt=True, ret_dtype=p2)
+    for thunk in [gb.Scalar.from_value(3.0), 3.0]:
+        assert s.apply(checked, thunk).new()[0].new().value.tolist() == [0.0, 3.0]
+    # An op whose UDF raises for every element thunk types too, unchecked
+    iu = IndexUnaryOp.register_anonymous(lambda x, i, j, t: x[:2] * t, is_udt=True, ret_dtype=p2)
+    assert iu[p6, p6].return_type is p2
 
 
 @pytest.mark.skipif("not supports_udfs")
