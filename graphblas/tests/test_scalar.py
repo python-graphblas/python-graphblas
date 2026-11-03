@@ -734,6 +734,19 @@ def test_ewise_union(s):
         s.ewise_union(t, binary.plus, 10, v)
 
 
+def test_select_row_compares_its_index_with_the_bound_given(s):
+    # A Scalar's only index is 0. The bound is the number given, made a whole number
+    # (s > -0.5 dropped it, and s < 1 raised AttributeError), not the comparison's thunk
+    # typed beside the value (300 beside INT8 is infinity).
+    assert select.row(s > -0.5).new() == s
+    assert select.row(s < 0.5).new() == s
+    assert select.row(s < 1).new() == s
+    assert select.row(s >= 0.5).new().is_empty
+    s8 = Scalar.from_value(1, dtype=dtypes.INT8)
+    assert select.row(s8 < 300).new() == s8
+    assert select.row(s8 > 299).new().is_empty
+
+
 def test_ewise_mult_add(s):
     assert s.ewise_add(s).new() == 10
     assert s.ewise_mult(s).new() == 25

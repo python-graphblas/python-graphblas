@@ -751,6 +751,11 @@ def test_select(v):
     w8 = select.index(v >= 4).new()
     expected = Vector.from_coo([4, 6], [2, 0], size=7)
     assert w8.isequal(expected)
+    # The index is compared with the bound given, not with 300 typed beside INT8 (inf)
+    w = Vector.from_coo([0, 200, 399], 1, dtype=dtypes.INT8, size=400)
+    assert select.index(w < 300).new().to_coo()[0].tolist() == [0, 200]
+    assert select.index(w >= 300).new().to_coo()[0].tolist() == [399]
+    assert select.index(w > 2.5).new().to_coo()[0].tolist() == [200, 399]
 
 
 @autocompute

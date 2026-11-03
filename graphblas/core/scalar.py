@@ -750,6 +750,7 @@ class Scalar(BaseType):
 
     def _ewise_mult(self, other, op=binary.times, is_infix=False):
         method_name = "ewise_mult"
+        given = other
         if is_infix:
             from .infix import ScalarEwiseMultExpr
 
@@ -778,7 +779,7 @@ class Scalar(BaseType):
                 )
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method_name, argname="op")
-        return ScalarExpression(
+        expr = ScalarExpression(
             method_name,
             f"GrB_Vector_eWiseMult_{op.opclass}",
             [self._as_vector(), other._as_vector()],
@@ -786,6 +787,9 @@ class Scalar(BaseType):
             is_cscalar=False,
             scalar_as_vector=True,
         )
+        if output_type(given) is not Scalar:
+            expr._right_literal = given  # a literal, as Scalar comparisons give it
+        return expr
 
     def ewise_union(self, other, op, left_default, right_default):
         """Perform element-wise computation on the union of sparse values,
@@ -940,7 +944,7 @@ class Scalar(BaseType):
 
         """
         expr = self._as_vector().apply(op, right, left=left)
-        return ScalarExpression(
+        rv = ScalarExpression(
             expr.method_name,
             expr.cfunc_name,
             expr.args,
@@ -950,6 +954,8 @@ class Scalar(BaseType):
             is_cscalar=False,
             scalar_as_vector=True,
         )
+        rv._right_literal = expr._right_literal
+        return rv
 
     def select(self, op, thunk=None):
         expr = self._as_vector().select(op, thunk)
