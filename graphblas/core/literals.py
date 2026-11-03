@@ -112,6 +112,10 @@ def _literal_operand(dtype, value, op, *, left=False):
                     # makes a float array, not an object one, of a part that
                     # also holds numpy values.
                     value = _beyond_as_infinity(np_type, parts)
+                elif np_type.kind == "S" and isinstance(value, str) and not value.isascii():
+                    # Bytes cannot hold it (numpy encodes ASCII), so it equals no
+                    # element, as in numpy; one byte longer than any, it compares so.
+                    value = b"\xff" * (np_type.itemsize + 1)
             literal_type = _literal_type(dtype, value, exact=exact)
             if literal_type is not None:
                 return value, literal_type
@@ -304,7 +308,7 @@ def _literal_type(dtype, value, *, exact=False):
     if np_type.names is None and np_type.kind in "SU" and isinstance(value, (str, bytes)):
         if _keeps_value(value, np_type):
             return dtype
-        return lookup_dtype(np.dtype(f"{np_type.kind}{max(len(value), 1)}"))
+        return lookup_dtype(_own_text_type(np_type.kind, value))
     if np_type.kind in "mM" and (date := _as_numpy_date(value, np_type)) is not None:
         if date.dtype.kind == np_type.kind and _keeps_value(date, np_type):
             return dtype
@@ -324,6 +328,17 @@ def _literal_type(dtype, value, *, exact=False):
             return lookup_dtype(value.dtype)
         return _array_literal_udt(dtype, value)
     return None
+
+
+def _own_text_type(kind, text):
+    """Return the type of ``text`` that does not fit a text leaf of ``kind``: its own length.
+
+    It keeps the leaf's kind, except that a str that bytes cannot hold (numpy
+    encodes ASCII) is a str, so beside bytes it equals nothing, as in numpy.
+    """
+    if kind == "S" and isinstance(text, str) and not text.isascii():
+        kind = "U"
+    return np.dtype(f"{kind}{max(len(text), 1)}")
 
 
 def _check_literal_fits(dtype, value):
@@ -664,7 +679,7 @@ def _weak_literal_udt(dtype, value, *, exact=False):
             # duration field, or text numpy cannot read as a date, takes the
             # field's type, and converting it reports what is wrong.
             if isinstance(part, (str, bytes)) and base.kind in "SU":
-                own = np.dtype(f"{base.kind}{max(len(part), 1)}")
+                own = _own_text_type(base.kind, part)
             elif (date := _as_numpy_date(part, base)) is not None:
                 part = date
                 own = date.dtype
