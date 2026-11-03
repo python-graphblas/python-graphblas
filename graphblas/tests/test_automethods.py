@@ -192,6 +192,9 @@ _MACHINERY_DUNDERS = (
         "__slotnames__",
         "__networkx_backend__",
         "__networkx_plugin__",
+        # A class constant numpy reads to make its operators defer to ours, not a
+        # value of the result; the expression classes define it themselves.
+        "__array_priority__",
     }
 )
 
