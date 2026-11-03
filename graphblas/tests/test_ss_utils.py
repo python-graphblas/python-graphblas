@@ -625,9 +625,13 @@ for take_ownership in [False, True]:
                 pass
             else:
                 raise AssertionError(f"the secure check passed: {method}_{format}")
-            # GraphBLAS took the arrays, then freed them: NumPy must not free them too.
+            # A secure import copies the arrays, even with take_ownership=True, so
+            # GraphBLAS freed only the copies: the caller's arrays still own their
+            # data and still hold it.
             owndata = [a.flags.owndata for a in arrays]
-            assert owndata == [not take_ownership] * len(arrays), (method, format, owndata)
+            assert all(owndata), (method, format, owndata)
+            fresh = [val for val in make().values() if isinstance(val, np.ndarray)]
+            assert all(np.array_equal(a, b) for a, b in zip(arrays, fresh)), (method, format)
             # A pack leaves the object as it was. GraphBLAS freed it.
             assert obj.isequal(v if format in {"sparse", "bitmap"} else A), (method, format)
             del data, arrays, obj, func
@@ -659,8 +663,7 @@ def test_secure_import(take_ownership):
         owndata = [array.flags.owndata for array in arrays]
         B = Matrix.ss.import_any(**info, secure_import=True, take_ownership=take_ownership)
         assert B.isequal(A, check_dtype=True), format
-        if take_ownership:
-            owndata = [False] * len(arrays)
+        # A secure import copies, so the arrays keep their data either way.
         assert [array.flags.owndata for array in arrays] == owndata, format
         B.ss.pack_any(**B.ss.export(format), secure_import=True, take_ownership=take_ownership)
         assert B.isequal(A, check_dtype=True), format
@@ -673,8 +676,7 @@ def test_secure_import(take_ownership):
         owndata = [array.flags.owndata for array in arrays]
         w = Vector.ss.import_any(**info, secure_import=True, take_ownership=take_ownership)
         assert w.isequal(v, check_dtype=True), format
-        if take_ownership:
-            owndata = [False] * len(arrays)
+        # A secure import copies, so the arrays keep their data either way.
         assert [array.flags.owndata for array in arrays] == owndata, format
         w.ss.pack_any(**w.ss.export(format), secure_import=True, take_ownership=take_ownership)
         assert w.isequal(v, check_dtype=True), format

@@ -888,6 +888,8 @@ class ss:
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
         dtype : dtype, optional
             dtype of the new Vector.
             If not specified, this will be inferred from ``values``.
@@ -990,7 +992,7 @@ class ss:
                 sorted_index=sorted_index,
                 take_ownership=take_ownership,
             )
-        copy = not take_ownership
+        copy = not take_ownership or secure_import
         indices = ints_to_numpy_buffer(indices, np.uint64, copy=copy, ownable=True, name="indices")
         if method == "pack":
             dtype = vector.dtype
@@ -1085,6 +1087,8 @@ class ss:
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
         dtype : dtype, optional
             dtype of the new Vector.
             If not specified, this will be inferred from ``values``.
@@ -1182,7 +1186,7 @@ class ss:
                 is_iso=is_iso,
                 take_ownership=take_ownership,
             )
-        copy = not take_ownership
+        copy = not take_ownership or secure_import
         bitmap = ints_to_numpy_buffer(bitmap, np.bool_, copy=copy, ownable=True, name="bitmap")
         if method == "pack":
             dtype = vector.dtype
@@ -1277,6 +1281,8 @@ class ss:
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
         dtype : dtype, optional
             dtype of the new Vector.
             If not specified, this will be inferred from ``values``.
@@ -1364,7 +1370,7 @@ class ss:
                 is_iso=is_iso,
                 take_ownership=take_ownership,
             )
-        copy = not take_ownership
+        copy = not take_ownership or secure_import
         if method == "pack":
             dtype = vector.dtype
             size = vector._size
