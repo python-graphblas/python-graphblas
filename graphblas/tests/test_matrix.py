@@ -1374,6 +1374,25 @@ def test_indexunary_helpers(A):
         indexunary.row(A < Scalar(float)).new()
 
 
+@pytest.mark.skipif("not supports_udfs")
+def test_index_helpers_find_a_lazily_registered_op():
+    """A helper uses an op registered with ``lazy=True`` before anything touches it.
+
+    It looked only at the namespace's built ops, so ``row(A < 2.5)`` took the
+    ``<=`` shift until something touched ``indexunary.rowlt``, then the op.
+    """
+    A = Matrix.from_coo([0, 1, 2, 3], [0, 0, 0, 0], [1, 1, 1, 1])
+    try:
+        indexunary.register_new("rowlt", lambda x, i, j, t: i < t, lazy=True)
+        for _ in range(2):
+            assert indexunary.row(A < 2.5).new().to_coo()[2].tolist() == [True] * 3 + [False]
+            assert select.row(A < 2.5).new().to_coo()[0].tolist() == [0, 1, 2]
+    finally:
+        for ns in [indexunary, select]:
+            ns._delayed.pop("rowlt", None)
+            vars(ns).pop("rowlt", None)
+
+
 def test_select(A):
     A3 = Matrix.from_coo([0, 3, 3, 6], [3, 0, 2, 4], [3, 3, 3, 3], nrows=7, ncols=7)
     w1 = A.select(select.valueeq, 3).new()

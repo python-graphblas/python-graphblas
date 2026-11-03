@@ -376,7 +376,7 @@ def _resolve_index_expr(ns, modname, expr, callname, opname):
         else:  # e.g., suitesparse-vanilla
             tensor = tensor[0].new()
             thunk = thunk[0].new()
-    if method not in ns:
+    if _namespace_op(ns, method) is None:
         # TODO: remove this once rowlt/rowge/collt/colge exist
         # Attempt to convert < into <= and >= into > (rowlt and rowge are not part of
         # the official spec, but rowle and rowgt are). Convert thunk to Python int to
@@ -386,9 +386,20 @@ def _resolve_index_expr(ns, modname, expr, callname, opname):
             method = f"{opname}{'le' if expr.op.name == 'lt' else 'gt'}"
             if not thunk._is_empty:
                 thunk = thunk.value - 1
-        if method not in ns:  # pragma: no cover (sanity)
+        if _namespace_op(ns, method) is None:  # pragma: no cover (sanity)
             raise ValueError(f"Unknown or unregistered {modname} method: {method}")
-    return ns[method](tensor, thunk)
+    return _namespace_op(ns, method)(tensor, thunk)
+
+
+def _namespace_op(ns, name):
+    """The op ``name`` in namespace globals ``ns``, or None; it builds one registered lazily.
+
+    A lazily registered op waits in the namespace's ``_delayed`` until its module
+    ``__getattr__`` builds it, so ``name in ns`` alone misses it until then.
+    """
+    if name not in ns and name in ns.get("_delayed", ()):
+        ns["__getattr__"](name)
+    return ns.get(name)
 
 
 # What each helper compares: indices only by order, values by order or equality.
