@@ -42,6 +42,14 @@ def _get_value(self, attr=None, default=None):
                 self._value = extract_fast()
             else:
                 self._value = self.new()
+        elif (
+            attr not in _fast_scalar_attrs
+            and getattr(self, "_extract_fast", None) is not None
+            and self._value._is_cscalar != self._is_cscalar
+        ):
+            # A value read cached a C scalar (_extract_fast); give the other attributes
+            # the kind of Scalar this expression reports, holding the same value.
+            self._value = self._value.dup(is_cscalar=self._is_cscalar, name=self._value.name)
         if attr is None:
             return self._value
         return getattr(self._value, attr)

@@ -925,6 +925,29 @@ def test_scalarvalue_graphblas_error():
             assert got[:2] == ("exc", "NullPointer"), got
 
 
+def test_scalarvalue_then_another_attribute():
+    """After a value read, the other attributes see the kind of Scalar the expression reports.
+
+    The value read caches the C scalar it extracts into, and ``gb_obj`` handed that out: an
+    ``int8_t *`` where a ``GrB_Scalar *`` was, which a C call taking a GrB_Scalar refused
+    with TypeError, while ``is_cscalar`` said False.
+    """
+    from graphblas.core import ffi
+
+    v = Vector.from_coo([2], [3], size=4, dtype=dtypes.INT8)
+    A = Matrix.from_coo([1], [2], [3], dtype=dtypes.INT8, nrows=3, ncols=4)
+    with gb.config.set(autocompute=True):
+        for make in [lambda: v[2], lambda: v[3], lambda: A[1, 2], lambda: A.T[2, 1]]:
+            fresh = make()
+            e = make()
+            value = e.value
+            assert ffi.typeof(e.gb_obj) is ffi.typeof(fresh.gb_obj)
+            assert e.is_cscalar is fresh.is_cscalar
+            assert e.nvals == fresh.nvals
+            assert e.value == value  # still the value read, as on main
+            assert (e + 1).new().isequal((fresh + 1).new(), check_dtype=True)
+
+
 def test_scalarvalue_index_integral_only():
     """__index__ is available on integral dtypes and absent on float, via the fast path."""
     vi = Vector.from_coo([2], [7], dtype=dtypes.INT64, size=5)
