@@ -18,6 +18,7 @@ Importing this module needs Numba.
 """
 
 import re
+import weakref
 
 import numba
 import numpy as np
@@ -68,6 +69,7 @@ def _finalize_udt_op(parent_op, dtype, dtype2, ret_type, wrapper, wrapper_sig, t
     ``dtype2`` is ``None`` for a unary op. Returns the cached
     ``typed_user_cls`` instance.
     """
+    raises_on_samples = getattr(wrapper, "_raises_on_samples", None)
     try:
         wrapper = numba.cfunc(wrapper_sig, nopython=True, error_model="numpy")(wrapper)
     except NumbaError as exc:
@@ -98,6 +100,8 @@ def _finalize_udt_op(parent_op, dtype, dtype2, ret_type, wrapper, wrapper_sig, t
         key = (dtype, dtype2)
     parent_op._udt_types[key] = ret_type
     parent_op._udt_ops[key] = op
+    if raises_on_samples is not None:
+        _RAISES_ON_SAMPLES[op] = raises_on_samples
     return op
 
 
@@ -536,18 +540,17 @@ def _udf_probe_value(dtype, fill=1):
 
 
 def _run_udf_probe(numba_func, arg_dtypes):
-    """Call the UDF on stand-in operands. Return ``(result,)``, or ``None`` if it gave up.
+    """Call the UDF on stand-in operands. Return ``(ran, error)``.
 
-    A UDF that raises on the stand-ins of ones is run again on twos, since
-    what it raises may depend on the values. One that raises an
-    ``ArithmeticError`` is then not checked, and if it also returns a shape
-    that does not fit, that is left to the wrapper, which fails without
-    telling the caller (see :func:`_compose_wrapper_body`). Any other
-    exception raised on both comes from the operands' types and shapes (a
-    broadcast, an index past the end): the cfunc would raise it for every
-    element, where Numba prints and swallows it and the element is never
-    written, so it raises ``UdfParseError`` here instead. Only the call is
-    guarded, so a mistake in building the operands still surfaces.
+    ``ran`` is ``(result,)``, or ``None`` if the UDF raised on the stand-ins
+    of ones: then its result is not checked, and if it also returns a shape
+    that does not fit, that is left to the wrapper, whose output then keeps
+    its zeros (see :func:`_compose_wrapper_body`). Such a UDF may raise only
+    for some values, so it still types (``np.linalg.inv`` raises on a matrix
+    of ones). ``error`` is the exception when it raised on twos as well, and
+    it was no ``ArithmeticError``; only the literal rule reads it (see
+    :data:`_RAISES_ON_SAMPLES`). Only the call is guarded, so a mistake in
+    building the operands still surfaces.
 
     This is where typing an op for a UDT runs the user's function rather
     than only compiling it; ``OpBase.__contains__`` is a typed lookup, so
@@ -556,21 +559,28 @@ def _run_udf_probe(numba_func, arg_dtypes):
     record, a scalar), so the call compiles the specialization the wrapper
     needs anyway.
     """
+    error = None
     for fill in (1, 2):
         args = [_udf_probe_value(d, fill) for d in arg_dtypes]
         try:
-            return (numba_func(*args),)
+            result = numba_func(*args)
         except NumbaError as exc:  # pragma: no cover (safety)
             # The wrapper's operands have these types, so it would fail to compile too.
             raise UdfParseError(_summarize_numba_typing_error(exc)) from exc
         except ArithmeticError:
-            return None
+            return None, None
         except Exception as exc:
             error = exc
-    names = ", ".join(str(dtype) for dtype in arg_dtypes)
-    raise UdfParseError(
-        f"UDT UDF raised {type(error).__name__} when run on sample values of ({names}): {error}"
-    ) from error
+            continue
+        return ((result,) if fill == 1 else None), None
+    return None, error
+
+
+# The UDT ops whose UDF raised, other than an ArithmeticError, on both sets of stand-in
+# operands, with the exception. Such an op still types, since the UDF may raise only
+# for some values, but beside it a number is typed as itself rather than as an element
+# (``literals._own_scalar_type_for_user_op``), as a Scalar of it would be.
+_RAISES_ON_SAMPLES = weakref.WeakKeyDictionary()
 
 
 def _raise_unless_fits(shape, expected, return_type, path, *, probed):
@@ -648,6 +658,8 @@ def _check_udf_fills_output(numba_func, numba_ret_type, return_type, zkind, arg_
     length is not in its type, so only running the UDF, on stand-ins built
     from ``arg_dtypes``, can say what shape it has. A UDF that returns no
     built array or list is never run.
+    Return the exception the UDF raised on every stand-in (see
+    :func:`_run_udf_probe`), or None.
     """
     if zkind == "array_elements":
         # (record field path, Numba type, slot shape, index into the tuple)
@@ -693,7 +705,10 @@ def _check_udf_fills_output(numba_func, numba_ret_type, return_type, zkind, arg_
             )
         elif isinstance(nb_type, numba.core.types.List):
             unknown.append((path, expected, i))  # a list's length is not in its type
-    if unknown and (ran := _run_udf_probe(numba_func, arg_dtypes)) is not None:
+    if not unknown:
+        return None
+    ran, error = _run_udf_probe(numba_func, arg_dtypes)
+    if ran is not None:
         for path, expected, i in unknown:
             value = ran[0] if i is None else ran[0][i]
             if isinstance(value, list):
@@ -702,6 +717,7 @@ def _check_udf_fills_output(numba_func, numba_ret_type, return_type, zkind, arg_
                 )
             else:
                 _raise_unless_fits(np.shape(value), expected, return_type, path, probed=True)
+    return error
 
 
 def _get_udt_wrapper(
@@ -731,7 +747,7 @@ def _get_udt_wrapper(
         yarg = ", y_ptr"
         yderef_expr = f", {yderef}"
     wrapper_sig = nt.void(*wrapper_args)
-    _check_udf_fills_output(numba_func, numba_ret_type, return_type, zkind, arg_dtypes)
+    error = _check_udf_fills_output(numba_func, numba_ret_type, return_type, zkind, arg_dtypes)
 
     rcidx = ", row, col" if include_indexes else ""
     signature_line = f"def wrapper(z_ptr, x_ptr{rcidx}{yarg}):"
@@ -746,6 +762,7 @@ def _get_udt_wrapper(
         source_label=f"<gb-udt-wrapper {kind} dtype={dtype} ret={return_type}>",
         extra_ns={"numba_func": numba_func},
     )
+    wrapper._raises_on_samples = error  # for _finalize_udt_op
     return wrapper, wrapper_sig
 
 
