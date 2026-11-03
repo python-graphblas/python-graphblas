@@ -183,6 +183,14 @@ def test_isequal(s):
     assert s.isequal(t)
     assert not s.isequal(t, check_dtype=True)
     assert Scalar.from_value(None, dtype="INT8").isequal(Scalar.from_value(None, dtype="INT16"))
+    # An int that INT64 cannot hold compares exactly, as with ``==``.
+    for big in [2**63, 2**64, -(2**63) - 1]:
+        assert not s.isequal(big)
+        assert not t.isequal(big)
+        assert not Scalar(dtypes.INT8).isequal(big)
+    assert Scalar.from_value(2**63, dtype="UINT64").isequal(2**63)
+    assert Scalar.from_value(2.0**64).isequal(2**64)
+    assert not Scalar.from_value(2.0**64).isequal(2**64 - 1)  # exactly, as isequal compares
 
 
 @pytest.mark.slow

@@ -242,6 +242,9 @@ class Scalar(BaseType):
                 if _literal_shape_differs(self.dtype, other):
                     return False
                 dtype = _literal_type(self.dtype, other, exact=True) or self.dtype
+            elif type(other) is int and not -(2**63) <= other < 2**63:
+                # INT64, a Python int's dtype, cannot hold it; compare exactly, as ``==`` does.
+                return not self._is_empty and self.value == other
             try:
                 other = Scalar.from_value(other, dtype, is_cscalar=None, name="s_isequal")
             except TypeError:
