@@ -1291,6 +1291,23 @@ def test_from_string():
     assert select.from_string(">=") is select.valuege
     assert indexunary.from_string("rowindex") is indexunary.rowindex
     assert indexunary.from_string("rowindex[int]") is indexunary.rowindex[int]
+    # Only operators: a namespace's helper functions and methods are not strings for one
+    for ns, name in [
+        (indexunary, "value"),
+        (indexunary, "row"),
+        (indexunary, "column[int]"),
+        (indexunary, "_resolve_expr"),
+        (select, "value"),
+        (select, "register_new"),
+        (op, "value"),
+        (op, "register_new"),
+    ]:
+        with pytest.raises(ValueError, match="Unknown .* string"):
+            ns.from_string(name)
+    A = Matrix.from_coo([0], [0], [1])
+    for helper in [indexunary.value, indexunary.row, select.column]:
+        with pytest.raises(TypeError, match=r"\.(value|row|column) is a helper, not an operator"):
+            A.apply(helper)
 
     # Every namespace's from_string carries a docstring (GH #513)
     for ns in [unary, binary, monoid, semiring, select, indexunary, agg, op]:
