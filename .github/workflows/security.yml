@@ -1,0 +1,58 @@
+name: Security
+
+# Run the security hooks of .pre-commit-config.yaml, with its versions and arguments, where
+# pre-commit.ci cannot: with network access, and weekly, for advisories published since.
+on:
+  pull_request:
+    paths:
+      - pyproject.toml
+      - .pre-commit-config.yaml
+      - .github/**
+  schedule:
+    # Mondays at 06:41 UTC
+    - cron: "41 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  pysentry:
+    name: pysentry
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+      # Advisories against the floors in pyproject.toml
+      - uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
+        with:
+          extra_args: pysentry --all-files
+
+  zizmor:
+    name: zizmor
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+      # With a token, zizmor also runs its online audits, such as advisories against the actions
+      # these workflows use (known-vulnerable-actions) and pins to commits outside an action's
+      # repository (impostor-commit).
+      - uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          extra_args: zizmor --all-files

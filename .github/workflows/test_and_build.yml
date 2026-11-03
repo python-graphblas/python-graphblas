@@ -17,9 +17,17 @@ on:
     branches:
       - main
 
-# concurrency:
-#   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
-#   cancel-in-progress: true
+permissions:
+  contents: read
+
+# GitHub can deliver a PR's pull_request event twice for one push when the PR's base
+# branch moved in the same push, as it does for every PR above the bottom of a restacked
+# stack. Keyed on the PR and its head commit, the later run cancels its identical twin,
+# and a run for an earlier commit is left to finish, as before (a group keyed on the
+# branch would cancel it). Pushes to main key on the run id, so none is ever cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
 
 jobs:
   rngs:
@@ -100,12 +108,14 @@ jobs:
           # - os: ubuntu-24.04-arm # Linux aarch64
           #   slowtask: notebooks
     env:
-      # Wheels on OS X come with an OpenMP that conflicts with OpenMP from conda-forge.
-      # Setting this is a workaround.
+      # Wheels on OS X come with an OpenMP that conflicts with OpenMP from conda-forge:
+      # libomp aborts when a second copy starts in the process, unless this is set. Two
+      # copies can still deadlock or crash in an OpenMP barrier, so "Update env" keeps
+      # conda-forge's libomp out of macOS wheel draws where it can.
       KMP_DUPLICATE_LIB_OK: ${{ contains(matrix.os, 'macos') && 'TRUE' || 'FALSE' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -117,7 +127,7 @@ jobs:
         # We may be able to support pypy if anybody asks for it
         # 3.9.16 0_73_pypy
         run: |
-          choices=(3.11 3.12 3.13 3.14)
+          choices=(3.11 3.12 3.13 3.14 3.15)
           selected=${choices[$((RANDOM % ${#choices[@]}))]}
           echo "selected: $selected (from: ${choices[*]})"
           echo "selected=$selected" >> "$GITHUB_OUTPUT"
@@ -130,7 +140,7 @@ jobs:
           echo "selected: $selected (from: ${choices[*]})"
           echo "selected=$selected" >> "$GITHUB_OUTPUT"
       - name: Setup conda
-        uses: conda-incubator/setup-miniconda@v3
+        uses: conda-incubator/setup-miniconda@be893c923ea9cf1cf7cd510fbdde27c7e18cbdcb # v4.1.0
         id: setup_conda
         with:
           auto-update-conda: true
@@ -139,17 +149,25 @@ jobs:
           conda-remove-defaults: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'false' || 'true' }}
           channel-priority: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'flexible' || 'strict' }}
           activate-environment: graphblas
-          auto-activate-base: false
+          # setup-miniconda deprecated ``auto-activate-base`` for this name, and warns
+          # on every run that still uses the old one.
+          auto-activate: false
       - name: Update env
+        id: update_env
+        env:
+          # Step outputs reach the script through the environment, not ``${{ }}``, so
+          # bash never parses them as code (zizmor's template-injection audit).
+          PYVER: ${{ steps.pyver.outputs.selected }}
+          SOURCETYPE: ${{ steps.sourcetype.outputs.selected }}
         run: |
           # Pick random compatible dependency versions using the version picker script.
           # See scripts/ci_pick_versions.py for version pools and constraint logic.
-          pyver=$(python -c "v='${{ steps.pyver.outputs.selected }}'.split('.');print(f'{v[0]}.{v[1]}')")
+          pyver=$(python -c "import os; v=os.environ['PYVER'].split('.');print(f'{v[0]}.{v[1]}')")
           # Assign first, then eval. `eval "$(cmd)"` reports eval's status, not cmd's, and
           # this step's shell has no `-e`, so a picker that exits non-zero (a pool table it
           # rejects, say) would leave every *ver variable unset and quietly install the
           # latest of everything: a green run that tested nothing it claims to have tested.
-          if ! picks=$(python scripts/ci_pick_versions.py --python "$pyver" --source ${{ steps.sourcetype.outputs.selected }}) ; then
+          if ! picks=$(python scripts/ci_pick_versions.py --python "$pyver" --source "$SOURCETYPE") ; then
             echo "::error::ci_pick_versions.py failed; refusing to install unpinned dependencies"
             exit 1
           fi
@@ -158,8 +176,43 @@ jobs:
           # Set up psg conda package variable (conda-forge installs via conda, others via pip).
           # For conda-forge, psg must always be installed; an empty psgver just means "latest".
           psg=""
-          if [[ ${{ steps.sourcetype.outputs.selected}} == "conda-forge" ]] ; then
+          if [[ $SOURCETYPE == "conda-forge" ]] ; then
             psg=python-suitesparse-graphblas${psgver}
+          fi
+          # Wheel and source draws install psg in "Build extension module", where this
+          # step's shell variables no longer exist, so psgver goes there as an output.
+          echo "psgver=$psgver" >> "$GITHUB_OUTPUT"
+
+          # Wheels bundle their own GraphBLAS. Otherwise give a pinned psg the GraphBLAS it was
+          # built for: python-suitesparse-graphblas X.Y.Z.W wraps SuiteSparse:GraphBLAS X.Y.Z,
+          # and psg's test_version_tracks_libgraphblas checks that they match. conda-forge's
+          # psg X.Y.Z.W accepts any graphblas >=X.Y.Z,<X.(Y+1), so without this pin a
+          # conda-forge draw gets the newest patch release (psg 10.5.1.1 got graphblas 10.5.2).
+          # A source draw compiles psg's sdist against it, and psg's 9.x sdists do not compile
+          # against GraphBLAS 10.
+          graphblas=""
+          if [[ ($SOURCETYPE == "conda-forge" || $SOURCETYPE == "source") && -n $psgver ]] ; then
+            IFS=. read -r gbmajor gbminor gbpatch _ <<< "${psgver##*=}"
+            gbseries="${gbmajor}.${gbminor}"
+            graphblas="graphblas>=${gbseries}.${gbpatch},<${gbseries}.$((gbpatch + 1))"
+          elif [[ $SOURCETYPE != "wheel" ]] ; then
+            graphblas="graphblas>=7.4"
+          fi
+
+          # A psg wheel on macOS bundles its own libomp, and with conda-forge's libomp in the
+          # same process too, a GraphBLAS parallel region can hang or crash (see
+          # KMP_DUPLICATE_LIB_OK). conda-forge's libomp comes in with OpenBLAS's openmp build
+          # and with Numba's default "omp" threading layer, so take OpenBLAS's pthreads build
+          # and Numba's "workqueue" layer instead. conda-forge has pthreads builds for macOS
+          # from libopenblas 0.3.30 on only, which scipy 1.9-1.11 do not accept, so those
+          # draws keep the openmp build.
+          blas=""
+          if [[ $SOURCETYPE == "wheel" && ${{ contains(matrix.os, 'macos') }} == true ]] ; then
+            case $spver in
+              =1.9 | =1.10 | =1.11) ;;
+              *) blas="libopenblas=*=*pthreads*" ;;
+            esac
+            echo "NUMBA_THREADING_LAYER=workqueue" >> "$GITHUB_ENV"
           fi
 
           # Decide whether to install numba and sparse.
@@ -203,6 +256,22 @@ jobs:
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psg${psgver}"
 
           set -x  # echo on
+          # conda-forge ships two ABIs for CPython 3.13+, and this step did not
+          # restate ``python``, so the solver was free to replace the interpreter
+          # setup-miniconda installed: a 3.14 draw on ubuntu-24.04-arm became
+          # 3.14.7-*_cp314t, where pandas 2.3 raises a GIL RuntimeWarning that
+          # filterwarnings=error turns into a collection error. Restating the
+          # version pins the interpreter and ``python-gil`` pins python_abi to
+          # the GIL build; setup-miniconda's own ``python-version`` above is
+          # equally ABI-free, so this covers that step too.
+          # python-suitesparse-graphblas pins the same pair in
+          # .github/workflows/test.yml, and asks for python-freethreading on the
+          # matrix entries that want the other ABI.
+          if [[ $PYVER == *pypy* ]] ; then
+            interpreter=pypy
+          else
+            interpreter="python=$PYVER python-gil"
+          fi
           $(command -v mamba || command -v conda) install -c nodefaults \
             packaging pip pytest coverage pytest-randomly cffi donfig tomli c-compiler make \
             pyyaml${yamlver} ${sparse} pandas${pdver} scipy${spver} numpy${npver} ${awkward} \
@@ -210,29 +279,32 @@ jobs:
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
             ${{ matrix.slowtask == 'notebooks' && '"matplotlib${mplver}" nbconvert jupyter "ipython>=7" drawsvg' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
-            ${{ steps.sourcetype.outputs.selected != 'wheel' && '"graphblas>=7.4"' || '' }} \
-            ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'pypy' || '' }} \
+            ${graphblas} ${blas:+"$blas"} \
+            ${interpreter} \
             ${{ matrix.os == 'windows-latest' && 'cmake' || 'm4' }} \
             # ${{ matrix.os != 'windows-latest' && 'pytest-forked' || '' }}  # to investigate crashes
       - name: Build extension module
+        env:
+          SOURCETYPE: ${{ steps.sourcetype.outputs.selected }}
+          PSGVER: ${{ steps.update_env.outputs.psgver }}
         run: |
           # ``python -m pip`` ensures the conda env's interpreter drives the
           # install, not a system ``pip`` on PATH.
-          if [[ ${{ steps.sourcetype.outputs.selected }} == "wheel" ]]; then
+          if [[ $SOURCETYPE == "wheel" ]]; then
               # Add --pre if installing a pre-release
-              python -m pip install --no-deps --only-binary ":all:" suitesparse-graphblas${psgver}
+              python -m pip install --no-deps --only-binary ":all:" "suitesparse-graphblas${PSGVER}"
 
               # Add the below line to the conda install command above if installing from test.pypi.org
               # ${{ steps.sourcetype.outputs.selected == 'wheel' && 'setuptools setuptools-git-versioning wheel cython' || '' }} \
               # python -m pip install --no-deps --only-binary ":all:" --index-url https://test.pypi.org/simple/ "suitesparse-graphblas>=7.4.3"
-          elif [[ ${{ steps.sourcetype.outputs.selected }} == "source" ]]; then
+          elif [[ $SOURCETYPE == "source" ]]; then
               # Add --pre if installing a pre-release
-              python -m pip install --no-deps --no-binary suitesparse-graphblas suitesparse-graphblas${psgver}
+              python -m pip install --no-deps --no-binary suitesparse-graphblas "suitesparse-graphblas${PSGVER}"
 
               # Add the below line to the conda install command above if installing from test.pypi.org
               # ${{ steps.sourcetype.outputs.selected == 'source' && 'setuptools setuptools-git-versioning wheel cython' || '' }} \
               # python -m pip install --no-deps --no-build-isolation --no-binary suitesparse-graphblas --index-url https://test.pypi.org/simple/ suitesparse-graphblas==7.4.3.3
-          elif [[ ${{ steps.sourcetype.outputs.selected }} == "upstream" ]]; then
+          elif [[ $SOURCETYPE == "upstream" ]]; then
               python -m pip install --no-deps git+https://github.com/GraphBLAS/python-suitesparse-graphblas.git@main#egg=suitesparse-graphblas
           fi
           python -m pip install --no-deps -e .
@@ -245,6 +317,9 @@ jobs:
       - name: JIT diagnostics
         run: python scripts/jit_diagnostics.py || true
       - name: Unit tests
+        # A hang (e.g. two libomp copies deadlocking in an OpenMP barrier on macOS) would
+        # otherwise hold the runner for GitHub's 6-hour limit.
+        timeout-minutes: 120
         run: |
           A=${{ needs.rngs.outputs.mapnumpy == 'A' || '' }} ; B=${{ needs.rngs.outputs.mapnumpy == 'B' || '' }}
           C=${{ needs.rngs.outputs.mapnumpy == 'C' || '' }} ; D=${{ needs.rngs.outputs.mapnumpy == 'D' || '' }}
@@ -277,6 +352,7 @@ jobs:
           coverage run -m pytest --color=yes --randomly -v ${args} \
             ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
       - name: Unit tests (bizarro scalars)
+        timeout-minutes: 120
         run: |
           # Run tests again with Scalars being C scalars by default
           find graphblas -type f -name "*.py" -print0 | xargs -0 sed -i -s \
@@ -317,6 +393,7 @@ jobs:
           git checkout .  # Undo changes to scalar default
       - name: Miscellaneous tests
         if: matrix.slowtask == 'pytest_normal'
+        timeout-minutes: 30
         run: |
           # Test (and cover) automatic initialization
           coverage run -a graphblas/tests/test_auto_init.py
@@ -340,11 +417,24 @@ jobs:
           # coverage run -a -m pytest --color=yes -x --no-mapnumpy -k test_npmonoid graphblas/tests/test_numpyops.py --runslow
       - name: More tests for coverage
         if: matrix.slowtask == 'notebooks' && matrix.os == 'windows-latest'
+        timeout-minutes: 30
         run: |
           # We use 'notebooks' slow task b/c it should have numba installed
           coverage run -a -m pytest --color=yes --runslow --no-mapnumpy -p no:randomly -v -k 'test_commutes or test_bool_doesnt_get_too_large or test_npbinary or test_npmonoid or test_npsemiring'
           coverage run -a -m pytest --color=yes --runslow --mapnumpy -p no:randomly -k 'test_bool_doesnt_get_too_large or test_npunary or test_binaryop_monoid_numpy'
           coverage run -a -m pytest --color=yes -x --no-mapnumpy --runslow -k test_binaryop_attributes_numpy graphblas/tests/test_op.py
+      - name: JIT tests for coverage
+        if: matrix.slowtask == 'notebooks' && matrix.os != 'windows-latest'
+        timeout-minutes: 30
+        run: |
+          # Most of test_ssjit.py needs the suitesparse backend, --runslow, Numba and a
+          # GraphBLAS that can JIT-compile, all in one pytest run. In one run in four or five,
+          # no job draws all four, so its coverage came and went. 'notebooks' jobs install
+          # Numba unless the picker rules it out. Windows is left out: conda-forge's GraphBLAS
+          # there names the build machine's compiler, so it never compiles. The tests skip
+          # what a draw cannot do: the JIT tests on psg's wheels (built without the JIT) and
+          # on GraphBLAS 7, the UDT tests without Numba.
+          coverage run -a -m pytest --color=yes --runslow --backend=suitesparse -p no:randomly -v graphblas/tests/test_ssjit.py
       - name: Auto-generated code check
         if: matrix.slowtask == 'pytest_bizarro'
         run: |
@@ -357,7 +447,7 @@ jobs:
           coverage xml
           coverage report --show-missing
       - name: codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           # Codecov takes tokenless uploads only from forks. A PR from a branch of this
           # repository, or a push to main, is refused with "Token required because
@@ -365,6 +455,7 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
       - name: Notebooks Execution check
         if: matrix.slowtask == 'notebooks'
+        timeout-minutes: 30
         run: |
           # Run notebooks only if numba is installed
           if python -c 'import numba' 2> /dev/null ; then
