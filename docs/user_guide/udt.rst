@@ -209,7 +209,10 @@ dtype, so it never narrows. Below, ``v`` is a Vector of an ``INT8[3]`` UDT.
        but converts exactly, such as ``0`` for a bool field or ``2.0`` for an
        int field, still converts with a ``DeprecationWarning`` and will raise
        in a future version; any other raises ``ValueError``, and a float too
-       large for a float field raises ``OverflowError``.
+       large for a float field raises ``OverflowError``. A Python or numpy
+       number beside a user-defined op that cannot be typed with an element
+       (``x[:2] * t`` with a 6-element ``t``) is typed as itself instead, as a
+       ``Scalar`` of it would be.
      - ``v.ewise_union(w, binary.plus, 0.5, 0)`` raises
 
 A Monoid used element-wise (``apply``, ``ewise_mult``, ``ewise_union``) uses
