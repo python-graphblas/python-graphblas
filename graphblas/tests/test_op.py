@@ -3366,6 +3366,85 @@ def test_udt_udf_raising_on_stand_ins_still_types():
 
 
 @pytest.mark.skipif("not supports_udfs")
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
+def test_builtin_type_udf_wrappers_write_zero_before_the_udf(monkeypatch):
+    """Each wrapper a user's op gets for a built-in type writes 0 before it calls the UDF.
+
+    The wrappers are made while the op registers, so they are caught from
+    ``numba.cfunc`` then, and each is called with an output of 0xAB bytes and a
+    UDF that always raises: the output must be 0 (False). Without the zero
+    writes it kept the 0xAB bytes, which a select reads as "keep".
+    """
+    import ctypes
+
+    import numba
+
+    from graphblas.core.operator import IndexBinaryOp
+
+    caught = []
+    cfunc = numba.cfunc
+
+    def catching_cfunc(*args, **kwargs):
+        decorate = cfunc(*args, **kwargs)
+
+        def catch(func):
+            caught.append(decorate(func))
+            return caught[-1]
+
+        return catch
+
+    # Numba types a return only if the raise is conditional
+    def raises_unary(x):  # pragma: no cover (numba)
+        if x == x:
+            raise ValueError("raises")
+        return x
+
+    def raises_binary(x, y):  # pragma: no cover (numba)
+        if x == x:
+            raise ValueError("raises")
+        return x
+
+    def raises_indexunary(x, i, j, t):  # pragma: no cover (numba)
+        if x == x:
+            raise ValueError("raises")
+        return x
+
+    def raises_indexbinary(x, ix, jx, y, iy, jy, t):  # pragma: no cover (numba)
+        if x == x:
+            raise ValueError("raises")
+        return x
+
+    monkeypatch.setattr(numba, "cfunc", catching_cfunc)
+    counts = {}
+    for cls, func in [
+        (UnaryOp, raises_unary),
+        (BinaryOp, raises_binary),
+        (IndexUnaryOp, raises_indexunary),
+        (IndexBinaryOp, raises_indexbinary),
+    ]:
+        if cls is IndexBinaryOp and lib.__dict__.get("GxB_IndexBinaryOp_new") is None:
+            continue  # pragma: no cover (SuiteSparse < 9.4)
+        start = len(caught)
+        cls.register_anonymous(func)
+        counts[cls.__name__] = len(caught) - start
+    monkeypatch.undo()
+    assert all(counts.values()), counts  # one wrapper per built-in type the UDF compiles for
+    for wrapper in caught:
+        args = []
+        out = None
+        for argtype, ctype in zip(wrapper._sig.args, wrapper.ctypes.argtypes, strict=True):
+            if not isinstance(argtype, numba.types.CPointer):
+                args.append(1)  # an index
+                continue
+            np_type = numba.np.numpy_support.as_dtype(argtype.dtype)
+            buf = np.full(np_type.itemsize, 0xAB, np.uint8) if out is None else np.ones(1, np_type)
+            out = buf if out is None else out
+            args.append(ctypes.cast(buf.ctypes.data, ctype))
+        wrapper.ctypes(*args)
+        assert not out.any(), wrapper._sig
+
+
+@pytest.mark.skipif("not supports_udfs")
 def test_udt_op_whose_udf_raised_on_stand_ins_can_be_collected():
     """An op the probe records as raising on every stand-in is freed once dropped.
 
