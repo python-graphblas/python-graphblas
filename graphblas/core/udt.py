@@ -431,7 +431,7 @@ def _casts_safely_into(literal_type, dtype):
     return reason is None and all(np.can_cast(x, z, "safe") for x, z in pairs)
 
 
-def _store_cast_op(result_dtype, output_dtype):
+def _store_cast_op(result_dtype, output_dtype, *, is_value=False):
     """Return the UnaryOp that converts a result for an object of ``output_dtype``, or ``None``.
 
     GraphBLAS casts between built-in types on store (C's casts, with a float
@@ -443,6 +443,8 @@ def _store_cast_op(result_dtype, output_dtype):
     UDTs whose layouts correspond (:func:`_udt_cast_error`). Any other
     pair raises ``DomainMismatch``. ``None`` means GraphBLAS stores the result
     as it is. This is the one place that decides what may be stored where.
+    ``is_value`` says the error is for an object stored or accumulated as it
+    is, not a computed result.
     """
     if result_dtype is output_dtype or not (result_dtype._is_udt or output_dtype._is_udt):
         return None
@@ -454,6 +456,11 @@ def _store_cast_op(result_dtype, output_dtype):
             return _udt_cast_op(result_dtype, output_dtype)
     elif _has_numba:
         reason = "a UDT casts only to another UDT"
+    if is_value:
+        raise DomainMismatch(
+            f"cannot store a value of type {result_dtype} in an object of type "
+            f"{output_dtype}: {reason}."
+        )
     raise DomainMismatch(
         f"cannot store a result of type {result_dtype} in an object of type "
         f"{output_dtype}: {reason}. Use .new() for an object of the result's type, or "
@@ -531,7 +538,7 @@ def _cast_for_store(value, dtype):
     another UDT type needs a converted copy: one element for a Scalar, which
     is made here, but the whole value for a Vector or Matrix, which raises.
     """
-    if (cast_op := _store_cast_op(value.dtype, dtype)) is None:
+    if (cast_op := _store_cast_op(value.dtype, dtype, is_value=True)) is None:
         return value
     from .base import BaseType
     from .scalar import Scalar
