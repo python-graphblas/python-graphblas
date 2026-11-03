@@ -115,7 +115,9 @@ def _literal_operand(dtype, value, op, *, left=False):
             exact = is_comparison or op.name == "truediv"
             if is_comparison and not isinstance(value, (np.generic, np.ndarray)):
                 np_type = dtype.np_type
-                parts = _dict_to_record(np_type, value) if isinstance(value, dict) else value
+                parts = value
+                if isinstance(value, dict) and np_type.names is not None:
+                    parts = _dict_to_record(np_type, value)
                 # First: making an int beyond its leaf infinity reshapes the part.
                 _refuse_misfit_fields(dtype, np_type, parts)
                 if _int_beyond_leaf(np_type, parts) is not None:

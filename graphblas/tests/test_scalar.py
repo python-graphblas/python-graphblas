@@ -474,6 +474,11 @@ def test_eq_types_a_literal_as_binary_eq_does():
         s == [1]  # noqa: B015
     with pytest.raises(TypeError, match=r"argument `other` in Scalar\.__ne__\(\.\.\.\)"):
         s != object()  # noqa: B015
+    # A dict is not an element of an array UDT (AttributeError from reading its fields)
+    a = Scalar.from_value([1, 2, 3], dtypes.register_anonymous(np.dtype((np.int8, 3))))
+    match = r"Scalar\.__eq__" if gb.core._supports_udfs else None
+    with pytest.raises(TypeError, match=match):
+        a == {}  # noqa: B015
 
 
 @autocompute
