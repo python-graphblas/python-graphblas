@@ -193,8 +193,8 @@ def _summarize_numba_typing_error(exc):
 def _udt_ret_type(parent_op, numba_ret_type, *dtypes):
     """Return the operator's declared ``ret_dtype``, else infer one from the UDF.
 
-    Inference can only name a type that is already an operand, so an output
-    UDT that appears nowhere in the inputs is unreachable without this. A
+    Inference names a built-in dtype or an operand's type, so an output UDT
+    that appears nowhere in the inputs is unreachable without this. A
     declared type is checked against the UDF's return first.
     """
     if (ret_dtype := parent_op._ret_dtype) is not None:
