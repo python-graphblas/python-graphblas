@@ -53,7 +53,7 @@ def _match_expr(parent, expr):
         expr.method_name == "apply"
         and len(args) == 2
         and op.parent in _binary_to_select
-        and (args[0] is parent or getattr(args[0], "T", None) is parent)
+        and args[0] is parent
     ):
         thunk = args[1]
         if op.type._is_udt and op.parent.name in {"eq", "ne"}:
