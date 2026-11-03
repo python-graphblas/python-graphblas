@@ -175,7 +175,8 @@ These are the natural choice when one operand is a boolean or *iso* (single-valu
 matrix, where a ``plus_times`` multiply either multiplies by one (a no-op) or rescales every
 term by the same constant. ``first`` and ``second`` skip the product and accumulate one side's
 values directly over the connection pattern. On a 0/1 matrix, ``plus_first`` counts the
-length-two paths between each pair of nodes.
+length-two paths between each pair of nodes. ``plus`` has no BOOL form, so for two boolean
+matrices give the semiring an integer type, as in ``A.mxm(A, semiring.plus_first[int])``.
 
 .. code-block:: python
 
