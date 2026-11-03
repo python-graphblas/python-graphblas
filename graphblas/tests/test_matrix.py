@@ -1396,6 +1396,12 @@ def test_indexunary_helpers(A):
     ]:
         assert indexunary.row(expr).new().to_coo()[2].tolist() == expected
     assert indexunary.column(A5.T < 2.5).new().to_coo()[2].tolist() == [True] * 3 + [False] * 2
+    # NaN compares False with every index; cast to the INT64 thunk it was 0, so < and <=
+    # gave True for row 0, and > and >= for every other row (select's helpers too)
+    nan = float("nan")
+    for expr in [A5 < nan, A5 <= nan, A5 > nan, A5 >= nan, A5 < Scalar.from_value(nan)]:
+        assert indexunary.row(expr).new().to_coo()[2].tolist() == [False] * 5, expr
+        assert select.row(expr).new().nvals == 0, expr
 
 
 @pytest.mark.skipif("not supports_udfs")
