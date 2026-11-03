@@ -1,4 +1,6 @@
+import hashlib
 import itertools
+import re
 
 from ...exceptions import _error_code_lookup
 from .. import ffi, lib
@@ -45,3 +47,33 @@ def _resolve_serialized_dtype(data_obj, data_nbytes, obj_kind):
         f"{obj_kind} deserialize cannot resolve dtype {dtype_name!r} and "
         f"GxB_Serialized_get_String is unavailable in this SuiteSparse build"
     ) from orig_error
+
+
+def _jit_c_source(name, funcname, jit_c_definition, types=()):
+    """Return the C name and definition to give SuiteSparse for an op registered from C.
+
+    SuiteSparse finds a compiled kernel in memory by its op's name (and the types in the
+    kernel's encoding), and checks an op's definition only when it loads a kernel from disk.
+    So two ops of one C name with different definitions would run each other's kernel: an op
+    defined again under its name, or two of one last name in two namespaces (``ss.f`` and
+    ``ss.nested.f``). The C name is ``funcname``, then ``_{len(t)}_{t}`` for each of
+    ``types`` (built-in types by name, UDTs by their C name), then a digest of these, the
+    full dotted ``name`` and the definition, as ``f_3a1c...``. SuiteSparse keeps a name of at
+    most 127 characters, so a longer one is ``funcname``'s start and a longer digest. One
+    name and definition give one C name on purpose: registered again, they reuse the kernel
+    compiled for them. The function is renamed in the definition wherever it is named, so a
+    recursive call follows, but not a struct member of the same name (after ``.`` or ``->``).
+    """
+    parts = [re.sub(r"\W", "_", t.jit_c_name or t.name) for t in types]
+    readable = funcname + "".join(f"_{len(part)}_{part}" for part in parts)
+    digest = hashlib.sha256(f"{readable}\0{name}\0{jit_c_definition}".encode()).hexdigest()
+    c_name = f"{readable}_{digest[:12]}"
+    if len(c_name) >= lib.GxB_MAX_NAME_LEN:
+        c_name = f"{funcname[:100]}_{digest[:16]}"
+
+    def rename(match):
+        if jit_c_definition[: match.start()].rstrip().endswith((".", "->")):
+            return match.group()
+        return c_name
+
+    return c_name, re.sub(rf"\b{re.escape(funcname)}\b", rename, jit_c_definition)

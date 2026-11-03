@@ -5,6 +5,7 @@ from .. import NULL, ffi, lib
 from ..operator.base import TypedOpBase
 from ..operator.indexunary import IndexUnaryOp, TypedUserIndexUnaryOp
 from . import _IS_SSGB7
+from ._utils import _jit_c_source
 
 ffi_new = ffi.new
 
@@ -39,7 +40,12 @@ def register_new(name, jit_c_definition, input_type, thunk_type, ret_type):
     see the SuiteSparse:GraphBLAS user guide.
 
     Only one type signature may be registered at a time, but repeated calls using
-    the same name with different input types is allowed.
+    the same name with different input types is allowed. The C function must have the
+    operator's name (the last part of ``name``). It is compiled under a C name made from
+    the full name and the definition, which the op's ``jit_c_name`` and ``jit_c_source``
+    show, so another definition, or the same last name in another namespace, gets its own
+    kernel. Registering one name with one definition again (after ``delattr``) reuses its
+    C name, and the kernel already compiled for it.
 
     This will also create a SelectOp operator under ``gb.select.ss`` if the return
     type is boolean.
@@ -107,6 +113,7 @@ def register_new(name, jit_c_definition, input_type, thunk_type, ret_type):
         rv = IndexUnaryOp(name, is_udt=True)
     from .jit_config import _compiling_c_source
 
+    c_name, c_definition = _jit_c_source(name, funcname, jit_c_definition)
     gb_obj = ffi_new("GrB_IndexUnaryOp*")
     with _compiling_c_source(f"gb.indexunary.{name}"):
         check_status_carg(
@@ -116,8 +123,8 @@ def register_new(name, jit_c_definition, input_type, thunk_type, ret_type):
                 ret_type._carg,
                 input_type._carg,
                 thunk_type._carg,
-                ffi_new("char[]", funcname.encode()),
-                ffi_new("char[]", jit_c_definition.encode()),
+                ffi_new("char[]", c_name.encode()),
+                ffi_new("char[]", c_definition.encode()),
             ),
             "IndexUnaryOp",
             gb_obj[0],
@@ -125,6 +132,7 @@ def register_new(name, jit_c_definition, input_type, thunk_type, ret_type):
     op = TypedJitIndexUnaryOp(
         rv, funcname, input_type, ret_type, gb_obj[0], jit_c_definition, dtype2=thunk_type
     )
+    op._jit_c_info = (c_name, c_definition)
     rv._add(op, is_jit=True)
     if ret_type == BOOL:
         from ..operator.select import SelectOp
@@ -150,6 +158,7 @@ def register_new(name, jit_c_definition, input_type, thunk_type, ret_type):
         op2 = TypedJitSelectOp(
             selectop, funcname, input_type, ret_type, gb_obj[0], jit_c_definition, dtype2=thunk_type
         )
+        op2._jit_c_info = (c_name, c_definition)
         selectop._add(op2, is_jit=True)
         setattr(select_module, funcname, selectop)
     setattr(module, funcname, rv)

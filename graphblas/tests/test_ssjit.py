@@ -25,9 +25,10 @@ from graphblas import (
 )
 from graphblas.core import _supports_udfs as supports_udfs
 from graphblas.core.operator.indexbinary import _has_idxbinop
-from graphblas.core.operator.udt_utils import _has_jit_set
+from graphblas.core.operator.udt_codegen import _has_jit_set
 from graphblas.core.ss import _IS_SSGB7
 from graphblas.core.ss.jit_config import _enable_jit_for_udt
+from graphblas.exceptions import EmptyObject
 
 from .conftest import autocompute, burble
 
@@ -591,6 +592,26 @@ def test_jit_udt():
     assert dtype.np_type == np_type
 
 
+@pytest.mark.skipif("_IS_SSGB7 or numba is None")
+def test_jit_udt_np_type_numba_cannot_type():
+    # The np_type gets the error register_anonymous gives for an array Numba cannot type
+    _require_jit_on()
+    np_type = np.dtype([("x", np.bool_, (2,))])
+    with pytest.raises(ValueError, match="cannot type an array of bool") as exc_info:
+        dtypes.ss.register_new(
+            "_jit_bool_pair", "typedef struct { uint8_t x [2] ; } _jit_bool_pair ;", np_type=np_type
+        )
+    assert isinstance(exc_info.value.__cause__, AttributeError)
+    assert not hasattr(dtypes.ss, "_jit_bool_pair")
+    # The failure leaves the name free, so it registers with an np_type Numba can type.
+    dtype = dtypes.ss.register_new(
+        "_jit_bool_pair",
+        "typedef struct { uint8_t x [2] ; } _jit_bool_pair ;",
+        np_type=np.dtype([("x", np.uint8, (2,))]),
+    )
+    assert dtypes.ss._jit_bool_pair is dtype
+
+
 @pytest.mark.skipif("_IS_SSGB7")
 def test_jit_udt_name_leaves_room_for_the_nul():
     """A type name as long as ``GxB_MAX_NAME_LEN`` is rejected before SuiteSparse sees it.
@@ -786,10 +807,15 @@ def test_jit_indexbinary(v):
     assert not hasattr(indexbinary, "add_theta")
     assert indexbinary.ss.add_theta is add_theta
     assert add_theta.name == "ss.add_theta"
-    assert add_theta.types == {(dtypes.FP64, dtypes.FP64): dtypes.FP64}
+    assert add_theta.types == {(dtypes.FP64, dtypes.FP64, dtypes.FP64): dtypes.FP64}
     assert "FP64" in add_theta
     assert add_theta["FP64"].return_type == dtypes.FP64
     assert add_theta["FP64"].jit_c_definition == cdef
+    # SuiteSparse compiles it under a C name of its types, name and definition
+    c_name = add_theta["FP64"].jit_c_name
+    assert c_name.startswith("add_theta_4_FP64_4_FP64_4_FP64_")
+    assert len(c_name) == len("add_theta_4_FP64_4_FP64_4_FP64_") + 12
+    assert add_theta["FP64"].jit_c_source == cdef.replace("add_theta", c_name)
     # Bind theta and use as BinaryOp
     v64 = v.dup("FP64")
     binop = add_theta["FP64"](10.0)
@@ -799,6 +825,17 @@ def test_jit_indexbinary(v):
     # ewise_mult: x+y+theta = 2*val + 10
     expected = Vector.from_coo([1, 3, 4, 6], [12.0, 12.0, 14.0, 10.0], dtype="FP64")
     assert expected.isequal(res)
+    # Bound with no type, it runs at the inputs' types and theta's, which a JIT op must
+    # have: like a JIT IndexUnaryOp's thunk, theta is not cast to the op's theta type.
+    assert expected.isequal(v64.ewise_mult(v64, add_theta(10.0)).new(), check_dtype=True)
+    with pytest.raises(KeyError, match="add_theta does not work with .FP64, FP64, INT64. types"):
+        v64.ewise_mult(v64, add_theta(10))
+    with pytest.raises(KeyError, match="add_theta does not work with .INT64, INT64, FP64. types"):
+        v.ewise_mult(v, add_theta(10.0))
+    # An empty theta is refused, as for any IndexBinaryOp (SuiteSparse would read its value)
+    for bind in [add_theta, add_theta["FP64"]]:
+        with pytest.raises(EmptyObject, match="theta is an empty Scalar"):
+            bind(gb.Scalar("FP64"))
     # Test duplicate registration fails
     assert "FP32" not in add_theta
     with burble():
@@ -814,7 +851,7 @@ def test_jit_indexbinary(v):
     assert "FP32" in add_theta
     with pytest.raises(
         TypeError,
-        match="IndexBinaryOp gb.indexbinary.ss.add_theta already defined for .FP64, FP64. input",
+        match="gb.indexbinary.ss.add_theta already defined for .FP64, FP64, FP64. input",
     ):
         indexbinary.ss.register_new("add_theta", cdef, "FP64", "FP64", "FP64", "FP64")
     # Test nested names
@@ -825,14 +862,94 @@ def test_jit_indexbinary(v):
     mixed_cdef = (
         "void add_theta (double *z, double *x, GrB_Index ix, GrB_Index jx, "
         "double *y, GrB_Index iy, GrB_Index jy, float *theta) "
-        "{ (*z) = (*x) + (*y) + (double)(*theta) ; }"
+        "{ (*z) = (*x) + (*y) + 2 * (double)(*theta) ; }"
     )
     add_theta_mixed = indexbinary.ss.register_new(
         "add_theta", mixed_cdef, "FP64", "FP64", "FP32", "FP64"
     )
     assert add_theta_mixed is add_theta
-    assert ("FP64", "FP32") in add_theta
-    assert ("FP32", "FP64") not in add_theta
+    assert ("FP64", "FP64", "FP32") in add_theta
+    assert ("FP64", "FP32") not in add_theta  # theta of y's type, FP32
+    assert repr(add_theta["FP64", "FP64", "FP32"]) == "indexbinary.add_theta[FP64, FP64, FP32]"
+    # An FP32 theta picks it, and its kernel runs. SuiteSparse finds a compiled kernel by its
+    # op's name, and its encoding has no theta type, so with one C name for both theta types
+    # this ran the FP64 theta's kernel, which read the float as a double: [2, 2, 4, 0].
+    assert add_theta["FP64", "FP64", "FP32"].jit_c_name.startswith(
+        "add_theta_4_FP64_4_FP64_4_FP32_"
+    )
+    expected_mixed = Vector.from_coo([1, 3, 4, 6], [22.0, 22.0, 24.0, 20.0])
+    res = v64.ewise_mult(v64, add_theta(np.float32(10))).new()
+    assert expected_mixed.isequal(res, check_dtype=True)
+    assert expected.isequal(v64.ewise_mult(v64, add_theta(10.0)).new(), check_dtype=True)
+    # A name too long for SuiteSparse with its types is cut, with a digest of the whole
+    long_name = "add_theta_" + "long" * 25
+    long_op = indexbinary.ss.register_new(
+        long_name, cdef.replace("add_theta", long_name), "FP64", "FP64", "FP64", "FP64"
+    )
+    c_name = long_op["FP64"].jit_c_name
+    assert len(c_name) == 117
+    assert c_name.startswith(long_name[:100])
+    assert expected.isequal(v64.ewise_mult(v64, long_op(10.0)).new(), check_dtype=True)
+
+
+@pytest.mark.slow
+def test_jit_c_name_per_name_and_definition(v):
+    """An op registered from C is compiled under a C name of its full name and definition.
+
+    SuiteSparse finds a compiled kernel in memory by its op's name, and checks a definition
+    only when it loads a kernel from disk. When the C name was the op's last name, an op
+    defined again after ``delattr``, or one of the same last name in another namespace, ran
+    the kernel compiled first.
+    """
+    if _IS_SSGB7:
+        return
+    _require_jit_on()
+    v64 = v.dup("FP64")
+    # One last name in two namespaces
+    plus = "void jcn_f (double *z, double *x, double *y) { (*z) = (*x) + (*y) ; }"
+    f = binary.ss.register_new("jcn_f", plus, "FP64", "FP64", "FP64")
+    g = binary.ss.register_new("jcn_ns.jcn_f", plus.replace("+", "-"), "FP64", "FP64", "FP64")
+    try:
+        expected = Vector.from_coo([1, 3, 4, 6], [2.0, 2.0, 4.0, 0.0])
+        assert v64.ewise_mult(v64, f).new().isequal(expected, check_dtype=True)
+        expected = Vector.from_coo([1, 3, 4, 6], [0.0, 0.0, 0.0, 0.0])
+        assert v64.ewise_mult(v64, g).new().isequal(expected, check_dtype=True)
+        assert f["FP64"].jit_c_name != g["FP64"].jit_c_name
+    finally:
+        delattr(binary.ss, "jcn_f")
+        delattr(binary.ss, "jcn_ns")
+    # One name defined again, after delattr, with another definition and then the first
+    square = "void jcn_u (double *z, double *x) { (*z) = (*x) * (*x) ; }"
+    add10 = square.replace("* (*x)", "+ 10")
+    names = []
+    for cdef, values in [(square, [1, 1, 4, 0]), (add10, [11, 11, 12, 10]), (square, [1, 1, 4, 0])]:
+        op = unary.ss.register_new("jcn_u", cdef, "FP64", "FP64")
+        try:
+            expected = Vector.from_coo([1, 3, 4, 6], values, dtype="FP64")
+            assert v64.apply(op).new().isequal(expected, check_dtype=True)
+            names.append(op["FP64"].jit_c_name)
+        finally:
+            delattr(unary.ss, "jcn_u")
+    assert names[0] != names[1]
+    assert names[0] == names[2]  # one definition, one kernel
+    # A struct member of the op's name is not renamed
+    rec = dtypes.ss.register_new(
+        "JcnRec",
+        "typedef struct { int64_t jcn_m ; double b ; } JcnRec ;",
+        np_type=np.dtype([("jcn_m", "<i8"), ("b", "<f8")], align=True),
+    )
+    cdef = "void jcn_m (double *z, const JcnRec *x) { (*z) = x->jcn_m + (*x) . b ; }"
+    op = unary.ss.register_new("jcn_m", cdef, rec, "FP64")
+    try:
+        c_name = op[rec].jit_c_name
+        assert op[rec].jit_c_source == cdef.replace("void jcn_m", f"void {c_name}")
+        w = Vector(rec, 2)
+        w[0] = (3, 0.5)
+        w[1] = (4, 0.25)
+        expected = Vector.from_coo([0, 1], [3.5, 4.25])
+        assert w.apply(op).new().isequal(expected, check_dtype=True)
+    finally:
+        delattr(unary.ss, "jcn_m")
 
 
 @pytest.mark.slow
@@ -957,8 +1074,7 @@ def test_udt_jit_c_source_introspection():
     times_arr = binary.times[arr_udt]
     src_arr = times_arr.jit_c_source
     assert src_arr is not None
-    assert "z->v[0] = (x->v[0]) * (y->v[0])" in src_arr
-    assert "z->v[10] = (x->v[10]) * (y->v[10])" in src_arr
+    assert "for (int64_t i = 0 ; i < 11 ; i++) { z->v[i] = (x->v[i]) * (y->v[i]) ; }" in src_arr
 
     # Builtin scalar op: no JIT source
     assert binary.plus[int].jit_c_source is None
@@ -1105,41 +1221,181 @@ def test_floordiv_udt_jit_matches_python_semantics():
 
 
 @pytest.mark.skipif("not supports_udfs")
-def test_min_max_udt_jit_propagates_nan():
-    """``binary.min``/``max`` on a float UDT must propagate NaN like Python/numba.
+def test_min_max_udt_jit_ignores_nan_and_breaks_zero_ties():
+    """The C JIT kernel for ``binary.min`` on a float UDT answers as the cfunc does.
 
-    Regression: the JIT codegen used to emit ``(a < b ? a : b)``, which
-    silently swallows NaN to the right-hand side. Python ``min(a, b)`` (and
-    numba's ``min``) returns ``a`` when neither comparison is true (NaN
-    involved), so ``min(NaN, 1.0) == NaN`` and ``min(1.0, NaN) == 1.0``.
-    The fix swaps the ternary to ``(b < a ? b : a)``.
+    ``GrB_MIN_FP64`` is C99 ``fmin``, which ignores a NaN operand from either
+    side, and so does ``binary.min`` on a UDT field. C99 leaves the tie
+    between ``-0.0`` and ``0.0`` to the C library (glibc's x86-64 ``fmin``
+    returns an operand by position), so the kernel spells the comparison out,
+    as the cfunc does, rather than calling ``fmin``: a tie gives ``-0.0`` for
+    ``min`` and ``0.0`` for ``max`` on every platform. Earlier spellings
+    decided NaN by position, in opposite directions: ``(a < b ? a : b)``
+    dropped a NaN on the right, and ``(b < a ? b : a)`` one on the left.
+
+    Integer fields keep the plain comparison: they have no NaN or signed zero.
     """
-    if _IS_SSGB7:
-        pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
+    if not _has_jit_set:
+        pytest.skip("jit_c_source introspection requires SuiteSparse:GraphBLAS >= 9")
     _require_jit_on()
 
     # Field names unique to this test; see floordiv test for the cache rationale.
     udt = dtypes.register_anonymous(
-        np.dtype([("nan_a", np.float64), ("nan_b", np.float64)]), "_NanJitMM"
+        np.dtype([("nan_a", np.float64), ("nan_b", np.float32), ("nan_c", np.int32)]), "_NanJitMM"
     )
+    csrc = binary.min[udt].jit_c_source
+    assert "fmin" not in csrc, csrc
+    assert "signbit(x->nan_a)" in csrc, csrc
+    assert "signbit(x->nan_b)" in csrc, csrc
+    assert "((x->nan_c) < (y->nan_c) ? (x->nan_c) : (y->nan_c))" in csrc, csrc
+    assert "!signbit(x->nan_a)" in binary.max[udt].jit_c_source
+
     N = 100
     v = gb.Vector(udt, N)
     u = gb.Vector(udt, N)
     nan = float("nan")
     for i in range(N):
         # field nan_a: NaN on the left; field nan_b: NaN on the right at odd indices.
-        v[i] = (nan, 2.0 + i)
-        u[i] = (1.0 + i, nan if i % 2 else 3.0 + i)
+        v[i] = (nan, 2.0 + i, i)
+        u[i] = (1.0 + i, nan if i % 2 else 3.0 + i, 2 * i)
 
     w = v.ewise_mult(u, binary.min).new()
-    assert np.isnan(w[0].new().value[0])  # min(NaN, 1.0) -> NaN
-    assert w[1].new().value[1] == 3.0  # min(3.0, NaN) -> 3.0 (NaN swallowed)
+    assert w[0].new().value[0] == 1.0  # min(NaN, 1.0) -> 1.0
+    assert w[1].new().value[1] == 3.0  # min(3.0, NaN) -> 3.0
     assert w[2].new().value[1] == 4.0  # min(4.0, 5.0) -> 4.0 (normal case)
+    assert w[3].new().value[2] == 3  # integer field is unaffected
 
     w = v.ewise_mult(u, binary.max).new()
-    assert np.isnan(w[0].new().value[0])  # max(NaN, 1.0) -> NaN
-    assert w[1].new().value[1] == 3.0  # max(3.0, NaN) -> 3.0 (NaN swallowed)
+    assert w[0].new().value[0] == 1.0  # max(NaN, 1.0) -> 1.0
+    assert w[1].new().value[1] == 3.0  # max(3.0, NaN) -> 3.0
     assert w[2].new().value[1] == 5.0  # max(4.0, 5.0) -> 5.0 (normal case)
+    assert w[3].new().value[2] == 6  # integer field is unaffected
+
+    # Both operands NaN is the one case where a NaN survives, for min and max
+    # alike, and it is the only case ``fmin`` has no non-NaN answer for.
+    nan_only = gb.Vector(udt, N)
+    for i in range(N):
+        nan_only[i] = (nan, np.float32(i), i)
+    w = nan_only.ewise_mult(nan_only, binary.min).new()
+    assert np.isnan(w[0].new().value[0])
+
+    # Signed-zero ties, in both orders and both fields, on the C kernel and the cfunc.
+    left = gb.Vector(udt, N)
+    right = gb.Vector(udt, N)
+    for i in range(N):
+        a, b = (-0.0, 0.0) if i % 2 else (0.0, -0.0)
+        left[i] = (a, a, i)
+        right[i] = (b, b, i)
+    for mode in ["on", "off"]:
+        with _jit_mode(mode):
+            lo = left.ewise_mult(right, binary.min).new()
+            hi = left.ewise_mult(right, binary.max).new()
+        for i in range(2):
+            assert np.signbit(lo[i].new().value[0]), mode
+            assert np.signbit(lo[i].new().value[1]), mode
+            assert not np.signbit(hi[i].new().value[0]), mode
+            assert not np.signbit(hi[i].new().value[1]), mode
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_complex_truediv_udt_jit_matches_cfunc_at_extremes():
+    """Complex division in the C JIT kernel is the cfunc's, bit for bit, at any magnitude.
+
+    SuiteSparse compiles C JIT kernels with ``-fcx-limited-range`` under GCC,
+    which turns C's ``_Complex`` division into the naive formula: complex64
+    ``1e20 / 1e20`` came out ``nan`` and ``(1+1j) / (1e160+1e160j)`` came out
+    ``0`` on Linux. The kernel divides with real arithmetic instead, by
+    CPython's algorithm before 3.14, so no flag changes it; the cfunc spells
+    out the same steps, since from Python 3.14 Numba's own ``/`` recovers
+    infinities as CPython's does (``(inf+nanj) / (1+1j)`` is ``inf-infj``).
+    """
+    if not _has_jit_set:
+        pytest.skip("jit_c_source introspection requires SuiteSparse:GraphBLAS >= 9")
+    _require_jit_on()
+
+    udt = dtypes.register_anonymous(
+        np.dtype([("cxd_s", np.complex64), ("cxd_d", np.complex128)], align=True), "_CxDivJit"
+    )
+    csrc = binary.truediv[udt].jit_c_source
+    assert "crealf" in csrc, csrc
+    assert "(x->cxd_d) / (y->cxd_d)" not in csrc, csrc
+    # (complex64 pair, complex128 pair); the first four are finite and the C
+    # library's division got them wrong under the limited-range flag.
+    pairs = [
+        ((1e20, 1e20), (1e200, 1e200)),
+        ((1e-25 + 1e-25j, 1e-25), (1e200 + 1e200j, 1e200 + 1e200j)),
+        ((1 + 1j, 1e30 + 1e30j), (1 + 1j, 1e160 + 1e160j)),
+        ((3e30 + 4e30j, 1e30 - 2e30j), (1e-170, 1e-170 + 1e-170j)),
+        ((0j, -2 + 0.5j), (0j, -2 + 0.5j)),
+        ((-2 + 0.5j, -2 + 0.5j), (-2 + 0.5j, -2 + 0.5j)),
+        ((3 + 4j, complex(0.0, -0.0)), (3 + 4j, complex(0.0, -0.0))),
+        ((complex(np.inf, np.nan), 1 + 1j), (complex(np.inf, np.nan), 1 + 1j)),
+    ]
+    N = 64
+    v = gb.Vector(udt, N)
+    u = gb.Vector(udt, N)
+    for i in range(N):
+        (a_s, b_s), (a_d, b_d) = pairs[i % len(pairs)]
+        v[i] = (a_s, a_d)
+        u[i] = (b_s, b_d)
+    with _jit_mode("on"):
+        jit = v.ewise_mult(u, binary.truediv).new()
+    with _jit_mode("off"):
+        cfunc = v.ewise_mult(u, binary.truediv).new()
+    assert jit.to_dense().tobytes() == cfunc.to_dense().tobytes()
+    result = jit.to_dense()
+    for i, ((a_s, b_s), (a_d, b_d)) in enumerate(pairs[:4]):
+        assert np.isclose(result[i]["cxd_s"], np.complex64(a_s) / np.complex64(b_s), rtol=1e-6)
+        assert np.isclose(result[i]["cxd_d"], np.complex128(a_d) / np.complex128(b_d), rtol=1e-15)
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_complex_times_udt_jit_matches_cfunc_with_infinities():
+    """Complex multiplication in the C JIT kernel is the cfunc's, bit for bit.
+
+    numpy multiplies by the textbook formula; clang's ``_Complex`` multiply
+    adds C99 Annex G's recovery, so ``1j * (inf+infj)`` came out
+    ``-inf+infj`` from a C kernel on macOS and ``nan+nanj`` from the cfunc
+    (GCC's ``-fcx-limited-range`` drops the recovery, so Linux agreed). The
+    kernel multiplies with real arithmetic instead, for record fields and
+    array elements alike. CPython adds the recovery from 3.14 and Numba 0.68
+    follows it, so the cfunc spells the formula out too.
+    """
+    if not _has_jit_set:
+        pytest.skip("jit_c_source introspection requires SuiteSparse:GraphBLAS >= 9")
+    _require_jit_on()
+
+    rec = dtypes.register_anonymous(
+        np.dtype([("cxt_s", np.complex64), ("cxt_d", np.complex128)], align=True), "_CxTimesJit"
+    )
+    arr = dtypes.register_anonymous(np.dtype((np.complex128, (2,))), "_CxTimesJitArr")
+    assert "(x->cxt_d) * (y->cxt_d)" not in binary.times[rec].jit_c_source
+    inf, nan = np.inf, np.nan
+    pairs = [
+        (1j, complex(inf, inf)),
+        (-2.5j, complex(inf, -inf)),
+        (complex(inf, 0.0), complex(0.0, 1.0)),
+        (complex(nan, inf), 2 + 1j),
+        (complex(1e30, 1e30), complex(1e30, -1e30)),
+        (3 + 4j, -1.5 + 0.25j),
+        (complex(-0.0, 0.0), complex(0.0, -0.0)),
+    ]
+    N = 3 * len(pairs)
+    for udt, element in [(rec, lambda z: (z, z)), (arr, lambda z: [z, -z])]:
+        v = gb.Vector(udt, N)
+        u = gb.Vector(udt, N)
+        for i in range(N):
+            a, b = pairs[i % len(pairs)]
+            v[i] = element(a)
+            u[i] = element(b)
+        with _jit_mode("on"):
+            jit = v.ewise_mult(u, binary.times).new()
+        with _jit_mode("off"):
+            cfunc = v.ewise_mult(u, binary.times).new()
+        assert jit.to_dense().tobytes() == cfunc.to_dense().tobytes()
+    result = jit[0].new().value  # 1j * (inf+infj), numpy's nan+nanj
+    assert np.isnan(result[0].real)
+    assert np.isnan(result[0].imag)
 
 
 @pytest.mark.skipif("not supports_udfs")
@@ -1473,6 +1729,44 @@ def test_packed_nested_record_layout_skips_jit():
     udt = dtypes.register_anonymous(spec, "_PackedNestedUdt")
     assert udt.jit_c_name is None  # JIT must be skipped
     assert udt.jit_c_definition is None
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_record_layouts_c_cannot_declare_skip_jit():
+    """A record whose fields a C struct cannot lay out the same way skips the JIT.
+
+    Explicit offsets can give a record a C struct's size with a field
+    somewhere else, as can such a record nested in one whose own offsets
+    match. A nested record with an array field has no C struct here, so the
+    record holding it has none either. Each computes with the cfunc.
+    """
+    if _IS_SSGB7:
+        pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
+
+    # Same size as the C struct (8 bytes), but the int32 at offset 1, not 4.
+    offset = np.dtype(
+        {
+            "names": ["ol_a", "ol_b"],
+            "formats": [np.int8, np.int32],
+            "offsets": [0, 1],
+            "itemsize": 8,
+        }
+    )
+    outer = np.dtype([("ol_in", offset), ("ol_z", np.float64)])
+    with_array = np.dtype(
+        [("ol_x", np.float64), ("ol_rec", [("ol_v", np.float64, (2,)), ("ol_w", np.float64)])],
+    )
+    for np_type, value, doubled in [
+        (offset, (1, 400), (2, 800)),
+        (outer, ((1, 400), 2.5), ((2, 800), 5.0)),
+        (with_array, (1.5, ([2, 3], 4)), (3.0, ([4, 6], 8))),
+    ]:
+        udt = dtypes.register_anonymous(np_type)
+        assert udt.jit_c_name is None
+        assert udt.jit_c_definition is None
+        v = gb.Vector(udt, 1)
+        v[0] = value
+        assert ((v + v).new().to_coo()[1] == np.array([doubled], dtype=np_type)).all()
 
 
 @pytest.mark.slow

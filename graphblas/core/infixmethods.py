@@ -3,6 +3,7 @@ from ..dtypes import BOOL
 from .infix import MatrixInfixExpr, ScalarInfixExpr, VectorInfixExpr
 from .matrix import Matrix, MatrixExpression, MatrixIndexExpr, TransposedMatrix
 from .scalar import Scalar, ScalarExpression, ScalarIndexExpr
+from .udt import _ewise_add_casts_udt, _plus_zero
 from .utils import output_type
 from .vector import Vector, VectorExpression, VectorIndexExpr
 
@@ -14,6 +15,16 @@ def call_op(self, other, op, *, outer=False, union=False):
     if type1 in types:
         if type2 in types:
             if outer:
+                if _ewise_add_casts_udt(self, other, op):
+                    # ewise_add copies an entry present in only one input into
+                    # the result type, which GraphBLAS cannot do for a UDT, so
+                    # infix takes the union with each operand's zero for the
+                    # missing value, as ``-`` takes 0. Its float fields are
+                    # -0.0, which plus adds without changing any value; it is
+                    # false for lor and lxor too. ``ewise_add`` itself raises.
+                    return self.ewise_union(
+                        other, op, _plus_zero(self.dtype), _plus_zero(other.dtype)
+                    )
                 return self.ewise_add(other, op)
             if union:
                 return self.ewise_union(other, op, False, False)
