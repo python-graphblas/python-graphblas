@@ -939,3 +939,10 @@ def test_scalar_operators_literal_on_the_left_udt():
         np.testing.assert_array_equal(result.value, expected)
     assert (1 - u).new().dtype == udt
     assert (10 / u).new().dtype.np_type == np.dtype((np.float64, (2,)))
+    # An op typed for its two sides takes a literal on the left in its left type
+    rec = dtypes.register_anonymous(np.dtype([("ll_a", "f8"), ("ll_b", "f8")]), "_LeftLiteralRec")
+    add_a = gb.core.operator.BinaryOp.register_anonymous(
+        lambda x, y: x + y.ll_a, "_left_literal_add_a", is_udt=True
+    )
+    s = Scalar.from_value((3.0, 4.0), rec)
+    assert add_a[dtypes.INT64, rec](2 & s).new().value == 5.0
