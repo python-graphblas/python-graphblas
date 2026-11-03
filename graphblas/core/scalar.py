@@ -1184,10 +1184,11 @@ def _as_scalar(scalar, dtype=None, *, is_cscalar):
 def _literal_scalar(scalar, value, op, *, within, argname=None, keyword_name=None):
     """Return literal ``value``, ``op``'s operand beside ``scalar`` on either side, as a Scalar.
 
-    It is typed as any literal operand is (``literals._literal_operand``). A value
-    that cannot be a Scalar raises TypeError, naming ``argname`` or ``keyword_name``.
+    It is typed as any literal operand is (``literals._literal_operand``), as the
+    left operand when ``argname`` is ``"left"``. A value that cannot be a Scalar
+    raises TypeError, naming ``argname`` or ``keyword_name``.
     """
-    value, dtype = _literal_operand(scalar.dtype, value, op)
+    value, dtype = _literal_operand(scalar.dtype, value, op, left=argname == "left")
     try:
         return Scalar.from_value(value, dtype, is_cscalar=False, name="")
     except TypeError:
