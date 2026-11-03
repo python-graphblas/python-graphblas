@@ -66,26 +66,25 @@ def _jit_works_here():
         return _enable_jit_for_udt()
 
 
-@pytest.fixture(scope="module", autouse=True)
-def _setup_jit():
-    """Set up the SuiteSparse:GraphBLAS JIT.
+def _configure_jit_for_tests(cfg, fix_jit_config):
+    """Let this module's tests compile JIT kernels where that is cheap; see ``_setup_jit``.
 
     Strategy:
-    1. _fix_jit_config(): fix conda-baked compiler paths and probe.
+    0. Where SuiteSparse compiles through cmake (``jit_use_cmake``, always True
+       when it is built with MSVC), nothing: as for UDT work
+       (``_enable_jit_for_udt``), only an ``'on'`` set before the tests, such as
+       ``GRAPHBLAS_JIT_C_CONTROL=on``, compiles there. Each kernel took about
+       10 s through cmake on Windows CI, and this module compiles about 260.
+    1. fix_jit_config(): fix conda-baked compiler paths and probe.
        - Returns True: JIT works, proceed.
        - Returns False: probe failed. Whatever ``jit_c_control``
          SuiteSparse was left at is left untouched.
        - Returns None: no conda env, try sysconfig instead.
     2. Sysconfig fallback: for non-conda installs (pure pip).
     """
-    if _IS_SSGB7:
-        # SuiteSparse JIT was added in SSGB 8
-        yield
+    if cfg["jit_use_cmake"]:
         return
-
-    prev = gb.ss.config["jit_c_control"]
-
-    result = _fix_jit_config()
+    result = fix_jit_config()
     # ``True``: conda JIT configured and verified. ``False``: probe failed;
     # don't try sysconfig, since if the conda compiler can't build GraphBLAS
     # JIT kernels, Python's sysconfig compiler won't either. Both done.
@@ -96,12 +95,23 @@ def _setup_jit():
         include = sysconfig.get_path("include")
         libs = sysconfig.get_config_var("LIBS")
         if cc and cflags and include:
-            gb.ss.config["jit_c_control"] = "on"
-            gb.ss.config["jit_c_compiler_name"] = cc
-            gb.ss.config["jit_c_compiler_flags"] = f"{cflags} -I{include}"
+            cfg["jit_c_control"] = "on"
+            cfg["jit_c_compiler_name"] = cc
+            cfg["jit_c_compiler_flags"] = f"{cflags} -I{include}"
             if libs:
-                gb.ss.config["jit_c_libraries"] = libs
+                cfg["jit_c_libraries"] = libs
 
+
+@pytest.fixture(scope="module", autouse=True)
+def _setup_jit():
+    """Set up the SuiteSparse:GraphBLAS JIT (``_configure_jit_for_tests``) and restore it."""
+    if _IS_SSGB7:
+        # SuiteSparse JIT was added in SSGB 8
+        yield
+        return
+
+    prev = gb.ss.config["jit_c_control"]
+    _configure_jit_for_tests(gb.ss.config, _fix_jit_config)
     try:
         yield
     finally:
@@ -838,6 +848,36 @@ def test_enable_jit_for_udt_re_raises_a_lowered_control(monkeypatch):
     fake["jit_c_control"] = "run"
     assert _enable_jit_for_udt() is False
     assert fake["jit_c_control"] == "run"
+
+
+def test_setup_jit_leaves_the_control_alone_where_suitesparse_uses_cmake(monkeypatch):
+    """The setup of this module does not set ``'on'`` where SuiteSparse compiles through cmake.
+
+    ``fix_jit_config()`` sets ``'on'`` whenever it finds a compiler to repair
+    from (on Windows, conda's ``clang.exe`` or the build machine's ``cl.exe``),
+    so the setup compiled every kernel of this module through cmake there, as
+    UDT work does not (``_enable_jit_for_udt``). Driven through a stand-in
+    config, so it runs on every host, whether SuiteSparse was built with MSVC or not.
+    """
+    calls = []
+
+    def fix_jit_config():
+        calls.append(cfg["jit_use_cmake"])
+        cfg["jit_c_control"] = "on"
+        return True
+
+    def no_env():
+        calls.append(cfg["jit_use_cmake"])
+
+    monkeypatch.setattr(sysconfig, "get_config_var", lambda name: f"<{name}>")
+    for fix in [fix_jit_config, no_env]:
+        cfg = {"jit_use_cmake": True, "jit_c_control": "run"}
+        _configure_jit_for_tests(cfg, fix)
+        assert cfg == {"jit_use_cmake": True, "jit_c_control": "run"}
+        cfg["jit_use_cmake"] = False
+        _configure_jit_for_tests(cfg, fix)
+        assert cfg["jit_c_control"] == "on"
+    assert calls == [False, False]
 
 
 @pytest.mark.skipif("_IS_SSGB7")
