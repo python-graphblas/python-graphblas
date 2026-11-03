@@ -361,17 +361,18 @@ def _pick_c_type_name(python_name):
     """Return a valid C identifier for use as ``GxB_JIT_C_NAME`` on a UDT named ``python_name``.
 
     ``gbudt_`` and the name (see ``_C_TYPE_NAME_PREFIX``), which stays readable in
-    introspection and JIT cache file names. A name made here (``gbudt_...``) or one starting
-    with ``_gb``, which python-graphblas keeps for the types it makes itself (a synthetic
-    ``_gbudt_NNN`` or ``_gbnest_NNN``, say), is kept as it is, so a pinned C name maps to itself.
-    When the result is not a C identifier (a name with dots, or none given), or would not fit
-    SuiteSparse's ``GxB_MAX_NAME_LEN`` (it refuses a name of 128 characters or more, and the
-    type is left with an empty one), mint a fresh ``_gbudt_NNN`` name instead, so the UDT
-    still takes the JIT path.
+    introspection and JIT cache file names. A name starting with ``_gb``, which
+    python-graphblas keeps for the types it makes itself (a synthetic ``_gbudt_NNN`` or
+    ``_gbnest_NNN``, the tensor engine's ``_gbtensor_...``), and which no kernel identifier
+    starts with, is kept as it is. When the result is not a C identifier (a name with dots,
+    or none given), or would not fit SuiteSparse's ``GxB_MAX_NAME_LEN`` (it refuses a name
+    of 128 characters or more, and the type is left with an empty one), mint a fresh
+    ``_gbudt_NNN`` name instead, so the UDT still takes the JIT path. A name SuiteSparse
+    already has for a type goes to ``_udt_c_typedef`` with ``is_c_name`` instead.
     """
     if not isinstance(python_name, str):
         c_name = ""
-    elif python_name.startswith((_C_TYPE_NAME_PREFIX, "_gb")):
+    elif python_name.startswith("_gb"):
         c_name = python_name
     else:
         c_name = _C_TYPE_NAME_PREFIX + python_name
@@ -380,12 +381,14 @@ def _pick_c_type_name(python_name):
     return f"_gbudt_{next(_synthetic_udt_counter)}"
 
 
-def _udt_c_typedef(python_name, np_type):
+def _udt_c_typedef(python_name, np_type, *, is_c_name=False):
     """Build the JIT C typedef for a record or array UDT, or return ``None``.
 
     Returns ``(type_name, typedef)`` on success, where ``type_name`` is the
     C identifier we register with SuiteSparse (``gbudt_`` and ``python_name``, or
-    a synthetic name; see ``_pick_c_type_name``). Returns ``None`` when the UDT still can't be
+    a synthetic name; see ``_pick_c_type_name``). With ``is_c_name``,
+    ``python_name`` is already that C name: one SuiteSparse has for the type, or a
+    synthetic one made here. Returns ``None`` when the UDT still can't be
     expressed in C after synthesizing the top-level name (a field name
     collides with a C reserved word, or a leaf field type isn't in
     ``NP_TO_C_TYPES``, e.g. object or datetime).
@@ -404,7 +407,7 @@ def _udt_c_typedef(python_name, np_type):
     # than register a broken typedef; the cfunc path is still correct.
     if np_type.names is not None and not _is_c_compatible_layout(np_type):
         return None
-    type_name = _pick_c_type_name(python_name)
+    type_name = python_name if is_c_name else _pick_c_type_name(python_name)
     if np_type.names is not None:
         # Inner typedefs (for nested structured fields) are prepended to the
         # final definition string so the outer struct's field types are in
@@ -425,7 +428,7 @@ def _udt_c_typedef(python_name, np_type):
                 # The inner C name is synthesized to avoid collisions with
                 # user-supplied type names elsewhere in the process.
                 inner_name = f"_gbnest_{next(_synthetic_udt_counter)}"
-                inner_info = _udt_c_typedef(inner_name, field_dtype)
+                inner_info = _udt_c_typedef(inner_name, field_dtype, is_c_name=True)
                 if inner_info is None:
                     return None
                 inner_resolved_name, inner_typedef = inner_info
@@ -1435,8 +1438,7 @@ def _make_jit_c_definition(op_name, py_op, dtype, arity):
     # Numba cfunc instead of JIT-compiling. ``jit_c_name`` is also where the
     # ``gbudt_`` or synthetic ``_gbudt_NNN`` name (see ``_pick_c_type_name``) is
     # recorded; using it keeps op codegen consistent.
-    pinned_name = dtype.jit_c_name
-    typedef_info = _udt_c_typedef(pinned_name or dtype.name, dtype.np_type)
+    typedef_info = _dtype_c_typedef(dtype)
     if typedef_info is None:
         return None
     type_name, _typedef = typedef_info
@@ -1485,8 +1487,20 @@ def _c_type_name(dtype):
     """
     if dtype.np_type.names is None and dtype.np_type.subdtype is None:
         return NP_TO_C_TYPES.get(dtype.np_type)
-    typedef_info = _udt_c_typedef(dtype.jit_c_name or dtype.name, dtype.np_type)
+    typedef_info = _dtype_c_typedef(dtype)
     return None if typedef_info is None else typedef_info[0]
+
+
+def _dtype_c_typedef(dtype):
+    """``_udt_c_typedef`` for UDT ``dtype`` under the C name SuiteSparse has for it.
+
+    That is its ``jit_c_name``: pinned when a UDT from numpy registers, or the name of a
+    type registered from C source. A UDT with none (not expressible in C) gets the name
+    ``_pick_c_type_name`` would give it.
+    """
+    if (c_name := dtype.jit_c_name) is not None:
+        return _udt_c_typedef(c_name, dtype.np_type, is_c_name=True)
+    return _udt_c_typedef(dtype.name, dtype.np_type)
 
 
 def _c_operand(side, path, stored, computed):
@@ -1601,10 +1615,9 @@ def _make_jit_c_comparison_definition(op_name, dtype, *, is_eq):
     semantic comparison.
     """
     np_type = dtype.np_type
-    pinned_name = dtype.jit_c_name
     # ``_udt_c_typedef`` returns None when the numpy layout doesn't match a
     # C compiler's layout for the same struct.
-    typedef_info = _udt_c_typedef(pinned_name or dtype.name, np_type)
+    typedef_info = _dtype_c_typedef(dtype)
     if typedef_info is None:
         return None
     type_name, _typedef = typedef_info
