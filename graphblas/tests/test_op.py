@@ -3366,6 +3366,37 @@ def test_udt_udf_raising_on_stand_ins_still_types():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udt_op_whose_udf_raised_on_stand_ins_can_be_collected():
+    """An op the probe records as raising on every stand-in is freed once dropped.
+
+    The record kept the exception, whose traceback holds the frames that hold the
+    typed op, so the op, its parent and their GraphBLAS handles were never freed
+    (r612: 5 of 5 alive). It keeps the exception as text now.
+    """
+    import gc
+    import weakref
+
+    from graphblas.core.operator.udf import _RAISES_ON_SAMPLES
+
+    r6 = dtypes.register_anonymous(np.dtype((np.float64, (6,))), "_FreedStandIn6")
+    r2 = dtypes.register_anonymous(np.dtype((np.float64, (2,))), "_FreedStandIn2")
+    v = Vector(r6, size=1)
+    v[0] = np.arange(6.0)
+    refs = []
+    for _ in range(3):
+        iu = IndexUnaryOp.register_anonymous(
+            lambda x, i, j, t: x[:2] * t, is_udt=True, ret_dtype=r2
+        )
+        assert v.apply(iu, 3.0).new()[0].new().value.tolist() == [0.0, 3.0]
+        typed = iu[r6, r6]
+        assert typed in _RAISES_ON_SAMPLES
+        refs += [weakref.ref(iu), weakref.ref(typed)]
+        del iu, typed
+    gc.collect()
+    assert [ref() for ref in refs] == [None] * len(refs)
+
+
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
 def test_udt_select_takes_a_number_as_itself_when_it_cannot_take_an_element():
     """A literal thunk for a user's select that cannot take an element is typed as itself.
