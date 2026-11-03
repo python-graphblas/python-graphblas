@@ -6406,6 +6406,19 @@ def test_udt_errors_name_the_real_problem():
             expr().new()
     with pytest.raises(KeyError, match="lt does not work with _ErrI8"):
         v.apply(binary.lt, right=2.5)
+    # Also before a literal that does not fit an int8 field fails to convert.
+    rec = dtypes.register_anonymous(np.dtype([("err_a", "i1"), ("err_b", "f8")]), "_ErrRec")
+    r = Vector(rec, size=2)
+    s = gb.Scalar.from_value((1, 2.0), rec)
+    for expr in [
+        lambda: v < 300,
+        lambda: r < (300, 2.0),
+        lambda: s < (300, 2.0),
+        lambda: r.apply(binary.lt, left=(300, 2.0)),
+        lambda: r.select("<", (300, 2.0)),
+    ]:
+        with pytest.raises(KeyError, match="lt does not work with _Err"):
+            expr()
 
 
 @pytest.mark.skipif("not supports_udfs")

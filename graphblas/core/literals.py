@@ -102,7 +102,10 @@ def _literal_operand(dtype, value, op, *, left=False):
                 return (math.inf if value > 0 else -math.inf), FP64
         return value, literal_dtype
     if getattr(op, "_udt_types", True) is None:
-        # An op that does not take UDTs at all (``lt``) reports that itself.
+        # An op that does not take UDTs at all (``lt``) reports that itself, here,
+        # before the literal becomes an element, which can fail first (300 in an
+        # int8 field).
+        op[dtype]
         return value, dtype
     if isinstance(op, Monoid) and not op._anonymous:
         # Element-wise, a Monoid is its BinaryOp (``get_typed_op`` types it so).
