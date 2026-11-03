@@ -116,7 +116,9 @@ def test_index_with_too_many_types():
     op = indexbinary.register_anonymous(add_theta)
     types = ("INT64",) * 4
     for parent in [op, op(1)]:
-        with pytest.raises(TypeError, match=r"takes one dtype, two \(x and y\), or three .* not 4"):
+        with pytest.raises(
+            TypeError, match=r"takes a dtype, or a tuple of two \(x and y\) .* of 4"
+        ):
             parent[types]
     assert types not in op
     assert types[:3] in op

@@ -591,8 +591,8 @@ class IndexBinaryOp(OpBase):
             return self._get_typed(*(lookup_dtype(dtype) for dtype in type_))
         if type(type_) is tuple and len(type_) != 2:
             raise TypeError(
-                f"{self!r}[...] takes one dtype, two (x and y), or three (x, y and theta), "
-                f"not {len(type_)}"
+                f"{self!r}[...] takes a dtype, or a tuple of two (x and y) or three (x, y and "
+                f"theta), not a tuple of {len(type_)}"
             )
         return super().__getitem__(type_)
 
