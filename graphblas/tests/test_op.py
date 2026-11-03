@@ -3236,6 +3236,59 @@ def test_udt_udf_raising_for_its_operand_types_raises_when_typed():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udt_user_op_takes_a_number_as_itself_when_it_cannot_take_an_element():
+    """A number beside a user's op is typed as itself when the op cannot take it as an element.
+
+    A literal beside a user's ``is_udt`` op becomes an element of the operand's
+    UDT, so ``x[:2] * t`` met a 6-element ``t``: its cfunc raised for every
+    element and the result held zeros, where a Scalar thunk worked. When the op
+    cannot be typed with an element, a Python or numpy number now takes its own
+    type, as a Scalar of it would.
+    """
+    r6 = dtypes.register_anonymous(np.dtype((np.float64, (6,))), "_OwnNum6")
+    r2 = dtypes.register_anonymous(np.dtype((np.float64, (2,))), "_OwnNum2")
+    iu = IndexUnaryOp.register_anonymous(
+        lambda x, i, j, t: x[:2] * t, "_own_num_iu", is_udt=True, ret_dtype=r2
+    )
+    bop = BinaryOp.register_anonymous(
+        lambda x, y: x[:2] * y, "_own_num_b", is_udt=True, ret_dtype=r2
+    )
+    left = BinaryOp.register_anonymous(
+        lambda x, y: y[:2] * x, "_own_num_left", is_udt=True, ret_dtype=r2
+    )
+    v = Vector(r6, size=2)
+    v[0] = np.arange(6.0)
+    v[1] = np.arange(6.0) + 10
+    expected = [[0.0, 3.0], [30.0, 33.0]]
+    for literal, own in [(3.0, FP64), (np.float64(3.0), FP64), (3, INT64), (np.float32(3), FP32)]:
+        for expr in [
+            v.apply(iu, literal),
+            v.apply(bop, right=literal),
+            v.apply(left, left=literal),
+        ]:
+            assert own in {expr.op.type, expr.op._type2}
+            assert expr.new().to_coo()[1].tolist() == expected
+    # An op that can take an element still gets one, as udt.rst says
+    i3 = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_OwnNumI3")
+    add = IndexUnaryOp.register_anonymous(lambda x, i, j, t: x + t, "_own_num_add", is_udt=True)
+    w = Vector(i3, size=1)
+    w[0] = [1, 2, 3]
+    expr = w.apply(add, 1)
+    assert expr.op._type2 is i3
+    assert expr.new()[0].new().value.tolist() == [2, 3, 4]
+    with pytest.raises(ValueError, match="does not fit _OwnNumI3"):
+        w.apply(add, 0.5)
+    # A record op that adds a number to each field takes it as itself
+    rec = dtypes.register_anonymous(np.dtype([("on_a", np.int32), ("on_b", np.float64)]))
+    each = BinaryOp.register_anonymous(
+        lambda x, y: (x.on_a + y, x.on_b + y), "_own_num_each", is_udt=True
+    )
+    r = Vector(rec, size=1)
+    r[0] = (1, 2.0)
+    assert r.apply(each, right=2).new()[0].new().value.tolist() == (3, 4.0)
+
+
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_record_array_field_roundtrip():
     """A record UDT with an array field writes exactly that field's extent.
