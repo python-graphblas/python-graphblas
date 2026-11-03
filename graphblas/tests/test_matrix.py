@@ -1403,14 +1403,17 @@ def test_index_helpers_find_a_lazily_registered_op():
     """A helper uses an op registered with ``lazy=True`` before anything touches it.
 
     It looked only at the namespace's built ops, so ``row(A < 2.5)`` took the
-    ``<=`` shift until something touched ``indexunary.rowlt``, then the op.
+    ``<=`` shift until something touched ``indexunary.rowlt``, then the op. select
+    has a SelectOp for it only once the indexunary op is built, so ``select.row``
+    took the shift until ``indexunary.rowlt`` was touched.
     """
     A = Matrix.from_coo([0, 1, 2, 3], [0, 0, 0, 0], [1, 1, 1, 1])
     try:
-        indexunary.register_new("rowlt", lambda x, i, j, t: i < t, lazy=True)
+        # It answers otherwise than the <= shift, so the result shows which ran.
+        indexunary.register_new("rowlt", lambda x, i, j, t: i == 0, lazy=True)
         for _ in range(2):
-            assert indexunary.row(A < 2.5).new().to_coo()[2].tolist() == [True] * 3 + [False]
-            assert select.row(A < 2.5).new().to_coo()[0].tolist() == [0, 1, 2]
+            assert select.row(A < 2.5).new().to_coo()[0].tolist() == [0]
+            assert indexunary.row(A < 2.5).new().to_coo()[2].tolist() == [True] + [False] * 3
     finally:
         for ns in [indexunary, select]:
             ns._delayed.pop("rowlt", None)
