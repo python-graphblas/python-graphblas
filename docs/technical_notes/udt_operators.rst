@@ -162,8 +162,8 @@ pair of built-in types:
    * - An existing object: ``w << v``, ``v.dup(dtype=...)``, with or without a mask, an
        accumulator or ``replace``
      - Cast in one pass.
-   * - An element-wise lifted operation: ``apply``, ``ewise_mult``, ``ewise_union``, and
-       the infix operators that use them
+   * - An element-wise lifted operation, or ``identity``, ``first`` or ``second``:
+       ``apply``, ``ewise_mult``, ``ewise_union``, and the infix operators that use them
      - The operator writes the object's type as it computes. ``a += 0.5`` on an
        ``INT8[3]`` Vector computes in FP64 and truncates, as it does on an INT8 Vector.
    * - Anything else: ``mxm``, ``mxv``, a reduction into a Vector, ``ewise_add``, a
