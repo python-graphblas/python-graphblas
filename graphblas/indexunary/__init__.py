@@ -56,6 +56,11 @@ def row(expr):
 
     The example will dispatch to ``gb.indexunary.rowle(A, 5)``
     while being potentially nicer to read.
+
+    For a Vector, ``gb.indexunary.row(v < 4)`` compares indices. Unlike
+    ``gb.select.index``, ``gb.indexunary.index`` is not a helper but the
+    ``rowindex`` op, so ``gb.indexunary.index(v < 4)`` gives the index of each
+    entry of ``v < 4``.
     """
     return _resolve_expr(expr, "row", "row")
 
