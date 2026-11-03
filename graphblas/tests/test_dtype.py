@@ -406,6 +406,24 @@ def test_register_anonymous_array_numba_cannot_type():
         assert f"cannot type an array of {element}" in str(exc_info.value.__cause__)
 
 
+def test_register_anonymous_raw_bytes_numba_cannot_type():
+    # A void dtype with no fields is raw bytes, which Numba cannot type, alone or in
+    # an array or record. Its own error was "NumbaNotImplementedError: |V4" in color.
+    for np_type, raw in [
+        (np.dtype("V4"), "V4"),
+        (np.dtype(("V4", (2,))), "V4"),
+        (np.dtype([("_rbt_a", "V3"), ("_rbt_b", np.int8)]), "V3"),
+        (np.dtype([("_rbt_c", [("_rbt_d", "V2")])]), "V2"),
+    ]:
+        if not supports_udfs:
+            assert dtypes.register_anonymous(np_type).np_type == np_type
+            continue
+        match = rf"cannot type raw bytes \(\|{raw}\).*np.dtype\(\(np.uint8, {raw[1:]}\)\)"
+        with pytest.raises(ValueError, match=match):
+            dtypes.register_anonymous(np_type)
+        assert np_type not in core.dtypes._registry
+
+
 def test_register_anonymous_from_dataclass_deferred_annotations():
     """Dataclass fields annotated as strings (PEP 563 / 649) resolve through ``lookup_dtype``."""
     from dataclasses import make_dataclass
