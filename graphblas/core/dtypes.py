@@ -111,10 +111,13 @@ def _get_udt_c_type_info(datatype):
     The returned ``c_name`` may differ from ``datatype.name``: if the user
     didn't supply a name, or supplied one that isn't a valid C identifier,
     ``_udt_c_typedef`` synthesizes a fresh ``_gbudt_NNN`` name so the UDT
-    can still take the JIT path. Returns ``None`` only for the cases that
-    remain unrepresentable in C: an unsupported field type (object,
-    datetime, string), or a field name that collides with a C reserved
-    word or isn't an identifier. Supports record UDTs (including nested
+    can still take the JIT path. Returns ``None`` when the UDT has no C form
+    here: a record laid out other than as a C compiler lays out its struct
+    (packed, as ``np.dtype([...])`` is without ``align=True``), a field name
+    that is not a valid C identifier (a C reserved word, say), a field that
+    is an array (only an array UDT is flattened, to ``v[n]``), a field or
+    element type with no C type (object, datetime, text), or a UDT that is
+    neither a record nor an array. Supports record UDTs (including nested
     records) and array UDTs (e.g., ``FP64[3]``).
     """
     from .operator.udt_codegen import _udt_c_typedef
