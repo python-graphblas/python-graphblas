@@ -551,7 +551,13 @@ class BinaryOp(OpBase):
         # only key a cache entry on a stable on-disk source, which lambdas and
         # interactively defined functions do not have, so ops registered by
         # users stay uncached.
-        binary_udf = numba.njit(func, error_model="numpy", cache=cache)
+        try:
+            binary_udf = numba.njit(func, error_model="numpy", cache=cache)
+        except RuntimeError:
+            # Numba has nowhere to write the cache ("no locator available"): a
+            # read-only install whose user has no writable cache directory
+            # either. Compile uncached, as for an op a user registers.
+            binary_udf = numba.njit(func, error_model="numpy")
         new_type_obj = cls(name, func, anonymous=anonymous, is_udt=is_udt, numba_func=binary_udf)
         return_types = {}
         nt = numba.types

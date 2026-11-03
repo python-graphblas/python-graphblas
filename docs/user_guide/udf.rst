@@ -237,7 +237,8 @@ object linking, which caching cannot remove.
 If that ``__pycache__`` directory is not writable (a read-only install, for
 example), Numba silently falls back to its per-user cache directory
 (``~/.cache/numba`` on Linux, ``~/Library/Caches/numba`` on macOS; set
-``NUMBA_CACHE_DIR`` to override). No warning is emitted for the fallback.
+``NUMBA_CACHE_DIR`` to override). No warning is emitted for the fallback. If
+neither is writable, these operators are compiled uncached, once per process.
 
 Operators you create with ``register_new`` or ``register_anonymous`` are never
 passed ``cache=True``: Numba can only cache a function with a stable on-disk
