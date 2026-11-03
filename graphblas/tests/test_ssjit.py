@@ -3071,8 +3071,12 @@ def test_udt_jit_c_name_too_long_keeps_the_cfunc():
         pytest.skip("requires SuiteSparse:GraphBLAS >= 9")
     _require_jit_on()
     rec = np.dtype([("tl_x", np.float64), ("tl_y", np.int64)], align=True)
-    # Its C name, gbudt_ and the name, has 125 characters and fits; plus_ and that does not.
-    t = dtypes.register_new("TooLongName" + "t" * 108, rec)
+    # A numpy UDT's C name leaves room for its ops' names, but one registered from C
+    # source keeps the name given: 125 characters fits, plus_ or eq_ and that does not.
+    name = "TooLongName" + "t" * 114
+    t = dtypes.ss.register_new(
+        name, f"typedef struct {{ double tl_x ; int64_t tl_y ; }} {name} ;", np_type=rec
+    )
     assert len(t.jit_c_name) == 125
     n = 40
     vals = np.zeros(n, t.np_type)
@@ -3147,24 +3151,33 @@ def test_udt_named_like_an_identifier_in_the_kernel_takes_the_jit():
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.skipif("not _has_jit_set")
 def test_udt_long_name_gets_a_c_name_that_fits():
-    """A UDT whose ``gbudt_`` C name would reach 128 characters gets a short synthetic one.
+    """A UDT whose ``gbudt_`` C name would not leave room for its ops' names gets a synthetic one.
 
-    SuiteSparse refuses a type name of 128 characters or more and keeps the type with an
-    empty one, so its first kernel, a transpose say, raised ``JitError``.
+    SuiteSparse refuses a name of 128 characters or more. A type with such a name was kept
+    with an empty one, so its first kernel, a transpose say, raised ``JitError``; and with a
+    C name of 119 to 127 characters, ``floordiv_`` or ``plus_`` and it did not fit, so the
+    op lost its JIT with a NoJITWarning that blamed the fields.
     """
+    from graphblas.core.operator.udt_codegen import _max_type_c_name_len
+
     _require_jit_on()
-    for length in [121, 122, 200]:
+    assert _max_type_c_name_len() == 118  # 127 less floordiv_
+    for length in [112, 113, 119, 200]:
         record = np.dtype([(f"fit{length}_a", np.float64), (f"fit{length}_b", np.int64)])
         udt = dtypes.register_anonymous(record, "n" * length)
-        if length == 121:
-            assert udt.jit_c_name == "gbudt_" + "n" * 121  # 127 characters
+        if length == 112:
+            assert udt.jit_c_name == "gbudt_" + "n" * 112  # 118 characters
         else:
             assert udt.jit_c_name.startswith("_gbudt_"), length
+        for op in [binary.floordiv[udt], binary.plus[udt], binary.eq[udt], unary.ainv[udt]]:
+            assert op.jit_c_source is not None, (length, op)
         vals = np.array([(1.0, 2), (3.0, 4)], dtype=record)
         A = gb.Matrix.from_coo([0, 1], [1, 0], vals, dtype=udt)
         with _jit_mode("on"):
             B = A.T.new()
+            C = A.ewise_mult(A, binary.plus).new()
         assert B.to_coo()[2].tolist() == [(3.0, 4), (1.0, 2)], length
+        assert C.to_coo()[2].tolist() == [(2.0, 4), (6.0, 8)], length
 
 
 def test_udt_c_name_keeps_python_graphblas_own_names():
