@@ -1382,10 +1382,25 @@ def test_indexunary_helpers(A):
         indexunary.value(A)
     with pytest.raises(TypeError, match="indexunary.row"):
         indexunary.row(A | A)
-    with pytest.raises(ValueError, match="roweq"):
-        indexunary.row(A == 3)
-    with pytest.raises(ValueError, match="coleq"):
-        indexunary.column(A == 3)
+    for helper, ns in [(indexunary.row, "indexunary"), (select.column, "select")]:
+        with pytest.raises(ValueError, match=f"{ns}.(row|column) compares indices with <, <="):
+            helper(A == 3)
+    # Anything but a comparison with a scalar on the right is refused by name. These
+    # raised IndexError, AttributeError, or the error of the op the helper picked.
+    for expr in [
+        abs(A),
+        A.mxm(A),
+        A.apply(binary.gt, left=3),
+        A.apply(binary.plus, right=3),
+        A.apply(binary.isgt, right=3),
+        A.ewise_mult(A, binary.gt),
+    ]:
+        for helper in [indexunary.value, select.value, indexunary.row]:
+            with pytest.raises(TypeError, match=r"takes a comparison .* with a scalar on its"):
+                helper(expr)
+    # An empty Scalar thunk raises as it does for the op; it raised from the shift.
+    with pytest.raises(EmptyObject):
+        indexunary.row(A < Scalar(float)).new()
 
 
 @autocompute
