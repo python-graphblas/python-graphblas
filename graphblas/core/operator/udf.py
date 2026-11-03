@@ -725,8 +725,16 @@ def _check_udf_fills_output(numba_func, numba_ret_type, return_type, zkind, arg_
             (path, numba_ret_type.types[i], leaf.shape, i)
             for i, (path, _c, leaf) in enumerate(leaves)
         ]
+    elif isinstance(numba_ret_type, numba.core.types.Array):
+        # An array returned for a scalar (a select's bool, say) fills it only with one
+        # value, which running the UDF shows; one that cannot is recorded, not refused,
+        # since its shape may depend on the values (``x[x > 0]``).
+        ran, error = _run_udf_probe(numba_func, arg_dtypes)
+        if ran is not None and np.size(ran[0]) != 1:
+            error = ValueError(f"returned an array of shape {np.shape(ran[0])} for a scalar")
+        return error
     else:
-        return
+        return None
     unknown = []
     for path, nb_type, expected, i in slots:
         if isinstance(nb_type, (numba.core.types.Optional, numba.core.types.NoneType)):
