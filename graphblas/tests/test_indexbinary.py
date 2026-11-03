@@ -612,6 +612,27 @@ def test_bad_type():
         indexbinary.register_anonymous(42)
 
 
+def test_type_the_op_does_not_take():
+    """``R in op`` is False and ``op[R]`` raises KeyError, as for an IndexUnaryOp.
+
+    Both raised AttributeError: IndexBinaryOp had no ``is_positional``, which
+    ``op[R]`` reads for a type the op does not have.
+    """
+
+    def add_vals(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+        return x + y + theta
+
+    op = indexbinary.register_anonymous(add_vals)
+    rec = dtypes.register_anonymous(
+        np.dtype([("ibt_a", np.float64), ("ibt_b", np.int64)]), "_IbtRec"
+    )
+    assert dtypes.INT64 in op
+    assert rec not in op
+    for expr in [lambda: op[rec], lambda: op(Scalar.from_value((1.0, 2), rec), dtype=rec)]:
+        with pytest.raises(KeyError, match="does not work with _IbtRec"):
+            expr()
+
+
 def test_with_mask():
     def add_vals(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
         return x + y + theta

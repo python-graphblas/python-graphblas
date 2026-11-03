@@ -330,6 +330,9 @@ class IndexBinaryOp(OpBase):
     _module = indexbinary
     _modname = "indexbinary"
     _custom_dtype = None
+    # Read by ``OpBase.__getitem__`` for a type the op does not have; no
+    # IndexBinaryOp is positional.
+    is_positional = False
     _typed_class = TypedBuiltinIndexBinaryOp
     _typed_user_class = TypedUserIndexBinaryOp
     # No built-in IndexBinaryOps; no parse config needed
