@@ -787,6 +787,14 @@ def test_select(s):
     assert select.valuene(5, s).new().is_empty
     with pytest.raises(TypeError):
         select.value(s | s)
+    # An index helper reads the thunk after taking the Scalars out of their Vectors;
+    # it read it from a Vector (AttributeError: 'Vector' object has no attribute 'value').
+    assert select.row(s < 1).new() == s
+    assert select.row(s >= 1).new().is_empty
+    assert gb.indexunary.row(s < 1).new().value is True
+    assert gb.indexunary.row(s >= 0.5).new().value is False
+    with pytest.raises(TypeError, match="select.value takes a comparison"):
+        select.value(s + 1)
 
 
 @pytest.mark.skipif("not suitesparse")
