@@ -5751,6 +5751,55 @@ def test_udt_record_literal_may_be_a_list():
             expr()
 
 
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_select_by_equality():
+    """``select("==", x)`` and ``"!="`` keep what ``==`` and ``!=`` find, as for built-in dtypes.
+
+    No select op lifts to UDTs, so they raised ``valueeq does not work with``,
+    and ``v.select(v == x)`` raised AttributeError from a UDT Scalar's pointer.
+    """
+    rec = dtypes.register_anonymous(np.dtype([("se_a", np.int8), ("se_b", np.float64)]), "_SelEq")
+    v = Vector(rec, size=4)
+    v[0] = (1, 2.0)
+    v[1] = (3, 4.0)
+    v[2] = (1, 2.0)
+    x = (1, 2.0)
+    for expr, indices in [
+        (lambda: v.select("==", x), [0, 2]),
+        (lambda: v.select("!=", x), [1]),
+        (lambda: v.select(select.valueeq, gb.Scalar.from_value((3, 4.0), rec)), [1]),
+        (lambda: v.select(indexunary.valueeq, x), [0, 2]),
+        (lambda: select.valueeq(v, x), [0, 2]),
+        (lambda: select.value(v == x), [0, 2]),
+        (lambda: v.select(v == x), [0, 2]),
+        # Typed as == types it: an int beyond a field, or a float, equals nothing
+        (lambda: v.select("==", (300, 2.0)), []),
+        (lambda: v.select("==", (1.5, 2.0)), []),
+    ]:
+        result = expr().new()
+        assert result.dtype == rec
+        assert result.to_coo()[0].tolist() == indices
+    assert v.select("==", x).new()[0].new().value.tolist() == x
+    w = Vector(rec, size=4)
+    w[0] = (1, 1.0)
+    w(accum=binary.plus) << v.select("==", x)
+    assert w.to_coo()[1].tolist() == [(2, 3.0), (1, 2.0)]
+    A = Matrix(rec, nrows=2, ncols=2)
+    A[0, 0] = x
+    A[1, 1] = (5, 6.0)
+    for expr, expected in [
+        (lambda: A.select("==", x), ([0], [0])),
+        (lambda: A.select("!=", x), ([1], [1])),
+        (lambda: A.select(A == x), ([0], [0])),
+        (lambda: A.T.select("==", (5, 6.0)), ([1], [1])),
+    ]:
+        rows, cols, _ = expr().new().to_coo()
+        assert (rows.tolist(), cols.tolist()) == expected
+    # Ordering does not lift to UDTs
+    with pytest.raises(KeyError, match="valuelt does not work with _SelEq"):
+        v.select("<", x)
+
+
 def test_udt_record_date_literals_compare_as_numpy():
     """A Python date or duration, or a date as text, in a record literal is typed as numpy types it.
 

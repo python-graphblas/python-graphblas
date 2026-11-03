@@ -67,7 +67,9 @@ from .vector import (
     VectorExpression,
     VectorIndexExpr,
     _isclose_recipe,
+    _select_by_comparison,
     _select_mask,
+    _udt_select_comparison,
 )
 
 if backend == "suitesparse":
@@ -2816,6 +2818,19 @@ class Matrix(BaseType):
         if thunk is None:
             thunk = False  # most basic form of 0 when unifying dtypes
         given = thunk
+        if (comparison := _udt_select_comparison(op, self.dtype)) is not None:
+            if type(thunk) is not Scalar:
+                thunk, dtype = _literal_operand(self.dtype, thunk, comparison)
+                thunk = Scalar.from_value(thunk, dtype, is_cscalar=None, name="")
+            return MatrixExpression(
+                method_name,
+                None,
+                [self, thunk, _select_by_comparison, (self, comparison, thunk)],
+                expr_repr=f"{{0.name}}.select({op}, thunk={{1._expr_name}})",
+                nrows=self._nrows,
+                ncols=self._ncols,
+                dtype=self.dtype,
+            )
         if type(thunk) is not Scalar:
             # A thunk beside a UDT becomes an element of it, so it must fit, as in apply.
             thunk, dtype = _literal_operand(self.dtype, thunk, op)

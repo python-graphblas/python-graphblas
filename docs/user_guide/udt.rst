@@ -128,6 +128,8 @@ The following operators auto-lift to any UDT on first use:
   ``second``, ``any``, and ``pair`` work too, since they don't touch field
   values.
 - UnaryOps: ``ainv``, ``abs``.
+- ``select`` with ``valueeq`` or ``valuene`` (``v.select("==", x)``), which
+  keeps the elements that ``==`` or ``!=`` finds.
 - Monoids: ``plus``, ``times``, ``min``, ``max``, ``any``.
 - Semirings combining a UDT-lifting monoid with a UDT-lifting BinaryOp
   (e.g., ``plus_times``, ``min_plus``, ``max_times``, ``any_first``).
