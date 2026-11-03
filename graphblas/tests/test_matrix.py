@@ -1269,6 +1269,24 @@ def test_apply_indexunary(A):
     assert pickle.loads(pickle.dumps(indexunary.tril[int])) is indexunary.tril[int]
 
 
+@autocompute
+def test_select_by_a_transposed_comparison():
+    """``A.select(A.T == x)`` keeps the entries where ``A.T == x``, as a computed mask does.
+
+    It was rewritten to ``select.valueeq(A, x)``, which drops the transpose, and
+    for a matrix that is not square the DimensionMismatch (on main since #252).
+    """
+    S = Matrix.from_coo([0, 1], [1, 0], [1, 5], nrows=2, ncols=2)
+    expected = Matrix.from_coo([1], [0], [5], nrows=2, ncols=2)
+    assert S.select(S.T == 1).new().isequal(expected)
+    assert S.select((S.T == 1).new()).new().isequal(expected)
+    # The rewrite still serves the comparison of the object itself
+    assert S.select(S == 1).new().isequal(Matrix.from_coo([0], [1], [1], nrows=2, ncols=2))
+    B = Matrix.from_coo([0, 1], [1, 2], [1, 1], nrows=2, ncols=3)
+    with pytest.raises(DimensionMismatch):
+        B.select(B.T == 1).new()
+
+
 def test_select(A):
     A3 = Matrix.from_coo([0, 3, 3, 6], [3, 0, 2, 4], [3, 3, 3, 3], nrows=7, ncols=7)
     w1 = A.select(select.valueeq, 3).new()

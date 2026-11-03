@@ -116,7 +116,7 @@ def _match_expr(parent, expr):
         and len(args) == 2
         and op.parent in _binary_to_select
         and args[1]._is_scalar
-        and (args[0] is parent or getattr(args[0], "T", None) is parent)
+        and args[0] is parent
         and op.type in _binary_to_select[op.parent]
     ):
         selectop = _binary_to_select[op.parent][op.type]
