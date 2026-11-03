@@ -1621,6 +1621,19 @@ def test_python_number_is_weak_beside_builtin_dtypes():
             assert i8.apply(op, left=-300).new().to_coo()[1].tolist() == values
         result = i8.ewise_union(w8, binary.isclose, 0, 300).new()
         assert result.to_coo()[1].tolist() == [False, False]
+        # A user's op named like a comparison is not one: the int is not made infinity
+        # (it gave [-inf, -inf] and [True, True]; main gives these, as numpy would)
+
+        def ge(x, y):
+            return x * 1.0 - y
+
+        def eq(x, y):
+            return y - x > 250
+
+        result = i8.apply(binary.register_anonymous(ge), right=300).new()
+        assert result.to_coo()[1].tolist() == [-200.0, -400.0]
+        result = i8.apply(binary.register_anonymous(eq), right=300).new()
+        assert result.to_coo()[1].tolist() == [False, True]
     # Typed scalars promote as numpy 2 promotes them, on numpy 1 too.
     assert dtypes.unify(dtypes.INT8, dtypes.INT64, is_right_scalar=True) == dtypes.INT64
 
