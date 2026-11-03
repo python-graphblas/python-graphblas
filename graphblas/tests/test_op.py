@@ -218,6 +218,25 @@ def test_unaryop_on_udt_needs_numba():
             v.apply(unop).new()
 
 
+@pytest.mark.skipif("supports_udfs")
+def test_udt_isequal_needs_numba():
+    """Without Numba, ``isequal`` of a Vector or Matrix of a UDT says it needs Numba.
+
+    It raised binary.eq's bare KeyError. A Scalar compares in numpy.
+    """
+    rec = dtypes.register_anonymous(np.dtype([("nn_c", np.int8), ("nn_d", np.float64)]))
+    text = dtypes.register_anonymous(np.dtype("S4"), "_NoNumbaText")
+    v = Vector(rec, size=2)
+    v[0] = (1, 2.0)
+    t = Matrix(text, nrows=1, ncols=1)
+    t[0, 0] = b"ab"
+    for expr in [lambda: v.isequal(v), lambda: t.isequal(t), lambda: v == v]:
+        with pytest.raises(KeyError, match="work on UDTs only with Numba installed"):
+            expr()
+    assert gb.Scalar.from_value((1, 2.0), rec).isequal(v[0].new())
+    assert gb.Scalar.from_value(b"ab", text) == b"ab"
+
+
 @pytest.mark.skipif("not supports_udfs")
 def test_unaryop_udf():
     def plus_one(x):
