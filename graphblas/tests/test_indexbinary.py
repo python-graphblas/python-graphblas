@@ -7,7 +7,7 @@ import graphblas as gb
 from graphblas import Matrix, Scalar, Vector, dtypes, indexbinary
 from graphblas.core import _supports_udfs as supports_udfs
 from graphblas.core.operator.indexbinary import _has_idxbinop
-from graphblas.exceptions import UdfParseError
+from graphblas.exceptions import EmptyObject, UdfParseError
 
 pytestmark = [
     pytest.mark.skipif(not supports_udfs, reason="requires numba"),
@@ -386,6 +386,18 @@ def test_array_udt_udf_shape_is_checked():
 
     good = indexbinary.register_anonymous(_combine, is_udt=True)
     assert good[arr_udt].return_type is arr_udt
+
+
+def test_empty_scalar_theta():
+    # SuiteSparse would read the empty Scalar's value: a crash, or a value it never held
+    op = indexbinary.register_anonymous(_ibo_add_theta)
+    opu = indexbinary.register_anonymous(_ibo_add_theta, is_udt=True)
+    cleared = Scalar.from_value(5)
+    cleared.clear()
+    for theta in [Scalar(int), Scalar(int, is_cscalar=True), cleared]:
+        for bind in [op, opu, op[int], opu[int], lambda t: op(t, dtype=int)]:
+            with pytest.raises(EmptyObject, match="theta is an empty Scalar"):
+                bind(theta)
 
 
 def test_bind_raw_udt_theta_without_dtype():

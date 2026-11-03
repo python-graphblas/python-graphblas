@@ -6,7 +6,7 @@ import numpy as np
 
 from ... import _STANDARD_OPERATOR_NAMES, indexbinary
 from ...dtypes import BOOL, INT8, UINT64, lookup_dtype
-from ...exceptions import UdfParseError, check_status_carg
+from ...exceptions import EmptyObject, UdfParseError, check_status_carg
 from .. import _has_numba, ffi, lib
 from ..dtypes import _sample_values, unify
 from .base import OpBase, ParameterizedUdf, TypedOpBase
@@ -70,6 +70,14 @@ def _theta_to_scalar(theta, dtype):
                 "(op[dtype](theta), or op(theta, dtype=...))."
             ) from exc
         raise
+
+
+def _refuse_empty_theta(theta):
+    # SuiteSparse binds theta without checking that it holds a value: binding a new
+    # empty Scalar crashes, and a copy of one binds whatever its value array holds.
+    # ``apply`` with an IndexUnaryOp raises EmptyObject for an empty thunk.
+    if theta._is_empty:
+        raise EmptyObject("theta is an empty Scalar; bind a Scalar that holds a value")
 
 
 class _BoundIndexBinaryOp(TypedOpBase):
@@ -235,6 +243,7 @@ class TypedBuiltinIndexBinaryOp(TypedOpBase):
             val, dt = theta.value, theta.dtype
             theta = Scalar.from_value(val, dt, is_cscalar=False, name="")  # pragma: is_grbscalar
             # fmt: on
+        _refuse_empty_theta(theta)
         new_binop = ffi_new("GrB_BinaryOp*")
         check_status_carg(
             lib.GxB_BinaryOp_new_IndexOp(new_binop, self.gb_obj, theta._carg),
@@ -677,6 +686,7 @@ class IndexBinaryOp(OpBase):
             theta = False
         if dtype is None:
             if isinstance(theta, Scalar):
+                _refuse_empty_theta(theta)
                 # Bound when it runs, so keep the value theta has now.
                 theta = theta.dup(name="")
             else:

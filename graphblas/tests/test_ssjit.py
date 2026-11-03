@@ -28,6 +28,7 @@ from graphblas.core.operator.indexbinary import _has_idxbinop
 from graphblas.core.operator.udt_codegen import _has_jit_set
 from graphblas.core.ss import _IS_SSGB7
 from graphblas.core.ss.jit_config import _enable_jit_for_udt
+from graphblas.exceptions import EmptyObject
 
 from .conftest import autocompute, burble
 
@@ -824,6 +825,10 @@ def test_jit_indexbinary(v):
         v64.ewise_mult(v64, add_theta(10))
     with pytest.raises(KeyError, match="add_theta does not work with .INT64, INT64, FP64. types"):
         v.ewise_mult(v, add_theta(10.0))
+    # An empty theta is refused, as for any IndexBinaryOp (SuiteSparse would read its value)
+    for bind in [add_theta, add_theta["FP64"]]:
+        with pytest.raises(EmptyObject, match="theta is an empty Scalar"):
+            bind(gb.Scalar("FP64"))
     # Test duplicate registration fails
     assert "FP32" not in add_theta
     with burble():
