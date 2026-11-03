@@ -99,8 +99,13 @@ def _literal_operand(dtype, value, op, *, left=False):
             # truediv gives float leaves whatever the int, so, as a comparison, it
             # types an int out of an integer leaf's range exactly instead of raising.
             exact = is_comparison or op.name == "truediv"
-            if is_comparison and not isinstance(value, (np.generic, np.ndarray)):
-                np_type = dtype.np_type
+            np_type = dtype.np_type
+            if is_comparison and np_type.kind == "S" and isinstance(value, str):
+                # A str, np.str_ included, that bytes cannot hold (numpy encodes ASCII)
+                # equals no element, as in numpy; one byte longer than any, it compares so.
+                if not value.isascii():
+                    value = b"\xff" * (np_type.itemsize + 1)
+            elif is_comparison and not isinstance(value, (np.generic, np.ndarray)):
                 parts = _as_record_parts(np_type, value)
                 # Check shapes first: _beyond_as_infinity reads each part in its
                 # field's shape, which would hide a part of another shape.
@@ -110,10 +115,6 @@ def _literal_operand(dtype, value, op, *, left=False):
                     # makes a float array, not an object one, of a part that
                     # also holds numpy values.
                     value = _beyond_as_infinity(np_type, parts)
-                elif np_type.kind == "S" and isinstance(value, str) and not value.isascii():
-                    # Bytes cannot hold it (numpy encodes ASCII), so it equals no
-                    # element, as in numpy; one byte longer than any, it compares so.
-                    value = b"\xff" * (np_type.itemsize + 1)
             literal_type = _literal_type(dtype, value, exact=exact)
             if literal_type is not None:
                 return value, literal_type
