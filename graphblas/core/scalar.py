@@ -302,6 +302,17 @@ class Scalar(BaseType):
         if type(other) is not Scalar:
             if other is None:
                 return self._is_empty
+            if type(other) is int and not -(2**63) <= other < 2**63:
+                # INT64, a Python int's dtype, cannot hold it; compare in Python, as isequal does
+                if self._is_empty:
+                    return False
+                x = self.value
+                try:
+                    return x == other or abs(x - other) <= max(
+                        rel_tol * max(abs(x), abs(other)), abs_tol
+                    )
+                except OverflowError:  # An int too large for a float, beside a float
+                    return False
             try:
                 other = Scalar.from_value(other, is_cscalar=None, name="s_isclose")
             except TypeError:
