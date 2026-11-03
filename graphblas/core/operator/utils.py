@@ -78,12 +78,16 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
                 return op[UINT64]
             if op._udt_types is None:
                 raise KeyError(f"{op.name} does not work with ({dtype}, {dtype2})")
-            if kind == "binary" and isinstance(op, Monoid):
+            if isinstance(op, Monoid):
                 # A Monoid takes one type, but used element-wise it is its
                 # BinaryOp, which takes the pair: ``v.ewise_mult(w, monoid.plus)``
-                # works where ``v * w`` does. Indexing (``monoid.plus[X, Y]``)
-                # still raises.
-                return get_typed_op(op.binaryop, dtype, dtype2)
+                # works where ``v * w`` does. Indexed with the pair, it takes the
+                # type its BinaryOp gives them, as ``monoid.plus["INT8", "INT16"]``
+                # is ``monoid.plus["INT16"]``.
+                binaryop = get_typed_op(op.binaryop, dtype, dtype2)
+                if kind == "binary":
+                    return binaryop
+                return op[binaryop.return_type]
             return op._compile_udt(dtype, dtype2)
         # Generic case: try to unify the two dtypes
         try:
