@@ -4945,6 +4945,39 @@ def test_udt_record_array_field_refuses_literal_of_another_shape():
         assert value["shp_b"] == 1
 
 
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_array_literal_broadcasts_with_an_array_udt():
+    """An array literal pairs with an array UDT when their shapes broadcast, as a UDT operand does.
+
+    The result has the shape numpy's would: ``INT8[3]`` and a 2-by-3 array
+    give ``[2, 3]``, as ``INT8[3]`` and an ``INT64[2, 3]`` UDT do. Before, an
+    array paired only when it broadcast to the UDT's shape; any other was
+    converted into the UDT and raised numpy's "could not broadcast" error.
+    """
+    i8x3 = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_BcastI8x3")
+    i8x1 = dtypes.register_anonymous(np.dtype((np.int8, (1,))), "_BcastI8x1")
+    int64 = np.array([1]).dtype  # int32 on Windows with numpy 1
+    v = Vector(i8x3, size=1)
+    v[0] = [1, 2, 3]
+    u = Vector(i8x1, size=1)
+    u[0] = [1]
+    rows = np.array([[1, 2, 3], [4, 5, 6]])
+    for expr in [lambda: v + rows, lambda: v.apply(binary.plus, left=rows)]:
+        result = expr().new()
+        assert result.dtype.np_type == np.dtype((int64, (2, 3)))
+        assert result[0].new().value.tolist() == [[2, 4, 6], [5, 7, 9]]
+    result = (u + np.array([1, 2, 3])).new()
+    assert result.dtype.np_type == np.dtype((int64, (3,)))
+    assert result[0].new().value.tolist() == [2, 3, 4]
+    assert (v + np.array([[1], [2]])).new()[0].new().value.tolist() == [[2, 3, 4], [3, 4, 5]]
+    assert (v == np.array([[1, 2, 3], [1, 2, 3]])).new()[0].new().value
+    assert not (v == rows).new()[0].new().value
+    assert v[0].new() == np.array([[1, 2, 3], [1, 2, 3]])
+    # A literal that must become an element must still fit it.
+    with pytest.raises(ValueError, match="does not fit _BcastI8x3"):
+        v.ewise_union(v, binary.plus, rows, 0)
+
+
 def test_udt_record_date_literals_compare_as_numpy():
     """A Python date or duration, or a date as text, in a record literal is typed as numpy types it.
 

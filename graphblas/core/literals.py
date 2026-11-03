@@ -805,11 +805,13 @@ def _array_literal_udt(dtype, value):
     An array has a dtype, so it is strong, as numpy 2 treats it:
     ``int8_udt + np.array([0.5, 1, 2])`` has float64 elements and
     ``+ np.array([1, 2, 3])`` int64 ones. Its type is the array layout of its
-    dtype, in its own shape when that pairs with the UDT's and in the UDT's
-    shape when it broadcasts to that (``np.array([1])`` beside ``INT8[3]``).
-    A 0-d structured array or ``np.void`` beside a record is its record dtype.
-    Anything else, such as a numeric array beside a record, is converted into
-    the UDT.
+    dtype: in the UDT's shape when it broadcasts to that (``np.array([1])``
+    beside ``INT8[3]``), which a literal that must become an element needs,
+    else in its own shape when the two broadcast together, so that an op's
+    result takes the shape numpy's would (``INT8[3]`` and a 2-by-3 array give
+    ``[2, 3]``). A 0-d structured array or ``np.void`` beside a record is its
+    record dtype. Anything else, such as a numeric array beside a record, is
+    converted into the UDT.
     """
     np_type = dtype.np_type
     if value.dtype.names is not None:
@@ -825,5 +827,9 @@ def _array_literal_udt(dtype, value):
         try:
             np.broadcast_to(value, shape)
         except ValueError:
-            return None
+            try:
+                np.broadcast_shapes(value.shape, shape)
+            except ValueError:
+                return None
+            shape = value.shape
     return lookup_dtype(np.dtype((value.dtype, shape)))
