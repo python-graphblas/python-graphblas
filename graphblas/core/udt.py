@@ -497,15 +497,28 @@ def _fused_store_expr(expr, output_dtype):
     return rv
 
 
-def _scalar_accum_op(scalar, accum):
-    """Return the op to accumulate into ``scalar`` with, as ``scalar.ewise_add`` runs it.
+def _scalar_accum_operand(scalar, value):
+    """Return ``value`` to accumulate into ``scalar``, converted to its type if that is a UDT.
 
-    ``__call__`` types ``accum`` on the object's dtype. For a UDT Scalar, that
-    would convert a literal into the UDT (``s += 0.5``), where a Vector
-    computes ``s + 0.5`` in its own type and casts as it stores; the untyped
-    op does the same here.
+    ``__call__`` types the accumulator on the object's dtype, as GraphBLAS
+    needs, so for a built-in Scalar GraphBLAS converts the value to that type
+    before it accumulates: an INT8 Scalar's ``s += 0.5`` adds 0, as a Vector's
+    ``v(accum=binary.plus) << 0.5`` does. GraphBLAS cannot convert a value to a
+    UDT, so for a UDT Scalar it is converted here, as storing it would convert
+    it: a literal as ``Scalar.from_value`` converts it, and a Scalar or an
+    element by :func:`_cast_for_store`, which raises for a type that does not
+    cast. ``value`` is a literal, a Scalar, or an element to extract.
     """
-    return accum.parent if scalar.dtype._is_udt else accum
+    if not scalar.dtype._is_udt:
+        return value
+    from .scalar import Scalar
+
+    if output_type(value) is Scalar:
+        return _cast_for_store(value, scalar.dtype)
+    try:
+        return Scalar.from_value(value, scalar.dtype, is_cscalar=False, name="")
+    except TypeError:  # not a scalar; ewise_add reports it
+        return value
 
 
 def _cast_for_store(value, dtype):

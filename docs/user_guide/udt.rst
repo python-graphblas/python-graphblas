@@ -256,7 +256,10 @@ data.
        (``w << expr.new()``); to assign, convert the value with
        ``.dup(dtype=...)`` first.
    * - ...from a ``Scalar`` or one element
-     - Computed in its own type, then cast.
+     - Computed in its own type, then cast. With an accumulator, the value is
+       cast before it accumulates, as GraphBLAS converts a value of a built-in
+       dtype, and so is a literal: an ``INT8[3]`` Scalar's ``s += 0.5`` adds 0,
+       as an ``INT8`` Scalar's does.
    * - Between a UDT and a built-in dtype, or layouts that do not correspond
      - ``DomainMismatch``.
 

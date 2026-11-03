@@ -5787,9 +5787,8 @@ def test_udt_store_casts_reach_every_store_path():
 
     ``agg.first`` into a Scalar of another UDT handed GraphBLAS the output as it
     was, which read the int8 bytes as float64 (24 bytes from a 3-byte
-    element). Indexed assignment of an expression skipped the cast, a UDT
-    Scalar's ``s += 0.5`` converted 0.5 into the UDT where a Vector casts the
-    sum, and ``dup`` failed for a dtype given as a numpy dtype or a string.
+    element). Indexed assignment of an expression skipped the cast, and
+    ``dup`` failed for a dtype given as a numpy dtype or a string.
     """
     i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_PathI8")
     f8s = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "_PathF8")
@@ -5822,8 +5821,6 @@ def test_udt_store_casts_reach_every_store_path():
     x[[0, 1]] << w[[0, 1]].new().dup(dtype=i8s)
     assert x.to_coo()[1].tolist() == [[0, 0, 0], [1, 1, 1], [4, 5, 6]]
     s = gb.Scalar.from_value([1, 2, 3], dtype=i8s)
-    s += 0.5
-    np.testing.assert_array_equal(s.value, [1, 2, 3])
     s += 1
     np.testing.assert_array_equal(s.value, [2, 3, 4])
     result = s.dup(dtype=np.dtype((np.float64, (3,))))
@@ -5831,6 +5828,50 @@ def test_udt_store_casts_reach_every_store_path():
     np.testing.assert_array_equal(result.value, [2, 3, 4])
     with pytest.raises(DomainMismatch, match="a UDT casts only to another UDT"):
         s.dup(dtype="FP64")
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_scalar_accumulates_its_value_converted_to_its_type():
+    """A UDT Scalar's accumulator adds a value converted to the Scalar's type, as a built-in's does.
+
+    The accumulator is typed on the Scalar's dtype, and GraphBLAS converts the
+    value to that type first: an INT8 Scalar of -1 ``+= 0.5`` stays -1, and so
+    does a Vector's ``v(accum=binary.plus) << 0.5``. A UDT Scalar used the
+    untyped op instead, so it computed -1 + 0.5 and truncated the sum to 0.
+    """
+    i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_AccumI8")
+    f8s = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "_AccumF8")
+    halves = Vector(f8s, size=2)
+    halves[1] = [0.5, 1.5, 2.5]
+
+    def added(value):
+        s = gb.Scalar.from_value([-1, -1, -1], dtype=i8s)
+        s(accum=binary.plus) << value
+        return s.value.tolist()
+
+    def added_to_int8(value):
+        s = gb.Scalar.from_value(-1, dtype=INT8)
+        s(accum=binary.plus) << value
+        return s.value
+
+    assert added(0.5) == [added_to_int8(0.5)] * 3 == [-1, -1, -1]
+    assert added(2.5) == [added_to_int8(2.5)] * 3 == [1, 1, 1]
+    assert added((0.5, 1.5, 2.5)) == [-1, 0, 1]
+    assert added(halves[1]) == [-1, 0, 1]
+    assert added(gb.Scalar.from_value([0.5, 1.5, 2.5], dtype=f8s)) == [-1, 0, 1]
+    v = Vector(i8s, size=1)
+    v[0] = [-1, -1, -1]
+    v(accum=binary.plus) << (0.5, 1.5, 2.5)
+    assert v[0].new().value.tolist() == [-1, 0, 1]
+    s = gb.Scalar.from_value([-1, -1, -1], dtype=i8s)
+    s += 0.5
+    assert s.value.tolist() == [-1, -1, -1]
+    s.clear()
+    s(accum=binary.plus) << 0.5
+    assert s.value.tolist() == [0, 0, 0]
+    # A built-in Scalar casts only into a built-in type, as for a store.
+    with pytest.raises(DomainMismatch, match="a UDT casts only to another UDT"):
+        added(gb.Scalar.from_value(0.5))
 
 
 @pytest.mark.skipif("not supports_udfs")

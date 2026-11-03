@@ -10,7 +10,7 @@ from .expr import AmbiguousAssignOrExtract, Updater
 from .literals import _literal_store_dtype
 from .mask import Mask
 from .operator import UNKNOWN_OPCLASS, binary_from_string, find_opclass, get_typed_op
-from .udt import _fused_store_expr, _scalar_accum_op, _store_cast_op
+from .udt import _fused_store_expr, _scalar_accum_operand, _store_cast_op
 from .utils import _Pointer, libget, output_type
 
 _recorder = ContextVar("recorder")
@@ -343,7 +343,8 @@ class BaseType:
                 if expr._is_scalar and self._is_scalar:
                     # Extract element (s << v[1])
                     if accum is not None:
-                        self(**opts) << self.ewise_add(expr, _scalar_accum_op(self, accum))
+                        expr = _scalar_accum_operand(self, expr)
+                        self(**opts) << self.ewise_add(expr, accum)
                         return
                     expr.parent._extract_element(
                         expr.resolved_indexes,
@@ -370,7 +371,7 @@ class BaseType:
                     return
                 if self._is_scalar:
                     if accum is not None:
-                        self(**opts) << self.ewise_add(expr, _scalar_accum_op(self, accum))
+                        self(**opts) << self.ewise_add(expr, accum)
                         return
                     if opts:
                         # Ignore opts for now
@@ -392,7 +393,8 @@ class BaseType:
                     # s << (v @ v)
                     expr = expr._to_expr()
                 elif accum is not None:
-                    self(**opts) << self.ewise_add(expr, _scalar_accum_op(self, accum))
+                    expr = _scalar_accum_operand(self, expr)
+                    self(**opts) << self.ewise_add(expr, accum)
                     return
                 else:
                     if opts:
