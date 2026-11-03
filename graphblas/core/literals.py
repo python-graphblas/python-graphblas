@@ -179,13 +179,9 @@ def _weak_builtin_literal_dtype(dtype, value, op=None):
         # keep, so an int out of range is typed exactly, as for a comparison:
         # int8_vec / 300 is FP64, as numpy divides integers in float64.
         np_type = _weak_literal_leaf([value], kind, dtype.np_type, exact=True)
-    if np_type == dtype.np_type:
-        rv = dtype
-    else:
-        try:
-            rv = lookup_dtype(np_type)
-        except ValueError:  # A complex literal where the backend has no complex types
-            return None
+    # Where the backend has no complex types (vanilla), lookup_dtype registers a
+    # complex literal's dtype as a UDT, so the literal keeps its own type.
+    rv = dtype if np_type == dtype.np_type else lookup_dtype(np_type)
     if kind != "b" and rv.np_type in _SINGLE_PRECISION:
         parts = (value.real, value.imag) if kind == "c" else (float(value),)
         try:
