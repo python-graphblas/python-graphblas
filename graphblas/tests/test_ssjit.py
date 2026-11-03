@@ -1755,7 +1755,7 @@ def test_udt_jit_c_source_introspection():
     udt = dtypes.register_anonymous(record_dtype, "_IntrospectUDT")
 
     # dtype-level introspection
-    assert udt.jit_c_name == "_IntrospectUDT"
+    assert udt.jit_c_name == "gbudt__IntrospectUDT"
     assert "typedef struct" in udt.jit_c_definition
     assert "int64_t introsp_a" in udt.jit_c_definition
     assert "double introsp_b" in udt.jit_c_definition
@@ -1766,7 +1766,7 @@ def test_udt_jit_c_source_introspection():
 
     # Auto-lifted record UDT binary op
     plus_udt = binary.plus[udt]
-    assert plus_udt.jit_c_name == "plus__IntrospectUDT"
+    assert plus_udt.jit_c_name == "plus_gbudt__IntrospectUDT"
     src = plus_udt.jit_c_source
     assert src is not None
     assert "z->introsp_a = (x->introsp_a) + (y->introsp_a)" in src
@@ -1774,7 +1774,7 @@ def test_udt_jit_c_source_introspection():
 
     # Auto-lifted record UDT unary op
     ainv_udt = unary.ainv[udt]
-    assert ainv_udt.jit_c_name == "ainv__IntrospectUDT"
+    assert ainv_udt.jit_c_name == "ainv_gbudt__IntrospectUDT"
     assert "z->introsp_a = -(x->introsp_a)" in ainv_udt.jit_c_source
 
     # Array UDT auto-lifted op. Use a shape no other test uses: ``np.dtype``
@@ -1803,7 +1803,7 @@ def test_udt_jit_c_source_introspection():
     # Monoid-based aggregator walks to its monoid; composite agg has no kernel.
     assert gb.agg.sum[udt].jit_c_source == plus_binop_src
     assert gb.agg.count[udt].jit_c_source is None
-    assert gb.agg.sum[udt].jit_c_name == "plus__IntrospectUDT"
+    assert gb.agg.sum[udt].jit_c_name == "plus_gbudt__IntrospectUDT"
     assert gb.agg.count[udt].jit_c_name is None
 
 
@@ -1822,12 +1822,12 @@ def test_op_jit_signature_uses_pinned_type_name():
     udt2 = dtypes.register_anonymous(record_dtype, "_PinnedRenamed")
     assert udt2 is udt
     assert udt.name == "_PinnedRenamed"
-    assert udt.jit_c_name == "_PinnedOrig"
+    assert udt.jit_c_name == "gbudt__PinnedOrig"
 
     op = binary.plus[udt]
     # Op signature must reference the pinned struct name, not the renamed one.
-    assert op.jit_c_name == "plus__PinnedOrig"
-    assert "_PinnedOrig *" in op.jit_c_source
+    assert op.jit_c_name == "plus_gbudt__PinnedOrig"
+    assert "gbudt__PinnedOrig *" in op.jit_c_source
     assert "_PinnedRenamed" not in op.jit_c_source
 
 
@@ -2781,8 +2781,9 @@ def test_udt_scalar_broadcast_jit_routing():
     assert binary.eq[record, record].jit_c_source is not None
     # Mixed arithmetic does, with the scalar read once for every leaf
     assert binary.plus[record, dtypes.INT64].jit_c_source == (
-        "void plus_11__BcastJitUV_int64_t (_BcastJitUV *z, const _BcastJitUV *x, "
-        "const int64_t *y) { z->bcast_u = (x->bcast_u) + (((double) ((*y)))) ; "
+        "void plus_17_gbudt__BcastJitUV_int64_t (gbudt__BcastJitUV *z, "
+        "const gbudt__BcastJitUV *x, const int64_t *y) { "
+        "z->bcast_u = (x->bcast_u) + (((double) ((*y)))) ; "
         "z->bcast_v = (x->bcast_v) + (((double) ((*y)))) ; }"
     )
     assert binary.plus[dtypes.INT64, record].jit_c_source is not None
@@ -3070,7 +3071,9 @@ def test_udt_jit_c_name_too_long_keeps_the_cfunc():
         pytest.skip("requires SuiteSparse:GraphBLAS >= 9")
     _require_jit_on()
     rec = np.dtype([("tl_x", np.float64), ("tl_y", np.int64)], align=True)
-    t = dtypes.register_new("TooLongName" + "t" * 120, rec)
+    # Its C name, gbudt_ and the name, has 125 characters and fits; plus_ and that does not.
+    t = dtypes.register_new("TooLongName" + "t" * 108, rec)
+    assert len(t.jit_c_name) == 125
     n = 40
     vals = np.zeros(n, t.np_type)
     vals["tl_x"] = np.arange(n) / 4
@@ -3111,3 +3114,54 @@ def test_udt_field_named_like_a_standard_macro_skips_the_jit():
         with pytest.warns(NoJITWarning, match="without JIT"):
             result = v.ewise_mult(v, binary.plus).new()
         assert result[0].new().value.tolist() == (2.0, 4.0), field
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.skipif("not _has_jit_set")
+def test_udt_named_like_an_identifier_in_the_kernel_takes_the_jit():
+    """A UDT named like an identifier in a JIT kernel compiles, under its ``gbudt_`` C name.
+
+    SuiteSparse's kernels name the type beside their own identifiers. A UDT named like a
+    parameter of our op definitions (``z``), a local of its templates (``A``, ``p``, ``i``,
+    ``result``) or something its headers declare (``div``) failed to compile: an empty
+    ``JitError``, and 'load' for the rest of the process.
+    """
+    _require_jit_on()
+    for name in ["z", "A", "p", "i", "div", "result"]:
+        record = np.dtype([(f"kn_{name}_a", np.float64), (f"kn_{name}_b", np.int64)], align=True)
+        udt = dtypes.register_anonymous(record, name)
+        assert udt.jit_c_name == f"gbudt_{name}"
+        vals = np.array([(1.0, 2), (3.0, 4)], dtype=record)
+        v = Vector.from_coo([0, 1], vals, dtype=udt)
+        A = gb.Matrix.from_coo([0, 1], [1, 0], vals, dtype=udt)
+        with _jit_mode("on"):
+            plus = v.ewise_mult(v, binary.plus).new()
+            biggest = v.reduce(monoid.max).new()
+            product = A.mxv(v, semiring.plus_times).new()
+            assert gb.ss.config["jit_c_control"] == "on", name
+        assert plus.to_coo()[1].tolist() == [(2.0, 4), (6.0, 8)], name
+        assert biggest.value.tolist() == (3.0, 4), name
+        assert product.to_coo()[1].tolist() == [(3.0, 8), (3.0, 8)], name
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.skipif("not _has_jit_set")
+def test_udt_long_name_gets_a_c_name_that_fits():
+    """A UDT whose ``gbudt_`` C name would reach 128 characters gets a short synthetic one.
+
+    SuiteSparse refuses a type name of 128 characters or more and keeps the type with an
+    empty one, so its first kernel, a transpose say, raised ``JitError``.
+    """
+    _require_jit_on()
+    for length in [121, 122, 200]:
+        record = np.dtype([(f"fit{length}_a", np.float64), (f"fit{length}_b", np.int64)])
+        udt = dtypes.register_anonymous(record, "n" * length)
+        if length == 121:
+            assert udt.jit_c_name == "gbudt_" + "n" * 121  # 127 characters
+        else:
+            assert udt.jit_c_name.startswith("_gbudt_"), length
+        vals = np.array([(1.0, 2), (3.0, 4)], dtype=record)
+        A = gb.Matrix.from_coo([0, 1], [1, 0], vals, dtype=udt)
+        with _jit_mode("on"):
+            B = A.T.new()
+        assert B.to_coo()[2].tolist() == [(3.0, 4), (1.0, 2)], length

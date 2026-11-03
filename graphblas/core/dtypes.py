@@ -108,17 +108,18 @@ class DataType:
 def _get_udt_c_type_info(datatype):
     """Return ``(c_name, c_typedef)`` for a UDT, or ``None`` if not expressible in C.
 
-    The returned ``c_name`` may differ from ``datatype.name``: if the user
-    didn't supply a name, or supplied one that isn't a valid C identifier,
-    ``_udt_c_typedef`` synthesizes a fresh ``_gbudt_NNN`` name so the UDT
-    can still take the JIT path. Returns ``None`` when the UDT has no C form
-    here: a record laid out other than as a C compiler lays out its struct
-    (packed, as ``np.dtype([...])`` is without ``align=True``), a field name
-    that is not a valid C identifier (a C reserved word, say), a field that
-    is an array (only an array UDT is flattened, to ``v[n]``), a field or
-    element type with no C type (object, datetime, text), or a UDT that is
-    neither a record nor an array. Supports record UDTs (including nested
-    records) and array UDTs (e.g., ``FP64[3]``).
+    The returned ``c_name`` is ``gbudt_`` and ``datatype.name``, or a fresh
+    ``_gbudt_NNN`` name when the user didn't supply a name, or supplied one
+    that isn't a valid C identifier or is too long for SuiteSparse
+    (``udt_codegen._pick_c_type_name``), so the UDT can still take the JIT
+    path. Returns ``None`` when the UDT has no C form here: a record laid out
+    other than as a C compiler lays out its struct (packed, as
+    ``np.dtype([...])`` is without ``align=True``), a field name that is not
+    a valid C identifier (a C reserved word, say), a field that is an array
+    (only an array UDT is flattened, to ``v[n]``), a field or element type
+    with no C type (object, datetime, text), or a UDT that is neither a
+    record nor an array. Supports record UDTs (including nested records) and
+    array UDTs (e.g., ``FP64[3]``).
     """
     from .operator.udt_codegen import _udt_c_typedef
 
@@ -302,9 +303,9 @@ def register_anonymous(dtype, name=None):
         string, and nested-UDT fields are not.
     name : str, optional
         A human-readable name for this UDT. Used in error messages and
-        ``repr``. Must be a valid C identifier (and not a C reserved word)
-        to be usable on the SuiteSparse JIT path; otherwise JIT is skipped
-        silently and ops fall back to the Numba cfunc path.
+        ``repr``. Any name takes the SuiteSparse JIT path: its C name is
+        ``gbudt_`` and the name, or a synthetic one when that is not a C
+        identifier or is too long.
 
     Returns
     -------

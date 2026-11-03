@@ -437,9 +437,9 @@ comes from compiling the function against each input type in turn.
 JIT and introspection
 ---------------------
 
-When the UDT name and all field names are valid C identifiers (not C reserved
-words), and the field types map to C primitives, SuiteSparse JIT-compiles a
-dedicated C kernel for each ``op[udt]`` lookup. The kernel is cached on disk
+When all field names are valid C identifiers (not C reserved words), and the
+field types map to C primitives, SuiteSparse JIT-compiles a dedicated C kernel
+for each ``op[udt]`` lookup. The kernel is cached on disk
 and reused across processes (keyed by content hash, so renaming a UDT doesn't
 invalidate). JIT lets SuiteSparse inline the kernel into its eWise and reduce
 templates, eliminating the per-element function-call overhead the Numba
@@ -450,11 +450,11 @@ Inspect what SuiteSparse is JIT-ing from Python:
 
 .. code-block:: python
 
-    udt.jit_c_name              # 'Edge', or None if not JIT-able
-    udt.jit_c_definition        # 'typedef struct { ... } Edge ;'
+    udt.jit_c_name              # 'gbudt_Edge', or None if not JIT-able
+    udt.jit_c_definition        # 'typedef struct { ... } gbudt_Edge ;'
 
     op = binary.plus[udt]
-    op.jit_c_name               # 'plus_Edge'
+    op.jit_c_name               # 'plus_gbudt_Edge'
     op.jit_c_source             # full C source SS will compile
 
     monoid.plus[udt].jit_c_source                # same kernel
@@ -465,9 +465,9 @@ Inspect what SuiteSparse is JIT-ing from Python:
 
 JIT is skipped when:
 
-- A field name (or the UDT name, if you supplied one) is a C reserved word
-  (``class``, ``return``, ...) or a stdlib macro/typedef pulled in by
-  ``GraphBLAS.h`` (``NULL``, ``FILE``, ``M_PI``, ``complex``, ...). The op
+- A field name is a C reserved word (``class``, ``return``, ...), or a macro
+  or typedef of the C headers the kernels include (``NULL``, ``FILE``,
+  ``M_PI``, ``complex``, ``INT_MAX``, ``SIZE_MAX``, ``BUFSIZ``, ...). The op
   falls through to the Numba cfunc path.
 - A field type isn't in the numpy-to-C map (rare; the standard numeric
   scalar types all map).
@@ -480,10 +480,12 @@ JIT is skipped when:
   which auto-aligns.
 - The JIT compiler isn't usable after auto-fix (see below).
 
-Anonymous UDTs (no ``name=`` argument) still take the JIT path: a synthetic
-``_gbudt_NNN`` C name is minted so SuiteSparse always has a registerable
-identifier. Pass ``name=`` only for readable JIT cache filenames and
-introspection.
+SuiteSparse knows a UDT by ``gbudt_`` and its name, which cannot collide with
+an identifier in the C code of a kernel, whatever the name. A UDT without a
+name, or whose name is not a C identifier or would make that C name too long
+for SuiteSparse (128 characters or more), gets a synthetic ``_gbudt_NNN`` C
+name and still takes the JIT path. Pass ``name=`` only for readable JIT cache
+filenames and introspection.
 
 When the cause is the UDT itself (the first four cases above), the first time
 auto-lift produces a non-JIT'd op for a given ``(op, dtype)`` pair in a
@@ -500,7 +502,9 @@ category or by message::
     warnings.filterwarnings("ignore", message="UDT operator running without JIT")
 
 In every skipped case the operation still works correctly via the Numba
-function-pointer path; you only lose the JIT speedup.
+function-pointer path; you only lose the JIT speedup. A field named like a
+macro that only some platform's C headers define (beyond the C standard's)
+is not skipped, and its kernel fails to compile; rename the field.
 
 JIT compiler auto-fix
 ~~~~~~~~~~~~~~~~~~~~~
