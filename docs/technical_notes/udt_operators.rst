@@ -26,6 +26,8 @@ level of nesting, or each element of an array, as it applies to that value's bui
        ``second``, ``any`` and ``pair``, which do not compute on the fields
    * - UnaryOp
      - ``ainv``, ``abs``
+   * - SelectOp
+     - ``valueeq`` and ``valuene``, which keep the elements ``eq`` or ``ne`` finds
    * - Monoid
      - ``plus``, ``times``, ``min``, ``max``, ``any``
    * - Semiring
