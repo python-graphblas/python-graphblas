@@ -279,6 +279,13 @@ data.
        cast before it accumulates, as GraphBLAS converts a value of a built-in
        dtype, and so is a literal: an ``INT8[3]`` Scalar's ``s += 0.5`` adds 0,
        as an ``INT8`` Scalar's does.
+   * - A literal: ``v[0] = (1.5, 1)``, ``Scalar.from_value``,
+       ``Vector.from_scalar``
+     - Converted as numpy assigns it to an element, so, unlike a literal that
+       an op makes an element, it need not fit: ``1.5`` in an integer field
+       truncates, text too long for its field is cut, and a datetime in a date
+       field loses its time of day. An int out of an integer field's range
+       raises ``OverflowError``, where an ``INT8`` Vector wraps it.
    * - Between a UDT and a built-in dtype, or layouts that do not correspond
      - ``DomainMismatch``.
 
