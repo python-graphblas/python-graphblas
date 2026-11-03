@@ -14,10 +14,10 @@ flags that refer to the build machine. ``jit_compiler_is_usable`` checks that
 the configured compiler exists, without compiling anything.
 
 The control is set when the backend initializes (``_set_jit_c_control_at_init``)
-and raised to ``'on'`` when C source needs compiling (``_enable_jit_for_udt``).
-The rules are in the Technical Notes, "The JIT control"
-(docs/technical_notes/jit.rst), and the trade-offs in the user guide's
-initialization page.
+and raised to ``'on'`` when C source needs compiling (``_enable_jit_for_udt``),
+but not where SuiteSparse compiles through cmake. The rules are in the Technical
+Notes, "The JIT control" (docs/technical_notes/jit.rst), and the trade-offs in
+the user guide's initialization page.
 """
 
 import contextlib
@@ -26,6 +26,7 @@ import os
 import pathlib
 import platform
 import re
+import shutil
 import subprocess
 
 # ``ffi`` and ``lib`` are imported in the functions that use them: importing them
@@ -63,6 +64,19 @@ def jit_compiler_is_usable():
 def _compiler_exists(cfg):
     cc = cfg.get("jit_c_compiler_name", "")
     return bool(cc) and pathlib.Path(cc).exists()
+
+
+def _compiler_or_cmake_exists(cfg):
+    """Whether the C compiler is on disk, or cmake on the PATH where SuiteSparse compiles with it.
+
+    SuiteSparse built with MSVC always compiles through cmake, and passes the
+    configured compiler to it as ``CMAKE_C_COMPILER``, which cmake's Visual Studio
+    generator ignores. conda-forge's Windows builds name the build machine's
+    ``cl.exe``, which users rarely have, so the compiler path says nothing there.
+    """
+    if cfg.get("jit_use_cmake"):
+        return shutil.which("cmake") is not None
+    return _compiler_exists(cfg)
 
 
 def fix_jit_config(*, use_sysconfig=True, probe=True):
@@ -213,7 +227,14 @@ _TOOLCHAIN_KEYS = (
     "jit_c_compiler_flags",
     "jit_c_linker_flags",
     "jit_c_libraries",
+    "jit_c_cmake_libs",
+    "jit_use_cmake",
 )
+
+
+def _probe_name(cfg):
+    toolchain = "\n".join(str(cfg.get(key, "")) for key in _TOOLCHAIN_KEYS)
+    return "_jit_probe_" + hashlib.sha256(toolchain.encode()).hexdigest()[:16]
 
 
 def _probe_jit(cfg):
@@ -231,15 +252,14 @@ def _probe_jit(cfg):
 
     The type is created through the C API, so nothing is registered in Python,
     and this can run while the backend initializes. Its name is a hash of the
-    toolchain settings, so a compiler or flags this cache has not seen compile
-    a probe of their own, rather than load one that another toolchain left in
-    a shared cache. A cached probe loads in about 2 ms; a compile takes about
-    0.3 s.
+    toolchain settings, cmake or not among them, so a compiler or flags this
+    cache has not seen compile a probe of their own, rather than load one that
+    another toolchain left in a shared cache. A cached probe loads in about 2 ms;
+    a compile takes about 0.3 s.
     """
     from .. import ffi, lib
 
-    toolchain = "\n".join(cfg.get(key, "") for key in _TOOLCHAIN_KEYS)
-    name = "_jit_probe_" + hashlib.sha256(toolchain.encode()).hexdigest()[:16]
+    name = _probe_name(cfg)
     defn = f"typedef struct {{ int _probe ; }} {name} ;"
     type_ptr = ffi.new("GrB_Type*")
     # Size 0 asks SuiteSparse to get the size from a compiled kernel.
@@ -262,7 +282,12 @@ class _CConfig:
         "jit_c_compiler_flags": "GxB_JIT_C_COMPILER_FLAGS",
         "jit_c_linker_flags": "GxB_JIT_C_LINKER_FLAGS",
         "jit_c_libraries": "GxB_JIT_C_LIBRARIES",
+        "jit_c_cmake_libs": "GxB_JIT_C_CMAKE_LIBS",
         "jit_cache_path": "GxB_JIT_CACHE_PATH",
+    }
+    _ints = {
+        "jit_c_control": "GxB_JIT_C_CONTROL",
+        "jit_use_cmake": "GxB_JIT_USE_CMAKE",
     }
 
     def __init__(self):
@@ -279,9 +304,9 @@ class _CConfig:
     def __getitem__(self, key):
         from .. import ffi, lib
 
-        if key == "jit_c_control":
+        if key in self._ints:
             val = ffi.new("int32_t*")
-            info = lib.GxB_Global_Option_get_INT32(lib.GxB_JIT_C_CONTROL, val)
+            info = lib.GxB_Global_Option_get_INT32(getattr(lib, self._ints[key]), val)
         else:
             val = ffi.new("char**")
             info = lib.GxB_Global_Option_get_CHAR(getattr(lib, self._strings[key]), val)
@@ -289,6 +314,8 @@ class _CConfig:
             raise RuntimeError(f"Could not get SuiteSparse:GraphBLAS option {key!r}")
         if key == "jit_c_control":
             return next(k for k, v in self._controls.items() if v == val[0])
+        if key == "jit_use_cmake":
+            return bool(val[0])
         return ffi.string(val[0]).decode()
 
     def __setitem__(self, key, value):
@@ -303,7 +330,7 @@ class _CConfig:
             raise RuntimeError(f"Could not set SuiteSparse:GraphBLAS option {key!r}")
 
     def get(self, key, default=None):
-        return self[key] if key == "jit_c_control" or key in self._strings else default
+        return self[key] if key in self._ints or key in self._strings else default
 
 
 def _cache_is_writable(cfg):
@@ -328,11 +355,12 @@ def _set_jit_c_control_at_init(control):
     that is set is kept (``_user_set_run``).
 
     Every value but ``'on'`` is set as given. ``'on'`` is set only where it
-    works: there is a compiler on disk (after :func:`_repair_jit_compiler`),
-    the cache directory is writable, and :func:`_probe_jit` passes. Elsewhere
-    the control is ``'run'``, the value the conda-forge and PyPI builds of
-    SuiteSparse start with, and nothing raises or warns. The rules are in the
-    Technical Notes, "The JIT control".
+    works: there is a compiler on disk (after :func:`_repair_jit_compiler`), or
+    cmake on the PATH where SuiteSparse compiles through cmake
+    (:func:`_compiler_or_cmake_exists`), the cache directory is writable, and
+    :func:`_probe_jit` passes. Elsewhere the control is ``'run'``, the value the
+    conda-forge and PyPI builds of SuiteSparse start with, and nothing raises or
+    warns. The rules are in the Technical Notes, "The JIT control".
     """
     global _jit_enabled_for_udt, _configured_jit_c_control, _user_set_run
     cfg = _CConfig()
@@ -344,7 +372,7 @@ def _set_jit_c_control_at_init(control):
     if not _compiler_exists(cfg):
         _repair_jit_compiler(cfg)
     _jit_enabled_for_udt = False
-    if _compiler_exists(cfg) and _cache_is_writable(cfg):
+    if _compiler_or_cmake_exists(cfg) and _cache_is_writable(cfg):
         cfg["jit_c_control"] = "on"
         _jit_enabled_for_udt = cfg["jit_c_control"] == "on" and _probe_jit(cfg)
     if not _jit_enabled_for_udt:
@@ -404,17 +432,23 @@ def _enable_jit_for_udt():
     time from compiling into one cache (GraphBLAS #449). So are ``'off'``,
     ``'pause'`` and ``'load'``. SuiteSparse sets ``'load'`` itself after a
     compile fails, and raising it would retry that compile at every later UDT
-    operator, raising ``JitError`` each time from SuiteSparse 9.4 on. Whether
-    this process can compile at all is probed once (``_jit_enabled_for_udt``).
-    The rules for users are in the Technical Notes, "The JIT control".
+    operator, raising ``JitError`` each time from SuiteSparse 9.4 on. Nor is the
+    default raised where SuiteSparse compiles through cmake (``jit_use_cmake``,
+    always True when it is built with MSVC): there each kernel took about 10 s
+    on Windows CI, so only an ``'on'`` the user set compiles, even where the
+    configured compiler exists. Whether this process can compile at all is
+    probed once (``_jit_enabled_for_udt``). The rules for users are in the
+    Technical Notes, "The JIT control".
     """
     global _jit_enabled_for_udt
     cfg = _ss_config()
     control = cfg.get("jit_c_control")
-    if control in (None, "off", "pause", "load") or (control == "run" and _user_set_run):
-        # ``None`` is a library with no JIT at all. The others are honored and
-        # not cached, so they decide nothing once the control is back at the
-        # default.
+    if control in (None, "off", "pause", "load") or (
+        control == "run" and (_user_set_run or cfg.get("jit_use_cmake"))
+    ):
+        # ``None`` is a library with no JIT at all. The others, and the default
+        # 'run' where SuiteSparse compiles through cmake, are honored and not
+        # cached, so they decide nothing once the control is back at the default.
         return False
     if _jit_enabled_for_udt is None:
         if not jit_compiler_is_usable():
@@ -491,6 +525,13 @@ def _compiling_c_source(name):
                 "that was set. To compile it, set gb.ss.config['jit_c_control'] = 'on', "
                 "or None for the default 'run', which python-graphblas raises to 'on' "
                 "for C source."
+            )
+        elif after == before == "run" and cfg.get("jit_use_cmake"):
+            reason = (
+                "jit_c_control is still 'run', which neither compiles nor loads: "
+                "SuiteSparse compiles through cmake here, which python-graphblas "
+                "does not start unasked (or SuiteSparse was built without the JIT). To "
+                "compile it through cmake, set gb.ss.config['jit_c_control'] = 'on'."
             )
         elif after == before == "run":
             reason = (
