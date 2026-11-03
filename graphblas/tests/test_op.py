@@ -6498,8 +6498,8 @@ def test_udt_literal_rules_edge_cases():
     # a field, not broadcastable), or not a number, has no type of its own, so
     # it is converted into the UDT, and numpy says why it cannot be. A record
     # says so itself for a part that does not broadcast to its array field.
-    # So too for a comparison, which first looks for an int beyond its leaf, a
-    # part holding numpy values, and text a bytes field cannot hold.
+    # So too for a comparison, which first looks for an int beyond its leaf and
+    # a part holding numpy values.
     rec = dtypes.register_anonymous(
         np.dtype([("edge_v", np.float64, (3,)), ("edge_n", np.int8)]), "_EdgeRec"
     )
@@ -6522,10 +6522,13 @@ def test_udt_literal_rules_edge_cases():
         (lambda: binary.plus(r, ([np.float64(1), [2, 3]], 4)), "with a sequence"),
         (lambda: binary.plus(r, ([np.zeros((3, 2)), np.zeros((3, 1))], 4)), "with a sequence"),
         (lambda: binary.plus(r, (np.array(["a", "b", "c"]), 4)), "could not convert string"),
-        (lambda: Vector(text, size=1) == ("\xe9", 1), "can't encode"),
     ]:
         with pytest.raises(ValueError, match=reason):
             expr()
+    # Text a bytes field cannot hold equals nothing, as in numpy, rather than raise.
+    t = Vector(text, size=1)
+    t[0] = (b"\xe9", 1)
+    assert not (t == ("\xe9", 1)).new()[0].new().value
     c = Vector(c8s, size=1)
     c[0] = [1, 2, 3]
     assert c.apply(binary.plus, right=(1 + 2j, 0, 0)).new()[0].new().value[0] == 2 + 2j
@@ -6944,6 +6947,20 @@ def test_udt_eq_compares_a_udt_that_is_neither_record_nor_array():
     assert (four != b"abcdef").new()[0].new().value
     assert gb.Scalar.from_value(b"abcd", text) != b"abcdef"
     assert gb.Scalar.from_value(b"ab", text) == gb.Scalar.from_value(b"ab", wide)
+    # A str that bytes cannot hold (numpy encodes ASCII) equals no element, as in
+    # numpy, even one of its UTF-8 or Latin-1 bytes; it was UnicodeEncodeError.
+    latin = Vector(text, size=3)
+    latin[0] = b"\xe9"
+    latin[1] = "\xe9".encode()
+    for literal in ["\xe9", "a\xe9"]:
+        assert (latin == literal).new().to_coo()[1].tolist() == [False, False]
+        assert (latin != literal).new().to_coo()[1].tolist() == [True, True]
+        assert gb.Scalar.from_value(b"\xe9", text) != literal
+        assert not gb.Scalar.from_value(b"\xe9", text).isequal(literal)
+    text_rec = dtypes.register_anonymous(np.dtype([("eqo_s", "S4"), ("eqo_n", np.int8)]))
+    assert gb.Scalar.from_value((b"\xe9", 1), text_rec) != ("\xe9", 1)
+    with pytest.raises(ValueError, match="does not fit _EqOpaqueBytes"):
+        latin.apply(binary.first, right="\xe9")
     # A Scalar's == compares in numpy, so an element Numba has no type for compares too.
     half = dtypes.register_anonymous(np.dtype(np.float16), "_EqOpaqueHalf")
     h = gb.Scalar.from_value(1.5, half)
