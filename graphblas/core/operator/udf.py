@@ -410,12 +410,15 @@ def _input_operand(dtype, var):
             var,
             nt.CPointer(base_numba),
         )
+    # A built-in operand is read before the wrapper zeros a built-in output, which
+    # GraphBLAS can pass as an operand too (z = f(z, y) in a reduce).
+    setup = f"    {var}0 = {var}_ptr[0]\n"
     if dtype == BOOL:
         # Numba cannot compile bool pointers (numba/numba#5395; see _bool_to_int8),
         # so read an int8 and convert it.
         # MAINT 2026-10-18: still hits on Numba 0.68; re-test periodically.
-        return "", f"bool({var}_ptr[0])", nt.CPointer(INT8.numba_type)
-    return "", f"{var}_ptr[0]", nt.CPointer(dtype.numba_type)
+        return setup, f"bool({var}0)", nt.CPointer(INT8.numba_type)
+    return setup, f"{var}0", nt.CPointer(dtype.numba_type)
 
 
 def _output_handler(return_type, numba_ret_type):
@@ -475,11 +478,20 @@ def _compose_wrapper_body(zkind, zinfo, signature_line, body_setup, call_expr):
     returns and array-typed record leaves slice-assign into the caller's
     buffer, so a wrong-shape return cannot overrun it. The ``ValueError`` it
     raises does not reach the caller, though: Numba prints and swallows an
-    exception raised in a cfunc, so the write stops there, and every leaf
-    from that one on keeps whatever SuiteSparse had in the buffer.
-    :func:`_check_udf_fills_output` rejects such a return when the op is
-    typed, but it cannot always learn the shape, so this stays the backstop.
+    exception raised in a cfunc, as it does any exception the UDF raises, and
+    GraphBLAS takes the output as the wrapper left it. So a built-in output (a
+    select's bool, say) is set to 0 before the UDF is called: an element the UDF
+    raises for holds 0, or False, which a select reads as "do not keep". A
+    select's output is an uninitialized bool in SuiteSparse, so it could keep the
+    entry and corrupt the entry count. A UDT output is not zeroed: it can be an
+    operand too (z = f(z, y) in a reduce), and copying a UDT operand first would
+    cost a copy of every element. Numba cannot re-raise, so catching the
+    exception would silence it. :func:`_check_udf_fills_output` rejects a return
+    that cannot fill the output when the op is typed, but it cannot always learn
+    the shape, so this stays the backstop.
     """
+    if zkind == "direct" and zinfo[2] == "z_ptr[0]":
+        body_setup = f"{body_setup}    z_ptr[0] = 0\n"
     if zkind == "array_elements":
         return (
             f"{signature_line}\n"
