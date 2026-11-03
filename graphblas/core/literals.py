@@ -884,12 +884,12 @@ def _array_literal_udt(dtype, value):
     ``+ np.array([1, 2, 3])`` int64 ones. Its type is the array UDT of its
     dtype. The shape is ``dtype``'s when the array broadcasts to it, as
     ``np.array([1])`` does with ``INT8[3]``; a literal that must become an
-    element needs that. Otherwise the shape is the array's own, when the two
-    shapes broadcast together, so that an op's result has the shape numpy's
-    would: ``INT8[3]`` and a 2-by-3 array give ``[2, 3]``. A 0-d structured
-    array or ``np.void`` is typed as its record dtype. ``None``, for anything
-    else, such as a numeric array with a record, means it is converted into
-    the UDT.
+    element needs that. Otherwise the shape is the array's own, so that an op's
+    result has the shape numpy's would (``INT8[3]`` and a 2-by-3 array give
+    ``[2, 3]``), and an op refuses shapes that do not broadcast together, as for
+    two UDTs. A 0-d structured array or ``np.void`` is typed as its record
+    dtype. ``None``, for anything else, such as a numeric array with a record,
+    means it is converted into the UDT.
     """
     np_type = dtype.np_type
     if value.dtype.names is not None:
@@ -905,9 +905,5 @@ def _array_literal_udt(dtype, value):
         try:
             np.broadcast_to(value, shape)
         except ValueError:
-            try:
-                np.broadcast_shapes(value.shape, shape)
-            except ValueError:
-                return None
             shape = value.shape
     return lookup_dtype(np.dtype((value.dtype, shape)))
