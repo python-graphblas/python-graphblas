@@ -467,10 +467,11 @@ Inspect what SuiteSparse is JIT-ing from Python:
 
 JIT is skipped when:
 
-- A field name is a C reserved word (``class``, ``return``, ...), or a macro
-  or typedef of the C headers the kernels include (``NULL``, ``FILE``,
-  ``M_PI``, ``complex``, ``INT_MAX``, ``SIZE_MAX``, ``BUFSIZ``, ...). The op
-  falls through to the Numba cfunc path.
+- A field name is a C reserved word (``class``, ``return``, ...), a macro or
+  typedef of the C headers the kernels include (``NULL``, ``FILE``, ``M_PI``,
+  ``complex``, ``INT_MAX``, ``SIZE_MAX``, ``BUFSIZ``, ``SIGINT``, ...), or
+  starts with ``GB_``, ``GrB_`` or ``GxB_``, which GraphBLAS keeps for its own
+  names. The op falls through to the Numba cfunc path.
 - A field type isn't in the numpy-to-C map (rare; the standard numeric
   scalar types all map).
 - A record has an array-valued field. Built-in operators still lift to it

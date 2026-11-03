@@ -3108,9 +3108,10 @@ def test_udt_field_named_like_a_standard_macro_skips_the_jit():
     """
     from graphblas.exceptions import NoJITWarning
 
-    for i, field in enumerate(
-        ["INT_MAX", "UINT8_MAX", "SIZE_MAX", "BUFSIZ", "EXIT_FAILURE", "PRId64", "EDOM"]
-    ):
+    fields = ["INT_MAX", "UINT8_MAX", "SIZE_MAX", "BUFSIZ", "EXIT_FAILURE", "PRId64", "EDOM"]
+    # <signal.h> and GraphBLAS's own macros, as GrB_INDEX_MAX, failed the same way
+    fields += ["SIGINT", "SIG_DFL", "GrB_INDEX_MAX", "GxB_IMPLEMENTATION_MAJOR", "GB_ANY"]
+    for i, field in enumerate(fields):
         record = np.dtype([(field, np.float64), (f"macro_other_{i}", np.float64)], align=True)
         udt = dtypes.register_anonymous(record)
         assert udt.jit_c_name is None, field
