@@ -25,7 +25,7 @@ from ..utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
-from ._utils import _resolve_serialized_dtype, _unclaim_taken
+from ._utils import _pack_securely, _resolve_serialized_dtype, _unclaim_taken
 from .config import BaseConfig
 from .descriptor import get_descriptor
 
@@ -1314,6 +1314,19 @@ class ss:
     ):
         if format is not None and format.lower() != "csr":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'csr'.")
+        if method == "pack" and secure_import:
+            return _pack_securely(
+                cls._import_csr,
+                matrix,
+                "csr",
+                opts,
+                indptr=indptr,
+                values=values,
+                col_indices=col_indices,
+                is_iso=is_iso,
+                sorted_cols=sorted_cols,
+                take_ownership=take_ownership,
+            )
         copy = not take_ownership
         indptr = ints_to_numpy_buffer(
             indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
@@ -1501,6 +1514,19 @@ class ss:
     ):
         if format is not None and format.lower() != "csc":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'csc'.")
+        if method == "pack" and secure_import:
+            return _pack_securely(
+                cls._import_csc,
+                matrix,
+                "csc",
+                opts,
+                indptr=indptr,
+                values=values,
+                row_indices=row_indices,
+                is_iso=is_iso,
+                sorted_rows=sorted_rows,
+                take_ownership=take_ownership,
+            )
         copy = not take_ownership
         indptr = ints_to_numpy_buffer(
             indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
@@ -1702,6 +1728,21 @@ class ss:
     ):
         if format is not None and format.lower() != "hypercsr":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'hypercsr'.")
+        if method == "pack" and secure_import:
+            return _pack_securely(
+                cls._import_hypercsr,
+                matrix,
+                "hypercsr",
+                opts,
+                rows=rows,
+                indptr=indptr,
+                values=values,
+                col_indices=col_indices,
+                nvec=nvec,
+                is_iso=is_iso,
+                sorted_cols=sorted_cols,
+                take_ownership=take_ownership,
+            )
         copy = not take_ownership
         indptr = ints_to_numpy_buffer(
             indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
@@ -1922,6 +1963,21 @@ class ss:
     ):
         if format is not None and format.lower() != "hypercsc":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'hypercsc'.")
+        if method == "pack" and secure_import:
+            return _pack_securely(
+                cls._import_hypercsc,
+                matrix,
+                "hypercsc",
+                opts,
+                cols=cols,
+                indptr=indptr,
+                values=values,
+                row_indices=row_indices,
+                nvec=nvec,
+                is_iso=is_iso,
+                sorted_rows=sorted_rows,
+                take_ownership=take_ownership,
+            )
         copy = not take_ownership
         indptr = ints_to_numpy_buffer(
             indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
@@ -2129,6 +2185,18 @@ class ss:
     ):
         if format is not None and format.lower() != "bitmapr":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'bitmapr'.")
+        if method == "pack" and secure_import:
+            return _pack_securely(
+                cls._import_bitmapr,
+                matrix,
+                "bitmapr",
+                opts,
+                bitmap=bitmap,
+                values=values,
+                nvals=nvals,
+                is_iso=is_iso,
+                take_ownership=take_ownership,
+            )
         copy = not take_ownership
         bitmap = ints_to_numpy_buffer(
             bitmap, np.bool_, copy=copy, ownable=True, order="C", name="bitmap"
@@ -2320,6 +2388,18 @@ class ss:
     ):
         if format is not None and format.lower() != "bitmapc":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'bitmapc'.")
+        if method == "pack" and secure_import:
+            return _pack_securely(
+                cls._import_bitmapc,
+                matrix,
+                "bitmapc",
+                opts,
+                bitmap=bitmap,
+                values=values,
+                nvals=nvals,
+                is_iso=is_iso,
+                take_ownership=take_ownership,
+            )
         copy = not take_ownership
         bitmap = ints_to_numpy_buffer(
             bitmap, np.bool_, copy=copy, ownable=True, order="F", name="bitmap"
@@ -2496,6 +2576,16 @@ class ss:
     ):
         if format is not None and format.lower() != "fullr":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'fullr'.")
+        if method == "pack" and secure_import:
+            return _pack_securely(
+                cls._import_fullr,
+                matrix,
+                "fullr",
+                opts,
+                values=values,
+                is_iso=is_iso,
+                take_ownership=take_ownership,
+            )
         copy = not take_ownership
         if method == "pack":
             dtype = matrix.dtype
@@ -2655,6 +2745,16 @@ class ss:
     ):
         if format is not None and format.lower() != "fullc":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'fullc'.")
+        if method == "pack" and secure_import:
+            return _pack_securely(
+                cls._import_fullc,
+                matrix,
+                "fullc",
+                opts,
+                values=values,
+                is_iso=is_iso,
+                take_ownership=take_ownership,
+            )
         copy = not take_ownership
         if method == "pack":
             dtype = matrix.dtype

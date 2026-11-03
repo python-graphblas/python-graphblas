@@ -23,6 +23,27 @@ def _unclaim_taken(*arrays_and_pointers):
             unclaim_buffer(array)
 
 
+def _pack_securely(import_, obj, format, opts, **kwargs):
+    """Pack ``kwargs`` (data in ``format``, for ``import_``) into ``obj`` with a secure check.
+
+    A secure pack whose check fails frees ``obj``'s GraphBLAS object itself
+    (SuiteSparse:GraphBLAS 10.5.2 and earlier), and the Python object keeps the
+    freed handle. A secure import that fails frees only the new object it made.
+    So the data is imported securely into a new object, and its content moves
+    into ``obj`` with an unpack and a fast pack, which take its arrays as they
+    are. A failure leaves ``obj`` unchanged.
+    """
+    if obj.ndim == 1:
+        shape = {"size": obj._size}
+    else:
+        shape = {"nrows": obj._nrows, "ncols": obj._ncols}
+    new = import_(
+        **kwargs, **shape, dtype=obj.dtype, secure_import=True, method="import", opts=opts
+    )
+    obj.ss.pack_any(**new.ss.unpack(format, **opts), take_ownership=True, **opts)
+    return obj
+
+
 def _resolve_serialized_dtype(data_obj, data_nbytes, obj_kind):
     """Resolve the dtype of a serialized Matrix/Vector buffer.
 

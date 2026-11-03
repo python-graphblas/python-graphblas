@@ -21,7 +21,7 @@ from ..utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
-from ._utils import _resolve_serialized_dtype, _unclaim_taken
+from ._utils import _pack_securely, _resolve_serialized_dtype, _unclaim_taken
 from .config import BaseConfig
 from .descriptor import get_descriptor
 from .matrix import _concat_mn, njit
@@ -976,6 +976,19 @@ class ss:
     ):
         if format is not None and format.lower() != "sparse":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'sparse'.")
+        if method == "pack" and secure_import:
+            return _pack_securely(
+                cls._import_sparse,
+                vector,
+                "sparse",
+                opts,
+                indices=indices,
+                values=values,
+                nvals=nvals,
+                is_iso=is_iso,
+                sorted_index=sorted_index,
+                take_ownership=take_ownership,
+            )
         copy = not take_ownership
         indices = ints_to_numpy_buffer(indices, np.uint64, copy=copy, ownable=True, name="indices")
         if method == "pack":
@@ -1155,6 +1168,18 @@ class ss:
     ):
         if format is not None and format.lower() != "bitmap":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'bitmap'.")
+        if method == "pack" and secure_import:
+            return _pack_securely(
+                cls._import_bitmap,
+                vector,
+                "bitmap",
+                opts,
+                bitmap=bitmap,
+                values=values,
+                nvals=nvals,
+                is_iso=is_iso,
+                take_ownership=take_ownership,
+            )
         copy = not take_ownership
         bitmap = ints_to_numpy_buffer(bitmap, np.bool_, copy=copy, ownable=True, name="bitmap")
         if method == "pack":
@@ -1326,6 +1351,16 @@ class ss:
     ):
         if format is not None and format.lower() != "full":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'full'.")
+        if method == "pack" and secure_import:
+            return _pack_securely(
+                cls._import_full,
+                vector,
+                "full",
+                opts,
+                values=values,
+                is_iso=is_iso,
+                take_ownership=take_ownership,
+            )
         copy = not take_ownership
         if method == "pack":
             dtype = vector.dtype
