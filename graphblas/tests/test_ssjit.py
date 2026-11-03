@@ -2573,3 +2573,66 @@ def test_fix_from_conda_finds_windows_compilers(tmp_path):
     assert _fix_from_conda(cfg, str(posix)) is True
     assert cfg["jit_c_compiler_name"] == str(posix / "bin" / "gcc")
     assert _fix_from_conda(cfg_for("/nowhere/cc"), str(tmp_path / "empty")) is None
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_mixed_jit_c_name_fits_suitesparse():
+    """A mixed op's C name from two long UDT names still fits SuiteSparse's 127 characters.
+
+    SuiteSparse refuses a longer name and takes the definition under an empty one; the kernel
+    it compiles then calls no function and leaves its output uninitialized.
+    """
+    if not _has_jit_set:
+        pytest.skip("requires SuiteSparse:GraphBLAS >= 9")
+    _require_jit_on()
+    rec = [("ln_x", np.float64), ("ln_y", np.float64)]
+    rec32 = [("ln_x", np.float32), ("ln_y", np.float32)]
+    a = dtypes.register_new("LongNameA" + "a" * 60, np.dtype(rec, align=True))
+    b = dtypes.register_new("LongNameB" + "b" * 60, np.dtype(rec32, align=True))
+    op = binary.plus[a, b]
+    assert op.jit_c_source is not None
+    assert len(op.jit_c_name) < gb.core.lib.GxB_MAX_NAME_LEN
+    n = 40
+    va = np.zeros(n, a.np_type)
+    va["ln_x"] = np.arange(n)
+    va["ln_y"] = 2 * np.arange(n)
+    vb = np.zeros(n, b.np_type)
+    vb["ln_x"] = 0.5
+    vb["ln_y"] = np.arange(n) % 3
+    u = Vector.from_coo(np.arange(n), va, dtype=a)
+    w = Vector.from_coo(np.arange(n), vb, dtype=b)
+    with _jit_mode("on"):
+        r = u.ewise_mult(w, binary.plus).new()
+    _, vals = r.to_coo()
+    np.testing.assert_array_equal(vals["ln_x"], np.arange(n) + 0.5)
+    np.testing.assert_array_equal(vals["ln_y"], 2 * np.arange(n) + np.arange(n) % 3)
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_jit_c_name_too_long_keeps_the_cfunc():
+    """An op whose C name SuiteSparse refuses (128 characters or more) runs its cfunc.
+
+    Setting the definition after a refused name would compile a kernel that calls no
+    function, so the op gets no C form at all.
+    """
+    if not _has_jit_set:
+        pytest.skip("requires SuiteSparse:GraphBLAS >= 9")
+    _require_jit_on()
+    rec = np.dtype([("tl_x", np.float64), ("tl_y", np.int64)], align=True)
+    t = dtypes.register_new("TooLongName" + "t" * 120, rec)
+    n = 40
+    vals = np.zeros(n, t.np_type)
+    vals["tl_x"] = np.arange(n) / 4
+    vals["tl_y"] = np.arange(n)
+    v = Vector.from_coo(np.arange(n), vals, dtype=t)
+    plus_op = binary.plus[t]
+    eq_op = binary.eq[t]
+    assert plus_op.jit_c_source is None
+    assert eq_op.jit_c_source is None
+    with _jit_mode("on"):
+        r = v.ewise_mult(v, binary.plus).new()
+        same = v.ewise_mult(v, binary.eq).new()
+    _, got = r.to_coo()
+    np.testing.assert_array_equal(got["tl_x"], np.arange(n) / 2)
+    np.testing.assert_array_equal(got["tl_y"], 2 * np.arange(n))
+    assert same.reduce(monoid.land).new()

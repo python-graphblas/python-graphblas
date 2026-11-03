@@ -17,6 +17,7 @@ when it is first typed for a UDT.
 """
 
 import ast
+import hashlib
 import itertools
 import linecache
 from functools import lru_cache, reduce
@@ -1507,6 +1508,10 @@ def _make_jit_c_mixed_definition(op_name, py_op, dtype, dtype2, ret_type, input_
     # start with a digit). SuiteSparse finds a compiled kernel by its op's name, so two ops
     # with one name would run each other's kernel.
     c_name = f"{op_name}_{len(x_name)}_{x_name}_{y_name}"
+    if len(c_name) >= lib.GxB_MAX_NAME_LEN:
+        # SuiteSparse keeps at most 127 characters (see ``_set_jit_c_strings``). A length of 0
+        # cannot come from the readable form, so this name is still the pair's own.
+        c_name = f"{op_name}_0_{hashlib.sha256(c_name.encode()).hexdigest()[:32]}"
     params = f"{z_name} *z, const {x_name} *x, const {y_name} *y"
     return c_name, f"void {c_name} ({params}) {{ {body} }}"
 
@@ -1591,8 +1596,15 @@ def _set_jit_c_strings(gb_obj, c_name, c_defn, set_string_func):
     from ..ss.jit_config import _enable_jit_for_udt
 
     _enable_jit_for_udt()
-    set_string_func(gb_obj, ffi.new("char[]", c_name.encode()), lib.GxB_JIT_C_NAME)
+    # SuiteSparse refuses a name of GxB_MAX_NAME_LEN (128) characters or more, then takes the
+    # definition under the empty name: its kernels call no function and leave their outputs
+    # uninitialized. So the definition goes only with the name, and without it the op keeps
+    # its cfunc.
+    info = set_string_func(gb_obj, ffi.new("char[]", c_name.encode()), lib.GxB_JIT_C_NAME)
+    if info != lib.GrB_SUCCESS:
+        return False
     set_string_func(gb_obj, ffi.new("char[]", c_defn.encode()), lib.GxB_JIT_C_DEFINITION)
+    return True
 
 
 def set_jit_c_comparison_on_op(gb_obj, op_name, dtype, set_string_func, *, is_eq):
@@ -1608,7 +1620,8 @@ def set_jit_c_comparison_on_op(gb_obj, op_name, dtype, set_string_func, *, is_eq
     result = _make_jit_c_comparison_definition(op_name, dtype, is_eq=is_eq)
     if result is None:
         return None
-    _set_jit_c_strings(gb_obj, *result, set_string_func)
+    if not _set_jit_c_strings(gb_obj, *result, set_string_func):
+        return None
     return result
 
 
@@ -1622,7 +1635,8 @@ def set_jit_c_mixed_on_op(gb_obj, op_name, py_op, dtype, dtype2, ret_type, input
     result = _make_jit_c_mixed_definition(op_name, py_op, dtype, dtype2, ret_type, input_types)
     if result is None:
         return None
-    _set_jit_c_strings(gb_obj, *result, lib.GrB_BinaryOp_set_String)
+    if not _set_jit_c_strings(gb_obj, *result, lib.GrB_BinaryOp_set_String):
+        return None
     return result
 
 
@@ -1638,5 +1652,6 @@ def set_jit_c_on_op(gb_obj, op_name, py_op, dtype, set_string_func, arity=2):
     result = _make_jit_c_definition(op_name, py_op, dtype, arity)
     if result is None:
         return None
-    _set_jit_c_strings(gb_obj, *result, set_string_func)
+    if not _set_jit_c_strings(gb_obj, *result, set_string_func):
+        return None
     return result
