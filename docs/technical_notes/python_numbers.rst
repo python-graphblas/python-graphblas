@@ -140,3 +140,8 @@ or ``np.int64(1)`` above, still converts, with a ``DeprecationWarning``; it will
 ``ValueError`` in version 2027.7.0 or later. Any other value that does not fit raises
 ``ValueError``. A ``float`` too large for a float32 field raises ``OverflowError`` instead
 of becoming infinity.
+
+A Python or numpy number beside a user-defined operator that cannot be typed with an
+element is typed as itself instead, as a ``Scalar`` of it would be. For example, an
+IndexUnaryOp that returns ``x[:2] * t`` with a 2-element ``ret_dtype``, applied to a Vector
+of a 6-element array UDT, cannot take a 6-element ``t``, so the thunk ``3.0`` is typed FP64.
