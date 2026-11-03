@@ -357,6 +357,21 @@ _jit_c_type_defs = {}
 _C_TYPE_NAME_PREFIX = "gbudt_"
 
 
+# The ops whose C name is ``{op}_{type}`` (``set_jit_c_on_op``,
+# ``set_jit_c_comparison_on_op``): the lifted arithmetic, eq and ne. A mixed op
+# shortens its own name (``_make_jit_c_mixed_definition``).
+_ONE_TYPE_OP_NAMES = (*BUILTIN_UDT_BINARY_OPS, *BUILTIN_UDT_UNARY_OPS, "eq", "ne")
+
+
+def _max_type_c_name_len():
+    """The longest C name a UDT may have, so every ``{op}_{type}`` built from it fits.
+
+    SuiteSparse refuses a name of ``GxB_MAX_NAME_LEN`` (128) characters or more; the
+    longest op prefix is ``floordiv_``, so this is 118.
+    """
+    return lib.GxB_MAX_NAME_LEN - 1 - max(len(f"{name}_") for name in _ONE_TYPE_OP_NAMES)
+
+
 def _pick_c_type_name(python_name):
     """Return a valid C identifier for use as ``GxB_JIT_C_NAME`` on a UDT named ``python_name``.
 
@@ -365,10 +380,10 @@ def _pick_c_type_name(python_name):
     python-graphblas keeps for the types it makes itself (a synthetic ``_gbudt_NNN`` or
     ``_gbnest_NNN``, the tensor engine's ``_gbtensor_...``), and which no kernel identifier
     starts with, is kept as it is. When the result is not a C identifier (a name with dots,
-    or none given), or would not fit SuiteSparse's ``GxB_MAX_NAME_LEN`` (it refuses a name
-    of 128 characters or more, and the type is left with an empty one), mint a fresh
-    ``_gbudt_NNN`` name instead, so the UDT still takes the JIT path. A name SuiteSparse
-    already has for a type goes to ``_udt_c_typedef`` with ``is_c_name`` instead.
+    or none given), or is too long for each op built from it to fit SuiteSparse's
+    ``GxB_MAX_NAME_LEN`` (``_max_type_c_name_len``), mint a fresh ``_gbudt_NNN`` name
+    instead, so the UDT and its ops still take the JIT path. A name SuiteSparse already has
+    for a type goes to ``_udt_c_typedef`` with ``is_c_name`` instead.
     """
     if not isinstance(python_name, str):
         c_name = ""
@@ -376,7 +391,7 @@ def _pick_c_type_name(python_name):
         c_name = python_name
     else:
         c_name = _C_TYPE_NAME_PREFIX + python_name
-    if c_name.isidentifier() and len(c_name) < lib.GxB_MAX_NAME_LEN:
+    if c_name.isidentifier() and len(c_name) <= _max_type_c_name_len():
         return c_name
     return f"_gbudt_{next(_synthetic_udt_counter)}"
 
