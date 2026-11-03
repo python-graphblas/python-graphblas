@@ -144,15 +144,22 @@ def _compile_udf_for_udt(numba_func, sig, *, op_kind, op_name, dtypes):
     UnsupportedError, ...) so any compilation failure produces a
     single-line UDT diagnostic. Also catches the bare NotImplementedError
     Numba raises for an op it types but cannot lower, such as ``>`` (so
-    ``max``) on complex values.
+    ``max``) on complex values, and the bare KeyError for a missing field.
     """
+    dtypes_str = ", ".join(str(d) for d in dtypes)
     try:
         _numba_compile(numba_func, sig)
     except (NumbaError, NotImplementedError) as exc:
-        dtypes_str = ", ".join(str(d) for d in dtypes)
         snippet = _summarize_numba_typing_error(exc)
         raise UdfParseError(
             f"{op_kind}.{op_name} does not work with ({dtypes_str}): {snippet}"
+        ) from exc
+    except KeyError as exc:
+        # Numba types ``x.name`` for a field the record lacks with a bare KeyError
+        # of the name, where ``x["name"]`` gets the TypingError "Field ... was not found".
+        raise UdfParseError(
+            f"{op_kind}.{op_name} does not work with ({dtypes_str}): "
+            f"Field {exc.args[0]!r} was not found in the record"
         ) from exc
 
 
