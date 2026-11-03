@@ -2716,6 +2716,35 @@ def test_udt_monoid_named_like_builtin_gets_no_identity():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_monoid_refuses_an_empty_scalar_identity():
+    """An empty Scalar identity raises EmptyObject, as an empty theta does.
+
+    A UDT monoid took it as zero bytes, so a field-wise product reduced to all
+    zeros, and a built-in type raised ``TypeError`` from converting None.
+    """
+    udt = dtypes.register_anonymous(np.dtype([("ei_a", np.int8), ("ei_b", np.float64)]))
+
+    def _fieldwise_times(x, y):  # pragma: no cover (numba)
+        return (x["ei_a"] * y["ei_a"], x["ei_b"] * y["ei_b"])
+
+    times_udt = BinaryOp.register_anonymous(_fieldwise_times, "_ei_times", is_udt=True)
+    times_int = BinaryOp.register_anonymous(lambda x, y: x * y, "_ei_times_int")
+    for binop, identity in [
+        (times_udt, gb.Scalar(udt)),
+        (times_udt, gb.Scalar(udt, is_cscalar=True)),
+        (times_int, gb.Scalar(INT64)),
+        (times_int, {INT64: gb.Scalar(INT64)}),
+    ]:
+        with pytest.raises(gb.exceptions.EmptyObject, match="identity is an empty Scalar"):
+            Monoid.register_anonymous(binop, identity)
+    v = Vector(udt, size=2)
+    v[0] = (2, 3.0)
+    v[1] = (5, 7.0)
+    one = gb.Scalar.from_value((1, 1.0), udt)
+    assert v.reduce(Monoid.register_anonymous(times_udt, one)).new() == (10, 21.0)
+
+
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.parametrize("shape", [(4,), (3, 2)])
 def test_udt_array_wrapper_stays_within_element(shape):
     """The array-UDT cfunc wrapper writes one element's bytes and nothing more.
