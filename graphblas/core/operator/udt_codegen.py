@@ -1407,13 +1407,15 @@ def _c_expr_unary(py_op, operand, field_dtype):
     raise ValueError(f"Unknown unary C op: {py_op}")  # pragma: no cover (safety)
 
 
-def _make_jit_c_definition(op_name, py_op, dtype, arity):
+def _make_jit_c_definition(op_name, py_op, dtype, arity, out=None):
     """Generate a JIT C function definition for a UDT operator.
 
     Returns ``(c_name, c_defn)``, or ``None`` if the dtype can't be expressed
     in C (unsupported field types, or names that collide with C reserved words).
     An op not defined on the field types (``min`` on a complex field) never
-    gets here: ``udt._element_types`` rejects it when the op is typed.
+    gets here: ``udt._element_types`` rejects it when the op is typed. ``out``
+    is the result type when it is not ``dtype`` (``abs`` of complex leaves),
+    which SuiteSparse must already know by its C name.
     """
     np_type = dtype.np_type
     # The op must name the type by the C name SuiteSparse has for it, not by
@@ -1423,11 +1425,14 @@ def _make_jit_c_definition(op_name, py_op, dtype, arity):
         return None
     type_name, _typedef = typedef_info
     c_name = f"{op_name}_{type_name}"
+    z_type_name = type_name if out is None else out.jit_c_name
+    if z_type_name is None:
+        return None
 
     if arity == 2:
-        params = f"{type_name} *z, const {type_name} *x, const {type_name} *y"
+        params = f"{z_type_name} *z, const {type_name} *x, const {type_name} *y"
     else:
-        params = f"{type_name} *z, const {type_name} *x"
+        params = f"{z_type_name} *z, const {type_name} *x"
 
     if np_type.names is not None:
         leaves = list(_iter_record_leaves(np_type))
@@ -1676,7 +1681,7 @@ def set_jit_c_mixed_on_op(gb_obj, op_name, py_op, dtype, dtype2, ret_type, input
     return result
 
 
-def set_jit_c_on_op(gb_obj, op_name, py_op, dtype, set_string_func, arity=2):
+def set_jit_c_on_op(gb_obj, op_name, py_op, dtype, set_string_func, arity=2, out=None):
     """Generate and set JIT C name+definition on a GrB operator, if possible.
 
     Returns ``(c_name, c_defn)`` when the dtype is expressible in C, ``None``
@@ -1684,7 +1689,7 @@ def set_jit_c_on_op(gb_obj, op_name, py_op, dtype, set_string_func, arity=2):
     ``TypedUserUnaryOp.jit_c_source`` and ``TypedUserBinaryOp.jit_c_source``).
     Callers check ``_has_jit_set`` first, so the vanilla backend sets no JIT C source.
     """
-    result = _make_jit_c_definition(op_name, py_op, dtype, arity)
+    result = _make_jit_c_definition(op_name, py_op, dtype, arity, out)
     if result is None:
         return None
     if not _set_jit_c_strings(gb_obj, *result, set_string_func):
