@@ -497,7 +497,10 @@ still takes the JIT path. Pass ``name=`` only for
 readable JIT cache filenames and introspection. To name such a UDT in C source
 of your own, as for ``gb.binary.ss.register_new``, use its ``jit_c_name``, not
 its Python name, which SuiteSparse does not know. A type registered from C
-source (``gb.dtypes.ss.register_new``) keeps the name you give it.
+source (``gb.dtypes.ss.register_new``) keeps the name you give it, so give it
+118 characters or fewer: the built-in operators lifted to it are named with
+that name after them (``floordiv_``, ``plus_``, ...), and a longer one leaves
+them names SuiteSparse refuses, so they run without the JIT.
 
 When the cause is the UDT itself (the first four cases above), the first time
 auto-lift produces a non-JIT'd op for a given ``(op, dtype)`` pair in a

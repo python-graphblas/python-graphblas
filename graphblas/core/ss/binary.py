@@ -38,8 +38,8 @@ def register_new(name, jit_c_definition, left_type, right_type, ret_type):
     jit_c_definition : str
         The C definition as a string of the user-defined function. For example:
         ``"void absdiff (double *z, double *x, double *y) { (*z) = fabs ((*x) - (*y)) ; }"``.
-        A UDT made from a numpy dtype is named in C by its ``jit_c_name`` (``gbudt_`` and
-        its name), not its Python name.
+        A UDT made from a numpy dtype is named in C by its ``jit_c_name`` (usually ``gbudt_``
+        and its name), not its Python name.
     left_type : dtype
         The dtype of the left operand of the binary operator.
     right_type : dtype
