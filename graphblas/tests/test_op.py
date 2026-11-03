@@ -171,9 +171,10 @@ def test_get_typed_op():
         operator.get_typed_op(binary.plus, dtypes.INT64, "bad dtype")
     # A tuple of types other than a pair (it was ValueError from unpacking it)
     for parent in [binary.plus, monoid.plus, indexunary.rowle]:
-        with pytest.raises(TypeError, match=r"\[\.\.\.\] takes one dtype or two, not 3"):
-            parent["INT64", "INT64", "INT64"]
-        assert ("INT64",) not in parent
+        for types in [("INT64",) * 3, ("INT64",)]:
+            with pytest.raises(TypeError, match=rf"takes a dtype or a pair .* of {len(types)}$"):
+                parent[types]
+            assert types not in parent
 
 
 @pytest.mark.skipif("supports_udfs")
