@@ -1390,6 +1390,9 @@ def test_indexunary_helpers(A):
         (A5 >= 2.5, [False, False, False, True, True]),
         (A5 > -0.5, [True] * 5),
         (A5 <= 2.5, [True, True, True, False, False]),
+        # A bound that is not a Python or numpy number: the thunk keeps its own type
+        (A5 < np.array(3), [True, True, True, False, False]),
+        (A5 >= np.array(3), [False, False, False, True, True]),
     ]:
         assert indexunary.row(expr).new().to_coo()[2].tolist() == expected
     assert indexunary.column(A5.T < 2.5).new().to_coo()[2].tolist() == [True] * 3 + [False] * 2

@@ -410,7 +410,9 @@ def _index_bound(literal, thunk, name):
     shift = name in {"lt", "ge"}
     if shift:
         name = "le" if name == "lt" else "gt"
-    bound = thunk.value if literal is None else literal
+    # The caller's number, if it is one; a Scalar expression (``w[0]``), a 0-d array or
+    # ``np.True_`` made the thunk keep its own type, so the thunk's value is the bound.
+    bound = literal if isinstance(literal, numbers.Real) else thunk.value
     if not isinstance(bound, numbers.Real):
         return thunk, name
     if math.isfinite(bound):
