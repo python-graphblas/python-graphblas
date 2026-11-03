@@ -373,8 +373,10 @@ def test_register_anonymous_zero_size():
     for dtype in [str, bytes, np.dtype("U"), np.dtype([]), np.dtype((np.int64, (0,)))]:
         with pytest.raises(ValueError, match="size of 0"):
             dtypes.register_anonymous(dtype)
-    with pytest.raises(ValueError, match="Unknown dtype"):
+    with pytest.raises(ValueError, match="Unknown dtype") as exc_info:
         dtypes.lookup_dtype(str)
+    # The reason it cannot be registered is chained; it was dropped.
+    assert "size of 0" in str(exc_info.value.__cause__)
 
 
 def test_register_anonymous_array_numba_cannot_type():
@@ -398,6 +400,10 @@ def test_register_anonymous_array_numba_cannot_type():
             dtypes.register_anonymous(np_type)
         assert isinstance(exc_info.value.__cause__, AttributeError)
         assert np_type not in core.dtypes._registry
+        # So does a lookup, which registers a dtype, with that reason as its cause.
+        with pytest.raises(ValueError, match="Unknown dtype") as exc_info:
+            gb.Vector(np_type, size=1)
+        assert f"cannot type an array of {element}" in str(exc_info.value.__cause__)
 
 
 def test_register_anonymous_from_dataclass_deferred_annotations():

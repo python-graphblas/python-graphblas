@@ -604,13 +604,14 @@ def lookup_dtype(key, value=None):
     try:
         # Auto-register!
         return register_anonymous(key)
-    except Exception:
-        pass
+    except Exception as exc:
+        # Why it cannot be registered, such as an array of bool, which Numba cannot type.
+        reason = exc
     try:
         return lookup_dtype(key.literal_type)  # For numba dtype inference
     except Exception:
         pass
-    raise ValueError(f"Unknown dtype: {key} of type {type(key)}")
+    raise ValueError(f"Unknown dtype: {key} of type {type(key)}") from reason
 
 
 def _raise_dtype_or_arraylike(cls_name, dtype, exc):
