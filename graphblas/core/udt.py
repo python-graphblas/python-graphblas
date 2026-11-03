@@ -80,11 +80,12 @@ def _iter_record_leaves(np_type, python_prefix="", c_prefix=""):
     ``("['outer']['inner_a']", "outer.inner_a", float64_dtype)``.
 
     Only record-in-record nesting is recognised. Array-typed fields are
-    yielded as a single leaf, which the Numba path handles: the generated
-    expression operates on the whole sub-array and the wrapper slice-assigns
-    it back. The JIT path never sees such a record, because a subarray dtype
-    has no entry in ``udt_codegen.NP_TO_C_TYPES`` and ``udt_codegen._udt_c_typedef``
-    bails out, so the op keeps the cfunc for every call.
+    yielded as a single leaf, which the Numba path handles: a binary op
+    computes it element by element, a unary op applies its expression to the
+    whole sub-array, and the wrapper slice-assigns the result back. The JIT
+    path never sees such a record, because a subarray dtype has no entry in
+    ``udt_codegen.NP_TO_C_TYPES`` and ``udt_codegen._udt_c_typedef`` bails out,
+    so the op keeps the cfunc for every call.
     """
     for name in np_type.names:
         field_dtype = np_type.fields[name][0]
