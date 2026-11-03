@@ -4534,6 +4534,11 @@ def test_subarray_dtype_values_shape():
     assert A.to_coo()[2].tolist() == expected
     A = Matrix.from_csr([0, 1, 2], [0, 1], 1.5, "FP64[2]")
     assert A.to_coo()[2].tolist() == expected
+    # on both backends (SuiteSparse raised "values must have 1 or more elements ... not 0")
+    A = Matrix.from_dcsr([0, 1], [0, 1, 2], [0, 1], 1.5, "FP64[2]")
+    assert A.to_coo()[2].tolist() == expected
+    A = Matrix.from_dcsc([0, 1], [0, 1, 2], [0, 1], 1.5, "FP64[2]")
+    assert A.to_coo()[2].tolist() == expected
     # The lengths compared are the number of elements, not of numbers (it said 6)
     with pytest.raises(ValueError, match="lengths must match: 2, 2, 3$"):
         Matrix.from_coo([0, 1], [0, 1], np.ones((3, 2)), "FP64[2]")
@@ -4575,6 +4580,17 @@ def test_ss_import_values_size():
         Matrix.from_dcsr([0, 1], [0, 1, 2], [0, 1], np.ones(2), "FP64[2]")
     with pytest.raises(ValueError, match=r"have 4 or more elements of dtype \S+, not 2"):
         Matrix.ss.import_fullc(values=np.ones((2, 2, 1)), dtype="FP64[2]")
+    # A scalar is not a whole element of a sub-array dtype (it said "not 0")
+    with pytest.raises(ValueError, match=r"a scalar does not fill one element of dtype \S+, of"):
+        Matrix.ss.import_fullr(values=1.5, nrows=2, ncols=2, dtype="FP64[2]", is_iso=True)
+    # More entries than indices is an indptr problem; it was reported as too few values
+    match = "index pointers give 4611686018427387904 entries, more than the number of indices, 1"
+    with pytest.raises(ValueError, match=match):
+        Matrix.ss.import_csr(nrows=1, ncols=3, indptr=[0, 2**62], col_indices=[0], values=[1.0])
+    with pytest.raises(ValueError, match="index pointers give 3 entries, more than the number"):
+        Matrix.ss.import_hypercsc(
+            nrows=3, ncols=3, cols=[0, 2], indptr=[0, 1, 3], row_indices=[0, 1], values=[1.0]
+        )
     # One element is enough for iso
     A = Matrix.ss.import_fullr(values=[7.0], nrows=2, ncols=2, is_iso=True)
     assert A.ss.is_iso
