@@ -7134,7 +7134,7 @@ def test_udt_eq_compares_a_udt_that_is_neither_record_nor_array():
     latin = Vector(text, size=3)
     latin[0] = b"\xe9"
     latin[1] = "\xe9".encode()
-    for literal in ["\xe9", "a\xe9"]:
+    for literal in ["\xe9", "a\xe9", np.str_("\xe9")]:
         assert (latin == literal).new().to_coo()[1].tolist() == [False, False]
         assert (latin != literal).new().to_coo()[1].tolist() == [True, True]
         assert gb.Scalar.from_value(b"\xe9", text) != literal

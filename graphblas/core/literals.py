@@ -116,8 +116,13 @@ def _literal_operand(dtype, value, op, *, left=False):
             # truediv gives float leaves whatever the int, so, as a comparison, it
             # types an int out of an integer leaf's range exactly instead of raising.
             exact = is_comparison or op.name == "truediv"
-            if is_comparison and not isinstance(value, (np.generic, np.ndarray)):
-                np_type = dtype.np_type
+            np_type = dtype.np_type
+            if is_comparison and np_type.kind == "S" and isinstance(value, str):
+                # A str, np.str_ included, that bytes cannot hold (numpy encodes ASCII)
+                # equals no element, as in numpy; one byte longer than any, it compares so.
+                if not value.isascii():
+                    value = b"\xff" * (np_type.itemsize + 1)
+            elif is_comparison and not isinstance(value, (np.generic, np.ndarray)):
                 parts = _as_record_parts(np_type, value)
                 # First: making an int beyond its leaf infinity reshapes the part.
                 _refuse_misfit_fields(dtype, np_type, parts)
@@ -125,10 +130,6 @@ def _literal_operand(dtype, value, op, *, left=False):
                     # As infinity in its leaf, it still equals no element, and it
                     # stays out of an array numpy makes of numpy values beside it.
                     value = _beyond_as_infinity(np_type, parts)
-                elif np_type.kind == "S" and isinstance(value, str) and not value.isascii():
-                    # Bytes cannot hold it (numpy encodes ASCII), so it equals no
-                    # element, as in numpy; one byte longer than any, it compares so.
-                    value = b"\xff" * (np_type.itemsize + 1)
             literal_type = _literal_type(dtype, value, exact=exact)
             if literal_type is not None:
                 return value, literal_type
