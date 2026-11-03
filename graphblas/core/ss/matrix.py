@@ -1,7 +1,7 @@
 import itertools
 
 import numpy as np
-from suitesparse_graphblas.utils import claim_buffer, claim_buffer_2d, unclaim_buffer
+from suitesparse_graphblas.utils import claim_buffer, claim_buffer_2d
 
 import graphblas as gb
 
@@ -25,7 +25,7 @@ from ..utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
-from ._utils import _resolve_serialized_dtype
+from ._utils import _resolve_serialized_dtype, _unclaim_taken
 from .config import BaseConfig
 from .descriptor import get_descriptor
 
@@ -1350,6 +1350,7 @@ class ss:
             not sorted_cols,
             NULL if desc is None else desc._carg,
         )
+        _unclaim_taken((indptr, Ap), (col_indices, Aj), (values, Ax))
         if method == "import":
             check_status_carg(
                 status,
@@ -1359,9 +1360,6 @@ class ss:
             matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
-        unclaim_buffer(indptr)
-        unclaim_buffer(col_indices)
-        unclaim_buffer(values)
         return matrix
 
     @classmethod
@@ -1539,6 +1537,7 @@ class ss:
             not sorted_rows,
             NULL if desc is None else desc._carg,
         )
+        _unclaim_taken((indptr, Ap), (row_indices, Ai), (values, Ax))
         if method == "import":
             check_status_carg(
                 status,
@@ -1548,9 +1547,6 @@ class ss:
             matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
-        unclaim_buffer(indptr)
-        unclaim_buffer(row_indices)
-        unclaim_buffer(values)
         return matrix
 
     @classmethod
@@ -1761,6 +1757,7 @@ class ss:
             not sorted_cols,
             NULL if desc is None else desc._carg,
         )
+        _unclaim_taken((indptr, Ap), (rows, Ah), (col_indices, Aj), (values, Ax))
         if method == "import":
             check_status_carg(
                 status,
@@ -1770,10 +1767,6 @@ class ss:
             matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
-        unclaim_buffer(indptr)
-        unclaim_buffer(rows)
-        unclaim_buffer(col_indices)
-        unclaim_buffer(values)
         return matrix
 
     @classmethod
@@ -1984,6 +1977,7 @@ class ss:
             not sorted_rows,
             NULL if desc is None else desc._carg,
         )
+        _unclaim_taken((indptr, Ap), (cols, Ah), (row_indices, Ai), (values, Ax))
         if method == "import":
             check_status_carg(
                 status,
@@ -1993,10 +1987,6 @@ class ss:
             matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
-        unclaim_buffer(indptr)
-        unclaim_buffer(cols)
-        unclaim_buffer(row_indices)
-        unclaim_buffer(values)
         return matrix
 
     @classmethod
@@ -2178,6 +2168,7 @@ class ss:
             nvals,
             NULL if desc is None else desc._carg,
         )
+        _unclaim_taken((bitmap, Ab), (values, Ax))
         if method == "import":
             check_status_carg(
                 status,
@@ -2187,8 +2178,6 @@ class ss:
             matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
-        unclaim_buffer(bitmap)
-        unclaim_buffer(values)
         return matrix
 
     @classmethod
@@ -2370,6 +2359,7 @@ class ss:
             nvals,
             NULL if desc is None else desc._carg,
         )
+        _unclaim_taken((bitmap, Ab), (values, Ax))
         if method == "import":
             check_status_carg(
                 status,
@@ -2379,8 +2369,6 @@ class ss:
             matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
-        unclaim_buffer(bitmap)
-        unclaim_buffer(values)
         return matrix
 
     @classmethod
@@ -2530,6 +2518,7 @@ class ss:
         status = getattr(lib, f"GxB_Matrix_{method}_FullR")(
             mhandle, *args, Ax, values.nbytes, is_iso, NULL if desc is None else desc._carg
         )
+        _unclaim_taken((values, Ax))
         if method == "import":
             check_status_carg(
                 status,
@@ -2539,7 +2528,6 @@ class ss:
             matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
-        unclaim_buffer(values)
         return matrix
 
     @classmethod
@@ -2688,6 +2676,7 @@ class ss:
         status = getattr(lib, f"GxB_Matrix_{method}_FullC")(
             mhandle, *args, Ax, values.nbytes, is_iso, NULL if desc is None else desc._carg
         )
+        _unclaim_taken((values, Ax))
         if method == "import":
             check_status_carg(
                 status,
@@ -2697,7 +2686,6 @@ class ss:
             matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
-        unclaim_buffer(values)
         return matrix
 
     @classmethod
