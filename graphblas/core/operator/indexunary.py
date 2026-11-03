@@ -162,26 +162,38 @@ class IndexUnaryOp(OpBase):
                     nt.CPointer(input_type.numba_type),
                 )
 
+                # Each wrapper writes 0 (False) before it calls the UDF: if the UDF raises, Numba
+                # prints the error and returns, and GraphBLAS uses the output as it is (for a
+                # select, an unwritten bool decides whether to keep the entry). The operands are
+                # read first, since the output can be one of them (z = f(z, y) in a reduce).
                 if type_ == BOOL:
                     if ret_type == BOOL:
 
                         def indexunary_wrapper(z, x, row, col, y):  # pragma: no cover (numba)
-                            z[0] = bool(indexunary_udf(bool(x[0]), row, col, bool(y[0])))
+                            x0, y0 = x[0], y[0]
+                            z[0] = 0
+                            z[0] = bool(indexunary_udf(bool(x0), row, col, bool(y0)))
 
                     else:
 
                         def indexunary_wrapper(z, x, row, col, y):  # pragma: no cover (numba)
-                            z[0] = indexunary_udf(bool(x[0]), row, col, bool(y[0]))
+                            x0, y0 = x[0], y[0]
+                            z[0] = 0
+                            z[0] = indexunary_udf(bool(x0), row, col, bool(y0))
 
                 elif ret_type == BOOL:
 
                     def indexunary_wrapper(z, x, row, col, y):  # pragma: no cover (numba)
-                        z[0] = bool(indexunary_udf(x[0], row, col, y[0]))
+                        x0, y0 = x[0], y[0]
+                        z[0] = 0
+                        z[0] = bool(indexunary_udf(x0, row, col, y0))
 
                 else:
 
                     def indexunary_wrapper(z, x, row, col, y):  # pragma: no cover (numba)
-                        z[0] = indexunary_udf(x[0], row, col, y[0])
+                        x0, y0 = x[0], y[0]
+                        z[0] = 0
+                        z[0] = indexunary_udf(x0, row, col, y0)
 
                 indexunary_wrapper = numba.cfunc(wrapper_sig, nopython=True, error_model="numpy")(
                     indexunary_wrapper

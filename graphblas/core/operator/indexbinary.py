@@ -420,16 +420,20 @@ class IndexBinaryOp(OpBase):
                     nt.CPointer(input_type.numba_type),
                 )
 
+                # Each wrapper writes 0 (False) before it calls the UDF: if the UDF raises, Numba
+                # prints the error and returns, and GraphBLAS uses the output as it is (for a
+                # select, an unwritten bool decides whether to keep the entry). The operands are
+                # read first, since the output can be one of them (z = f(z, y) in a reduce).
                 if type_ == BOOL:
                     if ret_type == BOOL:
 
                         def indexbinary_wrapper(
                             z, x, ix, jx, y, iy, jy, theta
                         ):  # pragma: no cover (numba)
+                            x0, y0, theta0 = x[0], y[0], theta[0]
+                            z[0] = 0
                             z[0] = bool(
-                                indexbinary_udf(
-                                    bool(x[0]), ix, jx, bool(y[0]), iy, jy, bool(theta[0])
-                                )
+                                indexbinary_udf(bool(x0), ix, jx, bool(y0), iy, jy, bool(theta0))
                             )
 
                     else:
@@ -437,23 +441,27 @@ class IndexBinaryOp(OpBase):
                         def indexbinary_wrapper(
                             z, x, ix, jx, y, iy, jy, theta
                         ):  # pragma: no cover (numba)
-                            z[0] = indexbinary_udf(
-                                bool(x[0]), ix, jx, bool(y[0]), iy, jy, bool(theta[0])
-                            )
+                            x0, y0, theta0 = x[0], y[0], theta[0]
+                            z[0] = 0
+                            z[0] = indexbinary_udf(bool(x0), ix, jx, bool(y0), iy, jy, bool(theta0))
 
                 elif ret_type == BOOL:
 
                     def indexbinary_wrapper(
                         z, x, ix, jx, y, iy, jy, theta
                     ):  # pragma: no cover (numba)
-                        z[0] = bool(indexbinary_udf(x[0], ix, jx, y[0], iy, jy, theta[0]))
+                        x0, y0, theta0 = x[0], y[0], theta[0]
+                        z[0] = 0
+                        z[0] = bool(indexbinary_udf(x0, ix, jx, y0, iy, jy, theta0))
 
                 else:
 
                     def indexbinary_wrapper(
                         z, x, ix, jx, y, iy, jy, theta
                     ):  # pragma: no cover (numba)
-                        z[0] = indexbinary_udf(x[0], ix, jx, y[0], iy, jy, theta[0])
+                        x0, y0, theta0 = x[0], y[0], theta[0]
+                        z[0] = 0
+                        z[0] = indexbinary_udf(x0, ix, jx, y0, iy, jy, theta0)
 
                 indexbinary_wrapper = numba.cfunc(wrapper_sig, nopython=True, error_model="numpy")(
                     indexbinary_wrapper
