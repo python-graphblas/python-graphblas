@@ -2263,6 +2263,30 @@ def test_udt_return_type_errors():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udt_udf_reading_a_missing_field():
+    """``x.name`` for a field the record lacks names the op and types, as ``x["name"]`` does.
+
+    Numba types the attribute form with a bare ``KeyError: 'name'``.
+    """
+    rec = dtypes.register_anonymous(np.dtype([("mf_a", "i1"), ("mf_b", "f8")]), "_MissFieldRec")
+    other = dtypes.register_anonymous(np.dtype([("mf_c", "i1"), ("mf_d", "f8")]), "_MissFieldRec2")
+    unknown = BinaryOp.register_anonymous(lambda x, y: x.mf_zzz, "_miss_field", is_udt=True)
+    with pytest.raises(
+        UdfParseError,
+        match=r"_miss_field does not work with \(_MissFieldRec, _MissFieldRec\): "
+        r"Field 'mf_zzz' was not found",
+    ):
+        unknown[rec]
+    assert rec not in unknown
+    mixed = BinaryOp.register_anonymous(lambda x, y: (x.mf_a, y.mf_d), "_miss_mix", is_udt=True)
+    with pytest.raises(UdfParseError, match=r"\(_MissFieldRec2, _MissFieldRec\): Field 'mf_a'"):
+        mixed[other, rec]
+    unary_op = UnaryOp.register_anonymous(lambda x: x.mf_zzz, "_miss_field_u", is_udt=True)
+    with pytest.raises(UdfParseError, match=r"unary._miss_field_u does not work with"):
+        unary_op[rec]
+
+
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_return_type_errors_array_udt():
     """Tuple return against an array UDT input should suggest a numpy array,
