@@ -5855,7 +5855,7 @@ def test_udt_store_casts_reach_every_store_path():
     u = Vector(f8s, size=3)
     u[[0, 2]] << unary.ainv(gb.Scalar.from_value([1, 2, 3], dtype=i8s))
     assert u.to_coo()[1].tolist() == [[-1, -2, -3]] * 2
-    with pytest.raises(DomainMismatch, match="a UDT casts only to another UDT"):
+    with pytest.raises(DomainMismatch, match="result of type .*casts only to another UDT. Use"):
         gb.Scalar(FP64) << v.reduce(agg.sum)
     w = Vector(f8s, size=3)
     w[0] = [0.5, 0.5, 0.5]
@@ -5918,8 +5918,9 @@ def test_udt_scalar_accumulates_its_value_converted_to_its_type():
     s.clear()
     s(accum=binary.plus) << 0.5
     assert s.value.tolist() == [0, 0, 0]
-    # A built-in Scalar casts only into a built-in type, as for a store.
-    with pytest.raises(DomainMismatch, match="a UDT casts only to another UDT"):
+    # A built-in Scalar casts only into a built-in type, as for a store. The error
+    # calls it a value, not a result (it said "a result of type FP64").
+    with pytest.raises(DomainMismatch, match="value of type FP64 .*casts only to another UDT.$"):
         added(gb.Scalar.from_value(0.5))
     # A Vector is not a value to accumulate, into a UDT Scalar or a built-in one.
     for accumulate in [added, added_to_int8]:
