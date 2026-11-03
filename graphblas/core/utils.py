@@ -245,7 +245,7 @@ def check_values_size(values, dtype, count, is_iso, *, indptr=None, indices=None
     if is_iso:
         count = 1
     if (have := values.nbytes // dtype.np_type.itemsize) < count:
-        if values.ndim == 0:
+        if values.ndim == 0 and have == 0:
             raise ValueError(
                 f"a scalar does not fill one element of dtype {dtype}, "
                 f"of shape {dtype.np_type.shape}"
