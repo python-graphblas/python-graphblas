@@ -361,8 +361,9 @@ def _pick_c_type_name(python_name):
     """Return a valid C identifier for use as ``GxB_JIT_C_NAME`` on a UDT named ``python_name``.
 
     ``gbudt_`` and the name (see ``_C_TYPE_NAME_PREFIX``), which stays readable in
-    introspection and JIT cache file names. A name made here (``gbudt_...``, or a synthetic
-    ``_gbudt_NNN`` or ``_gbnest_NNN``) is kept as it is, so a pinned C name maps to itself.
+    introspection and JIT cache file names. A name made here (``gbudt_...``) or one starting
+    with ``_gb``, which python-graphblas keeps for the types it makes itself (a synthetic
+    ``_gbudt_NNN`` or ``_gbnest_NNN``, say), is kept as it is, so a pinned C name maps to itself.
     When the result is not a C identifier (a name with dots, or none given), or would not fit
     SuiteSparse's ``GxB_MAX_NAME_LEN`` (it refuses a name of 128 characters or more, and the
     type is left with an empty one), mint a fresh ``_gbudt_NNN`` name instead, so the UDT
@@ -370,7 +371,7 @@ def _pick_c_type_name(python_name):
     """
     if not isinstance(python_name, str):
         c_name = ""
-    elif python_name.startswith((_C_TYPE_NAME_PREFIX, "_gbudt_", "_gbnest_")):
+    elif python_name.startswith((_C_TYPE_NAME_PREFIX, "_gb")):
         c_name = python_name
     else:
         c_name = _C_TYPE_NAME_PREFIX + python_name
