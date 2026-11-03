@@ -164,7 +164,8 @@ def _set_udt_jit_c_definition(datatype):
     # A name already given to another layout (two UDTs registered under one
     # name) gets a fresh one: SuiteSparse would share their JIT kernels.
     while _jit_c_type_defs.setdefault(c_name, typedef) != typedef:
-        info = _udt_c_typedef(f"_gbudt_{next(_synthetic_udt_counter)}", datatype.np_type)
+        c_name = f"_gbudt_{next(_synthetic_udt_counter)}"
+        info = _udt_c_typedef(c_name, datatype.np_type, is_c_name=True)
         c_name, typedef = info
     lib.GrB_Type_set_String(datatype._carg, ffi.new("char[]", c_name.encode()), lib.GxB_JIT_C_NAME)
     lib.GrB_Type_set_String(

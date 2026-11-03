@@ -3170,10 +3170,39 @@ def test_udt_long_name_gets_a_c_name_that_fits():
 def test_udt_c_name_keeps_python_graphblas_own_names():
     # A type python-graphblas makes itself has a name starting with _gb, which no kernel
     # identifier starts with either, so it keeps that name as its C name; a user's name gets
-    # the gbudt_ prefix.
+    # the gbudt_ prefix, even one that starts with it.
     from graphblas.core.operator.udt_codegen import _pick_c_type_name
 
     assert _pick_c_type_name("Edge") == "gbudt_Edge"
-    assert _pick_c_type_name("gbudt_Edge") == "gbudt_Edge"
+    assert _pick_c_type_name("gbudt_Edge") == "gbudt_gbudt_Edge"
     for name in ["_gbudt_7", "_gbnest_3", "_gbinternal_fp64x16"]:
         assert _pick_c_type_name(name) == name
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.skipif("not _has_jit_set")
+def test_udt_from_c_source_lifts_ops_under_its_own_c_name():
+    """An op lifted to a type registered from C source names the type as its C source does.
+
+    The prefix that keeps a numpy UDT's C name clear of kernel identifiers was also put on
+    a C-source type's name, so ``binary.plus[t]`` defined ``plus_gbudt_cpt_t`` on a type
+    ``gbudt_cpt_t`` that SuiteSparse does not know: ``JitError``, then 'load'.
+    """
+    _require_jit_on()
+    np_type = np.dtype([("cs_x", np.float64), ("cs_y", np.float64)], align=True)
+    t = dtypes.ss.register_new(
+        "cs_lift_t", "typedef struct { double cs_x ; double cs_y ; } cs_lift_t ;", np_type=np_type
+    )
+    assert t.jit_c_name == "cs_lift_t"
+    assert binary.plus[t].jit_c_name == "plus_cs_lift_t"
+    assert binary.eq[t].jit_c_name == "eq_cs_lift_t"
+    v = Vector.from_coo([0, 1], np.array([(1.0, 2.0), (3.0, 4.0)], dtype=np_type), dtype=t)
+    with _jit_mode("on"):
+        r = v.ewise_mult(v, binary.plus).new()
+        same = (v == v).new()
+        assert gb.ss.config["jit_c_control"] == "on"
+    assert r.to_coo()[1].tolist() == [(2.0, 4.0), (6.0, 8.0)]
+    assert same.to_coo()[1].tolist() == [True, True]
+    # A numpy UDT's own name always gets the prefix, even one that starts with it
+    udt = dtypes.register_anonymous(np.dtype([("cs_pre", np.float64)]), "gbudt_CsPre")
+    assert udt.jit_c_name == "gbudt_gbudt_CsPre"
