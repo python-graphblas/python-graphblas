@@ -419,10 +419,15 @@ def _namespace_op(ns, name):
     """The op ``name`` in namespace globals ``ns``, or None; it builds one registered lazily.
 
     A lazily registered op waits in the namespace's ``_delayed`` until its module
-    ``__getattr__`` builds it, so ``name in ns`` alone misses it until then.
+    ``__getattr__`` builds it, so ``name in ns`` alone misses it until then. An
+    IndexUnaryOp registered lazily makes its SelectOp only once it is built, so select
+    builds it from indexunary's ``_delayed``.
     """
-    if name not in ns and name in ns.get("_delayed", ()):
-        ns["__getattr__"](name)
+    if name not in ns:
+        if name in ns.get("_delayed", ()):
+            ns["__getattr__"](name)
+        elif ns is vars(select) and name in indexunary._delayed:
+            getattr(indexunary, name)
     return ns.get(name)
 
 
