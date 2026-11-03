@@ -1,3 +1,5 @@
+import math
+import numbers
 from types import BuiltinFunctionType, FunctionType, ModuleType
 
 from ... import (
@@ -367,29 +369,54 @@ def _resolve_index_expr(ns, modname, expr, callname, opname):
     _check_index_expr(modname, expr, callname, opname)
     tensor = expr.args[0]
     thunk = expr.args[1]
-    method = f"{opname}{expr.op.name}"
     if expr._is_scalar:
-        # Handle ScalarExpressions that change their arguments to Vector, before
-        # the shift below reads the thunk's value
+        # Handle ScalarExpressions that change their arguments to Vector, before the
+        # bound below reads the thunk's value. A comparison (an ewise_mult) has both
+        # as Vectors of size 1; an apply keeps its thunk a Scalar.
         if tensor._parent is not None:  # e.g., suitesparse
             tensor = tensor._parent
-            thunk = thunk._parent
+            if not thunk._is_scalar:
+                thunk = thunk._parent
         else:  # e.g., suitesparse-vanilla
             tensor = tensor[0].new()
-            thunk = thunk[0].new()
-    if _namespace_op(ns, method) is None:
-        # TODO: remove this once rowlt/rowge/collt/colge exist
-        # Attempt to convert < into <= and >= into > (rowlt and rowge are not part of
-        # the official spec, but rowle and rowgt are). Convert thunk to Python int to
-        # avoid possible subtraction with uints. An empty thunk goes to the op as it
-        # is, which raises EmptyObject.
-        if expr.op.name in {"lt", "ge"}:
-            method = f"{opname}{'le' if expr.op.name == 'lt' else 'gt'}"
-            if not thunk._is_empty:
-                thunk = thunk.value - 1
-        if _namespace_op(ns, method) is None:  # pragma: no cover (sanity)
-            raise ValueError(f"Unknown or unregistered {modname} method: {method}")
+            if not thunk._is_scalar:
+                thunk = thunk[0].new()
+    name = expr.op.name
+    if opname != "value":
+        if name in {"lt", "ge"} and _namespace_op(ns, f"{opname}{name}") is not None:
+            # An op registered for it (a user's rowlt): the number as given
+            if expr._right_literal is not None:
+                thunk = expr._right_literal
+        else:
+            thunk, name = _index_bound(expr._right_literal, thunk, name)
+    method = f"{opname}{name}"
+    if _namespace_op(ns, method) is None:  # pragma: no cover (sanity)
+        raise ValueError(f"Unknown or unregistered {modname} method: {method}")
     return _namespace_op(ns, method)(tensor, thunk)
+
+
+def _index_bound(literal, thunk, name):
+    """Return the thunk and comparison that select an index ``name`` (lt, le, gt, ge) a bound.
+
+    The bound is the number the caller gave (``literal``), else the thunk Scalar's value.
+    The comparison typed its thunk beside the values, which is wrong for an index: 300
+    beside INT8 values is infinity, and 2**24 + 1 beside FP32 rounds. Only rowle and
+    rowgt exist (and colle, colgt, indexle, indexgt), and indices are whole numbers, so
+    ``i < t`` is ``i <= ceil(t) - 1``, ``i >= t`` is ``i > ceil(t) - 1``, and ``i <= t``
+    and ``i > t`` take ``floor(t)``, where GraphBLAS would truncate a float toward zero
+    (``i > -0.5`` dropped index 0). A whole number beyond INT64, which holds every index,
+    is clamped to it. An empty Scalar goes to the op as it is, which raises EmptyObject.
+    """
+    shift = name in {"lt", "ge"}
+    if shift:
+        name = "le" if name == "lt" else "gt"
+    bound = thunk.value if literal is None else literal
+    if not isinstance(bound, numbers.Real):
+        return thunk, name
+    if math.isfinite(bound):
+        bound = math.ceil(bound) - 1 if shift else math.floor(bound)
+        bound = min(max(bound, -(2**63)), 2**63 - 1)
+    return bound, name
 
 
 def _namespace_op(ns, name):

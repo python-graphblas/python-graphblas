@@ -1372,6 +1372,27 @@ def test_indexunary_helpers(A):
     # An empty Scalar thunk raises as it does for the op; it raised from the shift.
     with pytest.raises(EmptyObject):
         indexunary.row(A < Scalar(float)).new()
+    # Indices are compared with the bound given, as a whole number, not with the thunk
+    # typed beside the values: beside INT8 or UINT8, 300 is infinity, and beside FP32,
+    # 2**24 + 1 rounds (as for select's helpers).
+    n = 400
+    for dtype in ["INT8", "UINT8"]:
+        B = Matrix.from_coo(np.arange(n), np.zeros(n, int), 1, dtype=dtype, nrows=n, ncols=1)
+        for expr, count in [(B < 300, 300), (B > 299, 100), (B <= 299, 300), (B >= 300, 100)]:
+            assert indexunary.row(expr).new().to_coo()[2].sum() == count
+        assert indexunary.column(B.T <= 299).new().to_coo()[2].sum() == 300
+    rows = [2**24 - 1, 2**24, 2**24 + 1]
+    F = Matrix.from_coo(rows, [0, 0, 0], [1.0, 2.0, 3.0], dtype="FP32", nrows=2**24 + 3, ncols=1)
+    assert indexunary.row(F < 2**24 + 1).new().to_coo()[2].tolist() == [True, True, False]
+    A5 = Matrix.from_coo(np.arange(5), np.zeros(5, int), 1.0, nrows=5, ncols=1)
+    for expr, expected in [
+        (A5 < A5.nrows / 2, [True, True, True, False, False]),
+        (A5 >= 2.5, [False, False, False, True, True]),
+        (A5 > -0.5, [True] * 5),
+        (A5 <= 2.5, [True, True, True, False, False]),
+    ]:
+        assert indexunary.row(expr).new().to_coo()[2].tolist() == expected
+    assert indexunary.column(A5.T < 2.5).new().to_coo()[2].tolist() == [True] * 3 + [False] * 2
 
 
 @pytest.mark.skipif("not supports_udfs")

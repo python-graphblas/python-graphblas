@@ -795,6 +795,15 @@ def test_select(s):
     assert gb.indexunary.row(s >= 0.5).new().value is False
     with pytest.raises(TypeError, match="select.value takes a comparison"):
         select.value(s + 1)
+    # A Scalar's apply keeps its thunk a Scalar (AttributeError on suitesparse, and
+    # TypeError on vanilla, from taking it out of a Vector)
+    assert select.value(s.apply(binary.lt, right=10)).new() == s
+    assert gb.indexunary.row(s.apply(binary.gt, right=-0.5)).new().value is True
+    # The bound given, as a whole number, not the thunk typed beside the value
+    assert gb.indexunary.row(s > -0.5).new().value is True
+    s8 = Scalar.from_value(1, dtype=dtypes.INT8)
+    assert gb.indexunary.row(s8 < 300).new().value is True
+    assert gb.indexunary.row(s8 > 299).new().value is False
 
 
 @pytest.mark.skipif("not suitesparse")

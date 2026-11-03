@@ -818,6 +818,10 @@ def test_indexunary_helpers(v):
     assert indexunary.row(v >= 4).new().isequal(v.apply(indexunary.rowgt, 3).new())
     assert indexunary.value(v == 1).new().dtype == dtypes.BOOL
     assert indexunary.row(v < 4).new().dtype == dtypes.BOOL
+    # The index is compared with the bound given, not with 300 typed beside INT8 (inf)
+    w = Vector.from_coo([0, 200, 399], 1, dtype=dtypes.INT8, size=400)
+    assert indexunary.row(w < 300).new().to_coo()[1].tolist() == [True, True, False]
+    assert indexunary.row(w > 2.5).new().to_coo()[1].tolist() == [False, True, True]
     # Scalar expression path resolves to a ScalarExpression, like select.value.
     s = Scalar.from_value(1)
     assert indexunary.value(s < 10).new() == s.apply(indexunary.valuelt, 10).new()
