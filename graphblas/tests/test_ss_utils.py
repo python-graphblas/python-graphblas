@@ -246,9 +246,14 @@ def test_openmp_enabled():
     )
 
 
-def test_global_config():
+def test_global_config(monkeypatch):
     d = {}
     config = gb.ss.config
+    if "jit_c_control" in config:  # SuiteSparse:GraphBLAS 8+
+        from graphblas.core.ss import jit_config
+
+        # Writing jit_c_control also sets whether UDT work keeps a "run"; undo that after
+        monkeypatch.setattr(jit_config, "_user_set_run", jit_config._user_set_run)
     for k in config:
         d[k] = config[k]
     assert d == config
@@ -271,6 +276,13 @@ def test_global_config():
     for k in config:
         if k in config._defaults:
             config[k] = None
+        elif k == "jit_c_control":
+            # None is the default "run" whatever graphblas.config has, and not a "run"
+            # the user chose, so UDT work may still raise it to "on"
+            config[k] = None
+            assert config[k] == "run"
+            assert jit_config._user_set_run is False
+            config[k] = d[k]
         else:
             with pytest.raises(ValueError, match="Unable to set default value for"):
                 config[k] = None
