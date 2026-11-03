@@ -1223,6 +1223,8 @@ class ss:
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
         dtype : dtype, optional
             dtype of the new Matrix.
             If not specified, this will be inferred from ``values``.
@@ -1328,7 +1330,7 @@ class ss:
                 sorted_cols=sorted_cols,
                 take_ownership=take_ownership,
             )
-        copy = not take_ownership
+        copy = not take_ownership or secure_import
         indptr = ints_to_numpy_buffer(
             indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
         )
@@ -1424,6 +1426,8 @@ class ss:
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
         dtype : dtype, optional
             dtype of the new Matrix.
             If not specified, this will be inferred from ``values``.
@@ -1529,7 +1533,7 @@ class ss:
                 sorted_rows=sorted_rows,
                 take_ownership=take_ownership,
             )
-        copy = not take_ownership
+        copy = not take_ownership or secure_import
         indptr = ints_to_numpy_buffer(
             indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
         )
@@ -1631,6 +1635,8 @@ class ss:
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
         dtype : dtype, optional
             dtype of the new Matrix.
             If not specified, this will be inferred from ``values``.
@@ -1746,7 +1752,7 @@ class ss:
                 sorted_cols=sorted_cols,
                 take_ownership=take_ownership,
             )
-        copy = not take_ownership
+        copy = not take_ownership or secure_import
         indptr = ints_to_numpy_buffer(
             indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
         )
@@ -1867,6 +1873,8 @@ class ss:
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
         dtype : dtype, optional
             dtype of the new Matrix.
             If not specified, this will be inferred from ``values``.
@@ -1982,7 +1990,7 @@ class ss:
                 sorted_rows=sorted_rows,
                 take_ownership=take_ownership,
             )
-        copy = not take_ownership
+        copy = not take_ownership or secure_import
         indptr = ints_to_numpy_buffer(
             indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
         )
@@ -2102,6 +2110,8 @@ class ss:
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
         dtype : dtype, optional
             dtype of the new Matrix.
             If not specified, this will be inferred from ``values``.
@@ -2202,7 +2212,7 @@ class ss:
                 is_iso=is_iso,
                 take_ownership=take_ownership,
             )
-        copy = not take_ownership
+        copy = not take_ownership or secure_import
         bitmap = ints_to_numpy_buffer(
             bitmap, np.bool_, copy=copy, ownable=True, order="C", name="bitmap"
         )
@@ -2306,6 +2316,8 @@ class ss:
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
         dtype : dtype, optional
             dtype of the new Matrix.
             If not specified, this will be inferred from ``values``.
@@ -2406,7 +2418,7 @@ class ss:
                 is_iso=is_iso,
                 take_ownership=take_ownership,
             )
-        copy = not take_ownership
+        copy = not take_ownership or secure_import
         bitmap = ints_to_numpy_buffer(
             bitmap, np.bool_, copy=copy, ownable=True, order="F", name="bitmap"
         )
@@ -2503,6 +2515,8 @@ class ss:
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
         dtype : dtype, optional
             dtype of the new Matrix.
             If not specified, this will be inferred from ``values``.
@@ -2593,7 +2607,7 @@ class ss:
                 is_iso=is_iso,
                 take_ownership=take_ownership,
             )
-        copy = not take_ownership
+        copy = not take_ownership or secure_import
         if method == "pack":
             dtype = matrix.dtype
         values, dtype = values_to_numpy_buffer(
@@ -2673,6 +2687,8 @@ class ss:
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
         dtype : dtype, optional
             dtype of the new Matrix.
             If not specified, this will be inferred from ``values``.
@@ -2763,7 +2779,7 @@ class ss:
                 is_iso=is_iso,
                 take_ownership=take_ownership,
             )
-        copy = not take_ownership
+        copy = not take_ownership or secure_import
         if method == "pack":
             dtype = matrix.dtype
         values, dtype = values_to_numpy_buffer(
@@ -3033,6 +3049,8 @@ class ss:
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
             For "coor", ownership of "rows" will never change.
         dtype : dtype, optional
             dtype of the new Matrix.
@@ -3203,6 +3221,8 @@ class ss:
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
             For "cooc", ownership of "cols" will never change.
         dtype : dtype, optional
             dtype of the new Matrix.
