@@ -7869,9 +7869,13 @@ def test_udt_ret_dtype_rejects_a_return_it_cannot_hold():
     assert flat[FP64, FP64].return_type is nested
     binary_rejects(lambda x, y: (x, y, x + y), arr2, "tuple of length 3, which cannot be written")
     binary_rejects(lambda x, y: (x, y), FP64, "tuple of length 2, which cannot be written")
-    # A complex return into real values; Numba's own message lost why
+    # A complex return into real values; Numba's own message lost why. Into BOOL it is
+    # written as bool(...), so it works
     for ret_dtype in [FP64, arr2]:
         binary_rejects(lambda x, y: x * 1j + y, ret_dtype, "complex128, .* Return a real value")
+    nonzero = BinaryOp.register_anonymous(lambda x, y: x * 1j + y, is_udt=True, ret_dtype=BOOL)
+    one, zero = Vector.from_coo([0], [1.5]), Vector.from_coo([0], [0.0])
+    assert one.ewise_mult(zero, nonzero).new()[0].new().value is True
     binary_rejects(
         lambda x, y: x if x > y else None, FP64, "returned a value that can be None, which cannot"
     )
