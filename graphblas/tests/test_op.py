@@ -1291,6 +1291,9 @@ def test_from_string():
     assert select.from_string(">=") is select.valuege
     assert indexunary.from_string("rowindex") is indexunary.rowindex
     assert indexunary.from_string("rowindex[int]") is indexunary.rowindex[int]
+    # The error's example is an op that resolves (it was 'row_index')
+    with pytest.raises(ValueError, match="Example usage: 'rowindex'"):
+        indexunary.from_string("bad_indexunary")
     # Only operators: a namespace's helper functions and methods are not strings for one
     for ns, name in [
         (indexunary, "value"),
