@@ -218,6 +218,13 @@ def _complex_op_error(op_name, dtype, dtype2):
     )
 
 
+def _records_in_array_message(op_label, dtypes_str):
+    return (
+        f"{op_label} does not work with ({dtypes_str}): a built-in op lifts to the numbers "
+        "in an array or a record, not to records in an array; register a custom op for it."
+    )
+
+
 def _element_types(op_name, dtype, dtype2, elem_x, elem_y):
     """Return ``(in_x, in_y, out)``, the numpy dtypes ``binary.{op_name}`` uses on one element.
 
@@ -237,6 +244,9 @@ def _element_types(op_name, dtype, dtype2, elem_x, elem_y):
     # down with ``NotImplementedError: No definition for lowering lt``.
     if op_name in _OPS_NOT_FOR_COMPLEX and "c" in (elem_x.kind, elem_y.kind):
         raise _complex_op_error(op_name, dtype, dtype2)
+    if elem_x.names is not None or elem_y.names is not None:
+        # Records in an array (an array UDT or field); Numba cannot add two records.
+        raise KeyError(_records_in_array_message(f"binary.{op_name}", f"{dtype}, {dtype2}"))
     builtin_x = _builtin_dtype(elem_x)
     builtin_y = _builtin_dtype(elem_y)
     if builtin_x is None or builtin_y is None:
