@@ -526,8 +526,9 @@ def _fused_store_expr(expr, output_dtype):
     casts each element as it writes it (``udt_codegen.fused_store_op``), so no
     temporary of the result's own type is made: data GraphBLAS works on is
     often too large to hold twice. That works for an element-wise
-    computation by a built-in op that lifts to UDTs (``apply``,
-    ``ewise_mult``, ``ewise_union``). ``ewise_add`` copies an entry present in
+    computation by a built-in op that lifts to UDTs, or by ``identity``,
+    ``first`` or ``second`` (``apply``, ``ewise_mult``, ``ewise_union``);
+    ``any`` may pick either operand. ``ewise_add`` copies an entry present in
     only one input without the op, and a semiring or reduction would add in
     the narrower type, so those and any other computation raise.
     """
@@ -546,10 +547,10 @@ def _fused_store_expr(expr, output_dtype):
         raise DomainMismatch(
             f"cannot store a result of type {expr.dtype} in an object of type "
             f"{output_dtype}: GraphBLAS cannot cast a UDT, and only a built-in op that lifts "
-            "to UDTs, in apply, ewise_mult or ewise_union, can write another type as it "
-            f"computes ({what} cannot), so this would need a temporary copy of the whole "
-            "result. Make it explicitly by storing the computed result, as in "
-            "`obj << expr.new()`, which casts it in one more pass."
+            "to UDTs, or identity, first or second, in apply, ewise_mult or ewise_union, can "
+            f"write another type as it computes ({what} cannot), so this would need a "
+            "temporary copy of the whole result. Make it explicitly by storing the computed "
+            "result, as in `obj << expr.new()`, which casts it in one more pass."
         )
     rv = copy.copy(expr)
     rv.op, rv.cfunc_name, rv.dtype = fused, cfunc_name, output_dtype

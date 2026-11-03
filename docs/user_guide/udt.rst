@@ -258,8 +258,9 @@ data.
    * - ...from an existing object: ``w << v``, ``v.dup(dtype=...)``, with a
        mask, an accumulator or ``replace``
      - One pass through a cast op.
-   * - ...from an element-wise lifted op: ``apply``, ``ewise_mult``,
-       ``ewise_union``, and infix operators that use them
+   * - ...from an element-wise lifted op, or ``identity``, ``first`` or
+       ``second``: ``apply``, ``ewise_mult``, ``ewise_union``, and infix
+       operators that use them
      - The op writes the object's type itself, in the same call:
        ``int_udt_vec += 0.5`` truncates, as it does for an ``INT8`` vector.
    * - ...from anything else: ``mxm``, ``reduce`` into a Vector, ``ewise_add``,
