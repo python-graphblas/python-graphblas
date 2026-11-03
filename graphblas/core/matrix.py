@@ -2426,6 +2426,7 @@ class Matrix(BaseType):
 
         """
         method_name = "apply"
+        right_literal = None
         extra_message = (
             "apply only accepts UnaryOp with no scalars or BinaryOp with `left` or `right` scalar "
             "or IndexUnaryOp with `right` thunk."
@@ -2495,6 +2496,7 @@ class Matrix(BaseType):
             expr_repr = "{1.name}.apply({op}, left={0._expr_name})"
         elif left is None:
             if type(right) is not Scalar:
+                right_literal = right
                 right, dtype = _literal_operand(self.dtype, right, op)
                 try:
                     right = Scalar.from_value(right, dtype, is_cscalar=None, name="")
@@ -2538,7 +2540,7 @@ class Matrix(BaseType):
             expr_repr = "{0.name}.apply({op}, right={1._expr_name})"
         else:
             raise TypeError("Cannot provide both `left` and `right` to apply")
-        return MatrixExpression(
+        expr = MatrixExpression(
             method_name,
             cfunc_name,
             args,
@@ -2549,6 +2551,8 @@ class Matrix(BaseType):
             at=self._is_transposed,
             bt=self._is_transposed,
         )
+        expr._right_literal = right_literal
+        return expr
 
     def select(self, op, thunk=None):
         """Create a new Matrix by applying ``op`` to each element of the Matrix

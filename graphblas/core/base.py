@@ -572,6 +572,7 @@ class BaseExpression:
         "expr_repr",
         "dtype",
         "_value",
+        "_right_literal",
         "__weakref__",
     )
     output_type = None
@@ -607,6 +608,9 @@ class BaseExpression:
             self.dtype = op.return_type
         else:
             self.dtype = dtype
+        # The right operand as the caller gave it, a literal a comparison typed
+        # beside the values; the select helpers compare indices with it instead.
+        self._right_literal = None
         self._value = None
 
     def new(self, dtype=None, *, mask=None, name=None, **opts):
