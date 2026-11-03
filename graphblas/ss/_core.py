@@ -143,9 +143,17 @@ class GlobalConfig(BaseConfig):
         "run" : run JIT kernels if already loaded, but don't load or compile
         "load" : able to load and run JIT kernels; may not compile
         "on" : full JIT: able to compile, load, and run
-        Only available for SuiteSparse:GraphBLAS >=8
+        Only available for SuiteSparse:GraphBLAS >=8.
+        python-graphblas sets it at init from ``graphblas.config["jit_c_control"]``,
+        or to "run" when that is not set, and UDT work raises that default "run" to
+        "on" when it needs a kernel compiled. A "run" configured there is kept, and
+        so is one set here over another configured value; with nothing configured,
+        "run" set here is the default again, as None is in any case. The user
+        guide's initialization page covers the trade-offs, and when "on" is safe.
     jit_use_cmake : bool
         Whether to use cmake to compile the JIT kernels.
+        Always True for SuiteSparse built with MSVC (on Windows), where
+        python-graphblas does not turn the JIT on yet.
         Only available for SuiteSparse:GraphBLAS >=8
     jit_c_compiler_name : str
         C compiler for JIT kernels.
@@ -253,6 +261,25 @@ class GlobalConfig(BaseConfig):
             "load": lib.GxB_JIT_LOAD,
             "on": lib.GxB_JIT_ON,
         }
+
+    def __setitem__(self, key, val):
+        key = key.lower()
+        if key != "jit_c_control":
+            super().__setitem__(key, val)
+            return
+        from ..core.ss import jit_config
+
+        # UDT work keeps a 'run' the user set. One written here counts when it
+        # changes the configured control (graphblas.config, read at init) or repeats
+        # a configured 'run'. With nothing configured it is the default 'run' again,
+        # which UDT work raises, so saving and restoring the default changes nothing.
+        # None is that default whatever is configured.
+        super().__setitem__(key, "run" if val is None else val)
+        if isinstance(val, str):
+            val = val.lower()
+        elif val is not None:
+            val = self._reverse_enumerations[key].get(val, val)
+        jit_config._user_set_run = val == "run" and jit_config._configured_jit_c_control is not None
 
 
 class About(Mapping):

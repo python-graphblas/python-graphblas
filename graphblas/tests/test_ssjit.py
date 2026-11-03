@@ -47,12 +47,22 @@ if backend != "suitesparse":
 # can call it themselves. Tests use it through the public surface.
 _fix_jit_config = gb.ss.fix_jit_config if not _IS_SSGB7 else (lambda: None)
 
-# ``_auto_fix_jit_at_import`` repairs the compiler path but leaves
-# ``jit_c_control`` alone, so compilation is enabled on demand by
-# ``_enable_jit_for_udt``. Ask it once here, before the autouse ``_setup_jit``
-# fixture mutates the live config: it answers whether this environment can
-# JIT-compile at all, and caches that answer for the rest of the process.
-_JIT_WORKS_AT_IMPORT = not _IS_SSGB7 and backend == "suitesparse" and _enable_jit_for_udt()
+
+def _jit_works_here():
+    """Whether this environment can JIT-compile at all, whatever control the session has.
+
+    The backend's init set ``jit_c_control`` from ``gb.config`` (``'run'`` by
+    default) and, under ``'on'``, probed the compiler. ``_enable_jit_for_udt``
+    raises the default ``'run'`` and probes, but answers no under ``'off'``,
+    ``'pause'``, ``'load'`` or a ``'run'`` the user set without probing, so ask
+    it under ``'on'``, and put the control back. It caches the answer for the
+    rest of the process. Asked once here, before the autouse ``_setup_jit``
+    fixture mutates the live config.
+    """
+    if _IS_SSGB7 or backend != "suitesparse":
+        return False
+    with _jit_mode("on"):
+        return _enable_jit_for_udt()
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -114,19 +124,28 @@ def _jit_mode(mode):
         gb.ss.config["jit_c_control"] = prev
 
 
-def _run_in_fresh_process(script):
+_JIT_WORKS_AT_IMPORT = _jit_works_here()
+
+
+def _run_in_fresh_process(script, jit_c_control=None, **extra_env):
     """Run ``script`` in a new interpreter on this tree; return its ``key: value`` lines.
 
     The script must print ``package: <gb.__file__>`` so the child can be shown
-    to have imported this tree before anything it reports is trusted.
+    to have imported this tree before anything it reports is trusted. The
+    child gets ``GRAPHBLAS_JIT_C_CONTROL=jit_c_control``, or none at all, and
+    ``extra_env``.
     """
     repo_root = Path(__file__).resolve().parents[2]
+    env = dict(os.environ, PYTHONPATH=str(repo_root), **extra_env)
+    env.pop("GRAPHBLAS_JIT_C_CONTROL", None)
+    if jit_c_control is not None:
+        env["GRAPHBLAS_JIT_C_CONTROL"] = jit_c_control
     result = subprocess.run(
         [sys.executable, "-c", script],
         capture_output=True,
         text=True,
         check=False,
-        env=dict(os.environ, PYTHONPATH=str(repo_root)),
+        env=env,
     )
     report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     assert result.returncode == 0, report
@@ -159,17 +178,115 @@ print("after: " + str(control()))
 
 
 @pytest.mark.skipif("_IS_SSGB7")
-def test_ss_import_leaves_jit_c_control_alone():
+@pytest.mark.parametrize("jit_c_control", [None, "run", "on", "pause"])
+def test_ss_import_leaves_jit_c_control_alone(jit_c_control):
     """Reading from ``gb.ss`` must not change the numerical machinery.
 
     ``gb.ss`` is reached by attribute access, so importing it has to be inert.
     It used to raise ``jit_c_control`` to ``'on'``, which decides whether
     SuiteSparse loads kernels from its on-disk cache, so a line as harmless as
     ``print(gb.ss.about["library_version"])`` changed how every later
-    operation in the process was computed.
+    operation in the process was computed. The control is set by the
+    backend's init, from ``gb.config`` (here ``GRAPHBLAS_JIT_C_CONTROL``),
+    and ``'on'`` becomes ``'run'`` where the JIT cannot compile. Not set, it
+    is ``'run'``.
     """
-    lines, report = _run_in_fresh_process(_SS_IMPORT_PROBE)
+    lines, report = _run_in_fresh_process(_SS_IMPORT_PROBE, jit_c_control)
     assert lines["after"] == lines["before"], report
+    if jit_c_control != "on":
+        expected = getattr(gb.core.lib, f"GxB_JIT_{(jit_c_control or 'run').upper()}")
+        assert lines["before"] == str(expected), report
+    elif _JIT_WORKS_AT_IMPORT:
+        assert lines["before"] == str(gb.core.lib.GxB_JIT_ON), report
+    else:
+        # psg's wheels (built without the JIT), or no working C compiler
+        assert lines["before"] == str(gb.core.lib.GxB_JIT_RUN), report
+
+
+_BAD_JIT_C_CONTROL_PROBE = """
+import graphblas as gb
+import suitesparse_graphblas as ssgb
+
+print("package: " + gb.__file__)
+try:
+    gb.Vector
+except ValueError as exc:
+    print("error: " + str(exc))
+print("initialized: " + str(ssgb.is_initialized()))
+"""
+
+
+def test_bad_jit_c_control_config_fails_init_before_it_starts():
+    """A bad ``GRAPHBLAS_JIT_C_CONTROL`` says so, and leaves SuiteSparse uninitialized."""
+    lines, report = _run_in_fresh_process(_BAD_JIT_C_CONTROL_PROBE, "of")
+    assert "GRAPHBLAS_JIT_C_CONTROL" in lines.get("error", ""), report
+    assert "'of'" in lines["error"], report
+    assert lines["initialized"] == "False", report
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_set_jit_c_control_at_init(monkeypatch):
+    """Init sets each configured value as given, and ``'on'`` only where the JIT compiles.
+
+    Where it cannot, it sets ``'run'`` with no error: a library built without
+    the JIT, no compiler on disk, a cache it cannot write to, or a compiler
+    that fails the probe. Nothing configured (None) sets ``'run'`` too, and
+    only that ``'run'`` is left for UDT work to raise. Called directly here,
+    as init calls it.
+    """
+    from graphblas.core.ss import jit_config
+    from graphblas.core.ss.jit_config import _set_jit_c_control_at_init
+
+    cfg = gb.ss.config
+    prev_control = cfg["jit_c_control"]
+    prev_cc = cfg["jit_c_compiler_name"]
+    for name in ["_jit_enabled_for_udt", "_configured_jit_c_control", "_user_set_run"]:
+        monkeypatch.setattr(jit_config, name, getattr(jit_config, name))
+    try:
+        for control in ["load", "run", "pause", "off"]:
+            _set_jit_c_control_at_init(control)
+            # A library built without the JIT clamps 'load' down to 'run'.
+            expected = {control, "run"} if control == "load" else {control}
+            assert cfg["jit_c_control"] in expected
+            assert jit_config._configured_jit_c_control == control
+            assert jit_config._user_set_run is (control == "run")
+        _set_jit_c_control_at_init(None)
+        assert cfg["jit_c_control"] == "run"
+        assert jit_config._configured_jit_c_control is None
+        assert jit_config._user_set_run is False
+        _set_jit_c_control_at_init("on")
+        assert jit_config._configured_jit_c_control == "on"
+        assert cfg["jit_c_control"] == ("on" if jit_config._jit_enabled_for_udt else "run")
+        if _JIT_WORKS_AT_IMPORT:
+            assert cfg["jit_c_control"] == "on"
+        # A cache it cannot write to: the cached probe would load, and the first
+        # new kernel would fail to compile.
+        with monkeypatch.context() as m:
+            m.setattr(jit_config, "_cache_is_writable", lambda cfg: False)
+            _set_jit_c_control_at_init("on")
+            assert cfg["jit_c_control"] == "run"
+        # A "compiler" that exists but cannot compile anything. The probe's type
+        # is named after the toolchain, so the probe kernel this process has
+        # already loaded does not answer for this one. SuiteSparse built with
+        # MSVC always compiles through cmake, whose Visual Studio generator
+        # chooses the compiler itself, so this setting cannot fail the probe.
+        if not cfg["jit_use_cmake"]:
+            cfg["jit_c_compiler_name"] = str(Path(__file__).parent)
+            _set_jit_c_control_at_init("on")
+            assert cfg["jit_c_control"] == "run"
+            assert jit_config._jit_enabled_for_udt is False
+        # No compiler on disk and nothing to repair it from: no probe at all.
+        cfg["jit_c_compiler_name"] = "/nonexistent/path/to/cc"
+        probes = []
+        monkeypatch.setattr(jit_config, "_repair_jit_compiler", lambda cfg: None)
+        monkeypatch.setattr(jit_config, "_probe_jit", probes.append)
+        _set_jit_c_control_at_init("on")
+        assert cfg["jit_c_control"] == "run"
+        assert jit_config._jit_enabled_for_udt is False
+        assert probes == []
+    finally:
+        cfg["jit_c_compiler_name"] = prev_cc
+        cfg["jit_c_control"] = prev_control
 
 
 # Run in a subprocess: this is about the very first call in a process, and by
@@ -187,11 +304,11 @@ print("second: " + str(gb.ss.fix_jit_config()))
 def test_fix_jit_config_first_call_agrees_with_the_second():
     """``fix_jit_config()`` must report on the environment, not on itself.
 
-    Its probe registers a UDT, and registering a UDT asks to enable the JIT,
-    which would start a second probe inside the first. The inner probe would
-    register the probe type and the outer one would then die redeclaring it,
-    so a working environment would answer ``False`` the first time and
-    ``True`` every time after.
+    Its probe once registered a UDT, and registering a UDT asks to enable the
+    JIT, which started a second probe inside the first. The inner probe
+    registered the probe type and the outer one then died redeclaring it, so a
+    working environment answered ``False`` the first time and ``True`` every
+    time after. The probe now goes through the C API and registers nothing.
     """
     lines, report = _run_in_fresh_process(_FIX_JIT_TWICE_PROBE)
     assert lines["first"] == lines["second"], report
@@ -199,8 +316,8 @@ def test_fix_jit_config_first_call_agrees_with_the_second():
 
 # Run in a subprocess: this process has already probed the JIT and cached the
 # answer, and a fresh one has to probe at its first registration. Each
-# registration starts from ``'run'``, so one registrar raising the control
-# cannot cover for another that does not.
+# registration starts from the default ``'run'`` (None), so one registrar
+# raising the control cannot cover for another that does not.
 _SS_REGISTER_NEW_PROBE = """
 import graphblas as gb
 from graphblas import binary, indexbinary, indexunary, select, unary
@@ -238,7 +355,7 @@ if _has_idxbinop:
         "FP64", "FP64", "FP64", "FP64",
     )
 for kind, register in registrars.items():
-    gb.ss.config["jit_c_control"] = "run"
+    gb.ss.config["jit_c_control"] = None
     try:
         register()
     except Exception as exc:
@@ -250,7 +367,7 @@ for kind, register in registrars.items():
 
 @pytest.mark.skipif("_IS_SSGB7")
 def test_ss_register_new_enables_the_jit():
-    """Registering an op from C source raises SuiteSparse's default ``'run'``.
+    """Registering an op from C source raises the default ``'run'``.
 
     SuiteSparse compiles the C definition, or loads it from its cache, when the
     op is created. ``'run'`` does neither, so without the raise the
@@ -298,9 +415,9 @@ def test_ss_register_new_says_why_the_jit_cannot_build_it(monkeypatch):
                 unary.ss.register_new(op_name, cdef, "FP64", "FP64")
             with pytest.raises(InvalidValue, match=match):
                 dtypes.ss.register_new(type_name, tdef)
-        # A process that cannot compile leaves SuiteSparse's default in place.
+        # A process that cannot compile leaves the default 'run' in place.
         monkeypatch.setattr(jit_config, "_jit_enabled_for_udt", False)
-        gb.ss.config["jit_c_control"] = "run"
+        gb.ss.config["jit_c_control"] = None
         with pytest.raises(NullPointer, match="jit_c_control is still 'run'"):
             unary.ss.register_new(op_name, cdef, "FP64", "FP64")
         # A probe that fails in this very call leaves 'load' before the op is created.
@@ -314,11 +431,139 @@ def test_ss_register_new_says_why_the_jit_cannot_build_it(monkeypatch):
             monkeypatch.setattr(jit_config, "_jit_enabled_for_udt", None)
             monkeypatch.setattr(jit_config, "jit_compiler_is_usable", lambda: True)
             monkeypatch.setattr(jit_config, "_probe_jit", failed_probe)
-            gb.ss.config["jit_c_control"] = "run"
+            gb.ss.config["jit_c_control"] = None
             with pytest.raises(NullPointer, match="the C compiler does not work here"):
                 unary.ss.register_new(op_name, cdef, "FP64", "FP64")
     finally:
         gb.ss.config["jit_c_control"] = prev
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_ss_register_new_under_a_chosen_run_says_how_to_opt_in(monkeypatch):
+    """C source cannot be built under a ``'run'`` the user set, and the error says so.
+
+    UDT work raises only the default ``'run'``. One that was set, often to keep
+    processes from compiling into one cache at the same time, is kept, so the
+    registration fails, and the message has to say why and what to set instead.
+    Here the user configured ``'on'`` before init and writes ``'run'`` later.
+    """
+    from graphblas.core.ss import jit_config
+    from graphblas.exceptions import InvalidValue, NullPointer
+
+    monkeypatch.setattr(jit_config, "_configured_jit_c_control", "on")
+    monkeypatch.setattr(jit_config, "_user_set_run", jit_config._user_set_run)
+    suffix = uuid.uuid4().hex[:8]
+    op_name = f"chosen_neg_{suffix}"
+    type_name = f"chosen_t_{suffix}"
+    prev = gb.ss.config["jit_c_control"]
+    try:
+        gb.ss.config["jit_c_control"] = "run"
+        assert jit_config._user_set_run is True
+        match = "jit_c_control was set to 'run' .*GRAPHBLAS_JIT_C_CONTROL.* = 'on', or None"
+        with pytest.raises(NullPointer, match=match):
+            unary.ss.register_new(
+                op_name,
+                f"void {op_name} (double *z, double *x) {{ (*z) = -(*x) ; }}",
+                "FP64",
+                "FP64",
+            )
+        with pytest.raises(InvalidValue, match=match):
+            dtypes.ss.register_new(type_name, f"typedef struct {{ int64_t c_a ; }} {type_name} ;")
+        assert gb.ss.config["jit_c_control"] == "run"
+    finally:
+        gb.ss.config["jit_c_control"] = prev
+
+
+# Run in a subprocess: the forms that set the control are read once, at init.
+# ``form`` is defined by a line put in front of this.
+_UDT_WORK_PROBE = """
+import uuid
+
+import numpy as np
+
+import graphblas as gb
+
+if form == "gb.config.set":
+    gb.config.set(jit_c_control="run")
+elif form == "gb.ss.config":
+    gb.ss.config["jit_c_control"] = "run"
+print("package: " + gb.__file__)
+print("before: " + gb.ss.config["jit_c_control"])
+name = "uw_" + uuid.uuid4().hex[:8]
+try:
+    gb.dtypes.ss.register_new(name, "typedef struct { int64_t uw_a ; } " + name + " ;")
+except Exception as exc:
+    print("register_new: " + type(exc).__name__ + ": " + str(exc))
+else:
+    print("register_new: ok")
+print("after register_new: " + gb.ss.config["jit_c_control"])
+try:
+    import numba
+except ImportError:
+    numba = None
+if numba is not None:
+    udt = gb.dtypes.register_anonymous(
+        np.dtype([("uw_x", np.int64), ("uw_y", np.int64)], align=True), "UdtWorkProbe"
+    )
+    v = gb.Vector.from_coo([0, 1], np.array([(1, 2), (3, 4)], dtype=udt.np_type), dtype=udt)
+    w = v.ewise_add(v, gb.binary.plus).new()
+    print("udt op: " + str(w[1].new().value.tolist()))
+    print("after udt op: " + gb.ss.config["jit_c_control"])
+"""
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+@pytest.mark.parametrize(
+    ("form", "env_control", "kept"),
+    [
+        pytest.param("default", None, False, id="default"),
+        pytest.param("GRAPHBLAS_JIT_C_CONTROL", "run", True, id="env-run"),
+        pytest.param("gb.config.set", None, True, id="config-set-run"),
+        pytest.param("YAML file", None, True, id="yaml-run"),
+        # With nothing configured, a 'run' written later is the default again.
+        pytest.param("gb.ss.config", None, False, id="ss-config-run"),
+        # Written over a configured 'on', it changes the control, so it counts.
+        pytest.param("gb.ss.config", "on", True, id="env-on-then-ss-config-run"),
+        pytest.param("GRAPHBLAS_JIT_C_CONTROL", "off", True, id="env-off"),
+        pytest.param("GRAPHBLAS_JIT_C_CONTROL", "pause", True, id="env-pause"),
+        pytest.param("GRAPHBLAS_JIT_C_CONTROL", "load", True, id="env-load"),
+    ],
+)
+def test_udt_work_raises_only_the_default_run(form, env_control, kept, tmp_path):
+    """UDT work raises the default ``'run'`` to ``'on'``, and keeps a control the user set.
+
+    A ``'run'`` set before init (``GRAPHBLAS_JIT_C_CONTROL``, ``gb.config.set``
+    or a YAML config file) keeps processes from compiling, at the cost of UDT
+    ops running their Numba functions and C source failing to register. One
+    written to ``gb.ss.config`` later counts only when it changes the configured
+    control. ``'off'``, ``'pause'`` and ``'load'`` were kept before the default
+    was told apart.
+    """
+    if not kept and not _JIT_WORKS_AT_IMPORT:
+        pytest.skip("JIT not compiled in or not working here; nothing raises to 'on'")
+    extra_env = {}
+    if form == "YAML file":
+        (tmp_path / "jit.yaml").write_text("jit_c_control: run\n")
+        extra_env["GRAPHBLAS_CONFIG"] = str(tmp_path)
+    script = f"form = {form!r}\n" + _UDT_WORK_PROBE
+    lines, report = _run_in_fresh_process(script, env_control, **extra_env)
+    control = env_control if form == "GRAPHBLAS_JIT_C_CONTROL" else "run"
+    if not kept:
+        assert lines["before"] == "run", report
+        assert lines["register_new"] == "ok", report
+        assert lines["after register_new"] == "on", report
+        expected = "on"
+    else:
+        # A library built without the JIT clamps 'load' down to 'run'.
+        expected = lines["before"]
+        assert expected in {control, "run"}, report
+        assert lines["register_new"].startswith("InvalidValue: Cannot create"), report
+        if control == "run":
+            assert "was set to 'run'" in lines["register_new"], report
+        assert lines["after register_new"] == expected, report
+    if numba is not None:
+        assert lines["udt op"] == "(6, 8)", report
+        assert lines["after udt op"] == expected, report
 
 
 @pytest.mark.skipif("_IS_SSGB7")
@@ -377,12 +622,18 @@ def test_enable_jit_for_udt_re_raises_a_lowered_control(monkeypatch):
     fake = {}
     monkeypatch.setattr(jit_config, "_ss_config", lambda: fake)
     monkeypatch.setattr(jit_config, "_jit_enabled_for_udt", True)
+    monkeypatch.setattr(jit_config, "_user_set_run", False)
     # An explicit opt-out is a choice, not the default to raise, and ``'load'`` is
     # also where SuiteSparse parks the control after a compile fails.
     for start, expected in (("run", "on"), ("load", "load"), ("off", "off"), ("pause", "pause")):
         fake["jit_c_control"] = start
         assert _enable_jit_for_udt() is (expected == "on")
         assert fake["jit_c_control"] == expected
+    # A 'run' the user set is an opt-out too.
+    jit_config._user_set_run = True
+    fake["jit_c_control"] = "run"
+    assert _enable_jit_for_udt() is False
+    assert fake["jit_c_control"] == "run"
 
 
 @pytest.mark.skipif("_IS_SSGB7")
@@ -390,9 +641,10 @@ def test_enable_jit_for_udt_does_not_cache_an_opt_out(monkeypatch):
     """An ``'off'`` at the first UDT op must not decide the rest of the process.
 
     It says nothing about whether this process can compile. Caching a "no"
-    for it would leave a saved ``'run'``, restored afterwards, unraised for
+    for it would leave the default ``'run'``, restored afterwards, unraised for
     good, so every later UDT op would run without the JIT and nothing would
-    say so. The same goes for ``'pause'`` and ``'load'``.
+    say so. The same goes for ``'pause'``, ``'load'``, and a ``'run'`` the user
+    chose.
     """
     from graphblas.core.ss import jit_config
 
@@ -401,19 +653,36 @@ def test_enable_jit_for_udt_does_not_cache_an_opt_out(monkeypatch):
     monkeypatch.setattr(jit_config, "_jit_enabled_for_udt", None)
     monkeypatch.setattr(jit_config, "jit_compiler_is_usable", lambda: True)
     monkeypatch.setattr(jit_config, "_probe_jit", lambda cfg: True)
-    for start in ("off", "pause", "load"):
+    monkeypatch.setattr(jit_config, "_cache_is_writable", lambda cfg: True)
+    for start in ("off", "pause", "load", "run"):
+        # The last is a 'run' the user set.
+        monkeypatch.setattr(jit_config, "_user_set_run", start == "run")
         fake["jit_c_control"] = start
         assert _enable_jit_for_udt() is False
         assert fake["jit_c_control"] == start
         assert jit_config._jit_enabled_for_udt is None
+    monkeypatch.setattr(jit_config, "_user_set_run", False)
+    # A cache it cannot write to: the default 'run' stays, and the answer is cached.
+    fake["jit_c_control"] = "run"
+    with monkeypatch.context() as m:
+        m.setattr(jit_config, "_cache_is_writable", lambda cfg: False)
+        assert _enable_jit_for_udt() is False
+        assert fake["jit_c_control"] == "run"
+        assert jit_config._jit_enabled_for_udt is False
+    monkeypatch.setattr(jit_config, "_jit_enabled_for_udt", None)
     fake["jit_c_control"] = "run"
     assert _enable_jit_for_udt() is True
     assert fake["jit_c_control"] == "on"
 
 
 @pytest.mark.skipif("_IS_SSGB7")
-def test_enable_jit_for_udt_re_raises_the_live_control():
-    """The same raise, through SuiteSparse's own config rather than a stand-in."""
+def test_enable_jit_for_udt_re_raises_the_live_control(monkeypatch):
+    """The same raise, through SuiteSparse's own config rather than a stand-in.
+
+    A ``'run'`` written to ``gb.ss.config`` is the default, and raised, while
+    nothing is configured; written over a configured ``'on'``, it is the user's,
+    and kept. None is the default either way.
+    """
     if not _JIT_WORKS_AT_IMPORT:
         pytest.skip("JIT not compiled in or not working here; the control need not hold 'on'")
 
@@ -423,9 +692,23 @@ def test_enable_jit_for_udt_re_raises_the_live_control():
     prev_enabled = jit_config._jit_enabled_for_udt
     try:
         jit_config._jit_enabled_for_udt = True
+        monkeypatch.setattr(jit_config, "_configured_jit_c_control", None)
+        monkeypatch.setattr(jit_config, "_user_set_run", jit_config._user_set_run)
         gb.ss.config["jit_c_control"] = "run"
         assert _enable_jit_for_udt() is True
         assert gb.ss.config["jit_c_control"] == "on"
+        monkeypatch.setattr(jit_config, "_configured_jit_c_control", "on")
+        gb.ss.config["jit_c_control"] = "RUN"
+        assert jit_config._user_set_run is True
+        assert _enable_jit_for_udt() is False
+        assert gb.ss.config["jit_c_control"] == "run"
+        gb.ss.config["jit_c_control"] = None
+        assert gb.ss.config["jit_c_control"] == "run"
+        assert jit_config._user_set_run is False
+        assert _enable_jit_for_udt() is True
+        assert gb.ss.config["jit_c_control"] == "on"
+        gb.ss.config["jit_c_control"] = gb.core.lib.GxB_JIT_RUN
+        assert jit_config._user_set_run is True
     finally:
         gb.ss.config["jit_c_control"] = prev_control
         jit_config._jit_enabled_for_udt = prev_enabled
@@ -465,7 +748,7 @@ def test_failed_compile_is_not_retried_at_the_next_arming():
     prev_enabled = jit_config._jit_enabled_for_udt
     try:
         # Start from the default, so the first arming shows the raise.
-        gb.ss.config["jit_c_control"] = "run"
+        gb.ss.config["jit_c_control"] = None
         # A compiler that does not exist fails under every toolchain, where a
         # flag it does not know is only a warning to MSVC. The cache is pinned
         # to yes (true here) so the arming does not repair the path first.
@@ -507,8 +790,8 @@ def test_public_fix_jit_config_repairs_a_broken_compiler():
         assert result is True
         assert gb.ss.jit_compiler_is_usable()
         # Calling fix_jit_config a second time must not disable JIT. The probe
-        # tries to register a one-shot ``_jit_probe`` UDT and previously
-        # interpreted the duplicate-name error as a probe failure.
+        # used to register a one-shot ``_jit_probe`` UDT, and took the
+        # duplicate-name error as a probe failure.
         gb.ss.config["jit_c_compiler_name"] = "/nonexistent/path/to/cc"
         result2 = gb.ss.fix_jit_config()
         assert result2 is True
@@ -2046,15 +2329,11 @@ def test_eq_ne_udt_cfunc_works_for_unrepresentable_dtypes():
 
 
 @pytest.mark.skipif("not supports_udfs")
-def test_udt_scalar_broadcast_skips_jit():
-    """Mixed UDT+scalar arithmetic and eq/ne stay on the cfunc path.
+def test_udt_scalar_broadcast_jit_routing():
+    """Mixed UDT and scalar arithmetic gets a C definition with a type for each of z, x
+    and y; eq/ne on a mixed pair, and ops that have no C form, keep the cfunc.
 
-    The JIT codegen helpers (``set_jit_c_on_op`` and
-    ``set_jit_c_comparison_on_op``) only run when ``dtype == dtype2``. A
-    mixed pair would need a per-side type in the C signature plus one C
-    name per (op, left_type, right_type) triple; for now we keep the
-    cfunc fallback for broadcast and skip JIT. This test pins that
-    routing so a future change doesn't accidentally regress it (either
+    This test pins that routing so a future change doesn't accidentally regress it (either
     direction is fine, but it should be a conscious decision).
     """
     if not _has_jit_set:
@@ -2068,12 +2347,193 @@ def test_udt_scalar_broadcast_skips_jit():
     # Same-type pairs do JIT.
     assert binary.plus[record, record].jit_c_source is not None
     assert binary.eq[record, record].jit_c_source is not None
-    # Mixed pairs do not JIT (cfunc handles broadcast correctly; this is
-    # the documented limit, not an oversight).
-    assert binary.plus[record, dtypes.INT64].jit_c_source is None
-    assert binary.plus[dtypes.INT64, record].jit_c_source is None
+    # Mixed arithmetic does, with the scalar read once for every leaf
+    assert binary.plus[record, dtypes.INT64].jit_c_source == (
+        "void plus_11__BcastJitUV_int64_t (_BcastJitUV *z, const _BcastJitUV *x, "
+        "const int64_t *y) { z->bcast_u = (x->bcast_u) + (((double) ((*y)))) ; "
+        "z->bcast_v = (x->bcast_v) + (((double) ((*y)))) ; }"
+    )
+    assert binary.plus[dtypes.INT64, record].jit_c_source is not None
+    # Comparisons on a mixed pair keep the cfunc
     assert binary.eq[record, dtypes.INT64].jit_c_source is None
     assert binary.ne[record, dtypes.FP64].jit_c_source is None
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_mixed_jit_c_source():
+    """The C definitions of lifted ops on a scalar and an array UDT, and the cases with no C
+    form (an array operand that broadcasts, integer truediv, an array leaf in a record).
+    """
+    if not _has_jit_set:
+        pytest.skip("requires SuiteSparse:GraphBLAS >= 9")
+    arr = dtypes.register_anonymous(np.dtype((np.float64, (13,))), "_MixedArr13")
+    # (the C name of whichever test registered this numpy type first: ``test_op`` has it too)
+    c = arr.jit_c_name
+    assert binary.times[dtypes.FP64, arr].jit_c_source == (
+        f"void times_6_double_{c} ({c} *z, const double *x, "
+        f"const {c} *y) {{ for (int64_t i = 0 ; i < 13 ; i++) "
+        "{ z->v[i] = ((*x)) * (y->v[i]) ; } }"
+    )
+    assert binary.times[dtypes.FP64, arr].jit_c_name == f"times_6_double_{c}"
+    assert binary.times[arr, dtypes.FP64].jit_c_name == f"times_{len(c)}_{c}_double"
+    # plus_times on these types: its monoid is the same-type plus
+    semi = gb.semiring.plus_times[dtypes.FP64, arr]
+    assert semi.jit_c_source == binary.times[dtypes.FP64, arr].jit_c_source
+    assert semi.monoid.jit_c_source is not None
+    # Operands converted to the type the op computes in, as the cfunc converts them
+    assert "(((double) ((*x)))) - (y->v[i])" in binary.minus[dtypes.INT32, arr].jit_c_source
+    arr_i8 = dtypes.register_anonymous(np.dtype((np.int8, (13,))), "_MixedArrI8")
+    assert "(((double) (x->v[i]))) + (y->v[i])" in binary.plus[arr_i8, arr].jit_c_source
+    # No C form: these keep the cfunc
+    arr1 = dtypes.register_anonymous(np.dtype((np.float64, (1,))), "_MixedArr1")
+    assert binary.plus[arr1, arr].jit_c_source is None  # (broadcasts)
+    assert binary.truediv[dtypes.INT64, arr_i8].jit_c_source is None
+    nested = dtypes.register_anonymous(
+        np.dtype([("mx_w", np.float64, (2,)), ("mx_c", np.int64)]), "_MixedArrLeaf"
+    )
+    assert binary.plus[nested, dtypes.INT64].jit_c_source is None
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_mixed_jit_c_name_is_its_own():
+    """A mixed op's C name is not a one-type op's on a UDT named like the pair, nor another
+    pair's. SuiteSparse finds a compiled kernel by its op's name, so the second op ran the
+    first's kernel: wrong values, or writes past the end of a smaller element.
+    """
+    if not _has_jit_set:
+        pytest.skip("requires SuiteSparse:GraphBLAS >= 9")
+    a = dtypes.register_anonymous(np.dtype((np.float64, (19,))), "_CnA")
+    b = dtypes.register_anonymous(np.dtype((np.int64, (19,))), "_CnB")
+    ab = dtypes.register_anonymous(np.dtype((np.int8, (19,))), f"{a.jit_c_name}_{b.jit_c_name}")
+    assert binary.plus[ab, ab].jit_c_name != binary.plus[a, b].jit_c_name
+    n = 50
+    # Values that vary, or SuiteSparse before 10.5 builds iso vectors and computes an iso
+    # result without the kernel
+    k = np.broadcast_to(np.arange(n)[:, None] % 7, (n, 19))
+    vab = Vector.from_coo(np.arange(n), k.astype(np.int8), dtype=ab)
+    va = Vector.from_coo(np.arange(n), k + 1.5, dtype=a)
+    vb = Vector.from_coo(np.arange(n), 10 * k, dtype=b)
+    with _jit_mode("on"):
+        same = vab.ewise_mult(vab, binary.plus).new()
+        mixed = va.ewise_mult(vb, binary.plus).new()
+    assert (same.to_dense() == 2 * k).all()
+    assert (mixed.to_dense() == 11 * k + 1.5).all()
+
+
+def _mixed_parity_cases():
+    rng = np.random.default_rng(17)
+    arr_f = dtypes.register_anonymous(np.dtype((np.float64, (5,))), "_MixedParF")
+    arr_i = dtypes.register_anonymous(np.dtype((np.int64, (5,))), "_MixedParI")
+    arr_c = dtypes.register_anonymous(np.dtype((np.complex128, (5,))), "_MixedParC")
+    rec = dtypes.register_anonymous(
+        np.dtype([("mp_a", np.float64), ("mp_b", np.int32)], align=True), "_MixedParRec"
+    )
+    n = 64
+    vf = rng.standard_normal((n, 5))
+    vf[0, :2] = [np.nan, np.inf]
+    vi = rng.integers(-9, 10, (n, 5))
+    vc = rng.standard_normal((n, 5)) + 1j * rng.standard_normal((n, 5))
+    vr = np.zeros(n, rec.np_type)
+    vr["mp_a"] = rng.standard_normal(n)
+    vr["mp_b"] = rng.integers(-9, 10, n)
+    sf = rng.standard_normal(n)
+    sf[1] = 0.0
+    si = rng.integers(-3, 4, n)
+    su = rng.integers(0, 2**63, n, dtype=np.uint64)
+    idx = np.arange(n)
+    u = {
+        "FP64[5]": Vector.from_coo(idx, vf, dtype=arr_f),
+        "INT64[5]": Vector.from_coo(idx, vi, dtype=arr_i),
+        "FC64[5]": Vector.from_coo(idx, vc, dtype=arr_c),
+        "record": Vector.from_coo(idx, vr, dtype=rec),
+    }
+    s = {
+        "FP64": Vector.from_coo(idx, sf),
+        "INT64": Vector.from_coo(idx, si),
+        "UINT64": Vector.from_coo(idx, su),
+    }
+    real_ops = ["plus", "minus", "times", "truediv", "floordiv", "min", "max"]
+    return (
+        [
+            ("FP64[5]", "FP64", real_ops),
+            ("FP64[5]", "INT64", real_ops),
+            ("INT64[5]", "UINT64", real_ops),  # (computed in FP64, as on built-in vectors)
+            ("INT64[5]", "INT64", ["plus", "minus", "times", "floordiv", "min", "max"]),
+            ("FC64[5]", "FP64", ["plus", "minus", "times", "truediv"]),
+            ("record", "FP64", real_ops),
+            ("record", "INT64", ["plus", "minus", "times", "min", "max"]),
+        ],
+        u,
+        s,
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_mixed_jit_cfunc_parity():
+    """A mixed op's C kernel and its Numba cfunc give the same bytes, the UDT on either side."""
+    if not _has_jit_set:
+        pytest.skip("requires SuiteSparse:GraphBLAS >= 9")
+    _require_jit_on()
+    cases, u, s = _mixed_parity_cases()
+    checked = 0
+    for ukey, skey, ops in cases:
+        for op in ops:
+            for left, right in [(u[ukey], s[skey]), (s[skey], u[ukey])]:
+                typed = getattr(binary, op)[left.dtype, right.dtype]
+                if typed.jit_c_source is None:
+                    continue
+                with _jit_mode("on"):
+                    jit = left.ewise_mult(right, getattr(binary, op)).new()
+                with _jit_mode("off"):
+                    cf = left.ewise_mult(right, getattr(binary, op)).new()
+                assert jit.dtype == cf.dtype
+                assert jit.nvals == cf.nvals
+                assert (
+                    jit.to_dense().tobytes() == cf.to_dense().tobytes()
+                ), f"binary.{op}[{left.dtype}, {right.dtype}]: JIT and cfunc disagree"
+                checked += 1
+    assert checked > 60
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_mixed_semiring_runs_jit(capfd):
+    """The scalar x array semiring compiles as one JIT kernel (burble), with the result of the
+    generic kernel.
+    """
+    if not _has_jit_set:
+        pytest.skip("requires SuiteSparse:GraphBLAS >= 9")
+    _require_jit_on()
+    arr = dtypes.register_anonymous(np.dtype((np.float64, (6,))), "_MixedSemi6")
+    rng = np.random.default_rng(23)
+    A = gb.Matrix.from_coo(
+        rng.integers(0, 30, 200),
+        rng.integers(0, 20, 200),
+        rng.random(200),
+        nrows=30,
+        ncols=20,
+        dup_op=binary.plus,
+    )
+    U = rng.random((20, 6))
+    u = Vector.from_coo(np.arange(20), U, dtype=arr)
+    semi = gb.semiring.plus_times[dtypes.FP64, arr]
+    capfd.readouterr()
+    with burble():
+        w = A.mxv(u, semi).new()
+        w.wait()
+    out = capfd.readouterr().out
+    assert "GrB_mxv" in out
+    assert "generic" not in out
+    # (and burble names the generic kernel when it runs)
+    with _jit_mode("off"), burble():
+        w_generic = A.mxv(u, semi).new()
+        w_generic.wait()
+    assert "generic" in capfd.readouterr().out
+    idx, vals = w.to_coo()
+    gidx, gvals = w_generic.to_coo()
+    assert_array_equal(idx, gidx)
+    np.testing.assert_allclose(vals, gvals, rtol=1e-13)
+    np.testing.assert_allclose(vals, (A.to_dense(0) @ U)[idx], rtol=1e-13)
 
 
 def test_context_importable():
@@ -2085,3 +2545,94 @@ def test_context_importable():
     from graphblas.core.ss.context import global_context
 
     assert gb.ss.global_context is global_context
+
+
+def test_fix_from_conda_finds_windows_compilers(tmp_path):
+    """The conda repair looks in ``bin`` and, as Windows conda installs them, ``Library/bin``
+    with ``.exe`` names; a baked-in Windows path's basename is found too. Nothing there: None.
+    """
+    from graphblas.core.ss.jit_config import _fix_from_conda
+
+    def cfg_for(name):
+        return {"jit_c_compiler_name": name, "jit_c_compiler_flags": "-O3"}
+
+    win = tmp_path / "win"
+    (win / "Library" / "bin").mkdir(parents=True)
+    (win / "Library" / "bin" / "clang.exe").write_text("")
+    cfg = cfg_for(r"C:\bld\_h_env\Library\bin\cl.exe")
+    assert _fix_from_conda(cfg, str(win)) is True
+    assert cfg["jit_c_compiler_name"] == str(win / "Library" / "bin" / "clang.exe")
+    (win / "Library" / "bin" / "cl.exe").write_text("")
+    cfg = cfg_for(r"C:\bld\_h_env\Library\bin\cl.exe")
+    assert _fix_from_conda(cfg, str(win)) is True
+    assert cfg["jit_c_compiler_name"] == str(win / "Library" / "bin" / "cl.exe")
+    posix = tmp_path / "posix"
+    (posix / "bin").mkdir(parents=True)
+    (posix / "bin" / "gcc").write_text("")
+    cfg = cfg_for("/home/conda/feedstock_root/build_artifacts/bin/x86_64-conda-linux-gnu-cc")
+    assert _fix_from_conda(cfg, str(posix)) is True
+    assert cfg["jit_c_compiler_name"] == str(posix / "bin" / "gcc")
+    assert _fix_from_conda(cfg_for("/nowhere/cc"), str(tmp_path / "empty")) is None
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_mixed_jit_c_name_fits_suitesparse():
+    """A mixed op's C name from two long UDT names still fits SuiteSparse's 127 characters.
+
+    SuiteSparse refuses a longer name and takes the definition under an empty one; the kernel
+    it compiles then calls no function and leaves its output uninitialized.
+    """
+    if not _has_jit_set:
+        pytest.skip("requires SuiteSparse:GraphBLAS >= 9")
+    _require_jit_on()
+    rec = [("ln_x", np.float64), ("ln_y", np.float64)]
+    rec32 = [("ln_x", np.float32), ("ln_y", np.float32)]
+    a = dtypes.register_new("LongNameA" + "a" * 60, np.dtype(rec, align=True))
+    b = dtypes.register_new("LongNameB" + "b" * 60, np.dtype(rec32, align=True))
+    op = binary.plus[a, b]
+    assert op.jit_c_source is not None
+    assert len(op.jit_c_name) < gb.core.lib.GxB_MAX_NAME_LEN
+    n = 40
+    va = np.zeros(n, a.np_type)
+    va["ln_x"] = np.arange(n)
+    va["ln_y"] = 2 * np.arange(n)
+    vb = np.zeros(n, b.np_type)
+    vb["ln_x"] = 0.5
+    vb["ln_y"] = np.arange(n) % 3
+    u = Vector.from_coo(np.arange(n), va, dtype=a)
+    w = Vector.from_coo(np.arange(n), vb, dtype=b)
+    with _jit_mode("on"):
+        r = u.ewise_mult(w, binary.plus).new()
+    _, vals = r.to_coo()
+    np.testing.assert_array_equal(vals["ln_x"], np.arange(n) + 0.5)
+    np.testing.assert_array_equal(vals["ln_y"], 2 * np.arange(n) + np.arange(n) % 3)
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_jit_c_name_too_long_keeps_the_cfunc():
+    """An op whose C name SuiteSparse refuses (128 characters or more) runs its cfunc.
+
+    Setting the definition after a refused name would compile a kernel that calls no
+    function, so the op gets no C form at all.
+    """
+    if not _has_jit_set:
+        pytest.skip("requires SuiteSparse:GraphBLAS >= 9")
+    _require_jit_on()
+    rec = np.dtype([("tl_x", np.float64), ("tl_y", np.int64)], align=True)
+    t = dtypes.register_new("TooLongName" + "t" * 120, rec)
+    n = 40
+    vals = np.zeros(n, t.np_type)
+    vals["tl_x"] = np.arange(n) / 4
+    vals["tl_y"] = np.arange(n)
+    v = Vector.from_coo(np.arange(n), vals, dtype=t)
+    plus_op = binary.plus[t]
+    eq_op = binary.eq[t]
+    assert plus_op.jit_c_source is None
+    assert eq_op.jit_c_source is None
+    with _jit_mode("on"):
+        r = v.ewise_mult(v, binary.plus).new()
+        same = v.ewise_mult(v, binary.eq).new()
+    _, got = r.to_coo()
+    np.testing.assert_array_equal(got["tl_x"], np.arange(n) / 2)
+    np.testing.assert_array_equal(got["tl_y"], 2 * np.arange(n))
+    assert same.reduce(monoid.land).new()
