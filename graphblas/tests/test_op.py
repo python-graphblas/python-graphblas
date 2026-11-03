@@ -5734,6 +5734,10 @@ def test_udt_array_literal_broadcasts_with_an_array_udt():
             expr()
     with pytest.raises(ValueError, match="does not fit _BcastI8x3"):
         v.ewise_union(v, binary.plus, pair, 0)
+    # An empty array has no UDT layout; numpy says why it does not fit
+    for empty in [np.array([]), np.zeros((2, 0)), np.zeros((0, 3))]:
+        with pytest.raises(ValueError, match="could not broadcast"):
+            binary.plus(v, empty)
 
 
 @pytest.mark.skipif("not supports_udfs")
