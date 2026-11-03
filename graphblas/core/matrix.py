@@ -679,7 +679,7 @@ class Matrix(BaseType):
         if rows.size != n or columns.size != n:
             raise ValueError(
                 "`rows` and `columns` and `values` lengths must match: "
-                f"{rows.size}, {columns.size}, {values.size}"
+                f"{rows.size}, {columns.size}, {n}"
             )
         check_element_shape(values, self.dtype, 1)
         if clear:

@@ -3106,3 +3106,6 @@ def test_subarray_dtype_values_shape():
     # A scalar fills whole elements
     v = Vector.from_coo([0, 1, 2], 1.5, "FP64[2]")
     assert v.to_coo()[1].tolist() == [[1.5, 1.5]] * 3
+    # The lengths compared are the number of elements, not of numbers (it said 2 != 6)
+    with pytest.raises(ValueError, match="lengths must match: 2 != 3$"):
+        Vector.from_coo([0, 1], np.ones((3, 2)), "FP64[2]")
