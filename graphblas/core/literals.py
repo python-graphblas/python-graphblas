@@ -139,10 +139,10 @@ def _own_scalar_type_for_user_op(dtype, value, op, left):
     Beside a user's ``is_udt`` op (an untyped BinaryOp, IndexUnaryOp or
     SelectOp), a literal becomes an element of the UDT. A Python or numpy
     number for an op whose function cannot be typed with that element (it
-    fails to compile, or raises on sample values: ``x[:2] * t`` with a
-    6-element ``t``) is typed as itself instead, as a ``Scalar`` of it would
-    be, when the op can be typed so. Otherwise it stays an element, and the
-    op reports why it cannot take it.
+    fails to compile, or raises on every set of sample values: ``x[:2] * t``
+    with a 6-element ``t``) is typed as itself instead, as a ``Scalar`` of it
+    would be, when the op can be typed so. Otherwise it stays an element,
+    and the op reports why it cannot take it.
     """
     from ..exceptions import UdfParseError
 
@@ -157,14 +157,20 @@ def _own_scalar_type_for_user_op(dtype, value, op, left):
     ):
         return None
 
-    def takes(dtype2):
-        try:
-            op[(dtype2, dtype) if left else (dtype, dtype2)]
-        except UdfParseError:
-            return False
-        return True
+    from .operator.udf import _RAISES_ON_SAMPLES
 
-    return own if not takes(dtype) and takes(own) else None
+    def types(dtype2):
+        try:
+            return op[(dtype2, dtype) if left else (dtype, dtype2)]
+        except UdfParseError:
+            return None
+
+    # A UDF that raised on every stand-in element types, but cannot take an element.
+    # The number's own type need only type: its stand-in is a fixed sample, not the number.
+    element = types(dtype)
+    if element is not None and element not in _RAISES_ON_SAMPLES or types(own) is None:
+        return None
+    return own
 
 
 # Built-in ops that compare their operands, and so keep no result type.
