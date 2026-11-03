@@ -405,12 +405,13 @@ Declaring the type does not switch off the shape check described above; it
 points the check at the declared type instead. The result must also be
 something the declared type can hold: one value per field for a record, an
 array or a scalar for an array UDT, and a scalar for a scalar type. A UDF that
-breaks either rule is rejected when the op is typed, so a wrong ``ret_dtype``
-is a registration error rather than a silently mis-typed result.
+breaks either rule is rejected when the op is typed (``op[dtype]``, or its
+first use), so a wrong ``ret_dtype`` is an error rather than a silently
+mis-typed result.
 
 It does not apply to ``SelectOp``, whose return type GraphBLAS fixes at
-``BOOL``, nor to builtin (non-UDT) dtypes, where the return type comes from
-compiling the function against each input type in turn.
+``BOOL``, nor to an op registered without ``is_udt=True``, whose return type
+comes from compiling the function against each input type in turn.
 
 .. _udt_jit_introspection:
 

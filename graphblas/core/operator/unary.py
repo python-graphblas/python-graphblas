@@ -338,8 +338,8 @@ class UnaryOp(OpBase):
         ret_dtype : dtype, optional
             The dtype the operator returns. Requires ``is_udt=True``.
             Without it the return type is inferred from what the function
-            returns, which can only name a type that is already an input, so
-            an output UDT that is not an operand needs this. The dtype is
+            returns, which names a built-in dtype or one of the input UDTs,
+            so an output UDT that is not an operand needs this. The dtype is
             fixed for the operator: it is the same for every input dtype.
 
         Returns
