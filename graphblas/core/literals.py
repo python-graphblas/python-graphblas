@@ -97,7 +97,7 @@ def _literal_operand(dtype, value, op, *, left=False):
             # by a comparison or by an op that gives another type (truediv).
             if isinstance(op, str):
                 op = binary_from_string(op)
-            if op.name in _COMPARISONS:
+            if op.name in _COMPARISONS and not op._anonymous:
                 return (math.inf if value > 0 else -math.inf), FP64
         return value, literal_dtype
     if getattr(op, "_udt_types", True) is None:
