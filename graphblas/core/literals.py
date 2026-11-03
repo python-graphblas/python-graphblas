@@ -31,8 +31,8 @@ from .operator.binary import BinaryOp
 from .operator.monoid import Monoid
 from .udt import (
     BUILTIN_UDT_BINARY_OPS,
+    _as_record_parts,
     _casts_safely_into,
-    _dict_to_record,
     _leaf_arrays,
     _promoted_record,
     _strip_leading_ones,
@@ -118,9 +118,7 @@ def _literal_operand(dtype, value, op, *, left=False):
             exact = is_comparison or op.name == "truediv"
             if is_comparison and not isinstance(value, (np.generic, np.ndarray)):
                 np_type = dtype.np_type
-                parts = value
-                if isinstance(value, dict) and np_type.names is not None:
-                    parts = _dict_to_record(np_type, value)
+                parts = _as_record_parts(np_type, value)
                 # First: making an int beyond its leaf infinity reshapes the part.
                 _refuse_misfit_fields(dtype, np_type, parts)
                 if _int_beyond_leaf(np_type, parts) is not None:
@@ -318,8 +316,7 @@ def _literal_type(dtype, value, *, exact=False):
     """
     value = _as_python_number(value)
     np_type = dtype.np_type
-    if isinstance(value, dict) and np_type.names is not None:
-        value = _dict_to_record(np_type, value)
+    value = _as_record_parts(np_type, value)
     _refuse_misfit_fields(dtype, np_type, value)
     if np_type.names is None and np_type.kind in "SU" and isinstance(value, (str, bytes)):
         if _keeps_value(value, np_type):
@@ -391,8 +388,7 @@ def _check_literal_fits(dtype, value):
     np_type = dtype.np_type
     if np_type.names is not None:
         target = np.zeros(1, dtype=np_type)
-        if isinstance(value, dict):
-            value = _dict_to_record(np_type, value)
+        value = _as_record_parts(np_type, value)
     else:
         # An array's elements, or the one value of a UDT that is neither (bytes).
         base, shape = np_type.subdtype or (np_type, ())
@@ -463,8 +459,7 @@ def _converts_exactly(dtype, value):
     np_type = dtype.np_type
     try:
         if np_type.names is not None:
-            if isinstance(value, dict):
-                value = _dict_to_record(np_type, value)
+            value = _as_record_parts(np_type, value)
             given = np.zeros(1, dtype=_object_layout(np_type))
             converted = np.zeros(1, dtype=np_type)
         else:
