@@ -357,32 +357,64 @@ def _resolve_index_expr(ns, modname, expr, callname, opname):
             f"Expected ScalarExpression, VectorExpression, or MatrixExpression; "
             f"found {type(expr)}\nTypical usage: {modname}.{callname}(x <= 5)"
         )
+    _check_index_expr(modname, expr, callname, opname)
     tensor = expr.args[0]
     thunk = expr.args[1]
     method = f"{opname}{expr.op.name}"
-    if method not in ns:
-        # TODO: remove this once rowlt/rowge/collt/colge exist
-        # Convert thunk to Python int to avoid possible subtraction with uints
-        thunk = thunk.value
-        # Attempt to convert < into <= (rowlt is not part of official spec, but rowle is)
-        if expr.op.name == "lt":
-            method = f"{opname}le"
-            thunk -= 1
-        # Attempt to convert >= into > (rowge is not part of official spec, but rowgt is)
-        elif expr.op.name == "ge":
-            method = f"{opname}gt"
-            thunk -= 1
-        if method not in ns:  # pragma: no cover (sanity)
-            raise ValueError(f"Unknown or unregistered {modname} method: {method}")
     if expr._is_scalar:
-        # Handle ScalarExpressions that change their arguments to Vector
+        # Handle ScalarExpressions that change their arguments to Vector, before
+        # the shift below reads the thunk's value
         if tensor._parent is not None:  # e.g., suitesparse
             tensor = tensor._parent
             thunk = thunk._parent
         else:  # e.g., suitesparse-vanilla
             tensor = tensor[0].new()
             thunk = thunk[0].new()
+    if method not in ns:
+        # TODO: remove this once rowlt/rowge/collt/colge exist
+        # Attempt to convert < into <= and >= into > (rowlt and rowge are not part of
+        # the official spec, but rowle and rowgt are). Convert thunk to Python int to
+        # avoid possible subtraction with uints. An empty thunk goes to the op as it
+        # is, which raises EmptyObject.
+        if expr.op.name in {"lt", "ge"}:
+            method = f"{opname}{'le' if expr.op.name == 'lt' else 'gt'}"
+            if not thunk._is_empty:
+                thunk = thunk.value - 1
+        if method not in ns:  # pragma: no cover (sanity)
+            raise ValueError(f"Unknown or unregistered {modname} method: {method}")
     return ns[method](tensor, thunk)
+
+
+# What each helper compares: indices only by order, values by order or equality.
+_INDEX_COMPARISONS = {"lt": "<", "le": "<=", "gt": ">", "ge": ">="}
+_VALUE_COMPARISONS = {**_INDEX_COMPARISONS, "eq": "==", "ne": "!="}
+
+
+def _check_index_expr(modname, expr, callname, opname):
+    """Raise unless ``expr`` is a comparison the ``callname`` helper can resolve.
+
+    That is ``x OP k``: a built-in comparison applied to a Vector, Matrix or
+    Scalar ``x`` with a scalar ``k`` on its right, with OP one of ``<``, ``<=``,
+    ``>``, ``>=`` (and ``==``, ``!=`` for ``value``). A Scalar compares as the
+    ewise_mult of two Vectors of size 1.
+    """
+    name = getattr(expr.op, "name", None)
+    if (
+        expr.method_name not in ({"apply", "ewise_mult"} if expr._is_scalar else {"apply"})
+        or len(expr.args) != 2
+        or name not in _VALUE_COMPARISONS
+        or getattr(expr.op, "parent", None) is not getattr(binary, name)
+        or "left=" in expr.expr_repr
+    ):
+        raise TypeError(
+            f"{modname}.{callname} takes a comparison of a Vector, Matrix or Scalar with a "
+            f"scalar on its right, as in {modname}.{callname}(x <= 5); got {expr._format_expr()}"
+        )
+    if opname != "value" and name not in _INDEX_COMPARISONS:
+        raise ValueError(
+            f"{modname}.{callname} compares indices with <, <=, > or >=, not "
+            f"{_VALUE_COMPARISONS[name]}"
+        )
 
 
 unary.register_new = UnaryOp.register_new
