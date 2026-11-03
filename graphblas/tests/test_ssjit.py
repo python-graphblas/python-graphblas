@@ -803,6 +803,11 @@ def test_jit_indexbinary(v):
     assert "FP64" in add_theta
     assert add_theta["FP64"].return_type == dtypes.FP64
     assert add_theta["FP64"].jit_c_definition == cdef
+    # SuiteSparse compiles it under a C name of its own types
+    assert add_theta["FP64"].jit_c_name == "add_theta_4_FP64_4_FP64_FP64"
+    assert add_theta["FP64"].jit_c_source == cdef.replace(
+        "add_theta", "add_theta_4_FP64_4_FP64_FP64"
+    )
     # Bind theta and use as BinaryOp
     v64 = v.dup("FP64")
     binop = add_theta["FP64"](10.0)
@@ -845,7 +850,7 @@ def test_jit_indexbinary(v):
     mixed_cdef = (
         "void add_theta (double *z, double *x, GrB_Index ix, GrB_Index jx, "
         "double *y, GrB_Index iy, GrB_Index jy, float *theta) "
-        "{ (*z) = (*x) + (*y) + (double)(*theta) ; }"
+        "{ (*z) = (*x) + (*y) + 2 * (double)(*theta) ; }"
     )
     add_theta_mixed = indexbinary.ss.register_new(
         "add_theta", mixed_cdef, "FP64", "FP64", "FP32", "FP64"
@@ -854,9 +859,23 @@ def test_jit_indexbinary(v):
     assert ("FP64", "FP64", "FP32") in add_theta
     assert ("FP64", "FP32") not in add_theta  # theta of y's type, FP32
     assert repr(add_theta["FP64", "FP64", "FP32"]) == "indexbinary.add_theta[FP64, FP64, FP32]"
-    # An FP32 theta picks it. Not computed here: SuiteSparse's JIT knows a user op's kernel
-    # by its name and x, y, z types, so in this process it would run the FP64 theta's kernel.
-    assert v64.ewise_mult(v64, add_theta(np.float32(10))).op._theta_type == dtypes.FP32
+    # An FP32 theta picks it, and its kernel runs. SuiteSparse finds a compiled kernel by its
+    # op's name, and its encoding has no theta type, so with one C name for both theta types
+    # this ran the FP64 theta's kernel, which read the float as a double: [2, 2, 4, 0].
+    assert add_theta["FP64", "FP64", "FP32"].jit_c_name == "add_theta_4_FP64_4_FP64_FP32"
+    expected_mixed = Vector.from_coo([1, 3, 4, 6], [22.0, 22.0, 24.0, 20.0])
+    res = v64.ewise_mult(v64, add_theta(np.float32(10))).new()
+    assert expected_mixed.isequal(res, check_dtype=True)
+    assert expected.isequal(v64.ewise_mult(v64, add_theta(10.0)).new(), check_dtype=True)
+    # A name too long for SuiteSparse with its types is cut, with a digest of the whole
+    long_name = "add_theta_" + "long" * 25
+    long_op = indexbinary.ss.register_new(
+        long_name, cdef.replace("add_theta", long_name), "FP64", "FP64", "FP64", "FP64"
+    )
+    c_name = long_op["FP64"].jit_c_name
+    assert len(c_name) == 117
+    assert c_name.startswith(long_name[:100])
+    assert expected.isequal(v64.ewise_mult(v64, long_op(10.0)).new(), check_dtype=True)
 
 
 @pytest.mark.slow
