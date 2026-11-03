@@ -267,11 +267,14 @@ def test_set_jit_c_control_at_init(monkeypatch):
             assert cfg["jit_c_control"] == "run"
         # A "compiler" that exists but cannot compile anything. The probe's type
         # is named after the toolchain, so the probe kernel this process has
-        # already loaded does not answer for this one.
-        cfg["jit_c_compiler_name"] = str(Path(__file__).parent)
-        _set_jit_c_control_at_init("on")
-        assert cfg["jit_c_control"] == "run"
-        assert jit_config._jit_enabled_for_udt is False
+        # already loaded does not answer for this one. SuiteSparse built with
+        # MSVC always compiles through cmake, whose Visual Studio generator
+        # chooses the compiler itself, so this setting cannot fail the probe.
+        if not cfg["jit_use_cmake"]:
+            cfg["jit_c_compiler_name"] = str(Path(__file__).parent)
+            _set_jit_c_control_at_init("on")
+            assert cfg["jit_c_control"] == "run"
+            assert jit_config._jit_enabled_for_udt is False
         # No compiler on disk and nothing to repair it from: no probe at all.
         cfg["jit_c_compiler_name"] = "/nonexistent/path/to/cc"
         probes = []
