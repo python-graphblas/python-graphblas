@@ -1654,6 +1654,18 @@ def test_python_number_is_weak_beside_builtin_dtypes():
             assert vec.apply(binary.lt, right=value).new().to_coo()[1].tolist() == [value > 0] * 2
         result = i64.apply(binary.isclose, right=2**63).new()
         assert result.to_coo()[1].tolist() == [True, False]  # as numpy's isclose
+        # Built-in ops made outside register_new (truediv) or on first use (binom) count
+        # as built-in too: truediv computes beside a 64-bit int, as numpy divides
+        # (these raised OverflowError).
+        assert (i64 / 2**63).new().to_coo()[1].tolist() == [1.0, 0.0]
+        assert (u64 / -1).new().to_coo()[1].tolist() == [-(2.0**64), 0.0]
+        assert (i8 / 2**70).new().to_coo()[1].tolist() == [100 / 2**70, -100 / 2**70]
+        from graphblas.core.literals import _is_builtin_op
+
+        assert all(
+            _is_builtin_op(op)
+            for op in [binary.truediv, binary.rtruediv, binary.cdiv, binary.binom]
+        )
     # Typed scalars promote as numpy 2 promotes them, on numpy 1 too.
     assert dtypes.unify(dtypes.INT8, dtypes.INT64, is_right_scalar=True) == dtypes.INT64
 
