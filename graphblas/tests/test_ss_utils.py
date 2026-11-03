@@ -561,9 +561,9 @@ def test_take_ownership_of_one_array_twice():
     _run_probe(_ONE_ARRAY_TWICE_PROBE)
 
 
-# Run in a subprocess: a regression frees the arrays twice, which aborts the
-# process at the second free or later. Arrays over 1 KiB: NumPy caches smaller
-# blocks instead of freeing them, so a double free of those is silent.
+# Run in a subprocess: a regression frees memory twice, which aborts the process
+# at the second free or later. Arrays over 1 KiB: NumPy caches smaller blocks
+# instead of freeing them, so a double free of those is silent.
 _FAILED_SECURE_IMPORT_PROBE = """
 import numpy as np
 
@@ -575,70 +575,81 @@ print("package: " + gb.__file__)
 n = 200
 
 
-def csx():
-    # A column (or row) index out of range: only the secure check reads them.
-    indptr = np.arange(n + 1, dtype=np.uint64)
-    indices = np.zeros(n, np.uint64)
-    indices[-1] = n + 5
-    return indptr, indices, np.ones(n)
-
-
-def hyper():
-    indptr, indices, values = csx()
-    return indptr, np.arange(n, dtype=np.uint64), indices, values
+def indices():
+    # An index out of range: only the secure check reads the indices.
+    rv = np.zeros(n, np.uint64)
+    rv[-1] = n + 5
+    return rv
 
 
 def bitmap(order="C"):
     # nvals does not match the bitmap: only the secure check counts it.
-    return np.ones((n, n), np.bool_, order=order), np.ones((n, n), order=order)
+    return {"bitmap": np.ones((n, n), np.bool_, order=order),
+            "values": np.ones((n, n), order=order), "nvals": 5}
 
 
-imports = [
-    (csx, lambda a, **kw: Matrix.ss.import_csr(
-        nrows=n, ncols=n, indptr=a[0], col_indices=a[1], values=a[2], **kw)),
-    (csx, lambda a, **kw: Matrix.ss.import_csc(
-        nrows=n, ncols=n, indptr=a[0], row_indices=a[1], values=a[2], **kw)),
-    (hyper, lambda a, **kw: Matrix.ss.import_hypercsr(
-        nrows=n, ncols=n, indptr=a[0], rows=a[1], col_indices=a[2], values=a[3], **kw)),
-    (hyper, lambda a, **kw: Matrix.ss.import_hypercsc(
-        nrows=n, ncols=n, indptr=a[0], cols=a[1], row_indices=a[2], values=a[3], **kw)),
-    (bitmap, lambda a, **kw: Matrix.ss.import_bitmapr(bitmap=a[0], values=a[1], nvals=5, **kw)),
-    (lambda: bitmap("F"), lambda a, **kw: Matrix.ss.import_bitmapc(
-        bitmap=a[0], values=a[1], nvals=5, **kw)),
-    (lambda: csx()[1:], lambda a, **kw: Vector.ss.import_sparse(
-        size=n, indices=a[0], values=a[1], **kw)),
-    (lambda: (np.ones(n * n, np.bool_), np.ones(n * n)), lambda a, **kw: Vector.ss.import_bitmap(
-        bitmap=a[0], values=a[1], nvals=5, **kw)),
-]
+indptr = lambda: np.arange(n + 1, dtype=np.uint64)  # noqa: E731
+formats = {
+    "csr": lambda: {"indptr": indptr(), "col_indices": indices(), "values": np.ones(n)},
+    "csc": lambda: {"indptr": indptr(), "row_indices": indices(), "values": np.ones(n)},
+    "hypercsr": lambda: {"indptr": indptr(), "rows": np.arange(n, dtype=np.uint64),
+                         "col_indices": indices(), "values": np.ones(n)},
+    "hypercsc": lambda: {"indptr": indptr(), "cols": np.arange(n, dtype=np.uint64),
+                         "row_indices": indices(), "values": np.ones(n)},
+    "bitmapr": bitmap,
+    "bitmapc": lambda: bitmap("F"),
+    "sparse": lambda: {"indices": indices(), "values": np.ones(n)},
+    "bitmap": lambda: {"bitmap": np.ones(n * n, np.bool_), "values": np.ones(n * n),
+                       "nvals": 5},
+}
+A = Matrix.from_coo([0, 1], [1, 0], [1.0, 2.0], nrows=n, ncols=n)
+v = Vector.from_coo([1], [1.0], size=n * n)
 for take_ownership in [False, True]:
-    for make, import_ in imports:
-        arrays = make()
-        try:
-            import_(arrays, secure_import=True, take_ownership=take_ownership)
-        except GraphblasException:
-            pass
-        else:
-            raise AssertionError("the secure check passed")
-        # GraphBLAS took the arrays, then freed them: NumPy must not free them too.
-        assert [a.flags.owndata for a in arrays] == [not take_ownership] * len(arrays)
-        del arrays
+    for format, make in formats.items():
+        for method in ["import", "pack"]:
+            data = make()
+            if format in {"sparse", "bitmap"}:
+                obj = v.dup()
+                func = getattr(obj.ss, f"{method}_{format}")
+                if method == "import":
+                    data["size"] = n if format == "sparse" else n * n
+            else:
+                obj = A.dup()
+                func = getattr(obj.ss, f"{method}_{format}")
+                if method == "import":
+                    data.update(nrows=n, ncols=n)
+            arrays = [val for val in data.values() if isinstance(val, np.ndarray)]
+            try:
+                func(**data, secure_import=True, take_ownership=take_ownership)
+            except GraphblasException:
+                pass
+            else:
+                raise AssertionError(f"the secure check passed: {method}_{format}")
+            # GraphBLAS took the arrays, then freed them: NumPy must not free them too.
+            owndata = [a.flags.owndata for a in arrays]
+            assert owndata == [not take_ownership] * len(arrays), (method, format, owndata)
+            # A pack leaves the object as it was. GraphBLAS freed it.
+            assert obj.isequal(v if format in {"sparse", "bitmap"} else A), (method, format)
+            del data, arrays, obj, func
 for _ in range(100):  # use the heap, so a corrupted one aborts here
     gb.Vector.from_dense(np.ones(3000))
 print("done")
 """
 
 
-def test_failed_secure_import_frees_arrays_once():
-    # GraphBLAS moves the arrays into the new object before a secure import's
-    # check, and frees them with the object when the check fails. The arrays,
-    # or the copies made of them, were unclaimed only after a successful call,
-    # so NumPy freed them a second time and the process aborted.
+def test_failed_secure_import_frees_once():
+    # GraphBLAS moves the arrays into the object before a secure check, and
+    # frees them with the object when the check fails. The arrays, or the copies
+    # made of them, were unclaimed only after a successful call, so NumPy freed
+    # them a second time, and the process aborted. A secure pack also freed the
+    # packed object itself (a SuiteSparse bug), whose handle Python then used and
+    # freed again; it now checks the data with a secure import into a new object.
     _run_probe(_FAILED_SECURE_IMPORT_PROBE)
 
 
 @pytest.mark.parametrize("take_ownership", [False, True])
 def test_secure_import(take_ownership):
-    # Valid data passes a secure import's check, in every format.
+    # Valid data passes a secure import's or pack's check, in every format.
     sparse = Matrix.from_coo([0, 1, 1], [1, 0, 2], [1.0, 2.0, 3.0], nrows=2, ncols=3)
     dense = Matrix.from_dense(np.arange(6.0).reshape(2, 3))
     for format in ["csr", "csc", "hypercsr", "hypercsc", "bitmapr", "bitmapc", "fullr", "fullc"]:
@@ -651,6 +662,8 @@ def test_secure_import(take_ownership):
         if take_ownership:
             owndata = [False] * len(arrays)
         assert [array.flags.owndata for array in arrays] == owndata, format
+        B.ss.pack_any(**B.ss.export(format), secure_import=True, take_ownership=take_ownership)
+        assert B.isequal(A, check_dtype=True), format
     sparse = Vector.from_coo([1, 3], [1.0, 2.0], size=5)
     dense = Vector.from_dense(np.arange(5.0))
     for format in ["sparse", "bitmap", "full"]:
@@ -663,3 +676,5 @@ def test_secure_import(take_ownership):
         if take_ownership:
             owndata = [False] * len(arrays)
         assert [array.flags.owndata for array in arrays] == owndata, format
+        w.ss.pack_any(**w.ss.export(format), secure_import=True, take_ownership=take_ownership)
+        assert w.isequal(v, check_dtype=True), format
