@@ -233,10 +233,12 @@ def _check_declared_ret_type(ret_dtype, numba_ret_type):
             return  # a ``ret_dtype`` value, such as an operand of that type
         wanted = f"a tuple of its {nleaves} fields, or a {ret_dtype} value"
     elif ret_dtype._is_udt and np_type.subdtype is not None:
+        _refuse_complex_into_real(ret_dtype, np_type.subdtype[0], numba_ret_type)
         if isinstance(numba_ret_type, (nt.Array, nt.Number, nt.Boolean)):
             return  # a scalar fills every slot; the shape is checked later
         wanted = "an array, or a scalar to fill every slot"
     else:
+        _refuse_complex_into_real(ret_dtype, np_type, numba_ret_type)
         if isinstance(numba_ret_type, (nt.Number, nt.Boolean)):
             return
         if ret_dtype._is_udt and numba_ret_type == ret_dtype.numba_type:
@@ -256,6 +258,21 @@ def _check_declared_ret_type(ret_dtype, numba_ret_type):
         f"UDT UDF returned {returned}, which cannot be written as "
         f"ret_dtype={ret_dtype}. Return {wanted}."
     )
+
+
+def _refuse_complex_into_real(ret_dtype, element, numba_ret_type):
+    """Raise unless a complex return goes into complex ``element``s of ``ret_dtype``.
+
+    Numba has no cast from complex to real, so the wrapper fails to compile,
+    with a message that loses why (``Failed in nopython mode pipeline``).
+    """
+    nt = numba.core.types
+    returned = numba_ret_type.dtype if isinstance(numba_ret_type, nt.Array) else numba_ret_type
+    if isinstance(returned, nt.Complex) and element.kind != "c":
+        raise UdfParseError(
+            f"UDT UDF returned {numba_ret_type}, which cannot be written as "
+            f"ret_dtype={ret_dtype}. Return a real value, or declare a complex ret_dtype."
+        )
 
 
 def _resolve_udt_return_type(numba_ret_type, *dtypes):
