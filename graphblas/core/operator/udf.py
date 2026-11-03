@@ -114,14 +114,16 @@ def _compile_udf_for_udt(numba_func, sig, *, op_kind, op_name, dtypes):
     ``x.name`` on a record without that field, and the bare NotImplementedError
     raised for an op Numba types but cannot lower.
     """
+    dtypes_str = ", ".join(str(d) for d in dtypes)
     try:
         numba_func.compile(sig)
     except (NumbaError, KeyError, NotImplementedError) as exc:
         if isinstance(exc, KeyError):
-            snippet = f"KeyError: {exc}"
+            # Numba types ``x.name`` for a field the record lacks with a bare KeyError
+            # of the name, where ``x["name"]`` gets the TypingError "Field ... was not found".
+            snippet = f"Field {exc.args[0]!r} was not found in the record"
         else:
             snippet = _summarize_numba_typing_error(exc)
-        dtypes_str = ", ".join(str(d) for d in dtypes)
         raise UdfParseError(
             f"{op_kind}.{op_name} does not work with ({dtypes_str}): {snippet}"
         ) from exc
