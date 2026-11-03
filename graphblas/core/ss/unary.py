@@ -2,27 +2,10 @@ from ... import backend
 from ...dtypes import lookup_dtype
 from ...exceptions import check_status_carg
 from .. import NULL, ffi, lib
-from ..operator.base import TypedOpBase
-from ..operator.unary import TypedUserUnaryOp, UnaryOp
 from . import _IS_SSGB7
 from ._utils import _jit_c_source
 
 ffi_new = ffi.new
-
-
-class TypedJitUnaryOp(TypedOpBase):
-    __slots__ = "_jit_c_definition"
-    opclass = "UnaryOp"
-
-    def __init__(self, parent, name, type_, return_type, gb_obj, jit_c_definition):
-        super().__init__(parent, name, type_, return_type, gb_obj, name)
-        self._jit_c_definition = jit_c_definition
-
-    @property
-    def jit_c_definition(self):
-        return self._jit_c_definition
-
-    __call__ = TypedUserUnaryOp.__call__
 
 
 def register_new(name, jit_c_definition, input_type, ret_type):
@@ -118,3 +101,25 @@ def register_new(name, jit_c_definition, input_type, ret_type):
     rv._add(op, is_jit=True)
     setattr(module, funcname, rv)
     return rv
+
+
+# Imported below register_new: importing the operator package initializes the
+# operators, which imports graphblas.unary.ss, which takes register_new from here.
+# Imported at the top, they made this module fail as a process's first import.
+from ..operator.base import TypedOpBase  # noqa: E402 isort:skip
+from ..operator.unary import TypedUserUnaryOp, UnaryOp  # noqa: E402 isort:skip
+
+
+class TypedJitUnaryOp(TypedOpBase):
+    __slots__ = "_jit_c_definition"
+    opclass = "UnaryOp"
+
+    def __init__(self, parent, name, type_, return_type, gb_obj, jit_c_definition):
+        super().__init__(parent, name, type_, return_type, gb_obj, name)
+        self._jit_c_definition = jit_c_definition
+
+    @property
+    def jit_c_definition(self):
+        return self._jit_c_definition
+
+    __call__ = TypedUserUnaryOp.__call__
