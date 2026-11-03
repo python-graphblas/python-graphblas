@@ -239,6 +239,8 @@ def _check_declared_ret_type(ret_dtype, numba_ret_type):
     else:
         if isinstance(numba_ret_type, (nt.Number, nt.Boolean)):
             return
+        if ret_dtype._is_udt and numba_ret_type == ret_dtype.numba_type:
+            return  # a value of a date, duration or text UDT, such as an operand returned as is
         wanted = "a scalar"
     if isinstance(numba_ret_type, nt.BaseTuple):
         returned = f"a tuple of length {len(numba_ret_type.types)}"
