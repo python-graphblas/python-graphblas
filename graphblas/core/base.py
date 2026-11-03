@@ -221,12 +221,16 @@ class BaseType:
     __array_priority__ = 1000
 
     def __getattr__(self, name):
-        # Fires only on a genuine attribute miss (slots/methods resolve first),
-        # so this is free on the hot path. Adds hints for common mistakes.
-        base = f"{type(self).__name__!r} object has no attribute {name!r}"
+        # Python calls this only after normal lookup fails (slots and methods resolve
+        # first), so it is free on the hot path. It fails both for a missing name and
+        # for a property that raises AttributeError, such as ``v.ss`` on the vanilla
+        # backend or ``__index__`` on a float Scalar. Add hints for common mistakes,
+        # and otherwise look the name up again, so a property raises its own message.
         if (hint := _INSTANCE_ATTR_HINTS.get(name)) is not None:
-            raise AttributeError(f"{base}; {hint}")
-        raise AttributeError(base)
+            raise AttributeError(
+                f"{type(self).__name__!r} object has no attribute {name!r}; {hint}"
+            )
+        return object.__getattribute__(self, name)
 
     def __call__(
         self,

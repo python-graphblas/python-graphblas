@@ -621,15 +621,16 @@ def _raise_dtype_or_arraylike(cls_name, dtype, exc):
     ``dtype`` is array-like data rather than a dtype spec, point at the ``from_*``
     constructors; otherwise re-raise the original ``Unknown dtype`` error. Valid
     list/tuple dtype specs (structured and subarray dtypes) never reach here
-    because ``lookup_dtype`` accepts them.
+    because ``lookup_dtype`` accepts them, but a malformed one does, so the
+    lookup's error stays attached as the cause.
     """
     if isinstance(dtype, (list, tuple, np.ndarray)):
         raise TypeError(
             f"{cls_name}() expects a dtype as the first argument, not "
-            f"{type(dtype).__name__} data. To build a {cls_name} from existing "
-            f"values, use a constructor such as {cls_name}.from_coo(...) or "
+            f"{type(dtype).__name__} data. If you meant to pass values, use a "
+            f"constructor such as {cls_name}.from_coo(...) or "
             f"{cls_name}.from_dense(...)."
-        ) from None
+        ) from exc
     raise exc
 
 
