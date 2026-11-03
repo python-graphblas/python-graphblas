@@ -6353,7 +6353,9 @@ def test_udt_pair_is_never_unified():
     which ``unify`` registered as a new type. An op that does not lift to UDTs
     then named that third type in its KeyError, and ``ewise_add`` with a monoid
     passed GraphBLAS two operands it rejected with GrB_DOMAIN_MISMATCH. A
-    Monoid takes one type, so on a mixed pair it runs as its BinaryOp.
+    Monoid takes one type, so on a mixed pair it runs as its BinaryOp, and
+    indexed with the pair it takes the type its BinaryOp gives them, as
+    ``monoid.plus["INT8", "INT16"]`` is ``monoid.plus["INT16"]``.
     """
     X = dtypes.register_anonymous(np.dtype([("uni_a", np.float32), ("uni_b", np.int64)]), "_UniX")
     Y = dtypes.register_anonymous(np.dtype([("uni_a", np.int64), ("uni_b", np.float32)]), "_UniY")
@@ -6372,8 +6374,17 @@ def test_udt_pair_is_never_unified():
     for expr in [lambda: v.ewise_add(w), lambda: monoid.plus(v | w)]:
         with pytest.raises(DomainMismatch, match="ewise_add cannot use binary.plus"):
             expr()
-    with pytest.raises(TypeError, match="Monoid inputs must be the same dtype"):
-        monoid.plus[X, Y]
+    # Indexed with the pair: TypeError (a Monoid takes one type) before; main and
+    # built-in types promote.
+    XY = binary.plus[X, Y].return_type
+    assert monoid.plus[X, Y] is monoid.plus[Y, X] is monoid.plus[XY]
+    assert monoid.max[X, Y] is monoid.max[XY]
+    R8 = dtypes.register_anonymous(np.dtype([("uni_c", np.int8)]), "_UniR8")
+    R16 = dtypes.register_anonymous(np.dtype([("uni_c", np.int16)]), "_UniR16")
+    assert monoid.plus[R8, R16] is monoid.plus[R16]
+    assert monoid.plus[R8, "INT16"] is monoid.plus[R16]
+    with pytest.raises(KeyError, match="plus does not work with"):
+        monoid.plus[X, R8]
 
 
 @pytest.mark.skipif("not supports_udfs")
