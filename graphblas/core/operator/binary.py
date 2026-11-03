@@ -87,7 +87,7 @@ if _has_numba:
             # Bytes, a datetime, or a complex number where the backend has no
             # complex types: an element is one value, compared as numpy compares
             # it, as a record field of that type is. ``_check_udt_pair`` has made
-            # sure both are the one UDT, or text of one kind.
+            # sure both are the one UDT, text of one kind, or dates or durations.
             wrapper = _compile_codegen(
                 f"def wrapper(z_ptr, x_ptr, y_ptr):\n    z_ptr[0] = x_ptr[0] {cmp_op} y_ptr[0]\n",
                 func_name="wrapper",

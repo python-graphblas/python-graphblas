@@ -233,7 +233,10 @@ def _literal_type(dtype, value, *, exact=False):
     (:func:`_array_literal_udt`); a sequence holding numpy values is the
     array numpy makes of it. Text beside a UDT of text is typed as in a
     record's text field: the UDT itself when it converts there and back
-    unchanged, else its own type at its own length, which does not fit.
+    unchanged, else its own type at its own length, which does not fit. A
+    date or duration beside a UDT of dates or durations is typed so too, its
+    own type being numpy's for it (:func:`_as_numpy_date`), so ``==``
+    compares it as numpy does.
     Anything else has no type here, and ``Scalar.from_value`` reports it.
     """
     value = _as_python_number(value)
@@ -245,6 +248,10 @@ def _literal_type(dtype, value, *, exact=False):
         if _keeps_value(value, np_type):
             return dtype
         return lookup_dtype(np.dtype(f"{np_type.kind}{max(len(value), 1)}"))
+    if np_type.kind in "mM" and (date := _as_numpy_date(value, np_type.kind)) is not None:
+        if date.dtype.kind == np_type.kind and _keeps_value(date, np_type):
+            return dtype
+        return lookup_dtype(date.dtype)
     if type(value) in _LITERAL_KINDS or isinstance(value, (tuple, list)):
         literal_type = _weak_literal_udt(dtype, value, exact=exact)
         if literal_type is not None or type(value) in _LITERAL_KINDS:

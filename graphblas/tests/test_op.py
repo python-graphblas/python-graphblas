@@ -4679,13 +4679,6 @@ def test_udt_literal_converts_only_when_exact():
             expr()
     with pytest.warns(DeprecationWarning, match="does not fit _ExactText"):
         assert t.apply(second, right=text_literal).new()[0].new().value.tolist() == (b"cd", 2)
-    with pytest.warns(DeprecationWarning, match="does not fit _ExactBareSeconds"):
-        assert d.apply(same, right=np.timedelta64(5000, "ms")).new()[0].new().value
-    # NaT stays NaT in any unit, and equals nothing.
-    with pytest.warns(DeprecationWarning, match="does not fit _ExactBareSeconds"):
-        assert np.isnat(d.apply(second, right=np.timedelta64("NaT", "ms")).new()[0].new().value)
-    with pytest.warns(DeprecationWarning, match="does not fit _ExactBareSeconds"):
-        assert not d.apply(same, right=np.timedelta64("NaT", "ms")).new()[0].new().value
     # Text for a text leaf converts, bytes or str.
     for literal in [b"cd", "cd"]:
         assert t.apply(second, right=(literal, 1)).new()[0].new().value.tolist() == (b"cd", 1)
@@ -4699,7 +4692,10 @@ def test_udt_literal_converts_only_when_exact():
         assert fine["ex_d"] == np.datetime64(5, "s")
         nat = when.apply(second, right=(np.datetime64("NaT", "ms"), 1)).new()[0].new().value
         assert np.isnat(nat["ex_d"])
-        # A duration in a coarser unit casts safely, so it fits by type.
+        # A UDT of durations alone too; NaT stays NaT in any unit, and equals nothing.
+        assert d.apply(same, right=np.timedelta64(5000, "ms")).new()[0].new().value
+        assert np.isnat(d.apply(second, right=np.timedelta64("NaT", "ms")).new()[0].new().value)
+        assert not d.apply(same, right=np.timedelta64("NaT", "ms")).new()[0].new().value
         assert np.isnat(d.apply(second, right=np.timedelta64("NaT", "m")).new()[0].new().value)
     assert (t == (b"ab", 1)).new()[0].new().value
     assert not (t == (b"ab", 1.5)).new()[0].new().value
@@ -6065,7 +6061,8 @@ def test_udt_eq_compares_a_udt_that_is_neither_record_nor_array():
     Such a UDT holds one value per element, which ``binary.eq`` and
     ``binary.ne`` compare as a record field of that type compares: bytes by
     value, and NaT equal to nothing. Only two elements of the one type
-    compare; any other pair raises binary.eq's KeyError.
+    compare, or text of one kind at two widths, or dates or durations in two
+    units; any other pair raises binary.eq's KeyError.
     """
     text = dtypes.register_anonymous(np.dtype("S4"), "_EqOpaqueBytes")
     v = Vector(text, size=3)
@@ -6140,6 +6137,37 @@ def test_udt_eq_compares_a_udt_that_is_neither_record_nor_array():
     d[0] = np.datetime64("NaT", "s")
     d[1] = np.datetime64(0, "s")
     assert (d == d).new().to_coo()[1].tolist() == [False, True]
+    # Under eq and ne, a date or duration pairs with one in another unit too, as
+    # numpy compares them, so a literal in a finer unit is not cut to the element's.
+    import datetime
+
+    days = dtypes.register_anonymous(np.dtype("M8[D]"), "_EqOpaqueDays")
+    day = Vector(days, size=1)
+    day[0] = np.datetime64("2020-01-01")
+    seconds = dtypes.register_anonymous(np.dtype("m8[s]"), "_EqOpaqueSeconds")
+    five = Vector(seconds, size=1)
+    five[0] = np.timedelta64(5, "s")
+    for x, literal, equal in [
+        (day, np.datetime64("2020-01-01T12:00"), False),
+        (day, datetime.datetime(2020, 1, 1, 12), False),  # noqa: DTZ001 (numpy's are naive)
+        (day, "2020-01-01T12:00", False),
+        (day, np.datetime64("2020-01-01T00"), True),
+        (day, datetime.date(2020, 1, 1), True),
+        (day, "2020-01-01", True),
+        (five, np.timedelta64(5001, "ms"), False),
+        (five, datetime.timedelta(seconds=5, microseconds=1), False),
+        (five, np.timedelta64(5000, "ms"), True),
+        (five, datetime.timedelta(seconds=5), True),
+    ]:
+        assert (x == literal).new()[0].new().value == equal
+        assert (x != literal).new()[0].new().value != equal
+        assert (x[0].new() == literal) is equal
+    in_ms = Vector(dtypes.register_anonymous(np.dtype("m8[ms]"), "_EqOpaqueMillis"), size=1)
+    in_ms[0] = np.timedelta64(5000, "ms")
+    assert binary.eq(five & in_ms).new()[0].new().value
+    assert five.isequal(in_ms)
+    with pytest.raises(KeyError, match="pairs only with its own type"):
+        day == np.timedelta64(5, "s")  # noqa: B015
     # Nor with a record or an array UDT, for a Scalar as for a Vector.
     pair = dtypes.register_anonymous(np.dtype((np.int8, (5,))), "_EqOpaqueArr5")
     rec = dtypes.register_anonymous(np.dtype([("eqo_a", np.int8)]), "_EqOpaqueRec")
