@@ -1634,6 +1634,21 @@ def test_python_number_is_weak_beside_builtin_dtypes():
         assert result.to_coo()[1].tolist() == [-200.0, -400.0]
         result = i8.apply(binary.register_anonymous(eq), right=300).new()
         assert result.to_coo()[1].tolist() == [False, True]
+        # Where the op and the int would compute in a float type, which rounds an int
+        # beyond 64 bits, a user's op raises (it gave [False, True]: 2**63 - 1 < 2**63 is
+        # False in FP64). A built-in op that computes in float anyway does not.
+        i64 = Vector.from_coo([0, 1], [2**63 - 1, 0], dtype=dtypes.INT64)
+        u64 = Vector.from_coo([0, 1], [2**64 - 1, 0], dtype=dtypes.UINT64)
+        lt = binary.register_anonymous(lambda x, y: x < y)
+        if not hasattr(binary, "_test_weak_lt"):
+            binary.register_new("_test_weak_lt", lambda x, y: x < y)
+        for vec, value in [(i64, 2**63), (i64, -(2**63) - 1), (u64, 2**64)]:
+            for op in [lt, binary._test_weak_lt]:
+                with pytest.raises(OverflowError, match="out of bounds"):
+                    vec.apply(op, right=value)
+            assert vec.apply(binary.lt, right=value).new().to_coo()[1].tolist() == [value > 0] * 2
+        result = i64.apply(binary.isclose, right=2**63).new()
+        assert result.to_coo()[1].tolist() == [True, False]  # as numpy's isclose
     # Typed scalars promote as numpy 2 promotes them, on numpy 1 too.
     assert dtypes.unify(dtypes.INT8, dtypes.INT64, is_right_scalar=True) == dtypes.INT64
 

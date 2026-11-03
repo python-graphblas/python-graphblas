@@ -22,6 +22,7 @@ from functools import lru_cache
 
 import numpy as np
 
+from .. import _STANDARD_OPERATOR_NAMES
 from ..dtypes import FP64, lookup_dtype
 from . import utils
 from .dtypes import _nats_in_leaf_units, _view_if_same_layout
@@ -179,6 +180,12 @@ def _weak_builtin_literal_dtype(dtype, value, op=None):
         # keep, so an int out of range is typed exactly, as for a comparison:
         # int8_vec / 300 is FP64, as numpy divides integers in float64.
         np_type = _weak_literal_leaf([value], kind, dtype.np_type, exact=True)
+        if np.result_type(dtype.np_type, np_type).kind not in "iu" and not _is_builtin_op(op):
+            # The two then unify to a float type, which rounds an int beyond 64
+            # bits: in FP64, the INT64 2**63 - 1 and the int 2**63 are equal. A
+            # built-in op that gives another type computes in float anyway (a
+            # comparison is given infinity instead), but a user's op may compare.
+            raise
     # Where the backend has no complex types (vanilla), lookup_dtype registers a
     # complex literal's dtype as a UDT, so the literal keeps its own type.
     rv = dtype if np_type == dtype.np_type else lookup_dtype(np_type)
@@ -198,6 +205,15 @@ def _weak_builtin_literal_dtype(dtype, value, op=None):
                 f"overflow encountered in cast: {value!r} is infinity as {rv}", RuntimeWarning
             )
     return rv
+
+
+def _is_builtin_op(op):
+    """Whether python-graphblas defines ``op``, or a built-in parameterized op made it."""
+    if op._anonymous:
+        info = getattr(getattr(op, "orig_func", None), "_parameterized_info", None)
+        return info is not None and _is_builtin_op(info[0])
+    module = op._op_class._modname if isinstance(op, ParameterizedUdf) else op._modname
+    return f"{module}.{op.name}" in _STANDARD_OPERATOR_NAMES
 
 
 def _gives_another_type(op, dtype):
