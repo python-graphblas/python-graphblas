@@ -33,6 +33,7 @@ from ..udt import (
     _check_udt_pair,
     _get_udt_info,
     _iter_record_leaves,
+    _records_in_array_message,
     _udt_op_types,
 )
 
@@ -1030,6 +1031,10 @@ if _has_numba:
                 f"Element-wise UDT ops require a record dtype (named fields) "
                 f"or an array dtype (e.g., FP64[3])."
             )
+        np_type = dtype.np_type
+        leaves = [d for *_, d in _iter_record_leaves(np_type)] if np_type.names else [np_type]
+        if any(leaf.base.names is not None for leaf in leaves):
+            raise KeyError(_records_in_array_message(f"unary.{op_name}", dtype))
 
         kind, _detail = info
         if kind == "record":
