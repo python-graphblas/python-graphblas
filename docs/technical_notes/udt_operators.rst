@@ -238,5 +238,8 @@ runs:
 - an array that cannot fill the element, such as ``x[:2]`` from a 3-element UDT.
 
 Numba knows the length of a tuple but not the shape of an array the function builds, so
-for an array result the check calls the function once on sample values. A function that
-raises on those values is not checked.
+for an array result the check calls the function on sample values. A function that raises
+on those values is not checked, since it may raise only for some values. An exception the
+function raises when the operator runs is printed and goes no further (Numba cannot pass
+it to GraphBLAS), so that element is not written; a built-in output, such as a select's
+bool, is 0 or ``False`` there.
