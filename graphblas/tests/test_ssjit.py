@@ -2636,3 +2636,27 @@ def test_udt_jit_c_name_too_long_keeps_the_cfunc():
     np.testing.assert_array_equal(got["tl_x"], np.arange(n) / 2)
     np.testing.assert_array_equal(got["tl_y"], 2 * np.arange(n))
     assert same.reduce(monoid.land).new()
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.skipif("not _has_jit_set")
+def test_udt_field_named_like_a_standard_macro_skips_the_jit():
+    """A field named like a macro of the C standard headers the JIT includes skips the JIT.
+
+    The preprocessor expands it inside the struct, so the kernel did not compile:
+    SuiteSparse raised ``JitError`` (with no message) for that op and set
+    ``jit_c_control`` to 'load' for the rest of the process. Asked of the C name
+    only, so nothing compiles here.
+    """
+    from graphblas.exceptions import NoJITWarning
+
+    for i, field in enumerate(
+        ["INT_MAX", "UINT8_MAX", "SIZE_MAX", "BUFSIZ", "EXIT_FAILURE", "PRId64", "EDOM"]
+    ):
+        record = np.dtype([(field, np.float64), (f"macro_other_{i}", np.float64)], align=True)
+        udt = dtypes.register_anonymous(record)
+        assert udt.jit_c_name is None, field
+        v = Vector.from_coo([0], np.array([(1.0, 2.0)], dtype=record), dtype=udt, size=2)
+        with pytest.warns(NoJITWarning, match="without JIT"):
+            result = v.ewise_mult(v, binary.plus).new()
+        assert result[0].new().value.tolist() == (2.0, 4.0), field
