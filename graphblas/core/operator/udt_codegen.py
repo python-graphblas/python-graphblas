@@ -164,9 +164,10 @@ _has_jit_set = backend == "suitesparse" and hasattr(lib, "GxB_JIT_C_NAME")
 #      their own namespace), but our gate runs the same check at both
 #      positions for simplicity.
 #
-# Either way the JIT compile fails, SuiteSparse swallows the failure
-# silently, and the op runs through the slower Numba cfunc path. Block
-# these eagerly so the user sees the "without JIT" warning instead.
+# Either way the JIT compile fails. SuiteSparse 9.4 and later then raise
+# JitError for that call and set ``jit_c_control`` to 'load', so the process
+# compiles no more kernels. Block these eagerly: the op runs through the
+# slower Numba cfunc path, and the user sees the "without JIT" warning.
 _C_RESERVED = frozenset(
     {
         # C keywords
@@ -281,6 +282,56 @@ _C_RESERVED = frozenset(
         # <errno.h>
         "errno",
     }
+) | frozenset(
+    # Object-like macros the C standard defines in the other headers of the JIT
+    # include chain. A platform adds its own (POSIX errno codes, ...), which
+    # still fail to compile.
+    [
+        # <limits.h>
+        *("CHAR_BIT", "SCHAR_MIN", "SCHAR_MAX", "UCHAR_MAX", "CHAR_MIN", "CHAR_MAX"),
+        *("MB_LEN_MAX", "SHRT_MIN", "SHRT_MAX", "USHRT_MAX", "INT_MIN", "INT_MAX"),
+        *("UINT_MAX", "LONG_MIN", "LONG_MAX", "ULONG_MAX", "LLONG_MIN", "LLONG_MAX"),
+        "ULLONG_MAX",
+        # <stdint.h>
+        *(
+            f"{u}INT{kind}{bits}_{end}"
+            for kind in ("", "_LEAST", "_FAST")
+            for bits in (8, 16, 32, 64)
+            for u, end in (("", "MIN"), ("", "MAX"), ("U", "MAX"))
+        ),
+        *("INTPTR_MIN", "INTPTR_MAX", "UINTPTR_MAX", "INTMAX_MIN", "INTMAX_MAX"),
+        *("UINTMAX_MAX", "PTRDIFF_MIN", "PTRDIFF_MAX", "SIG_ATOMIC_MIN", "SIG_ATOMIC_MAX"),
+        *("SIZE_MAX", "WCHAR_MIN", "WCHAR_MAX", "WINT_MIN", "WINT_MAX"),
+        # <inttypes.h>
+        *(
+            f"{prefix}{conv}{size}"
+            for prefix, convs in (("PRI", "diouxX"), ("SCN", "dioux"))
+            for conv in convs
+            for size in (
+                *(f"{kind}{bits}" for kind in ("", "LEAST", "FAST") for bits in (8, 16, 32, 64)),
+                "MAX",
+                "PTR",
+            )
+        ),
+        # <stdio.h>
+        *("BUFSIZ", "FILENAME_MAX", "FOPEN_MAX", "L_tmpnam", "SEEK_CUR", "SEEK_END"),
+        *("SEEK_SET", "TMP_MAX", "_IOFBF", "_IOLBF", "_IONBF"),
+        # <stdlib.h>
+        *("EXIT_FAILURE", "EXIT_SUCCESS", "RAND_MAX", "MB_CUR_MAX"),
+        # <errno.h>
+        *("EDOM", "ERANGE", "EILSEQ"),
+        # <math.h>
+        *("FP_INFINITE", "FP_NAN", "FP_NORMAL", "FP_SUBNORMAL", "FP_ZERO", "FP_FAST_FMA"),
+        *("FP_FAST_FMAF", "FP_FAST_FMAL", "FP_ILOGB0", "FP_ILOGBNAN", "MATH_ERRNO"),
+        *("MATH_ERREXCEPT", "math_errhandling"),
+        # <stdatomic.h>
+        *(
+            f"ATOMIC_{kind}_LOCK_FREE"
+            for kind in ("BOOL", "CHAR", "CHAR16_T", "CHAR32_T", "WCHAR_T", "SHORT", "INT")
+        ),
+        *("ATOMIC_LONG_LOCK_FREE", "ATOMIC_LLONG_LOCK_FREE", "ATOMIC_POINTER_LOCK_FREE"),
+        "ATOMIC_FLAG_INIT",
+    ]
 )
 
 
