@@ -43,7 +43,7 @@ repos:
       - id: name-tests-test
         args: ["--pytest-test-first"]
   - repo: https://github.com/abravalheri/validate-pyproject
-    rev: "0.26"
+    rev: v0.27
     hooks:
       - id: validate-pyproject
         name: Validate pyproject.toml
@@ -76,21 +76,21 @@ repos:
       - id: black
       - id: black-jupyter
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.1
+    rev: v0.17.3
     hooks:
       - id: ruff-check
         args: [--fix-only, --show-fixes]
   # Let's keep `flake8` even though `ruff` does much of the same.
   # `flake8-bugbear` and `flake8-simplify` have caught things missed by `ruff`.
   - repo: https://github.com/PyCQA/flake8
-    rev: 7.4.1
+    rev: 7.5.0
     hooks:
       - id: flake8
         args: ["--config=.flake8"]
         additional_dependencies:
           &flake8_dependencies # These versions need updated manually
-          - flake8==7.4.1
-          - flake8-bugbear==26.9.30
+          - flake8==7.5.0
+          - flake8-bugbear==26.10.27
           - flake8-simplify==0.31.1
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.3
@@ -101,7 +101,7 @@ repos:
           - tomli; python_version<'3.11'
         files: ^(graphblas|docs)/
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.1
+    rev: v0.17.3
     hooks:
       - id: ruff-check
       # - id: ruff-format  # we prefer black; uncomment to compare with ruff's formatter
@@ -149,11 +149,11 @@ repos:
     hooks:
       - id: actionlint
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.31.1
+    rev: v1.32.0
     hooks:
       - id: zizmor
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.38.2
+    rev: 0.39.0
     hooks:
       - id: check-dependabot
       - id: check-github-workflows
