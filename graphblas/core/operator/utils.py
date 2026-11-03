@@ -186,6 +186,14 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
             kind=kind,
         )
     if isinstance(op, FunctionType):
+        if op.__module__ in {"graphblas.indexunary", "graphblas.select"}:
+            # Not a UDF: a helper such as ``indexunary.value`` or a module function
+            modname = op.__module__.rpartition(".")[2]
+            raise TypeError(
+                f"{modname}.{op.__name__} is a helper, not an operator: it takes a comparison "
+                f"and returns its expression, as in {modname}.value(A > 3). To apply an op, "
+                f"give one such as {modname}.valuegt."
+            )
         if kind == "unary":
             op = UnaryOp.register_anonymous(op, is_udt=True)
             return op._compile_udt(dtype, dtype2)
@@ -505,12 +513,19 @@ def _from_string(string, module, mapping, example):
                 cur = None
                 break
         op = getattr(cur, attr, None)
-        if op is None:
-            name = module.__name__.split(".")[-1]
-            raise ValueError(f"Unknown {name} string: {string!r}.  Example usage: {example!r}")
+    if not _is_operator(op):
+        # A namespace also holds functions (``indexunary.value``), methods and modules
+        name = module.__name__.split(".")[-1]
+        raise ValueError(f"Unknown {name} string: {string!r}.  Example usage: {example!r}")
     if dtype:
         op = op[dtype]
     return op
+
+
+def _is_operator(obj):
+    return isinstance(obj, (OpBase, TypedOpBase, ParameterizedUdf)) or (
+        _Aggregator is not None and isinstance(obj, (_Aggregator, _TypedAggregator))
+    )
 
 
 def unary_from_string(string):
