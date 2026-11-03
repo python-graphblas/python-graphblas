@@ -7683,6 +7683,19 @@ def test_udt_ret_dtype_rejects_a_return_it_cannot_hold():
     assert tuple(r.apply(same).new()[0].new().value.tolist()) == (1.0, 2.0)
     np.testing.assert_array_equal(w.ewise_mult(u, fill).new()[0].new().value, [4.0, 4.0])
     assert w.ewise_mult(u, cast).new()[0].new().value == 4
+    # So does an operand of a date, duration or text UDT returned as its own type,
+    # which said "Return a scalar"
+    for np_type, value in [
+        ("M8[s]", np.datetime64(5, "s")),
+        ("m8[s]", np.timedelta64(5, "s")),
+        ("S5", b"abc"),
+    ]:
+        udt = dtypes.register_anonymous(np.dtype(np_type))
+        own = UnaryOp.register_anonymous(lambda x: x, is_udt=True, ret_dtype=udt)
+        assert own[udt].return_type is udt
+        v = Vector(udt, size=1)
+        v[0] = value
+        assert v.apply(own).new()[0].new().value == value
 
 
 def _ret_dtype_pickle_udf(x):  # pragma: no cover (numba)
