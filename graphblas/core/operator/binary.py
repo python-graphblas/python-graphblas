@@ -803,7 +803,9 @@ class BinaryOp(OpBase):
                 self.name, py_op, dtype, dtype2
             )
         elif self._numba_func is None:
-            raise KeyError(f"{self.name} does not work with {dtypes} types")
+            # Only without Numba does an op that lifts to UDTs get here.
+            needs = "; built-in ops work on UDTs only with Numba installed" if is_lifted else ""
+            raise KeyError(f"{self.name} does not work with {dtypes} types{needs}")
         else:
             numba_func = self._numba_func
             sig = (dtype.numba_type, dtype2.numba_type)
