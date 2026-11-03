@@ -81,10 +81,11 @@ Field type rules:
   of ``int64`` for the others.
 - Text (``str`` or ``bytes``, such as ``np.dtype("S5")``), ``datetime64`` and
   ``timedelta64`` may be fields, or a whole UDT that is neither record nor
-  array. Such a UDT can be stored, extracted and compared (``==``, ``!=`` and
-  ``isequal``), and ``first``, ``second``, ``pair`` and ``any`` work on it, but
-  arithmetic operators do not lift to it: ``plus`` and ``min`` raise
-  ``KeyError``.
+  array. Such a UDT can be stored and extracted. With Numba, it can also be
+  compared (``==``, ``!=`` and ``isequal``), and ``first``, ``second``, ``pair``
+  and ``any`` work on it, but arithmetic operators do not lift to it: ``plus``
+  and ``min`` raise ``KeyError``. Without Numba, only a ``Scalar``'s ``==``,
+  ``!=`` and ``isequal``, and ``pair``, work on it.
 - Python objects (``np.dtype(object)``) are not supported.
 - Dataclass annotation strings (e.g., ``"int"``) resolve through
   ``lookup_dtype``.
