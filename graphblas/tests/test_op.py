@@ -5659,6 +5659,22 @@ def test_udt_array_literal_broadcasts_with_an_array_udt():
     # A literal that must become an element must still fit it.
     with pytest.raises(ValueError, match="does not fit _BcastI8x3"):
         v.ewise_union(v, binary.plus, rows, 0)
+    # Shapes that do not broadcast raise the KeyError of two such UDTs, which
+    # names both; they raised numpy's "could not broadcast" from converting.
+    pair = np.array([1, 2])
+    both = r"broadcast together; got (int8\[3\] vs int\d+\[2\]|int\d+\[2\] vs int8\[3\])"
+    for expr in [
+        lambda: v + pair,
+        lambda: v == pair,
+        lambda: binary.plus(v, [1, 2]),
+        lambda: v.apply(binary.plus, left=pair),
+        lambda: v[0].new() == pair,
+        lambda: v.apply(monoid.plus, right=pair),
+    ]:
+        with pytest.raises(KeyError, match=both):
+            expr()
+    with pytest.raises(ValueError, match="does not fit _BcastI8x3"):
+        v.ewise_union(v, binary.plus, pair, 0)
 
 
 def test_udt_record_date_literals_compare_as_numpy():
@@ -6495,9 +6511,9 @@ def test_udt_literal_rules_edge_cases():
     with pytest.raises(ValueError, match=r"Fraction\(1, 2\) does not fit _EdgeI8"):
         v.apply(udf, right=Fraction(1, 2))
     # A literal not laid out like an element (ragged, too long or too short for
-    # a field, not broadcastable), or not a number, has no type of its own, so
-    # it is converted into the UDT, and numpy says why it cannot be. A record
-    # says so itself for a part that does not broadcast to its array field.
+    # a field), or not a number, has no type of its own, so it is converted
+    # into the UDT, and numpy says why it cannot be. A record says so itself
+    # for a part that does not broadcast to its array field.
     # So too for a comparison, which first looks for an int beyond its leaf and
     # a part holding numpy values.
     rec = dtypes.register_anonymous(
@@ -6512,7 +6528,6 @@ def test_udt_literal_rules_edge_cases():
     text = dtypes.register_anonymous(np.dtype([("edge_s", "S3"), ("edge_k", np.int8)]), "_EdgeText")
     for expr, reason in [
         (lambda: binary.plus(v, [1, [2, 3]]), "with a sequence"),
-        (lambda: v + np.array([1, 2]), "could not broadcast"),
         (lambda: v + "abc", "invalid literal"),
         (lambda: v.apply(udf, right="abc"), "invalid literal"),
         (lambda: binary.plus(r, (1, 2, 3)), "tuple of length 3"),
