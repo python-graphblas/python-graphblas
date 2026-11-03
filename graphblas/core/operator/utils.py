@@ -74,7 +74,8 @@ except Exception:  # pragma: no cover (debug)
 # ``agg.py`` imports ``get_typed_op`` from this module, so the two form an import
 # cycle and we can't import the Aggregator classes at module load. ``agg.py``
 # registers them here when it loads, which ``core.operator.__init__`` does
-# eagerly at import. Before registration no Aggregator instance can exist, so
+# eagerly at import. agg.py creates its Aggregators before it registers the
+# classes, but none reaches ``get_typed_op`` until then, so before registration
 # ``get_typed_op`` skips the check entirely.
 _Aggregator = None
 _TypedAggregator = None
