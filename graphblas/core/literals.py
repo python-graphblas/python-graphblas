@@ -25,7 +25,7 @@ import numpy as np
 from ..dtypes import FP64, lookup_dtype
 from . import utils
 from .dtypes import _nats_in_leaf_units, _view_if_same_layout
-from .operator import IndexUnaryOp, SelectOp, TypedOpBase, binary_from_string
+from .operator import IndexUnaryOp, ParameterizedUdf, SelectOp, TypedOpBase, binary_from_string
 from .operator.binary import BinaryOp
 from .operator.monoid import Monoid
 from .udt import (
@@ -201,14 +201,19 @@ def _weak_builtin_literal_dtype(dtype, value, op=None):
 
 
 def _gives_another_type(op, dtype):
-    """Whether built-in ``op`` on two operands of built-in ``dtype`` gives another type.
+    """Whether ``op`` on two operands of built-in ``dtype`` gives another type.
 
-    ``truediv`` on integers gives FP64, and the numpy ufuncs that compute in
-    float give a float type, as numpy computes them in a float loop.
+    ``truediv`` on integers gives FP64, ``isclose`` gives BOOL, and the numpy
+    ufuncs that compute in float give a float type, as numpy computes them in
+    a float loop. A user's op counts by the type it gives too. A
+    parameterized op is typed with its default parameters, as
+    ``get_typed_op`` types it.
     """
-    if op is None or getattr(op, "_anonymous", True) or not hasattr(op, "__getitem__"):
+    if op is None:
         return False
     try:
+        if isinstance(op, ParameterizedUdf):
+            op = op()
         return op[dtype].return_type != dtype
     except Exception:  # An op that does not take this dtype reports it itself, later.
         return False

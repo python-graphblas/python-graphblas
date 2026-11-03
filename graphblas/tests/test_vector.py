@@ -1608,6 +1608,19 @@ def test_python_number_is_weak_beside_builtin_dtypes():
         plus = binary.register_anonymous(lambda x, y: x + y)
         with pytest.raises(OverflowError, match="out of bounds"):
             i8.apply(plus, right=300)
+        # Any op whose result is another type, as truediv's and a comparison's are, takes
+        # an int out of range exactly: a parameterized op, a user's, and the instances a
+        # parameterized op makes (these raised OverflowError; main and numpy give False).
+        gt = binary.register_anonymous(lambda x, y: x > y)
+        for op, values in [
+            (binary.isclose, [False, False]),
+            (binary.isclose(0.1), [False, False]),
+            (gt, [False, False]),
+        ]:
+            assert i8.apply(op, right=300).new().to_coo()[1].tolist() == values
+            assert i8.apply(op, left=-300).new().to_coo()[1].tolist() == values
+        result = i8.ewise_union(w8, binary.isclose, 0, 300).new()
+        assert result.to_coo()[1].tolist() == [False, False]
     # Typed scalars promote as numpy 2 promotes them, on numpy 1 too.
     assert dtypes.unify(dtypes.INT8, dtypes.INT64, is_right_scalar=True) == dtypes.INT64
 
