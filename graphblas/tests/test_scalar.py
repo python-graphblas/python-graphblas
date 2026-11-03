@@ -468,6 +468,12 @@ def test_eq_types_a_literal_as_binary_eq_does():
     assert empty == Scalar(dtypes.FP64)
     assert empty == None  # noqa: E711
     assert empty != 0
+    # A value that is not a literal names the operator used, not Scalar.ewise_mult.
+    s = Scalar.from_value(1, dtype=dtypes.INT8)
+    with pytest.raises(TypeError, match=r"argument `other` in Scalar\.__eq__\(\.\.\.\)"):
+        s == [1]  # noqa: B015
+    with pytest.raises(TypeError, match=r"argument `other` in Scalar\.__ne__\(\.\.\.\)"):
+        s != object()  # noqa: B015
 
 
 @autocompute

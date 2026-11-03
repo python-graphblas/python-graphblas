@@ -158,12 +158,12 @@ class Scalar(BaseType):
         Without Numba, which ``binary.eq`` needs for UDTs, a UDT's values are
         compared in numpy, which broadcasts them the same way.
         """
-        return _scalar_eq(self, other)
+        return _scalar_eq(self, other, "__eq__")
 
     __hash__ = None
 
     def __ne__(self, other):
-        return not _scalar_eq(self, other)
+        return not _scalar_eq(self, other, "__ne__")
 
     def __bool__(self):
         """Truthiness check.
@@ -1137,8 +1137,11 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
     # End auto-generated code: Scalar
 
 
-def _scalar_eq(scalar, other):
-    """Return ``scalar == other`` as a bool, by ``binary.eq`` (see ``Scalar.__eq__``)."""
+def _scalar_eq(scalar, other, within):
+    """Return ``scalar == other`` as a bool, by ``binary.eq`` (see ``Scalar.__eq__``).
+
+    ``within`` is the method an error names, ``__eq__`` or ``__ne__``.
+    """
     if other is None:
         return scalar._is_empty
     if type(other) is not Scalar and output_type(other) is Scalar:
@@ -1175,6 +1178,19 @@ def _scalar_eq(scalar, other):
         # float16) holds one value, which numpy compares as binary.eq does, with no
         # GraphBLAS call; and numpy compares float16, which Numba cannot.
         return _udt_eq_without_numba(scalar, other)
+    if type(other) is not Scalar:
+        # As ewise_mult converts it, but an error names the method the user called.
+        value, dtype = _literal_operand(scalar.dtype, other, binary.eq)
+        try:
+            other = Scalar.from_value(value, dtype, is_cscalar=False, name="s_eq_other")
+        except TypeError:
+            other = scalar._expect_type(
+                other,
+                Scalar,
+                within=within,
+                argname="other",
+                extra_message="Literal scalars also accepted.",
+            )
     return bool(scalar.ewise_mult(other, binary.eq).new(name="s_eq").value)
 
 
