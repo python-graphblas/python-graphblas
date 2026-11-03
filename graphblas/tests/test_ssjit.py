@@ -603,6 +603,13 @@ def test_jit_udt_np_type_numba_cannot_type():
         )
     assert isinstance(exc_info.value.__cause__, AttributeError)
     assert not hasattr(dtypes.ss, "_jit_bool_pair")
+    # The failure leaves the name free, so it registers with an np_type Numba can type.
+    dtype = dtypes.ss.register_new(
+        "_jit_bool_pair",
+        "typedef struct { uint8_t x [2] ; } _jit_bool_pair ;",
+        np_type=np.dtype([("x", np.uint8, (2,))]),
+    )
+    assert dtypes.ss._jit_bool_pair is dtype
 
 
 @pytest.mark.skipif("_IS_SSGB7")

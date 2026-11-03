@@ -61,7 +61,6 @@ def register_new(name, jit_c_definition, *, np_type=None):
             ffi_new("char[]", jit_c_definition.encode()),
         )
         check_status_carg(status, "Type", gb_obj[0])
-    _jit_c_type_defs[name] = jit_c_definition
 
     # Let SuiteSparse:GraphBLAS determine the size (we gave 0 as size above)
     size_ptr = ffi_new("size_t*")
@@ -101,4 +100,8 @@ def register_new(name, jit_c_definition, *, np_type=None):
     if save_np_type or np_type not in core.dtypes._registry:
         core.dtypes._registry[np_type] = rv
     setattr(dtypes.ss, name, rv)
+    # Only now, so that a registration that fails above (Numba cannot type an
+    # array of bool, say) leaves the name free to register again. The type it
+    # made is never used, so no JIT kernel knows its name.
+    _jit_c_type_defs[name] = jit_c_definition
     return rv
