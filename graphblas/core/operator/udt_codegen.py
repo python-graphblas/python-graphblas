@@ -324,13 +324,26 @@ _C_RESERVED = frozenset(
         ),
         *("ATOMIC_LONG_LOCK_FREE", "ATOMIC_LLONG_LOCK_FREE", "ATOMIC_POINTER_LOCK_FREE"),
         "ATOMIC_FLAG_INIT",
+        # <signal.h>, which the C library headers bring in on some platforms
+        *("SIGABRT", "SIGFPE", "SIGILL", "SIGINT", "SIGSEGV", "SIGTERM"),
+        *("SIG_DFL", "SIG_ERR", "SIG_IGN"),
     ]
 )
 
+# GraphBLAS's own names, many of them macros of ``GraphBLAS.h`` and its JIT headers
+# (``GrB_INDEX_MAX``, ``GxB_IMPLEMENTATION_MAJOR``), and more with each version, so a
+# field may not start with any of these.
+_C_RESERVED_PREFIXES = ("GB_", "GrB_", "GxB_")
+
 
 def _is_valid_c_identifier(name):
-    """True if ``name`` is a valid C identifier and not a reserved word."""
-    return isinstance(name, str) and name.isidentifier() and name not in _C_RESERVED
+    """True if ``name`` is a valid C identifier and not a reserved word or GraphBLAS's name."""
+    return (
+        isinstance(name, str)
+        and name.isidentifier()
+        and name not in _C_RESERVED
+        and not name.startswith(_C_RESERVED_PREFIXES)
+    )
 
 
 # Process-global counter for synthesizing C names when the user-supplied
