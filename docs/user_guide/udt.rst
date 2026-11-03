@@ -137,9 +137,10 @@ The following operators auto-lift to any UDT on first use:
   ``any_value``, ``count``. The positional ``agg.ss.first`` and
   ``agg.ss.last`` work on any dtype, including UDTs.
 
-They need Numba. Without it, a built-in op on a UDT raises ``KeyError``, and
-so do ``==`` and ``isequal`` on a Vector or Matrix of a UDT; a ``Scalar``'s
-``==`` and ``isequal`` compare in numpy.
+Except ``pair``, ``count``, ``agg.ss.first`` and ``agg.ss.last``, they need
+Numba. Without it, the others raise ``KeyError`` on a UDT, and so do ``==`` and
+``isequal`` on a Vector or Matrix of a UDT; a ``Scalar``'s ``==`` and ``isequal``
+compare in numpy.
 
 For example:
 
