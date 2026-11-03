@@ -439,7 +439,9 @@ JIT and introspection
 
 When all field names are valid C identifiers (not C reserved words), and the
 field types map to C primitives, SuiteSparse JIT-compiles a dedicated C kernel
-for each ``op[udt]`` lookup. The kernel is cached on disk
+for each ``op[udt]`` lookup. A lifted op on a UDT and a built-in type, or on two
+UDT types that pair, compiles too, under a name such as
+``plus_7_int64_t_gbudt_Edge``. The kernel is cached on disk
 and reused across processes (keyed by content hash, so renaming a UDT doesn't
 invalidate). JIT lets SuiteSparse inline the kernel into its eWise and reduce
 templates, eliminating the per-element function-call overhead the Numba
@@ -479,6 +481,10 @@ JIT is skipped when:
   Pass ``align=True`` to ``np.dtype``, or use the dict / dataclass form,
   which auto-aligns.
 - The JIT compiler isn't usable after auto-fix (see below).
+- An op on a UDT and another type is an array UDT that broadcasts to another
+  shape, a record with an array-valued field, or ``eq`` or ``ne``; or an op on
+  one UDT gives another type (``v / v`` on ``INT8[3]`` is ``FP64[3]``). These
+  keep the Numba cfunc without a warning.
 
 SuiteSparse knows a UDT by ``gbudt_`` and its name, which cannot collide with
 an identifier in the C code of a kernel, whatever the name. A UDT without a
@@ -526,9 +532,12 @@ later operations compute.
 ``jit_c_control`` starts at ``graphblas.config["jit_c_control"]``, ``'run'`` by
 default (run cached kernels only; no compile, no load from disk); see
 :ref:`suitesparse_jit`. That default ``'run'`` is raised to ``'on'`` (compile,
-load, and run) by each of these, since each asks SuiteSparse to compile C source:
+load, and run) by each of these, since each asks SuiteSparse to compile C source.
+It stays ``'on'`` for the rest of the process, for every operation, built-in ones
+included:
 
-- a UDT operator that gets C source, such as the first ``binary.plus[udt]``;
+- a UDT operator that gets C source, such as the first ``binary.plus[udt]`` or
+  ``binary.plus[udt, "INT64"]``;
 - ``gb.dtypes.ss.register_new``, which registers a type from a C typedef;
 - ``gb.binary.ss.register_new`` and its ``unary``, ``indexunary``, ``select``,
   and ``indexbinary`` siblings, which register an operator from a C definition.
