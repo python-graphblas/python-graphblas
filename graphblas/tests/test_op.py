@@ -3366,6 +3366,35 @@ def test_udt_udf_raising_on_stand_ins_still_types():
 
 
 @pytest.mark.skipif("not supports_udfs")
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
+def test_udt_select_takes_a_number_as_itself_when_it_cannot_take_an_element():
+    """A literal thunk for a user's select that cannot take an element is typed as itself.
+
+    ``x[0] > t`` with ``t`` an INT8[3] element returns three bools for the one
+    the select needs, so the wrapper raised for every entry and nothing was
+    kept (or, before the select's bool was written first, a stray byte decided).
+    The select's UDF is now run on stand-ins when it returns an array, and a
+    number beside it is typed as itself, as a Scalar of it is.
+    """
+    i3 = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_SelOwnI3")
+    first_above = SelectOp.register_anonymous(
+        lambda x, i, j, t: x[0] > t, "_sel_own_first", is_udt=True
+    )
+    v = Vector(i3, size=2)
+    v[0] = [1, 2, 3]
+    v[1] = [-4, 5, 6]
+    for thunk in [0, np.int8(0), 0.5, gb.Scalar.from_value(0)]:
+        kept = v.select(first_above, thunk).new()
+        assert kept.to_coo()[0].tolist() == [0]
+    # A select that takes an element still gets one
+    same = SelectOp.register_anonymous(
+        lambda x, i, j, t: (x == t).all(), "_sel_own_same", is_udt=True
+    )
+    v[1] = [1, 1, 1]
+    assert v.select(same, 1).new().to_coo()[0].tolist() == [1]
+
+
+@pytest.mark.skipif("not supports_udfs")
 def test_udt_user_op_takes_a_number_as_itself_when_it_cannot_take_an_element():
     """A number beside a user's op is typed as itself when the op cannot take it as an element.
 
