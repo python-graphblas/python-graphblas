@@ -1075,20 +1075,27 @@ if _has_numba:
         and casts each element or leaf into ``out_type`` as it writes it, as a
         store casts (``udt._store_cast_op``). So a result goes into an object
         of another UDT type in the one GraphBLAS call that computes it, with no
-        temporary. Only the built-in ops that lift to UDTs have such a form;
-        ``udt._store_cast_op`` has already accepted the pair of types.
+        temporary. Only the built-in ops that lift to UDTs have such a form,
+        and ``identity``, ``first`` and ``second``, which store an operand as
+        it is; ``udt._store_cast_op`` has already accepted the pair of types.
         """
         from .udf import _finalize_udt_op
 
         parent = getattr(typed_op, "parent", None)
         if parent is None or parent._anonymous:
             return None
-        if typed_op.opclass == "BinaryOp" and parent.name in BUILTIN_UDT_BINARY_OPS:
+        if typed_op.opclass == "UnaryOp" and parent.name == "identity":
+            from .unary import _udt_cast_op
+
+            return _udt_cast_op(typed_op.type, out_type)
+        if typed_op.opclass == "BinaryOp" and (
+            parent.name in BUILTIN_UDT_BINARY_OPS or parent.name in {"first", "second"}
+        ):
             from .binary import BinaryOp, TypedUserBinaryOp
 
             cls, typed_cls = BinaryOp, TypedUserBinaryOp
             dtype2 = typed_op.type2
-            py_op = BUILTIN_UDT_BINARY_OPS[parent.name]
+            py_op = BUILTIN_UDT_BINARY_OPS.get(parent.name)
         elif typed_op.opclass == "UnaryOp" and parent.name in BUILTIN_UDT_UNARY_OPS:
             from .unary import TypedUserUnaryOp, UnaryOp
 
@@ -1106,13 +1113,35 @@ if _has_numba:
         dtype = typed_op.type
         if (types := dtype if dtype2 is None else (dtype, dtype2)) in fused._udt_ops:
             return fused._udt_ops[types]
-        if dtype2 is None:
+        if py_op is None:
+            wrapper, sig = _pick_cast_wrapper(parent.name, dtype, dtype2, out_type)
+        elif dtype2 is None:
             wrapper, sig, _ = compile_udt_unary_wrapper(parent.name, py_op, dtype, out=out_type)
         else:
             wrapper, sig, _ = compile_udt_binary_wrapper(
                 parent.name, py_op, dtype, dtype2, out=out_type
             )
         return _finalize_udt_op(fused, dtype, dtype2, out_type, wrapper, sig, typed_cls)
+
+    def _pick_cast_wrapper(op_name, dtype, dtype2, out_type):
+        """Compile ``first`` or ``second`` storing the operand it picks as UDT ``out_type``.
+
+        The operand is cast as a store casts it (:func:`compile_udt_cast_wrapper`);
+        the other is not read, whatever its type. Returns (wrapper_func, wrapper_sig).
+        """
+        nt = numba.types
+        picked = "x_ptr" if op_name == "first" else "y_ptr"
+        cast, cast_sig = compile_udt_cast_wrapper(dtype if picked == "x_ptr" else dtype2, out_type)
+        wrapper = _compile_codegen(
+            f"def _pick(z_ptr, x_ptr, y_ptr):\n    cast(z_ptr, {picked})\n",
+            func_name="_pick",
+            source_label=f"<gb-udt {op_name} as {out_type}>",
+            extra_ns={"cast": numba.njit(cast)},
+        )
+        z_type, picked_type = cast_sig.args
+        if picked == "x_ptr":
+            return wrapper, nt.void(z_type, picked_type, nt.voidptr)
+        return wrapper, nt.void(z_type, nt.voidptr, picked_type)
 
 
 # JIT C code generators below.

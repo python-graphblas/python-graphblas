@@ -6102,11 +6102,24 @@ def test_udt_store_casts_each_element_as_builtin_types_do():
         C << A.mxm(A, semiring.plus_times)
     with pytest.raises(DomainMismatch, match="would need a temporary copy"):
         w << v.ewise_add(v, binary.plus)
-    # Only a built-in op that lifts to UDTs can, so not first or a user's op.
+    # Only a built-in op can, so not a user's op, nor any, which picks either operand.
     udf = BinaryOp.register_anonymous(lambda x, y: x, "_store_cast_first", is_udt=True)
-    for not_lifted in [binary.first, udf]:
+    for not_lifted in [binary.any, udf]:
         with pytest.raises(DomainMismatch, match="would need a temporary copy"):
             w << v.ewise_mult(v, not_lifted)
+    # identity, first and second store an operand, cast as a store casts it.
+    for u, expected in [(v, v.dup(i8s)), (x, z)]:
+        for expr in [
+            u.apply(unary.identity),
+            u.ewise_mult(u, binary.first),
+            u.ewise_mult(u, binary.second),
+            u.apply(binary.first, right=u[0].new()),
+            u.apply(binary.second, left=u[0].new()),
+        ]:
+            stored = Vector(expected.dtype, size=u.size)
+            stored << expr
+            # As bytes, since z holds NaN
+            assert stored.to_coo()[1].tobytes() == expected.to_coo()[1].tobytes()
     with pytest.raises(DomainMismatch, match="extraction cannot"):
         w << v[[0, 1, 2]]
     # The computed result, stored as an existing object, casts in one pass.
