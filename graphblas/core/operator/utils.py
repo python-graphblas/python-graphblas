@@ -1,6 +1,7 @@
 from types import BuiltinFunctionType, FunctionType, ModuleType
 
 from ... import (
+    _STANDARD_OPERATOR_NAMES,
     backend,
     binary,
     config,
@@ -50,6 +51,18 @@ try:
     # the tuple-form ``__reduce__`` that re-registers the function in the
     # child.
     IndexBinaryOp._initialize()
+    # Every op the namespaces hold now is python-graphblas's own, also ones made
+    # outside ``register_new`` (cdiv, truediv, rtruediv, the semirings on cdiv) and
+    # ones made on first use (binom). Record them all as standard: they pickle by
+    # name, and ``literals._is_builtin_op`` counts them built-in, with no list to
+    # keep in step.
+    for _module in [binary, unary, monoid, semiring, indexunary, select, indexbinary]:
+        _modname = _module.__name__.rsplit(".", 1)[-1]
+        _STANDARD_OPERATOR_NAMES.update(f"{_modname}.{key}" for key in _module._delayed)
+        for _val in list(vars(_module).values()):
+            if isinstance(_val, (OpBase, ParameterizedUdf)) and not _val._anonymous:
+                _STANDARD_OPERATOR_NAMES.add(f"{_modname}.{_val.name}")
+    del _module, _modname, _val
 except Exception:  # pragma: no cover (debug)
     # Exceptions here can often get ignored by Python
     import traceback
