@@ -6946,6 +6946,23 @@ print("still lazy: " + " ".join(n for n in lazy_udfs if n in gb.binary._delayed)
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_anonymous_op_named_like_a_builtin_is_not_lifted_to_udts():
+    # Only the built-in ops lift field by field to UDTs. An anonymous op that
+    # shares a built-in's name is a user's op, as before ops were seeded in
+    # BinaryOp.__init__.
+    def plus_like(x, y):  # pragma: no cover (numba)
+        return x + y
+
+    op = BinaryOp.register_anonymous(plus_like, "plus")
+    assert op._custom_dtype is None
+    assert binary.plus._custom_dtype is not None
+    rec = dtypes.register_anonymous(np.dtype([("x", np.int32), ("y", np.float64)]))
+    v = Vector.from_coo([0], [(1, 2.0)], dtype=rec)
+    with pytest.raises(KeyError, match="does not work with"):
+        v.ewise_mult(v, op).new()
+
+
+@pytest.mark.skipif("not supports_udfs")
 def test_initialize_does_not_build_lazy_udfs():
     repo_root = Path(__file__).resolve().parents[2]
     env = dict(os.environ, PYTHONPATH=str(repo_root))

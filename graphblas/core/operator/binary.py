@@ -1083,10 +1083,11 @@ class BinaryOp(OpBase):
         if is_udt:
             self._udt_types = {}  # {(dtype, dtype): DataType}
             self._udt_ops = {}  # {(dtype, dtype): TypedUserBinaryOp}
-        elif _has_numba and name in _BUILTIN_UDT_BINARY_OPS:
+        elif _has_numba and not anonymous and name in _BUILTIN_UDT_BINARY_OPS:
             # Built-in arithmetic ops auto-lift to UDTs field-by-field.
             # Seeded here rather than in ``_initialize`` so that delayed ops
-            # (e.g. ``floordiv``) are not force-built at import time.
+            # (e.g. ``floordiv``) are not force-built at import time. An
+            # anonymous op that shares a built-in's name is a user's op.
             self._udt_types = {}
             self._udt_ops = {}
             self._custom_dtype = _udt_dtype
