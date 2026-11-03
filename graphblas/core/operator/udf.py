@@ -539,8 +539,8 @@ def _fits_by_broadcast(shape, expected):
         return False
 
 
-def _udf_probe_value(dtype):
-    """Build a stand-in operand of ``dtype`` for :func:`_run_udf_probe`.
+def _udf_probe_value(dtype, fill=1):
+    """Build a stand-in operand of ``dtype`` for :func:`_run_udf_probe`, ``fill`` in every leaf.
 
     Only the shape of the UDF's result is read, so any values it accepts
     will do.
@@ -548,20 +548,25 @@ def _udf_probe_value(dtype):
     if dtype._is_udt:
         np_type = dtype.np_type
         if np_type.subdtype is None:
-            return np.ones(1, dtype=np_type)[0]
+            return np.full(1, fill, dtype=np_type)[0]
         base_np_type, shape = np_type.subdtype
-        return np.ones(shape, dtype=base_np_type)
+        return np.full(shape, fill, dtype=base_np_type)
     return _sample_values[dtype]
 
 
 def _run_udf_probe(numba_func, arg_dtypes):
-    """Call the UDF on stand-in operands. Returns ``(result,)``, or ``None`` if it raised.
+    """Call the UDF on stand-in operands. Returns ``(result,)``, or ``None`` if it gave up.
 
-    A UDF that raises on the stand-in values is not checked, so one that
-    also returns a shape that does not fit is left to the wrapper, which
-    fails without telling the caller (see :func:`_compose_wrapper_body`).
-    Only the call is guarded, so a mistake in building the operands still
-    surfaces.
+    A UDF that raises on the stand-ins of ones is run again on twos, since
+    what it raises may depend on the values. One that raises an
+    ``ArithmeticError`` is then not checked, and if it also returns a shape
+    that does not fit, that is left to the wrapper, which fails without
+    telling the caller (see :func:`_compose_wrapper_body`). Any other
+    exception raised on both comes from the operands' types and shapes (a
+    broadcast, an index past the end): the cfunc would raise it for every
+    element, where Numba prints and swallows it and the element is never
+    written, so it raises ``UdfParseError`` here instead. Only the call is
+    guarded, so a mistake in building the operands still surfaces.
 
     This is where typing an op for a UDT runs the user's function rather
     than only compiling it, and ``OpBase.__contains__`` is a typed lookup,
@@ -570,14 +575,21 @@ def _run_udf_probe(numba_func, arg_dtypes):
     array, a record, a scalar), so the call compiles the specialization the
     wrapper needs anyway.
     """
-    args = [_udf_probe_value(d) for d in arg_dtypes]
-    try:
-        return (numba_func(*args),)
-    except NumbaError as exc:  # pragma: no cover (safety)
-        # The wrapper's operands have these types, so it would fail to compile too.
-        raise UdfParseError(_summarize_numba_typing_error(exc)) from exc
-    except Exception:
-        return None
+    for fill in (1, 2):
+        args = [_udf_probe_value(d, fill) for d in arg_dtypes]
+        try:
+            return (numba_func(*args),)
+        except NumbaError as exc:  # pragma: no cover (safety)
+            # The wrapper's operands have these types, so it would fail to compile too.
+            raise UdfParseError(_summarize_numba_typing_error(exc)) from exc
+        except ArithmeticError:
+            return None
+        except Exception as exc:
+            error = exc
+    names = ", ".join(str(dtype) for dtype in arg_dtypes)
+    raise UdfParseError(
+        f"UDT UDF raised {type(error).__name__} when run on sample values of ({names}): {error}"
+    ) from error
 
 
 def _raise_unless_fits(shape, expected, return_type, path, *, probed):
