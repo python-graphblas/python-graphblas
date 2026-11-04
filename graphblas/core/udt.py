@@ -104,6 +104,26 @@ def _strip_leading_ones(shape):
     return shape[i:]
 
 
+def _record_leaf_mismatch(leaves_x, leaves_y):
+    """Return where the leaves of two records do not pair, or ``None`` if they do.
+
+    ``leaves_x`` and ``leaves_y`` are :func:`_iter_record_leaves` lists. The
+    operands of a lifted op (:func:`_check_udt_pair`), and an element and the
+    one it is stored in (:func:`_corresponding_leaves`), pair as records when
+    they nest the same way, with the same field names in the same order at
+    every level, and each field has the same shape in both; field dtypes may
+    differ. The result is ``"nesting"``, or ``(c_access, shape_x, shape_y)``
+    for the first field whose shapes differ. Array UDTs pair by rules that
+    differ on purpose: operands broadcast, a stored element does not.
+    """
+    if [py for py, _c, _d in leaves_x] != [py for py, _c, _d in leaves_y]:
+        return "nesting"
+    for (_py, c, x), (_py_y, _c_y, y) in zip(leaves_x, leaves_y, strict=True):
+        if x.shape != y.shape:
+            return c, x.shape, y.shape
+    return None
+
+
 # Which operands an op on UDTs takes, and the type of its result.
 
 
@@ -166,7 +186,8 @@ def _check_udt_pair(op_name, dtype, dtype2, info_x, info_y):
         # operand is leaf ``i`` of the other.
         leaves_x = list(_iter_record_leaves(dtype.np_type))
         leaves_y = list(_iter_record_leaves(dtype2.np_type))
-        if [py for py, _c, _d in leaves_x] != [py for py, _c, _d in leaves_y]:
+        mismatch = _record_leaf_mismatch(leaves_x, leaves_y)
+        if mismatch == "nesting":
             raise KeyError(
                 f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
                 f"record UDTs must nest the same way, with the same field names in the "
@@ -180,13 +201,13 @@ def _check_udt_pair(op_name, dtype, dtype2, info_x, info_y):
         # broadcast would work one way round only, since the arithmetic ops
         # write into a field shaped like the left operand's: ``(3,)`` plus
         # ``(1,)`` works, ``(1,)`` plus ``(3,)`` does not.
-        for (_py, c, leaf_x), (_py_y, _c_y, leaf_y) in zip(leaves_x, leaves_y, strict=True):
-            if leaf_x.shape != leaf_y.shape:
-                raise KeyError(
-                    f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
-                    f"record UDTs must have the same shape for each field; field {c} is "
-                    f"{leaf_x.shape} vs {leaf_y.shape}."
-                )
+        if mismatch is not None:
+            c, shape_x, shape_y = mismatch
+            raise KeyError(
+                f"binary.{op_name} does not work with ({dtype}, {dtype2}): "
+                f"record UDTs must have the same shape for each field; field {c} is "
+                f"{shape_x} vs {shape_y}."
+            )
         return
     # Array UDTs broadcast as numpy arrays do, so ``(3, 1)`` with ``(1, 4)``
     # gives ``(3, 4)``; the generated code reads each operand through a flat
@@ -412,12 +433,12 @@ def _corresponding_leaves(np_x, np_z):
         return None, [(base_x, base_z)]
     leaves_x = list(_iter_record_leaves(np_x))
     leaves_z = list(_iter_record_leaves(np_z))
-    if [py for py, _c, _d in leaves_x] != [py for py, _c, _d in leaves_z]:
+    mismatch = _record_leaf_mismatch(leaves_x, leaves_z)
+    if mismatch == "nesting":
         return "records must have the same field names, in the same order, at every level", None
-    pairs = [(x, z) for (_, _, x), (_, _, z) in zip(leaves_x, leaves_z, strict=True)]
-    if any(x.shape != z.shape for x, z in pairs):
+    if mismatch is not None:
         return "records must have the same shape for each field", None
-    return None, [(x.base, z.base) for x, z in pairs]
+    return None, [(x.base, z.base) for (_, _, x), (_, _, z) in zip(leaves_x, leaves_z, strict=True)]
 
 
 def _udt_cast_error(dtype, to_dtype):
