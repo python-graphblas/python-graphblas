@@ -7,7 +7,7 @@ from ...dtypes import BOOL, FP64, INT8, INT64, UINT64, lookup_dtype
 from ...exceptions import UdfParseError, check_status_carg
 from .. import _has_numba, ffi, lib
 from ..dtypes import _sample_values
-from .base import OpBase, ParameterizedUdf, TypedOpBase, _call_op
+from .base import OpBase, ParameterizedUdf, TypedOpBase, _call_op, _validate_ret_dtype
 
 if _has_numba:
     import numba
@@ -18,7 +18,7 @@ if _has_numba:
         _compile_udf_for_udt,
         _finalize_udt_op,
         _get_udt_wrapper,
-        _resolve_udt_return_type,
+        _udt_ret_type,
     )
 ffi_new = ffi.new
 
@@ -86,7 +86,7 @@ class IndexUnaryOp(OpBase):
     Built-in and registered IndexUnaryOps are located in the ``graphblas.indexunary`` namespace.
     """
 
-    __slots__ = "orig_func", "is_positional", "_is_udt", "_numba_func"
+    __slots__ = "orig_func", "is_positional", "_is_udt", "_numba_func", "_ret_dtype"
     _module = indexunary
     _modname = "indexunary"
     _custom_dtype = None
@@ -111,17 +111,23 @@ class IndexUnaryOp(OpBase):
                    "rowindex", "colindex"}  # fmt: skip
 
     @classmethod
-    def _build(cls, name, func, *, is_udt=False, anonymous=False):
+    def _build(cls, name, func, *, is_udt=False, anonymous=False, ret_dtype=None):
         if not isinstance(func, FunctionType):
             raise TypeError(f"UDF argument must be a function, not {type(func)}")
         if name is None:
             name = getattr(func, "__name__", "<anonymous_binary>")
+        ret_dtype = _validate_ret_dtype(ret_dtype, "indexunary", is_udt=is_udt, parameterized=False)
         success = False
         # Set on the Dispatcher, not just the cfunc wrapper; see the note in
         # ``BinaryOp._build``.
         indexunary_udf = numba.njit(func, error_model="numpy")
         new_type_obj = cls(
-            name, func, anonymous=anonymous, is_udt=is_udt, numba_func=indexunary_udf
+            name,
+            func,
+            anonymous=anonymous,
+            is_udt=is_udt,
+            numba_func=indexunary_udf,
+            ret_dtype=ret_dtype,
         )
         return_types = {}
         nt = numba.types
@@ -156,26 +162,38 @@ class IndexUnaryOp(OpBase):
                     nt.CPointer(input_type.numba_type),
                 )
 
+                # Each wrapper writes 0 (False) before it calls the UDF: if the UDF raises, Numba
+                # prints the error and returns, and GraphBLAS uses the output as it is (for a
+                # select, an unwritten bool decides whether to keep the entry). The operands are
+                # read first, since the output can be one of them (z = f(z, y) in a reduce).
                 if type_ == BOOL:
                     if ret_type == BOOL:
 
                         def indexunary_wrapper(z, x, row, col, y):  # pragma: no cover (numba)
-                            z[0] = bool(indexunary_udf(bool(x[0]), row, col, bool(y[0])))
+                            x0, y0 = x[0], y[0]
+                            z[0] = 0
+                            z[0] = bool(indexunary_udf(bool(x0), row, col, bool(y0)))
 
                     else:
 
                         def indexunary_wrapper(z, x, row, col, y):  # pragma: no cover (numba)
-                            z[0] = indexunary_udf(bool(x[0]), row, col, bool(y[0]))
+                            x0, y0 = x[0], y[0]
+                            z[0] = 0
+                            z[0] = indexunary_udf(bool(x0), row, col, bool(y0))
 
                 elif ret_type == BOOL:
 
                     def indexunary_wrapper(z, x, row, col, y):  # pragma: no cover (numba)
-                        z[0] = bool(indexunary_udf(x[0], row, col, y[0]))
+                        x0, y0 = x[0], y[0]
+                        z[0] = 0
+                        z[0] = bool(indexunary_udf(x0, row, col, y0))
 
                 else:
 
                     def indexunary_wrapper(z, x, row, col, y):  # pragma: no cover (numba)
-                        z[0] = indexunary_udf(x[0], row, col, y[0])
+                        x0, y0 = x[0], y[0]
+                        z[0] = 0
+                        z[0] = indexunary_udf(x0, row, col, y0)
 
                 indexunary_wrapper = numba.cfunc(wrapper_sig, nopython=True, error_model="numpy")(
                     indexunary_wrapper
@@ -218,7 +236,7 @@ class IndexUnaryOp(OpBase):
             numba_func, sig, op_kind="indexunary", op_name=self.name, dtypes=(dtype, dtype2)
         )
         numba_ret_type = numba_func.overloads[sig].signature.return_type
-        ret_type = _resolve_udt_return_type(numba_ret_type, dtype, dtype2)
+        ret_type = _udt_ret_type(self, numba_ret_type, dtype, dtype2)
         indexunary_wrapper, wrapper_sig = _get_udt_wrapper(
             numba_func, ret_type, dtype, dtype2, include_indexes=True, numba_ret_type=numba_ret_type
         )
@@ -227,7 +245,9 @@ class IndexUnaryOp(OpBase):
         )
 
     @classmethod
-    def register_anonymous(cls, func, name=None, *, parameterized=False, is_udt=False):
+    def register_anonymous(
+        cls, func, name=None, *, parameterized=False, is_udt=False, ret_dtype=None
+    ):
         """Register a IndexUnary without registering it in the ``graphblas.indexunary`` namespace.
 
         Because it is not registered in the namespace, the name is optional.
@@ -261,6 +281,13 @@ class IndexUnaryOp(OpBase):
             Setting ``is_udt=True`` is also helpful when the left and right
             dtypes need to be different.
 
+        ret_dtype : dtype, optional
+            The dtype the operator returns. Requires ``is_udt=True``.
+            Without it the return type is inferred from what the function
+            returns, which names a built-in dtype or one of the input UDTs,
+            so an output UDT that is not an operand needs this. The dtype is
+            fixed for the operator: it is the same for every input dtype.
+
         Returns
         -------
         return IndexUnaryOp or ParameterizedIndexUnaryOp
@@ -268,11 +295,14 @@ class IndexUnaryOp(OpBase):
         """
         cls._check_supports_udf("register_anonymous")
         if parameterized:
+            _validate_ret_dtype(ret_dtype, "indexunary", is_udt=is_udt, parameterized=True)
             return ParameterizedIndexUnaryOp(name, func, anonymous=True, is_udt=is_udt)
-        return cls._build(name, func, anonymous=True, is_udt=is_udt)
+        return cls._build(name, func, anonymous=True, is_udt=is_udt, ret_dtype=ret_dtype)
 
     @classmethod
-    def register_new(cls, name, func, *, parameterized=False, is_udt=False, lazy=False):
+    def register_new(
+        cls, name, func, *, parameterized=False, is_udt=False, lazy=False, ret_dtype=None
+    ):
         """Register a new IndexUnaryOp and save it to ``graphblas.indexunary`` namespace.
 
         If the return type is Boolean, the function will also be registered as a SelectOp
@@ -315,6 +345,10 @@ class IndexUnaryOp(OpBase):
             delay compilation and only compile when the operator is used,
             which is done by setting ``lazy=True``.
 
+        ret_dtype : dtype, optional
+            The dtype the operator returns. Requires ``is_udt=True``.
+            See :meth:`register_anonymous` for details.
+
         Examples
         --------
         >>> gb.indexunary.register_new("row_mod", lambda x, i, j, thunk: i % max(thunk, 2))
@@ -323,20 +357,34 @@ class IndexUnaryOp(OpBase):
 
         """
         cls._check_supports_udf("register_new")
+        # Validate eagerly even for lazy=True, so a bad combination fails at
+        # the registration site rather than at first attribute touch.
+        _validate_ret_dtype(ret_dtype, "indexunary", is_udt=is_udt, parameterized=parameterized)
         module, funcname = cls._remove_nesting(name)
         if lazy:
             module._delayed[funcname] = (
                 cls.register_new,
-                {"name": name, "func": func, "parameterized": parameterized, "is_udt": is_udt},
+                {
+                    "name": name,
+                    "func": func,
+                    "parameterized": parameterized,
+                    "is_udt": is_udt,
+                    "ret_dtype": ret_dtype,
+                },
             )
         elif parameterized:
             indexunary_op = ParameterizedIndexUnaryOp(name, func, is_udt=is_udt)
             setattr(module, funcname, indexunary_op)
         else:
-            indexunary_op = cls._build(name, func, is_udt=is_udt)
+            indexunary_op = cls._build(name, func, is_udt=is_udt, ret_dtype=ret_dtype)
             setattr(module, funcname, indexunary_op)
-            # If return type is BOOL, register additionally as a SelectOp
-            if all(x == BOOL for x in indexunary_op.types.values()):
+            # If return type is BOOL, register additionally as a SelectOp. A UDT
+            # op has no types until it is compiled, so only a declared
+            # ``ret_dtype`` can rule it out here.
+            declared = indexunary_op._ret_dtype
+            if (declared is None or declared == BOOL) and all(
+                x == BOOL for x in indexunary_op.types.values()
+            ):
                 from .select import SelectOp
 
                 select_module, funcname = SelectOp._remove_nesting(name, strict=False)
@@ -397,8 +445,10 @@ class IndexUnaryOp(OpBase):
         is_positional=False,
         is_udt=False,
         numba_func=None,
+        ret_dtype=None,
     ):
         super().__init__(name, anonymous=anonymous)
+        self._ret_dtype = ret_dtype
         self.orig_func = func
         self._numba_func = numba_func
         self.is_positional = is_positional

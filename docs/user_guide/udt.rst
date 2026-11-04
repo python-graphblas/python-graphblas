@@ -209,7 +209,10 @@ dtype, so it never narrows. Below, ``v`` is a Vector of an ``INT8[3]`` UDT.
        but converts exactly, such as ``0`` for a bool field or ``2.0`` for an
        int field, still converts with a ``DeprecationWarning`` and will raise
        in a future version; any other raises ``ValueError``, and a float too
-       large for a float field raises ``OverflowError``.
+       large for a float field raises ``OverflowError``. A Python or numpy
+       number beside a user-defined op that cannot be typed with an element
+       (``x[:2] * t`` with a 6-element ``t``) is typed as itself instead, as a
+       ``Scalar`` of it would be.
      - ``v.ewise_union(w, binary.plus, 0.5, 0)`` raises
 
 A Monoid used element-wise (``apply``, ``ewise_mult``, ``ewise_union``) uses
@@ -365,11 +368,54 @@ array returned into an array-typed field of a record UDT. A tuple or list also
 fills such a field, but only a one-dimensional one and only at its exact
 length; unlike an array, it does not broadcast. Numba does not know the shape
 of an array the UDF builds, or the length of a list, so the check runs the UDF
-once on sample values; a UDF that raises on those values is not checked.
+on sample values; a UDF that raises on those values is not checked, since it
+may raise only for some values. An exception the UDF raises when the op runs
+is printed and goes no further (Numba cannot pass it to GraphBLAS), so that
+element is not written; a built-in output, such as a select's bool, is 0 or
+``False`` there.
 
 If your UDF references a field that doesn't exist, or returns the wrong arity,
 you'll get a ``UdfParseError`` with the actionable diagnostic line surfaced
 from Numba's typing pass instead of a 200-line traceback.
+
+Naming the output type
+~~~~~~~~~~~~~~~~~~~~~~
+
+By default the return type is worked out from what the UDF returns, matched
+against the input dtypes. That can only name a type the operator already has
+in hand, so an output UDT that is not one of the operands is out of reach.
+The ``x[:2]`` rejection above is a case of this: the output really is a
+2-element UDT, but nothing says so.
+
+Pass ``ret_dtype`` to say it outright. It takes anything ``lookup_dtype``
+accepts and requires ``is_udt=True``:
+
+.. code-block:: python
+
+    nine = gb.dtypes.register_anonymous(np.dtype((np.float64, (9,))), "Nine")
+    three = gb.dtypes.register_anonymous(np.dtype((np.float64, (3,))), "Three")
+
+    head = gb.unary.register_anonymous(lambda x: x[:3], "head", is_udt=True, ret_dtype=three)
+    head[nine].return_type  # Three
+
+``ret_dtype`` is available on ``register_anonymous`` and ``register_new`` for
+``UnaryOp``, ``BinaryOp``, ``IndexUnaryOp``, and ``IndexBinaryOp``. It is a
+property of the operator, not of a particular input dtype: the same output
+type applies to every dtype the operator is typed for. An operator whose
+output type should vary with its inputs still needs one registration per
+output type.
+
+Declaring the type does not switch off the shape check described above; it
+points the check at the declared type instead. The result must also be
+something the declared type can hold: one value per field for a record, an
+array or a scalar for an array UDT, and a scalar for a scalar type. A UDF that
+breaks either rule is rejected when the op is typed (``op[dtype]``, or its
+first use), so a wrong ``ret_dtype`` is an error rather than a silently
+mis-typed result.
+
+It does not apply to ``SelectOp``, whose return type GraphBLAS fixes at
+``BOOL``, nor to an op registered without ``is_udt=True``, whose return type
+comes from compiling the function against each input type in turn.
 
 .. _udt_jit_introspection:
 
