@@ -80,11 +80,12 @@ def _iter_record_leaves(np_type, python_prefix="", c_prefix=""):
     ``("['outer']['inner_a']", "outer.inner_a", float64_dtype)``.
 
     Only record-in-record nesting is recognised. Array-typed fields are
-    yielded as a single leaf, which the Numba path handles: the generated
-    expression operates on the whole sub-array and the wrapper slice-assigns
-    it back. The JIT path never sees such a record, because a subarray dtype
-    has no entry in ``udt_codegen.NP_TO_C_TYPES`` and ``udt_codegen._udt_c_typedef``
-    bails out, so the op keeps the cfunc for every call.
+    yielded as a single leaf, which the Numba path handles: a binary op
+    computes it element by element, a unary op applies its expression to the
+    whole sub-array, and the wrapper slice-assigns the result back. The JIT
+    path never sees such a record, because a subarray dtype has no entry in
+    ``udt_codegen.NP_TO_C_TYPES`` and ``udt_codegen._udt_c_typedef`` bails out,
+    so the op keeps the cfunc for every call.
     """
     for name in np_type.names:
         field_dtype = np_type.fields[name][0]
@@ -430,7 +431,7 @@ def _casts_safely_into(literal_type, dtype):
     return reason is None and all(np.can_cast(x, z, "safe") for x, z in pairs)
 
 
-def _store_cast_op(result_dtype, output_dtype):
+def _store_cast_op(result_dtype, output_dtype, *, is_value=False):
     """Return the UnaryOp that converts a result for an object of ``output_dtype``, or ``None``.
 
     GraphBLAS casts between built-in types on store (C's casts, with a float
@@ -442,6 +443,8 @@ def _store_cast_op(result_dtype, output_dtype):
     UDTs whose layouts correspond (:func:`_udt_cast_error`). Any other
     pair raises ``DomainMismatch``. ``None`` means GraphBLAS stores the result
     as it is. This is the one place that decides what may be stored where.
+    ``is_value`` says the error is for an object stored or accumulated as it
+    is, not a computed result.
     """
     if result_dtype is output_dtype or not (result_dtype._is_udt or output_dtype._is_udt):
         return None
@@ -453,6 +456,11 @@ def _store_cast_op(result_dtype, output_dtype):
             return _udt_cast_op(result_dtype, output_dtype)
     elif _has_numba:
         reason = "a UDT casts only to another UDT"
+    if is_value:
+        raise DomainMismatch(
+            f"cannot store a value of type {result_dtype} in an object of type "
+            f"{output_dtype}: {reason}."
+        )
     raise DomainMismatch(
         f"cannot store a result of type {result_dtype} in an object of type "
         f"{output_dtype}: {reason}. Use .new() for an object of the result's type, or "
@@ -530,7 +538,7 @@ def _cast_for_store(value, dtype):
     another UDT type needs a converted copy: one element for a Scalar, which
     is made here, but the whole value for a Vector or Matrix, which raises.
     """
-    if (cast_op := _store_cast_op(value.dtype, dtype)) is None:
+    if (cast_op := _store_cast_op(value.dtype, dtype, is_value=True)) is None:
         return value
     from .base import BaseType
     from .scalar import Scalar

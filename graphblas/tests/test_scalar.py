@@ -293,7 +293,10 @@ def test_udt_nat_duration_in_another_unit_stays_nat():
         np.dtype([("nat_o", [("nat_d", "m8[s]")]), ("nat_n", np.int8)]), "_NatNested"
     )
     # Numba cannot type an array of durations, so registering one needs it absent.
-    pair = None if gb.core._has_numba else dtypes.register_anonymous(np.dtype(("m8[s]", 2)))
+    pair = pairs = None
+    if not gb.core._has_numba:
+        pair = dtypes.register_anonymous(np.dtype(("m8[s]", 2)))
+        pairs = dtypes.register_anonymous(np.dtype([("nat_p", "m8[s]", 2), ("nat_n", np.int8)]))
     for unit in ["ns", "ms", "m", "D"]:
         nat = np.timedelta64("NaT", unit)
         assert np.isnat(Scalar.from_value(nat, seconds).value)
@@ -321,6 +324,9 @@ def test_udt_nat_duration_in_another_unit_stays_nat():
             got = Scalar.from_value([nat, np.timedelta64(5000, "ms")], pair).value
             assert np.isnat(got[0])
             assert got[1] == np.timedelta64(5, "s")
+            got = Scalar.from_value(([nat, np.timedelta64(5000, "ms")], 1), pairs).value
+            assert np.isnat(got["nat_p"][0])
+            assert got["nat_p"][1] == np.timedelta64(5, "s")
         r = Vector(days, size=1)
         r[0] = (np.datetime64("NaT", unit), 1)
         assert np.isnat(r[0].new().value["nat_t"])
@@ -462,6 +468,17 @@ def test_eq_types_a_literal_as_binary_eq_does():
     assert empty == Scalar(dtypes.FP64)
     assert empty == None  # noqa: E711
     assert empty != 0
+    # A value that is not a literal names the operator used, not Scalar.ewise_mult.
+    s = Scalar.from_value(1, dtype=dtypes.INT8)
+    with pytest.raises(TypeError, match=r"argument `other` in Scalar\.__eq__\(\.\.\.\)"):
+        s == [1]  # noqa: B015
+    with pytest.raises(TypeError, match=r"argument `other` in Scalar\.__ne__\(\.\.\.\)"):
+        s != object()  # noqa: B015
+    # A dict is not an element of an array UDT (AttributeError from reading its fields)
+    a = Scalar.from_value([1, 2, 3], dtypes.register_anonymous(np.dtype((np.int8, 3))))
+    match = r"Scalar\.__eq__" if gb.core._supports_udfs else None
+    with pytest.raises(TypeError, match=match):
+        a == {}  # noqa: B015
 
 
 @autocompute
@@ -715,6 +732,19 @@ def test_ewise_union(s):
         s.ewise_union(t, binary.plus, v, 20)
     with pytest.raises(TypeError, match="Literal scalars also"):
         s.ewise_union(t, binary.plus, 10, v)
+
+
+def test_select_row_compares_its_index_with_the_bound_given(s):
+    # A Scalar's only index is 0. The bound is the number given, made a whole number
+    # (s > -0.5 dropped it, and s < 1 raised AttributeError), not the comparison's thunk
+    # typed beside the value (300 beside INT8 is infinity).
+    assert select.row(s > -0.5).new() == s
+    assert select.row(s < 0.5).new() == s
+    assert select.row(s < 1).new() == s
+    assert select.row(s >= 0.5).new().is_empty
+    s8 = Scalar.from_value(1, dtype=dtypes.INT8)
+    assert select.row(s8 < 300).new() == s8
+    assert select.row(s8 > 299).new().is_empty
 
 
 def test_ewise_mult_add(s):

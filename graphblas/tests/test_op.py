@@ -4576,6 +4576,7 @@ def test_udt_literal_converts_only_when_exact():
         np.dtype([("ex_v", np.int8, (2,)), ("ex_w", np.int8)]), "_ExactNested"
     )
     text = dtypes.register_anonymous(np.dtype([("ex_s", "S4"), ("ex_n", np.int8)]), "_ExactText")
+    char = dtypes.register_anonymous(np.dtype([("ex_c", "S1"), ("ex_k", np.int8)]), "_ExactChar")
     bare = dtypes.register_anonymous(np.dtype("S3"), "_ExactBareText")
     seconds = dtypes.register_anonymous(np.dtype("m8[s]"), "_ExactBareSeconds")
     dates = dtypes.register_anonymous(
@@ -4593,6 +4594,8 @@ def test_udt_literal_converts_only_when_exact():
     n[0] = ([1, 2], 3)
     t = Vector(text, size=1)
     t[0] = (b"ab", 1)
+    c = Vector(char, size=1)
+    c[0] = (b"a", 1)
     b = Vector(bare, size=1)
     b[0] = b"0.5"
     d = Vector(seconds, size=1)
@@ -4656,6 +4659,8 @@ def test_udt_literal_converts_only_when_exact():
         (lambda: b.apply(same, right=np.True_), "_ExactBareText: it is typed as BOOL,"),
         (lambda: b.apply(same, right=b"0.5000"), "_ExactBareText"),  # was cut to b"0.5"
         (lambda: t.apply(second, right=cut_text), "_ExactText"),
+        # NaT as b"N"
+        (lambda: c.apply(second, right=(np.datetime64("NaT", "s"), 1)), "_ExactChar"),
         (lambda: d.apply(same, right=np.timedelta64(5, "ms")), "_ExactBareSeconds"),
     ]:
         with pytest.raises(ValueError, match=re.escape(f"does not fit {typed_as}")):
@@ -5004,11 +5009,32 @@ def test_udt_record_date_literals_compare_as_numpy():
         ((datetime.date(2020, 1, 1), datetime.timedelta(seconds=5)), True),
         ((midnight, secs), True),
         (("2020-01-01", secs), True),
+        # Text in a duration field takes the field's type, as before.
+        ((day, "5"), True),
     ]:
         assert (s == literal) is equal
         if supports_udfs:
             assert (v == literal).new()[0].new().value == equal
             assert (v != literal).new()[0].new().value != equal
+    # Text numpy reads as NaT is NaT in the field's unit (numpy 2.5 warns for NaT with no
+    # unit), and NaT equals nothing, as in numpy.
+    bare = dtypes.register_anonymous(np.dtype("M8[s]"), "_DateLitBare")
+    b = gb.Scalar.from_value(np.datetime64(0, "s"), dtype=bare)
+    for nat in ["NaT", "nat", "", b"NaT"]:
+        assert (s == (nat, secs)) is False
+        assert (b == nat) is False
+        if supports_udfs:
+            assert not (v == (nat, secs)).new()[0].new().value
+    # So does text numpy cannot read as a date or duration, and converting it says why.
+    for literal, reason in [
+        (("not a date", secs), "Error parsing datetime string"),
+        ((day, "abc"), "Could not convert object to NumPy timedelta"),
+    ]:
+        with pytest.raises(ValueError, match=reason):
+            s == literal  # noqa: B015
+        if supports_udfs:
+            with pytest.raises(ValueError, match=reason):
+                (v == literal).new()
     if supports_udfs:
         # A user's op refuses what its field would cut short, as for a numpy date.
         second = BinaryOp.register_anonymous(lambda x, y: y, "_date_lit_second", is_udt=True)
@@ -5839,7 +5865,7 @@ def test_udt_store_casts_reach_every_store_path():
     u = Vector(f8s, size=3)
     u[[0, 2]] << unary.ainv(gb.Scalar.from_value([1, 2, 3], dtype=i8s))
     assert u.to_coo()[1].tolist() == [[-1, -2, -3]] * 2
-    with pytest.raises(DomainMismatch, match="a UDT casts only to another UDT"):
+    with pytest.raises(DomainMismatch, match="result of type .*casts only to another UDT. Use"):
         gb.Scalar(FP64) << v.reduce(agg.sum)
     w = Vector(f8s, size=3)
     w[0] = [0.5, 0.5, 0.5]
@@ -5902,9 +5928,14 @@ def test_udt_scalar_accumulates_its_value_converted_to_its_type():
     s.clear()
     s(accum=binary.plus) << 0.5
     assert s.value.tolist() == [0, 0, 0]
-    # A built-in Scalar casts only into a built-in type, as for a store.
-    with pytest.raises(DomainMismatch, match="a UDT casts only to another UDT"):
+    # A built-in Scalar casts only into a built-in type, as for a store. The error
+    # calls it a value, not a result (it said "a result of type FP64").
+    with pytest.raises(DomainMismatch, match="value of type FP64 .*casts only to another UDT.$"):
         added(gb.Scalar.from_value(0.5))
+    # A Vector is not a value to accumulate, into a UDT Scalar or a built-in one.
+    for accumulate in [added, added_to_int8]:
+        with pytest.raises(TypeError, match="Bad type for keyword argument `other=`"):
+            accumulate(halves)
 
 
 @pytest.mark.skipif("not supports_udfs")
@@ -6333,7 +6364,9 @@ def test_udt_pair_is_never_unified():
     which ``unify`` registered as a new type. An op that does not lift to UDTs
     then named that third type in its KeyError, and ``ewise_add`` with a monoid
     passed GraphBLAS two operands it rejected with GrB_DOMAIN_MISMATCH. A
-    Monoid takes one type, so on a mixed pair it runs as its BinaryOp.
+    Monoid takes one type, so on a mixed pair it runs as its BinaryOp, and
+    indexed with the pair it takes the type the pair promotes to, as
+    ``monoid.plus["INT8", "INT16"]`` is ``monoid.plus["INT16"]``.
     """
     X = dtypes.register_anonymous(np.dtype([("uni_a", np.float32), ("uni_b", np.int64)]), "_UniX")
     Y = dtypes.register_anonymous(np.dtype([("uni_a", np.int64), ("uni_b", np.float32)]), "_UniY")
@@ -6352,8 +6385,22 @@ def test_udt_pair_is_never_unified():
     for expr in [lambda: v.ewise_add(w), lambda: monoid.plus(v | w)]:
         with pytest.raises(DomainMismatch, match="ewise_add cannot use binary.plus"):
             expr()
-    with pytest.raises(TypeError, match="Monoid inputs must be the same dtype"):
-        monoid.plus[X, Y]
+    # Indexed with the pair: TypeError (a Monoid takes one type) before; main and
+    # built-in types promote.
+    XY = binary.plus[X, Y].return_type
+    assert monoid.plus[X, Y] is monoid.plus[Y, X] is monoid.plus[XY]
+    assert monoid.max[X, Y] is monoid.max[XY]
+    R8 = dtypes.register_anonymous(np.dtype([("uni_c", np.int8)]), "_UniR8")
+    R16 = dtypes.register_anonymous(np.dtype([("uni_c", np.int16)]), "_UniR16")
+    assert monoid.plus[R8, R16] is monoid.plus[R16]
+    assert monoid.plus[R8, "INT16"] is monoid.plus[R16]
+    # binary.any gives the second operand's type, but monoid.any promotes the pair in
+    # either order, as main did (``monoid.any[R16, R8]`` was ``monoid.any[R8]``)
+    for pair in [(R8, R16), (R16, R8), (R8, "INT16"), ("INT16", R8)]:
+        assert monoid.any[pair] is monoid.any[R16], pair
+    assert monoid.any[X, Y] is monoid.any[Y, X] is monoid.any[XY]
+    with pytest.raises(KeyError, match="plus does not work with"):
+        monoid.plus[X, R8]
 
 
 @pytest.mark.skipif("not supports_udfs")
