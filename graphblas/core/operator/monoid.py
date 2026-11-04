@@ -384,7 +384,13 @@ class Monoid(OpBase):
         else:
             identity = Scalar.from_value(identity_val, dtype=ret_type, is_cscalar=True)
         new_monoid = ffi_new("GrB_Monoid*")
-        status = lib.GrB_Monoid_new_UDT(new_monoid, binaryop.gb_obj, identity.gb_obj)
+        if ret_type._is_udt:
+            status = lib.GrB_Monoid_new_UDT(new_monoid, binaryop.gb_obj, identity.gb_obj)
+        else:
+            # An is_udt op typed for a built-in type, as a monoid over a UDF built by
+            # ``_build`` is. GrB_Monoid_new_UDT refused it with an empty DomainMismatch.
+            func = libget(f"GrB_Monoid_new_{ret_type.name}")
+            status = func(new_monoid, binaryop.gb_obj, identity.gb_obj[0])
         check_status_carg(status, "Monoid", new_monoid[0])
         op = TypedUserMonoid(
             self,
