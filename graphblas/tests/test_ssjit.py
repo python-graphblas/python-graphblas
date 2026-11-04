@@ -150,20 +150,34 @@ _UDT_WORK_RAISES_RUN = _JIT_WORKS_AT_IMPORT and not _CMAKE_ONLY
 
 
 def _jit_through_cmake_here():
-    """Whether SuiteSparse has the JIT and compiles only through cmake, and cmake is on the PATH.
+    """Whether ``'on'`` set at init should compile through cmake here, as SuiteSparse does.
 
-    One built without the JIT keeps ``jit_c_control`` at ``'run'``. Here
-    ``'on'`` set at init probes through cmake, which finds the Visual Studio
-    compiler itself.
+    It must compile only through cmake, have the JIT (one built without it keeps
+    ``jit_c_control`` at ``'run'``), and find cmake on the PATH, which then finds
+    the Visual Studio compiler itself. Then it asks a real probe, as init does. A
+    SuiteSparse built with MinGW (psg's 8.0 wheels) passes gcc-style flags, which
+    cmake's Visual Studio generator hands to cl.exe, which refuses them: there the
+    probe fails, and ``'on'`` rightly becomes ``'run'``. A failed probe with flags
+    for cl.exe still counts, so the tests that need ``'on'`` report it.
     """
+    from graphblas.core.ss import jit_config
+
     if not _CMAKE_ONLY or shutil.which("cmake") is None:
         return False
     with _jit_mode("on"):
-        return gb.ss.config["jit_c_control"] == "on"
+        if gb.ss.config["jit_c_control"] != "on":
+            return False
+        if jit_config._probe_jit(gb.ss.config):
+            return True
+    flags = gb.ss.config["jit_c_compiler_flags"].split()
+    return not any(flag.startswith(("-W", "-std=", "-f")) for flag in flags)
 
 
 _JIT_THROUGH_CMAKE = _jit_through_cmake_here()
-_CMAKE_PROBE_FAILED = "cmake could not build the probe: is Visual Studio's C compiler installed?"
+_CMAKE_PROBE_FAILED = (
+    "cmake could not build the probe with Visual Studio's compiler; its error is in the "
+    "captured output"
+)
 
 
 def _run_in_fresh_process(script, jit_c_control=None, **extra_env):
@@ -421,6 +435,47 @@ def test_set_jit_c_control_at_init_compiles_through_cmake(monkeypatch):
         assert cfg["jit_c_control"] == ("on" if jit_config._jit_enabled_for_udt else "run")
         if _JIT_THROUGH_CMAKE:
             assert cfg["jit_c_control"] == "on", _CMAKE_PROBE_FAILED
+    finally:
+        for key, val in prev.items():
+            cfg[key] = val
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_jit_through_cmake_here_asks_a_probe(monkeypatch):
+    """The cmake tests expect ``'on'`` only where a probe compiles, or should have.
+
+    With psg's 8.0 wheel on Windows (built with MinGW), cmake handed the wheel's gcc
+    flags to cl.exe, which refused them (D8021, ``/Wundef``), so init rightly kept
+    ``'run'``; but the check only set ``'on'``, which needs no compile, and the
+    tests asserted ``'on'``. Driven with a stand-in probe on any host.
+    """
+    from graphblas.core.ss import jit_config
+
+    cfg = gb.ss.config
+    with _jit_mode("on"):
+        if cfg["jit_c_control"] != "on":
+            pytest.skip("SuiteSparse built without the JIT")
+    prev = {key: cfg[key] for key in ["jit_c_control", "jit_c_compiler_flags"]}
+    monkeypatch.setitem(globals(), "_CMAKE_ONLY", True)
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    try:
+        for flags, compiles, expected in [
+            ("-Wundef -std=c11 -fexcess-precision=fast", False, False),  # MinGW: run is right
+            ("/O2 /DNDEBUG", False, True),  # cl.exe's flags: the failure is reported
+            ("-Wundef -std=c11", True, True),
+            ("/O2 /DNDEBUG", True, True),
+        ]:
+            cfg["jit_c_compiler_flags"] = flags
+            monkeypatch.setattr(jit_config, "_probe_jit", lambda cfg, ok=compiles: ok)
+            assert _jit_through_cmake_here() is expected, (flags, compiles)
+            assert cfg["jit_c_control"] == prev["jit_c_control"]
+        # Not only through cmake, or no cmake: nothing to expect
+        monkeypatch.setattr(jit_config, "_probe_jit", lambda cfg: True)
+        monkeypatch.setattr(shutil, "which", lambda name: None)
+        assert _jit_through_cmake_here() is False
+        monkeypatch.setitem(globals(), "_CMAKE_ONLY", False)
+        monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+        assert _jit_through_cmake_here() is False
     finally:
         for key, val in prev.items():
             cfg[key] = val
