@@ -3822,6 +3822,7 @@ def test_sparse_float_repr_scientific():
         )
 
 
+@pytest.mark.skipif("not dtypes._supports_complex")
 def test_sparse_complex_repr():
     values = [
         1 + 2j,
@@ -3986,6 +3987,8 @@ def test_sparse_repr_chop_threshold():
             "0    100  1.50\n"
             "1    161 -0.25"
         )
+    if not dtypes._supports_complex:
+        return  # A complex value would be a UDT, with its own dtype in the header
     # A complex value is compared by its magnitude, so a small part is not chopped
     v = Vector.from_coo([100, 161], [1e-8 + 1j, 2 - 1e-9j], size=1000, name="v")
     with display_options("display.chop_threshold", 1e-6):
@@ -4025,6 +4028,8 @@ def test_repr_float_format():
             "index        0    1 2     3\n"
             "value 1,234.50  nan   -0.00"
         )
+    if not dtypes._supports_complex:
+        return  # A complex value would be a UDT, with its own dtype in the header
     v = Vector.from_coo([100, 161], [1 + 2j, complex(np.nan, 1)], size=1000, name="v")
     with display_options("display.float_format", "{:.2f}".format):
         repr_printer(v, "v")
@@ -4509,13 +4514,13 @@ def test_repr_max_rows_zero(monkeypatch):
         )
     # A terminal with room for one row leaves none to show. main's pandas renderer
     # raised TypeError here (pandas fails on a frame truncated to no rows).
-    v = Vector.from_coo([100, 161, 222], [1 + 2j, -1j, 2.5], size=1000, name="v")
+    v = Vector.from_coo([100, 161, 222], [1.5, -1.0, 2.5], size=1000, name="v")
     monkeypatch.setenv("LINES", "4")
     with display_options("display.max_rows", 0):
         repr_printer(v, "v")
         assert repr(v) == (
             '"v"        nvals  size  dtype  format\n'
-            "gb.Vector      3  1000   FC64  sparse\n"
+            "gb.Vector      3  1000   FP64  sparse\n"
             "-------------------------------------\n"
             "    index  val\n"
             "..    ...  ..."
