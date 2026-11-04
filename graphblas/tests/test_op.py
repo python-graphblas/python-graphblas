@@ -2192,6 +2192,26 @@ def test_udt_monoid_op_must_return_its_input_type(record_udt):
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udt_monoid_on_a_builtin_type():
+    """A monoid over an ``is_udt=True`` op works on a built-in type the op returns.
+
+    GrB_Monoid_new_UDT refused the op typed FP64 x FP64 -> FP64 with DomainMismatch
+    and no message; the typed GrB_Monoid_new_FP64 takes it.
+    """
+    op = BinaryOp.register_anonymous(lambda x, y: x + y, is_udt=True)
+    mon = Monoid.register_anonymous(op, np.float64(0.0))
+    for dtype in [FP64, FP32]:
+        assert mon[dtype].return_type == dtype
+        assert Vector.from_coo([0, 1, 2], [1, 2, 3], dtype=dtype).reduce(mon).new() == 6
+        assert Vector(dtype, 3).reduce(mon, allow_empty=False).new() == 0
+    A = Matrix.from_coo([0, 0, 1], [0, 1, 1], [1.0, 2.0, 3.0])
+    assert A.reduce_rowwise(mon).new().isequal(Vector.from_coo([0, 1], [3.0, 3.0]))
+    # An op that returns another type is still refused up front
+    with pytest.raises(TypeError, match="must return its input type, INT8, not INT64"):
+        mon[INT8]
+
+
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_tuple_return_semiring(record_udt):
     """A Semiring built from tuple-returning ops drives mxm correctly."""
