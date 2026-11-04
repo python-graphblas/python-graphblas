@@ -17,6 +17,7 @@ from ..utils import (
     _distinct_buffers,
     _MatrixArray,
     _Pointer,
+    check_values_size,
     get_order,
     get_shape,
     ints_to_numpy_buffer,
@@ -1352,6 +1353,8 @@ class ss:
         else:
             mhandle = matrix._carg
             args = ()
+        n = nrows if method == "import" else matrix._nrows
+        check_values_size(values, dtype, n, is_iso, indptr=indptr, indices=col_indices)
         desc = get_descriptor(secure_import=secure_import, **opts)
         status = getattr(lib, f"GxB_Matrix_{method}_CSR")(
             mhandle,
@@ -1555,6 +1558,8 @@ class ss:
         else:
             mhandle = matrix._carg
             args = ()
+        n = ncols if method == "import" else matrix._ncols
+        check_values_size(values, dtype, n, is_iso, indptr=indptr, indices=row_indices)
         desc = get_descriptor(secure_import=secure_import, **opts)
         status = getattr(lib, f"GxB_Matrix_{method}_CSC")(
             mhandle,
@@ -1790,6 +1795,7 @@ class ss:
         else:
             mhandle = matrix._carg
             args = ()
+        check_values_size(values, dtype, nvec, is_iso, indptr=indptr, indices=col_indices)
         desc = get_descriptor(secure_import=secure_import, **opts)
         status = getattr(lib, f"GxB_Matrix_{method}_HyperCSR")(
             mhandle,
@@ -2028,6 +2034,7 @@ class ss:
         else:
             mhandle = matrix._carg
             args = ()
+        check_values_size(values, dtype, nvec, is_iso, indptr=indptr, indices=row_indices)
         desc = get_descriptor(secure_import=secure_import, **opts)
         status = getattr(lib, f"GxB_Matrix_{method}_HyperCSC")(
             mhandle,
@@ -2239,6 +2246,7 @@ class ss:
         else:
             mhandle = matrix._carg
             args = ()
+        check_values_size(values, dtype, nrows * ncols, is_iso)
         desc = get_descriptor(secure_import=secure_import, **opts)
         status = getattr(lib, f"GxB_Matrix_{method}_BitmapR")(
             mhandle,
@@ -2445,6 +2453,7 @@ class ss:
         else:
             mhandle = matrix._carg
             args = ()
+        check_values_size(values, dtype, nrows * ncols, is_iso)
         desc = get_descriptor(secure_import=secure_import, **opts)
         status = getattr(lib, f"GxB_Matrix_{method}_BitmapC")(
             mhandle,
@@ -2625,6 +2634,7 @@ class ss:
         else:
             mhandle = matrix._carg
             args = ()
+        check_values_size(values, dtype, nrows * ncols, is_iso)
         desc = get_descriptor(secure_import=secure_import, **opts)
         status = getattr(lib, f"GxB_Matrix_{method}_FullR")(
             mhandle, *args, Ax, values.nbytes, is_iso, NULL if desc is None else desc._carg
@@ -2796,6 +2806,7 @@ class ss:
         else:
             mhandle = matrix._carg
             args = ()
+        check_values_size(values, dtype, nrows * ncols, is_iso)
         desc = get_descriptor(secure_import=secure_import, **opts)
         status = getattr(lib, f"GxB_Matrix_{method}_FullC")(
             mhandle, *args, Ax, values.nbytes, is_iso, NULL if desc is None else desc._carg

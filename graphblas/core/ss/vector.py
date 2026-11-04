@@ -16,6 +16,7 @@ from ..utils import (
     _CArray,
     _distinct_buffers,
     _MatrixArray,
+    check_values_size,
     ints_to_numpy_buffer,
     normalize_chunks,
     values_to_numpy_buffer,
@@ -1015,6 +1016,7 @@ class ss:
         else:
             vhandle = vector._carg
             args = ()
+        check_values_size(values, dtype, nvals, is_iso)
         desc = get_descriptor(secure_import=secure_import, **opts)
         status = getattr(lib, f"GxB_Vector_{method}_CSC")(
             vhandle,
@@ -1216,6 +1218,7 @@ class ss:
         else:
             vhandle = vector._carg
             args = ()
+        check_values_size(values, dtype, size, is_iso)
         desc = get_descriptor(secure_import=secure_import, **opts)
         status = getattr(lib, f"GxB_Vector_{method}_Bitmap")(
             vhandle,
@@ -1390,6 +1393,7 @@ class ss:
         else:
             vhandle = vector._carg
             args = ()
+        check_values_size(values, dtype, size, is_iso)
         desc = get_descriptor(secure_import=secure_import, **opts)
         status = getattr(lib, f"GxB_Vector_{method}_Full")(
             vhandle,
