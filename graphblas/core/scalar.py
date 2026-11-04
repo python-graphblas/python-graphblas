@@ -17,6 +17,7 @@ from .literals import (
     _literal_type,
 )
 from .operator import get_typed_op
+from .operator.binary import _isclose
 from .udt import (
     _element_bytes,
     _element_shapes_differ,
@@ -34,7 +35,7 @@ from .utils import _Pointer, output_type, wrapdoc
 if _supports_udfs:
     from ..binary import isclose
 else:
-    from .operator.binary import _isclose as isclose
+    isclose = _isclose
 
 ffi_new = ffi.new
 
@@ -271,7 +272,8 @@ class Scalar(BaseType):
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
         """Check for approximate equality (including whether the value is missing).
 
-        Equivalent to: ``abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)``.
+        Equivalent to: ``abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)``,
+        except that, as in ``math.isclose``, an infinity is close only to itself.
 
         Parameters
         ----------

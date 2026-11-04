@@ -1,5 +1,6 @@
 import inspect
 import itertools
+import math
 import pickle
 import sys
 import types
@@ -1135,6 +1136,22 @@ def test_isclose(v):
     assert u7.isclose(u7, rel_tol=1e-8)
     u4b = Vector.from_coo([1, 3, 4, 5], [1.0, 1.0, 2.0, 0.0], size=u4.size)
     assert not u4.isclose(u4b)
+
+
+def test_isclose_infinity():
+    # As in math.isclose, an infinity is close only to itself. It was close to every
+    # number (abs(inf - y) is inf, and so is rel_tol * inf), with Numba and without.
+    from graphblas.core.vector import _isclose_recipe
+
+    values = [math.inf, -math.inf, 1.0, 0.0, math.nan]
+    for x, y in itertools.product(values, repeat=2):
+        left = Vector.from_coo([0, 2], [x, 5.0], size=3)
+        right = Vector.from_coo([0, 2], [y, 5.0], size=3)
+        for abs_tol in [0.0, math.inf]:
+            expected = math.isclose(x, y, rel_tol=1e-7, abs_tol=abs_tol)
+            if supports_udfs:
+                assert left.isclose(right, abs_tol=abs_tol) is expected, (x, y)
+            assert _isclose_recipe(left, right, 1e-7, abs_tol) is expected, (x, y)
 
 
 def test_binary_op(v):

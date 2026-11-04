@@ -319,7 +319,8 @@ class UnaryOp(OpBase):
             can be used as: ``A.ewise_mult(B, gb.binary.isclose(rel_tol=1e-5))``.
             When creating a parameterized user-defined operator, the ``func``
             parameter must be a callable that *returns* a function that will
-            then get compiled. See the ``user_isclose`` example below.
+            then get compiled. See the ``user_isclose`` example in
+            ``BinaryOp.register_new``.
         is_udt : bool, default False
             Whether the operator is intended to operate on user-defined types.
             If True, then the function will not be automatically compiled for
@@ -357,7 +358,8 @@ class UnaryOp(OpBase):
             can be used as: ``A.ewise_mult(B, gb.binary.isclose(rel_tol=1e-5))``.
             When creating a parameterized user-defined operator, the ``func``
             parameter must be a callable that *returns* a function that will
-            then get compiled. See the ``user_isclose`` example below.
+            then get compiled. See the ``user_isclose`` example in
+            ``BinaryOp.register_new``.
         is_udt : bool, default False
             Whether the operator is intended to operate on user-defined types.
             If True, then the function will not be automatically compiled for

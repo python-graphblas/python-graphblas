@@ -459,7 +459,8 @@ class Matrix(BaseType):
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False, **opts):
         """Check for approximate equality (including same size and same structure).
 
-        Equivalent to: ``abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)``.
+        Equivalent to: ``abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)``,
+        except that, as in ``math.isclose``, an infinity is close only to itself.
 
         Parameters
         ----------

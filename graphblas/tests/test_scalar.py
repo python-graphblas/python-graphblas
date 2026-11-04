@@ -1,4 +1,6 @@
 import inspect
+import itertools
+import math
 import pickle
 import random
 import sys
@@ -197,6 +199,18 @@ def test_isclose():
     assert not s.isclose(Scalar.from_value(5), check_dtype=True)
     assert not s.isclose(Scalar.from_value(None, dtype=s.dtype))
     assert Scalar.from_value(None, dtype="FP64").isclose(Scalar.from_value(None, dtype="FP32"))
+
+
+def test_isclose_infinity():
+    # As in math.isclose, an infinity is close only to itself. It was close to every
+    # number (abs(inf - y) is inf, and so is rel_tol * inf), in both of isclose's paths.
+    values = [math.inf, -math.inf, 1.0, 0.0, math.nan]
+    for x, y in itertools.product(values, repeat=2):
+        for abs_tol in [0.0, math.inf]:
+            expected = math.isclose(x, y, rel_tol=1e-7, abs_tol=abs_tol)
+            assert Scalar.from_value(x).isclose(y, abs_tol=abs_tol) is expected, (x, y)
+            other = Scalar.from_value(y)
+            assert Scalar.from_value(x).isclose(other, abs_tol=abs_tol) is expected, (x, y)
 
 
 def test_isclose_udt_raises():
