@@ -1320,6 +1320,36 @@ def test_jit_udt_name_and_typedef_are_checked():
     assert not hasattr(dtypes.ss, "chk_scalar")
 
 
+@pytest.mark.skipif("_IS_SSGB7")
+def test_jit_udt_deserializes_without_dtype(monkeypatch):
+    """A type from C source is found by its C name, which the blob keeps.
+
+    Such a type has no numpy repr in GrB_NAME, the fallback for a name that does not
+    resolve, so deserializing without ``dtype=`` raised a bare SyntaxError.
+    """
+    _require_jit_on()
+    name = "_jit_ser_pair"
+    np_type = np.dtype([("a", np.int64), ("b", np.float64)])
+    dtype = dtypes.ss.register_new(
+        name, f"typedef struct {{ int64_t a ; double b ; }} {name} ;", np_type=np_type
+    )
+    A = gb.Matrix(dtype, 2, 3)
+    A[0, 1] = (1, 2.5)
+    v = Vector(dtype, 3)
+    v[2] = (3, 4.5)
+    for obj in [A, v]:
+        blob = obj.ss.serialize()
+        got = type(obj).ss.deserialize(blob)
+        assert got.dtype is dtype
+        assert got.to_coo()[-1].tolist() == obj.to_coo()[-1].tolist()
+        # A process that has not registered the type is told to pass it
+        with monkeypatch.context() as m:
+            m.delattr(dtypes.ss, name)
+            with pytest.raises(ValueError, match=f"type name '{name}'; pass it as dtype="):
+                type(obj).ss.deserialize(blob)
+        assert type(obj).ss.deserialize(blob, dtype=dtype).dtype is dtype
+
+
 def test_jit_unary(v):
     cdef = "void square (float *z, float *x) { (*z) = (*x) * (*x) ; } ;"
     if _IS_SSGB7:
