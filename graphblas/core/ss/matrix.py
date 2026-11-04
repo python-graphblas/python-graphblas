@@ -870,18 +870,23 @@ class ss:
                     columns = _CArray(size=nvals, name="&columns_array")
                     scalar = _scalar_index("s_nvals")
                     scalar.value = nvals
+                    dtype_name = "UDT" if parent.dtype._is_udt else parent.dtype.name
                     call(
-                        f"GrB_Matrix_extractTuples_{parent.dtype.name}",
+                        f"GrB_Matrix_extractTuples_{dtype_name}",
                         [rows, columns, None, _Pointer(scalar), parent],
                     )
-                    value = parent.reduce_scalar(monoid.any, allow_empty=False).new().value
+                    # One value, of shape (1, *element) for an array UDT. It is read with
+                    # an iterator, which needs no Numba for a UDT, as reduce did.
+                    values = np.zeros(1, dtype)  # an iso Matrix with no entries has no value
+                    if nvals:
+                        values[0] = self.iso_value.value
                     rv = {
                         "format": "coo",
                         "nrows": nrows,
                         "ncols": ncols,
                         "rows": rows.array,
                         "cols": columns.array,
-                        "values": np.array([value], dtype=dtype),
+                        "values": values,
                         "is_iso": True,
                     }
                 else:

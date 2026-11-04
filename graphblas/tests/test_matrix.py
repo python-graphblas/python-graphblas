@@ -5098,6 +5098,29 @@ def test_ss_import_coo_with_empty_rows_and_columns():
 
 
 @pytest.mark.skipif("not suitesparse")
+def test_ss_export_coo_of_an_iso_udt():
+    # An iso Matrix exports as "coo" with one value. For a UDT this called
+    # GrB_Matrix_extractTuples_<name>, which does not exist (AttributeError), and the
+    # value came from a reduce, which a UDT can do only with Numba.
+    arr = dtypes.register_anonymous(np.dtype((np.int64, (4,))), "_IsoCooArr")
+    rec = dtypes.register_anonymous(np.dtype([("a", np.int64), ("b", np.float64)]), "_IsoCooRec")
+    A = Matrix.ss.import_fullr(values=[[1, 2, 3, 4]], nrows=2, ncols=3, dtype=arr, is_iso=True)
+    R = Matrix.ss.import_fullr(
+        values=np.array([(1, 2.5)], rec.np_type), nrows=2, ncols=3, is_iso=True
+    )
+    F = Matrix.ss.import_fullr(values=[2.5], nrows=2, ncols=3, is_iso=True)
+    for M, value in [(A, [[1, 2, 3, 4]]), (R, [(1, 2.5)]), (F, [2.5])]:
+        assert M.ss.is_iso
+        info = M.ss.export("coo")
+        assert info["is_iso"]
+        assert info["values"].tolist() == value  # one value, (1, 4) for the array UDT
+        B = Matrix.ss.import_any(**info)
+        assert B.dtype == M.dtype
+        for got, want in zip(B.to_coo(), M.to_coo(), strict=True):
+            np.testing.assert_array_equal(got, want)
+
+
+@pytest.mark.skipif("not suitesparse")
 def test_ss_import_values_size():
     # GraphBLAS before 10.5.2 compares the byte size of imported values with the number
     # of entries, not the bytes they need, so it read past the end of each of these
