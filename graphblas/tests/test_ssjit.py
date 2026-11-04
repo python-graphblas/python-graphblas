@@ -66,26 +66,25 @@ def _jit_works_here():
         return _enable_jit_for_udt()
 
 
-@pytest.fixture(scope="module", autouse=True)
-def _setup_jit():
-    """Set up the SuiteSparse:GraphBLAS JIT.
+def _configure_jit_for_tests(cfg, fix_jit_config):
+    """Let this module's tests compile JIT kernels where that is cheap; see ``_setup_jit``.
 
     Strategy:
-    1. _fix_jit_config(): fix conda-baked compiler paths and probe.
+    0. Where SuiteSparse compiles through cmake (``jit_use_cmake``, always True
+       when it is built with MSVC), nothing: as for UDT work
+       (``_enable_jit_for_udt``), only an ``'on'`` set before the tests, such as
+       ``GRAPHBLAS_JIT_C_CONTROL=on``, compiles there. Each kernel took about
+       10 s through cmake on Windows CI, and this module compiles about 260.
+    1. fix_jit_config(): fix conda-baked compiler paths and probe.
        - Returns True: JIT works, proceed.
        - Returns False: probe failed. Whatever ``jit_c_control``
          SuiteSparse was left at is left untouched.
        - Returns None: no conda env, try sysconfig instead.
     2. Sysconfig fallback: for non-conda installs (pure pip).
     """
-    if _IS_SSGB7:
-        # SuiteSparse JIT was added in SSGB 8
-        yield
+    if cfg["jit_use_cmake"]:
         return
-
-    prev = gb.ss.config["jit_c_control"]
-
-    result = _fix_jit_config()
+    result = fix_jit_config()
     # ``True``: conda JIT configured and verified. ``False``: probe failed;
     # don't try sysconfig, since if the conda compiler can't build GraphBLAS
     # JIT kernels, Python's sysconfig compiler won't either. Both done.
@@ -96,12 +95,23 @@ def _setup_jit():
         include = sysconfig.get_path("include")
         libs = sysconfig.get_config_var("LIBS")
         if cc and cflags and include:
-            gb.ss.config["jit_c_control"] = "on"
-            gb.ss.config["jit_c_compiler_name"] = cc
-            gb.ss.config["jit_c_compiler_flags"] = f"{cflags} -I{include}"
+            cfg["jit_c_control"] = "on"
+            cfg["jit_c_compiler_name"] = cc
+            cfg["jit_c_compiler_flags"] = f"{cflags} -I{include}"
             if libs:
-                gb.ss.config["jit_c_libraries"] = libs
+                cfg["jit_c_libraries"] = libs
 
+
+@pytest.fixture(scope="module", autouse=True)
+def _setup_jit():
+    """Set up the SuiteSparse:GraphBLAS JIT (``_configure_jit_for_tests``) and restore it."""
+    if _IS_SSGB7:
+        # SuiteSparse JIT was added in SSGB 8
+        yield
+        return
+
+    prev = gb.ss.config["jit_c_control"]
+    _configure_jit_for_tests(gb.ss.config, _fix_jit_config)
     try:
         yield
     finally:
@@ -840,6 +850,36 @@ def test_enable_jit_for_udt_re_raises_a_lowered_control(monkeypatch):
     assert fake["jit_c_control"] == "run"
 
 
+def test_setup_jit_leaves_the_control_alone_where_suitesparse_uses_cmake(monkeypatch):
+    """The setup of this module does not set ``'on'`` where SuiteSparse compiles through cmake.
+
+    ``fix_jit_config()`` sets ``'on'`` whenever it finds a compiler to repair
+    from (on Windows, conda's ``clang.exe`` or the build machine's ``cl.exe``),
+    so the setup compiled every kernel of this module through cmake there, as
+    UDT work does not (``_enable_jit_for_udt``). Driven through a stand-in
+    config, so it runs on every host, whether SuiteSparse was built with MSVC or not.
+    """
+    calls = []
+
+    def fix_jit_config():
+        calls.append(cfg["jit_use_cmake"])
+        cfg["jit_c_control"] = "on"
+        return True
+
+    def no_env():
+        calls.append(cfg["jit_use_cmake"])
+
+    monkeypatch.setattr(sysconfig, "get_config_var", lambda name: f"<{name}>")
+    for fix in [fix_jit_config, no_env]:
+        cfg = {"jit_use_cmake": True, "jit_c_control": "run"}
+        _configure_jit_for_tests(cfg, fix)
+        assert cfg == {"jit_use_cmake": True, "jit_c_control": "run"}
+        cfg["jit_use_cmake"] = False
+        _configure_jit_for_tests(cfg, fix)
+        assert cfg["jit_c_control"] == "on"
+    assert calls == [False, False]
+
+
 @pytest.mark.skipif("_IS_SSGB7")
 def test_enable_jit_for_udt_leaves_run_alone_where_suitesparse_uses_cmake(monkeypatch):
     """UDT work does not raise the default ``'run'`` where SuiteSparse compiles through cmake.
@@ -1280,6 +1320,36 @@ def test_jit_udt_name_and_typedef_are_checked():
     assert not hasattr(dtypes.ss, "chk_scalar")
 
 
+@pytest.mark.skipif("_IS_SSGB7")
+def test_jit_udt_deserializes_without_dtype(monkeypatch):
+    """A type from C source is found by its C name, which the blob keeps.
+
+    Such a type has no numpy repr in GrB_NAME, the fallback for a name that does not
+    resolve, so deserializing without ``dtype=`` raised a bare SyntaxError.
+    """
+    _require_jit_on()
+    name = "_jit_ser_pair"
+    np_type = np.dtype([("a", np.int64), ("b", np.float64)])
+    dtype = dtypes.ss.register_new(
+        name, f"typedef struct {{ int64_t a ; double b ; }} {name} ;", np_type=np_type
+    )
+    A = gb.Matrix(dtype, 2, 3)
+    A[0, 1] = (1, 2.5)
+    v = Vector(dtype, 3)
+    v[2] = (3, 4.5)
+    for obj in [A, v]:
+        blob = obj.ss.serialize()
+        got = type(obj).ss.deserialize(blob)
+        assert got.dtype is dtype
+        assert got.to_coo()[-1].tolist() == obj.to_coo()[-1].tolist()
+        # A process that has not registered the type is told to pass it
+        with monkeypatch.context() as m:
+            m.delattr(dtypes.ss, name)
+            with pytest.raises(ValueError, match=f"type name '{name}'; pass it as dtype="):
+                type(obj).ss.deserialize(blob)
+        assert type(obj).ss.deserialize(blob, dtype=dtype).dtype is dtype
+
+
 def test_jit_unary(v):
     cdef = "void square (float *z, float *x) { (*z) = (*x) * (*x) ; } ;"
     if _IS_SSGB7:
@@ -1715,7 +1785,7 @@ def test_udt_jit_c_source_introspection():
     udt = dtypes.register_anonymous(record_dtype, "_IntrospectUDT")
 
     # dtype-level introspection
-    assert udt.jit_c_name == "_IntrospectUDT"
+    assert udt.jit_c_name == "gbudt__IntrospectUDT"
     assert "typedef struct" in udt.jit_c_definition
     assert "int64_t introsp_a" in udt.jit_c_definition
     assert "double introsp_b" in udt.jit_c_definition
@@ -1726,7 +1796,7 @@ def test_udt_jit_c_source_introspection():
 
     # Auto-lifted record UDT binary op
     plus_udt = binary.plus[udt]
-    assert plus_udt.jit_c_name == "plus__IntrospectUDT"
+    assert plus_udt.jit_c_name == "plus_gbudt__IntrospectUDT"
     src = plus_udt.jit_c_source
     assert src is not None
     assert "z->introsp_a = (x->introsp_a) + (y->introsp_a)" in src
@@ -1734,7 +1804,7 @@ def test_udt_jit_c_source_introspection():
 
     # Auto-lifted record UDT unary op
     ainv_udt = unary.ainv[udt]
-    assert ainv_udt.jit_c_name == "ainv__IntrospectUDT"
+    assert ainv_udt.jit_c_name == "ainv_gbudt__IntrospectUDT"
     assert "z->introsp_a = -(x->introsp_a)" in ainv_udt.jit_c_source
 
     # Array UDT auto-lifted op. Use a shape no other test uses: ``np.dtype``
@@ -1763,7 +1833,7 @@ def test_udt_jit_c_source_introspection():
     # Monoid-based aggregator walks to its monoid; composite agg has no kernel.
     assert gb.agg.sum[udt].jit_c_source == plus_binop_src
     assert gb.agg.count[udt].jit_c_source is None
-    assert gb.agg.sum[udt].jit_c_name == "plus__IntrospectUDT"
+    assert gb.agg.sum[udt].jit_c_name == "plus_gbudt__IntrospectUDT"
     assert gb.agg.count[udt].jit_c_name is None
 
 
@@ -1782,12 +1852,12 @@ def test_op_jit_signature_uses_pinned_type_name():
     udt2 = dtypes.register_anonymous(record_dtype, "_PinnedRenamed")
     assert udt2 is udt
     assert udt.name == "_PinnedRenamed"
-    assert udt.jit_c_name == "_PinnedOrig"
+    assert udt.jit_c_name == "gbudt__PinnedOrig"
 
     op = binary.plus[udt]
     # Op signature must reference the pinned struct name, not the renamed one.
-    assert op.jit_c_name == "plus__PinnedOrig"
-    assert "_PinnedOrig *" in op.jit_c_source
+    assert op.jit_c_name == "plus_gbudt__PinnedOrig"
+    assert "gbudt__PinnedOrig *" in op.jit_c_source
     assert "_PinnedRenamed" not in op.jit_c_source
 
 
@@ -2741,8 +2811,9 @@ def test_udt_scalar_broadcast_jit_routing():
     assert binary.eq[record, record].jit_c_source is not None
     # Mixed arithmetic does, with the scalar read once for every leaf
     assert binary.plus[record, dtypes.INT64].jit_c_source == (
-        "void plus_11__BcastJitUV_int64_t (_BcastJitUV *z, const _BcastJitUV *x, "
-        "const int64_t *y) { z->bcast_u = (x->bcast_u) + (((double) ((*y)))) ; "
+        "void plus_17_gbudt__BcastJitUV_int64_t (gbudt__BcastJitUV *z, "
+        "const gbudt__BcastJitUV *x, const int64_t *y) { "
+        "z->bcast_u = (x->bcast_u) + (((double) ((*y)))) ; "
         "z->bcast_v = (x->bcast_v) + (((double) ((*y)))) ; }"
     )
     assert binary.plus[dtypes.INT64, record].jit_c_source is not None
@@ -2939,6 +3010,25 @@ def test_context_importable():
     assert gb.ss.global_context is global_context
 
 
+@pytest.mark.parametrize("kind", ["binary", "unary"])
+def test_ss_op_module_can_be_the_first_import(kind):
+    """``graphblas.core.ss.binary`` (or ``unary``) imports as a process's first graphblas import.
+
+    Importing the operator package initializes the operators, which imports
+    ``graphblas.binary.ss``, which takes ``register_new`` from this module. With
+    the operator imports at its top, that raised ImportError ("partially
+    initialized module"), on main too.
+    """
+    script = (
+        f"import graphblas.core.ss.{kind} as mod\n"
+        "import graphblas as gb\n"
+        "print('package: ' + gb.__file__)\n"
+        f"print('same: ' + str(gb.{kind}.ss.register_new is mod.register_new))\n"
+    )
+    lines, report = _run_in_fresh_process(script)
+    assert lines["same"] == "True", report
+
+
 def test_fix_from_conda_finds_windows_compilers(tmp_path):
     """The conda repair looks in ``bin`` and, as Windows conda installs them, ``Library/bin``
     with ``.exe`` names; a baked-in Windows path's basename is found too. Nothing there: None.
@@ -3011,7 +3101,13 @@ def test_udt_jit_c_name_too_long_keeps_the_cfunc():
         pytest.skip("requires SuiteSparse:GraphBLAS >= 9")
     _require_jit_on()
     rec = np.dtype([("tl_x", np.float64), ("tl_y", np.int64)], align=True)
-    t = dtypes.register_new("TooLongName" + "t" * 120, rec)
+    # A numpy UDT's C name leaves room for its ops' names, but one registered from C
+    # source keeps the name given: 125 characters fits, plus_ or eq_ and that does not.
+    name = "TooLongName" + "t" * 114
+    t = dtypes.ss.register_new(
+        name, f"typedef struct {{ double tl_x ; int64_t tl_y ; }} {name} ;", np_type=rec
+    )
+    assert len(t.jit_c_name) == 125
     n = 40
     vals = np.zeros(n, t.np_type)
     vals["tl_x"] = np.arange(n) / 4
@@ -3028,3 +3124,129 @@ def test_udt_jit_c_name_too_long_keeps_the_cfunc():
     np.testing.assert_array_equal(got["tl_x"], np.arange(n) / 2)
     np.testing.assert_array_equal(got["tl_y"], 2 * np.arange(n))
     assert same.reduce(monoid.land).new()
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.skipif("not _has_jit_set")
+def test_udt_field_named_like_a_standard_macro_skips_the_jit():
+    """A field named like a macro of the C standard headers the JIT includes skips the JIT.
+
+    The preprocessor expands it inside the struct, so the kernel did not compile:
+    SuiteSparse raised ``JitError`` (with no message) for that op and set
+    ``jit_c_control`` to 'load' for the rest of the process. Asked of the C name
+    only, so nothing compiles here.
+    """
+    from graphblas.exceptions import NoJITWarning
+
+    fields = ["INT_MAX", "UINT8_MAX", "SIZE_MAX", "BUFSIZ", "EXIT_FAILURE", "PRId64", "EDOM"]
+    # <signal.h> and GraphBLAS's own macros, as GrB_INDEX_MAX, failed the same way
+    fields += ["SIGINT", "SIG_DFL", "GrB_INDEX_MAX", "GxB_IMPLEMENTATION_MAJOR", "GB_ANY"]
+    for i, field in enumerate(fields):
+        record = np.dtype([(field, np.float64), (f"macro_other_{i}", np.float64)], align=True)
+        udt = dtypes.register_anonymous(record)
+        assert udt.jit_c_name is None, field
+        v = Vector.from_coo([0], np.array([(1.0, 2.0)], dtype=record), dtype=udt, size=2)
+        with pytest.warns(NoJITWarning, match="without JIT"):
+            result = v.ewise_mult(v, binary.plus).new()
+        assert result[0].new().value.tolist() == (2.0, 4.0), field
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.skipif("not _has_jit_set")
+def test_udt_named_like_an_identifier_in_the_kernel_takes_the_jit():
+    """A UDT named like an identifier in a JIT kernel compiles, under its ``gbudt_`` C name.
+
+    SuiteSparse's kernels name the type beside their own identifiers. A UDT named like a
+    parameter of our op definitions (``z``), a local of its templates (``A``, ``p``, ``i``,
+    ``result``) or something its headers declare (``div``) failed to compile: an empty
+    ``JitError``, and 'load' for the rest of the process.
+    """
+    _require_jit_on()
+    for name in ["z", "A", "p", "i", "div", "result"]:
+        record = np.dtype([(f"kn_{name}_a", np.float64), (f"kn_{name}_b", np.int64)], align=True)
+        udt = dtypes.register_anonymous(record, name)
+        assert udt.jit_c_name == f"gbudt_{name}"
+        vals = np.array([(1.0, 2), (3.0, 4)], dtype=record)
+        v = Vector.from_coo([0, 1], vals, dtype=udt)
+        A = gb.Matrix.from_coo([0, 1], [1, 0], vals, dtype=udt)
+        with _jit_mode("on"):
+            plus = v.ewise_mult(v, binary.plus).new()
+            biggest = v.reduce(monoid.max).new()
+            product = A.mxv(v, semiring.plus_times).new()
+            assert gb.ss.config["jit_c_control"] == "on", name
+        assert plus.to_coo()[1].tolist() == [(2.0, 4), (6.0, 8)], name
+        assert biggest.value.tolist() == (3.0, 4), name
+        assert product.to_coo()[1].tolist() == [(3.0, 8), (3.0, 8)], name
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.skipif("not _has_jit_set")
+def test_udt_long_name_gets_a_c_name_that_fits():
+    """A UDT whose ``gbudt_`` C name would not leave room for its ops' names gets a synthetic one.
+
+    SuiteSparse refuses a name of 128 characters or more. A type with such a name was kept
+    with an empty one, so its first kernel, a transpose say, raised ``JitError``; and with a
+    C name of 119 to 127 characters, ``floordiv_`` or ``plus_`` and it did not fit, so the
+    op lost its JIT with a NoJITWarning that blamed the fields.
+    """
+    from graphblas.core.operator.udt_codegen import _max_type_c_name_len
+
+    _require_jit_on()
+    assert _max_type_c_name_len() == 118  # 127 less floordiv_
+    for length in [112, 113, 119, 200]:
+        record = np.dtype([(f"fit{length}_a", np.float64), (f"fit{length}_b", np.int64)])
+        udt = dtypes.register_anonymous(record, "n" * length)
+        if length == 112:
+            assert udt.jit_c_name == "gbudt_" + "n" * 112  # 118 characters
+        else:
+            assert udt.jit_c_name.startswith("_gbudt_"), length
+        for op in [binary.floordiv[udt], binary.plus[udt], binary.eq[udt], unary.ainv[udt]]:
+            assert op.jit_c_source is not None, (length, op)
+        vals = np.array([(1.0, 2), (3.0, 4)], dtype=record)
+        A = gb.Matrix.from_coo([0, 1], [1, 0], vals, dtype=udt)
+        with _jit_mode("on"):
+            B = A.T.new()
+            C = A.ewise_mult(A, binary.plus).new()
+        assert B.to_coo()[2].tolist() == [(3.0, 4), (1.0, 2)], length
+        assert C.to_coo()[2].tolist() == [(2.0, 4), (6.0, 8)], length
+
+
+def test_udt_c_name_keeps_python_graphblas_own_names():
+    # A type python-graphblas makes itself has a name starting with _gb, which no kernel
+    # identifier starts with either, so it keeps that name as its C name; a user's name gets
+    # the gbudt_ prefix, even one that starts with it.
+    from graphblas.core.operator.udt_codegen import _pick_c_type_name
+
+    assert _pick_c_type_name("Edge") == "gbudt_Edge"
+    assert _pick_c_type_name("gbudt_Edge") == "gbudt_gbudt_Edge"
+    for name in ["_gbudt_7", "_gbnest_3", "_gbinternal_fp64x16"]:
+        assert _pick_c_type_name(name) == name
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.skipif("not _has_jit_set")
+def test_udt_from_c_source_lifts_ops_under_its_own_c_name():
+    """An op lifted to a type registered from C source names the type as its C source does.
+
+    The prefix that keeps a numpy UDT's C name clear of kernel identifiers was also put on
+    a C-source type's name, so ``binary.plus[t]`` defined ``plus_gbudt_cpt_t`` on a type
+    ``gbudt_cpt_t`` that SuiteSparse does not know: ``JitError``, then 'load'.
+    """
+    _require_jit_on()
+    np_type = np.dtype([("cs_x", np.float64), ("cs_y", np.float64)], align=True)
+    t = dtypes.ss.register_new(
+        "cs_lift_t", "typedef struct { double cs_x ; double cs_y ; } cs_lift_t ;", np_type=np_type
+    )
+    assert t.jit_c_name == "cs_lift_t"
+    assert binary.plus[t].jit_c_name == "plus_cs_lift_t"
+    assert binary.eq[t].jit_c_name == "eq_cs_lift_t"
+    v = Vector.from_coo([0, 1], np.array([(1.0, 2.0), (3.0, 4.0)], dtype=np_type), dtype=t)
+    with _jit_mode("on"):
+        r = v.ewise_mult(v, binary.plus).new()
+        same = (v == v).new()
+        assert gb.ss.config["jit_c_control"] == "on"
+    assert r.to_coo()[1].tolist() == [(2.0, 4.0), (6.0, 8.0)]
+    assert same.to_coo()[1].tolist() == [True, True]
+    # A numpy UDT's own name always gets the prefix, even one that starts with it
+    udt = dtypes.register_anonymous(np.dtype([("cs_pre", np.float64)]), "gbudt_CsPre")
+    assert udt.jit_c_name == "gbudt_gbudt_CsPre"

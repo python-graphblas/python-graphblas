@@ -108,14 +108,18 @@ class DataType:
 def _get_udt_c_type_info(datatype):
     """Return ``(c_name, c_typedef)`` for a UDT, or ``None`` if not expressible in C.
 
-    The returned ``c_name`` may differ from ``datatype.name``: if the user
-    didn't supply a name, or supplied one that isn't a valid C identifier,
-    ``_udt_c_typedef`` synthesizes a fresh ``_gbudt_NNN`` name so the UDT
-    can still take the JIT path. Returns ``None`` only for the cases that
-    remain unrepresentable in C: an unsupported field type (object,
-    datetime, string), or a field name that collides with a C reserved
-    word or isn't an identifier. Supports record UDTs (including nested
-    records) and array UDTs (e.g., ``FP64[3]``).
+    The returned ``c_name`` is ``gbudt_`` and ``datatype.name``, or a fresh
+    ``_gbudt_NNN`` name when the user didn't supply a name, or supplied one
+    that isn't a valid C identifier or is too long for SuiteSparse
+    (``udt_codegen._pick_c_type_name``), so the UDT can still take the JIT
+    path. Returns ``None`` when the UDT has no C form here: a record laid out
+    other than as a C compiler lays out its struct (packed, as
+    ``np.dtype([...])`` is without ``align=True``), a field name that is not
+    a valid C identifier (a C reserved word, say), a field that is an array
+    (only an array UDT is flattened, to ``v[n]``), a field or element type
+    with no C type (object, datetime, text), or a UDT that is neither a
+    record nor an array. Supports record UDTs (including nested records) and
+    array UDTs (e.g., ``FP64[3]``).
     """
     from .operator.udt_codegen import _udt_c_typedef
 
@@ -160,7 +164,8 @@ def _set_udt_jit_c_definition(datatype):
     # A name already given to another layout (two UDTs registered under one
     # name) gets a fresh one: SuiteSparse would share their JIT kernels.
     while _jit_c_type_defs.setdefault(c_name, typedef) != typedef:
-        info = _udt_c_typedef(f"_gbudt_{next(_synthetic_udt_counter)}", datatype.np_type)
+        c_name = f"_gbudt_{next(_synthetic_udt_counter)}"
+        info = _udt_c_typedef(c_name, datatype.np_type, is_c_name=True)
         c_name, typedef = info
     lib.GrB_Type_set_String(datatype._carg, ffi.new("char[]", c_name.encode()), lib.GxB_JIT_C_NAME)
     lib.GrB_Type_set_String(
@@ -211,6 +216,28 @@ def _numba_type(dtype):
             f"Numba, which python-graphblas uses for UDTs, cannot type an array of {element}, "
             f"as in {dtype}; use an array of {instead} instead"
         ) from exc
+    except numba.core.errors.NumbaError as exc:
+        # Numba's own error is "NumbaNotImplementedError: |V4", with terminal colors
+        raw = _raw_bytes_element(dtype)
+        if raw is None:  # pragma: no cover (safety)
+            raise
+        raise ValueError(
+            f"Numba, which python-graphblas uses for UDTs, cannot type raw bytes ({raw}), "
+            f"as in {dtype}; use an array of uint8 instead, np.dtype((np.uint8, "
+            f"{raw.itemsize}))"
+        ) from exc
+
+
+def _raw_bytes_element(dtype):
+    """The first void dtype with no fields (raw bytes) in dtype, or None."""
+    if dtype.subdtype is not None:
+        return _raw_bytes_element(dtype.subdtype[0])
+    if dtype.names is None:
+        return dtype if dtype.kind == "V" else None
+    for field_dtype, *_ in dtype.fields.values():
+        if (raw := _raw_bytes_element(field_dtype)) is not None:
+            return raw
+    return None
 
 
 def register_new(name, dtype=None):
@@ -277,9 +304,9 @@ def register_anonymous(dtype, name=None):
         string, and nested-UDT fields are not.
     name : str, optional
         A human-readable name for this UDT. Used in error messages and
-        ``repr``. Must be a valid C identifier (and not a C reserved word)
-        to be usable on the SuiteSparse JIT path; otherwise JIT is skipped
-        silently and ops fall back to the Numba cfunc path.
+        ``repr``. Any name takes the SuiteSparse JIT path: its C name is
+        ``gbudt_`` and the name, or a synthetic one when that is not a C
+        identifier or is too long.
 
     Returns
     -------
@@ -604,13 +631,14 @@ def lookup_dtype(key, value=None):
     try:
         # Auto-register!
         return register_anonymous(key)
-    except Exception:
-        pass
+    except Exception as exc:
+        # Why it cannot be registered, such as an array of bool, which Numba cannot type.
+        reason = exc
     try:
         return lookup_dtype(key.literal_type)  # For numba dtype inference
     except Exception:
         pass
-    raise ValueError(f"Unknown dtype: {key} of type {type(key)}")
+    raise ValueError(f"Unknown dtype: {key} of type {type(key)}") from reason
 
 
 def _raise_dtype_or_arraylike(cls_name, dtype, exc):

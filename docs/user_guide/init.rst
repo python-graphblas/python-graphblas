@@ -69,8 +69,9 @@ often several times slower (``Matrix.reduce_rowwise`` with ``lor`` on ``BOOL`` o
 ``plus`` on ``UINT64`` ran 2.7 to 8 times slower on 10 million entries). The JIT control,
 ``gb.ss.config["jit_c_control"]``, is ``"run"`` by default: run only kernels already
 loaded in the process, and compile nothing. UDT operators, and types and operators
-registered from C source, raise this default to ``"on"`` when they need a kernel (see
-:doc:`udt`), but leave a control you set as it is. To opt in for everything, set the
+registered from C source, raise this default to ``"on"`` the first time they need a
+kernel, for the rest of the process and for every operation (see :doc:`udt`), but leave
+a control you set as it is. To opt in for everything, set the
 control to ``"on"`` (compile, load and run):
 
 .. code-block:: bash
@@ -96,7 +97,11 @@ later to ``gb.ss.config`` is that same default, so to keep UDT work from compili
 directory and compiler), and falls back to ``"run"``, with no error, where the JIT cannot
 work: SuiteSparse built without the JIT (as in the PyPI wheels), SuiteSparse 7, no working
 C compiler (in an activated conda environment, ``conda install c-compiler``), or a cache
-directory it cannot write to. On Windows, SuiteSparse built with MSVC (as conda-forge
+directory it cannot write to. That check is for a configured ``"on"`` only: an ``"on"``
+written later to ``gb.ss.config`` is taken as it is, and with a C compiler that does not
+work, the first operation that needs a new kernel raises ``JitError``, and SuiteSparse
+lowers the control to ``"load"``. ``gb.ss.fix_jit_config()`` repairs the compiler setting
+where it can and checks it. On Windows, SuiteSparse built with MSVC (as conda-forge
 builds it) compiles JIT kernels only through cmake, which finds the Visual Studio C
 compiler itself. There ``"on"`` needs cmake (``conda install cmake``) and Visual Studio or
 its Build Tools rather than the configured compiler, and UDT work does not raise the
@@ -111,8 +116,10 @@ With the JIT on:
   (`GraphBLAS issue #449 <https://github.com/DrTimothyAldenDavis/GraphBLAS/issues/449>`_).
   With multiprocessing, dask, pytest-xdist and the like, set
   ``GRAPHBLAS_JIT_C_CONTROL=run`` in the environment the workers start in, so that none
-  of them compiles: UDT work raises only the default ``"run"``, not one you set. That
-  costs UDTs their compiled kernels: UDT operators call their Numba functions instead
+  of them compiles: UDT work raises only the default ``"run"``, not one you set. (At the
+  default, the first UDT operator that needs a kernel turns the JIT on for the whole
+  process, so such processes race too.) Setting ``"run"`` costs UDTs their compiled
+  kernels: UDT operators call their Numba functions instead
   (typically 2 to 3 times slower for elementwise operations), and registering types or
   operators from C source fails. To keep the kernels, give each process its own cache
   instead, by setting the ``GRAPHBLAS_CACHE_PATH`` environment variable before graphblas

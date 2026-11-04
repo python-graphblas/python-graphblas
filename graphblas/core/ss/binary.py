@@ -2,33 +2,10 @@ from ... import backend
 from ...dtypes import lookup_dtype
 from ...exceptions import check_status_carg
 from .. import NULL, ffi, lib
-from ..operator.base import TypedOpBase
-from ..operator.binary import BinaryOp, TypedUserBinaryOp
 from . import _IS_SSGB7
 from ._utils import _jit_c_source
 
 ffi_new = ffi.new
-
-
-class TypedJitBinaryOp(TypedOpBase):
-    __slots__ = "_monoid", "_jit_c_definition"
-    opclass = "BinaryOp"
-
-    def __init__(self, parent, name, type_, return_type, gb_obj, jit_c_definition, dtype2=None):
-        super().__init__(parent, name, type_, return_type, gb_obj, name, dtype2=dtype2)
-        self._monoid = None
-        self._jit_c_definition = jit_c_definition
-
-    @property
-    def jit_c_definition(self):
-        return self._jit_c_definition
-
-    monoid = TypedUserBinaryOp.monoid
-    commutes_to = TypedUserBinaryOp.commutes_to
-    _semiring_commutes_to = TypedUserBinaryOp._semiring_commutes_to
-    is_commutative = TypedUserBinaryOp.is_commutative
-    type2 = TypedUserBinaryOp.type2
-    __call__ = TypedUserBinaryOp.__call__
 
 
 def register_new(name, jit_c_definition, left_type, right_type, ret_type):
@@ -61,6 +38,8 @@ def register_new(name, jit_c_definition, left_type, right_type, ret_type):
     jit_c_definition : str
         The C definition as a string of the user-defined function. For example:
         ``"void absdiff (double *z, double *x, double *y) { (*z) = fabs ((*x) - (*y)) ; }"``.
+        A UDT made from a numpy dtype is named in C by its ``jit_c_name`` (usually ``gbudt_``
+        and its name), not its Python name.
     left_type : dtype
         The dtype of the left operand of the binary operator.
     right_type : dtype
@@ -137,3 +116,31 @@ def register_new(name, jit_c_definition, left_type, right_type, ret_type):
     rv._add(op, is_jit=True)
     setattr(module, funcname, rv)
     return rv
+
+
+# Imported below register_new: importing the operator package initializes the
+# operators, which imports graphblas.binary.ss, which takes register_new from here.
+# Imported at the top, they made this module fail as a process's first import.
+from ..operator.base import TypedOpBase  # noqa: E402 isort:skip
+from ..operator.binary import BinaryOp, TypedUserBinaryOp  # noqa: E402 isort:skip
+
+
+class TypedJitBinaryOp(TypedOpBase):
+    __slots__ = "_monoid", "_jit_c_definition"
+    opclass = "BinaryOp"
+
+    def __init__(self, parent, name, type_, return_type, gb_obj, jit_c_definition, dtype2=None):
+        super().__init__(parent, name, type_, return_type, gb_obj, name, dtype2=dtype2)
+        self._monoid = None
+        self._jit_c_definition = jit_c_definition
+
+    @property
+    def jit_c_definition(self):
+        return self._jit_c_definition
+
+    monoid = TypedUserBinaryOp.monoid
+    commutes_to = TypedUserBinaryOp.commutes_to
+    _semiring_commutes_to = TypedUserBinaryOp._semiring_commutes_to
+    is_commutative = TypedUserBinaryOp.is_commutative
+    type2 = TypedUserBinaryOp.type2
+    __call__ = TypedUserBinaryOp.__call__

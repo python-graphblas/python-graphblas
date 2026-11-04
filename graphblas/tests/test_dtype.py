@@ -373,8 +373,10 @@ def test_register_anonymous_zero_size():
     for dtype in [str, bytes, np.dtype("U"), np.dtype([]), np.dtype((np.int64, (0,)))]:
         with pytest.raises(ValueError, match="size of 0"):
             dtypes.register_anonymous(dtype)
-    with pytest.raises(ValueError, match="Unknown dtype"):
+    with pytest.raises(ValueError, match="Unknown dtype") as exc_info:
         dtypes.lookup_dtype(str)
+    # The reason it cannot be registered is chained; it was dropped.
+    assert "size of 0" in str(exc_info.value.__cause__)
 
 
 def test_register_anonymous_array_numba_cannot_type():
@@ -397,6 +399,28 @@ def test_register_anonymous_array_numba_cannot_type():
         with pytest.raises(ValueError, match=match) as exc_info:
             dtypes.register_anonymous(np_type)
         assert isinstance(exc_info.value.__cause__, AttributeError)
+        assert np_type not in core.dtypes._registry
+        # So does a lookup, which registers a dtype, with that reason as its cause.
+        with pytest.raises(ValueError, match="Unknown dtype") as exc_info:
+            gb.Vector(np_type, size=1)
+        assert f"cannot type an array of {element}" in str(exc_info.value.__cause__)
+
+
+def test_register_anonymous_raw_bytes_numba_cannot_type():
+    # A void dtype with no fields is raw bytes, which Numba cannot type, alone or in
+    # an array or record. Its own error was "NumbaNotImplementedError: |V4" in color.
+    for np_type, raw in [
+        (np.dtype("V4"), "V4"),
+        (np.dtype(("V4", (2,))), "V4"),
+        (np.dtype([("_rbt_a", "V3"), ("_rbt_b", np.int8)]), "V3"),
+        (np.dtype([("_rbt_c", [("_rbt_d", "V2")])]), "V2"),
+    ]:
+        if not supports_udfs:
+            assert dtypes.register_anonymous(np_type).np_type == np_type
+            continue
+        match = rf"cannot type raw bytes \(\|{raw}\).*np.dtype\(\(np.uint8, {raw[1:]}\)\)"
+        with pytest.raises(ValueError, match=match):
+            dtypes.register_anonymous(np_type)
         assert np_type not in core.dtypes._registry
 
 
@@ -565,13 +589,13 @@ def test_udt_jit_c_info_pinned_at_first_register():
     # stable.
     record_dtype = np.dtype([("pin_a", np.int64), ("pin_b", np.int64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "_PinUDT_first")
-    assert udt.jit_c_name == "_PinUDT_first"
+    assert udt.jit_c_name == "gbudt__PinUDT_first"
 
     udt2 = dtypes.register_anonymous(record_dtype, "_PinUDT_renamed")
     assert udt2 is udt
     assert udt.name == "_PinUDT_renamed"
     # SS-side name is frozen at first register; introspection must reflect that.
-    assert udt.jit_c_name == "_PinUDT_first"
+    assert udt.jit_c_name == "gbudt__PinUDT_first"
     assert "_PinUDT_first" in udt.jit_c_definition
 
 
@@ -587,12 +611,14 @@ def test_udt_layouts_under_one_name_get_their_own_jit_c_names():
     """
     small = dtypes.register_anonymous(np.dtype((np.int16, (1, 3, 1))), "_SameJitName")
     big = dtypes.register_anonymous(np.dtype((np.int16, (2, 1, 7))), "_SameJitName")
-    assert small.jit_c_name == "_SameJitName"
+    assert small.jit_c_name == "gbudt__SameJitName"
     assert big.jit_c_name != small.jit_c_name
     assert big.jit_c_name in big.jit_c_definition
     # Nor may a typedef registered in C take a name a UDT already has.
     with pytest.raises(ValueError, match="unavailable"):
-        dtypes.ss.register_new("_SameJitName", "typedef struct { int8_t q ; } _SameJitName ;")
+        dtypes.ss.register_new(
+            small.jit_c_name, f"typedef struct {{ int8_t q ; }} {small.jit_c_name} ;"
+        )
     # The rest compiles kernels for both layouts, which needs a C compiler the JIT can use.
     # Asked under 'on': a 'run' the session set (GRAPHBLAS_JIT_C_CONTROL) would answer no.
     from graphblas.core.ss.jit_config import _enable_jit_for_udt

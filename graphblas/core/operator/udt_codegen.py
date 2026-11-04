@@ -33,6 +33,7 @@ from ..udt import (
     _check_udt_pair,
     _get_udt_info,
     _iter_record_leaves,
+    _records_in_array_message,
     _udt_op_types,
 )
 
@@ -147,25 +148,20 @@ def _is_signed_int(np_dtype):
 # ``hasattr`` would lie; gate on the backend too.
 _has_jit_set = backend == "suitesparse" and hasattr(lib, "GxB_JIT_C_NAME")
 
-# Names that can't be used as UDT type names or record field names in the
-# JIT C source. Covers two failure modes from the JIT include chain
-# (``GraphBLAS.h`` transitively pulls in ``<math.h>``, ``<complex.h>``,
-# ``<stddef.h>``, ``<stdio.h>``, ``<errno.h>``, ``<stdint.h>``):
+# Names that can't be used as record field names in the JIT C source: C
+# keywords, and the macros of the JIT include chain (``GraphBLAS.h``
+# transitively pulls in ``<math.h>``, ``<complex.h>``, ``<stddef.h>``,
+# ``<stdio.h>``, ``<errno.h>``, ``<stdint.h>`` and more). The preprocessor
+# expands a macro inside any declarator or expression it appears in, so a field
+# declared ``double M_PI ;`` becomes ``double 3.14159... ;`` and won't compile;
+# the separate namespace for struct members doesn't help. (A UDT's own name
+# never collides: its C name has a prefix, ``_C_TYPE_NAME_PREFIX``. The typedef
+# names listed here mattered when the type's C name was its Python name.)
 #
-#   1. **Macro names**: the preprocessor expands them inside any declarator
-#      or expression they appear in, so a field declared ``double M_PI ;``
-#      becomes ``double 3.14159... ;`` and won't compile. The C-standard
-#      separate namespace for struct members doesn't help here.
-#   2. **Typedef names** at the *outer* type-name position: emitting
-#      ``typedef struct { ... } FILE ;`` collides with the existing
-#      ``FILE`` typedef in scope (most compilers reject as a redefinition).
-#      Struct member names of the same spelling are fine (members live in
-#      their own namespace), but our gate runs the same check at both
-#      positions for simplicity.
-#
-# Either way the JIT compile fails, SuiteSparse swallows the failure
-# silently, and the op runs through the slower Numba cfunc path. Block
-# these eagerly so the user sees the "without JIT" warning instead.
+# Either way the JIT compile fails. SuiteSparse 9.4 and later then raise
+# JitError for that call and set ``jit_c_control`` to 'load', so the process
+# compiles no more kernels. Block these eagerly: the op runs through the
+# slower Numba cfunc path, and the user sees the "without JIT" warning.
 _C_RESERVED = frozenset(
     {
         # C keywords
@@ -280,17 +276,80 @@ _C_RESERVED = frozenset(
         # <errno.h>
         "errno",
     }
+) | frozenset(
+    # Object-like macros the C standard defines in the other headers of the JIT
+    # include chain. A platform adds its own (POSIX errno codes, ...), which
+    # still fail to compile.
+    [
+        # <limits.h>
+        *("CHAR_BIT", "SCHAR_MIN", "SCHAR_MAX", "UCHAR_MAX", "CHAR_MIN", "CHAR_MAX"),
+        *("MB_LEN_MAX", "SHRT_MIN", "SHRT_MAX", "USHRT_MAX", "INT_MIN", "INT_MAX"),
+        *("UINT_MAX", "LONG_MIN", "LONG_MAX", "ULONG_MAX", "LLONG_MIN", "LLONG_MAX"),
+        "ULLONG_MAX",
+        # <stdint.h>
+        *(
+            f"{u}INT{kind}{bits}_{end}"
+            for kind in ("", "_LEAST", "_FAST")
+            for bits in (8, 16, 32, 64)
+            for u, end in (("", "MIN"), ("", "MAX"), ("U", "MAX"))
+        ),
+        *("INTPTR_MIN", "INTPTR_MAX", "UINTPTR_MAX", "INTMAX_MIN", "INTMAX_MAX"),
+        *("UINTMAX_MAX", "PTRDIFF_MIN", "PTRDIFF_MAX", "SIG_ATOMIC_MIN", "SIG_ATOMIC_MAX"),
+        *("SIZE_MAX", "WCHAR_MIN", "WCHAR_MAX", "WINT_MIN", "WINT_MAX"),
+        # <inttypes.h>
+        *(
+            f"{prefix}{conv}{size}"
+            for prefix, convs in (("PRI", "diouxX"), ("SCN", "dioux"))
+            for conv in convs
+            for size in (
+                *(f"{kind}{bits}" for kind in ("", "LEAST", "FAST") for bits in (8, 16, 32, 64)),
+                "MAX",
+                "PTR",
+            )
+        ),
+        # <stdio.h>
+        *("BUFSIZ", "FILENAME_MAX", "FOPEN_MAX", "L_tmpnam", "SEEK_CUR", "SEEK_END"),
+        *("SEEK_SET", "TMP_MAX", "_IOFBF", "_IOLBF", "_IONBF"),
+        # <stdlib.h>
+        *("EXIT_FAILURE", "EXIT_SUCCESS", "RAND_MAX", "MB_CUR_MAX"),
+        # <errno.h>
+        *("EDOM", "ERANGE", "EILSEQ"),
+        # <math.h>
+        *("FP_INFINITE", "FP_NAN", "FP_NORMAL", "FP_SUBNORMAL", "FP_ZERO", "FP_FAST_FMA"),
+        *("FP_FAST_FMAF", "FP_FAST_FMAL", "FP_ILOGB0", "FP_ILOGBNAN", "MATH_ERRNO"),
+        *("MATH_ERREXCEPT", "math_errhandling"),
+        # <stdatomic.h>
+        *(
+            f"ATOMIC_{kind}_LOCK_FREE"
+            for kind in ("BOOL", "CHAR", "CHAR16_T", "CHAR32_T", "WCHAR_T", "SHORT", "INT")
+        ),
+        *("ATOMIC_LONG_LOCK_FREE", "ATOMIC_LLONG_LOCK_FREE", "ATOMIC_POINTER_LOCK_FREE"),
+        "ATOMIC_FLAG_INIT",
+        # <signal.h>, which the C library headers bring in on some platforms
+        *("SIGABRT", "SIGFPE", "SIGILL", "SIGINT", "SIGSEGV", "SIGTERM"),
+        *("SIG_DFL", "SIG_ERR", "SIG_IGN"),
+    ]
 )
+
+# GraphBLAS's own names, many of them macros of ``GraphBLAS.h`` and its JIT headers
+# (``GrB_INDEX_MAX``, ``GxB_IMPLEMENTATION_MAJOR``), and more with each version, so a
+# field may not start with any of these.
+_C_RESERVED_PREFIXES = ("GB_", "GrB_", "GxB_")
 
 
 def _is_valid_c_identifier(name):
-    """True if ``name`` is a valid C identifier and not a reserved word."""
-    return isinstance(name, str) and name.isidentifier() and name not in _C_RESERVED
+    """True if ``name`` is a valid C identifier and not a reserved word or GraphBLAS's name."""
+    return (
+        isinstance(name, str)
+        and name.isidentifier()
+        and name not in _C_RESERVED
+        and not name.startswith(_C_RESERVED_PREFIXES)
+    )
 
 
 # Process-global counter for synthesizing C names when the user-supplied
-# Python name isn't a valid C identifier (or is a C reserved word, or the
-# UDT was registered without ``name=`` at all). The Python-side ``DataType.name``
+# Python name doesn't make a valid C identifier of 127 characters or fewer (or
+# the UDT was registered without ``name=`` at all). The Python-side ``DataType.name``
 # is left alone; this only affects ``GxB_JIT_C_NAME``. ``itertools.count`` is
 # atomic enough for our purposes; collisions across processes are harmless
 # because the SS JIT cache files are keyed by ``(c_name, content_hash)`` per
@@ -304,29 +363,61 @@ _synthetic_udt_counter = itertools.count(1)
 _jit_c_type_defs = {}
 
 
-def _pick_c_type_name(python_name):
-    """Return a valid C identifier for use as ``GxB_JIT_C_NAME`` on a UDT.
+# The C name of a UDT is its name after this prefix. SuiteSparse's JIT puts the type's name in
+# a kernel beside its own identifiers, so a UDT named like one of them did not compile: a
+# local of its templates (``A``, ``C``, ``p``, ``i``, ``result``), a parameter of the op
+# definitions made here (``z``, ``x``), or anything the C headers declare (``div``,
+# ``index``, ``GB_void``). No identifier there starts with the prefix.
+_C_TYPE_NAME_PREFIX = "gbudt_"
 
-    When ``python_name`` is already a valid C identifier (and not reserved),
-    return it unchanged so introspection and JIT cache filenames remain
-    readable. Otherwise mint a fresh ``_gbudt_NNN`` name. This lets UDTs
-    that were anonymous in the Python sense (no ``name=`` passed, name with
-    dots / special chars, name that collides with a C keyword) still take
-    the JIT path; users never see the synthetic name unless they read
-    ``DataType.jit_c_name``.
+
+# The ops whose C name is ``{op}_{type}`` (``set_jit_c_on_op``,
+# ``set_jit_c_comparison_on_op``): the lifted arithmetic, eq and ne. A mixed op
+# shortens its own name (``_make_jit_c_mixed_definition``).
+_ONE_TYPE_OP_NAMES = (*BUILTIN_UDT_BINARY_OPS, *BUILTIN_UDT_UNARY_OPS, "eq", "ne")
+
+
+def _max_type_c_name_len():
+    """The longest C name a UDT may have, so every ``{op}_{type}`` built from it fits.
+
+    SuiteSparse refuses a name of ``GxB_MAX_NAME_LEN`` (128) characters or more; the
+    longest op prefix is ``floordiv_``, so this is 118.
     """
-    if _is_valid_c_identifier(python_name):
-        return python_name
+    return lib.GxB_MAX_NAME_LEN - 1 - max(len(f"{name}_") for name in _ONE_TYPE_OP_NAMES)
+
+
+def _pick_c_type_name(python_name):
+    """Return a valid C identifier for use as ``GxB_JIT_C_NAME`` on a UDT named ``python_name``.
+
+    ``gbudt_`` and the name (see ``_C_TYPE_NAME_PREFIX``), which stays readable in
+    introspection and JIT cache file names. A name starting with ``_gb``, which
+    python-graphblas keeps for the types it makes itself (a synthetic ``_gbudt_NNN`` or
+    ``_gbnest_NNN``, the tensor engine's ``_gbtensor_...``), and which no kernel identifier
+    starts with, is kept as it is. When the result is not a C identifier (a name with dots,
+    or none given), or is too long for each op built from it to fit SuiteSparse's
+    ``GxB_MAX_NAME_LEN`` (``_max_type_c_name_len``), mint a fresh ``_gbudt_NNN`` name
+    instead, so the UDT and its ops still take the JIT path. A name SuiteSparse already has
+    for a type goes to ``_udt_c_typedef`` with ``is_c_name`` instead.
+    """
+    if not isinstance(python_name, str):
+        c_name = ""
+    elif python_name.startswith("_gb"):
+        c_name = python_name
+    else:
+        c_name = _C_TYPE_NAME_PREFIX + python_name
+    if c_name.isidentifier() and len(c_name) <= _max_type_c_name_len():
+        return c_name
     return f"_gbudt_{next(_synthetic_udt_counter)}"
 
 
-def _udt_c_typedef(python_name, np_type):
+def _udt_c_typedef(python_name, np_type, *, is_c_name=False):
     """Build the JIT C typedef for a record or array UDT, or return ``None``.
 
     Returns ``(type_name, typedef)`` on success, where ``type_name`` is the
-    C identifier we register with SuiteSparse (may differ from
-    ``python_name`` if that wasn't a valid C identifier; see
-    ``_pick_c_type_name``). Returns ``None`` when the UDT still can't be
+    C identifier we register with SuiteSparse (``gbudt_`` and ``python_name``, or
+    a synthetic name; see ``_pick_c_type_name``). With ``is_c_name``,
+    ``python_name`` is already that C name: one SuiteSparse has for the type, or a
+    synthetic one made here. Returns ``None`` when the UDT still can't be
     expressed in C after synthesizing the top-level name (a field name
     collides with a C reserved word, or a leaf field type isn't in
     ``NP_TO_C_TYPES``, e.g. object or datetime).
@@ -345,7 +436,7 @@ def _udt_c_typedef(python_name, np_type):
     # than register a broken typedef; the cfunc path is still correct.
     if np_type.names is not None and not _is_c_compatible_layout(np_type):
         return None
-    type_name = _pick_c_type_name(python_name)
+    type_name = python_name if is_c_name else _pick_c_type_name(python_name)
     if np_type.names is not None:
         # Inner typedefs (for nested structured fields) are prepended to the
         # final definition string so the outer struct's field types are in
@@ -366,7 +457,7 @@ def _udt_c_typedef(python_name, np_type):
                 # The inner C name is synthesized to avoid collisions with
                 # user-supplied type names elsewhere in the process.
                 inner_name = f"_gbnest_{next(_synthetic_udt_counter)}"
-                inner_info = _udt_c_typedef(inner_name, field_dtype)
+                inner_info = _udt_c_typedef(inner_name, field_dtype, is_c_name=True)
                 if inner_info is None:
                     return None
                 inner_resolved_name, inner_typedef = inner_info
@@ -1030,6 +1121,10 @@ if _has_numba:
                 f"Element-wise UDT ops require a record dtype (named fields) "
                 f"or an array dtype (e.g., FP64[3])."
             )
+        np_type = dtype.np_type
+        leaves = [d for *_, d in _iter_record_leaves(np_type)] if np_type.names else [np_type]
+        if any(leaf.base.names is not None for leaf in leaves):
+            raise KeyError(_records_in_array_message(f"unary.{op_name}", dtype))
 
         kind, _detail = info
         if kind == "record":
@@ -1070,20 +1165,27 @@ if _has_numba:
         and casts each element or leaf into ``out_type`` as it writes it, as a
         store casts (``udt._store_cast_op``). So a result goes into an object
         of another UDT type in the one GraphBLAS call that computes it, with no
-        temporary. Only the built-in ops that lift to UDTs have such a form;
-        ``udt._store_cast_op`` has already accepted the pair of types.
+        temporary. Only the built-in ops that lift to UDTs have such a form,
+        and ``identity``, ``first`` and ``second``, which store an operand as
+        it is; ``udt._store_cast_op`` has already accepted the pair of types.
         """
         from .udf import _finalize_udt_op
 
         parent = getattr(typed_op, "parent", None)
         if parent is None or parent._anonymous:
             return None
-        if typed_op.opclass == "BinaryOp" and parent.name in BUILTIN_UDT_BINARY_OPS:
+        if typed_op.opclass == "UnaryOp" and parent.name == "identity":
+            from .unary import _udt_cast_op
+
+            return _udt_cast_op(typed_op.type, out_type)
+        if typed_op.opclass == "BinaryOp" and (
+            parent.name in BUILTIN_UDT_BINARY_OPS or parent.name in {"first", "second"}
+        ):
             from .binary import BinaryOp, TypedUserBinaryOp
 
             cls, typed_cls = BinaryOp, TypedUserBinaryOp
             dtype2 = typed_op.type2
-            py_op = BUILTIN_UDT_BINARY_OPS[parent.name]
+            py_op = BUILTIN_UDT_BINARY_OPS.get(parent.name)
         elif typed_op.opclass == "UnaryOp" and parent.name in BUILTIN_UDT_UNARY_OPS:
             from .unary import TypedUserUnaryOp, UnaryOp
 
@@ -1101,13 +1203,35 @@ if _has_numba:
         dtype = typed_op.type
         if (types := dtype if dtype2 is None else (dtype, dtype2)) in fused._udt_ops:
             return fused._udt_ops[types]
-        if dtype2 is None:
+        if py_op is None:
+            wrapper, sig = _pick_cast_wrapper(parent.name, dtype, dtype2, out_type)
+        elif dtype2 is None:
             wrapper, sig, _ = compile_udt_unary_wrapper(parent.name, py_op, dtype, out=out_type)
         else:
             wrapper, sig, _ = compile_udt_binary_wrapper(
                 parent.name, py_op, dtype, dtype2, out=out_type
             )
         return _finalize_udt_op(fused, dtype, dtype2, out_type, wrapper, sig, typed_cls)
+
+    def _pick_cast_wrapper(op_name, dtype, dtype2, out_type):
+        """Compile ``first`` or ``second`` storing the operand it picks as UDT ``out_type``.
+
+        The operand is cast as a store casts it (:func:`compile_udt_cast_wrapper`);
+        the other is not read, whatever its type. Returns (wrapper_func, wrapper_sig).
+        """
+        nt = numba.types
+        picked = "x_ptr" if op_name == "first" else "y_ptr"
+        cast, cast_sig = compile_udt_cast_wrapper(dtype if picked == "x_ptr" else dtype2, out_type)
+        wrapper = _compile_codegen(
+            f"def _pick(z_ptr, x_ptr, y_ptr):\n    cast(z_ptr, {picked})\n",
+            func_name="_pick",
+            source_label=f"<gb-udt {op_name} as {out_type}>",
+            extra_ns={"cast": numba.njit(cast)},
+        )
+        z_type, picked_type = cast_sig.args
+        if picked == "x_ptr":
+            return wrapper, nt.void(z_type, picked_type, nt.voidptr)
+        return wrapper, nt.void(z_type, nt.voidptr, picked_type)
 
 
 # JIT C code generators below.
@@ -1360,13 +1484,15 @@ def _c_expr_unary(py_op, operand, field_dtype):
     raise ValueError(f"Unknown unary C op: {py_op}")  # pragma: no cover (safety)
 
 
-def _make_jit_c_definition(op_name, py_op, dtype, arity):
+def _make_jit_c_definition(op_name, py_op, dtype, arity, out=None):
     """Generate a JIT C function definition for a UDT operator.
 
     Returns ``(c_name, c_defn)``, or ``None`` if the dtype can't be expressed
     in C (unsupported field types, or names that collide with C reserved words).
     An op not defined on the field types (``min`` on a complex field) never
-    gets here: ``udt._element_types`` rejects it when the op is typed.
+    gets here: ``udt._element_types`` rejects it when the op is typed. ``out``
+    is the result type when it is not ``dtype`` (``abs`` of complex leaves),
+    which SuiteSparse must already know by its C name.
     """
     np_type = dtype.np_type
     # Prefer the C name SuiteSparse already has for this type. ``GxB_JIT_C_NAME``
@@ -1374,19 +1500,21 @@ def _make_jit_c_definition(op_name, py_op, dtype, arity):
     # propagate to SS. If the op's signature referenced ``dtype.name`` it would
     # use an undefined struct name, and SS would silently fall back to the
     # Numba cfunc instead of JIT-compiling. ``jit_c_name`` is also where the
-    # synthetic ``_gbudt_NNN`` name (for UDTs whose Python name isn't a valid
-    # C identifier) is recorded; using it keeps op codegen consistent.
-    pinned_name = dtype.jit_c_name
-    typedef_info = _udt_c_typedef(pinned_name or dtype.name, dtype.np_type)
+    # ``gbudt_`` or synthetic ``_gbudt_NNN`` name (see ``_pick_c_type_name``) is
+    # recorded; using it keeps op codegen consistent.
+    typedef_info = _dtype_c_typedef(dtype)
     if typedef_info is None:
         return None
     type_name, _typedef = typedef_info
     c_name = f"{op_name}_{type_name}"
+    z_type_name = type_name if out is None else out.jit_c_name
+    if z_type_name is None:
+        return None
 
     if arity == 2:
-        params = f"{type_name} *z, const {type_name} *x, const {type_name} *y"
+        params = f"{z_type_name} *z, const {type_name} *x, const {type_name} *y"
     else:
-        params = f"{type_name} *z, const {type_name} *x"
+        params = f"{z_type_name} *z, const {type_name} *x"
 
     if np_type.names is not None:
         # Use leaf C paths so nested records emit ``z->outer.inner_a = ...``
@@ -1426,8 +1554,20 @@ def _c_type_name(dtype):
     """
     if dtype.np_type.names is None and dtype.np_type.subdtype is None:
         return NP_TO_C_TYPES.get(dtype.np_type)
-    typedef_info = _udt_c_typedef(dtype.jit_c_name or dtype.name, dtype.np_type)
+    typedef_info = _dtype_c_typedef(dtype)
     return None if typedef_info is None else typedef_info[0]
+
+
+def _dtype_c_typedef(dtype):
+    """``_udt_c_typedef`` for UDT ``dtype`` under the C name SuiteSparse has for it.
+
+    That is its ``jit_c_name``: pinned when a UDT from numpy registers, or the name of a
+    type registered from C source. A UDT with none (not expressible in C) gets the name
+    ``_pick_c_type_name`` would give it.
+    """
+    if (c_name := dtype.jit_c_name) is not None:
+        return _udt_c_typedef(c_name, dtype.np_type, is_c_name=True)
+    return _udt_c_typedef(dtype.name, dtype.np_type)
 
 
 def _c_operand(side, path, stored, computed):
@@ -1542,10 +1682,9 @@ def _make_jit_c_comparison_definition(op_name, dtype, *, is_eq):
     semantic comparison.
     """
     np_type = dtype.np_type
-    pinned_name = dtype.jit_c_name
     # ``_udt_c_typedef`` returns None when the numpy layout doesn't match a
     # C compiler's layout for the same struct.
-    typedef_info = _udt_c_typedef(pinned_name or dtype.name, np_type)
+    typedef_info = _dtype_c_typedef(dtype)
     if typedef_info is None:
         return None
     type_name, _typedef = typedef_info
@@ -1640,7 +1779,7 @@ def set_jit_c_mixed_on_op(gb_obj, op_name, py_op, dtype, dtype2, ret_type, input
     return result
 
 
-def set_jit_c_on_op(gb_obj, op_name, py_op, dtype, set_string_func, arity=2):
+def set_jit_c_on_op(gb_obj, op_name, py_op, dtype, set_string_func, arity=2, out=None):
     """Generate and set JIT C name+definition on a GrB operator, if possible.
 
     Returns ``(c_name, c_defn)`` when the dtype is expressible in C, ``None``
@@ -1649,7 +1788,7 @@ def set_jit_c_on_op(gb_obj, op_name, py_op, dtype, set_string_func, arity=2):
     Callers check ``_has_jit_set`` first: without it, SuiteSparse has no
     ``set_string_func`` to pass.
     """
-    result = _make_jit_c_definition(op_name, py_op, dtype, arity)
+    result = _make_jit_c_definition(op_name, py_op, dtype, arity, out)
     if result is None:
         return None
     if not _set_jit_c_strings(gb_obj, *result, set_string_func):

@@ -218,6 +218,13 @@ def _complex_op_error(op_name, dtype, dtype2):
     )
 
 
+def _records_in_array_message(op_label, dtypes_str):
+    return (
+        f"{op_label} does not work with ({dtypes_str}): a built-in op lifts to the numbers "
+        "in an array or a record, not to records in an array; register a custom op for it."
+    )
+
+
 def _element_types(op_name, dtype, dtype2, elem_x, elem_y):
     """Return ``(in_x, in_y, out)``, the numpy dtypes ``binary.{op_name}`` uses on one element.
 
@@ -237,6 +244,9 @@ def _element_types(op_name, dtype, dtype2, elem_x, elem_y):
     # down with ``NotImplementedError: No definition for lowering lt``.
     if op_name in _OPS_NOT_FOR_COMPLEX and "c" in (elem_x.kind, elem_y.kind):
         raise _complex_op_error(op_name, dtype, dtype2)
+    if elem_x.names is not None or elem_y.names is not None:
+        # Records in an array (an array UDT or field); Numba cannot add two records.
+        raise KeyError(_records_in_array_message(f"binary.{op_name}", f"{dtype}, {dtype2}"))
     builtin_x = _builtin_dtype(elem_x)
     builtin_y = _builtin_dtype(elem_y)
     if builtin_x is None or builtin_y is None:
@@ -299,6 +309,33 @@ def _udt_op_types(op_name, dtype, dtype2):
         if operand.np_type == result:
             return operand, [(in_x, in_y)]
     return lookup_dtype(result), [(in_x, in_y)]
+
+
+def _unary_op_type(op_name, dtype):
+    """Return the type ``unary.{op_name}`` gives on UDT ``dtype``: each leaf as on its built-in.
+
+    Of the ops that lift, only ``abs`` changes a leaf's type: a complex number's
+    magnitude is real, as ``unary.abs`` on FC64 gives FP64 (and numpy's ``abs``
+    a float), also where the backend has no complex types.
+    """
+    if op_name != "abs":
+        return dtype
+
+    def leaf_type(leaf):
+        base, shape = leaf.subdtype or (leaf, ())
+        if base.kind == "c":
+            base = np.empty(0, base).real.dtype
+        return np.dtype((base, shape)) if shape else base
+
+    np_type = dtype.np_type
+    if np_type.names is None:
+        result = leaf_type(np_type)
+        return dtype if result == np_type else lookup_dtype(result)
+    leaves = [leaf for _py, _c, leaf in _iter_record_leaves(np_type)]
+    result_leaves = [leaf_type(leaf) for leaf in leaves]
+    if result_leaves == leaves:
+        return dtype
+    return lookup_dtype(_promoted_record([np_type], iter(result_leaves)))
 
 
 def _promoted_record(records, result_leaves):
@@ -475,8 +512,9 @@ def _fused_store_expr(expr, output_dtype):
     casts each element as it writes it (``udt_codegen.fused_store_op``), so no
     temporary of the result's own type is made: data GraphBLAS works on is
     often too large to hold twice. That works for an element-wise
-    computation by a built-in op that lifts to UDTs (``apply``,
-    ``ewise_mult``, ``ewise_union``). ``ewise_add`` copies an entry present in
+    computation by a built-in op that lifts to UDTs, or by ``identity``,
+    ``first`` or ``second`` (``apply``, ``ewise_mult``, ``ewise_union``);
+    ``any`` may pick either operand. ``ewise_add`` copies an entry present in
     only one input without the op, and a semiring or reduction would add in
     the narrower type, so those and any other computation raise.
     """
@@ -495,10 +533,10 @@ def _fused_store_expr(expr, output_dtype):
         raise DomainMismatch(
             f"cannot store a result of type {expr.dtype} in an object of type "
             f"{output_dtype}: GraphBLAS cannot cast a UDT, and only a built-in op that lifts "
-            "to UDTs, in apply, ewise_mult or ewise_union, can write another type as it "
-            f"computes ({what} cannot), so this would need a temporary copy of the whole "
-            "result. Make it explicitly by storing the computed result, as in "
-            "`obj << expr.new()`, which casts it in one more pass."
+            "to UDTs, or identity, first or second, in apply, ewise_mult or ewise_union, can "
+            f"write another type as it computes ({what} cannot), so this would need a "
+            "temporary copy of the whole result. Make it explicitly by storing the computed "
+            "result, as in `obj << expr.new()`, which casts it in one more pass."
         )
     rv = copy.copy(expr)
     rv.op, rv.cfunc_name, rv.dtype = fused, cfunc_name, output_dtype
@@ -768,8 +806,7 @@ def _element_bytes(dtype, value):
     # as junk however it writes the record.
     if np_type.subdtype is None:
         arr = np.zeros(1, dtype=np_type)
-        if isinstance(value, dict) and np_type.names is not None:
-            value = _dict_to_record(np_type, value)
+        value = _as_record_parts(np_type, value)
     else:
         arr = np.zeros(np_type.subdtype[1], dtype=np_type.subdtype[0])
     value = _nats_in_leaf_units(_view_if_same_layout(value, arr.dtype), arr.dtype)
@@ -801,16 +838,27 @@ def _element_value(dtype, data):
     return rv.view(base).reshape(shape)
 
 
-def _dict_to_record(np_type, d):
-    """Converts e.g. ``{"x": 1, "y": 2.3}`` to ``(1, 2.3)``."""
-    rv = []
-    for name, (dtype, _) in np_type.fields.items():
-        val = d[name]
-        if dtype.names is not None and isinstance(val, dict):
-            rv.append(_dict_to_record(dtype, val))
-        else:
-            rv.append(val)
-    return tuple(rv)
+def _as_record_parts(np_type, value):
+    """Return ``value`` for an element of ``np_type`` with each record in it as a tuple.
+
+    A record literal may be a tuple, list or dict laid out like the element, but
+    numpy takes only a tuple: ``{"x": 1, "y": 2.3}`` and ``[1, 2.3]`` become
+    ``(1, 2.3)``, at every level of a nested record. A list of another length
+    becomes a tuple too, which numpy refuses by its length; an array field
+    keeps its list.
+    """
+    if np_type.names is None:
+        return value
+    if isinstance(value, dict):
+        value = [value[name] for name in np_type.names]
+    elif isinstance(value, list) and len(value) != len(np_type.names):
+        return tuple(value)
+    elif not isinstance(value, (list, tuple)) or len(value) != len(np_type.names):
+        return value
+    return tuple(
+        _as_record_parts(np_type.fields[name][0], part)
+        for name, part in zip(np_type.names, value, strict=True)
+    )
 
 
 def _leaf_arrays(arr):

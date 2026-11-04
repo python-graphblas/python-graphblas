@@ -2,7 +2,7 @@ import itertools
 
 import numpy as np
 
-from .. import backend, binary, monoid, select, semiring, unary
+from .. import backend, binary, indexunary, monoid, select, semiring, unary
 from ..dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
 from ..exceptions import DimensionMismatch, GrB_NO_VALUE, NoValue, check_status, check_status_carg
 from . import _supports_udfs, automethods, ffi, lib, utils
@@ -111,8 +111,26 @@ def _select_mask(updater, obj, mask):
         updater << obj.dup(mask=mask)
 
 
+def _udt_select_comparison(op, dtype):
+    """``binary.eq`` or ``ne`` for select op ``valueeq`` or ``valuene`` on UDT ``dtype``, else None.
+
+    No select op lifts to UDTs, while ``==`` and ``!=`` do, so such a select keeps
+    the values they find equal or unequal to the thunk (:func:`_select_by_comparison`).
+    """
+    if dtype._is_udt:
+        for name, comparison in [("valueeq", binary.eq), ("valuene", binary.ne)]:
+            if op is getattr(select, name) or op is getattr(indexunary, name):
+                return comparison
+    return None
+
+
+def _select_by_comparison(updater, obj, mask_expr):
+    _select_mask(updater, obj, mask_expr.new(name="M_temp").V)
+
+
 def _isclose_recipe(self, other, rel_tol, abs_tol, **opts):
-    #  x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
+    #  x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol), except that
+    #  an infinity is close only to itself
     isequal = self.ewise_mult(other, binary.eq).new(bool, name="isclose", **opts)
     if isequal._nvals != self._nvals:
         return False
@@ -132,6 +150,13 @@ def _isclose_recipe(self, other, rel_tol, abs_tol, **opts):
     # max(abs(x), abs(y))
     x(**opts) << x.ewise_mult(y, binary.max)
     max_x_y = x
+    # As in math.isclose, an infinity is close only to itself, and those are equal
+    if max_x_y.ndim == 1:
+        biggest = max_x_y.reduce(monoid.max, allow_empty=False).new(**opts).value
+    else:
+        biggest = max_x_y.reduce_scalar(monoid.max, allow_empty=False).new(**opts).value
+    if biggest == np.inf:
+        return False
     # rel_tol * max(abs(x), abs(y))
     max_x_y(**opts) << max_x_y.apply(binary.times, rel_tol)
     # max(rel_tol * max(abs(x), abs(y)), abs_tol)
@@ -463,7 +488,8 @@ class Vector(BaseType):
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False, **opts):
         """Check for approximate equality (including same size and same structure).
 
-        Equivalent to: ``abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)``.
+        Equivalent to: ``abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)``,
+        except that, as in ``math.isclose``, an infinity is close only to itself.
 
         Parameters
         ----------
@@ -1717,9 +1743,10 @@ class Vector(BaseType):
         if thunk is None:
             thunk = False  # most basic form of 0 when unifying dtypes
         given = thunk
+        comparison = _udt_select_comparison(op, self.dtype)
         if type(thunk) is not Scalar:
             # A thunk beside a UDT becomes an element of it, so it must fit, as in apply.
-            thunk, dtype = _literal_operand(self.dtype, thunk, op)
+            thunk, dtype = _literal_operand(self.dtype, thunk, comparison or op)
             try:
                 thunk = Scalar.from_value(thunk, dtype, is_cscalar=None, name="")
             except TypeError:
@@ -1731,6 +1758,16 @@ class Vector(BaseType):
                     extra_message="Literal scalars also accepted.",
                     op=op,
                 )
+        if comparison is not None:
+            mask_expr = self.apply(comparison, right=thunk)  # typed now, so errors raise now
+            return VectorExpression(
+                method_name,
+                None,
+                [self, thunk, _select_by_comparison, (self, mask_expr)],
+                expr_repr=f"{{0.name}}.select({op}, thunk={{1._expr_name}})",
+                size=self._size,
+                dtype=self.dtype,
+            )
         op = get_typed_op(op, self.dtype, thunk.dtype, is_right_scalar=True, kind="select")
         op, thunk = _value_select_in_own_type(op, self.dtype, thunk, given)
         self._expect_op(op, ("SelectOp", "IndexUnaryOp"), within=method_name, argname="op")

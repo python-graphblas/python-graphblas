@@ -57,6 +57,8 @@ def register_new(name, jit_c_definition, input_type, thunk_type):
         The C definition as a string of the user-defined function. For example:
         ``"void woot (bool *z, const int32_t *x, GrB_Index i, GrB_Index j, int32_t *y) "``
         ``"{ (*z) = ((*x) + i + j == (*y)) ; }"``
+        A UDT made from a numpy dtype is named in C by its ``jit_c_name`` (usually ``gbudt_``
+        and its name), not its Python name.
     input_type : dtype
         The dtype of the operand of the select operator.
     thunk_type : dtype

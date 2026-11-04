@@ -1,5 +1,6 @@
 import inspect
 import itertools
+import math
 import pickle
 import sys
 import types
@@ -13,7 +14,6 @@ from numpy.testing import assert_array_equal
 import graphblas as gb
 from graphblas import agg, backend, binary, dtypes, indexunary, monoid, select, semiring, unary
 from graphblas.core import _supports_udfs as supports_udfs
-from graphblas.core import lib
 from graphblas.exceptions import (
     DimensionMismatch,
     DomainMismatch,
@@ -1233,6 +1233,22 @@ def test_isclose(v):
     assert u7.isclose(u7, rel_tol=1e-8)
     u4b = Vector.from_coo([1, 3, 4, 5], [1.0, 1.0, 2.0, 0.0], size=u4.size)
     assert not u4.isclose(u4b)
+
+
+def test_isclose_infinity():
+    # As in math.isclose, an infinity is close only to itself. It was close to every
+    # number (abs(inf - y) is inf, and so is rel_tol * inf), with Numba and without.
+    from graphblas.core.vector import _isclose_recipe
+
+    values = [math.inf, -math.inf, 1.0, 0.0, math.nan]
+    for x, y in itertools.product(values, repeat=2):
+        left = Vector.from_coo([0, 2], [x, 5.0], size=3)
+        right = Vector.from_coo([0, 2], [y, 5.0], size=3)
+        for abs_tol in [0.0, math.inf]:
+            expected = math.isclose(x, y, rel_tol=1e-7, abs_tol=abs_tol)
+            if supports_udfs:
+                assert left.isclose(right, abs_tol=abs_tol) is expected, (x, y)
+            assert _isclose_recipe(left, right, 1e-7, abs_tol) is expected, (x, y)
 
 
 def test_binary_op(v):
@@ -2699,11 +2715,10 @@ def test_udt():
         vv = Vector.ss.deserialize(v.ss.serialize(), dtype=long_udt)
         assert v.isequal(vv, check_dtype=True)
         # The dtype name is too long to embed in the blob; dtype= must be provided.
-        # Whichever error the caller sees comes from parsing the name that is in
-        # the blob. Builds with GxB_Serialized_get_String let that SyntaxError
-        # through; older ones have no second name to try, so they wrap it.
+        # Builds with GxB_Serialized_get_String say so (the empty GrB_NAME raised a
+        # bare SyntaxError); older ones have no second name to try.
         with pytest.raises(
-            SyntaxError if hasattr(lib, "GxB_Serialized_get_String") else ValueError
+            ValueError, match="pass it as dtype=|GxB_Serialized_get_String is unavailable"
         ):
             Vector.ss.deserialize(v.ss.serialize())
     # May be able to look up non-anonymous dtypes by name if their names are too long
@@ -3148,6 +3163,28 @@ def test_subarray_dtypes_iso():
     expected = np.broadcast_to([0, 1, 2, 3], (3, 4))
     np.testing.assert_array_equal(v.to_dense(), expected)
     np.testing.assert_array_equal(v.to_coo()[1], expected)
+
+
+# Without SuiteSparse, building a UDT uses dup_op=binary.any, which needs Numba.
+@pytest.mark.skipif("not suitesparse and not supports_udfs")
+def test_subarray_dtype_values_in_another_array_dtype():
+    # Asked for another array dtype of the same shape, the values convert number by
+    # number. astype to the array dtype repeated each number into an element: shape
+    # (n, 4, 4), for an iso Vector too.
+    expected = np.arange(8, dtype=np.int64).reshape(2, 4)
+    v = Vector.from_coo([0, 1], expected)
+    iso = Vector("INT64[4]", size=2)
+    iso[:] = [0, 1, 2, 3]
+    iso_expected = np.broadcast_to([0, 1, 2, 3], (2, 4))
+    for w, values in [(v, expected), (iso, iso_expected)]:
+        for get in [w.to_dense, lambda w=w, **kw: w.to_coo(**kw)[1]]:
+            got = get(dtype="FP64[4]")
+            assert got.dtype == np.float64
+            np.testing.assert_array_equal(got, values)
+            # Leading axes of length 1 do not matter, as in a store
+            np.testing.assert_array_equal(get(dtype="FP32[1, 4]"), values[:, None, :])
+            with pytest.raises(DomainMismatch, match="must have the same shape"):
+                get(dtype="FP64[2]")
 
 
 @pytest.mark.skipif("not supports_udfs")

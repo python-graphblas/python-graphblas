@@ -123,6 +123,7 @@ def _one(x):
 
 if _has_numba:
     from ..udt import BUILTIN_UDT_UNARY_OPS as _BUILTIN_UDT_UNARY_OPS
+    from ..udt import _unary_op_type
     from .udt_codegen import (
         _has_jit_set,
         _maybe_warn_jit_skipped,
@@ -287,8 +288,11 @@ class UnaryOp(OpBase):
             # Auto-generate an element-wise UDT function for the built-in
             # unary ops (``ainv``, ``abs``).
             py_op = _BUILTIN_UDT_UNARY_OPS[self.name]
+            # ``abs`` on a complex leaf gives a real one, written as it computes.
+            out = _unary_op_type(self.name, dtype)
+            out = None if out is dtype else out
             unary_wrapper, wrapper_sig, ret_type = compile_udt_unary_wrapper(
-                self.name, py_op, dtype
+                self.name, py_op, dtype, out=out
             )
             op = _finalize_udt_op(
                 self, dtype, None, ret_type, unary_wrapper, wrapper_sig, TypedUserUnaryOp
@@ -298,7 +302,7 @@ class UnaryOp(OpBase):
             # there, so it must not be evaluated as an argument first.
             if _has_jit_set:
                 op._jit_c_info = set_jit_c_on_op(
-                    op.gb_obj, self.name, py_op, dtype, lib.GrB_UnaryOp_set_String, arity=1
+                    op.gb_obj, self.name, py_op, dtype, lib.GrB_UnaryOp_set_String, 1, out
                 )
                 _maybe_warn_jit_skipped(op._jit_c_info, self.name, dtype.name)
             return op
@@ -341,7 +345,8 @@ class UnaryOp(OpBase):
             can be used as: ``A.ewise_mult(B, gb.binary.isclose(rel_tol=1e-5))``.
             When creating a parameterized user-defined operator, the ``func``
             parameter must be a callable that *returns* a function that will
-            then get compiled. See the ``user_isclose`` example below.
+            then get compiled. See the ``user_isclose`` example in
+            ``BinaryOp.register_new``.
         is_udt : bool, default False
             Whether the operator is intended to operate on user-defined types.
             If True, then the function will not be automatically compiled for
@@ -388,7 +393,8 @@ class UnaryOp(OpBase):
             can be used as: ``A.ewise_mult(B, gb.binary.isclose(rel_tol=1e-5))``.
             When creating a parameterized user-defined operator, the ``func``
             parameter must be a callable that *returns* a function that will
-            then get compiled. See the ``user_isclose`` example below.
+            then get compiled. See the ``user_isclose`` example in
+            ``BinaryOp.register_new``.
         is_udt : bool, default False
             Whether the operator is intended to operate on user-defined types.
             If True, then the function will not be automatically compiled for

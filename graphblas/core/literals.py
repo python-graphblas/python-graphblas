@@ -31,8 +31,8 @@ from .operator.binary import BinaryOp
 from .operator.monoid import Monoid
 from .udt import (
     BUILTIN_UDT_BINARY_OPS,
+    _as_record_parts,
     _casts_safely_into,
-    _dict_to_record,
     _leaf_arrays,
     _promoted_record,
     _strip_leading_ones,
@@ -102,7 +102,10 @@ def _literal_operand(dtype, value, op, *, left=False):
                 return (math.inf if value > 0 else -math.inf), FP64
         return value, literal_dtype
     if getattr(op, "_udt_types", True) is None:
-        # An op that does not take UDTs at all (``lt``) reports that itself.
+        # An op that does not take UDTs at all (``lt``) reports that itself, here,
+        # before the literal becomes an element, which can fail first (300 in an
+        # int8 field).
+        op[dtype]
         return value, dtype
     if isinstance(op, Monoid) and not op._anonymous:
         # Element-wise, a Monoid is its BinaryOp (``get_typed_op`` types it so).
@@ -113,11 +116,14 @@ def _literal_operand(dtype, value, op, *, left=False):
             # truediv gives float leaves whatever the int, so, as a comparison, it
             # types an int out of an integer leaf's range exactly instead of raising.
             exact = is_comparison or op.name == "truediv"
-            if is_comparison and not isinstance(value, (np.generic, np.ndarray)):
-                np_type = dtype.np_type
-                parts = value
-                if isinstance(value, dict) and np_type.names is not None:
-                    parts = _dict_to_record(np_type, value)
+            np_type = dtype.np_type
+            if is_comparison and np_type.kind == "S" and isinstance(value, str):
+                # A str, np.str_ included, that bytes cannot hold (numpy encodes ASCII)
+                # equals no element, as in numpy; one byte longer than any, it compares so.
+                if not value.isascii():
+                    value = b"\xff" * (np_type.itemsize + 1)
+            elif is_comparison and not isinstance(value, (np.generic, np.ndarray)):
+                parts = _as_record_parts(np_type, value)
                 # First: making an int beyond its leaf infinity reshapes the part.
                 _refuse_misfit_fields(dtype, np_type, parts)
                 if _int_beyond_leaf(np_type, parts) is not None:
@@ -311,13 +317,12 @@ def _literal_type(dtype, value, *, exact=False):
     """
     value = _as_python_number(value)
     np_type = dtype.np_type
-    if isinstance(value, dict) and np_type.names is not None:
-        value = _dict_to_record(np_type, value)
+    value = _as_record_parts(np_type, value)
     _refuse_misfit_fields(dtype, np_type, value)
     if np_type.names is None and np_type.kind in "SU" and isinstance(value, (str, bytes)):
         if _keeps_value(value, np_type):
             return dtype
-        return lookup_dtype(np.dtype(f"{np_type.kind}{max(len(value), 1)}"))
+        return lookup_dtype(_own_text_type(np_type.kind, value))
     if np_type.kind in "mM" and (date := _as_numpy_date(value, np_type)) is not None:
         if date.dtype.kind == np_type.kind and _keeps_value(date, np_type):
             return dtype
@@ -337,6 +342,17 @@ def _literal_type(dtype, value, *, exact=False):
             return lookup_dtype(value.dtype)
         return _array_literal_udt(dtype, value)
     return None
+
+
+def _own_text_type(kind, text):
+    """Return the type of ``text`` that does not fit a text leaf of ``kind``: its own length.
+
+    It keeps the leaf's kind, except that a str that bytes cannot hold (numpy
+    encodes ASCII) is a str, so beside bytes it equals nothing, as in numpy.
+    """
+    if kind == "S" and isinstance(text, str) and not text.isascii():
+        kind = "U"
+    return np.dtype(f"{kind}{max(len(text), 1)}")
 
 
 def _check_literal_fits(dtype, value):
@@ -373,8 +389,7 @@ def _check_literal_fits(dtype, value):
     np_type = dtype.np_type
     if np_type.names is not None:
         target = np.zeros(1, dtype=np_type)
-        if isinstance(value, dict):
-            value = _dict_to_record(np_type, value)
+        value = _as_record_parts(np_type, value)
     else:
         # An array's elements, or the one value of a UDT that is neither (bytes).
         base, shape = np_type.subdtype or (np_type, ())
@@ -445,8 +460,7 @@ def _converts_exactly(dtype, value):
     np_type = dtype.np_type
     try:
         if np_type.names is not None:
-            if isinstance(value, dict):
-                value = _dict_to_record(np_type, value)
+            value = _as_record_parts(np_type, value)
             given = np.zeros(1, dtype=_object_layout(np_type))
             converted = np.zeros(1, dtype=np_type)
         else:
@@ -671,7 +685,7 @@ def _weak_literal_udt(dtype, value, *, exact=False):
             # Text in a duration field, or text numpy cannot read as a date,
             # takes the field's type, and converting it reports what is wrong.
             if isinstance(part, (str, bytes)) and base.kind in "SU":
-                own = np.dtype(f"{base.kind}{max(len(part), 1)}")
+                own = _own_text_type(base.kind, part)
             elif (date := _as_numpy_date(part, base)) is not None:
                 part = date
                 own = date.dtype
@@ -874,18 +888,19 @@ def _array_literal_udt(dtype, value):
     ``+ np.array([1, 2, 3])`` int64 ones. Its type is the array layout of its
     dtype: in the UDT's shape when it broadcasts to that (``np.array([1])``
     beside ``INT8[3]``), which a literal that must become an element needs,
-    else in its own shape when the two broadcast together, so that an op's
-    result takes the shape numpy's would (``INT8[3]`` and a 2-by-3 array give
-    ``[2, 3]``). A 0-d structured array or ``np.void`` beside a record is its
-    record dtype. Anything else, such as a numeric array beside a record, is
-    converted into the UDT.
+    else in its own shape, so that an op's result takes the shape numpy's
+    would (``INT8[3]`` and a 2-by-3 array give ``[2, 3]``), and an op refuses
+    shapes that do not broadcast together, as for two UDTs. A 0-d structured
+    array or ``np.void`` beside a record is its record dtype. Anything else,
+    such as a numeric array beside a record, is converted into the UDT.
     """
     np_type = dtype.np_type
     if value.dtype.names is not None:
         return lookup_dtype(value.dtype) if value.ndim == 0 else None
     # A bool array converts as it is (a BOOL array UDT cannot be registered),
     # and bool casts safely into every numeric element.
-    if np_type.names is not None or value.dtype.kind not in "iufc":
+    if np_type.names is not None or value.dtype.kind not in "iufc" or value.size == 0:
+        # An empty array's layout cannot be a UDT, so numpy says why it does not fit.
         return None
     shape = np_type.subdtype[1]
     if _strip_leading_ones(value.shape) == _strip_leading_ones(shape):
@@ -894,9 +909,5 @@ def _array_literal_udt(dtype, value):
         try:
             np.broadcast_to(value, shape)
         except ValueError:
-            try:
-                np.broadcast_shapes(value.shape, shape)
-            except ValueError:
-                return None
             shape = value.shape
     return lookup_dtype(np.dtype((value.dtype, shape)))

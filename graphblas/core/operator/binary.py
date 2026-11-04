@@ -361,7 +361,12 @@ def _rpow(x, y):
 
 def _isclose(rel_tol=1e-7, abs_tol=0.0):
     def inner(x, y):  # pragma: no cover (numba)
-        return x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
+        if x == y:
+            return True
+        # As in math.isclose, an infinity is close only to itself
+        if abs(x) == np.inf or abs(y) == np.inf:
+            return False
+        return abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
 
     return inner
 
@@ -803,7 +808,9 @@ class BinaryOp(OpBase):
                 self.name, py_op, dtype, dtype2
             )
         elif self._numba_func is None:
-            raise KeyError(f"{self.name} does not work with {dtypes} types")
+            # Only without Numba does an op that lifts to UDTs get here.
+            needs = "; built-in ops work on UDTs only with Numba installed" if is_lifted else ""
+            raise KeyError(f"{self.name} does not work with {dtypes} types{needs}")
         else:
             numba_func = self._numba_func
             sig = (dtype.numba_type, dtype2.numba_type)
@@ -986,7 +993,11 @@ class BinaryOp(OpBase):
 
         >>> def user_isclose(rel_tol=1e-7, abs_tol=0.0):
         >>>     def inner(x, y):
-        >>>         return x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
+        >>>         if x == y:
+        >>>             return True
+        >>>         if abs(x) == np.inf or abs(y) == np.inf:
+        >>>             return False
+        >>>         return abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
         >>>     return inner
         >>> gb.binary.register_new("user_isclose", user_isclose, parameterized=True)
 
