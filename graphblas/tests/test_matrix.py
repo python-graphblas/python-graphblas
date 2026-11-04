@@ -4922,6 +4922,34 @@ def test_subarray_dtype_ss_column_order(shape):
 
 
 @pytest.mark.skipif("not suitesparse")
+def test_subarray_dtype_ss_export_spare_values():
+    # A dense export of an array UDT given more values than entries raised
+    # ValueError, and unpack left the Matrix empty. SuiteSparse 7 always gives more
+    # (its memory pool rounds allocations up); here a full Matrix resized smaller
+    # keeps its larger buffer, in either layout.
+    big = np.arange(3 * 3 * 4, dtype=np.int64).reshape(3, 3, 4)
+    for layout, nrows, ncols in [("by_row", 2, 3), ("by_col", 3, 2)]:
+        expected = big[:nrows, :ncols]
+
+        def resized(layout=layout, nrows=nrows, ncols=ncols):
+            A = Matrix.from_dense(big)
+            A.ss.config["format"] = layout
+            A.resize(nrows, ncols)
+            return A
+
+        for fmt in ["fullr", "fullc", "bitmapr", "bitmapc"]:
+            A = resized()
+            np.testing.assert_array_equal(A.to_dense(), expected)
+            info = A.ss.unpack(fmt)
+            np.testing.assert_array_equal(info["values"], expected)
+            getattr(A.ss, f"pack_{fmt}")(**info)
+            np.testing.assert_array_equal(A.to_dense(), expected)
+            info = resized().ss.export(fmt, give_ownership=True)
+            np.testing.assert_array_equal(info["values"], expected)
+            np.testing.assert_array_equal(Matrix.ss.import_any(**info).to_dense(), expected)
+
+
+@pytest.mark.skipif("not suitesparse")
 def test_subarray_dtype_ss_row_order_round_trip_takes_the_buffer():
     # Unpacked in row order from a buffer of exactly its size (256 bytes, which
     # SuiteSparse 7's pool does not round up), an array UDT's values own that buffer,

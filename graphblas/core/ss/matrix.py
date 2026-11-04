@@ -63,12 +63,18 @@ def _claim_values_2d(cdata, cdata_size, nrows, ncols, dtype, is_c_order):
 
     GraphBLAS stores an array UDT's element as one contiguous block. Given a subarray
     dtype in column order, ``claim_buffer_2d`` made the element's own axes the
-    slowest, so ``values[i, j]`` was not the entry at ``(i, j)``. In row order it gets
-    them right, and its array owns the buffer.
+    slowest, so ``values[i, j]`` was not the entry at ``(i, j)``. Given more than
+    ``nrows * ncols`` elements, it raised ValueError for any subarray dtype. GraphBLAS
+    may hand over more: SuiteSparse 7's memory pool rounds an allocation up to a
+    power of two, and a full matrix resized smaller keeps its buffer. Row order with
+    an exactly sized buffer still goes to it: its array owns the buffer, so packing
+    the values back can take them without a copy.
     """
-    if not dtype.shape or is_c_order:
+    if not dtype.shape or (is_c_order and cdata_size == nrows * ncols):
         return claim_buffer_2d(ffi, cdata, cdata_size, nrows, ncols, dtype, is_c_order)
-    values = claim_buffer(ffi, cdata, cdata_size, dtype)
+    values = claim_buffer(ffi, cdata, cdata_size, dtype)[: nrows * ncols]
+    if is_c_order:
+        return values.reshape(nrows, ncols, *dtype.shape)
     return values.reshape(ncols, nrows, *dtype.shape).swapaxes(0, 1)
 
 
