@@ -1,5 +1,4 @@
 from ..dtypes import lookup_dtype
-from ._scipy import from_scipy_sparse
 
 
 def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
@@ -21,6 +20,14 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
     Returns
     -------
     :class:`~graphblas.Matrix`
+
+    Raises
+    ------
+    networkx.NetworkXError
+        If the graph has no nodes, or ``nodelist`` is empty, repeats a node, or
+        names one the graph does not have (as ``nx.to_scipy_sparse_array`` does).
+    ValueError
+        If a weight is not a bool, int (at most 64 bits), float or complex scalar.
 
     """
     import networkx as nx
@@ -79,28 +86,19 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
         # An explicit dtype= is applied above and never reaches this branch.
         values = values.astype(np.int64)
     if values.ndim != 1 or values.dtype.kind not in "biufc":
-        # Defer to scipy so the error matches the previous behavior exactly.
         # Two kinds of weight land here: non-numeric attributes (object arrays,
-        # but also e.g. all-string weights, which infer a <U dtype rather than
-        # object), and sequence-valued attributes of uniform length, which infer
-        # a 2-D numeric array that from_coo would otherwise accept as a UDT.
-        try:
-            return _from_networkx_via_scipy(G, nodelist, dtype, weight, name)
-        except (nx.NetworkXError, TypeError) as err:
-            # Since scipy 1.15 an unsupported dtype is rejected while the coo array
-            # is built, and that ValueError reaches us unchanged. Older scipy builds
-            # the array and fails in the coo -> csr conversion instead: scipy raises
-            # TypeError ("no supported conversion for types"), which networkx 3.4+
-            # wraps in a NetworkXError that blames the sparse format while
-            # networkx <= 3.3 lets the TypeError propagate.
-            # Restate it so every supported stack reports the same error for the
-            # same graph. The graph and nodelist checks above are the ones
-            # nx.to_scipy_sparse_array makes, so a NetworkXError or TypeError from
-            # the fallback can only be that dtype complaint.
-            raise ValueError(
-                f"scipy.sparse does not support dtype {values.dtype}; "
-                "edge weights must be numeric scalars"
-            ) from err
+        # which ints beyond 64 bits also give, and e.g. all-string weights, which
+        # infer a <U dtype rather than object), and sequence-valued attributes of
+        # uniform length, which infer a 2-D numeric array that from_coo would
+        # otherwise accept as a UDT. nx.to_scipy_sparse_array rejects the same
+        # weights, but asking it made the error depend on scipy: ValueError since
+        # 1.15, TypeError or a NetworkXError blaming the sparse format before, and
+        # ImportError without scipy installed.
+        got = f"dtype {values.dtype}" if values.ndim == 1 else f"arrays of shape {values.shape[1:]}"
+        raise ValueError(
+            "edge weights must be bool, int (at most 64 bits), float or complex scalars; "
+            f"attribute {weight!r} gives {got}"
+        )
     if values.size == 0:
         # An empty graph has no data to infer a dtype from; scipy defaults an
         # empty coo array to float64, so match that when dtype is unset.
@@ -134,17 +132,6 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
         A.ss.build_scalar(rows, cols, values[0])
         return A
     return Matrix.from_coo(rows, cols, values, nrows=nlen, ncols=nlen, dup_op=dup_op, name=name)
-
-
-def _from_networkx_via_scipy(G, nodelist, dtype, weight, name):
-    """Fallback path: convert through a scipy sparse array.
-
-    ``dtype`` is already normalized to a numpy type (or None) by the caller.
-    """
-    import networkx as nx
-
-    A = nx.to_scipy_sparse_array(G, nodelist=nodelist, dtype=dtype, weight=weight)
-    return from_scipy_sparse(A, name=name)
 
 
 # TODO: add parameters to allow different networkx classes and attribute names

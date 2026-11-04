@@ -1,4 +1,6 @@
 import functools
+import re
+import sys
 from io import BytesIO, StringIO
 
 import numpy as np
@@ -269,54 +271,41 @@ def test_from_networkx_int32_weights_widen_like_from_coo():
     assert gb.Matrix.from_coo([0], [1], [np.int16(2)]).dtype == dtypes.INT16
 
 
-@pytest.mark.skipif("not nx or not ss")
-@pytest.mark.parametrize(
-    "graph_cls", [nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph] if nx else []
-)
-def test_from_networkx_rejects_array_weights(graph_cls):
-    # Sequence weights of uniform length infer a 2-D numeric array, which passes
-    # a dtype-kind test but which from_coo would happily read as a UDT. scipy has
-    # always rejected these, so the direct path must defer rather than quietly
-    # widen what from_networkx accepts.
-    G = graph_cls()
-    G.add_edge(0, 1, weight=[1, 2])
-    G.add_edge(1, 0, weight=[3, 4])
-    with pytest.raises(ValueError, match="must be 1-D"):
-        gb.io.from_networkx(G)
-
-
-@pytest.mark.skipif("not nx or not ss")
-@pytest.mark.parametrize(
-    "graph_cls", [nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph] if nx else []
-)
-def test_from_networkx_rejects_string_weights(graph_cls):
-    # String weights infer a 1-D <U array, so a shape test alone would let them
-    # through; only the dtype-kind half of the guard sends these to scipy, which
-    # rejects them the way it always has.
-    G = graph_cls()
-    G.add_edge(0, 1, weight="a")
-    G.add_edge(1, 2, weight="b")
-    with pytest.raises(ValueError, match="does not support dtype"):
-        gb.io.from_networkx(G)
+def _block_scipy(monkeypatch):
+    # ``import scipy`` (and ``import scipy.sparse``) raise ImportError while a
+    # sys.modules entry is None; monkeypatch puts the real modules back after.
+    for modname in ("scipy", "scipy.sparse"):
+        monkeypatch.setitem(sys.modules, modname, None)
 
 
 @pytest.mark.skipif("not nx")
-def test_from_networkx_unsupported_dtype_is_valueerror(monkeypatch):
-    # scipy < 1.15 builds a string-dtype coo array happily and only fails converting
-    # it to csr, and networkx re-raises that failure as a NetworkXError blaming the
-    # sparse format. from_networkx restates it as the ValueError newer scipy raises
-    # directly, which is what the caller can act on; monkeypatching the fallback
-    # exercises the old behavior on any scipy.
-    import graphblas.io._networkx as _gnx
-
-    def _raise_networkx_error(*args, **kwargs):
-        raise nx.NetworkXError("Unknown sparse matrix format: csr")
-
-    monkeypatch.setattr(_gnx, "_from_networkx_via_scipy", _raise_networkx_error)
-    G = nx.Graph()
-    G.add_edge(0, 1, weight="a")
-    G.add_edge(1, 2, weight="b")
-    with pytest.raises(ValueError, match="does not support dtype"):
+@pytest.mark.parametrize(
+    "graph_cls", [nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph] if nx else []
+)
+@pytest.mark.parametrize(
+    ("weights", "got"),
+    [
+        # Sequences of uniform length infer a 2-D numeric array, which passes a
+        # dtype-kind test but which from_coo would happily read as a UDT.
+        ([[1, 2], [3, 4]], "arrays of shape (2,)"),
+        # Strings infer a 1-D <U array, so a shape test alone would let them in.
+        (["a", "b"], "dtype <U1"),
+        ([2**70, 1], "dtype object"),  # beyond 64 bits
+        ([object(), 1], "dtype object"),
+    ],
+)
+@pytest.mark.parametrize("block_scipy", [False, True])
+def test_from_networkx_rejects_weights_a_matrix_cannot_hold(
+    graph_cls, weights, got, block_scipy, monkeypatch
+):
+    # The same ValueError whether or not scipy is installed, and on any scipy:
+    # deferring to nx.to_scipy_sparse_array gave ImportError without it.
+    if block_scipy:
+        _block_scipy(monkeypatch)
+    G = graph_cls()
+    G.add_edge(0, 1, weight=weights[0])
+    G.add_edge(1, 2, weight=weights[1])
+    with pytest.raises(ValueError, match=re.escape(f"attribute 'weight' gives {got}")):
         gb.io.from_networkx(G)
 
 
@@ -361,14 +350,9 @@ def test_from_networkx_rejects_bad_nodelist():
 
 @pytest.mark.skipif("not nx")
 def test_from_networkx_multigraph_is_scipy_free(monkeypatch):
-    # A numeric-weight multigraph must ingest via the direct coo path, not the
-    # scipy fallback, so networkx ingest no longer requires scipy for this case.
-    import graphblas.io._networkx as _gnx
-
-    def _boom(*args, **kwargs):  # pragma: no cover (only runs if the direct path regresses)
-        raise AssertionError("scipy fallback should not be used for a numeric multigraph")
-
-    monkeypatch.setattr(_gnx, "_from_networkx_via_scipy", _boom)
+    # A numeric-weight multigraph ingests via the direct coo path, so networkx
+    # ingest does not require scipy for it.
+    _block_scipy(monkeypatch)
     G = nx.MultiDiGraph()
     G.add_weighted_edges_from([(0, 1, 2.0), (0, 1, 3.0), (2, 0, 1.0), (1, 1, 4.0), (1, 1, 0.5)])
     M = gb.io.from_networkx(G)
