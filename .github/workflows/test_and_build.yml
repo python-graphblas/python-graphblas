@@ -215,9 +215,10 @@ jobs:
             echo "NUMBA_THREADING_LAYER=workqueue" >> "$GITHUB_ENV"
           fi
 
-          # Decide whether to install numba and sparse.
+          # Decide whether to install numba and the packages that depend on it.
           # Random skip: pypy always, 20% on Windows, 40% on other OSes (unless notebooks).
           awkward=awkward${akver}
+          datashade=""
           if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') }} == true ||
                 ( ${{ matrix.slowtask != 'notebooks'}} == true && (
                   ( ${{ matrix.os == 'windows-latest' }} == true && $(python -c 'import random ; print(random.random() < .2)') == True ) ||
@@ -246,6 +247,10 @@ jobs:
             sparsever=NA
           else
             numba=numba${numbaver}
+            # graphblas.viz.datashade's dependencies, which the notebooks job installs so its
+            # tests run and count for coverage. datashader depends on numba, so they come
+            # only where numba does.
+            datashade="datashader holoviews hvplot bokeh"
             if [[ $sparsever == "NA" ]] ; then
               sparse=""
             else
@@ -277,7 +282,7 @@ jobs:
             pyyaml${yamlver} ${sparse} pandas${pdver} scipy${spver} numpy${npver} ${awkward} \
             networkx${nxver} ${numba} ${psg} \
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \
-            ${{ matrix.slowtask == 'notebooks' && '"matplotlib${mplver}" nbconvert jupyter "ipython>=7" drawsvg' || '' }} \
+            ${{ matrix.slowtask == 'notebooks' && '"matplotlib${mplver}" nbconvert jupyter "ipython>=7" drawsvg ${datashade}' || '' }} \
             ${{ steps.sourcetype.outputs.selected == 'upstream' && 'cython' || '' }} \
             ${graphblas} ${blas:+"$blas"} \
             ${interpreter} \
