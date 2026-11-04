@@ -2,9 +2,46 @@ import hashlib
 import itertools
 import re
 
+from suitesparse_graphblas.utils import unclaim_buffer
+
 from ...exceptions import _error_code_lookup
 from .. import ffi, lib
 from ..dtypes import _string_to_dtype
+
+
+def _unclaim_taken(*arrays_and_pointers):
+    """Unclaim each array whose pointer GraphBLAS cleared, as it does when it takes the data.
+
+    Call it right after an import or pack, before checking the status. GraphBLAS
+    moves the arrays into the object first and only then runs a secure import's
+    check; when that fails, it frees the object and the arrays with it, so NumPy
+    must stop owning them although the call failed. A call that fails before the
+    move leaves every pointer as it was, and the arrays stay the caller's.
+    """
+    for array, ptr in arrays_and_pointers:
+        if ptr[0] == ffi.NULL:
+            unclaim_buffer(array)
+
+
+def _pack_securely(import_, obj, format, opts, **kwargs):
+    """Pack ``kwargs`` (data in ``format``, for ``import_``) into ``obj`` with a secure check.
+
+    A secure pack whose check fails frees ``obj``'s GraphBLAS object itself
+    (SuiteSparse:GraphBLAS 10.5.2 and earlier), and the Python object keeps the
+    freed handle. A secure import that fails frees only the new object it made.
+    So the data is imported securely into a new object, and its content moves
+    into ``obj`` with an unpack and a fast pack, which take its arrays as they
+    are. A failure leaves ``obj`` unchanged.
+    """
+    if obj.ndim == 1:
+        shape = {"size": obj._size}
+    else:
+        shape = {"nrows": obj._nrows, "ncols": obj._ncols}
+    new = import_(
+        **kwargs, **shape, dtype=obj.dtype, secure_import=True, method="import", opts=opts
+    )
+    obj.ss.pack_any(**new.ss.unpack(format, **opts), take_ownership=True, **opts)
+    return obj
 
 
 def _resolve_serialized_dtype(data_obj, data_nbytes, obj_kind):

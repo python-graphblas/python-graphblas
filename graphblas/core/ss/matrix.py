@@ -1,7 +1,7 @@
 import itertools
 
 import numpy as np
-from suitesparse_graphblas.utils import claim_buffer, claim_buffer_2d, unclaim_buffer
+from suitesparse_graphblas.utils import claim_buffer, claim_buffer_2d
 
 import graphblas as gb
 
@@ -14,6 +14,7 @@ from ..operator import get_typed_op
 from ..scalar import Scalar, _as_scalar, _scalar_index
 from ..utils import (
     _CArray,
+    _distinct_buffers,
     _MatrixArray,
     _Pointer,
     get_order,
@@ -24,7 +25,7 @@ from ..utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
-from ._utils import _resolve_serialized_dtype
+from ._utils import _pack_securely, _resolve_serialized_dtype, _unclaim_taken
 from .config import BaseConfig
 from .descriptor import get_descriptor
 
@@ -1214,12 +1215,16 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (uint64 for indptr and col_indices)
-                - own its own data
+                - own its own data, from the allocator GraphBLAS frees with:
+                  NumPy's default memory handler, unless suitesparse-graphblas
+                  was initialized with ``memory_manager="c"``
                 - be writeable
-            If all of these conditions are not met, then the data will be
+            If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
         dtype : dtype, optional
             dtype of the new Matrix.
             If not specified, this will be inferred from ``values``.
@@ -1312,7 +1317,20 @@ class ss:
     ):
         if format is not None and format.lower() != "csr":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'csr'.")
-        copy = not take_ownership
+        if method == "pack" and secure_import:
+            return _pack_securely(
+                cls._import_csr,
+                matrix,
+                "csr",
+                opts,
+                indptr=indptr,
+                values=values,
+                col_indices=col_indices,
+                is_iso=is_iso,
+                sorted_cols=sorted_cols,
+                take_ownership=take_ownership,
+            )
+        copy = not take_ownership or secure_import
         indptr = ints_to_numpy_buffer(
             indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
         )
@@ -1324,8 +1342,7 @@ class ss:
         values, dtype = values_to_numpy_buffer(
             values, dtype, copy=copy, ownable=True, subarray_after=1
         )
-        if col_indices is values:
-            values = np.copy(values)
+        indptr, col_indices, values = _distinct_buffers(indptr, col_indices, values)
         Ap = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indptr))
         Aj = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", col_indices))
         Ax = ffi_new("void**", ffi.from_buffer("void*", values))
@@ -1349,6 +1366,7 @@ class ss:
             not sorted_cols,
             NULL if desc is None else desc._carg,
         )
+        _unclaim_taken((indptr, Ap), (col_indices, Aj), (values, Ax))
         if method == "import":
             check_status_carg(
                 status,
@@ -1358,9 +1376,6 @@ class ss:
             matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
-        unclaim_buffer(indptr)
-        unclaim_buffer(col_indices)
-        unclaim_buffer(values)
         return matrix
 
     @classmethod
@@ -1403,12 +1418,16 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (uint64 for indptr and row_indices)
-                - own its own data
+                - own its own data, from the allocator GraphBLAS frees with:
+                  NumPy's default memory handler, unless suitesparse-graphblas
+                  was initialized with ``memory_manager="c"``
                 - be writeable
-            If all of these conditions are not met, then the data will be
+            If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
         dtype : dtype, optional
             dtype of the new Matrix.
             If not specified, this will be inferred from ``values``.
@@ -1501,7 +1520,20 @@ class ss:
     ):
         if format is not None and format.lower() != "csc":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'csc'.")
-        copy = not take_ownership
+        if method == "pack" and secure_import:
+            return _pack_securely(
+                cls._import_csc,
+                matrix,
+                "csc",
+                opts,
+                indptr=indptr,
+                values=values,
+                row_indices=row_indices,
+                is_iso=is_iso,
+                sorted_rows=sorted_rows,
+                take_ownership=take_ownership,
+            )
+        copy = not take_ownership or secure_import
         indptr = ints_to_numpy_buffer(
             indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
         )
@@ -1513,8 +1545,7 @@ class ss:
         values, dtype = values_to_numpy_buffer(
             values, dtype, copy=copy, ownable=True, subarray_after=1
         )
-        if row_indices is values:
-            values = np.copy(values)
+        indptr, row_indices, values = _distinct_buffers(indptr, row_indices, values)
         Ap = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indptr))
         Ai = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", row_indices))
         Ax = ffi_new("void**", ffi.from_buffer("void*", values))
@@ -1538,6 +1569,7 @@ class ss:
             not sorted_rows,
             NULL if desc is None else desc._carg,
         )
+        _unclaim_taken((indptr, Ap), (row_indices, Ai), (values, Ax))
         if method == "import":
             check_status_carg(
                 status,
@@ -1547,9 +1579,6 @@ class ss:
             matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
-        unclaim_buffer(indptr)
-        unclaim_buffer(row_indices)
-        unclaim_buffer(values)
         return matrix
 
     @classmethod
@@ -1598,12 +1627,16 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (uint64 for rows, indptr, col_indices)
-                - own its own data
+                - own its own data, from the allocator GraphBLAS frees with:
+                  NumPy's default memory handler, unless suitesparse-graphblas
+                  was initialized with ``memory_manager="c"``
                 - be writeable
-            If all of these conditions are not met, then the data will be
+            If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
         dtype : dtype, optional
             dtype of the new Matrix.
             If not specified, this will be inferred from ``values``.
@@ -1704,7 +1737,22 @@ class ss:
     ):
         if format is not None and format.lower() != "hypercsr":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'hypercsr'.")
-        copy = not take_ownership
+        if method == "pack" and secure_import:
+            return _pack_securely(
+                cls._import_hypercsr,
+                matrix,
+                "hypercsr",
+                opts,
+                rows=rows,
+                indptr=indptr,
+                values=values,
+                col_indices=col_indices,
+                nvec=nvec,
+                is_iso=is_iso,
+                sorted_cols=sorted_cols,
+                take_ownership=take_ownership,
+            )
+        copy = not take_ownership or secure_import
         indptr = ints_to_numpy_buffer(
             indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
         )
@@ -1719,8 +1767,7 @@ class ss:
         )
         if not is_iso and values.ndim == 0:
             is_iso = True
-        if col_indices is values:
-            values = np.copy(values)
+        indptr, rows, col_indices, values = _distinct_buffers(indptr, rows, col_indices, values)
         Ap = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indptr))
         Ah = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", rows))
         Aj = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", col_indices))
@@ -1760,6 +1807,7 @@ class ss:
             not sorted_cols,
             NULL if desc is None else desc._carg,
         )
+        _unclaim_taken((indptr, Ap), (rows, Ah), (col_indices, Aj), (values, Ax))
         if method == "import":
             check_status_carg(
                 status,
@@ -1769,10 +1817,6 @@ class ss:
             matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
-        unclaim_buffer(indptr)
-        unclaim_buffer(rows)
-        unclaim_buffer(col_indices)
-        unclaim_buffer(values)
         return matrix
 
     @classmethod
@@ -1821,12 +1865,16 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (uint64 for indptr and row_indices)
-                - own its own data
+                - own its own data, from the allocator GraphBLAS frees with:
+                  NumPy's default memory handler, unless suitesparse-graphblas
+                  was initialized with ``memory_manager="c"``
                 - be writeable
-            If all of these conditions are not met, then the data will be
+            If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
         dtype : dtype, optional
             dtype of the new Matrix.
             If not specified, this will be inferred from ``values``.
@@ -1927,7 +1975,22 @@ class ss:
     ):
         if format is not None and format.lower() != "hypercsc":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'hypercsc'.")
-        copy = not take_ownership
+        if method == "pack" and secure_import:
+            return _pack_securely(
+                cls._import_hypercsc,
+                matrix,
+                "hypercsc",
+                opts,
+                cols=cols,
+                indptr=indptr,
+                values=values,
+                row_indices=row_indices,
+                nvec=nvec,
+                is_iso=is_iso,
+                sorted_rows=sorted_rows,
+                take_ownership=take_ownership,
+            )
+        copy = not take_ownership or secure_import
         indptr = ints_to_numpy_buffer(
             indptr, np.uint64, copy=copy, ownable=True, name="index pointers"
         )
@@ -1940,8 +2003,7 @@ class ss:
         values, dtype = values_to_numpy_buffer(
             values, dtype, copy=copy, ownable=True, subarray_after=1
         )
-        if row_indices is values:
-            values = np.copy(values)
+        indptr, cols, row_indices, values = _distinct_buffers(indptr, cols, row_indices, values)
         if not is_iso and values.ndim == 0:
             is_iso = True
         Ap = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indptr))
@@ -1983,6 +2045,7 @@ class ss:
             not sorted_rows,
             NULL if desc is None else desc._carg,
         )
+        _unclaim_taken((indptr, Ap), (cols, Ah), (row_indices, Ai), (values, Ax))
         if method == "import":
             check_status_carg(
                 status,
@@ -1992,10 +2055,6 @@ class ss:
             matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
-        unclaim_buffer(indptr)
-        unclaim_buffer(cols)
-        unclaim_buffer(row_indices)
-        unclaim_buffer(values)
         return matrix
 
     @classmethod
@@ -2043,12 +2102,16 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (bool for bitmap)
-                - own its own data
+                - own its own data, from the allocator GraphBLAS frees with:
+                  NumPy's default memory handler, unless suitesparse-graphblas
+                  was initialized with ``memory_manager="c"``
                 - be writeable
-            If all of these conditions are not met, then the data will be
+            If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
         dtype : dtype, optional
             dtype of the new Matrix.
             If not specified, this will be inferred from ``values``.
@@ -2137,7 +2200,19 @@ class ss:
     ):
         if format is not None and format.lower() != "bitmapr":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'bitmapr'.")
-        copy = not take_ownership
+        if method == "pack" and secure_import:
+            return _pack_securely(
+                cls._import_bitmapr,
+                matrix,
+                "bitmapr",
+                opts,
+                bitmap=bitmap,
+                values=values,
+                nvals=nvals,
+                is_iso=is_iso,
+                take_ownership=take_ownership,
+            )
+        copy = not take_ownership or secure_import
         bitmap = ints_to_numpy_buffer(
             bitmap, np.bool_, copy=copy, ownable=True, order="C", name="bitmap"
         )
@@ -2146,8 +2221,7 @@ class ss:
         values, dtype = values_to_numpy_buffer(
             values, dtype, copy=copy, ownable=True, order="C", subarray_after=2
         )
-        if bitmap is values:
-            values = np.copy(values)
+        bitmap, values = _distinct_buffers(bitmap, values)
         if method == "import":
             nrows, ncols = get_shape(nrows, ncols, dtype, bitmap=bitmap, values=values)
         else:
@@ -2177,6 +2251,7 @@ class ss:
             nvals,
             NULL if desc is None else desc._carg,
         )
+        _unclaim_taken((bitmap, Ab), (values, Ax))
         if method == "import":
             check_status_carg(
                 status,
@@ -2186,8 +2261,6 @@ class ss:
             matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
-        unclaim_buffer(bitmap)
-        unclaim_buffer(values)
         return matrix
 
     @classmethod
@@ -2235,12 +2308,16 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be FORTRAN contiguous
                 - have the correct dtype (bool for bitmap)
-                - own its own data
+                - own its own data, from the allocator GraphBLAS frees with:
+                  NumPy's default memory handler, unless suitesparse-graphblas
+                  was initialized with ``memory_manager="c"``
                 - be writeable
-            If all of these conditions are not met, then the data will be
+            If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
         dtype : dtype, optional
             dtype of the new Matrix.
             If not specified, this will be inferred from ``values``.
@@ -2329,7 +2406,19 @@ class ss:
     ):
         if format is not None and format.lower() != "bitmapc":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'bitmapc'.")
-        copy = not take_ownership
+        if method == "pack" and secure_import:
+            return _pack_securely(
+                cls._import_bitmapc,
+                matrix,
+                "bitmapc",
+                opts,
+                bitmap=bitmap,
+                values=values,
+                nvals=nvals,
+                is_iso=is_iso,
+                take_ownership=take_ownership,
+            )
+        copy = not take_ownership or secure_import
         bitmap = ints_to_numpy_buffer(
             bitmap, np.bool_, copy=copy, ownable=True, order="F", name="bitmap"
         )
@@ -2338,8 +2427,7 @@ class ss:
         values, dtype = values_to_numpy_buffer(
             values, dtype, copy=copy, ownable=True, order="F", subarray_after=2
         )
-        if bitmap is values:
-            values = np.copy(values)
+        bitmap, values = _distinct_buffers(bitmap, values)
         if method == "import":
             nrows, ncols = get_shape(nrows, ncols, dtype, bitmap=bitmap, values=values)
         else:
@@ -2369,6 +2457,7 @@ class ss:
             nvals,
             NULL if desc is None else desc._carg,
         )
+        _unclaim_taken((bitmap, Ab), (values, Ax))
         if method == "import":
             check_status_carg(
                 status,
@@ -2378,8 +2467,6 @@ class ss:
             matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
-        unclaim_buffer(bitmap)
-        unclaim_buffer(values)
         return matrix
 
     @classmethod
@@ -2420,12 +2507,16 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype
-                - own its own data
+                - own its own data, from the allocator GraphBLAS frees with:
+                  NumPy's default memory handler, unless suitesparse-graphblas
+                  was initialized with ``memory_manager="c"``
                 - be writeable
-            If all of these conditions are not met, then the data will be
+            If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
         dtype : dtype, optional
             dtype of the new Matrix.
             If not specified, this will be inferred from ``values``.
@@ -2506,7 +2597,17 @@ class ss:
     ):
         if format is not None and format.lower() != "fullr":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'fullr'.")
-        copy = not take_ownership
+        if method == "pack" and secure_import:
+            return _pack_securely(
+                cls._import_fullr,
+                matrix,
+                "fullr",
+                opts,
+                values=values,
+                is_iso=is_iso,
+                take_ownership=take_ownership,
+            )
+        copy = not take_ownership or secure_import
         if method == "pack":
             dtype = matrix.dtype
         values, dtype = values_to_numpy_buffer(
@@ -2528,6 +2629,7 @@ class ss:
         status = getattr(lib, f"GxB_Matrix_{method}_FullR")(
             mhandle, *args, Ax, values.nbytes, is_iso, NULL if desc is None else desc._carg
         )
+        _unclaim_taken((values, Ax))
         if method == "import":
             check_status_carg(
                 status,
@@ -2537,7 +2639,6 @@ class ss:
             matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
-        unclaim_buffer(values)
         return matrix
 
     @classmethod
@@ -2578,12 +2679,16 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be FORTRAN contiguous
                 - have the correct dtype
-                - own its own data
+                - own its own data, from the allocator GraphBLAS frees with:
+                  NumPy's default memory handler, unless suitesparse-graphblas
+                  was initialized with ``memory_manager="c"``
                 - be writeable
-            If all of these conditions are not met, then the data will be
+            If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
         dtype : dtype, optional
             dtype of the new Matrix.
             If not specified, this will be inferred from ``values``.
@@ -2664,7 +2769,17 @@ class ss:
     ):
         if format is not None and format.lower() != "fullc":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'fullc'.")
-        copy = not take_ownership
+        if method == "pack" and secure_import:
+            return _pack_securely(
+                cls._import_fullc,
+                matrix,
+                "fullc",
+                opts,
+                values=values,
+                is_iso=is_iso,
+                take_ownership=take_ownership,
+            )
+        copy = not take_ownership or secure_import
         if method == "pack":
             dtype = matrix.dtype
         values, dtype = values_to_numpy_buffer(
@@ -2685,6 +2800,7 @@ class ss:
         status = getattr(lib, f"GxB_Matrix_{method}_FullC")(
             mhandle, *args, Ax, values.nbytes, is_iso, NULL if desc is None else desc._carg
         )
+        _unclaim_taken((values, Ax))
         if method == "import":
             check_status_carg(
                 status,
@@ -2694,7 +2810,6 @@ class ss:
             matrix = gb.Matrix._from_obj(mhandle, dtype, nrows, ncols, name=name)
         else:
             check_status(status, matrix)
-        unclaim_buffer(values)
         return matrix
 
     @classmethod
@@ -2926,12 +3041,16 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (uint64 for indptr and row_indices)
-                - own its own data
+                - own its own data, from the allocator GraphBLAS frees with:
+                  NumPy's default memory handler, unless suitesparse-graphblas
+                  was initialized with ``memory_manager="c"``
                 - be writeable
-            If all of these conditions are not met, then the data will be
+            If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
             For "coor", ownership of "rows" will never change.
         dtype : dtype, optional
             dtype of the new Matrix.
@@ -3094,12 +3213,16 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (uint64 for indptr and row_indices)
-                - own its own data
+                - own its own data, from the allocator GraphBLAS frees with:
+                  NumPy's default memory handler, unless suitesparse-graphblas
+                  was initialized with ``memory_manager="c"``
                 - be writeable
-            If all of these conditions are not met, then the data will be
+            If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
             For "cooc", ownership of "cols" will never change.
         dtype : dtype, optional
             dtype of the new Matrix.
