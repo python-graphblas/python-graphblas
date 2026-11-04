@@ -2669,7 +2669,7 @@ class Matrix(BaseType):
                         extra_message="Literal scalars also accepted.",
                         op=op,
                     )
-            op = get_typed_op(op, left.dtype, self.dtype, is_left_scalar=True, kind="binary")
+            op = get_typed_op(op, left.dtype, self.dtype, kind="binary")
             if opclass == "Monoid":
                 op = op.binaryop
             else:
@@ -2707,12 +2707,10 @@ class Matrix(BaseType):
                         op=op,
                     )
             if opclass in {"IndexUnaryOp", "SelectOp"}:
-                op = get_typed_op(
-                    op, self.dtype, right.dtype, is_right_scalar=True, kind="indexunary"
-                )
+                op = get_typed_op(op, self.dtype, right.dtype, kind="indexunary")
                 cfunc_method = "IndexOp"
             else:
-                op = get_typed_op(op, self.dtype, right.dtype, is_right_scalar=True, kind="binary")
+                op = get_typed_op(op, self.dtype, right.dtype, kind="binary")
                 cfunc_method = "BinaryOp2nd"
                 if opclass == "Monoid":
                     op = op.binaryop
@@ -2843,7 +2841,7 @@ class Matrix(BaseType):
                 ncols=self._ncols,
                 dtype=self.dtype,
             )
-        op = get_typed_op(op, self.dtype, thunk.dtype, is_right_scalar=True, kind="select")
+        op = get_typed_op(op, self.dtype, thunk.dtype, kind="select")
         op, thunk = _value_select_in_own_type(op, self.dtype, thunk, given)
         self._expect_op(op, ("SelectOp", "IndexUnaryOp"), within=method_name, argname="op")
         if thunk._is_cscalar:
