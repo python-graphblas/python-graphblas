@@ -1,3 +1,5 @@
+import numpy as np
+
 from .. import backend, binary
 from ..dtypes import BOOL
 from ..exceptions import DimensionMismatch
@@ -6,9 +8,10 @@ from ..semiring import any_pair
 from . import automethods, recorder, utils
 from .base import _expect_op, _expect_type
 from .expr import InfixExprBase
+from .literals import _LITERAL_KINDS, _literal_operand
 from .mask import Mask
 from .matrix import Matrix, MatrixExpression, TransposedMatrix
-from .scalar import Scalar, ScalarExpression
+from .scalar import Scalar, ScalarExpression, _literal_scalar
 from .utils import output_type, wrapdoc
 from .vector import Vector, VectorExpression
 
@@ -16,15 +19,27 @@ InfixExprBase._expect_op = _expect_op
 InfixExprBase._expect_type = _expect_type
 
 
+def _typed_operands(self, op):
+    """Return the operands of ``self``, with a literal beside a Scalar typed as ``op``'s operand."""
+    left, right = self.left, self.right
+    if self._is_scalar:
+        if output_type(left) is not Scalar:
+            left = _literal_scalar(right, left, op, within=self.method_name, argname="left")
+        elif output_type(right) is not Scalar:
+            right = _literal_scalar(left, right, op, within=self.method_name, argname="right")
+    return left, right
+
+
 def _ewise_add_to_expr(self):
     if self._expr is not None:
         return self._expr
-    if self.left.dtype == BOOL and self.right.dtype == BOOL:
-        self._expr = self.left.ewise_add(self.right, lor)
+    left, right = _typed_operands(self, lor)
+    if left.dtype == BOOL and right.dtype == BOOL:
+        self._expr = left.ewise_add(right, lor)
         return self._expr
     raise TypeError(
         "Bad dtypes for `x | y`!  Automatic computation of `x | y` infix expressions is only valid "
-        f"for BOOL dtypes.  The argument dtypes are {self.left.dtype} and {self.right.dtype}.\n\n"
+        f"for BOOL dtypes.  The argument dtypes are {left.dtype} and {right.dtype}.\n\n"
         "When auto-computed for boolean dtypes, `x | y` performs ewise_add (union) using LOR.\n\n"
         "Typical usage is to create an ewise_add expression such as `monoid.plus(x | y)`."
     )
@@ -33,16 +48,37 @@ def _ewise_add_to_expr(self):
 def _ewise_mult_to_expr(self):
     if self._expr is not None:
         return self._expr
-    if self.left.dtype == BOOL and self.right.dtype == BOOL:
-        self._expr = self.left.ewise_mult(self.right, land)
+    left, right = _typed_operands(self, land)
+    if left.dtype == BOOL and right.dtype == BOOL:
+        self._expr = left.ewise_mult(right, land)
         return self._expr
     raise TypeError(
         "Bad dtypes for `x & y`!  Automatic computation of `x & y` infix expressions is only valid "
-        f"for BOOL dtypes.  The argument dtypes are {self.left.dtype} and {self.right.dtype}.\n\n"
+        f"for BOOL dtypes.  The argument dtypes are {left.dtype} and {right.dtype}.\n\n"
         "When auto-computed for boolean dtypes, `x & y` performs ewise_mult (intersection) using "
         "LAND.\n\n"
         "Typical usage is to create an ewise_mult expression such as `monoid.times(x & y)`."
     )
+
+
+def _is_literal(operand):
+    """Whether an operand of an infix expression is a literal, which only a Scalar takes."""
+    return output_type(operand) not in {Scalar, Vector, Matrix, TransposedMatrix}
+
+
+def _operand_name(operand, *, html=False):
+    if _is_literal(operand):
+        # As in `s & 1`; it shows its value, as an unnamed Scalar does
+        return repr(operand)
+    return operand._name_html if html else operand.name
+
+
+def _scalar_call_left(self, method_name, *args, **kwargs):
+    if output_type(self.left) is Scalar:
+        return getattr(self.left, method_name)(self.right, *args, **kwargs)
+    # A literal stays on the left: `binary.minus(1 & s)` is `1 - s`. Scalar's method types
+    # it beside `s` once the op is known, as it types a literal on the right.
+    return getattr(Scalar, method_name)(self.left, self.right, *args, **kwargs)
 
 
 class ScalarInfixExpr(InfixExprBase):
@@ -69,6 +105,14 @@ class ScalarInfixExpr(InfixExprBase):
     @property
     def is_grbscalar(self):
         return not self.is_cscalar
+
+    def _format_expr(self):
+        return f"{_operand_name(self.left)} {self._infix} {_operand_name(self.right)}"
+
+    def _format_expr_html(self):
+        left = _operand_name(self.left, html=True)
+        right = _operand_name(self.right, html=True)
+        return f"{left} {self._infix} {right}"
 
     __hash__ = None
 
@@ -127,6 +171,7 @@ class ScalarEwiseAddExpr(ScalarInfixExpr):
     _infix = "|"
 
     _to_expr = _ewise_add_to_expr
+    _call_left = _scalar_call_left
 
     # Allow e.g. `plus(x | y | z)`
     __or__ = Scalar.__or__
@@ -155,6 +200,7 @@ class ScalarEwiseMultExpr(ScalarInfixExpr):
     _infix = "&"
 
     _to_expr = _ewise_mult_to_expr
+    _call_left = _scalar_call_left
 
     # Allow e.g. `plus(x & y & z)`
     __and__ = Scalar.__and__
@@ -485,7 +531,7 @@ utils._output_types[MatrixEwiseMultExpr] = Matrix
 utils._output_types[MatrixMatMulExpr] = Matrix
 
 
-def _dummy(obj, obj_type):
+def _dummy(obj):
     with recorder.skip_record:
         return output_type(obj)(BOOL, *obj.shape, name="")
 
@@ -496,6 +542,33 @@ def _mismatched(left, right, method, op):
         _dummy(right) if isinstance(right, InfixExprBase) else right, op
     )
     raise DimensionMismatch  # pragma: no cover
+
+
+def _check_literal(scalar, value, *, within, argname):
+    """Raise TypeError now if ``value`` cannot be a literal beside ``scalar``, as ``+`` does.
+
+    How a literal is typed depends on the op (``literals._literal_operand``), which
+    comes later, so here it is typed as ``==`` types it, the op that takes the most
+    literals, and dropped. A Python number is always a literal, so it is not checked.
+    Nor is a literal beside an infix expression, which has no dtype until an op is
+    applied: ``(s & t) & object()`` raises only then.
+    """
+    if type(value) in _LITERAL_KINDS or isinstance(scalar, ScalarInfixExpr):
+        return
+    value, dtype = _literal_operand(scalar.dtype, value, binary.eq)
+    try:
+        # A float too large for a float32 leaf warns once, when the op types the literal
+        with np.errstate(over="ignore"):
+            Scalar.from_value(value, dtype, is_cscalar=False, name="")
+    except TypeError:
+        _expect_type(
+            scalar,
+            value,
+            Scalar,
+            within=within,
+            argname=argname,
+            extra_message="Literal scalars also accepted.",
+        )
 
 
 def _ewise_infix_expr(left, right, *, method, within):
@@ -530,14 +603,15 @@ def _ewise_infix_expr(left, right, *, method, within):
         left._expect_type(right, tuple(types), within=within, argname="right")
     if right_type in types:
         right._expect_type(left, tuple(types), within=within, argname="left")
-    if left_type is Scalar:
+    if left_type is Scalar or right_type is Scalar:
+        # A literal operand stays a literal, on its own side, until an op types it
+        if left_type is not Scalar:
+            _check_literal(right, left, within=within, argname="left")
+        elif right_type is not Scalar:
+            _check_literal(left, right, within=within, argname="right")
         if method == "ewise_mult":
             return ScalarEwiseMultExpr(left, right)
         return ScalarEwiseAddExpr(left, right)
-    if right_type is Scalar:
-        if method == "ewise_mult":
-            return ScalarEwiseMultExpr(right, left)
-        return ScalarEwiseAddExpr(right, left)
     raise TypeError(  # pragma: no cover (sanity)
         f"Bad types for ewise infix: {type(left).__name__}, {type(right).__name__}"
     )

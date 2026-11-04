@@ -41,7 +41,9 @@ with an INT8 vector ``v``, ``v + 1`` is INT8 and ``v * 0.5`` is FP64, while
 ``v + 300`` raises ``OverflowError`` rather than wrapping, and ``v * 2`` wraps
 in INT8 as it does in numpy. An FP32 vector times ``0.5`` is FP32, plus ``1j``
 is FC32, and plus ``1e300`` is infinity, with a ``RuntimeWarning`` as in numpy. numpy scalars, 0-d arrays and ``Scalar`` objects keep their own
-type: ``v + np.int64(1)`` is INT64. python-graphblas applies this rule itself,
+type: ``v + np.int64(1)`` is INT64, and so is ``np.int64(1) + v``, since numpy's
+operators leave an operation with a python-graphblas object to python-graphblas.
+python-graphblas applies this rule itself,
 so it does not depend on the installed version of numpy. User-defined types
 follow the same rule, field by field (see :doc:`udt`).
 

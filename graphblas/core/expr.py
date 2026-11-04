@@ -290,6 +290,7 @@ class Assigner:
 class AmbiguousAssignOrExtract:
     __slots__ = "parent", "resolved_indexes", "_value", "__weakref__"
     _is_scalar = False
+    __array_priority__ = 1000  # numpy's operators defer to ours; see BaseType
 
     def __init__(self, parent, resolved_indexes):
         self.parent = parent
@@ -484,6 +485,7 @@ class Updater:
 class InfixExprBase:
     __slots__ = "left", "right", "_expr", "__weakref__"
     _is_scalar = False
+    __array_priority__ = 1000  # numpy's operators defer to ours; see BaseType
 
     def __init__(self, left, right):
         self.left = left
@@ -510,6 +512,10 @@ class InfixExprBase:
             # Rely on the default operator for `x @ y`
             self._expr = getattr(self.left, self.method_name)(self.right)
         return self._expr
+
+    def _call_left(self, method_name, *args, **kwargs):
+        """Call the left operand's ``method_name`` with the right operand, as ``op(x & y)`` does."""
+        return getattr(self.left, method_name)(self.right, *args, **kwargs)
 
     def _get_value(self, attr=None, default=None):
         expr = self._to_expr()
