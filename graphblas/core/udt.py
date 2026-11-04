@@ -372,13 +372,7 @@ def _check_leaves_compare(op_name, dtype, dtype2):
     already pair (:func:`_check_udt_pair`); a side that is not a record stands
     in every leaf of the other.
     """
-
-    def leaves(np_type):
-        if np_type.names is not None:
-            return [leaf.base for _py, _c, leaf in _iter_record_leaves(np_type)]
-        return [np_type.base]
-
-    xs, ys = leaves(dtype.np_type), leaves(dtype2.np_type)
+    xs, ys = list(_leaf_dtypes(dtype.np_type)), list(_leaf_dtypes(dtype2.np_type))
     if len(xs) == 1:
         xs = xs * len(ys)
     if len(ys) == 1:
