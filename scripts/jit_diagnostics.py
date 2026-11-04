@@ -12,6 +12,7 @@ import pathlib
 import shutil
 import sys
 import sysconfig
+import time
 
 
 def main():
@@ -52,6 +53,8 @@ def main():
         conda_path = pathlib.Path(conda) / "bin" / name if conda else None
         conda_exists = conda_path.exists() if conda_path else False
         print(f"  {name}: which={which}, conda={'yes' if conda_exists else 'no'}")
+    # SuiteSparse built with MSVC (Windows) compiles only through cmake.
+    print(f"  cmake: which={shutil.which('cmake')}")
 
     # Import graphblas
     try:
@@ -71,6 +74,7 @@ def main():
     print("\n--- GraphBLAS JIT settings after graphblas init ---")
     for key in [
         "jit_c_control",
+        "jit_use_cmake",
         "jit_c_compiler_name",
         "jit_c_compiler_flags",
         "jit_c_linker_flags",
@@ -112,8 +116,8 @@ def main():
     # Try the fix
     print("\n--- Attempting gb.ss.fix_jit_config ---")
     result = gb.ss.fix_jit_config()
-    # True=JIT working, False=probe failed, None=no conda env
-    desc = "working" if result is True else "probe failed" if result is False else "no conda"
+    descs = {True: "working", False: "probe failed", None: "no compiler found to repair from"}
+    desc = descs[result]
     print(f"  Result: {result} ({desc})")
     if result is True:
         print(f"  Compiler: {gb.ss.config['jit_c_compiler_name']}")
@@ -132,12 +136,14 @@ def main():
 
             prev_burble = gb.ss.config["burble"]
             gb.ss.config["burble"] = True
+            start = time.perf_counter()
             dtype = dtypes.ss.register_new(
                 "jit_diag_test",
                 "typedef struct { int val ; } jit_diag_test ;",
             )
+            seconds = time.perf_counter() - start
             gb.ss.config["burble"] = prev_burble
-            print(f"  SUCCESS: registered type '{dtype.name}'")
+            print(f"  SUCCESS: registered type '{dtype.name}' in {seconds:.2f} s")
         except Exception as e:
             print(f"  FAILED: {type(e).__name__}: {e}")
             try:
@@ -146,6 +152,37 @@ def main():
                     print(f"  JIT error log: {err_log[:500]}")
             except Exception:
                 pass
+
+    # What GRAPHBLAS_JIT_C_CONTROL=on does at init: it probes the compiler, or
+    # cmake where SuiteSparse compiles with it, and falls back to 'run'. A probe
+    # compiled through cmake times about the least a new kernel costs there.
+    print("\n--- jit_c_control 'on', as init sets it ---", flush=True)
+    from graphblas.core.ss import jit_config
+
+    probe_seconds = []
+    probe_jit = jit_config._probe_jit
+
+    def timed_probe(cfg):
+        start = time.perf_counter()
+        try:
+            return probe_jit(cfg)
+        finally:
+            probe_seconds.append(time.perf_counter() - start)
+
+    jit_config._probe_jit = timed_probe
+    prev_burble = gb.ss.config["burble"]
+    gb.ss.config["burble"] = True
+    try:
+        jit_config._set_jit_c_control_at_init("on")
+    finally:
+        gb.ss.config["burble"] = prev_burble
+        jit_config._probe_jit = probe_jit
+    print(f"  Result: {gb.ss.config['jit_c_control']}")
+    via = "cmake" if gb.ss.config["jit_use_cmake"] else "the C compiler"
+    if probe_seconds:
+        print(f"  Probe through {via}: {probe_seconds[0]:.2f} s (compile, or load if cached)")
+    else:
+        print(f"  No probe: {via} not found, the cache not writable, or SuiteSparse has no JIT")
 
     # Print final JIT state
     print("\n--- Final JIT state ---")
