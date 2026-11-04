@@ -361,7 +361,12 @@ def _rpow(x, y):
 
 def _isclose(rel_tol=1e-7, abs_tol=0.0):
     def inner(x, y):  # pragma: no cover (numba)
-        return x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
+        if x == y:
+            return True
+        # As in math.isclose, an infinity is close only to itself
+        if abs(x) == np.inf or abs(y) == np.inf:
+            return False
+        return abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
 
     return inner
 
@@ -988,7 +993,11 @@ class BinaryOp(OpBase):
 
         >>> def user_isclose(rel_tol=1e-7, abs_tol=0.0):
         >>>     def inner(x, y):
-        >>>         return x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
+        >>>         if x == y:
+        >>>             return True
+        >>>         if abs(x) == np.inf or abs(y) == np.inf:
+        >>>             return False
+        >>>         return abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
         >>>     return inner
         >>> gb.binary.register_new("user_isclose", user_isclose, parameterized=True)
 

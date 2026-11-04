@@ -1,5 +1,6 @@
 import inspect
 import itertools
+import math
 import pickle
 import sys
 import types
@@ -2164,6 +2165,22 @@ def test_isclose(A, v):
         [3.0, 2.000001, 3.0, 1.0, 5.0, 3.0, 7.0, 7.9999999, 3.0, 1.0, 7.0, 4.0],
     )
     assert C6.isclose(A, rel_tol=1e-3)
+
+
+def test_isclose_infinity():
+    # As in math.isclose, an infinity is close only to itself. It was close to every
+    # number (abs(inf - y) is inf, and so is rel_tol * inf), with Numba and without.
+    from graphblas.core.vector import _isclose_recipe
+
+    values = [math.inf, -math.inf, 1.0, 0.0, math.nan]
+    for x, y in itertools.product(values, repeat=2):
+        left = Matrix.from_coo([0, 1], [1, 0], [x, 5.0])
+        right = Matrix.from_coo([0, 1], [1, 0], [y, 5.0])
+        for abs_tol in [0.0, math.inf]:
+            expected = math.isclose(x, y, rel_tol=1e-7, abs_tol=abs_tol)
+            if supports_udfs:
+                assert left.isclose(right, abs_tol=abs_tol) is expected, (x, y)
+            assert _isclose_recipe(left, right, 1e-7, abs_tol) is expected, (x, y)
 
 
 @pytest.mark.slow

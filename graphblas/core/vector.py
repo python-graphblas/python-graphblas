@@ -129,7 +129,8 @@ def _select_by_comparison(updater, obj, mask_expr):
 
 
 def _isclose_recipe(self, other, rel_tol, abs_tol, **opts):
-    #  x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
+    #  x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol), except that
+    #  an infinity is close only to itself
     isequal = self.ewise_mult(other, binary.eq).new(bool, name="isclose", **opts)
     if isequal._nvals != self._nvals:
         return False
@@ -149,6 +150,13 @@ def _isclose_recipe(self, other, rel_tol, abs_tol, **opts):
     # max(abs(x), abs(y))
     x(**opts) << x.ewise_mult(y, binary.max)
     max_x_y = x
+    # As in math.isclose, an infinity is close only to itself, and those are equal
+    if max_x_y.ndim == 1:
+        biggest = max_x_y.reduce(monoid.max, allow_empty=False).new(**opts).value
+    else:
+        biggest = max_x_y.reduce_scalar(monoid.max, allow_empty=False).new(**opts).value
+    if biggest == np.inf:
+        return False
     # rel_tol * max(abs(x), abs(y))
     max_x_y(**opts) << max_x_y.apply(binary.times, rel_tol)
     # max(rel_tol * max(abs(x), abs(y)), abs_tol)
@@ -480,7 +488,8 @@ class Vector(BaseType):
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False, **opts):
         """Check for approximate equality (including same size and same structure).
 
-        Equivalent to: ``abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)``.
+        Equivalent to: ``abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)``,
+        except that, as in ``math.isclose``, an infinity is close only to itself.
 
         Parameters
         ----------

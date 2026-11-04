@@ -1,4 +1,6 @@
 import inspect
+import itertools
+import math
 import pickle
 import random
 import sys
@@ -211,6 +213,22 @@ def test_isclose():
     assert Scalar.from_value(2**63, dtype="UINT64").isclose(2**63)
     assert not Scalar.from_value(1.0).isclose(10**400)
     assert not Scalar(dtype="INT8").isclose(2**63)
+
+
+def test_isclose_infinity():
+    # As in math.isclose, an infinity is close only to itself. It was close to every
+    # number (abs(inf - y) is inf, and so is rel_tol * inf), in both of isclose's paths.
+    values = [math.inf, -math.inf, 1.0, 0.0, math.nan]
+    for x, y in itertools.product(values, repeat=2):
+        for abs_tol in [0.0, math.inf]:
+            expected = math.isclose(x, y, rel_tol=1e-7, abs_tol=abs_tol)
+            assert Scalar.from_value(x).isclose(y, abs_tol=abs_tol) is expected, (x, y)
+            other = Scalar.from_value(y)
+            assert Scalar.from_value(x).isclose(other, abs_tol=abs_tol) is expected, (x, y)
+    # An int that INT64 cannot hold compares in Python, with the same rule
+    assert not Scalar.from_value(math.inf).isclose(2**70)
+    assert not Scalar.from_value(-math.inf).isclose(-(2**70))
+    assert Scalar.from_value(2.0**70).isclose(2**70)
 
 
 def test_isclose_udt_raises():

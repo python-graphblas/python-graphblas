@@ -17,6 +17,7 @@ from .literals import (
     _literal_type,
 )
 from .operator import get_typed_op
+from .operator.binary import _isclose
 from .udt import (
     _element_bytes,
     _element_shapes_differ,
@@ -34,7 +35,7 @@ from .utils import _Pointer, output_type, wrapdoc
 if _supports_udfs:
     from ..binary import isclose
 else:
-    from .operator.binary import _isclose as isclose
+    isclose = _isclose
 
 ffi_new = ffi.new
 
@@ -274,7 +275,8 @@ class Scalar(BaseType):
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
         """Check for approximate equality (including whether the value is missing).
 
-        Equivalent to: ``abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)``.
+        Equivalent to: ``abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)``,
+        except that, as in ``math.isclose``, an infinity is close only to itself.
 
         Parameters
         ----------
@@ -304,11 +306,8 @@ class Scalar(BaseType):
                 # INT64, a Python int's dtype, cannot hold it; compare in Python, as isequal does
                 if self._is_empty:
                     return False
-                x = self.value
                 try:
-                    return x == other or abs(x - other) <= max(
-                        rel_tol * max(abs(x), abs(other)), abs_tol
-                    )
+                    return _isclose(rel_tol, abs_tol)(self.value, other)
                 except OverflowError:  # An int too large for a float, beside a float
                     return False
             try:
