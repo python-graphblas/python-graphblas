@@ -178,6 +178,33 @@ def test_from_coo_scalar():
             C.ss.iso_value
 
 
+@pytest.mark.parametrize("value", [np.float64(1.5), np.int32(-3), [True], np.uint64(2**64 - 1)])
+@pytest.mark.parametrize("dtype", [None, "FP32"])
+def test_from_coo_broadcast_values(value, dtype):
+    # n copies of one value that were never made (stride 0) build iso, and
+    # otherwise give what the same values as an ordinary array give. The dtype
+    # comes from the array: np.int32 values stay INT32, where np.int32(-3) as
+    # the values gives INT64.
+    values = np.broadcast_to(value, 3)
+    C = Matrix.from_coo([0, 1, 3], [1, 1, 2], values, dtype)
+    expected = Matrix.from_coo([0, 1, 3], [1, 1, 2], values.copy(), dtype)
+    assert C.isequal(expected, check_dtype=True)
+    if suitesparse:
+        assert C.ss.is_iso
+
+    values = np.broadcast_to(np.float64(1), 3)
+    with pytest.raises(ValueError, match="Duplicate indices found"):
+        Matrix.from_coo([0, 1, 0], [1, 1, 1], values)
+    with pytest.raises(ValueError, match="lengths must match: 2, 2, 3"):
+        Matrix.from_coo([0, 1], [1, 1], values)
+    # dup_op combines duplicates as it does any values, so the result isn't iso
+    C = Matrix.from_coo([0, 1, 0], [1, 1, 1], values, dup_op=binary.plus)
+    assert C.isequal(Matrix.from_coo([0, 1], [1, 1], [2.0, 1.0]), check_dtype=True)
+    C = Matrix.from_coo([], [], np.broadcast_to(np.float64(1), 0), nrows=2, ncols=2)
+    assert C.nvals == 0
+    assert C.dtype == dtypes.FP64
+
+
 @pytest.mark.skipif("not suitesparse")
 def test_ss_iso_value_of_an_empty_iso_matrix():
     # SuiteSparse marks a Matrix built from no tuples iso, and may mark other empty

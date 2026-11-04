@@ -247,6 +247,27 @@ def test_update_with_a_literal_raises_graphblas_errors():
         v(Vector(bool, 3).S) << 1
 
 
+@pytest.mark.parametrize("value", [np.float64(1.5), np.int32(-3), [True], np.uint64(2**64 - 1)])
+@pytest.mark.parametrize("dtype", [None, "FP32"])
+def test_from_coo_broadcast_values(value, dtype):
+    # As for Matrix.from_coo: stride-0 values build iso, and otherwise give
+    # what the same values as an ordinary array give
+    values = np.broadcast_to(value, 3)
+    v = Vector.from_coo([0, 1, 3], values, dtype)
+    expected = Vector.from_coo([0, 1, 3], values.copy(), dtype)
+    assert v.isequal(expected, check_dtype=True)
+    if suitesparse:
+        assert v.ss.is_iso
+
+    values = np.broadcast_to(np.float64(1), 3)
+    with pytest.raises(ValueError, match="Duplicate indices found"):
+        Vector.from_coo([0, 1, 0], values)
+    with pytest.raises(ValueError, match="lengths must match: 2 != 3"):
+        Vector.from_coo([0, 1], values)
+    v = Vector.from_coo([0, 1, 0], values, dup_op=binary.plus)
+    assert v.isequal(Vector.from_coo([0, 1], [2.0, 1.0]), check_dtype=True)
+
+
 def test_from_coo_default_values():
     u = Vector.from_coo([1, 3])
     v = Vector.from_coo([1, 3], [1.0, 1.0])
