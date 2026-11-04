@@ -4884,6 +4884,34 @@ def test_subarray_dtype_ss_column_order(shape):
     _assert_same_udt_entries(A, B)
     raw = A.ss.export("fullc", raw=True)  # may have spare values after the six
     np.testing.assert_array_equal(raw["values"][:6].ravel(), flat)
+    # A list of elements in column order, as ``raw=True`` exports them, imports as it is
+    for fmt in ["fullc", "bitmapc"]:
+        info = A.ss.export(fmt, raw=True)
+        assert info["values"].shape[1:] == shape
+        _assert_same_udt_entries(A, Matrix.ss.import_any(**info))
+        B = A.dup()
+        B.ss.pack_any(**B.ss.unpack(fmt, raw=True))
+        _assert_same_udt_entries(A, B)
+        kwargs = {"bitmap": np.ones(6, dtype=bool)} if fmt == "bitmapc" else {}
+        values = expected.swapaxes(0, 1).reshape(6, *shape)
+        B = getattr(Matrix.ss, f"import_{fmt}")(
+            values=values, nrows=2, ncols=3, dtype=A.dtype, take_ownership=True, **kwargs
+        )
+        _assert_same_udt_entries(A, B)
+        assert not values.flags.owndata  # taken, as it is
+        # Element axes that fit neither layout are refused, not read as a list of elements
+        # (for INT64[2, 2], values of shape (2, 3, 4) put [8, 9, 10, 11] at (0, 1))
+        bad = expected.reshape(2, 3, 4) if len(shape) > 1 else expected.reshape(2, 12)
+        kwargs = {"bitmap": np.ones((2, 3), dtype=bool)} if fmt == "bitmapc" else {}
+        with pytest.raises(ValueError, match=r"in column order must have shape \(nrows, ncols"):
+            getattr(Matrix.ss, f"import_{fmt}")(
+                values=bad, nrows=2, ncols=3, dtype=A.dtype, **kwargs
+            )
+        # An iso value given as one element (for INT64[2, 2], it was read transposed)
+        B = getattr(Matrix.ss, f"import_{fmt}")(
+            values=expected[0, 1], nrows=2, ncols=3, dtype=A.dtype, is_iso=True, **kwargs
+        )
+        np.testing.assert_array_equal(B.to_dense(), np.broadcast_to(expected[0, 1], (2, 3, *shape)))
     # Elements missing from a bitmap are left out
     del A[0, 1]
     info = A.ss.export("bitmapc")
@@ -4978,7 +5006,8 @@ def test_ss_import_values_size():
         )
     with pytest.raises(ValueError, match=match):
         Matrix.from_dcsr([0, 1], [0, 1, 2], [0, 1], np.ones(2), "FP64[2]")
-    with pytest.raises(ValueError, match=r"have 4 or more elements of dtype \S+, not 2"):
+    match = r"values of \S+ in column order must have shape \(nrows, ncols, 2\), an element"
+    with pytest.raises(ValueError, match=match):
         Matrix.ss.import_fullc(values=np.ones((2, 2, 1)), dtype="FP64[2]")
     # A scalar is not a whole element of a sub-array dtype (it said "not 0")
     with pytest.raises(ValueError, match=r"a scalar does not fill one element of dtype \S+, of"):
