@@ -5001,6 +5001,31 @@ def test_subarray_dtype_ss_row_order_round_trip_takes_the_buffer():
 
 # Without SuiteSparse, building a UDT uses dup_op=binary.any, which needs Numba.
 @pytest.mark.skipif("not suitesparse and not supports_udfs")
+def test_subarray_dtype_values_in_another_array_dtype():
+    # Asked for another array dtype of the same shape, the values convert number by
+    # number. astype to the array dtype repeated each number into an element: shape
+    # (n, 4, 4), for an iso Matrix too.
+    dense = np.arange(2 * 3 * 4, dtype=np.int64).reshape(2, 3, 4)
+    A = Matrix.from_dense(dense)
+    iso = Matrix("INT64[4]", nrows=2, ncols=3)
+    iso[:, :] = [0, 1, 2, 3]
+    for M, expected in [(A, dense), (iso, np.broadcast_to([0, 1, 2, 3], (2, 3, 4)))]:
+        got = M.to_dense(dtype="FP64[4]")
+        assert got.dtype == np.float64
+        np.testing.assert_array_equal(got, expected)
+        np.testing.assert_array_equal(M.to_dense(dtype="FP32[1, 4]"), expected[:, :, None, :])
+        with pytest.raises(DomainMismatch, match="must have the same shape"):
+            M.to_dense(dtype="FP64[2]")
+        values = expected.reshape(6, 4)
+        for method in ["coo", "csr", "dcsr"]:
+            np.testing.assert_array_equal(getattr(M, f"to_{method}")(dtype="FP64[4]")[-1], values)
+        values = expected.swapaxes(0, 1).reshape(6, 4)
+        for method in ["csc", "dcsc"]:
+            np.testing.assert_array_equal(getattr(M, f"to_{method}")(dtype="FP64[4]")[-1], values)
+
+
+# Without SuiteSparse, building a UDT uses dup_op=binary.any, which needs Numba.
+@pytest.mark.skipif("not suitesparse and not supports_udfs")
 def test_subarray_dtype_values_shape():
     # Each of these has one entry per index but not two numbers per entry. Building
     # from too few numbers read past the end of the array. (The dtype's name is

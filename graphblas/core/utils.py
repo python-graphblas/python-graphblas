@@ -293,7 +293,24 @@ def normalize_values(self, values, dtype, shape=None, is_iso=False):
     if dtype is not None:
         dtype = lookup_dtype(dtype)
         if dtype != self.dtype:
-            values = values.astype(dtype.np_type)  # copies
+            np_type = dtype.np_type
+            element_shape = self.dtype.np_type.shape
+            if element_shape and np_type.subdtype is not None:
+                # ``values`` has each element's own axes last already. astype to the
+                # array dtype would add them again, repeating each number into one.
+                from ..exceptions import DomainMismatch
+                from .udt import _strip_leading_ones
+
+                if _strip_leading_ones(element_shape) != _strip_leading_ones(np_type.shape):
+                    # As a store says it (``to_dense(fill_value, dtype)`` stores)
+                    raise DomainMismatch(
+                        f"cannot convert values of type {self.dtype} to {dtype}: array UDTs "
+                        "must have the same shape, apart from leading axes of length 1"
+                    )
+                index_shape = values.shape[: values.ndim - len(element_shape)]
+                values = values.astype(np_type.base).reshape(index_shape + np_type.shape)
+            else:
+                values = values.astype(np_type)  # copies
     else:
         dtype = self.dtype
     if is_iso:
