@@ -621,9 +621,10 @@ def unify(type1, type2, *, is_left_scalar=False, is_right_scalar=False):
     unify(BOOL, UINT16) -> UINT16
     unify(FP32, INT32) -> FP64
 
-    ``is_left_scalar`` and ``is_right_scalar`` are ignored: a Python number is
-    typed before it gets here (``literals._literal_operand``), and a typed
-    scalar promotes as any operand does, as numpy 2 promotes it.
+    ``is_left_scalar`` and ``is_right_scalar`` are accepted and ignored, for code
+    that still passes them; python-graphblas itself no longer does. A Python
+    number is typed before it gets here (``literals._literal_operand``), and a
+    typed scalar promotes as any operand does, as numpy 2 promotes it.
     """
     if type1 is type2:
         return type1
