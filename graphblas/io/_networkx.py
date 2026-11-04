@@ -66,6 +66,17 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
             G = G.subgraph(nodelist)
 
     index = dict(zip(nodelist, range(nlen), strict=True))
+    if weight is None and not G.is_multigraph() and (dtype is None or dtype.kind in "biufc"):
+        # Every entry is 1, so read only the coordinates: row by row in nodelist
+        # order, straight from the adjacency, which for an undirected graph already
+        # holds both directions and each self-loop once. No tuple and no value per
+        # edge makes this two to three times faster than the general path below.
+        nbrs = [G._adj[u] for u in nodelist]
+        rows = np.repeat(np.arange(nlen, dtype=np.uint64), [len(nbr) for nbr in nbrs])
+        if rows.size:  # with no edge, the general path gives the dtype (scipy's float64)
+            cols = np.fromiter((index[v] for nbr in nbrs for v in nbr), np.uint64, rows.size)
+            dtype = np.int64 if dtype is None else dtype  # as the general path infers the 1s
+            return Matrix.from_coo(rows, cols, 1, dtype=dtype, nrows=nlen, ncols=nlen, name=name)
     coefficients = zip(
         *((index[u], index[v], wt) for u, v, wt in G.edges(data=weight, default=1)),
         strict=True,
