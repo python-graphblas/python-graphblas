@@ -4659,7 +4659,8 @@ def test_udt_literal_converts_only_when_exact():
         (lambda: b.apply(same, right=np.True_), "_ExactBareText: it is typed as BOOL,"),
         (lambda: b.apply(same, right=b"0.5000"), "_ExactBareText"),  # was cut to b"0.5"
         (lambda: t.apply(second, right=cut_text), "_ExactText"),
-        (lambda: c.apply(second, right=(np.datetime64("NaT"), 1)), "_ExactChar"),  # NaT as b"N"
+        # NaT as b"N"
+        (lambda: c.apply(second, right=(np.datetime64("NaT", "s"), 1)), "_ExactChar"),
         (lambda: d.apply(same, right=np.timedelta64(5, "ms")), "_ExactBareSeconds"),
     ]:
         with pytest.raises(ValueError, match=re.escape(f"does not fit {typed_as}")):
