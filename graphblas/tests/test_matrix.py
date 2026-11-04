@@ -212,6 +212,28 @@ def test_ss_export_full_of_a_matrix_that_is_not_full(method, fmt):
     assert A.isequal(Matrix.from_coo([0], [1], [2.0], nrows=2, ncols=2))
 
 
+@pytest.mark.parametrize("dtype", ["BOOL", "INT64", "FP64"])
+@pytest.mark.parametrize("value", [True, 7, 2.5])
+@pytest.mark.parametrize("mask_kind", [None, "S", "V", "~S", "~V"])
+@pytest.mark.parametrize("replace", [False, True])
+def test_update_with_a_literal_matches_the_full_path(dtype, value, mask_kind, replace):
+    # C(mask, replace) << x takes a fast path; an active Recorder sends the same
+    # update down the full path to compare with.
+    C = Matrix.from_coo([0, 1], [1, 2], [1, 0], dtype=dtype, nrows=3, ncols=3)
+    M = Matrix.from_coo([0, 1, 2], [0, 2, 1], [True, False, True], nrows=3, ncols=3)
+    mask = {None: None, "S": M.S, "V": M.V, "~S": ~M.S, "~V": ~M.V}[mask_kind]
+    if mask is None and replace:
+        return
+    fast = C.dup()
+    full = C.dup()
+    fast(mask=mask, replace=replace) << value
+    with gb.Recorder():
+        full(mask=mask, replace=replace) << value
+    assert fast.isequal(full, check_dtype=True)
+    with pytest.raises(TypeError, match="Vector mask"):
+        fast(Vector(bool, 3).S) << value
+
+
 def test_from_coo_default_values():
     B = Matrix.from_coo([1, 3], [2, 4])
     C = Matrix.from_coo([1, 3], [2, 4], [1.0, 1.0])
