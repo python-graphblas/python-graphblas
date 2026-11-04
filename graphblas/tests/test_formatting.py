@@ -3987,8 +3987,10 @@ def test_sparse_repr_chop_threshold():
             "0    100  1.50\n"
             "1    161 -0.25"
         )
-    if not dtypes._supports_complex:
-        return  # A complex value would be a UDT, with its own dtype in the header
+
+
+@pytest.mark.skipif("not dtypes._supports_complex")
+def test_sparse_repr_chop_threshold_complex():
     # A complex value is compared by its magnitude, so a small part is not chopped
     v = Vector.from_coo([100, 161], [1e-8 + 1j, 2 - 1e-9j], size=1000, name="v")
     with display_options("display.chop_threshold", 1e-6):
@@ -4028,8 +4030,10 @@ def test_repr_float_format():
             "index        0    1 2     3\n"
             "value 1,234.50  nan   -0.00"
         )
-    if not dtypes._supports_complex:
-        return  # A complex value would be a UDT, with its own dtype in the header
+
+
+@pytest.mark.skipif("not dtypes._supports_complex")
+def test_repr_float_format_complex():
     v = Vector.from_coo([100, 161], [1 + 2j, complex(np.nan, 1)], size=1000, name="v")
     with display_options("display.float_format", "{:.2f}".format):
         repr_printer(v, "v")
