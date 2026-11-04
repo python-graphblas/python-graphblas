@@ -881,7 +881,9 @@ class ss:
             return rv
 
         if method == "export":
-            mhandle = ffi_new("GrB_Matrix*", parent._carg)
+            # GraphBLAS frees the Matrix as it hands the arrays over, and sets this
+            # handle to NULL, so an error after that cannot leave it dangling
+            mhandle = parent.gb_obj
             type_ = ffi_new("GrB_Type*")
             nrows_ = ffi_new("GrB_Index*")
             ncols_ = ffi_new("GrB_Index*")
@@ -1188,8 +1190,6 @@ class ss:
         rv["is_iso"] = is_iso
         rv["format"] = format
         rv["values"] = values
-        if method == "export":
-            parent.gb_obj[0] = NULL
         if parent.dtype._is_udt:
             rv["dtype"] = parent.dtype
         return rv

@@ -519,7 +519,9 @@ class ss:
 
         size = parent._size
         if method == "export":
-            vhandle = ffi_new("GrB_Vector*", parent._carg)
+            # GraphBLAS frees the Vector as it hands the arrays over, and sets this
+            # handle to NULL, so an error after that cannot leave it dangling
+            vhandle = parent.gb_obj
             type_ = ffi_new("GrB_Type*")
             size_ = ffi_new("GrB_Index*")
             args = (type_, size_)
@@ -646,8 +648,6 @@ class ss:
             format=format,
             values=values,
         )
-        if method == "export":
-            parent.gb_obj[0] = NULL
         if parent.dtype._is_udt:
             rv["dtype"] = parent.dtype
         return rv

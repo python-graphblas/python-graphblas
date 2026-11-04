@@ -325,6 +325,34 @@ def test_nvals_and_shape_raise_the_graphblas_error():
             assert str(got.value) == str(expected.value), name
 
 
+@pytest.mark.skipif("not suitesparse")
+def test_ss_export_failing_after_graphblas_frees_the_object(monkeypatch):
+    # GraphBLAS frees the object as it hands its arrays over. An error after that,
+    # here in claiming the values, left the handle pointing at the freed object, so a
+    # later call read freed memory and the object was freed again when collected.
+    import gc
+
+    import graphblas.core.ss.matrix as ss_matrix
+    import graphblas.core.ss.vector as ss_vector
+
+    def fail(*args):
+        raise RuntimeError("claim failed")
+
+    monkeypatch.setattr(ss_matrix, "claim_buffer_2d", fail)
+    monkeypatch.setattr(ss_vector, "claim_buffer", fail)
+    A = Matrix.from_dense([[1.5, 2.5], [3.5, 4.5]])
+    v = Vector.from_dense([1.5, 2.5])
+    for obj, format, nvals in [(A, "fullr", 4), (v, "full", 2)]:
+        with pytest.raises(RuntimeError, match="claim failed"):
+            obj.ss.export(format)  # exports a copy
+        gc.collect()  # frees the copy
+        assert obj.nvals == nvals
+        with pytest.raises(RuntimeError, match="claim failed"):
+            obj.ss.export(format, give_ownership=True)
+        with pytest.raises(NullPointer):
+            obj._nvals
+
+
 def test_build(A):
     assert A.nvals == 12
     A.clear()
