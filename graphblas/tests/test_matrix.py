@@ -4837,6 +4837,7 @@ def test_subarray_dtypes():
     assert A.isequal(B, check_dtype=True)
     for method in ["coo", "csr", "csc", "dcsr", "dcsc", "edgelist"]:
         B = getattr(A, f"from_{method}")(*getattr(A, f"to_{method}")())
+        assert A.isequal(B, check_dtype=True)
     B = Matrix.from_dicts(A.to_dicts())
     assert A.isequal(B, check_dtype=True)
     B = Matrix.from_dicts(A.to_dicts(), A.dtype)
@@ -4859,7 +4860,7 @@ def test_subarray_dtypes():
     Full2 = Matrix.from_dense(b2)
     assert Full1.isequal(Full2, check_dtype=True)
     Full2 = Matrix.from_dense(Full1.to_dense())
-    assert Full2.isequal(Full2, check_dtype=True)
+    assert Full1.isequal(Full2, check_dtype=True)
     if suitesparse:
         Full2 = Matrix.ss.import_fullr(b2)
         assert Full1.isequal(Full2, check_dtype=True)
