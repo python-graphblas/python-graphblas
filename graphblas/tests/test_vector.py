@@ -3167,6 +3167,28 @@ def test_subarray_dtypes_iso():
     np.testing.assert_array_equal(v.to_coo()[1], expected)
 
 
+# Without SuiteSparse, building a UDT uses dup_op=binary.any, which needs Numba.
+@pytest.mark.skipif("not suitesparse and not supports_udfs")
+def test_subarray_dtype_values_in_another_array_dtype():
+    # Asked for another array dtype of the same shape, the values convert number by
+    # number. astype to the array dtype repeated each number into an element: shape
+    # (n, 4, 4), for an iso Vector too.
+    expected = np.arange(8, dtype=np.int64).reshape(2, 4)
+    v = Vector.from_coo([0, 1], expected)
+    iso = Vector("INT64[4]", size=2)
+    iso[:] = [0, 1, 2, 3]
+    iso_expected = np.broadcast_to([0, 1, 2, 3], (2, 4))
+    for w, values in [(v, expected), (iso, iso_expected)]:
+        for get in [w.to_dense, lambda w=w, **kw: w.to_coo(**kw)[1]]:
+            got = get(dtype="FP64[4]")
+            assert got.dtype == np.float64
+            np.testing.assert_array_equal(got, values)
+            # Leading axes of length 1 do not matter, as in a store
+            np.testing.assert_array_equal(get(dtype="FP32[1, 4]"), values[:, None, :])
+            with pytest.raises(DomainMismatch, match="must have the same shape"):
+                get(dtype="FP64[2]")
+
+
 @pytest.mark.skipif("not supports_udfs")
 def test_subarray_dtypes():
     a = np.arange(3 * 4, dtype=np.int64).reshape(3, 4)
