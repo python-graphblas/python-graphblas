@@ -1601,6 +1601,7 @@ def test_diag(v):
         if suitesparse:
             A = gb.ss.diag(v, k=k, nthreads=2)
             assert expected.isequal(A)
+            assert expected.isequal(gb.ss.diag(v, k=k))
         A = v.diag(k)
         assert expected.isequal(A)
 
