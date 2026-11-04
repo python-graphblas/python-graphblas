@@ -332,23 +332,9 @@ class Scalar(BaseType):
         isclose_func = isclose(rel_tol, abs_tol)
         if not _has_numba:
             # Check if types are compatible
-            get_typed_op(
-                binary.eq,
-                self.dtype,
-                other.dtype,
-                is_left_scalar=True,
-                is_right_scalar=True,
-                kind="binary",
-            )
+            get_typed_op(binary.eq, self.dtype, other.dtype, kind="binary")
             return isclose_func(self.value, other.value)
-        isclose_func = get_typed_op(
-            isclose_func,
-            self.dtype,
-            other.dtype,
-            is_left_scalar=True,
-            is_right_scalar=True,
-            kind="binary",
-        )
+        isclose_func = get_typed_op(isclose_func, self.dtype, other.dtype, kind="binary")
         return isclose_func._numba_func(self.value, other.value)
 
     def clear(self):
@@ -860,8 +846,8 @@ class Scalar(BaseType):
         op1 = get_typed_op(op, self.dtype, right.dtype, kind="binary")
         op2 = get_typed_op(op, left.dtype, other.dtype, kind="binary")
         if op1 is not op2:
-            left_dtype = unify(op1.type, op2.type, is_right_scalar=True)
-            right_dtype = unify(op1.type2, op2.type2, is_left_scalar=True)
+            left_dtype = unify(op1.type, op2.type)
+            right_dtype = unify(op1.type2, op2.type2)
             op = get_typed_op(op, left_dtype, right_dtype, kind="binary")
         else:
             op = op1

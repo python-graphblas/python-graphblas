@@ -1,0 +1,147 @@
+# Tensor: limitations and roadmap
+
+What the experimental `gb.Tensor` does not do yet, what has not been tested, and the order in
+which the maintainers plan to work on it. Timings are written "8 / 1" for 8 and 1 threads,
+and the data sets are those named in `design.md`.
+
+## Not tested
+
+- **Windows.** Nothing has run on Windows. Specifically:
+  - **The kernel cache's file locking.** A rename onto a file another process holds open
+    raises there; the cache then uses that process's file if it holds the same source, or
+    compiles in memory. That was tested by simulating the failure, not on Windows.
+  - **The JIT compiler flags.** `fix_jit_config` now finds conda's compilers under
+    `Library\bin` and with `.exe` names. But the flags it repairs are POSIX-minded
+    (`-isysroot`, `-arch`), and whether conda-forge's Windows SuiteSparse JIT compiles that
+    way is unknown. If it does not, the array-UDT engine warns once and turns itself off,
+    and the Numba or GraphBLAS engines run: correct, slower.
+  - **Numba's `parallel=True`.** It should work with its workqueue or TBB layer (the kernels
+    use only `prange` and plain arrays), but it has not run.
+  - **numpy 1.x's 32-bit default integer.** Coordinates are converted to int64 explicitly,
+    and no arithmetic on a default-int array that could pass 2^31 was found by reading. Not
+    run.
+- **x86 planner constants.** The cost model was fitted on one machine, an Apple M5 Pro
+  (`design.md`, "Fitted constants"). Atomics are slow there, which is why wide transposes
+  and column reductions prefer 2 threads. That rule, and the rest of the ranking, may differ
+  on x86.
+- **Linux, and SuiteSparse other than 10.5.1.** The branch has not run in CI.
+- **NELL-2 and Enron were not fully re-censused.** The census of decision points covered the
+  test suite, u7, skew, hyper, Zipf, Uber, NIPS and part of Enron. Its later re-measurement
+  finished only u7, because machine load spoiled the rest. For NELL-2, the TTM and MTTKRP
+  engine choices rest on earlier forced-engine measurements, and only its slices were rerun
+  after the last changes. Uber's and NIPS's contraction and slice rows were not run by the census
+  (Uber's slices were measured later, with the benchmark kit: see "Known performance gaps").
+
+## Missing features
+
+- `None` (new axis) and boolean indices; Vector or Tensor index arrays (undecided: see
+  `decisions.md`).
+- `einsum` with `...` or a repeated index within one operand (diagonals).
+- Composite aggregators (`agg.mean`, `agg.varp`) and positional ones (`agg.ss.argmin`) in
+  `reduce`.
+- Index-based `select` (`rowindex`, `tril` and the like), which needs logical coordinates.
+- `pad`.
+- binsparse interchange; `graphblas.io` dispatching ndim > 2 to the Tensor methods.
+- An Array API namespace.
+- `Tensor.dtype` is a python-graphblas type, not a numpy dtype, so libraries that expect
+  numpy dtypes (TensorLy, for example) need a small adapter.
+- Broadcast unions (`ewise_add`, `ewise_union`) past 2^60 positions whose broadcast axes
+  would fit only split across the row and column groups: a clear ValueError, by decision
+  (`decisions.md`, 26). Revisit if a workload needs them.
+
+## Known performance gaps
+
+- **TTM along an axis other than the stored order** relayouts the tensor and then runs the
+  kernel. In the last full measurement, made before the latest planner refits, it was
+  1.9-2.7x behind TACO at 1 thread on u7, and 6.8-7.4x on NELL-2 modes 0 and 1. TACO's
+  numbers are for a copy of the tensor already in that mode's order, built outside its timing
+  (7.6 s on NELL-2). Where the time goes (2026-10-27, R = 16, the kit's timing, ms at 1 / 8
+  threads):
+
+  | case          | total      | relayout  | kernel    | `wait()`: the output's row hash |
+  | ------------- | ---------- | --------- | --------- | ------------------------------- |
+  | u7 mode 0     | 85 / 23    | 45 / 14   | 39 / 7.3  | none (a full output)            |
+  | u7 mode 1     | 58 / 14    | 17 / 5.6  | 39 / 7.2  | none (a full output)            |
+  | NELL-2 mode 0 | 1870 / 371 | 689 / 162 | 440 / 99  | 733 / 88                        |
+  | NELL-2 mode 1 | 1772 / 342 | 243 / 68  | 511 / 122 | 969 / 115                       |
+
+  The last column is SuiteSparse building the hyper hash of the output (1.7e7 and 2.1e7
+  nonempty rows of R values) in the `wait()` that the kit, like any user, calls to finish a
+  result. None of the other libraries has such a hash. It is also 7-14% of NELL-2's sums,
+  TTVs and broadcasts at 1 thread. `Tensor.wait()` keeps building it, as `Matrix.wait()`
+  does (`decisions.md`, 24): `wait("complete")` skips it, and most operations on the result
+  pay it next. An in-place kernel along the first column axis, with a sparse accumulator
+  per row instead of the reshape and second transpose, was prototyped on NELL-2 mode 0: 1354
+  against 1049 ms at 1 thread (without the hash), 243 against 269 at 8, so not pursued.
+  Per-mode copies are not kept (`decisions.md`, 25); an explicit `relayout()` before a loop
+  gives one. With it, done outside the timing, NELL-2 modes 0 and 1 take 445 and 548 ms at
+  1 thread without the hash, against TACO's 263 and 262 from its own copy, and 1127 and
+  1433 with it (`benchmarks.md`). To revisit if users run TTMs along many modes in turn
+  (HOOI, Tucker).
+
+- **Slabs of Uber (4-d, layout (0, 1, 2 | 3)) along its first axis**, a row range of the
+  stored Matrix: 0.17 ms for one index, against pydata/sparse's 0.059, and 3.7 ms at 1 thread
+  for a 10% range against its 1.8 (the Tensor is fastest at 8 threads, 1.3 ms). Its other
+  slabs were 6-30x slower than now until the extract was priced by the rows it visits, and a
+  column range of a sparse row group was filtered from the stored arrays (`benchmarks.md`,
+  "Performance work after K").
+- **einsum's per-call overhead** shows at millisecond scale: about 45 us for one contraction,
+  97 us for an MTTKRP through einsum, and 128 us for three operands.
+- **Planning a 5-d MTTKRP** takes about 12 ms on the first call for a shape, even for a tiny
+  tensor: choosing the products' axis order prices a relayout for each of 24 candidate orders
+  (`_mttkrp_order`), from one planner search over the 5-d states (`tensor_layout.plan_each`;
+  one search per order took about 160 ms). Later calls hit the plan cache (0.3 ms); 4-d first
+  calls take about 2 ms and 3-d ones 0.4.
+- **Moved operands are not kept.** A relayout made for one operation is dropped afterwards, so
+  repeated contractions of the same operand repay it. Keeping it on the store needs a memory
+  policy.
+- **The Tensor's own waits build the row hash.** Its operations finish an operand with
+  `wait()` (materialize) before testing its format or unloading it into a Container
+  (`tensor_layout.stored_format`, `_Unloaded`), and that also builds SuiteSparse's hash of a
+  hypersparse Matrix's rows (a hyperlist longer than `GxB_HYPER_HASH`, 1024 by default),
+  even where the operation would not use it: SuiteSparse's own extract of a short row list
+  would not build it (`GB_subref_phase0.c`). On NELL-2's TTM output (R = 16, 1.66e7 and
+  2.15e7 rows for modes 0 and 1) the hash takes 0.68-0.97 s at 1 thread and 86-116 ms at 8,
+  about 45 ns a row. After `wait("complete")`, which skips it, a row extract that takes 1-3 ms
+  took 0.68-0.96 s at 1 thread, because the extract's own wait built it (the perf round,
+  2026-10-28). Internal waits cannot simply use "complete": SuiteSparse does no work for it,
+  and Container work needs pending work finished (`tensor_layout.stored_format`). An idea:
+  finish pending work with the hash off for that Matrix (its `GxB_HYPER_HASH` setting, set
+  around the wait and put back), with care, since `GB_wait` frees an existing hash while it
+  is off and pending tuples are assembled. Decision 24 keeps `Tensor.wait()` itself
+  materializing, as `Matrix.wait()` does.
+- **4-d MTTKRP** is within 1.0-1.4x of SPLATT at 8 threads (geometric mean on Uber, NIPS and
+  Enron). The worst row is 1.66x (Uber mode 3, R = 16).
+- **Batched products with few large batches** can trail a plain loop: multiplex PageRank on
+  the Higgs data set (4 layers) is 1.4-1.8x slower as one batched `'lu,luv->lv'` than as four
+  `vxm`.
+- **Known mispricings** found by the census and not yet refitted:
+  - a broadcast multiply on Zipf at 8 threads (29 to 36 ms after the last refit: clustered
+    rows, priced as uniform);
+  - materializing Enron's `permute_dims((0, 2, 1, 3))` at 1 thread: the planned chain is
+    1.23x behind a REBUILD;
+  - the TTM engine rule: on u7 mode 2 at 1 thread and skew mode 0 at 8, the array-UDT engine
+    is 1.27-1.38x faster than the one chosen, and on hyper mode 0 at 8 threads the products
+    are 1.2x faster than Numba;
+  - Uber's two-axis sums (a REBUILD where the column selector is 4x faster), and NIPS's TTV
+    column selector (1.6x behind mxv after a reshape).
+
+## Roadmap, in order
+
+1. **Maintainer review** of the API (`decisions.md`) and of the riskier code: copy-on-write,
+   the Container calls that hand arrays to SuiteSparse unchecked, the planner's pricing, and
+   the engine rules.
+2. **CI on every platform** python-graphblas supports, with a SuiteSparse 10 job on each.
+   This closes the Windows questions above, and runs the suite without Numba and with the JIT
+   off there too.
+3. **Refit the cost constants** on x86, and with a script driven by the census instead of by
+   hand. Then fix the mispricings listed above, and finish the census on NELL-2 and Enron.
+4. **Performance:** TTM along non-stored modes (per-mode copies, if many-mode sweeps such as
+   HOOI and Tucker need them: `decisions.md`, 25); einsum's per-call overhead; keeping
+   moved operands on the store; internal waits without the row hash (above).
+5. **API:** `pad`, more aggregators, index-based `select`, einsum diagonals, and the open
+   questions (Vector and Tensor index arrays, `graphblas.io` dispatch).
+6. **When SuiteSparse 10.5.2 is the oldest supported version:** drop the 10.5.1 reshape
+   workaround (`tensor_layout.reshape_owned`, marked `TODO(SuiteSparse 10.5.2)`).
+7. **Backports** to Matrix and Vector (`backport-candidates.md`).
+8. **Later:** binsparse, when its protocol settles; an Array API namespace.

@@ -51,6 +51,7 @@ from .utils import (
     _CArray,
     _Pointer,
     _repeated_value,
+    _tensor_types,
     check_element_shape,
     class_property,
     get_order,
@@ -513,8 +514,9 @@ class Matrix(BaseType):
 
         Parameters
         ----------
-        other : Matrix
-            The matrix to compare against
+        other : Matrix or Tensor
+            The matrix to compare against. A Tensor compares this Matrix as the
+            2-d Tensor of its shape (``Tensor.isequal``).
         check_dtype : bool
             If True, also checks that dtypes match
 
@@ -532,6 +534,9 @@ class Matrix(BaseType):
         :meth:`isclose` : For equality check of floating point dtypes
 
         """
+        if output_type(other) in _tensor_types:
+            # The Tensor compares this Matrix as the 2-d Tensor of its shape
+            return other.isequal(self, check_dtype=check_dtype, **opts)
         other = self._expect_type(
             other, (Matrix, TransposedMatrix), within="isequal", argname="other"
         )
@@ -567,8 +572,9 @@ class Matrix(BaseType):
 
         Parameters
         ----------
-        other : Matrix
-            The matrix to compare against.
+        other : Matrix or Tensor
+            The matrix to compare against. A Tensor compares this Matrix as the
+            2-d Tensor of its shape (``Tensor.isclose``).
         rel_tol : float
             Relative tolerance.
         abs_tol : float
@@ -582,6 +588,11 @@ class Matrix(BaseType):
             Whether all values of the Matrix are close to the values in ``other``.
 
         """
+        if output_type(other) in _tensor_types:
+            # The Tensor compares this Matrix as the 2-d Tensor of its shape
+            return other.isclose(
+                self, rel_tol=rel_tol, abs_tol=abs_tol, check_dtype=check_dtype, **opts
+            )
         other = self._expect_type(
             other, (Matrix, TransposedMatrix), within="isclose", argname="other"
         )
@@ -1749,7 +1760,7 @@ class Matrix(BaseType):
                         keyword_name="fill_value",
                         extra_message="Literal scalars also accepted.",
                     )
-            dtype = unify(fill_value.dtype, self.dtype, is_left_scalar=True)
+            dtype = unify(fill_value.dtype, self.dtype)
 
         rv = self.dup(dtype, clear=True, name="to_dense", **opts)
         rv(**opts) << fill_value
@@ -2354,8 +2365,8 @@ class Matrix(BaseType):
             op1 = get_typed_op(op, self.dtype, right.dtype, kind="binary")
             op2 = get_typed_op(op, left.dtype, other.dtype, kind="binary")
         if op1 is not op2:
-            left_dtype = unify(op1.type, op2.type, is_right_scalar=True)
-            right_dtype = unify(op1.type2, op2.type2, is_left_scalar=True)
+            left_dtype = unify(op1.type, op2.type)
+            right_dtype = unify(op1.type2, op2.type2)
             op = get_typed_op(op, left_dtype, right_dtype, kind="binary")
         else:
             op = op1
@@ -2669,7 +2680,7 @@ class Matrix(BaseType):
                         extra_message="Literal scalars also accepted.",
                         op=op,
                     )
-            op = get_typed_op(op, left.dtype, self.dtype, is_left_scalar=True, kind="binary")
+            op = get_typed_op(op, left.dtype, self.dtype, kind="binary")
             if opclass == "Monoid":
                 op = op.binaryop
             else:
@@ -2707,12 +2718,10 @@ class Matrix(BaseType):
                         op=op,
                     )
             if opclass in {"IndexUnaryOp", "SelectOp"}:
-                op = get_typed_op(
-                    op, self.dtype, right.dtype, is_right_scalar=True, kind="indexunary"
-                )
+                op = get_typed_op(op, self.dtype, right.dtype, kind="indexunary")
                 cfunc_method = "IndexOp"
             else:
-                op = get_typed_op(op, self.dtype, right.dtype, is_right_scalar=True, kind="binary")
+                op = get_typed_op(op, self.dtype, right.dtype, kind="binary")
                 cfunc_method = "BinaryOp2nd"
                 if opclass == "Monoid":
                     op = op.binaryop
@@ -2843,7 +2852,7 @@ class Matrix(BaseType):
                 ncols=self._ncols,
                 dtype=self.dtype,
             )
-        op = get_typed_op(op, self.dtype, thunk.dtype, is_right_scalar=True, kind="select")
+        op = get_typed_op(op, self.dtype, thunk.dtype, kind="select")
         op, thunk = _value_select_in_own_type(op, self.dtype, thunk, given)
         self._expect_op(op, ("SelectOp", "IndexUnaryOp"), within=method_name, argname="op")
         if thunk._is_cscalar:

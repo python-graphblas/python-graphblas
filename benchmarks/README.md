@@ -25,6 +25,10 @@ benchmarks/
   conversions.py         from_coo/to_coo, from_dense/to_dense, scipy interop
   imports.py             cold import + first-use timing (timeraw, fresh subprocess)
   repr_bench.py          repr / _repr_html_ for small and large objects
+  tensor_ops.py          the experimental n-d Tensor: element-wise and broadcast,
+                         reductions, permute and reshape, construction, TTV / TTM /
+                         MTTKRP, tensordot and batched matmul, einsum, extraction,
+                         assignment, gather, and small-tensor overhead
 _verify.py               standalone check: runs every benchmark once (not an asv file)
 ```
 
@@ -58,6 +62,17 @@ graphblas` ~32 ms, init/first-operator ~0.2 s. Bump `common.LARGE_NNZ` or add a
   higher-degree matrix if you want heavier `mxm`.
 - Large kernels use `number = 1`, `warmup_time = 0`, small `repeat`, and a
   `timeout`, so asv does not batch them into multi-second runs.
+- `tensor_ops.py` builds seeded uniform tensors in `setup` (a 3-d one of ~1e6
+  entries in 200 x 300 x 400, a 4-d one of ~5e5), so it downloads nothing. The
+  Tensor needs SuiteSparse:GraphBLAS 10 or later (its Container API); on older
+  versions every Tensor benchmark fails at setup. Its Numba kernels compile on first
+  use in a process, so the classes that use them call each operation once in
+  `setup`. Without a working C compiler the SuiteSparse JIT stays at `"run"`, the
+  Tensor's array-UDT engine is off, and the Numba or GraphBLAS engines run instead:
+  compare results only between runs made with the same JIT and Numba availability.
+  The cross-library comparisons (pydata/sparse, scipy, torch, SPLATT, TACO) are in
+  `scripts/tensor_bench/`, outside `benchmark_dir`, because asv imports every module
+  under it.
 - `imports.py` uses `timeraw_*`, which runs the returned code string in a fresh
   subprocess. That is the only way to measure true cold import cost; a normal
   benchmark would read ~0 because the module is already imported.

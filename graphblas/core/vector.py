@@ -41,6 +41,7 @@ from .utils import (
     _CArray,
     _Pointer,
     _repeated_value,
+    _tensor_types,
     check_element_shape,
     class_property,
     ints_to_numpy_buffer,
@@ -442,8 +443,9 @@ class Vector(BaseType):
 
         Parameters
         ----------
-        other : Vector
-            The vector to compare against
+        other : Vector or Tensor
+            The vector to compare against. A Tensor compares this Vector as the
+            1-d Tensor of its shape (``Tensor.isequal``).
         check_dtype : bool, default=False
             If True, also checks that dtypes match
 
@@ -461,6 +463,9 @@ class Vector(BaseType):
         :meth:`isclose` : For equality check of floating point dtypes
 
         """
+        if output_type(other) in _tensor_types:
+            # The Tensor compares this Vector as the 1-d Tensor of its shape
+            return other.isequal(self, check_dtype=check_dtype, **opts)
         other = self._expect_type(other, Vector, within="isequal", argname="other")
         if check_dtype and self.dtype != other.dtype:
             return False
@@ -493,8 +498,9 @@ class Vector(BaseType):
 
         Parameters
         ----------
-        other : Vector
-            Vector to compare against
+        other : Vector or Tensor
+            Vector to compare against. A Tensor compares this Vector as the 1-d
+            Tensor of its shape (``Tensor.isclose``).
         rel_tol : float
             Relative tolerance
         abs_tol : float
@@ -507,6 +513,11 @@ class Vector(BaseType):
         bool
 
         """
+        if output_type(other) in _tensor_types:
+            # The Tensor compares this Vector as the 1-d Tensor of its shape
+            return other.isclose(
+                self, rel_tol=rel_tol, abs_tol=abs_tol, check_dtype=check_dtype, **opts
+            )
         other = self._expect_type(other, Vector, within="isclose", argname="other")
         if check_dtype and self.dtype != other.dtype:
             return False
@@ -1109,7 +1120,7 @@ class Vector(BaseType):
                         keyword_name="fill_value",
                         extra_message="Literal scalars also accepted.",
                     )
-            dtype = unify(fill_value.dtype, self.dtype, is_left_scalar=True)
+            dtype = unify(fill_value.dtype, self.dtype)
 
         rv = self.dup(dtype, clear=True, name="to_dense", **opts)
         rv(**opts) << fill_value
@@ -1388,8 +1399,8 @@ class Vector(BaseType):
             op1 = get_typed_op(op, self.dtype, right.dtype, kind="binary")
             op2 = get_typed_op(op, left.dtype, other.dtype, kind="binary")
         if op1 is not op2:
-            left_dtype = unify(op1.type, op2.type, is_right_scalar=True)
-            right_dtype = unify(op1.type2, op2.type2, is_left_scalar=True)
+            left_dtype = unify(op1.type, op2.type)
+            right_dtype = unify(op1.type2, op2.type2)
             op = get_typed_op(op, left_dtype, right_dtype, kind="binary")
         else:
             op = op1
@@ -1599,7 +1610,7 @@ class Vector(BaseType):
                         extra_message="Literal scalars also accepted.",
                         op=op,
                     )
-            op = get_typed_op(op, left.dtype, self.dtype, is_left_scalar=True, kind="binary")
+            op = get_typed_op(op, left.dtype, self.dtype, kind="binary")
             if opclass == "Monoid":
                 op = op.binaryop
             else:
@@ -1637,12 +1648,10 @@ class Vector(BaseType):
                         op=op,
                     )
             if opclass in {"IndexUnaryOp", "SelectOp"}:
-                op = get_typed_op(
-                    op, self.dtype, right.dtype, is_right_scalar=True, kind="indexunary"
-                )
+                op = get_typed_op(op, self.dtype, right.dtype, kind="indexunary")
                 cfunc_method = "IndexOp"
             else:
-                op = get_typed_op(op, self.dtype, right.dtype, is_right_scalar=True, kind="binary")
+                op = get_typed_op(op, self.dtype, right.dtype, kind="binary")
                 cfunc_method = "BinaryOp2nd"
                 if opclass == "Monoid":
                     op = op.binaryop
@@ -1768,7 +1777,7 @@ class Vector(BaseType):
                 size=self._size,
                 dtype=self.dtype,
             )
-        op = get_typed_op(op, self.dtype, thunk.dtype, is_right_scalar=True, kind="select")
+        op = get_typed_op(op, self.dtype, thunk.dtype, kind="select")
         op, thunk = _value_select_in_own_type(op, self.dtype, thunk, given)
         self._expect_op(op, ("SelectOp", "IndexUnaryOp"), within=method_name, argname="op")
         if thunk._is_cscalar:
