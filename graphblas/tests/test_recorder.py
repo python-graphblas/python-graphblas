@@ -215,9 +215,8 @@ def test_record_repr_markdown(switch):
 
 def test_record_repr_html():
     A = gb.Matrix(int, 3, 3, name="A")
-    rec = gb.Recorder()
-    rec.start()
-    A[0, 0].new(name="c")
+    with gb.Recorder() as rec:
+        A[0, 0].new(name="c")
     try:
         import IPython  # noqa: F401
     except ImportError:
@@ -232,11 +231,11 @@ def test_record_failed_call():
     small = gb.Vector(int, size=2**55)
     BIG[:] = 1
     small[0] = 2
-    rec = gb.Recorder()
-    try:
-        BIG.ewise_add(small).new()
-    except OutOfMemory:
-        pass
+    with gb.Recorder() as rec:
+        try:
+            BIG.ewise_add(small).new()
+        except OutOfMemory:
+            pass
     assert "ERROR: OutOfMemory" in rec.data[-1]
 
 
