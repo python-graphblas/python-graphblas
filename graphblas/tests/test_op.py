@@ -5016,6 +5016,15 @@ def test_udt_record_date_literals_compare_as_numpy():
         if supports_udfs:
             assert (v == literal).new()[0].new().value == equal
             assert (v != literal).new()[0].new().value != equal
+    # Text numpy reads as NaT is NaT in the field's unit (numpy 2.5 warns for NaT with no
+    # unit), and NaT equals nothing, as in numpy.
+    bare = dtypes.register_anonymous(np.dtype("M8[s]"), "_DateLitBare")
+    b = gb.Scalar.from_value(np.datetime64(0, "s"), dtype=bare)
+    for nat in ["NaT", "nat", "", b"NaT"]:
+        assert (s == (nat, secs)) is False
+        assert (b == nat) is False
+        if supports_udfs:
+            assert not (v == (nat, secs)).new()[0].new().value
     # So does text numpy cannot read as a date or duration, and converting it says why.
     for literal, reason in [
         (("not a date", secs), "Error parsing datetime string"),
