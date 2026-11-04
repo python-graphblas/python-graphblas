@@ -276,7 +276,7 @@ def _literal_type(dtype, value, *, exact=False):
         if _keeps_value(value, np_type):
             return dtype
         return lookup_dtype(np.dtype(f"{np_type.kind}{max(len(value), 1)}"))
-    if np_type.kind in "mM" and (date := _as_numpy_date(value, np_type.kind)) is not None:
+    if np_type.kind in "mM" and (date := _as_numpy_date(value, np_type)) is not None:
         if date.dtype.kind == np_type.kind and _keeps_value(date, np_type):
             return dtype
         return lookup_dtype(date.dtype)
@@ -630,7 +630,7 @@ def _weak_literal_udt(dtype, value, *, exact=False):
             # takes the field's type, and converting it reports what is wrong.
             if isinstance(part, (str, bytes)) and base.kind in "SU":
                 own = np.dtype(f"{base.kind}{max(len(part), 1)}")
-            elif (date := _as_numpy_date(part, base.kind)) is not None:
+            elif (date := _as_numpy_date(part, base)) is not None:
                 part = date
                 own = date.dtype
                 if own.kind != base.kind:
@@ -693,21 +693,27 @@ def _weak_literal_udt(dtype, value, *, exact=False):
     return dtype if literal_type == np_type else lookup_dtype(literal_type)
 
 
-def _as_numpy_date(value, kind):
+def _as_numpy_date(value, leaf):
     """Return ``value`` as numpy's ``datetime64`` or ``timedelta64``, or ``None`` if it is neither.
 
     A numpy date or duration is itself; a Python ``datetime.date`` or
     ``datetime.datetime`` is a date in days or microseconds and a
     ``datetime.timedelta`` a duration in microseconds, as numpy makes them;
     text is a date in the unit it is written to (``"2020-01-01T12:00"`` is in
-    minutes) when ``kind``, the leaf's, is ``"M"`` and numpy can read it.
+    minutes) when ``leaf``, the numpy dtype it meets, is a date and numpy can
+    read it. Text numpy reads as NaT (``"NaT"`` in any case, or empty) is NaT
+    in the leaf's unit: numpy would give it no unit, which numpy 2.5 deprecates.
     """
     if isinstance(value, (np.datetime64, np.timedelta64)):
         return value
     try:
         if isinstance(value, datetime.timedelta):
             return np.timedelta64(value)
-        if isinstance(value, datetime.date) or (kind == "M" and isinstance(value, (str, bytes))):
+        if isinstance(value, datetime.date):
+            return np.datetime64(value)
+        if leaf.kind == "M" and isinstance(value, (str, bytes)):
+            if value.lower() in ("nat", "", b"nat", b""):
+                return np.datetime64("NaT", np.datetime_data(leaf)[0])
             return np.datetime64(value)
     except ValueError:  # text that is not a date; converting it reports that
         pass
