@@ -1283,6 +1283,13 @@ def test_jit_udt_np_type_numba_cannot_type():
         )
     assert isinstance(exc_info.value.__cause__, AttributeError)
     assert not hasattr(dtypes.ss, "_jit_bool_pair")
+    # So does a field that is an array of arrays of bool, which numpy keeps unflattened
+    nested = np.dtype([("d", np.dtype((np.bool_, (2,))), (3,))])
+    with pytest.raises(ValueError, match="cannot type an array of bool"):
+        dtypes.ss.register_new(
+            "_jit_bool_nest", "typedef struct { uint8_t d [6] ; } _jit_bool_nest ;", np_type=nested
+        )
+    assert not hasattr(dtypes.ss, "_jit_bool_nest")
     # The failure leaves the name free, so it registers with an np_type Numba can type.
     dtype = dtypes.ss.register_new(
         "_jit_bool_pair",

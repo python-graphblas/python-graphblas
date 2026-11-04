@@ -190,16 +190,32 @@ _NUMBA_UNTYPED_ARRAY_ELEMENTS = {
 }
 
 
+def _iter_leaves(np_type):
+    """Yield each leaf dtype of ``np_type``: a scalar, or an array of scalars, shape and all.
+
+    Walks records, nested records, arrays of records and arrays of arrays
+    (numpy keeps ``np.dtype((np.dtype(("?", (2,))), (3,)))`` as it is given),
+    in field order, so it reaches every value an element holds. A leaf inside
+    an array of records or of arrays comes once, as its record or inner array
+    declares it. ``udt._iter_record_leaves``, which pairs two records' leaves
+    for an op, yields an array of records as one leaf.
+    """
+    if np_type.names is not None:
+        for name in np_type.names:
+            yield from _iter_leaves(np_type.fields[name][0])
+    elif np_type.subdtype is not None and (
+        np_type.subdtype[0].names is not None or np_type.subdtype[0].subdtype is not None
+    ):
+        yield from _iter_leaves(np_type.subdtype[0])
+    else:
+        yield np_type
+
+
 def _numba_untyped_array_element(dtype):
     """The kind of the first array element in dtype that Numba cannot type, or None."""
-    if dtype.subdtype is not None:
-        base = dtype.subdtype[0]
-        if base.kind in _NUMBA_UNTYPED_ARRAY_ELEMENTS:
-            return base.kind
-        return _numba_untyped_array_element(base)
-    for field_dtype, *_ in (dtype.fields or {}).values():
-        if (kind := _numba_untyped_array_element(field_dtype)) is not None:
-            return kind
+    for leaf in _iter_leaves(dtype):
+        if leaf.subdtype is not None and leaf.base.kind in _NUMBA_UNTYPED_ARRAY_ELEMENTS:
+            return leaf.base.kind
     return None
 
 
@@ -230,14 +246,7 @@ def _numba_type(dtype):
 
 def _raw_bytes_element(dtype):
     """The first void dtype with no fields (raw bytes) in dtype, or None."""
-    if dtype.subdtype is not None:
-        return _raw_bytes_element(dtype.subdtype[0])
-    if dtype.names is None:
-        return dtype if dtype.kind == "V" else None
-    for field_dtype, *_ in dtype.fields.values():
-        if (raw := _raw_bytes_element(field_dtype)) is not None:
-            return raw
-    return None
+    return next((leaf.base for leaf in _iter_leaves(dtype) if leaf.base.kind == "V"), None)
 
 
 def register_new(name, dtype=None):
@@ -786,11 +795,7 @@ def _nats_in_leaf_units(values, np_type):
 
 def _has_duration_leaf(np_type):
     """Whether ``np_type`` has a timedelta64 leaf: a record field, an array's element, or itself."""
-    if np_type.subdtype is not None:
-        return _has_duration_leaf(np_type.subdtype[0])
-    if np_type.names is not None:
-        return any(_has_duration_leaf(np_type.fields[name][0]) for name in np_type.names)
-    return np_type.kind == "m"
+    return any(leaf.base.kind == "m" for leaf in _iter_leaves(np_type))
 
 
 def _dtype_to_string(dtype):

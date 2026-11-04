@@ -31,7 +31,7 @@ import numpy as np
 
 from ..exceptions import DomainMismatch
 from . import _has_numba, ffi, utils
-from .dtypes import _nats_in_leaf_units, _registry, _view_if_same_layout, lookup_dtype
+from .dtypes import _iter_leaves, _nats_in_leaf_units, _registry, _view_if_same_layout, lookup_dtype
 from .utils import output_type
 
 # The built-in ops that lift to UDTs, each with the Python operator or function
@@ -873,11 +873,7 @@ def _leaf_arrays(arr):
 @lru_cache
 def _has_half_leaf(np_type):
     """Whether ``np_type`` has a float16 leaf: a record field, an array's element, or itself."""
-    if np_type.subdtype is not None:
-        return _has_half_leaf(np_type.subdtype[0])
-    if np_type.names is not None:
-        return any(_has_half_leaf(np_type.fields[name][0]) for name in np_type.names)
-    return np_type.kind == "f" and np_type.itemsize == 2
+    return any(leaf.base.kind == "f" and leaf.base.itemsize == 2 for leaf in _iter_leaves(np_type))
 
 
 def _refuse_half(op, *dtypes):
@@ -899,12 +895,11 @@ def _refuse_half(op, *dtypes):
 @lru_cache
 def _has_narrow_float_leaf(np_type):
     """Whether ``np_type`` has a float leaf narrower than float64, which a float may overflow."""
-    if np_type.subdtype is not None:
-        return _has_narrow_float_leaf(np_type.subdtype[0])
-    if np_type.names is not None:
-        return any(_has_narrow_float_leaf(np_type.fields[name][0]) for name in np_type.names)
-    kind, size = np_type.kind, np_type.itemsize
-    return (kind == "f" and size < 8) or (kind == "c" and size < 16)
+    for leaf in _iter_leaves(np_type):
+        kind, size = leaf.base.kind, leaf.base.itemsize
+        if (kind == "f" and size < 8) or (kind == "c" and size < 16):
+            return True
+    return False
 
 
 @lru_cache
