@@ -4627,6 +4627,37 @@ def test_subarray_dtype_values_shape():
 
 
 @pytest.mark.skipif("not suitesparse")
+def test_ss_import_coo_with_empty_rows_and_columns():
+    # indptr was set only at the rows that appear, so every empty row after the first
+    # left a 0 in it: an empty row in the middle moved entries to another row (and
+    # isequal still said True), and an empty last row lost every entry
+    def entries(M):
+        return sorted(zip(*(x.tolist() for x in M.to_coo()), strict=True))
+
+    cases = [
+        ([0, 2], [1, 0], 3, 2),  # row 1, in the middle
+        ([0, 0], [0, 1], 3, 2),  # rows 1 and 2, at the end
+        ([2, 2], [0, 1], 3, 2),  # rows 0 and 1, at the start (this one worked)
+        ([1, 3], [2, 2], 5, 4),  # rows and columns empty at the start, middle and end
+        ([], [], 3, 2),  # no entries
+    ]
+    for rows, cols, nrows, ncols in cases:
+        A = Matrix.from_coo(rows, cols, np.arange(1.0, len(rows) + 1), nrows=nrows, ncols=ncols)
+        for M in [A, A.T.new()]:
+            for info in [M.ss.export("coor"), M.ss.export("cooc"), M.ss.export("coo", sort=True)]:
+                B = Matrix.ss.import_any(**info)
+                assert B.shape == M.shape
+                assert entries(B) == entries(M), (rows, cols, info["format"])
+    # Lists work, and an index beyond the shape is refused before indptr is written
+    B = Matrix.ss.import_coor(rows=[0, 2], cols=[1, 0], values=[1.0, 2.0], nrows=3, ncols=2)
+    assert B.to_coo()[0].tolist() == [0, 2]
+    with pytest.raises(IndexOutOfBound, match="rows must be less than nrows, 3; got 3"):
+        Matrix.ss.import_coor(rows=[0, 3], cols=[0, 0], values=[1.0, 2.0], nrows=3, ncols=1)
+    with pytest.raises(IndexOutOfBound, match="cols must be less than ncols, 2; got 5"):
+        Matrix.ss.import_cooc(rows=[0, 0], cols=[1, 5], values=[1.0, 2.0], nrows=1, ncols=2)
+
+
+@pytest.mark.skipif("not suitesparse")
 def test_ss_import_values_size():
     # GraphBLAS before 10.5.2 compares the byte size of imported values with the number
     # of entries, not the bytes they need, so it read past the end of each of these

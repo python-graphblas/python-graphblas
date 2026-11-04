@@ -7,7 +7,13 @@ import graphblas as gb
 
 from ... import binary, monoid
 from ...dtypes import _INDEX, BOOL, INT64, UINT64, lookup_dtype
-from ...exceptions import InvalidValue, _error_code_lookup, check_status, check_status_carg
+from ...exceptions import (
+    IndexOutOfBound,
+    InvalidValue,
+    _error_code_lookup,
+    check_status,
+    check_status_carg,
+)
 from .. import NULL, _has_numba, ffi, lib
 from ..base import call
 from ..operator import get_typed_op
@@ -3171,7 +3177,7 @@ class ss:
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'coor'.")
         if not sorted_rows:
             raise ValueError("sorted_rows must be True when importing 'coor' format")
-        indptr = indices_to_indptr(rows, nrows + 1)
+        indptr = _coo_indptr(rows, nrows, "rows", "nrows")
         return cls._import_csr(
             nrows=nrows,
             ncols=ncols,
@@ -3344,7 +3350,7 @@ class ss:
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'cooc'.")
         if not sorted_cols:
             raise ValueError("sorted_cols must be True when importing 'cooc' format")
-        indptr = indices_to_indptr(cols, ncols + 1)
+        indptr = _coo_indptr(cols, ncols, "cols", "ncols")
         return cls._import_csc(
             nrows=nrows,
             ncols=ncols,
@@ -4558,17 +4564,28 @@ def issorted(arr):  # pragma: no cover (numba)
 
 @njit
 def indices_to_indptr(indices, size):  # pragma: no cover (numba)
-    """Calculate the indptr for e.g. CSR from sorted COO rows."""
+    """Calculate the indptr for e.g. CSR from sorted uint64 COO rows, each below size - 1.
+
+    Each row's count goes at ``indptr[row + 1]``, then a running sum. Setting only the
+    rows that appear left 0 for every empty row after the first one, so an empty row
+    in the middle moved entries to another row, and an empty last row lost them all.
+    """
     indptr = np.zeros(size, dtype=indices.dtype)
-    index = np.uint64(0)
     one = np.uint64(1)
     for i in range(indices.size):
-        row = indices[i]
-        if row != index:
-            indptr[index + one] = i
-            index = row
-    indptr[index + one] = indices.size
+        indptr[indices[i] + one] += one
+    for i in range(1, size):
+        indptr[i] += indptr[i - 1]
     return indptr
+
+
+def _coo_indptr(indices, size, name, size_name):
+    """Return the indptr, of ``size + 1``, of sorted COO ``indices`` (rows or columns)."""
+    indices = ints_to_numpy_buffer(indices, np.uint64, name=name)
+    # indices_to_indptr writes at each index + 1, with no bounds check under Numba
+    if indices.size > 0 and (biggest := indices.max()) >= size:
+        raise IndexOutOfBound(f"{name} must be less than {size_name}, {size}; got {biggest}")
+    return indices_to_indptr(indices, size + 1)
 
 
 @njit(parallel=True)
