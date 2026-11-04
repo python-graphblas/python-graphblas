@@ -73,3 +73,7 @@ Visualization
 ~~~~~~~~~~~~~
 
 .. autofunction:: graphblas.viz.draw
+
+.. autofunction:: graphblas.viz.spy
+
+.. autofunction:: graphblas.viz.datashade
