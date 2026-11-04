@@ -17,6 +17,7 @@ from ..utils import (
     _CArray,
     _distinct_buffers,
     _MatrixArray,
+    _ownable_copy,
     _Pointer,
     check_values_size,
     get_order,
@@ -55,6 +56,53 @@ def _iterator_value_getter(dtype):
         return _element_value(dtype, buf)
 
     return get_udt
+
+
+def _claim_values_2d(cdata, cdata_size, nrows, ncols, dtype, is_c_order):
+    """Like ``claim_buffer_2d``, for values, but keep each array-UDT element contiguous.
+
+    GraphBLAS stores an array UDT's element as one contiguous block. Given a subarray
+    dtype in column order, ``claim_buffer_2d`` made the element's own axes the
+    slowest, so ``values[i, j]`` was not the entry at ``(i, j)``. In row order it gets
+    them right, and its array owns the buffer.
+    """
+    if not dtype.shape or is_c_order:
+        return claim_buffer_2d(ffi, cdata, cdata_size, nrows, ncols, dtype, is_c_order)
+    values = claim_buffer(ffi, cdata, cdata_size, dtype)
+    return values.reshape(ncols, nrows, *dtype.shape).swapaxes(0, 1)
+
+
+def _values_in_column_order(values, dtype, copy):
+    """Return ``(values, dtype, owner, swapped)`` for a fullc or bitmapc import.
+
+    GraphBLAS takes ``owner``'s memory, which holds the elements in column order: as
+    ``owner``, C-contiguous, if ``swapped``, else as ``owner.T``. An array UDT keeps
+    each element contiguous, so given one element per entry (``values[i, j]``), the
+    two entry axes are swapped into a copy. Fortran order of the whole array, as for
+    other types, put the element's own axes slowest, and GraphBLAS read each element
+    from scattered numbers.
+    """
+    # Converted once, to see the shape (and infer an array UDT from it). An array UDT's
+    # layout is decided below; other values go straight to Fortran order.
+    given = values
+    if isinstance(given, np.ndarray):
+        array_udt = given.ndim > 2 if dtype is None else bool(lookup_dtype(dtype).np_type.shape)
+    else:
+        array_udt = False
+    values, dtype = values_to_numpy_buffer(
+        values, dtype, order="K" if array_udt else "F", subarray_after=2
+    )
+    # A conversion that made a new array (from a list, or to another dtype or order)
+    # needs no second copy to be safe to hand over
+    if copy and not (isinstance(given, np.ndarray) and np.may_share_memory(values, given)):
+        copy = False
+    sub = dtype.np_type.shape
+    if sub and values.ndim == 2 + len(sub):
+        return values, dtype, _ownable_copy(values.swapaxes(0, 1), "C"), True
+    values, dtype = values_to_numpy_buffer(
+        values, dtype, copy=copy, ownable=True, order="F", subarray_after=2
+    )
+    return values, dtype, values, False
 
 
 def head(matrix, n=10, dtype=None, *, sort=False):
@@ -614,6 +662,9 @@ class ss:
 
         Return values
             - Note: for ``raw=True``, arrays may be larger than specified.
+            - Note: for an array UDT, ``values`` has the element's own axes after those
+              shown, so with ``raw=False`` ``values[i, j]`` is the element at ``(i, j)``.
+              In "bitmapc" and "fullc" it is then not Fortran-ordered.
             - "csr" format
                 - indptr : ndarray(dtype=uint64, ndim=1, size=nrows + 1)
                 - col_indices : ndarray(dtype=uint64, ndim=1, size=nvals)
@@ -1134,14 +1185,8 @@ class ss:
                     if values.size > 1:  # pragma: no cover (suitesparse)
                         values = values[:1]
                 else:
-                    values = claim_buffer_2d(
-                        ffi,
-                        Ax[0],
-                        Ax_size[0] // dtype.itemsize,
-                        nrows,
-                        ncols,
-                        dtype,
-                        is_c_order,
+                    values = _claim_values_2d(
+                        Ax[0], Ax_size[0] // dtype.itemsize, nrows, ncols, dtype, is_c_order
                     )
             rv = {"bitmap": bitmap, "nvals": nvals_[0]}
             if raw:
@@ -1180,8 +1225,8 @@ class ss:
                 rv = {"nrows": nrows, "ncols": ncols}
             else:
                 is_c_order = format == "fullr"
-                values = claim_buffer_2d(
-                    ffi, Ax[0], Ax_size[0] // dtype.itemsize, nrows, ncols, dtype, is_c_order
+                values = _claim_values_2d(
+                    Ax[0], Ax_size[0] // dtype.itemsize, nrows, ncols, dtype, is_c_order
                 )
                 rv = {}
         else:
@@ -2450,16 +2495,14 @@ class ss:
         )
         if method == "pack":
             dtype = matrix.dtype
-        values, dtype = values_to_numpy_buffer(
-            values, dtype, copy=copy, ownable=True, order="F", subarray_after=2
-        )
-        bitmap, values = _distinct_buffers(bitmap, values)
+        values, dtype, owner, swapped = _values_in_column_order(values, dtype, copy)
+        bitmap, owner = _distinct_buffers(bitmap, owner)
         if method == "import":
             nrows, ncols = get_shape(nrows, ncols, dtype, bitmap=bitmap, values=values)
         else:
             nrows, ncols = matrix.shape
         Ab = ffi_new("int8_t**", ffi.from_buffer("int8_t*", bitmap.T))
-        Ax = ffi_new("void**", ffi.from_buffer("void*", values.T))
+        Ax = ffi_new("void**", ffi.from_buffer("void*", owner if swapped else owner.T))
         if nvals is None:
             if bitmap.size == nrows * ncols:
                 nvals = np.count_nonzero(bitmap)
@@ -2479,12 +2522,12 @@ class ss:
             Ab,
             Ax,
             bitmap.nbytes,
-            values.nbytes,
+            owner.nbytes,
             is_iso,
             nvals,
             NULL if desc is None else desc._carg,
         )
-        _unclaim_taken((bitmap, Ab), (values, Ax))
+        _unclaim_taken((bitmap, Ab), (owner, Ax))
         if method == "import":
             check_status_carg(
                 status,
@@ -2810,14 +2853,12 @@ class ss:
         copy = not take_ownership or secure_import
         if method == "pack":
             dtype = matrix.dtype
-        values, dtype = values_to_numpy_buffer(
-            values, dtype, copy=copy, order="F", ownable=True, subarray_after=2
-        )
+        values, dtype, owner, swapped = _values_in_column_order(values, dtype, copy)
         if method == "import":
             nrows, ncols = get_shape(nrows, ncols, dtype, values=values)
         else:
             nrows, ncols = matrix.shape
-        Ax = ffi_new("void**", ffi.from_buffer("void*", values.T))
+        Ax = ffi_new("void**", ffi.from_buffer("void*", owner if swapped else owner.T))
         if method == "import":
             mhandle = ffi_new("GrB_Matrix*")
             args = (dtype._carg, nrows, ncols)
@@ -2827,9 +2868,9 @@ class ss:
         check_values_size(values, dtype, nrows * ncols, is_iso)
         desc = get_descriptor(secure_import=secure_import, **opts)
         status = getattr(lib, f"GxB_Matrix_{method}_FullC")(
-            mhandle, *args, Ax, values.nbytes, is_iso, NULL if desc is None else desc._carg
+            mhandle, *args, Ax, owner.nbytes, is_iso, NULL if desc is None else desc._carg
         )
-        _unclaim_taken((values, Ax))
+        _unclaim_taken((owner, Ax))
         if method == "import":
             check_status_carg(
                 status,
