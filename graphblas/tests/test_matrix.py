@@ -1550,9 +1550,10 @@ def test_select_row_and_column_compare_indices_with_the_bound_given():
     with gb.config.set(autocompute=True):
         assert select.row(A < w[0]).new().to_coo()[0].tolist() == [0, 1, 2]
         assert select.row(A >= w[0]).new().to_coo()[0].tolist() == [3, 4]
-    # A comparison with the scalar on the left gives the op's TypeError, as on main; it
-    # was AttributeError ('Matrix' object has no attribute 'value')
-    with pytest.raises(TypeError, match="Bad type for keyword argument `thunk=`"):
+    # A comparison with the scalar on the left is refused with a TypeError that names
+    # the helper (main gave the op's TypeError; it was briefly AttributeError: 'Matrix'
+    # object has no attribute 'value')
+    with pytest.raises(TypeError, match="select.row takes a comparison"):
         select.row(A.apply(binary.le, left=3))
     # NaN compares False with every index, so it keeps none; NaN cast to the INT64 thunk
     # was 0, so < and <= kept row 0, and > and >= every other row (main too)
