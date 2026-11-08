@@ -30,7 +30,7 @@ from graphblas.core.ss import _IS_SSGB7
 from graphblas.core.ss.jit_config import _enable_jit_for_udt
 from graphblas.exceptions import EmptyObject
 
-from .conftest import autocompute, burble
+from .conftest import autocompute, burble, skip_without_jit
 
 from graphblas import Vector  # isort:skip (for dask-graphblas)
 
@@ -110,7 +110,7 @@ def _setup_jit():
 def _require_jit_on():
     """Skip the test if the SuiteSparse JIT can't compile in this environment."""
     if gb.ss.config["jit_c_control"] != "on":
-        pytest.skip("JIT compilation not available (probe failed or compiler missing)")
+        skip_without_jit("JIT compilation not available (probe failed or compiler missing)")
 
 
 @contextlib.contextmanager
@@ -175,6 +175,19 @@ print("package: " + gb.__file__)
 print("before: " + str(before))
 print("after: " + str(control()))
 """
+
+
+@pytest.mark.skipif("not os.environ.get('GRAPHBLAS_REQUIRE_JIT')")
+def test_required_jit_works():
+    """Where GRAPHBLAS_REQUIRE_JIT is set (CI's pytest_jit job), the JIT tests can all run.
+
+    Most of them skip what an environment cannot do through ``skip_without_jit``, which
+    fails instead there. A GraphBLAS without a JIT and a missing Numba skip whole tests
+    by marker, so check those here.
+    """
+    assert not _IS_SSGB7, "SuiteSparse:GraphBLAS 7 has no JIT"
+    assert _JIT_WORKS_AT_IMPORT, "the JIT cannot compile here (probe failed or compiler missing)"
+    assert supports_udfs, "Numba is missing, so no UDT op or kernel can be built"
 
 
 @pytest.mark.skipif("_IS_SSGB7")
@@ -376,7 +389,7 @@ def test_ss_register_new_enables_the_jit():
     first.
     """
     if not _JIT_WORKS_AT_IMPORT:
-        pytest.skip("JIT not compiled in or not working here; nothing can compile")
+        skip_without_jit("JIT not compiled in or not working here; nothing can compile")
     lines, report = _run_in_fresh_process(_SS_REGISTER_NEW_PROBE)
     kinds = ["unary", "binary", "indexunary", "select"]
     kinds += ["indexbinary"] if _has_idxbinop else []
@@ -540,7 +553,7 @@ def test_udt_work_raises_only_the_default_run(form, env_control, kept, tmp_path)
     was told apart.
     """
     if not kept and not _JIT_WORKS_AT_IMPORT:
-        pytest.skip("JIT not compiled in or not working here; nothing raises to 'on'")
+        skip_without_jit("JIT not compiled in or not working here; nothing raises to 'on'")
     extra_env = {}
     if form == "YAML file":
         (tmp_path / "jit.yaml").write_text("jit_c_control: run\n")
@@ -570,7 +583,7 @@ def test_udt_work_raises_only_the_default_run(form, env_control, kept, tmp_path)
 def test_ss_register_new_says_the_compile_failed():
     """C source that does not compile says so, and that ``jit_c_control`` is now ``'load'``."""
     if not _JIT_WORKS_AT_IMPORT:
-        pytest.skip("JIT not compiled in or not working here; nothing compiles to fail")
+        skip_without_jit("JIT not compiled in or not working here; nothing compiles to fail")
     from graphblas.exceptions import JitError, NullPointer
 
     cdef = "void why_bad (double *z, double *x) { (*z) = why_undeclared ; }"
@@ -589,7 +602,7 @@ def test_ss_register_new_says_the_compile_failed():
 def test_auto_fix_jit_at_import_left_compiler_usable():
     """The import-time repair leaves a compiler the UDT path can actually use."""
     if not gb.ss.jit_compiler_is_usable():
-        pytest.skip("sandboxed env without a usable compiler; auto-fix had nothing to repair")
+        skip_without_jit("sandboxed env without a usable compiler; auto-fix had nothing to repair")
     if not _JIT_WORKS_AT_IMPORT:
         # Compiler file exists but the probe failed (e.g., the baked-in flags
         # target a different arch than the host). After a compile failure
@@ -597,7 +610,7 @@ def test_auto_fix_jit_at_import_left_compiler_usable():
         # downstream ops punt to generic cleanly; the probe absorbs that first
         # failure. Which mode it lands in varies by SuiteSparse version.
         assert gb.ss.config["jit_c_control"] in {"load", "run"}
-        pytest.skip("compiler present but JIT probe failed in this env")
+        skip_without_jit("compiler present but JIT probe failed in this env")
     assert _JIT_WORKS_AT_IMPORT
     assert gb.ss.config["jit_c_control"] == "on"
 
@@ -684,7 +697,7 @@ def test_enable_jit_for_udt_re_raises_the_live_control(monkeypatch):
     and kept. None is the default either way.
     """
     if not _JIT_WORKS_AT_IMPORT:
-        pytest.skip("JIT not compiled in or not working here; the control need not hold 'on'")
+        skip_without_jit("JIT not compiled in or not working here; the control need not hold 'on'")
 
     from graphblas.core.ss import jit_config
 
@@ -729,7 +742,7 @@ def test_failed_compile_is_not_retried_at_the_next_arming():
     with ``'off'`` the only way out.
     """
     if not _JIT_WORKS_AT_IMPORT:
-        pytest.skip("JIT not compiled in or not working here; nothing compiles to fail")
+        skip_without_jit("JIT not compiled in or not working here; nothing compiles to fail")
     from graphblas.core.ss import jit_config
     from graphblas.exceptions import JitError
 
@@ -774,7 +787,7 @@ def test_failed_compile_is_not_retried_at_the_next_arming():
 def test_public_fix_jit_config_repairs_a_broken_compiler():
     """``gb.ss.fix_jit_config()`` repairs a clobbered compiler path and returns ``True``."""
     if not _JIT_WORKS_AT_IMPORT:
-        pytest.skip("env JIT doesn't actually compile; nothing to repair to")
+        skip_without_jit("env JIT doesn't actually compile; nothing to repair to")
     prev = {
         "control": gb.ss.config["jit_c_control"],
         "cc": gb.ss.config["jit_c_compiler_name"],
