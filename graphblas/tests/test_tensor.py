@@ -2742,6 +2742,33 @@ def test_broadcast_guard_hint_for_ewise_mult():
         a.ewise_add(v)
 
 
+def test_select_and_apply_take_a_0d_tensor():
+    # a full reduction is a 0-d Tensor (decision 2); it serves as the scalar operand
+    X = Tensor.from_coo(([0, 1, 1], [0, 0, 1], [1, 2, 0]), [1.0, 5.0, 3.0], shape=(2, 2, 3))
+    t = X.sum().new().apply(binary.truediv, right=3.0).new()  # 0-d, 3.0
+    assert t.shape == ()
+    s = t.to_scalar()
+    assert X.select(gb.select.valuege, t).new().isequal(X.select(gb.select.valuege, s).new())
+    assert X.select(gb.select.valuege, t).new().to_coo()[1].tolist() == [5.0, 3.0]
+    assert X.apply(binary.minus, right=t).new().isequal(X.apply(binary.minus, right=s).new())
+    assert X.apply(binary.minus, left=t).new().isequal(X.apply(binary.minus, left=s).new())
+    with gb.config.set(autocompute=False), pytest.raises(TypeError, match=r"\.new\(\)"):
+        X.select(gb.select.valuege, X.sum())
+    with gb.config.set(autocompute=True):
+        assert X.apply(binary.minus, right=X.sum()).new().isequal(X.apply(binary.minus, right=9.0))
+    # An empty 0-d Tensor is an empty Scalar: these operators need a value, so both raise, where
+    # ewise_mult works by position and gives an empty result
+    empty = Tensor(dtypes.FP64, ())
+    for operand in [empty, Scalar(dtypes.FP64)]:
+        with pytest.raises(gb.exceptions.EmptyObject):
+            X.select(gb.select.valuege, operand).new()
+        with pytest.raises(gb.exceptions.EmptyObject):
+            X.apply(binary.minus, right=operand).new()
+        with pytest.raises(gb.exceptions.EmptyObject):
+            X.apply(binary.minus, left=operand).new()
+    assert X.ewise_mult(empty, binary.plus).new().nvals == 0
+
+
 @pytest.mark.parametrize("layout", all_layouts(3)[::2])
 def test_broadcast_mult_strategies(layout, monkeypatch):
     """Exact group, part of a group (expanded through a selector) and relayout paths."""
