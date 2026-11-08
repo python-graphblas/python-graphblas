@@ -129,9 +129,11 @@ def _isclose_recipe(self, other, rel_tol, abs_tol, **opts):
     # So we can use structural mask below
     isequal(**opts) << select.value(isequal == True)  # noqa: E712
 
-    # abs(x) and abs(y), in FP64 for a real type: abs wraps at an integer type's minimum
-    x = self.apply(unary.abs[_abs_type(self.dtype)]).new(FP64, mask=~isequal.S, **opts)
-    y = other.apply(unary.abs[_abs_type(other.dtype)]).new(FP64, mask=~isequal.S, **opts)
+    # abs(x) and abs(y), in the type x - y is in below, or in FP64 for a real type:
+    # abs wraps at an integer type's minimum
+    abs_type = _abs_type(unify(self.dtype, other.dtype))
+    x = self.apply(unary.abs[abs_type]).new(FP64, mask=~isequal.S, **opts)
+    y = other.apply(unary.abs[abs_type]).new(FP64, mask=~isequal.S, **opts)
     # max(abs(x), abs(y))
     x(**opts) << x.ewise_mult(y, binary.max)
     max_x_y = x
@@ -155,8 +157,9 @@ def _isclose_recipe(self, other, rel_tol, abs_tol, **opts):
         lo = self.ewise_mult(other, binary.min).new(UINT64, mask=~isequal.S, **opts)
         y(~isequal.S, replace=True, **opts) << hi.ewise_mult(lo, binary.minus)
     else:
-        y(~isequal.S, replace=True, **opts) << self.ewise_mult(other, binary.minus)
-        y(**opts) << y.apply(unary.abs)
+        # abs before storing in y, whose FP64 would keep only a complex number's real part
+        diff = self.ewise_mult(other, binary.minus).new(mask=~isequal.S, **opts)
+        y(~isequal.S, replace=True, **opts) << diff.apply(unary.abs)
     abs_x_y = y
 
     # abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
