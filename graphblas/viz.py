@@ -160,6 +160,9 @@ def _matrix_to_dataframe(M):
         cols = cols.astype(np.float64)
     else:
         cols = cols.astype(np.int64)
+    if vals.dtype == np.bool_:
+        # datashader aggregates only numbers, so a boolean Matrix plots as 0 and 1
+        vals = vals.astype(np.uint8)
     return pd.DataFrame({"row": rows, "col": cols, "val": vals})
 
 
