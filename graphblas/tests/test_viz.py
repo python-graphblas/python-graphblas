@@ -129,6 +129,16 @@ def test_draw_rejects_non_matrix():
         viz.draw(v)
 
 
+@pytest.mark.parametrize(("nrows", "ncols"), [(2, 5), (5, 2)])
+def test_draw_rejects_non_square(nrows, ncols):
+    # A rectangular Matrix used to draw as a graph of its rows plus whichever
+    # columns had entries.
+    _importorskip("networkx")
+    M = Matrix.from_coo([0, 1], [1, 0], [1.0, 2.0], nrows=nrows, ncols=ncols)
+    with pytest.raises(ValueError, match=rf"square Matrix, not shape \({nrows}, {ncols}\)"):
+        viz.draw(M)
+
+
 @pytest.mark.skipif("not dtypes._supports_complex")
 def test_draw_rejects_complex():
     # networkx's layout used to raise "float() argument must be ... not 'complex'"
