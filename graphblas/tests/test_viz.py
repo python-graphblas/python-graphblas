@@ -129,6 +129,26 @@ def test_draw_rejects_non_matrix():
         viz.draw(v)
 
 
+@pytest.mark.skipif("not dtypes._supports_complex")
+def test_draw_rejects_complex():
+    # networkx's layout used to raise "float() argument must be ... not 'complex'"
+    _importorskip("networkx")
+    M = Matrix.from_coo([0, 1], [1, 0], [1j, 2], nrows=2, ncols=2)
+    with pytest.raises(TypeError, match="booleans or real numbers, not FC64"):
+        viz.draw(M)
+
+
+def test_draw_rejects_udt():
+    # networkx's layout used to raise "shape mismatch: value array of shape (2,2) ..."
+    _importorskip("networkx")
+    import numpy as np
+
+    udt = dtypes.register_anonymous(np.dtype([("viz_draw_a", np.int32), ("viz_draw_b", np.int8)]))
+    M = Matrix.from_coo([0, 1], [1, 0], [(1, 2), (3, 4)], nrows=2, ncols=2, dtype=udt)
+    with pytest.raises(TypeError, match="booleans or real numbers"):
+        viz.draw(M)
+
+
 @pytest.mark.filterwarnings("ignore:FigureCanvasAgg is non-interactive")
 def test_draw_reciprocal_edges_both_labels_visible():
     # Regression for gh-474: reciprocal directed edges (0->1 and 1->0) used to be
