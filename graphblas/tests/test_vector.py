@@ -2771,11 +2771,9 @@ def test_udt():
         vv = Vector.ss.deserialize(v.ss.serialize(), dtype=long_udt)
         assert v.isequal(vv, check_dtype=True)
         # The dtype name is too long to embed in the blob; dtype= must be provided.
-        # Builds with GxB_Serialized_get_String say so (the empty GrB_NAME raised a
-        # bare SyntaxError); older ones have no second name to try.
-        with pytest.raises(
-            ValueError, match="pass it as dtype=|GxB_Serialized_get_String is unavailable"
-        ):
+        # Every build says so (from SuiteSparse 9, the empty GrB_NAME raised a bare
+        # SyntaxError; before it, there is no second name to try).
+        with pytest.raises(ValueError, match="pass it as dtype="):
             Vector.ss.deserialize(v.ss.serialize())
     # May be able to look up non-anonymous dtypes by name if their names are too long
     named_long_dtype = np.dtype([("x", np.bool_), ("y" * 1000, np.float64)], align=False)

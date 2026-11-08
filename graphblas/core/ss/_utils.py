@@ -91,17 +91,11 @@ def _resolve_serialized_dtype(data_obj, data_nbytes, obj_kind):
     c_source_type = getattr(dtypes.ss, dtype_name, None) if dtype_name else None
     if type(c_source_type) is DataType:
         return c_source_type
-    if has_grb_name:
-        # Such as a type from C source that this process has not registered
-        raise ValueError(
-            f"{obj_kind} deserialize cannot tell the dtype from the type name "
-            f"{dtype_name!r}; pass it as dtype="
-        ) from orig_error
-    # No GrB_NAME fallback available (older SS); surface the original
-    # resolution failure with the actual dtype name attached.
+    # Such as a type from C source that this process has not registered, or a UDT whose
+    # numpy repr GrB_NAME could not keep (or, before SuiteSparse 9, has no GrB_NAME)
     raise ValueError(
-        f"{obj_kind} deserialize cannot resolve dtype {dtype_name!r} and "
-        f"GxB_Serialized_get_String is unavailable in this SuiteSparse build"
+        f"{obj_kind} deserialize cannot tell the dtype from the type name "
+        f"{dtype_name!r}; pass it as dtype="
     ) from orig_error
 
 
