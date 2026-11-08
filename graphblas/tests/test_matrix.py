@@ -4225,9 +4225,7 @@ def test_ss_serialize_udt_with_a_long_name():
     A[1, 2] = (1, 5.6)
     assert_same(A, Matrix.ss.deserialize(A.ss.serialize(), dtype=long_udt))
     # An anonymous one needs dtype= (see test_vector.py's test_udt for the errors)
-    with pytest.raises(
-        ValueError, match="pass it as dtype=|GxB_Serialized_get_String is unavailable"
-    ):
+    with pytest.raises(ValueError, match="pass it as dtype="):
         Matrix.ss.deserialize(A.ss.serialize())
     # A named one is found by its name
     named_long_dtype = np.dtype([("x", np.bool_), ("z" * 1000, np.float64)], align=False)
