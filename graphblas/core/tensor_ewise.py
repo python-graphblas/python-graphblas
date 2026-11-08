@@ -100,11 +100,22 @@ def _check_expansion(method, operands, shape, allow):
         replicated = sum(f * n for f, n in sizes if f > 1)
     limit = config.get("tensor_max_expansion", 10**9)
     if replicated > limit and not allow:
+        if method == "ewise_mult":
+            # ewise_mult takes no allow_expansion, and suggesting itself would not help
+            advice = (
+                "Both operands broadcast, so the intersection is an outer product; raise "
+                "`graphblas.config` option tensor_max_expansion "
+                "(`with gb.config.set(tensor_max_expansion=...)`) to allow it."
+            )
+        else:
+            advice = (
+                "numpy semantics fill every broadcast position; use ewise_mult for the "
+                "intersection, pass allow_expansion=True, or raise `graphblas.config` option "
+                "tensor_max_expansion."
+            )
         raise ValueError(
             f"{method} of shapes {operands[0]._shape} and {operands[1]._shape} would replicate "
-            f"{replicated} entries to broadcast (the limit is {limit}). numpy semantics fill "
-            "every broadcast position; use ewise_mult for the intersection, pass "
-            "allow_expansion=True, or raise `graphblas.config` option tensor_max_expansion."
+            f"{replicated} entries to broadcast (the limit is {limit}). {advice}"
         )
 
 
