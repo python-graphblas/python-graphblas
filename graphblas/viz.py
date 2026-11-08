@@ -61,6 +61,9 @@ def draw(m):
     typ = _output_type(m)
     if typ is not _Matrix and typ is not _TransposedMatrix:
         raise TypeError(f"Can only draw a Matrix, not {type(m)}")
+    if m.dtype._is_udt or m.dtype.np_type.kind == "c":
+        # The layout reads the values as edge weights, which networkx needs as floats
+        raise TypeError(f"Can only draw a Matrix of booleans or real numbers, not {m.dtype}")
 
     g = to_networkx(m)
     pos = nx.spring_layout(g)
