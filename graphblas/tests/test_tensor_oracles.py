@@ -35,6 +35,8 @@ import graphblas as gb
 from graphblas import Matrix, Scalar, Vector, backend, binary, monoid, semiring, unary
 from graphblas.core import ffi, lib, tensor, tensor_census, tensor_index
 
+from .conftest import skip_without_jit
+
 if backend != "suitesparse":
     pytest.skip("Tensor needs the suitesparse backend", allow_module_level=True)
 try:
@@ -1165,7 +1167,10 @@ def test_ttm(rng, engines, engine_list):
         (engine,) = engine_list
         if not o.stats[engine]:
             # The results were right, but the engine never ran (the UDT engine needs the JIT)
-            pytest.skip(f"the {engine} engine did not run here: {dict(o.stats)}")
+            reason = f"the {engine} engine did not run here: {dict(o.stats)}"
+            if engine == "udt":
+                skip_without_jit(reason)
+            pytest.skip(reason)
     if engine_list == ("products",):
         assert not o.stats["numba"], dict(o.stats)
         assert not o.stats["udt"], dict(o.stats)

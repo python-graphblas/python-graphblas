@@ -18,6 +18,8 @@ from graphblas.core.tensor import Layout, Tensor, TensorExpression
 from graphblas.core.tensor import _has_container as tensor_has_container
 from graphblas.exceptions import DimensionMismatch, IndexOutOfBound
 
+from .conftest import skip_without_jit
+
 if backend != "suitesparse":
     pytest.skip("Tensor needs the suitesparse backend", allow_module_level=True)
 if not tensor_has_container():
@@ -3682,6 +3684,8 @@ def test_give_buffer_fallback(monkeypatch):
         calls = _ttm_udt_spy(monkeypatch)
         check(X.tensordot(U, ([2], [0])).new(), *_ttm_model(xv, xp, U, 2), approx=True)
         assert calls == ["hypercsr"]
+    elif os.environ.get("GRAPHBLAS_REQUIRE_JIT"):
+        pytest.fail("GRAPHBLAS_REQUIRE_JIT is set, but the UDT TTM engine cannot compile")
 
 
 def test_ttm_numba_free_axes_past_2_60(monkeypatch):
@@ -3841,7 +3845,7 @@ def _require_jit_compile():
     from graphblas.core import tensor_udt
 
     if not tensor_udt.jit_ready() or tensor_udt.semiring(2) is None:
-        pytest.skip("the UDT TTM engine needs the SuiteSparse JIT with a compiler")
+        skip_without_jit("the UDT TTM engine needs the SuiteSparse JIT with a compiler")
 
 
 @pytest.mark.parametrize("nthreads", [1, 8])
@@ -4121,7 +4125,7 @@ def test_ttm_udt_jit_failure(control, numba, tmp_path):
     lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
     assert lines["package"] == str(repo_root / "graphblas" / "__init__.py"), report
     if "skip" in lines:
-        pytest.skip(lines["skip"])
+        skip_without_jit(lines["skip"])
     assert float(lines["max_err"]) < 1e-12, report
     assert lines["control"] == "load", report
     assert lines["compiler"] == "/nonexistent/bin/cc", report  # (not touched)
@@ -4272,7 +4276,7 @@ def test_udt_engine_new_kernel_jit_failure(case, tmp_path):
     lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
     assert lines["package"] == str(repo_root / "graphblas" / "__init__.py"), report
     if "skip" in lines:
-        pytest.skip(lines["skip"])
+        skip_without_jit(lines["skip"])
     assert float(lines["max_err"]) < 1e-10, report
     # Compiled and ran; then one attempt that failed, and none after
     assert lines["attempts"] == "['ok'] ['JitError']", report
