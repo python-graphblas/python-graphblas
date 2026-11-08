@@ -2726,6 +2726,22 @@ def test_broadcast_guard():
     assert R.nvals == 6
 
 
+def test_broadcast_guard_hint_for_ewise_mult():
+    # ewise_mult takes no allow_expansion, so its refusal names only the config option
+    a = Tensor.from_coo(([0, 1, 2], [0, 0, 0]), 1.0, shape=(3, 1))
+    b = Tensor.from_coo(([0, 0], [1, 3]), 1.0, shape=(1, 5))
+    with gb.config.set(tensor_max_expansion=5), pytest.raises(ValueError, match="outer") as info:
+        a.ewise_mult(b)
+    msg = str(info.value)
+    assert "outer product" in msg
+    assert "tensor_max_expansion" in msg
+    assert "use ewise_mult" not in msg
+    assert "allow_expansion" not in msg
+    v = Tensor.from_coo(([0, 2],), [1.0, 2.0], shape=(5,))
+    with gb.config.set(tensor_max_expansion=1), pytest.raises(ValueError, match="allow_expansion"):
+        a.ewise_add(v)
+
+
 @pytest.mark.parametrize("layout", all_layouts(3)[::2])
 def test_broadcast_mult_strategies(layout, monkeypatch):
     """Exact group, part of a group (expanded through a selector) and relayout paths."""
