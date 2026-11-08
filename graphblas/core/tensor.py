@@ -637,7 +637,8 @@ class Tensor(BaseType):
         value. Values are copied once; a COO's coordinates are raveled into the Matrix's row
         and column indices. A GCXS array (ndim >= 2) imports its arrays as they are, one copy
         each, and the Tensor takes its layout: the compressed axes as rows, the others as
-        columns.
+        columns. If those columns are past 2^60 positions, which no Matrix holds, its entries
+        are decoded and the Tensor takes a layout of its own.
 
         Parameters
         ----------
@@ -678,7 +679,9 @@ class Tensor(BaseType):
         hold its layout and the pointer has at most 2^20 slots or two per entry. Otherwise the
         export takes the cheapest layout whose pointer is that small, or failing that the
         compressed axes with the shortest pointer. Those may leave a column group past 2^60
-        positions, which no Matrix can hold and GCXS can (below 2^63).
+        positions, which no Matrix can hold and GCXS stores in int64 indices (below 2^63).
+        ``from_pydata_sparse`` reads such an array back; past 2^63 positions in all, pydata's
+        own ``tocoo``, ``sum``, indexing and ``transpose`` raise on it.
 
         A pointer of more than 2^28 positions and more than two per entry (2 GiB, out of
         proportion to the data) raises ``ValueError``, with or without ``compressed_axes``:
