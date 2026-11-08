@@ -344,9 +344,44 @@ def _isclose(rel_tol=1e-7, abs_tol=0.0):
         # As in math.isclose, an infinity is close only to itself
         if abs(x) == np.inf or abs(y) == np.inf:
             return False
-        return abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
+        return _abs_diff(x, y) <= max(rel_tol * max(_magnitude(x), _magnitude(y)), abs_tol)
 
     return inner
+
+
+# Integer arithmetic in Numba wraps: x - y in int64 or uint64 (Numba widens smaller
+# unsigned types to uint64, so 5 - 6 is 2**64 - 1), and abs at a signed type's
+# minimum. Python ints do not, so for them these are plain Python; the overloads
+# below compile them for Numba's integers so that they do not wrap either.
+def _abs_diff(x, y):
+    return abs(x - y)
+
+
+def _magnitude(x):
+    return abs(x)
+
+
+if _has_numba:
+    from numba.extending import overload
+
+    @overload(_abs_diff)
+    def _abs_diff_overload(x, y):
+        if isinstance(x, numba.types.Integer) and x == y:
+
+            def abs_diff(x, y):  # pragma: no cover (numba)
+                # The difference fits uint64, where both convert modulo 2**64
+                if x >= y:
+                    return np.uint64(x) - np.uint64(y)
+                return np.uint64(y) - np.uint64(x)
+
+            return abs_diff
+        return lambda x, y: abs(x - y)
+
+    @overload(_magnitude)
+    def _magnitude_overload(x):
+        if isinstance(x, numba.types.Integer):
+            return lambda x: abs(np.float64(x))
+        return lambda x: abs(x)  # noqa: PLW0108 (an overload returns a Python function)
 
 
 _MAX_INT64 = np.iinfo(np.int64).max
@@ -848,7 +883,8 @@ class BinaryOp(OpBase):
         >>> dir(gb.binary)
         [..., 'max_zero', ...]
 
-        This is how ``gb.binary.isclose`` is defined:
+        ``gb.binary.isclose`` is defined like this, except that it computes ``x - y``
+        and ``abs(x)`` for integers without wrapping:
 
         >>> def user_isclose(rel_tol=1e-7, abs_tol=0.0):
         >>>     def inner(x, y):

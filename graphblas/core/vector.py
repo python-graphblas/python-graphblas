@@ -3,7 +3,7 @@ import itertools
 import numpy as np
 
 from .. import backend, binary, monoid, select, semiring, unary
-from ..dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
+from ..dtypes import _INDEX, FP64, INT64, UINT64, lookup_dtype, unify
 from ..exceptions import DimensionMismatch, NoValue, check_status
 from . import _supports_udfs, automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, call
@@ -110,6 +110,10 @@ def _select_mask(updater, obj, mask):
         updater << obj.dup(mask=mask)
 
 
+def _abs_type(dtype):
+    return dtype if dtype.np_type.kind == "c" else FP64
+
+
 def _isclose_recipe(self, other, rel_tol, abs_tol, **opts):
     #  x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol), except that
     #  an infinity is close only to itself
@@ -125,10 +129,9 @@ def _isclose_recipe(self, other, rel_tol, abs_tol, **opts):
     # So we can use structural mask below
     isequal(**opts) << select.value(isequal == True)  # noqa: E712
 
-    # abs(x)
-    x = self.apply(unary.abs).new(FP64, mask=~isequal.S, **opts)
-    # abs(y)
-    y = other.apply(unary.abs).new(FP64, mask=~isequal.S, **opts)
+    # abs(x) and abs(y), in FP64 for a real type: abs wraps at an integer type's minimum
+    x = self.apply(unary.abs[_abs_type(self.dtype)]).new(FP64, mask=~isequal.S, **opts)
+    y = other.apply(unary.abs[_abs_type(other.dtype)]).new(FP64, mask=~isequal.S, **opts)
     # max(abs(x), abs(y))
     x(**opts) << x.ewise_mult(y, binary.max)
     max_x_y = x
@@ -144,11 +147,17 @@ def _isclose_recipe(self, other, rel_tol, abs_tol, **opts):
     # max(rel_tol * max(abs(x), abs(y)), abs_tol)
     max_x_y(**opts) << max_x_y.apply(binary.max, abs_tol)
 
-    # x - y
-    y(~isequal.S, replace=True, **opts) << self.ewise_mult(other, binary.minus)
-    abs_x_y = y
     # abs(x - y)
-    abs_x_y(**opts) << abs_x_y.apply(unary.abs)
+    if unify(self.dtype, other.dtype).np_type.kind in "iu":
+        # x - y wraps in an integer type, and the difference may not fit it. It fits
+        # UINT64, where max(x, y) and min(x, y) convert modulo 2**64.
+        hi = self.ewise_mult(other, binary.max).new(UINT64, mask=~isequal.S, **opts)
+        lo = self.ewise_mult(other, binary.min).new(UINT64, mask=~isequal.S, **opts)
+        y(~isequal.S, replace=True, **opts) << hi.ewise_mult(lo, binary.minus)
+    else:
+        y(~isequal.S, replace=True, **opts) << self.ewise_mult(other, binary.minus)
+        y(**opts) << y.apply(unary.abs)
+    abs_x_y = y
 
     # abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
     isequal(**opts) << abs_x_y.ewise_mult(max_x_y, binary.le)

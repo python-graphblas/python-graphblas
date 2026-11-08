@@ -213,6 +213,19 @@ def test_isclose_infinity():
             assert Scalar.from_value(x).isclose(other, abs_tol=abs_tol) is expected, (x, y)
 
 
+def test_isclose_integers_do_not_wrap():
+    # x - y or abs(x) wrapped in an integer type, and a UINT64 value above INT64's
+    # maximum raised OverflowError with Numba; see test_vector.ISCLOSE_WRAPPING_CASES
+    from .test_vector import ISCLOSE_WRAPPING_CASES
+
+    for xtype, ytype, x, y, rel_tol in ISCLOSE_WRAPPING_CASES:
+        expected = math.isclose(x, y, rel_tol=rel_tol)
+        for (lt, lv), (rt, rv) in [((xtype, x), (ytype, y)), ((ytype, y), (xtype, x))]:
+            left = Scalar.from_value(lv, dtype=lt)
+            right = Scalar.from_value(rv, dtype=rt)
+            assert left.isclose(right, rel_tol=rel_tol) is expected, (lt, lv, rt, rv)
+
+
 def test_isclose_udt_raises():
     """Reject ``isclose`` on UDTs with a clear message that points to isequal."""
     arr_udt = dtypes.register_anonymous(np.dtype((np.int64, (3,))), "_IscloseUdt3")

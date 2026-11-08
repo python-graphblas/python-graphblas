@@ -1154,6 +1154,37 @@ def test_isclose_infinity():
             assert _isclose_recipe(left, right, 1e-7, abs_tol) is expected, (x, y)
 
 
+# (x's dtype, y's dtype, x, y, rel_tol): each was wrong in at least one of isclose's
+# paths, because x - y or abs(x) wrapped in an integer type. The values are far enough
+# apart (or exactly on the tolerance) that FP64 gives math.isclose's answer too.
+ISCLOSE_WRAPPING_CASES = [
+    ("UINT64", "UINT64", 0, 2**64 - 1, 1e-7),
+    ("UINT64", "UINT64", 2**63, 2**64 - 1, 1e-7),
+    ("UINT32", "UINT32", 5, 6, 0.5),
+    ("UINT8", "UINT8", 5, 6, 0.5),
+    ("UINT8", "UINT64", 0, 2**64 - 1, 1e-7),
+    ("INT64", "INT64", -(2**63), 2**63 - 1, 1e-7),
+    ("INT64", "INT64", -(2**63), 0, 1.0),
+    ("INT8", "INT8", -128, 127, 0.5),
+    ("INT8", "INT8", -128, 0, 1.0),
+    ("INT8", "INT64", 0, -(2**63), 1e-7),
+    ("INT8", "UINT64", -1, 2**64 - 1, 1e-7),
+]
+
+
+def test_isclose_integers_do_not_wrap():
+    from graphblas.core.vector import _isclose_recipe
+
+    for xtype, ytype, x, y, rel_tol in ISCLOSE_WRAPPING_CASES:
+        expected = math.isclose(x, y, rel_tol=rel_tol)
+        for (lt, lv), (rt, rv) in [((xtype, x), (ytype, y)), ((ytype, y), (xtype, x))]:
+            left = Vector.from_coo([0, 2], [lv, 5], dtype=lt, size=3)
+            right = Vector.from_coo([0, 2], [rv, 5], dtype=rt, size=3)
+            if supports_udfs:
+                assert left.isclose(right, rel_tol=rel_tol) is expected, (lt, lv, rt, rv)
+            assert _isclose_recipe(left, right, rel_tol, 0.0) is expected, (lt, lv, rt, rv)
+
+
 def test_binary_op(v):
     v2 = v.dup()
     v2[1] = 0

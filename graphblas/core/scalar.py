@@ -338,7 +338,11 @@ class Scalar(BaseType):
             is_right_scalar=True,
             kind="binary",
         )
-        return isclose_func._numba_func(self.value, other.value)
+        # Pass the values in the op's input types, as ewise_mult does; Numba types a
+        # Python int as int64, which a UINT64 value need not fit
+        x = isclose_func.type.np_type.type(self.value)
+        y = isclose_func.type2.np_type.type(other.value)
+        return isclose_func._numba_func(x, y)
 
     def clear(self):
         """In-place operation which clears the value in the Scalar.

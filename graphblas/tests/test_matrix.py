@@ -1999,6 +1999,22 @@ def test_isclose_infinity():
             assert _isclose_recipe(left, right, 1e-7, abs_tol) is expected, (x, y)
 
 
+def test_isclose_integers_do_not_wrap():
+    # x - y or abs(x) wrapped in an integer type; see test_vector.ISCLOSE_WRAPPING_CASES
+    from graphblas.core.vector import _isclose_recipe
+
+    from .test_vector import ISCLOSE_WRAPPING_CASES
+
+    for xtype, ytype, x, y, rel_tol in ISCLOSE_WRAPPING_CASES:
+        expected = math.isclose(x, y, rel_tol=rel_tol)
+        for (lt, lv), (rt, rv) in [((xtype, x), (ytype, y)), ((ytype, y), (xtype, x))]:
+            left = Matrix.from_coo([0, 1], [1, 0], [lv, 5], dtype=lt)
+            right = Matrix.from_coo([1, 0], [0, 1], [rv, 5], dtype=rt).T
+            if supports_udfs:
+                assert left.isclose(right, rel_tol=rel_tol) is expected, (lt, lv, rt, rv)
+            assert _isclose_recipe(left, right, rel_tol, 0.0) is expected, (lt, lv, rt, rv)
+
+
 @pytest.mark.slow
 def test_transpose_equals(A):
     data = [
