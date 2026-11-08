@@ -15,7 +15,7 @@ import warnings
 
 import pytest
 
-from graphblas import Matrix, Vector, viz
+from graphblas import Matrix, Vector, dtypes, viz
 
 
 def _importorskip(modname):
@@ -276,3 +276,35 @@ def test_datashade_bool():
         values = image.data[image.vdims[0].name]
         assert values.dims == ("row", "col")
         np.testing.assert_array_equal(values.values, expected)
+
+
+@pytest.mark.skipif("not dtypes._supports_complex")
+def test_datashade_rejects_complex():
+    # Rendering used to fail later with a numba TypingError that holoviews only
+    # logged, leaving a blank plot.
+    _import_datashade_deps()
+    M = Matrix.from_coo([0, 2], [3, 1], [1j, 2], nrows=3, ncols=4)
+    with pytest.raises(TypeError, match="booleans or real numbers, not FC64"):
+        viz.datashade(M)
+
+
+def test_datashade_rejects_udt():
+    # Rendering used to fail later with "NumPy datatype ... not supported"
+    _import_datashade_deps()
+    import numpy as np
+
+    udt = dtypes.register_anonymous(np.dtype([("viz_ds_a", np.int32), ("viz_ds_b", np.float64)]))
+    M = Matrix.from_coo([0, 2], [3, 1], [(1, 2.0), (3, 4.0)], nrows=3, ncols=4, dtype=udt)
+    with pytest.raises(TypeError, match="booleans or real numbers"):
+        viz.datashade(M)
+    with pytest.raises(TypeError, match="booleans or real numbers"):
+        viz.datashade(M, agg=["count", "sum"])
+
+
+@pytest.mark.parametrize(("nrows", "ncols"), [(0, 0), (3, 0), (0, 4)])
+def test_datashade_rejects_no_rows_or_columns(nrows, ncols):
+    # Rendering used to fail later with ZeroDivisionError
+    _import_datashade_deps()
+    M = Matrix(float, nrows, ncols)
+    with pytest.raises(ValueError, match="with rows and columns"):
+        viz.datashade(M)

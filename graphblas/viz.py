@@ -208,6 +208,12 @@ def datashade(M, agg="count", *, width=None, height=None, opts_kwargs=None, **kw
 
     """
     bk, hv, _hp, _ds = _get_imports(["bk", "hv", "hp", "ds"], "datashade")
+    # The plot renders lazily, and holoviews only logs an error raised then and
+    # shows a blank plot, so refuse up front what datashader cannot draw.
+    if M.dtype._is_udt or M.dtype.np_type.kind == "c":
+        raise TypeError(f"Can only datashade a Matrix of booleans or real numbers, not {M.dtype}")
+    if M.nrows == 0 or M.ncols == 0:
+        raise ValueError(f"Can only datashade a Matrix with rows and columns, not shape {M.shape}")
     if "df" not in kwargs:
         df = _matrix_to_dataframe(M)
     else:
