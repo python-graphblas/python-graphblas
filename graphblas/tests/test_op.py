@@ -2318,7 +2318,7 @@ def test_udt_udf_reading_a_missing_field():
 
     Numba types the attribute form with a bare ``KeyError: 'name'``; before 0.60,
     with a TypingError that holds it, and 0.58 and 0.59 also warn about that.
-    Before 0.60 the TypingError for ``x["name"]`` quotes its "Field" line.
+    ``x["name"]``'s "Field" line comes quoted on 0.60 (in a bare KeyError) and before.
     """
     rec = dtypes.register_anonymous(np.dtype([("mf_a", "i1"), ("mf_b", "f8")]), "_MissFieldRec")
     other = dtypes.register_anonymous(np.dtype([("mf_c", "i1"), ("mf_d", "f8")]), "_MissFieldRec2")
@@ -2346,7 +2346,7 @@ def test_udt_udf_reading_a_missing_field():
     # The TypingError from Numba before 0.60, as 0.59.1 words it, whatever Numba runs here
     from numba import TypingError
 
-    from graphblas.core.operator.udf import _missing_field
+    from graphblas.core.operator.udf import _missing_field, _summarize_numba_typing_error
 
     old_style = (
         "Failed in nopython mode pipeline (step: nopython frontend)\n"
@@ -2356,6 +2356,10 @@ def test_udt_udf_reading_a_missing_field():
     assert _missing_field(TypingError(old_style.format("mf_zzz"))) == "mf_zzz"
     assert _missing_field(TypingError(old_style.format("other error"))) is None
     assert _missing_field(KeyError("mf_zzz")) == "mf_zzz"
+    # Numba 0.60 raises x["mf_zzz"]'s sentence as a bare KeyError, which is no name
+    by_key_060 = KeyError("Field 'mf_zzz' was not found in record with fields ('mf_a', 'mf_b')")
+    assert _missing_field(by_key_060) is None
+    assert _summarize_numba_typing_error(by_key_060) == by_key_060.args[0]
 
 
 @pytest.mark.skipif("not supports_udfs")

@@ -174,12 +174,14 @@ _OLD_STYLE_MISSING_FIELD_RE = re.compile(
 def _missing_field(exc):
     """Return the field that ``x.name`` reads and the record lacks, if that is why ``exc``.
 
-    Numba types ``x.name`` for a missing field with a bare KeyError of the name
-    (where ``x["name"]`` gets a TypingError that says "Field ... was not
-    found"). Before 0.60 a TypingError holds that KeyError instead.
+    Numba types ``x.name`` for a missing field with a bare KeyError of the name.
+    Before 0.60 a TypingError holds that KeyError instead. ``x["name"]`` gets
+    Numba's own "Field ... was not found" sentence: in a TypingError, or, in
+    0.60, as a bare KeyError of it, which is not a name.
     """
     if isinstance(exc, KeyError):
-        return exc.args[0]
+        name = exc.args[0] if exc.args else None
+        return name if isinstance(name, str) and name.isidentifier() else None
     match = _OLD_STYLE_MISSING_FIELD_RE.search(_ANSI_RE.sub("", str(exc)))
     return None if match is None else match["name"]
 
@@ -210,8 +212,8 @@ def _summarize_numba_typing_error(exc):
     """
     lines = [_ANSI_RE.sub("", line).strip() for line in str(exc).splitlines()]
     for i, line in enumerate(lines):
-        # Before 0.60, Numba gives an error it captured, such as the KeyError
-        # "Field ... was not found" for ``x["name"]``, as its quoted repr.
+        # A KeyError, such as "Field ... was not found" for ``x["name"]``, prints as
+        # its quoted repr: bare in Numba 0.60, and inside the TypingError before it
         if len(line) > 1 and line[0] == line[-1] == '"':
             line = line[1:-1]
         if line.startswith(_NUMBA_DIAG_PREFIXES):
