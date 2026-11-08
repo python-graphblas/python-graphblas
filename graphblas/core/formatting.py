@@ -540,6 +540,7 @@ def _format_float_column(values, digits):
         # pandas does; e.g. a "%f"-style callable then casts complex the same way.
         return [na_rep if (v != v) else float_format(v) for v in arr]
     seq = arr.tolist()
+    # FC32 values come in as python complex, so a threshold > 3.4e38 can chop what pandas keeps.
     threshold = _display_option("chop_threshold")
 
     def format_with(fmt_str):
