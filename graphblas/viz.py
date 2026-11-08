@@ -157,15 +157,9 @@ def _matrix_to_dataframe(M):
     """
     np, pd = _get_imports(["np", "pd"], "datashade")
     rows, cols, vals = M.to_coo()
-    max_int = np.iinfo(np.int64).max
-    if M.nrows > max_int and rows.max() > max_int:
-        rows = rows.astype(np.float64)
-    else:
-        rows = rows.astype(np.int64)
-    if M.ncols > max_int and cols.max() > max_int:
-        cols = cols.astype(np.float64)
-    else:
-        cols = cols.astype(np.int64)
+    # GraphBLAS dimensions are at most 2**60, so int64 holds every uint64 index
+    rows = rows.astype(np.int64)
+    cols = cols.astype(np.int64)
     if vals.dtype == np.bool_:
         # datashader aggregates only numbers, so a boolean Matrix plots as 0 and 1
         vals = vals.astype(np.uint8)
