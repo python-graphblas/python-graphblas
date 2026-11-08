@@ -98,6 +98,12 @@ jobs:
             slowtask: pytest_normal
           - os: ubuntu-24.04-arm # Linux aarch64
             slowtask: pytest_normal
+          # Not drawn at random: the newest Python and psg from conda-forge, with Numba and
+          # a C compiler, so the JIT tests run and count for coverage on every run. Its
+          # GRAPHBLAS_REQUIRE_JIT fails the JIT tests instead of skipping them if it cannot
+          # compile.
+          - os: ubuntu-latest
+            slowtask: pytest_jit
           # Uncomment these temporarily for stress testing
           # - os: macos-15-intel # macOS x86_64 (Intel)
           #   slowtask: pytest_bizarro
@@ -128,6 +134,10 @@ jobs:
         # 3.9.16 0_73_pypy
         run: |
           choices=(3.11 3.12 3.13 3.14 3.15)
+          if [[ ${{ matrix.slowtask == 'pytest_jit' }} == true ]] ; then
+            # MAINT: 2026-11-07 the newest Python with conda-forge builds of psg and Numba
+            choices=(3.15)
+          fi
           selected=${choices[$((RANDOM % ${#choices[@]}))]}
           echo "selected: $selected (from: ${choices[*]})"
           echo "selected=$selected" >> "$GITHUB_OUTPUT"
@@ -136,6 +146,9 @@ jobs:
         # Remove 'upstream' from the list if it is known to not work.
         run: |
           choices=(conda-forge wheel source upstream)
+          if [[ ${{ matrix.slowtask == 'pytest_jit' }} == true ]] ; then
+            choices=(conda-forge)  # psg's wheels are built without the JIT
+          fi
           selected=${choices[$((RANDOM % ${#choices[@]}))]}
           echo "selected: $selected (from: ${choices[*]})"
           echo "selected=$selected" >> "$GITHUB_OUTPUT"
@@ -172,6 +185,9 @@ jobs:
             exit 1
           fi
           eval "$picks"
+          if [[ ${{ matrix.slowtask == 'pytest_jit' }} == true ]] ; then
+            psgver=""  # the newest psg, whichever the picker printed above
+          fi
 
           # Set up psg conda package variable (conda-forge installs via conda, others via pip).
           # For conda-forge, psg must always be installed; an empty psgver just means "latest".
@@ -220,7 +236,7 @@ jobs:
           awkward=awkward${akver}
           datashade=""
           if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') }} == true ||
-                ( ${{ matrix.slowtask != 'notebooks'}} == true && (
+                ( ${{ matrix.slowtask != 'notebooks' && matrix.slowtask != 'pytest_jit' }} == true && (
                   ( ${{ matrix.os == 'windows-latest' }} == true && $(python -c 'import random ; print(random.random() < .2)') == True ) ||
                   ( ${{ matrix.os == 'windows-latest' }} == false && $(python -c 'import random ; print(random.random() < .4)') == True ))) ]]
           then
@@ -328,6 +344,8 @@ jobs:
         # A hang (e.g. two libomp copies deadlocking in an OpenMP barrier on macOS) would
         # otherwise hold the runner for GitHub's 6-hour limit.
         timeout-minutes: 120
+        env:
+          GRAPHBLAS_REQUIRE_JIT: ${{ matrix.slowtask == 'pytest_jit' && '1' || '' }}
         run: |
           A=${{ needs.rngs.outputs.mapnumpy == 'A' || '' }} ; B=${{ needs.rngs.outputs.mapnumpy == 'B' || '' }}
           C=${{ needs.rngs.outputs.mapnumpy == 'C' || '' }} ; D=${{ needs.rngs.outputs.mapnumpy == 'D' || '' }}
@@ -358,8 +376,11 @@ jobs:
           # pytest ${{ matrix.os != 'windows-latest' && '--forked' || '' }} \  # to investigate crashes
           #   --color=yes --randomly -v -s ${args} \
           coverage run -m pytest --color=yes --randomly -v ${args} \
-            ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }}
+            ${{ matrix.slowtask == 'pytest_normal' && '--runslow' || '' }} \
+            ${{ matrix.slowtask == 'pytest_jit' && '--runslow --backend=suitesparse' || '' }}
       - name: Unit tests (bizarro scalars)
+        # The JIT job runs the suite once; the other jobs cover the C scalar defaults
+        if: matrix.slowtask != 'pytest_jit'
         timeout-minutes: 120
         run: |
           # Run tests again with Scalars being C scalars by default
