@@ -118,15 +118,26 @@ def _compile_udf_for_udt(numba_func, sig, *, op_kind, op_name, dtypes):
     try:
         numba_func.compile(sig)
     except (NumbaError, KeyError, NotImplementedError) as exc:
-        if isinstance(exc, KeyError):
-            # Numba types ``x.name`` for a field the record lacks with a bare KeyError
-            # of the name, where ``x["name"]`` gets the TypingError "Field ... was not found".
-            snippet = f"Field {exc.args[0]!r} was not found in the record"
+        if (field := _missing_field(exc)) is not None:
+            snippet = f"Field {field!r} was not found in the record"
         else:
             snippet = _summarize_numba_typing_error(exc)
         raise UdfParseError(
             f"{op_kind}.{op_name} does not work with ({dtypes_str}): {snippet}"
         ) from exc
+
+
+def _missing_field(exc):
+    """Return the field that ``x.name`` reads and the record lacks, if that is why ``exc``.
+
+    Numba types ``x.name`` for a missing field with a bare KeyError of the name
+    (where ``x["name"]`` gets a TypingError that says "Field ... was not
+    found"). Any other KeyError, such as one with no name, is not that.
+    """
+    if isinstance(exc, KeyError):
+        name = exc.args[0] if exc.args else None
+        return name if isinstance(name, str) and name.isidentifier() else None
+    return None
 
 
 # Numba prefixes its actionable diagnostic line with one of these.

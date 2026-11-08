@@ -2297,6 +2297,18 @@ def test_udt_udf_reading_a_missing_field():
     unary_op = UnaryOp.register_anonymous(lambda x: x.mf_zzz, "_miss_field_u", is_udt=True)
     with pytest.raises(UdfParseError, match=r"unary._miss_field_u does not work with"):
         unary_op[rec]
+    by_key = UnaryOp.register_anonymous(lambda x: x["mf_zzz"], "_miss_field_k", is_udt=True)
+    with pytest.raises(
+        UdfParseError,
+        match=r"unary._miss_field_k does not work with \(_MissFieldRec\): "
+        r"Field 'mf_zzz' was not found in record with fields \('mf_a', 'mf_b'\)$",
+    ):
+        by_key[rec]
+    from graphblas.core.operator.udf import _missing_field
+
+    assert _missing_field(KeyError("mf_zzz")) == "mf_zzz"
+    assert _missing_field(KeyError()) is None
+    assert _missing_field(KeyError("not a name")) is None
 
 
 @pytest.mark.skipif("not supports_udfs")
