@@ -2316,7 +2316,9 @@ def test_udt_return_type_errors():
 def test_udt_udf_reading_a_missing_field():
     """``x.name`` for a field the record lacks names the op and types, as ``x["name"]`` does.
 
-    Numba types the attribute form with a bare ``KeyError: 'name'``.
+    Numba types the attribute form with a bare ``KeyError: 'name'``; before 0.60,
+    with a TypingError that holds it, and 0.58 and 0.59 also warn about that.
+    Before 0.60 the TypingError for ``x["name"]`` quotes its "Field" line.
     """
     rec = dtypes.register_anonymous(np.dtype([("mf_a", "i1"), ("mf_b", "f8")]), "_MissFieldRec")
     other = dtypes.register_anonymous(np.dtype([("mf_c", "i1"), ("mf_d", "f8")]), "_MissFieldRec2")
@@ -2334,6 +2336,26 @@ def test_udt_udf_reading_a_missing_field():
     unary_op = UnaryOp.register_anonymous(lambda x: x.mf_zzz, "_miss_field_u", is_udt=True)
     with pytest.raises(UdfParseError, match=r"unary._miss_field_u does not work with"):
         unary_op[rec]
+    by_key = UnaryOp.register_anonymous(lambda x: x["mf_zzz"], "_miss_field_k", is_udt=True)
+    with pytest.raises(
+        UdfParseError,
+        match=r"unary._miss_field_k does not work with \(_MissFieldRec\): "
+        r"Field 'mf_zzz' was not found in record with fields \('mf_a', 'mf_b'\)$",
+    ):
+        by_key[rec]
+    # The TypingError from Numba before 0.60, as 0.59.1 words it, whatever Numba runs here
+    from numba import TypingError
+
+    from graphblas.core.operator.udf import _missing_field
+
+    old_style = (
+        "Failed in nopython mode pipeline (step: nopython frontend)\n"
+        'Internal error at resolving type of attribute "mf_zzz" of "x".\n'
+        "\x1b[1m\x1b[1m'{}'\x1b[0m\n\x1b[0m\x1b[1mDuring: typing of get attribute at f.py (1)"
+    )
+    assert _missing_field(TypingError(old_style.format("mf_zzz"))) == "mf_zzz"
+    assert _missing_field(TypingError(old_style.format("other error"))) is None
+    assert _missing_field(KeyError("mf_zzz")) == "mf_zzz"
 
 
 @pytest.mark.skipif("not supports_udfs")
