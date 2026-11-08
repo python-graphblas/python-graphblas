@@ -1,4 +1,5 @@
 import contextlib
+import warnings
 
 import numpy as np
 import pytest
@@ -6797,3 +6798,28 @@ def test_chop_threshold_complex(dtype, big_str, small_str):
         assert "1.000000e+00+1.000000e+00j" in r
         assert "0.000000e+00+0.000000e+00j" in r
         w._repr_html_()
+
+
+@pytest.mark.skipif("not dtypes._supports_complex")
+def test_complex_repr_magnitude_overflow_warns_nothing(monkeypatch):
+    # The float formatter takes np.abs of a complex column, which is inf for FC64
+    # components near the float max. numpy 1.24 on arm64 also raises the FP
+    # overflow flag there (newer numpy does not), and that RuntimeWarning must not
+    # escape from repr. Stand in for that numpy with an abs whose own arithmetic
+    # overflows, so the test can fail on any numpy. (FC32 values reach the formatter
+    # widened to double, so their magnitudes never overflow.)
+    real_abs = np.abs
+
+    def overflowing_abs(x):
+        x = np.asarray(x)
+        if np.iscomplexobj(x):
+            return np.sqrt(x.real * x.real + x.imag * x.imag)
+        return real_abs(x)
+
+    big = float(np.finfo(np.float64).max)
+    v = Vector.from_coo([10_000, 500_000], [complex(big, big), 1j], size=10**6, dtype="FC64")
+    monkeypatch.setattr(formatting.np, "abs", overflowing_abs)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        assert "1.797693e+308+1.797693e+308j" in repr(v)
+        v._repr_html_()
