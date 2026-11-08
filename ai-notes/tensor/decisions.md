@@ -168,6 +168,17 @@ the API settles. `design.md` describes how the code implements these.
     recorded a reason for the old default. A behavior change to the experimental API,
     toward the parity it claims. Decided 2026-10-28 by the coordinator, on Erik's
     instruction to decide and document. _Revisit_ if users ask for a default operator.
+28. **`select` and `apply` take a 0-d Tensor as their scalar operand** (`thunk`, `left`,
+    `right`), converted with `to_scalar()` when the expression is built. _Why:_ 0-d is the
+    Tensor's scalar (2), a full `reduce` returns one, and `ewise_mult` already broadcasts
+    one, so a threshold that came from a reduction needed a `to_scalar()` that no other
+    operand needs. An empty 0-d Tensor raises `EmptyObject`, as an empty Scalar does: these
+    operators need a value, while `ewise_mult` works by position and gives an empty result.
+    The value is read when the expression is built, where a Scalar operand is read when it
+    computes; only a 0-d Tensor changed between the two would show it. The narrower
+    alternative was to leave the signature alone and make the refusal name `Tensor.select`
+    and say `.to_scalar()`. Decided 2026-11-08 by the coordinator. _Revisit_ if a Tensor
+    operand of another rank is proposed here (it stays refused).
 
 ## Deferred, on purpose
 
