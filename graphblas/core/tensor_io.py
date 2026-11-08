@@ -37,8 +37,8 @@ def _gcxs_states(shape):
 _GCXS_SMALL_POINTER = 2**20
 # Past this many and past two per entry, the export refuses, whoever chose the axes. The memory
 # then follows the shape and not the data. 2^28 groups is 2 GiB of pointer and a peak of about
-# 3 GiB (1.5 times the pointer, measured), safe on a small machine; a 2^31 pointer is what
-# killed 16 GB CI runners.
+# 3 GiB (1.5 times the pointer through a Matrix, measured), safe on a small machine; a 2^31
+# pointer is what killed 16 GB CI runners.
 _GCXS_MAX_POINTER = 2**28
 
 
@@ -96,7 +96,8 @@ def _gcxs_from_coordinates(T, rows, sparse):
     r = tl.ravel(coords, shape, rows)
     c = tl.ravel(coords, shape, cols)
     order = np.lexsort((c, r))
-    indptr = np.bincount(r + 1, minlength=tl.prod(shape, rows) + 1).cumsum()
+    indptr = np.bincount(r + 1, minlength=tl.prod(shape, rows) + 1)
+    np.cumsum(indptr, out=indptr)  # (in place: this can be the largest array of the export)
     return sparse.GCXS(
         (values[order], c[order], indptr), shape=shape, compressed_axes=rows, fill_value=0
     )
@@ -150,35 +151,44 @@ def from_pydata_sparse(cls, s, *, dup_op=None, layout=None, name=None):
         # a Tensor layout, so its arrays import as they are (one copy each).
         rows = tuple(int(a) for a in s.compressed_axes)
         lay = Layout(rows, tuple(a for a in range(len(shape)) if a not in rows))
-        if tl._valid_split(shape, lay.seq, len(rows)):
-            from .matrix import Matrix
+        nrows, ncols = tl.prod(shape, lay.rows), tl.prod(shape, lay.cols)
+        indptr, indices = np.asarray(s.indptr), np.asarray(s.indices)
+        if dup_op is None:
+            # As pydata's todense: repeated coordinates add up
+            dup_op = binary.lor if dtype == BOOL else binary.plus
+        if not tl._valid_split(shape, lay.seq, len(rows)):
+            # Columns past 2^60, which no Matrix holds. Decode the arrays here: past 2^63
+            # positions in all, pydata's own tocoo raises.
+            coords = [None] * len(shape)
+            r = np.repeat(np.arange(nrows, dtype=np.int64), np.diff(indptr))
+            tl.unravel(r, shape, lay.rows, coords)
+            tl.unravel(indices.astype(np.int64), shape, lay.cols, coords)
+            return cls.from_coo(
+                coords, s.data, dtype, shape=shape, layout=layout, dup_op=dup_op, name=name
+            )
+        from .matrix import Matrix
 
-            nrows, ncols = tl.prod(shape, lay.rows), tl.prod(shape, lay.cols)
-            indptr, indices = np.asarray(s.indptr), np.asarray(s.indices)
-            # GCXS promises neither sorted columns nor distinct ones (pydata checks neither),
-            # and SuiteSparse takes its arrays unchecked: a repeat would make an invalid
-            # Matrix. Rows strictly increasing (the usual case) import as they are; others
-            # are built, with repeats combined by dup_op.
-            increasing = indices[1:] > indices[:-1]
-            ends = indptr[1:-1]
-            increasing[ends[(ends > 0) & (ends < indices.size)] - 1] = True  # (row boundaries)
-            if increasing.all():
-                M = Matrix.ss.import_csr(
-                    nrows=nrows,
-                    ncols=ncols,
-                    indptr=indptr,
-                    col_indices=indices,
-                    values=s.data,
-                    dtype=dtype,
-                    sorted_cols=True,
-                )
-            else:
-                if dup_op is None:
-                    # As pydata's todense: repeated coordinates add up
-                    dup_op = binary.lor if dtype == BOOL else binary.plus
-                r = np.repeat(np.arange(nrows, dtype=np.int64), np.diff(indptr))
-                M = tl.from_coo(r, indices, s.data, dtype, nrows, ncols, dup_op=dup_op)
-            return _with_layout(cls, M, shape, lay, layout, name)
+        # GCXS promises neither sorted columns nor distinct ones (pydata checks neither),
+        # and SuiteSparse takes its arrays unchecked: a repeat would make an invalid
+        # Matrix. Rows strictly increasing (the usual case) import as they are; others
+        # are built, with repeats combined by dup_op.
+        increasing = indices[1:] > indices[:-1]
+        ends = indptr[1:-1]
+        increasing[ends[(ends > 0) & (ends < indices.size)] - 1] = True  # (row boundaries)
+        if increasing.all():
+            M = Matrix.ss.import_csr(
+                nrows=nrows,
+                ncols=ncols,
+                indptr=indptr,
+                col_indices=indices,
+                values=s.data,
+                dtype=dtype,
+                sorted_cols=True,
+            )
+        else:
+            r = np.repeat(np.arange(nrows, dtype=np.int64), np.diff(indptr))
+            M = tl.from_coo(r, indices, s.data, dtype, nrows, ncols, dup_op=dup_op)
+        return _with_layout(cls, M, shape, lay, layout, name)
     if not isinstance(s, sparse.COO):
         s = s.asformat("coo")
     return cls.from_coo(
