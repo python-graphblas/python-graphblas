@@ -43,8 +43,8 @@ def _ewise_expr(
         op1 = get_typed_op(op, self.dtype, right.dtype, kind="binary")
         op2 = get_typed_op(op, left.dtype, other.dtype, kind="binary")
         if op1 is not op2:
-            left_dtype = unify(op1.type, op2.type, is_right_scalar=True)
-            right_dtype = unify(op1.type2, op2.type2, is_left_scalar=True)
+            left_dtype = unify(op1.type, op2.type)
+            right_dtype = unify(op1.type2, op2.type2)
             op = get_typed_op(op, left_dtype, right_dtype, kind="binary")
         else:
             op = op1
