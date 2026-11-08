@@ -4581,11 +4581,21 @@ def indices_to_indptr(indices, size):  # pragma: no cover (numba)
 
 def _coo_indptr(indices, size, name, size_name):
     """Return the indptr, of ``size + 1``, of sorted COO ``indices`` (rows or columns)."""
-    indices = ints_to_numpy_buffer(indices, np.uint64, name=name)
+    # Read 2-D indices as a flat buffer, as other imports do. The kernel would index
+    # a 2-D array by its rows, past the end of its first axis.
+    indices = ints_to_numpy_buffer(indices, np.uint64, name=name).ravel()
     # indices_to_indptr writes at each index + 1, with no bounds check under Numba
     if indices.size > 0 and (biggest := indices.max()) >= size:
         raise IndexOutOfBound(f"{name} must be less than {size_name}, {size}; got {biggest}")
-    return indices_to_indptr(indices, size + 1)
+    if _has_numba:
+        return indices_to_indptr(indices, size + 1)
+    # Without Numba the kernel's loops run in Python, once per entry and once per row.
+    # Every index is below size, so it reads the same as int64; counts are never negative.
+    indptr = np.empty(size + 1, np.uint64)
+    indptr[0] = 0
+    counts = np.bincount(indices.view(np.int64), minlength=size)
+    np.cumsum(counts.view(np.uint64), out=indptr[1:])
+    return indptr
 
 
 @njit(parallel=True)

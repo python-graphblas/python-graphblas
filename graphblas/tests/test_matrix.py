@@ -4655,6 +4655,13 @@ def test_ss_import_coo_with_empty_rows_and_columns():
         Matrix.ss.import_coor(rows=[0, 3], cols=[0, 0], values=[1.0, 2.0], nrows=3, ncols=1)
     with pytest.raises(IndexOutOfBound, match="cols must be less than ncols, 2; got 5"):
         Matrix.ss.import_cooc(rows=[0, 0], cols=[1, 5], values=[1.0, 2.0], nrows=1, ncols=2)
+    # 2-D indices are a flat buffer, as in from_coo; they read past the end (or crashed)
+    rows = np.array([[0, 1], [1, 2]], np.uint64)
+    B = Matrix.ss.import_coor(rows=rows, cols=[0, 0, 1, 1], values=[1, 2, 3, 4], nrows=3, ncols=2)
+    assert entries(B) == entries(Matrix.from_coo(rows.ravel(), [0, 0, 1, 1], [1, 2, 3, 4]))
+    cols = np.array([[0], [0], [1]], np.uint64)
+    B = Matrix.ss.import_cooc(rows=[0, 2, 1], cols=cols, values=[1, 2, 3], nrows=3, ncols=2)
+    assert entries(B) == entries(Matrix.from_coo([0, 2, 1], cols.ravel(), [1, 2, 3]))
 
 
 @pytest.mark.skipif("not suitesparse")
