@@ -256,3 +256,23 @@ def test_datashade_positions_match_spy():
     ys = agg.coords["row"].values
     nonzero = {(round(float(ys[i])), round(float(xs[j]))) for i, j in np.argwhere(agg.values > 0)}
     assert nonzero == {(0, 1), (0, 3), (2, 3)}
+
+
+def test_datashade_bool():
+    # datashader aggregates only numbers. A boolean Matrix used to plot blank, with
+    # holoviews logging "input must be numeric" when it rendered; now its values
+    # plot as 0 and 1.
+    _import_datashade_deps()
+    import numpy as np
+
+    M = Matrix.from_coo([0, 2], [3, 1], [True, False], nrows=3, ncols=4)
+    nan = np.nan
+    for agg, expected in [
+        ("sum", [[nan, nan, nan, 1], [nan, nan, nan, nan], [nan, 0, nan, nan]]),
+        ("count", [[0, 0, 0, 1], [0, 0, 0, 0], [0, 1, 0, 0]]),
+    ]:
+        # Indexing the lazy DynamicMap computes the image, as rendering would
+        image = viz.datashade(M, agg=agg)[()]
+        values = image.data[image.vdims[0].name]
+        assert values.dims == ("row", "col")
+        np.testing.assert_array_equal(values.values, expected)
