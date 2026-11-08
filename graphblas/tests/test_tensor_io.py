@@ -5,7 +5,8 @@ import itertools
 import numpy as np
 import pytest
 
-from graphblas import backend, binary, dtypes
+from graphblas import Matrix, backend, binary, dtypes
+from graphblas.core import tensor_io
 from graphblas.core.tensor import Layout, Tensor
 from graphblas.core.tensor import _has_container as tensor_has_container
 from graphblas.core.tensor_io import _scipy_coo_needs
@@ -244,11 +245,25 @@ def test_pydata_gcxs_repeated_or_unsorted_columns():
     check(T, want, want != 0)
 
 
+def _no_huge_csr(monkeypatch):
+    """Fail where an export would otherwise allocate a row pointer that kills a CI runner."""
+    orig = Matrix.to_csr
+
+    def to_csr(self, *args, **kwargs):
+        assert self.nrows <= 2**24, f"to_csr of a Matrix with {self.nrows} rows"
+        return orig(self, *args, **kwargs)
+
+    monkeypatch.setattr(Matrix, "to_csr", to_csr)
+
+
 @needs_sparse
-def test_pydata_gcxs_past_2_60():
-    """Past 2^60 positions: a GCXS whose column group is no Matrix dimension imports
-    through COO, and the GCXS export takes a compressed split whose groups fit.
+def test_pydata_gcxs_past_2_60(monkeypatch):
+    """Past 2^60 positions: a GCXS whose column group is no Matrix dimension imports through
+    COO, and the GCXS export compresses the axes with the fewest groups even when no Matrix
+    could hold their columns. It used to compress (0, 1), a row pointer of 16 GiB for two
+    entries, and GitHub's 16 GB runners were killed.
     """
+    _no_huge_csr(monkeypatch)
     shape = (2, 2**30, 2**31)
     coords = np.array([[0, 1], [5, 2**30 - 1], [7, 3]])
     g = sparse.GCXS.from_coo(sparse.COO(coords, [1.0, 2.0], shape=shape), compressed_axes=(0,))
@@ -258,8 +273,104 @@ def test_pydata_gcxs_past_2_60():
     np.testing.assert_array_equal(np.array(got_coords), coords)
     np.testing.assert_array_equal(got, [1.0, 2.0])
     out = T.to_pydata_sparse("gcxs")
-    assert out.compressed_axes == (0, 1)
+    assert out.compressed_axes == (0,)
+    assert out.indptr.size == 3
     np.testing.assert_array_equal(out.tocoo().coords, coords)
+    np.testing.assert_array_equal(out.tocoo().data, [1.0, 2.0])
+    # Asked for by name, and a view with the compressed axis in the middle
+    out = T.to_pydata_sparse("gcxs", compressed_axes=(0,))
+    assert out.compressed_axes == (0,)
+    V = T.permute_dims((1, 0, 2))
+    out = V.to_pydata_sparse("gcxs")
+    assert out.compressed_axes == (1,)
+    want = coords[[1, 0, 2]]
+    want = want[:, np.lexsort(want[::-1])]
+    np.testing.assert_array_equal(out.tocoo().coords, want)
+    empty = Tensor(T.dtype, shape).to_pydata_sparse("gcxs")
+    assert empty.compressed_axes == (0,)
+    assert empty.nnz == 0
+    assert empty.indptr.tolist() == [0, 0, 0]
+
+
+@needs_sparse
+def test_pydata_gcxs_row_pointer_follows_the_entries():
+    """A few entries in a layout of 2^26 groups export by the entries, not the groups. The
+    export kept the Tensor's layout whatever its row pointer cost: here 512 MiB, and a peak
+    of 770 MiB. This shape keeps that affordable, so a regression fails the assertion.
+    """
+    import tracemalloc
+
+    shape = (2**13, 2**13, 5)
+    coords = np.array([[0, 1, 2**13 - 1], [5, 6, 3], [3, 4, 0]])
+    T = Tensor.from_coo(coords, [1.0, 2.0, 3.0], shape=shape, layout=((0, 1), (2,)))
+    tracemalloc.start()
+    try:
+        out = T.to_pydata_sparse("gcxs")
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak < 2**20, f"peak of {peak} bytes"
+    assert out.indptr.size - 1 == np.prod([shape[a] for a in out.compressed_axes]) <= 2**13
+    order = np.lexsort(coords[::-1])
+    np.testing.assert_array_equal(out.tocoo().coords, coords[:, order])
+    np.testing.assert_array_equal(out.tocoo().data, np.array([1.0, 2.0, 3.0])[order])
+    # The Tensor is left as it was
+    assert T.layout == Layout((0, 1), (2,))
+
+
+@needs_sparse
+def test_pydata_gcxs_keeps_a_small_row_pointer():
+    """No move when the Tensor's own row pointer is small next to the entries, or small."""
+    # Two groups per entry, though compressing axis 2 would take 8 slots
+    shape = (2**12, 2**9, 7)
+    coords = np.array(np.unravel_index(np.arange(2**20) * 7 + 3, shape), np.int64)
+    T = Tensor.from_coo(coords, 1.5, shape=shape, layout=((0, 1), (2,)))
+    out = T.to_pydata_sparse("gcxs")
+    assert out.compressed_axes == (0, 1)
+    assert out.nnz == 2**20
+    # A few entries in a layout of 2^20 groups: small, one group more is not
+    for nrows, kept in [(2**10, True), (2**10 + 1, False)]:
+        shape = (nrows, 2**10, 3)
+        T = Tensor.from_coo([[0], [5], [1]], [1.0], shape=shape, layout=((0, 1), (2,)))
+        assert (T.to_pydata_sparse("gcxs").compressed_axes == (0, 1)) is kept
+
+
+@needs_sparse
+def test_pydata_gcxs_refuses_an_enormous_row_pointer(monkeypatch):
+    """An export whose memory would follow an enormous shape and not its entries raises,
+    naming "coo". (2^40, 2^40) used to start allocating an 8 TiB row pointer.
+    """
+    _no_huge_csr(monkeypatch)
+    coords = np.array([[0, 1], [5, 6]])
+    T = Tensor.from_coo(coords, [1.0, 2.0], shape=(2**40, 2**40))
+    with pytest.raises(ValueError, match=r"fewest of any compressed axes.*format='coo'"):
+        T.to_pydata_sparse("gcxs")
+    with pytest.raises(ValueError, match=r"format='coo' or compressed_axes with fewer"):
+        T.to_pydata_sparse("gcxs", compressed_axes=(0,))
+    np.testing.assert_array_equal(T.to_pydata_sparse("coo").coords, coords)
+    # Every compressed split of a cube of 2^30 is at least 2^30 groups
+    T = Tensor.from_coo([[0], [1], [2]], [1.0], shape=(2**30, 2**30, 2**30))
+    with pytest.raises(ValueError, match="format='coo'"):
+        T.to_pydata_sparse("gcxs")
+    # A good default does not excuse an explicit choice that needs 2^29 groups
+    T = Tensor.from_coo([[0], [1], [2]], [1.0], shape=(2**29, 2**29, 5))
+    assert T.to_pydata_sparse("gcxs").compressed_axes == (2,)
+    with pytest.raises(ValueError, match="compressed_axes with fewer"):
+        T.to_pydata_sparse("gcxs", compressed_axes=(0,))
+    # GCXS ravels columns into int64: compressing axis 0 leaves 2^80 column positions
+    T = Tensor.from_coo([[1], [2], [3], [4], [5]], [1.0], shape=(2, 2**20, 2**20, 2**20, 2**20))
+    with pytest.raises(ValueError, match="int64"):
+        T.to_pydata_sparse("gcxs", compressed_axes=(0,))
+    assert T.to_pydata_sparse("gcxs").compressed_axes == (1,)  # (columns: 2^61)
+    # Past the limit, entries in proportion to the row pointer are still exported
+    monkeypatch.setattr(tensor_io, "_GCXS_MAX_POINTER", 64)
+    for nvals, ok in [(64, True), (63, False)]:
+        T = Tensor.from_coo([np.arange(nvals), np.zeros(nvals, int)], 1.0, shape=(128, 3))
+        if ok:
+            assert T.to_pydata_sparse("gcxs", compressed_axes=(0,)).nnz == nvals
+        else:
+            with pytest.raises(ValueError, match="format='coo'"):
+                T.to_pydata_sparse("gcxs", compressed_axes=(0,))
 
 
 @needs_sparse
