@@ -293,6 +293,48 @@ def test_pydata_gcxs_past_2_60(monkeypatch):
 
 
 @needs_sparse
+def test_pydata_gcxs_past_2_63_round_trip(monkeypatch):
+    """An export past 2^63 positions reads back, though pydata's tocoo raises at that size:
+    the import decodes the GCXS arrays. Repeated columns are combined as at any other size.
+    """
+    _no_huge_csr(monkeypatch)
+    for shape, rows, coords in [
+        ((2**10, 2**30, 2**31), (0,), [[1, 1023, 7], [5, 2**30 - 1, 3], [7, 3, 2**31 - 1]]),
+        (
+            (2, 2**20, 2**20, 2**20, 2**20),
+            (1,),
+            [[1, 0, 1], [2, 3, 2], [3, 2**20 - 1, 3], [4, 5, 4], [5, 2**20 - 1, 6]],
+        ),
+    ]:
+        coords = np.array(coords)
+        vals = np.arange(1.0, coords.shape[1] + 1)
+        out = Tensor.from_coo(coords, vals, shape=shape).to_pydata_sparse("gcxs")
+        assert out.compressed_axes == rows
+        T = Tensor.from_pydata_sparse(out)
+        assert T.shape == shape
+        got_coords, got = T.to_coo()
+        order = np.lexsort(coords[::-1])
+        np.testing.assert_array_equal(np.array(got_coords), coords[:, order])
+        np.testing.assert_array_equal(got, vals[order])
+    shape = (2**10, 2**30, 2**31)
+    x, y = 5 * 2**31 + 7, (2**30 - 1) * 2**31 + 3
+    indptr = np.full(2**10 + 1, 3)
+    indptr[0] = 0
+    arrays = (np.array([1.0, 2.0, 4.0]), np.array([y, x, y]), indptr)
+    g = sparse.GCXS(arrays, shape=shape, compressed_axes=(0,))
+    want_coords = [[0, 0], [5, 2**30 - 1], [7, 3]]
+    for kwargs, want in [({}, [2.0, 5.0]), ({"dup_op": binary.max}, [2.0, 4.0])]:
+        got_coords, got = Tensor.from_pydata_sparse(g, **kwargs).to_coo()
+        np.testing.assert_array_equal(np.array(got_coords), want_coords)
+        np.testing.assert_array_equal(got, want)
+    arrays = (arrays[0].astype(bool), *arrays[1:])  # (pydata's astype raises at this size)
+    g = sparse.GCXS(arrays, shape=shape, compressed_axes=(0,))
+    got_coords, got = Tensor.from_pydata_sparse(g).to_coo()
+    np.testing.assert_array_equal(np.array(got_coords), want_coords)
+    np.testing.assert_array_equal(got, [True, True])
+
+
+@needs_sparse
 def test_pydata_gcxs_row_pointer_follows_the_entries():
     """A few entries in a layout of 2^26 groups export by the entries, not the groups. The
     export kept the Tensor's layout whatever its row pointer cost: here 512 MiB, and a peak
@@ -316,6 +358,16 @@ def test_pydata_gcxs_row_pointer_follows_the_entries():
     np.testing.assert_array_equal(out.tocoo().data, np.array([1.0, 2.0, 3.0])[order])
     # The Tensor is left as it was
     assert T.layout == Layout((0, 1), (2,))
+    # A pointer of 2^24 groups built from coordinates (columns past 2^60) is built once
+    T = Tensor.from_coo([[0], [1], [2]], [1.0], shape=(2**24, 2**31, 2**31))
+    tracemalloc.start()
+    try:
+        out = T.to_pydata_sparse("gcxs")
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert out.compressed_axes == (0,)
+    assert peak < 1.5 * out.indptr.nbytes, f"peak of {peak} bytes"
 
 
 @needs_sparse

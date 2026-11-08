@@ -153,7 +153,7 @@ def default_layout(shape, nnz=None):
 
 
 def ravel(coords, shape, axes, n=None):
-    """C-order linear index of ``axes`` (int64; every group is < 2^60)."""
+    """C-order linear index of ``axes`` (int64; a group must be below 2^63 positions)."""
     if not axes:
         if n is None:
             n = coords[0].size if coords else 0
