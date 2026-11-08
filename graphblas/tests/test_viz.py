@@ -15,7 +15,8 @@ import warnings
 
 import pytest
 
-from graphblas import Matrix, Vector, dtypes, viz
+from graphblas import Matrix, Vector, backend, dtypes, viz
+from graphblas.core import _supports_udfs as supports_udfs
 
 
 def _importorskip(modname):
@@ -148,6 +149,10 @@ def test_draw_rejects_complex():
         viz.draw(M)
 
 
+@pytest.mark.skipif(
+    not supports_udfs and backend == "suitesparse-vanilla",
+    reason="building a UDT Matrix needs binary.any on it, which vanilla has only through Numba",
+)
 def test_draw_rejects_udt():
     # networkx's layout used to raise "shape mismatch: value array of shape (2,2) ..."
     _importorskip("networkx")
