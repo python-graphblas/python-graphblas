@@ -174,6 +174,17 @@ def _as_tensor(x, within):
     return None
 
 
+def _as_scalar_operand(x):
+    """A 0-d Tensor (a full reduction's result) as the Scalar that ``select`` and ``apply``
+    take; anything else unchanged.
+    """
+    if output_type(x) is Tensor:
+        x = _compute(x, "a scalar operand")
+        if x.ndim == 0:
+            return x.to_scalar()
+    return x
+
+
 def _mask_arg(x):
     """A bare BOOL Tensor used as a mask means its values (as for Matrix)."""
     x = _compute(x, "mask")
@@ -1067,9 +1078,10 @@ class Tensor(BaseType):
     def select(self, op, thunk=None):
         """Keep the entries whose values pass ``op``: a value selector, as an operator
         (``select.valuegt``) or a string as Matrix takes it (``">"``, ``"valuegt"``);
-        index-based selectors are not supported yet.
+        index-based selectors are not supported yet. ``thunk`` may be a 0-d Tensor.
         """
         # (Matrix resolves the op, strings included; the probe is not computed)
+        thunk = _as_scalar_operand(thunk)
         probe = self._M.select(op, thunk)
         if not probe.op.name.startswith("value"):
             raise NotImplementedError(
@@ -1089,8 +1101,9 @@ class Tensor(BaseType):
 
     def apply(self, op, right=None, *, left=None):
         """Apply ``op`` to every stored value (with a scalar ``left`` or ``right`` for a
-        BinaryOp).
+        BinaryOp); a 0-d Tensor serves as that scalar.
         """
+        right, left = _as_scalar_operand(right), _as_scalar_operand(left)
         probe = self._M.apply(op, right=right, left=left)
         return TensorExpression(
             "apply",
