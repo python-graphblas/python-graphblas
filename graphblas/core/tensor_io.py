@@ -28,6 +28,80 @@ def _gcxs_states(shape):
     return frozenset(states)
 
 
+# A GCXS row pointer has one int64 for each group of its compressed axes, plus one. These limits
+# count groups.
+#
+# Up to this many, or two per entry, a pointer is not worth a move: at two per entry it costs
+# what the entries' indices and values do, and filling it is cheaper than the sort or copy of
+# every entry that a move to a smaller pointer takes.
+_GCXS_SMALL_POINTER = 2**20
+# Past this many and past two per entry, the export refuses, whoever chose the axes. The memory
+# then follows the shape and not the data. 2^28 groups is 2 GiB of pointer and a peak of about
+# 3 GiB (1.5 times the pointer, measured), safe on a small machine; a 2^31 pointer is what
+# killed 16 GB CI runners.
+_GCXS_MAX_POINTER = 2**28
+
+
+def _gcxs_choose(shape, nvals):
+    """The axes a GCXS export compresses when none are asked for: ``(rows, states)``.
+
+    ``rows`` is the split with the fewest groups. ``states`` holds the layouts a Matrix can have
+    whose row pointer is small or no longer than that of ``rows``, so a layout already fine stays
+    put. It is None when there are none: every Matrix layout of ``shape`` has far more groups
+    than ``rows`` because the columns of ``rows`` are past 2^60, which GCXS allows (it stores
+    them raveled in int64) and a Matrix dimension does not.
+    """
+    ndim = len(shape)
+    splits = [
+        rows
+        for p in range(1, ndim)
+        for rows in itertools.combinations(range(ndim), p)
+        if tl.prod(shape, set(range(ndim)) - set(rows)) < 2**63
+    ]
+    rows = min(splits, key=lambda axes: tl.prod(shape, axes))
+    limit = max(_GCXS_SMALL_POINTER, 2 * nvals, tl.prod(shape, rows))
+    states = frozenset(
+        (seq, p) for seq, p in _gcxs_states(shape) if tl.prod(shape, seq[:p]) <= limit
+    )
+    return rows, states or None
+
+
+def _check_gcxs_split(shape, rows, nvals, *, chosen):
+    """Refuse compressed axes whose GCXS array cannot be built or would swamp the machine."""
+    cols = tuple(a for a in range(len(shape)) if a not in rows)
+    if tl.prod(shape, cols) >= 2**63:
+        raise ValueError(
+            f"compressed_axes {rows} of shape {shape} leave {tl.prod(shape, cols)} column "
+            "positions, which GCXS cannot ravel into int64 indices; compress more axes"
+        )
+    groups = tl.prod(shape, rows)
+    if groups > max(_GCXS_MAX_POINTER, 2 * nvals):
+        fewest = ", the fewest of any compressed axes" if chosen else ""
+        raise ValueError(
+            f"a GCXS array of shape {shape} compressing axes {rows} needs a row pointer of "
+            f"{groups + 1} int64s ({(groups + 1) * 8 / 2**30:.3g} GiB{fewest}) for {nvals} "
+            f"entries; use format='coo'"
+            + ("" if chosen else " or compressed_axes with fewer positions")
+        )
+
+
+def _gcxs_from_coordinates(T, rows, sparse):
+    """A GCXS array compressing ``rows``, built from the entries' coordinates.
+
+    For a split no Matrix can hold, so ``M.to_csr()`` cannot provide its arrays.
+    """
+    shape = T._shape
+    cols = tuple(a for a in range(T.ndim) if a not in rows)
+    coords, values = T.to_coo(sort=False)
+    r = tl.ravel(coords, shape, rows)
+    c = tl.ravel(coords, shape, cols)
+    order = np.lexsort((c, r))
+    indptr = np.bincount(r + 1, minlength=tl.prod(shape, rows) + 1).cumsum()
+    return sparse.GCXS(
+        (values[order], c[order], indptr), shape=shape, compressed_axes=rows, fill_value=0
+    )
+
+
 def _unravel_into(idx, shape, axes, out):
     """``tl.unravel`` writing each axis of ``axes`` into its row of the 2-d array ``out``,
     with no copy past the one into ``out``.
@@ -124,8 +198,10 @@ def to_pydata_sparse(T, format="coo", *, compressed_axes=None):
         raise ValueError("compressed_axes applies to the 'gcxs' format only")
     shape = T._shape
     if format == "gcxs" and T.ndim >= 2:
+        nvals = T.nvals
         if compressed_axes is None:
-            targets = _gcxs_states(shape)
+            rows, targets = _gcxs_choose(shape, nvals)
+            _check_gcxs_split(shape, rows, nvals, chosen=True)
         else:
             from .tensor import _normalize_axis
 
@@ -136,9 +212,11 @@ def to_pydata_sparse(T, format="coo", *, compressed_axes=None):
                     f"compressed_axes must be some but not all of the {T.ndim} axes; "
                     f"got {compressed_axes!r}"
                 )
-            targets = tl.as_layout((rows, cols), shape)
-        # No move when the layout is one GCXS holds; else the cheapest move to one. (There is
-        # one: below 2^60 positions every split is valid; past it, the Tensor's own groups.)
+            _check_gcxs_split(shape, rows, nvals, chosen=False)
+            targets = Layout(rows, cols) if tl._valid_split(shape, rows + cols, len(rows)) else None
+        if targets is None:
+            return _gcxs_from_coordinates(T, rows, sparse)
+        # No move when the layout is one of the targets; else the cheapest move to one
         M, lay = tl.relayout(T._M, shape, T._layout, targets)
         indptr, cols, values = M.to_csr()
         return sparse.GCXS(

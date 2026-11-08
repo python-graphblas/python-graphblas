@@ -664,16 +664,25 @@ class Tensor(BaseType):
         format : {"coo", "gcxs", "dok"}, default "coo"
             "coo" is in C order, so a Tensor whose layout is not the identity axis order is
             relaid out first. "gcxs" uses the Tensor's layout as it is when GCXS can hold it
-            (both groups nonempty and in increasing order), else the cheapest such layout.
+            (both groups nonempty and in increasing order) and its row pointer is small, else
+            the compressed axes described below.
         compressed_axes : sequence of ints, optional
             The axes GCXS compresses (the rows of a layout), for "gcxs".
 
         A "coo" array (and "dok", built from it) takes memory by the entries. A "gcxs" array
-        also holds a row pointer with one slot per position of its compressed axes (the
+        also holds a row pointer with one int64 per position of its compressed axes (the
         product of their lengths, plus one), so its memory follows that product whatever the
-        entries: two compressed axes of 2^20 make a row pointer of 2^40 slots. Choose
-        ``compressed_axes`` to keep their product small; without it, the Tensor's own row
-        axes are compressed when GCXS can hold its layout.
+        entries: two compressed axes of 2^20 make a row pointer of 2^40 slots.
+
+        Without ``compressed_axes``, the Tensor's own row axes are compressed when GCXS can
+        hold its layout and the pointer has at most 2^20 slots or two per entry. Otherwise the
+        export takes the cheapest layout whose pointer is that small, or failing that the
+        compressed axes with the shortest pointer. Those may leave a column group past 2^60
+        positions, which no Matrix can hold and GCXS can (below 2^63).
+
+        A pointer of more than 2^28 positions and more than two per entry (2 GiB, out of
+        proportion to the data) raises ``ValueError``, with or without ``compressed_axes``:
+        use "coo" for such an array.
         """
         from .tensor_io import to_pydata_sparse
 
