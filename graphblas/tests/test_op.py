@@ -49,7 +49,7 @@ from graphblas.dtypes import (
 )
 from graphblas.exceptions import DimensionMismatch, DomainMismatch, InvalidValue, UdfParseError
 
-from .conftest import shouldhave
+from .conftest import shouldhave, skip_without_jit
 
 if dtypes._supports_complex:
     from graphblas.dtypes import FC32, FC64
@@ -1655,7 +1655,7 @@ def udt_op_path(request):
     previous = gb.ss.config["jit_c_control"]
     if path == "jit":
         if not _jit_can_compile():
-            pytest.skip("C JIT compilation not available (probe failed or compiler missing)")
+            skip_without_jit("C JIT compilation not available (probe failed or compiler missing)")
         # Set it rather than assume it. SuiteSparse demotes ``on`` to ``load``
         # after a failed compile, and a demoted control routes to the cfunc
         # silently, so this parameter would pass while running the other path.
