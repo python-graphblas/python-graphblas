@@ -119,6 +119,14 @@ def _unravel_into(idx, shape, axes, out):
         idx = q
 
 
+def _rows_of(indptr):
+    """The row of each entry of a CSR ``indptr``. pydata may store it as uint64, which
+    ``np.repeat`` does not take as counts.
+    """
+    counts = np.diff(indptr).astype(np.int64, copy=False)
+    return np.repeat(np.arange(counts.size, dtype=np.int64), counts)
+
+
 def _with_layout(cls, M, shape, lay, layout, name):
     """The Tensor of ``M`` held in ``lay``, moved to ``layout`` (and pinned) if one is given."""
     if layout is None:
@@ -160,8 +168,7 @@ def from_pydata_sparse(cls, s, *, dup_op=None, layout=None, name=None):
             # Columns past 2^60, which no Matrix holds. Decode the arrays here: past 2^63
             # positions in all, pydata's own tocoo raises.
             coords = [None] * len(shape)
-            r = np.repeat(np.arange(nrows, dtype=np.int64), np.diff(indptr))
-            tl.unravel(r, shape, lay.rows, coords)
+            tl.unravel(_rows_of(indptr), shape, lay.rows, coords)
             tl.unravel(indices.astype(np.int64), shape, lay.cols, coords)
             return cls.from_coo(
                 coords, s.data, dtype, shape=shape, layout=layout, dup_op=dup_op, name=name
@@ -186,8 +193,7 @@ def from_pydata_sparse(cls, s, *, dup_op=None, layout=None, name=None):
                 sorted_cols=True,
             )
         else:
-            r = np.repeat(np.arange(nrows, dtype=np.int64), np.diff(indptr))
-            M = tl.from_coo(r, indices, s.data, dtype, nrows, ncols, dup_op=dup_op)
+            M = tl.from_coo(_rows_of(indptr), indices, s.data, dtype, nrows, ncols, dup_op=dup_op)
         return _with_layout(cls, M, shape, lay, layout, name)
     if not isinstance(s, sparse.COO):
         s = s.asformat("coo")

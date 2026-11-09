@@ -209,13 +209,15 @@ def test_pydata_gcxs_repeated_or_unsorted_columns():
         return lib.GxB_Matrix_fprint(M._carg, b"M", lib.GxB_SILENT, ffi.NULL) == lib.GrB_SUCCESS
 
     data = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
-    for indices, indptr in [
+    cases = [
         ([1, 1, 0, 2, 3, 3], [0, 2, 3, 6]),  # repeats, sorted
         ([1, 0, 1, 2, 3, 2], [0, 3, 3, 6]),  # repeats, unsorted; an empty row
         ([2, 0, 1, 3, 1, 0], [0, 3, 4, 6]),  # unsorted, no repeat
         ([0, 1, 2, 0, 1, 3], [0, 3, 3, 6]),  # sorted and distinct: imported as it is
-    ]:
-        arrays = (data, np.array(indices), np.array(indptr))
+    ]
+    # (pydata's from_coo makes uint64 arrays with idx_dtype=np.uint64)
+    for (indices, indptr), idx_dtype in itertools.product(cases, [np.int64, np.uint64]):
+        arrays = (data, np.array(indices, idx_dtype), np.array(indptr, idx_dtype))
         g = sparse.GCXS(arrays, shape=(3, 4), compressed_axes=(0,))
         T = Tensor.from_pydata_sparse(g)
         assert valid(T)
@@ -318,20 +320,21 @@ def test_pydata_gcxs_past_2_63_round_trip(monkeypatch):
         np.testing.assert_array_equal(got, vals[order])
     shape = (2**10, 2**30, 2**31)
     x, y = 5 * 2**31 + 7, (2**30 - 1) * 2**31 + 3
-    indptr = np.full(2**10 + 1, 3)
-    indptr[0] = 0
-    arrays = (np.array([1.0, 2.0, 4.0]), np.array([y, x, y]), indptr)
-    g = sparse.GCXS(arrays, shape=shape, compressed_axes=(0,))
     want_coords = [[0, 0], [5, 2**30 - 1], [7, 3]]
-    for kwargs, want in [({}, [2.0, 5.0]), ({"dup_op": binary.max}, [2.0, 4.0])]:
-        got_coords, got = Tensor.from_pydata_sparse(g, **kwargs).to_coo()
+    for idx_dtype in [np.int64, np.uint64]:
+        indptr = np.full(2**10 + 1, 3, idx_dtype)
+        indptr[0] = 0
+        arrays = (np.array([1.0, 2.0, 4.0]), np.array([y, x, y], idx_dtype), indptr)
+        g = sparse.GCXS(arrays, shape=shape, compressed_axes=(0,))
+        for kwargs, want in [({}, [2.0, 5.0]), ({"dup_op": binary.max}, [2.0, 4.0])]:
+            got_coords, got = Tensor.from_pydata_sparse(g, **kwargs).to_coo()
+            np.testing.assert_array_equal(np.array(got_coords), want_coords)
+            np.testing.assert_array_equal(got, want)
+        arrays = (arrays[0].astype(bool), *arrays[1:])  # (pydata's astype raises at this size)
+        g = sparse.GCXS(arrays, shape=shape, compressed_axes=(0,))
+        got_coords, got = Tensor.from_pydata_sparse(g).to_coo()
         np.testing.assert_array_equal(np.array(got_coords), want_coords)
-        np.testing.assert_array_equal(got, want)
-    arrays = (arrays[0].astype(bool), *arrays[1:])  # (pydata's astype raises at this size)
-    g = sparse.GCXS(arrays, shape=shape, compressed_axes=(0,))
-    got_coords, got = Tensor.from_pydata_sparse(g).to_coo()
-    np.testing.assert_array_equal(np.array(got_coords), want_coords)
-    np.testing.assert_array_equal(got, [True, True])
+        np.testing.assert_array_equal(got, [True, True])
 
 
 @needs_sparse
