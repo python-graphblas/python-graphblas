@@ -6,26 +6,28 @@ from ..operator.base import TypedOpBase
 from ..operator.indexbinary import (
     IndexBinaryOp,
     TypedBuiltinIndexBinaryOp,
-    TypedUserIndexBinaryOp,
     _has_idxbinop,
+    _TypedIndexBinaryOpMixin,
 )
+from ._utils import _jit_c_source
 
 ffi_new = ffi.new
 
 
-class TypedJitIndexBinaryOp(TypedOpBase):
-    __slots__ = "_jit_c_definition"
+class TypedJitIndexBinaryOp(_TypedIndexBinaryOpMixin, TypedOpBase):
+    __slots__ = "_jit_c_definition", "_theta_type"
     opclass = "IndexBinaryOp"
 
-    def __init__(self, parent, name, type_, return_type, gb_obj, jit_c_definition, dtype2=None):
+    def __init__(
+        self, parent, name, type_, return_type, gb_obj, jit_c_definition, dtype2, theta_type
+    ):
         super().__init__(parent, name, type_, return_type, gb_obj, name, dtype2=dtype2)
         self._jit_c_definition = jit_c_definition
+        self._theta_type = theta_type
 
     @property
     def jit_c_definition(self):
         return self._jit_c_definition
-
-    thunk_type = TypedUserIndexBinaryOp.thunk_type
 
     def __call__(self, theta=None):
         return TypedBuiltinIndexBinaryOp.__call__(self, theta)
@@ -47,7 +49,12 @@ def register_new(name, jit_c_definition, x_type, y_type, theta_type, ret_type):
     see the SuiteSparse:GraphBLAS user guide.
 
     Only one type signature may be registered at a time, but repeated calls using
-    the same name with different input types is allowed.
+    the same name with different input types is allowed. The C function must have the
+    operator's name (the last part of ``name``). It is compiled under a C name made from
+    the full name and the definition, which the op's ``jit_c_name`` and ``jit_c_source``
+    show, so another definition, or the same last name in another namespace, gets its own
+    kernel. Registering one name with one definition again (after ``delattr``) reuses its
+    C name, and the kernel already compiled for it.
 
     Parameters
     ----------
@@ -101,18 +108,22 @@ def register_new(name, jit_c_definition, x_type, y_type, theta_type, ret_type):
         if not isinstance(rv, IndexBinaryOp):
             IndexBinaryOp._remove_nesting(name)
         if (
-            (x_type, theta_type) in rv.types
+            (x_type, y_type, theta_type) in rv.types
             or rv._udt_types is not None
-            and (x_type, theta_type) in rv._udt_types
+            and (x_type, y_type, theta_type) in rv._udt_types
         ):
             raise TypeError(
                 f"IndexBinaryOp gb.indexbinary.{name} already defined for "
-                f"({x_type}, {theta_type}) input types"
+                f"({x_type}, {y_type}, {theta_type}) input types"
             )
     else:
         rv = IndexBinaryOp(name, is_udt=True)
     from .jit_config import _compiling_c_source
 
+    # Theta's type is not in the kernel's encoding, so the C name carries the types
+    c_name, c_definition = _jit_c_source(
+        name, funcname, jit_c_definition, (x_type, y_type, theta_type)
+    )
     gb_obj = ffi_new("GxB_IndexBinaryOp*")
     with _compiling_c_source(f"gb.indexbinary.{name}"):
         check_status_carg(
@@ -123,15 +134,16 @@ def register_new(name, jit_c_definition, x_type, y_type, theta_type, ret_type):
                 x_type._carg,
                 y_type._carg,
                 theta_type._carg,
-                ffi_new("char[]", funcname.encode()),
-                ffi_new("char[]", jit_c_definition.encode()),
+                ffi_new("char[]", c_name.encode()),
+                ffi_new("char[]", c_definition.encode()),
             ),
             "IndexBinaryOp",
             gb_obj[0],
         )
     op = TypedJitIndexBinaryOp(
-        rv, funcname, x_type, ret_type, gb_obj[0], jit_c_definition, dtype2=theta_type
+        rv, funcname, x_type, ret_type, gb_obj[0], jit_c_definition, y_type, theta_type
     )
+    op._jit_c_info = (c_name, c_definition)
     rv._add(op, is_jit=True)
     setattr(module, funcname, rv)
     return rv

@@ -4,7 +4,7 @@ import numpy as np
 
 from ..dtypes import _INDEX, lookup_dtype
 from . import ffi, lib
-from .dtypes import _view_if_same_layout
+from .dtypes import _nats_in_leaf_units, _view_if_same_layout
 
 _NP2 = np.__version__.startswith("2.")
 
@@ -47,6 +47,30 @@ _output_types = {
     type: type,
 }
 _output_types.update((k, k) for k in set(np.sctypeDict.values()))
+
+
+def _warn_from_caller(message, category):
+    """Warn at the first caller outside python-graphblas, so default filters can show it.
+
+    Python shows a DeprecationWarning by default only when it is attributed to
+    ``__main__``, and a check that warns may sit at any depth below the public
+    method. python-graphblas's own tests count as callers.
+    """
+    import sys
+    import warnings
+    from pathlib import Path
+
+    package = Path(__file__).parent.parent
+    tests = package / "tests"
+    frame = sys._getframe(1)
+    stacklevel = 2
+    while frame is not None:  # pragma: no branch (safety)
+        filename = Path(frame.f_code.co_filename)
+        if not filename.is_relative_to(package) or filename.is_relative_to(tests):
+            break
+        frame = frame.f_back
+        stacklevel += 1
+    warnings.warn(message, category, stacklevel=stacklevel)
 
 
 def output_type(val):
@@ -97,7 +121,7 @@ def values_to_numpy_buffer(
         np_type = _get_subdtype(dtype.np_type)
         # https://numpy.org/doc/stable/release/2.0.0-notes.html#new-copy-keyword-meaning-for-array-and-asarray-constructors
         array = np.array(
-            _view_if_same_layout(array, np_type),
+            _nats_in_leaf_units(_view_if_same_layout(array, np_type), np_type),
             np_type,
             copy=copy or _NP2 and None,
             order=order,
@@ -132,10 +156,8 @@ def normalize_values(self, values, dtype, shape=None, is_iso=False):
     else:
         dtype = self.dtype
     if is_iso:
-        if dtype.np_type.subdtype is None:
-            values = np.broadcast_to(values, shape)
-        else:
-            values = np.broadcast_to(values, shape + values.shape)
+        # The iso value of an array UDT is exported as shape (1, *subarray shape)
+        values = np.broadcast_to(values, shape + values.shape[1:])
     return values
 
 

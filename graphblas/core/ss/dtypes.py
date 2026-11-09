@@ -29,7 +29,11 @@ def register_new(name, jit_c_definition, *, np_type=None):
         )
     if not name.isidentifier():
         raise ValueError(f"`name` argument must be a valid Python identifier; got: {name!r}")
-    if name in core.dtypes._registry or hasattr(dtypes.ss, name):
+    from ..operator.udt_codegen import _jit_c_type_defs
+
+    # SuiteSparse's JIT knows a type by its C name alone, so it must not be
+    # another type's C name either.
+    if name in core.dtypes._registry or hasattr(dtypes.ss, name) or name in _jit_c_type_defs:
         raise ValueError(f"{name!r} name for dtype is unavailable")
     # GxB_MAX_NAME_LEN counts the terminating NUL, so SuiteSparse keeps one fewer
     # character; a name that long would no longer match its typedef and would
@@ -84,7 +88,7 @@ def register_new(name, jit_c_definition, *, np_type=None):
             np_type = np.dtype((np.uint8, size))
             save_np_type = False
         if _has_numba:
-            numba_type = numba.typeof(np_type).dtype
+            numba_type = core.dtypes._numba_type(np_type)
         else:
             numba_type = None
 
@@ -96,4 +100,8 @@ def register_new(name, jit_c_definition, *, np_type=None):
     if save_np_type or np_type not in core.dtypes._registry:
         core.dtypes._registry[np_type] = rv
     setattr(dtypes.ss, name, rv)
+    # Only now, so that a registration that fails above (Numba cannot type an
+    # array of bool, say) leaves the name free to register again. The type it
+    # made is never used, so no JIT kernel knows its name.
+    _jit_c_type_defs[name] = jit_c_definition
     return rv

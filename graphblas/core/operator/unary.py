@@ -35,7 +35,7 @@ if _supports_complex:
 if _has_numba:
     import numba
 
-    from .base import (
+    from .udf import (
         _bool_to_int8,
         _compile_udf_for_udt,
         _finalize_udt_op,
@@ -120,10 +120,11 @@ def _one(x):
 
 
 if _has_numba:
-    from .udt_utils import BUILTIN_UDT_UNARY_OPS as _BUILTIN_UDT_UNARY_OPS
-    from .udt_utils import (
+    from ..udt import BUILTIN_UDT_UNARY_OPS as _BUILTIN_UDT_UNARY_OPS
+    from .udt_codegen import (
         _has_jit_set,
         _maybe_warn_jit_skipped,
+        compile_udt_cast_wrapper,
         compile_udt_unary_wrapper,
         set_jit_c_on_op,
     )
@@ -255,6 +256,9 @@ class UnaryOp(OpBase):
     def _compile_udt(self, dtype, dtype2):
         if dtype in self._udt_types:
             return self._udt_ops[dtype]
+        from ..udt import _refuse_half
+
+        _refuse_half(self, dtype)
         # See the matching note in ``BinaryOp._compile_udt``: plain-scalar
         # misses on UDT-dispatch-enabled ops get the legacy message.
         if not dtype._is_udt and self._numba_func is None:
@@ -494,3 +498,23 @@ class UnaryOp(OpBase):
 
 
 ParameterizedUnaryOp._op_class = UnaryOp
+
+
+# {to_dtype: UnaryOp}; each one's typed ops are keyed by the type they cast from.
+_udt_casts = {}
+
+
+def _udt_cast_op(dtype, to_dtype):
+    """Return the UnaryOp storing an element of UDT ``dtype`` as UDT ``to_dtype``.
+
+    ``udt._store_cast_op`` decides when to use it, after
+    ``udt._udt_cast_error`` has accepted the pair. It is compiled once
+    per pair and has no JIT kernel.
+    """
+    parent = _udt_casts.get(to_dtype)
+    if parent is None:
+        parent = _udt_casts[to_dtype] = UnaryOp(f"cast_to_{to_dtype}", anonymous=True, is_udt=True)
+    if dtype in parent._udt_ops:
+        return parent._udt_ops[dtype]
+    wrapper, wrapper_sig = compile_udt_cast_wrapper(dtype, to_dtype)
+    return _finalize_udt_op(parent, dtype, None, to_dtype, wrapper, wrapper_sig, TypedUserUnaryOp)

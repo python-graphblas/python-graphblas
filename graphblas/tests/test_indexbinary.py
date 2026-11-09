@@ -7,7 +7,7 @@ import graphblas as gb
 from graphblas import Matrix, Scalar, Vector, dtypes, indexbinary
 from graphblas.core import _supports_udfs as supports_udfs
 from graphblas.core.operator.indexbinary import _has_idxbinop
-from graphblas.exceptions import UdfParseError
+from graphblas.exceptions import EmptyObject, UdfParseError
 
 pytestmark = [
     pytest.mark.skipif(not supports_udfs, reason="requires numba"),
@@ -81,6 +81,68 @@ def test_untyped_call():
     B = Matrix.from_coo([0, 1], [1, 0], [5, 2])
     C = A.ewise_mult(B, binop).new()
     assert list(C.to_coo()[2]) == [18, 19]
+
+
+def test_untyped_call_is_typed_when_it_runs():
+    """``op(theta)`` takes its type from both inputs and theta each time it runs.
+
+    Theta is typed as an IndexUnaryOp's thunk is: a Python int is INT64 and a
+    float FP64, a numpy scalar or a Scalar keeps its type, and the default,
+    False, changes no type. Before, the op had theta's type alone: ``op()``
+    was BOOL, so ints became True; ``op(2)`` truncated floats to INT64; and
+    ``op(np.int8(2))`` computed in INT8, where 300.0 became 127 and wrapped.
+    """
+
+    def upper_from_x(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+        return x if ix <= jx else y
+
+    pick = indexbinary.register_anonymous(upper_from_x)
+    A = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [10, 20, 30, 40])
+    B = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [-1, -2, -3, -4])
+    expected = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [10, 20, -3, 40])
+    for binop in [pick(), pick(0), pick(False)]:
+        assert A.ewise_mult(B, binop).new().isequal(expected, check_dtype=True)
+    C = A.ewise_mult(B, pick(0.0)).new()
+    assert C.isequal(expected.dup("FP64"), check_dtype=True)
+
+    def weighted(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+        return x + theta * y
+
+    wsum = indexbinary.register_anonymous(weighted)
+    u = Vector.from_coo([0, 1], [1.5, 300.0])
+    w = Vector.from_coo([0, 1], [2.25, 1.0])
+    expected = Vector.from_coo([0, 1], [6.0, 302.0])
+    for theta in [2, 2.0, np.int8(2), Scalar.from_value(2, "INT8")]:
+        binop = wsum(theta)
+        assert u.ewise_mult(w, binop).new().isequal(expected, check_dtype=True)
+        assert binop(u & w).new().isequal(expected, check_dtype=True)
+    # One op runs at each type it meets
+    i8 = Vector.from_coo([0, 1], [1, 100], dtype="INT8")
+    binop = wsum(1)
+    assert u.ewise_mult(w, binop).new().isequal(Vector.from_coo([0, 1], [3.75, 301.0]))
+    result = i8.ewise_mult(i8, binop).new()
+    assert result.isequal(Vector.from_coo([0, 1], [2, 200], dtype="INT64"), check_dtype=True)
+    for binop in [wsum(), wsum(np.int8(1))]:
+        assert i8.ewise_mult(i8, binop).new().dtype == dtypes.INT8
+    # A named type is the op's type, as before
+    for binop in [
+        wsum["INT64"](2),
+        wsum(2, dtype="INT64"),
+        wsum(Scalar.from_value(2.0), dtype="INT64"),
+        wsum(2)["INT64"],
+    ]:
+        assert binop.type == dtypes.INT64
+        result = u.ewise_mult(w, binop).new()
+        assert result.isequal(Vector.from_coo([0, 1], [5, 302]), check_dtype=True)
+    assert repr(wsum(2)) == "indexbinary.weighted(2)"
+    rec_udt = dtypes.register_anonymous(np.dtype([("theta_a", np.int64)]), "_UntypedThetaRec")
+    with pytest.raises(KeyError, match="weighted does not work with _UntypedThetaRec"):
+        wsum(Scalar.from_value((1,), rec_udt))
+    # Binding when it runs uses theta's value from when it was given
+    theta = Scalar.from_value(2.0)
+    binop = wsum(theta)
+    theta.value = 100.0
+    assert u.ewise_mult(w, binop).new().isequal(expected)
 
 
 def test_index_aware():
@@ -326,17 +388,117 @@ def test_array_udt_udf_shape_is_checked():
     assert good[arr_udt].return_type is arr_udt
 
 
-def test_bind_raw_udt_theta_without_dtype_errors():
-    """A raw UDT theta with no dtype can't be inferred; the error is clear and actionable."""
-    indexbinary.register_new("raw_no_dtype_op", _ibo_return_x, is_udt=True)
+def test_empty_scalar_theta():
+    # SuiteSparse would read the empty Scalar's value: a crash, or a value it never held
+    op = indexbinary.register_anonymous(_ibo_add_theta)
+    opu = indexbinary.register_anonymous(_ibo_add_theta, is_udt=True)
+    cleared = Scalar.from_value(5)
+    cleared.clear()
+    for theta in [Scalar(int), Scalar(int, is_cscalar=True), cleared]:
+        for bind in [op, opu, op[int], opu[int], lambda t: op(t, dtype=int)]:
+            with pytest.raises(EmptyObject, match="theta is an empty Scalar"):
+                bind(theta)
+
+
+def test_bind_raw_udt_theta_without_dtype():
+    """A numpy array theta is typed as its array layout, as other array literals are.
+
+    With ``is_udt=True``, theta keeps that type, as any theta does, so it is
+    never converted to y's type. A tuple has no type of its own: give it as a
+    Scalar of its UDT, or name the op's type. An op without ``is_udt`` does
+    not take a UDT theta.
+    """
+
+    def theta_only(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+        return theta
+
+    arr_udt = dtypes.register_anonymous(np.dtype((np.int32, (3,))), "_RawThetaArr3i32")
+    indexbinary.register_new("raw_no_dtype_op", theta_only, is_udt=True)
     try:
         op = indexbinary.raw_no_dtype_op
+        v = Vector.from_coo([0], np.array([[1, 2, 3]], dtype=np.int32), dtype=arr_udt)
+        for theta in [np.array([10, 20, 30], np.int32), Scalar.from_value((10, 20, 30), arr_udt)]:
+            result = v.ewise_mult(v, op(theta)).new()
+            assert result.dtype == arr_udt
+            assert result[0].new().value.tolist() == [10, 20, 30]
+        # An int64 or float64 array keeps its type, where it would have become int32
+        result = v.ewise_mult(v, op(np.array([10, 20, 2**40]))).new()
+        assert result.dtype.np_type == np.dtype((np.int64, (3,)))
+        assert result[0].new().value.tolist() == [10, 20, 2**40]
+        result = v.ewise_mult(v, op(np.array([10, 20.5, 30]))).new()
+        assert result.dtype.np_type == np.dtype((np.float64, (3,)))
+        assert result[0].new().value.tolist() == [10, 20.5, 30]
+        with pytest.raises(TypeError, match=r"Cannot infer a dtype for theta from \(10, 20, 30\)"):
+            op((10, 20, 30))
         with pytest.raises(TypeError, match="Cannot infer a dtype for theta"):
-            op(np.array([1, 2, 3], dtype=np.int64))
-        with pytest.raises(TypeError, match="Cannot infer a dtype for theta"):
-            op((1, 2, 3))
+            op(np.array([True, False]))
+        # Its array UDT is shared, under the name it got first (another test's)
+        with pytest.raises(KeyError, match="_ibo_add_theta does not work with "):
+            indexbinary.register_anonymous(_ibo_add_theta)(np.array([1, 2, 3]))
     finally:
         delattr(indexbinary, "raw_no_dtype_op")
+
+
+def test_untyped_bind_theta_keeps_its_type_with_is_udt():
+    """With ``is_udt=True``, ``op(theta)`` compiles for x, y and theta as they are typed.
+
+    SuiteSparse gives theta a type of its own (``GxB_IndexBinaryOp_new`` takes
+    ``theta_type``), so theta is not converted: 0.5 stays 0.5 beside INT64
+    inputs, and Numba types the result as it would for those three types.
+    Before, theta took y's type when the op ran. Naming two types,
+    ``op[X, Y](theta)``, still gives theta y's type and casts it, and
+    ``op[X, Y, T](theta)`` names all three.
+    """
+    op = indexbinary.register_anonymous(_ibo_add_theta, is_udt=True)
+    v = Vector.from_coo([0, 1], [1, 2])
+    expected = Vector.from_coo([0, 1], [4, 6])
+    for theta in [2, np.int8(2), Scalar.from_value(2, "INT16")]:
+        assert v.ewise_mult(v, op(theta)).new().isequal(expected, check_dtype=True)
+    for theta in [2.0, np.float64(2), Scalar.from_value(2.0)]:
+        result = v.ewise_mult(v, op(theta)).new()
+        assert result.isequal(expected.dup(float), check_dtype=True)
+    result = v.ewise_mult(v, op(0.5)).new()
+    assert result.isequal(Vector.from_coo([0, 1], [2.5, 4.5]), check_dtype=True)
+    i8 = Vector.from_coo([0], [1], dtype="INT8")
+    result = i8.ewise_mult(i8, op(300)).new()
+    assert result.isequal(Vector.from_coo([0], [302]), check_dtype=True)
+    assert {key for key in op._udt_types if key[0] == dtypes.INT64} == {
+        (dtypes.INT64, dtypes.INT64, dtypes.INT64),
+        (dtypes.INT64, dtypes.INT64, dtypes.INT8),
+        (dtypes.INT64, dtypes.INT64, dtypes.INT16),
+        (dtypes.INT64, dtypes.INT64, dtypes.FP64),
+    }
+    # Named types
+    result = v.ewise_mult(v, op["INT64", "INT64"](0.5)).new()
+    assert result.isequal(Vector.from_coo([0, 1], [2, 4]), check_dtype=True)
+    typed = op["INT64", "INT64", "FP64"]
+    assert typed is op._udt_ops[dtypes.INT64, dtypes.INT64, dtypes.FP64]
+    assert typed.thunk_type == dtypes.FP64
+    assert repr(typed) == "indexbinary._ibo_add_theta[INT64, INT64, FP64]"
+    assert repr(op["INT64", "INT64"]) == "indexbinary._ibo_add_theta[INT64, INT64]"
+    result = v.ewise_mult(v, typed(0.5)).new()
+    assert result.isequal(Vector.from_coo([0, 1], [2.5, 4.5]), check_dtype=True)
+    # Pickle keeps all three types, for the typed op and for the op it binds
+    typed2 = pickle.loads(pickle.dumps(typed))  # re-registers the anonymous op
+    assert repr(typed2) == repr(typed)
+    assert v.ewise_mult(v, typed2(0.5)).new().isequal(result, check_dtype=True)
+    bound = v.ewise_mult(v, op(0.5)).op
+    assert bound.type == bound._type2 == dtypes.INT64
+    bound2 = pickle.loads(pickle.dumps(bound))
+    assert bound2._theta_type == dtypes.FP64
+    assert v.ewise_mult(v, bound2).new().isequal(result, check_dtype=True)
+    bound2 = pickle.loads(pickle.dumps(op["INT64", "FP64"](1)))  # was op["INT64"](1)
+    assert (bound2.type, bound2._type2, bound2._theta_type) == (
+        dtypes.INT64,
+        dtypes.FP64,
+        dtypes.FP64,
+    )
+    # Without is_udt, the three types are one, as when the op runs
+    wsum = indexbinary.register_anonymous(_ibo_add_theta)
+    assert wsum["INT8", "INT8", "INT64"] is wsum["INT64"]
+    rec_udt = dtypes.register_anonymous(np.dtype([("theta_b", np.int64)]), "_UntypedThetaRec2")
+    with pytest.raises(KeyError, match="does not work with .INT64, INT64, _UntypedThetaRec2"):
+        wsum["INT64", "INT64", rec_udt]
 
 
 def test_pickle_bound_record_udt_theta():
@@ -450,6 +612,27 @@ def test_bad_type():
         indexbinary.register_anonymous(42)
 
 
+def test_type_the_op_does_not_take():
+    """``R in op`` is False and ``op[R]`` raises KeyError, as for an IndexUnaryOp.
+
+    Both raised AttributeError: IndexBinaryOp had no ``is_positional``, which
+    ``op[R]`` reads for a type the op does not have.
+    """
+
+    def add_vals(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+        return x + y + theta
+
+    op = indexbinary.register_anonymous(add_vals)
+    rec = dtypes.register_anonymous(
+        np.dtype([("ibt_a", np.float64), ("ibt_b", np.int64)]), "_IbtRec"
+    )
+    assert dtypes.INT64 in op
+    assert rec not in op
+    for expr in [lambda: op[rec], lambda: op(Scalar.from_value((1.0, 2), rec), dtype=rec)]:
+        with pytest.raises(KeyError, match="does not work with _IbtRec"):
+            expr()
+
+
 def test_with_mask():
     def add_vals(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
         return x + y + theta
@@ -477,6 +660,23 @@ def test_with_accumulator():
     binop = op(10)
     C(accum=gb.binary.plus) << A.ewise_mult(B, binop)
     assert C.to_coo()[2][0] == 118  # 100 + (3+5+10)
+
+
+def test_reduce_refuses_a_bound_op():
+    """A bound IndexBinaryOp gets the TypeError reduce gives a BinaryOp that is in no Monoid.
+
+    It raised AttributeError: neither the bound op nor its IndexBinaryOp had
+    ``monoid``, which reduce and its error message read.
+    """
+
+    def add_vals(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+        return x + y + theta
+
+    op = indexbinary.register_anonymous(add_vals)
+    v = Vector.from_coo([0, 1], [1, 2])
+    for binop in [op(1), op[int](1)]:
+        with pytest.raises(TypeError, match="is not known to be part of a Monoid"):
+            v.reduce(binop)
 
 
 def test_ewise_with_bound_binop():
@@ -508,6 +708,7 @@ def test_find_opclass():
 
     bound = typed(0)
     assert bound.opclass == "BinaryOp"
+    assert find_opclass(op(0))[1] == "BinaryOp"
 
 
 def test_udt_tuple_return():
@@ -713,6 +914,84 @@ def test_semiring_from_bound_ibo_over_udt_mxm():
     assert C[0, 0].new() == (11, 4)
     assert C[0, 1].new() == (7, 3)
     assert C[1, 1].new() == (25, 7)
+
+
+def _ibo_decay(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+    d = ix - jx if ix >= jx else jx - ix
+    return x * y * theta**d
+
+
+def test_semiring_from_untyped_bound_ibo():
+    """A Semiring from ``ibo(theta)`` is typed when it runs, by the inputs and theta.
+
+    Before, ``ibo(0.5)`` was an FP64 op, so its semiring refused INT64
+    matrices with KeyError, and ``ibo(1)`` was INT64 and refused FP64 ones.
+    """
+    from graphblas import monoid as monoid_module
+    from graphblas import semiring as semiring_module
+
+    decay = indexbinary.register_anonymous(_ibo_decay)
+    A = Matrix.from_coo([0, 0, 1, 2], [0, 2, 1, 0], [1, 1, 1, 1], nrows=3, ncols=3)
+    v = Vector.from_coo([0, 1, 2], [4, 4, 4])
+    half = semiring_module.register_anonymous(monoid_module.plus, decay(0.5))
+    one = semiring_module.register_anonymous(monoid_module.plus, decay(1))
+    expected = Vector.from_coo([0, 1, 2], [5.0, 4.0, 1.0])
+    assert A.mxv(v, half).new().isequal(expected, check_dtype=True)
+    assert A.dup("FP32").mxv(v.dup("FP32"), half).new().isequal(expected, check_dtype=True)
+    assert A.mxv(v, one).new().isequal(Vector.from_coo([0, 1, 2], [8, 4, 4]), check_dtype=True)
+    result = A.dup(float).mxv(v.dup(float), one).new()
+    assert result.isequal(Vector.from_coo([0, 1, 2], [8.0, 4.0, 4.0]), check_dtype=True)
+    sr2 = pickle.loads(pickle.dumps(half))
+    assert A.mxv(v, sr2).new().isequal(expected, check_dtype=True)
+    # Theta keeps its type through pickle: FP32 data stays FP32 with an FP32 theta
+    bound2 = pickle.loads(pickle.dumps(decay(np.float32(0.5))))
+    sr2 = semiring_module.register_anonymous(monoid_module.plus, bound2)
+    result = A.dup("FP32").mxv(v.dup("FP32"), sr2).new()
+    assert result.isequal(expected.dup("FP32"), check_dtype=True)
+
+
+def test_argmax_semiring_from_untyped_bound_ibo():
+    """The SuiteSparse user guide's row argmax, with theta unused, bound with ``iop()``.
+
+    The multiplier turns ``A(i, k)`` into the pair ``(k, A(i, k))`` and a max
+    monoid on pairs keeps the larger value (the smaller column on a tie). The
+    guide binds a BOOL theta because theta cannot be NULL. Here the matrix
+    holds pairs, so the UDF's tuple return takes their type. Before, ``iop()``
+    and ``iop(0)`` were ops on BOOL and INT64 values, not the matrix's pairs.
+    Theta keeps its own type, so each bind compiles the op for it.
+    """
+    from graphblas import binary
+    from graphblas import monoid as monoid_module
+    from graphblas import semiring as semiring_module
+
+    pair = dtypes.register_anonymous(np.dtype([("k", np.int64), ("v", np.float64)]), "IboPair")
+
+    def make_pair(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+        return (np.int64(jx), x["v"])
+
+    def max_pair(a, b):  # pragma: no cover (numba)
+        if a[1] > b[1] or (a[1] == b[1] and a[0] < b[0]):
+            return a
+        return b
+
+    iop = indexbinary.register_anonymous(make_pair, is_udt=True)
+    max_monoid = monoid_module.register_anonymous(
+        binary.register_anonymous(max_pair, is_udt=True), (np.iinfo(np.int64).max, -np.inf)
+    )
+    values = np.array([(0, 3.0), (0, 7.0), (0, 7.0), (0, 5.0), (0, -1.0)], dtype=pair.np_type)
+    A = Matrix.from_coo([0, 0, 0, 1, 1], [0, 1, 2, 0, 2], values, dtype=pair)
+    ones = Vector.from_scalar(True, A.ncols)
+    for binop in [iop(), iop(False), iop(0), iop(0.0)]:
+        argmax = semiring_module.register_anonymous(max_monoid, binop)
+        c = A.mxv(ones, argmax).new()
+        assert c.dtype == pair
+        assert c[0].new() == (1, 7.0)
+        assert c[1].new() == (0, 5.0)
+    assert set(iop._udt_types) == {
+        (pair, dtypes.BOOL, dtypes.BOOL),
+        (pair, dtypes.BOOL, dtypes.INT64),
+        (pair, dtypes.BOOL, dtypes.FP64),
+    }
 
 
 def test_dir_and_module():

@@ -358,6 +358,11 @@ jobs:
           coverage report --show-missing
       - name: codecov
         uses: codecov/codecov-action@v5
+        with:
+          # Codecov takes tokenless uploads only from forks. A PR from a branch of this
+          # repository, or a push to main, is refused with "Token required because
+          # branch is protected".
+          token: ${{ secrets.CODECOV_TOKEN }}
       - name: Notebooks Execution check
         if: matrix.slowtask == 'notebooks'
         run: |

@@ -224,17 +224,18 @@ class Semiring(OpBase):
             raise TypeError(f"monoid must be a Monoid, not {type(monoid)}")
         # SuiteSparse:GraphBLAS allows the multiplier of a Semiring to be
         # any GrB_BinaryOp, "including those based on a GxB_IndexBinaryOp"
-        # (GraphBLAS.h, GrB_Semiring section). A ``_BoundIndexBinaryOp`` is
-        # already exactly such a typed GrB_BinaryOp (built via
-        # ``GxB_BinaryOp_new_IndexOp``), so accept it directly and build
-        # one Semiring for its specific input/output type pair, rather
-        # than the regular per-typed-op iteration that polymorphic
-        # ``BinaryOp`` parents go through.
+        # (GraphBLAS.h, GrB_Semiring section). A ``_BoundIndexBinaryOp``
+        # (``ibo[dtype](theta)``) is already exactly such a typed
+        # GrB_BinaryOp (built via ``GxB_BinaryOp_new_IndexOp``), so accept it
+        # directly and build one Semiring for its specific input/output type
+        # pair, rather than the regular per-typed-op iteration that
+        # polymorphic ``BinaryOp`` parents go through. ``ibo(theta)`` is such
+        # a parent, a BinaryOp subclass that binds theta per type as it runs.
         from .indexbinary import _BoundIndexBinaryOp
 
         if isinstance(binaryop, _BoundIndexBinaryOp):
             return cls._build_from_bound_indexbinary(name, monoid, binaryop, anonymous=anonymous)
-        if type(binaryop) is not BinaryOp:
+        if not isinstance(binaryop, BinaryOp):
             raise TypeError(
                 f"binaryop must be a BinaryOp or a bound IndexBinaryOp "
                 f"(``ibo[dtype](theta)``), not {type(binaryop)}"
@@ -351,9 +352,10 @@ class Semiring(OpBase):
             The monoid of the semiring (like "plus" in the default "plus_times" semiring).
         binaryop : BinaryOp, ParameterizedBinaryOp, or bound IndexBinaryOp
             The multiplier of the semiring (like "times" in the default
-            "plus_times" semiring). A bound IndexBinaryOp (``ibo[dtype](theta)``)
-            is accepted as well; the resulting semiring is monomorphic in
-            the bound op's input/output types.
+            "plus_times" semiring). An IndexBinaryOp bound to theta,
+            ``ibo(theta)``, is a BinaryOp. One bound at a type,
+            ``ibo[dtype](theta)``, is accepted as well; the resulting semiring
+            is monomorphic in the bound op's input/output types.
         name : str, optional
             The name of the operator. This *does not* show up as ``gb.semiring.{name}``.
 
@@ -379,9 +381,10 @@ class Semiring(OpBase):
         monoid : Monoid or ParameterizedMonoid
             The monoid of the semiring (like "plus" in the default "plus_times" semiring).
         binaryop : BinaryOp, ParameterizedBinaryOp, or bound IndexBinaryOp
-            The multiplier of the semiring. A bound IndexBinaryOp
-            (``ibo[dtype](theta)``) is also accepted; the resulting
-            semiring is monomorphic in the bound op's input/output types.
+            The multiplier of the semiring. ``ibo(theta)`` is a BinaryOp, and
+            an IndexBinaryOp bound at a type, ``ibo[dtype](theta)``, is also
+            accepted; the resulting semiring is monomorphic in the bound op's
+            input/output types.
         lazy : bool, default False
             If False (the default), then the function will be automatically
             compiled for builtin types (unless ``is_udt`` is True).
