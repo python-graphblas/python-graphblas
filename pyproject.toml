@@ -45,6 +45,7 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
   "Programming Language :: Python :: 3 :: Only",
   "Intended Audience :: Developers",
   "Intended Audience :: Other Audience",
@@ -62,7 +63,7 @@ dependencies = [
   # https://peps.python.org/pep-0771/ (still draft as of 2026-03)
   # Use e.g. "python-graphblas[suitesparse]" or "python-graphblas[default]" instead
   "suitesparse-graphblas >=7.4.0.0",
-  "numba >=0.57; python_version<'3.15'", # make optional where numba is not supported
+  "numba >=0.57; python_version<'3.16'", # make optional where numba is not supported
 ]
 
 [project.urls]
@@ -83,11 +84,11 @@ suitesparse-udf = [ # udf requires numba
 repr = ["python-graphblas[pandas]"]
 io = [
   "python-graphblas[networkx,scipy]",
-  "python-graphblas[numba]; python_version<'3.15'", # make optional where numba is not supported
+  "python-graphblas[numba]; python_version<'3.16'", # make optional where numba is not supported
   "awkward >=2.0",
   # sparse needs numba, so it stays optional and takes numba's upper guard from above:
   # it has to drop out wherever numba does.
-  "sparse >=0.14; python_version<'3.15'",
+  "sparse >=0.14; python_version<'3.16'",
   # fast-matrix-market is no longer maintained; last supported Python is 3.12
 ]
 viz = ["python-graphblas[networkx,scipy]", "matplotlib >=3.6"]
@@ -99,11 +100,11 @@ datashade = [ # datashade requires numba
 test = ["python-graphblas[suitesparse,pandas,scipy]", "packaging >=21", "pytest >=6.2", "tomli >=1"]
 default = [
   "python-graphblas[suitesparse,pandas,scipy]",
-  "python-graphblas[numba]; python_version<'3.15'", # make optional where numba is not supported
+  "python-graphblas[numba]; python_version<'3.16'", # make optional where numba is not supported
 ]
 all = [
   "python-graphblas[default,io,viz,test]",
-  "python-graphblas[datashade]; python_version<'3.15'", # make optional, b/c datashade needs numba
+  "python-graphblas[datashade]; python_version<'3.16'", # make optional, b/c datashade needs numba
 ]
 
 [tool.setuptools]
@@ -138,6 +139,10 @@ dirty_template = "{tag}+{ccount}.g{sha}.dirty"
 
 [tool.black]
 line-length = 100
+# MAINT: add "py315" once a black that knows it (26.5 or later) installs on Python 3.15
+# from conda-forge (2026-10-19: its pytokens >=0.4 has no 3.15 build, so 3.15 gets black
+# 26.1, which rejects "py315" and stops CI's auto-generated code check). Listing it also
+# makes any older black refuse to run on this repository.
 target-version = ["py311", "py312", "py313", "py314"]
 
 [tool.isort]
