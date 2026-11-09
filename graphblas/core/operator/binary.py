@@ -409,6 +409,7 @@ if _has_numba:
         _has_jit_set,
         _maybe_warn_jit_skipped,
         compile_udt_binary_wrapper,
+        set_jit_c_mixed_on_op,
         set_jit_c_on_op,
     )
 
@@ -689,13 +690,13 @@ class BinaryOp(OpBase):
         op = _finalize_udt_op(
             self, dtype, dtype2, ret_type, binary_wrapper, wrapper_sig, TypedUserBinaryOp
         )
-        # Set JIT C definition for auto-generated built-in UDT ops. Only
-        # same-type pairs apply: mixed UDT+scalar ops don't have a
-        # meaningful single-type C definition. The arithmetic kernel also
-        # declares ``z`` with the operands' type, so it fits only an op whose
-        # result is that type too, which ``truediv`` on integers is not.
-        # ``_has_jit_set`` gates access to ``lib.GrB_BinaryOp_set_String``,
-        # which is absent on SS < 9.
+        # Set JIT C definition for auto-generated built-in UDT ops. A same-type
+        # pair whose result is that type too gets the one-type kernel below; a
+        # mixed pair (a scalar with a UDT, or two UDTs of one layout with other
+        # element types) gets a kernel with a C type for each of z, x and y,
+        # when it has a C form (``set_jit_c_mixed_on_op``); eq/ne on a mixed
+        # pair keep the cfunc. ``_has_jit_set`` gates access to
+        # ``lib.GrB_BinaryOp_set_String``, which is absent on SS < 9.
         if is_lifted and self.name in _BUILTIN_UDT_BINARY_OPS:
             is_jittable = ret_type == dtype
         else:
@@ -723,6 +724,20 @@ class BinaryOp(OpBase):
                     is_eq=(self.name == "eq"),
                 )
             _maybe_warn_jit_skipped(op._jit_c_info, self.name, dtype.name)
+        elif _has_numba and _has_jit_set and is_lifted and self.name in _BUILTIN_UDT_BINARY_OPS:
+            # (no warning when there is none: the cfunc is this op's documented path)
+            from ..udt import _udt_op_types
+
+            _, input_types = _udt_op_types(self.name, dtype, dtype2)
+            op._jit_c_info = set_jit_c_mixed_on_op(
+                op.gb_obj,
+                self.name,
+                _BUILTIN_UDT_BINARY_OPS[self.name],
+                dtype,
+                dtype2,
+                ret_type,
+                input_types,
+            )
         return op
 
     @classmethod

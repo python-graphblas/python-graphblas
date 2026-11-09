@@ -137,6 +137,9 @@ def _init(backend_arg, blocking, automatic=False):
         # Already initialized with these parameters; nothing more to do
         return
 
+    if backend_arg == "suitesparse":
+        # Checked before anything is initialized, so a bad value changes nothing
+        jit_c_control = _jit_c_control_config()
     backend = backend_arg
     if backend in {"suitesparse", "suitesparse-vanilla"}:
         try:
@@ -197,6 +200,35 @@ def _init(backend_arg, blocking, automatic=False):
     core.ffi = ffi
     core.lib = lib
     core.NULL = ffi.NULL
+    if backend == "suitesparse":
+        from .core.ss.jit_config import _set_jit_c_control_at_init
+
+        _set_jit_c_control_at_init(jit_c_control)
+
+
+_JIT_C_CONTROLS = ("on", "load", "run", "pause", "off")
+
+
+def _jit_c_control_config():
+    """``config["jit_c_control"]``, the SuiteSparse JIT control set at init (see graphblas.yaml).
+
+    None when it is not set, which is the default: ``'run'``, raised by UDT work.
+    """
+    val = config.get("jit_c_control")
+    if val is None:
+        return None
+    # YAML 1.1 reads an unquoted on/off as a bool, so a config file saying
+    # ``jit_c_control: off`` arrives here as False.
+    if val is True or val is False:
+        return "on" if val else "off"
+    if isinstance(val, str) and val.lower() in _JIT_C_CONTROLS:
+        return val.lower()
+    raise ValueError(
+        "Bad value for graphblas.config['jit_c_control'] (or the GRAPHBLAS_JIT_C_CONTROL "
+        f"environment variable): {val!r}. Must be one of: "
+        + ", ".join(repr(x) for x in _JIT_C_CONTROLS)
+        + ", or unset"
+    )
 
 
 # Ideally this is in operator.py, but lives here to avoid circular references

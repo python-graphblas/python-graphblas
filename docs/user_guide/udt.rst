@@ -442,25 +442,32 @@ but never compiles a ``.dylib`` or ``.so``, and silently falls back to the
 cfunc path. The 2-3x JIT speedup is silently lost.
 
 python-graphblas repairs the compiler path when ``graphblas.ss`` is
-imported, which the first access to ``gb.ss`` does. If
-``jit_c_compiler_name`` doesn't exist on disk, it is replaced with one from
-``$CONDA_PREFIX/bin/`` (or from ``sysconfig`` for pure-pip installs). The
+imported, which the first access to ``gb.ss`` does (and at init, when the JIT
+control is configured to ``'on'``). If ``jit_c_compiler_name`` doesn't exist on
+disk, it is replaced with one from ``$CONDA_PREFIX/bin/`` (or from
+``sysconfig`` for pure-pip installs). The
 import changes nothing else, so reading ``gb.ss.about`` does not change what
 later operations compute.
 
-``jit_c_control`` is raised from the SS default ``'run'`` (run cached kernels
-only; no compile, no load from disk) to ``'on'`` (compile, load, and run) by
-each of these, since each asks SuiteSparse to compile C source:
+``jit_c_control`` starts at ``graphblas.config["jit_c_control"]``, ``'run'`` by
+default (run cached kernels only; no compile, no load from disk); see
+:ref:`suitesparse_jit`. That default ``'run'`` is raised to ``'on'`` (compile,
+load, and run) by each of these, since each asks SuiteSparse to compile C source:
 
 - a UDT operator that gets C source, such as the first ``binary.plus[udt]``;
 - ``gb.dtypes.ss.register_new``, which registers a type from a C typedef;
 - ``gb.binary.ss.register_new`` and its ``unary``, ``indexunary``, ``select``,
   and ``indexbinary`` siblings, which register an operator from a C definition.
 
-A setting other than ``'run'`` is kept, including ``'off'``, ``'pause'``, and
-``'load'`` (load and run cached kernels, never compile). SuiteSparse itself
-sets ``'load'`` after a compile fails, so keeping it means a failing compile
-is tried once, not again at every later request.
+A control you set is kept: ``'off'``, ``'pause'``, ``'load'`` (load and run
+cached kernels, never compile), and ``'run'`` too when it was set before init
+(``GRAPHBLAS_JIT_C_CONTROL``, ``gb.config.set``, or a YAML config file). With
+nothing configured, a ``'run'`` set later in ``gb.ss.config`` is the default
+again. Under a ``'run'`` you set, UDT operators use their Numba functions, and
+the registrations above fail with an error saying how to opt in:
+``gb.ss.config["jit_c_control"] = "on"``, or ``None`` for the default.
+SuiteSparse itself sets ``'load'`` after a compile fails, so keeping it means a
+failing compile is tried once, not again at every later request.
 
 Call the helper manually to re-fix or verify::
 
