@@ -170,11 +170,16 @@ def _lift_rank(t, ndim):
 
 
 def _one_term_monoid(dtype):
-    # Diagonal scaling sums one term per output, so any monoid gives the same value; pick one
-    # with factory kernels for the output type.
+    # Diagonal scaling has one term per output entry, which must come back as the operator
+    # computed it. Where an output column has every row, SuiteSparse's saxpy starts from the
+    # monoid's identity and adds the term (see tl._perm_semiring). There plus returns +0.0
+    # for -0.0 and quiets a signaling NaN, while any writes the term unchanged. Integers use
+    # plus and BOOL uses lor: both are exact for them and have factory kernels for more
+    # operators than any has. Without the JIT, any_times and most other any semirings run
+    # generic, 0-15% slower than plus for 1e6 hypersparse rows (10.5.1 and 10.5.2).
     if dtype == BOOL:
         return monoid.lor
-    if dtype._is_udt:
+    if dtype._is_udt or dtype.name in {"FP32", "FP64", "FC32", "FC64"}:
         return monoid.any
     return monoid.plus
 
