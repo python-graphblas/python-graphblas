@@ -237,7 +237,10 @@ not numpy's two elements).
     1.0
 
 A repeated index repeats its slice, as with ``np.ix_``: ``X[:, [1, 1]]`` is 2 x 2 x 4. A
-negative index counts from the end.
+negative index counts from the end. An index out of range raises what Matrix raises for the
+same key: ``IndexError`` for an int, or for any index below ``-size``; otherwise
+``InvalidIndex`` (assigning to one element, or extracting with a Scalar out of range) or
+``IndexOutOfBound``, as GraphBLAS reports it.
 
 Assignment by index
 -------------------

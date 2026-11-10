@@ -14,12 +14,13 @@ SuiteSparse assign or subassign on the stored Matrix, with the value and a regio
 to the region's matching layout.
 """
 
+import functools
 import math
 
 import numpy as np
 
 from ..dtypes import BOOL
-from ..exceptions import DimensionMismatch, IndexOutOfBound
+from ..exceptions import DimensionMismatch, IndexOutOfBound, InvalidIndex
 from . import tensor_census as census
 from . import tensor_layout as tl
 from .expr import Updater
@@ -27,9 +28,20 @@ from .scalar import Scalar
 from .tensor_layout import Layout
 
 
-def _resolve(t, keys):
-    """``(keys, sel)`` as extraction resolves them: one entry per axis, an int (axis dropped),
-    a range (a slice) or an int64 array of coordinates (negatives wrapped once).
+def _resolve(t, keys, *, assign=False):
+    """``(keys, sel)`` as extraction (or, with ``assign``, assignment) resolves them: one entry
+    per axis, an int (axis dropped), a range (a slice) or an int64 array of coordinates
+    (negatives wrapped once).
+    """
+    keys, sel, error = _resolve_keys(t, keys, assign=assign)
+    if error is not None:
+        raise error
+    return keys, sel
+
+
+def _resolve_keys(t, keys, *, assign=False):
+    """``(keys, sel, error)``: ``_resolve``'s result, with an index out of range given as the
+    exception to raise (``sel`` then holds a stand-in for it), not raised.
     """
     keys = keys if isinstance(keys, tuple) else (keys,)
     if any(k is None for k in keys):
@@ -42,9 +54,37 @@ def _resolve(t, keys):
     if len(keys) > t.ndim:
         raise IndexError(f"too many indices for a Tensor of {t.ndim} dimensions")
     keys = keys + (slice(None),) * (t.ndim - len(keys))
+    scalars = [type(k) is Scalar for k in keys]
     keys = tuple(_scalar_index(k, a) for a, k in enumerate(keys))
-    sel = [_axis_index(k, n, a) for a, (k, n) in enumerate(zip(keys, t._shape, strict=True))]
-    return keys, sel
+    sel, problems = [], []
+    for a, (k, n, s) in enumerate(zip(keys, t._shape, scalars, strict=True)):
+        x, problem = _axis_index(k, n, a, scalar=s)
+        sel.append(x)
+        if problem is not None:
+            problems.append(problem)
+    error = _out_of_range(keys, problems, assign) if problems else None
+    return keys, sel, error
+
+
+def _out_of_range(keys, problems, assign):
+    """The exception the same Matrix call raises for indices out of range (``problems``: a
+    ``(kind, message)`` per axis), with the Tensor's message.
+
+    Matrix checks ints itself, and any index below ``-size``: IndexError, whichever axis it is
+    on. The rest it leaves to GraphBLAS: an assignment raises InvalidIndex for a region of one
+    element (each index an int, a Scalar or one-element array), else IndexOutOfBound; an
+    extraction raises InvalidIndex where a Scalar is out of range, else IndexOutOfBound.
+    """
+    kinds = [kind for kind, _ in problems]
+    for kind, msg in problems:
+        if kind in {"int", "below"}:
+            return IndexError(msg)
+    if assign:
+        one = all(not isinstance(k, slice) and np.size(k) == 1 for k in keys)
+        return (InvalidIndex if one else IndexOutOfBound)(problems[0][1])
+    if "scalar" in kinds:
+        return InvalidIndex(problems[kinds.index("scalar")][1])
+    return IndexOutOfBound(problems[0][1])
 
 
 def _region_value(value, shape, dtype):
@@ -89,7 +129,7 @@ def assign(t, keys, value, *, mask=None, accum=None, replace=False, is_submask=F
     from .tensor import Tensor, _as_tensor
 
     opts = opts or {}
-    keys, sel = _resolve(t, keys)
+    keys, sel = _resolve(t, keys, assign=True)
     kept = [a for a in range(t.ndim) if not isinstance(sel[a], int)]
     renum = {a: i for i, a in enumerate(kept)}
     shape = tuple(len(sel[a]) for a in kept)
@@ -514,17 +554,20 @@ def _scalar_index(index, axis):
     return int(index.value)
 
 
-def _axis_index(index, size, axis):
-    """An int (axis dropped), a range (a slice: kept as one, so that indexing costs follow the
-    entries rather than the axis lengths) or a sorted-or-not int64 array of coordinates.
+def _axis_index(index, size, axis, *, scalar=False):
+    """``(selection, problem)``: an int (axis dropped), a range (a slice: kept as one, so that
+    indexing costs follow the entries rather than the axis lengths) or a sorted-or-not int64
+    array of coordinates; and None, or ``(kind, message)`` for an index out of range (see
+    _out_of_range), when the selection is a stand-in. ``scalar``: the int came from a Scalar.
     """
     if isinstance(index, (int, np.integer)):
         i = int(index)
-        if not -size <= i < size:
-            raise IndexOutOfBound(f"index {i} is out of bounds for axis {axis} of size {size}")
-        return i + size if i < 0 else i
+        if -size <= i < size:
+            return (i + size if i < 0 else i), None
+        msg = f"index {i} is out of bounds for axis {axis} of size {size}"
+        return 0, ("scalar" if scalar and i >= 0 else "below" if scalar else "int", msg)
     if isinstance(index, slice):
-        return range(*index.indices(size))
+        return range(*index.indices(size)), None
     arr = np.asarray(index)
     if arr.dtype == bool:
         raise TypeError("boolean indices are not supported for Tensor")
@@ -532,16 +575,25 @@ def _axis_index(index, size, axis):
         raise TypeError(f"bad index for axis {axis}: {index!r}")
     arr = arr.astype(np.int64)
     if arr.size and (arr.min() < -size or arr.max() >= size):
-        raise IndexOutOfBound(f"an index is out of bounds for axis {axis} of size {size}")
-    return np.where(arr < 0, arr + size, arr)
+        msg = f"an index is out of bounds for axis {axis} of size {size}"
+        return np.zeros(arr.size, np.int64), ("below" if arr.min() < -size else "array", msg)
+    return np.where(arr < 0, arr + size, arr), None
 
 
 def _extract_expr(self, keys):
-    keys, sel = _resolve(self, keys)
+    given = keys
+    keys, sel, error = _resolve_keys(self, keys)
+    recipe = _extract_recipe
+    if isinstance(error, IndexError):
+        raise error
+    if error is not None:
+        # Matrix leaves these to GraphBLAS, which refuses them when the extract runs, or when
+        # the expression is assigned to (see _out_of_range), so they are raised then
+        recipe = functools.partial(_refused_recipe, error)
     shape = tuple(len(x) for x in sel if not isinstance(x, int))
     expr = TensorIndexExpr(
         "extract",
-        _extract_recipe,
+        recipe,
         [self],
         (self, sel, keys),
         dtype=self.dtype,
@@ -550,8 +602,12 @@ def _extract_expr(self, keys):
         expr_repr="{0.name}[...]",
     )
     expr._parent = self
-    expr._keys = keys
+    expr._keys = given  # (an assignment resolves them itself, Scalars included)
     return expr
+
+
+def _refused_recipe(exc, updater, t, sel, keys):
+    raise exc
 
 
 def _group_index(shape, axes, sel, keys, *, build=True):
