@@ -16,7 +16,7 @@ from graphblas import Matrix, Scalar, Vector, backend, binary, dtypes, monoid
 from graphblas.core import tensor_layout as tl
 from graphblas.core.tensor import Layout, Tensor, TensorExpression
 from graphblas.core.tensor import _has_container as tensor_has_container
-from graphblas.exceptions import DimensionMismatch, IndexOutOfBound
+from graphblas.exceptions import DimensionMismatch, IndexOutOfBound, InvalidIndex
 
 from .conftest import skip_without_jit
 
@@ -3934,8 +3934,8 @@ def test_scalar_index():
             A[bad, :].new()
         with pytest.raises(TypeError):
             X[bad, :, :]
-    with pytest.raises(IndexOutOfBound):
-        X[:, Scalar.from_value(5), :]
+    with pytest.raises(InvalidIndex):
+        X[:, Scalar.from_value(5), :].new()
 
 
 def test_infix_bool_and_operator_waits():
@@ -5350,10 +5350,10 @@ def test_indexing(layout, monkeypatch):
     for key in INDEX_KEYS[7:11]:
         check(X[key].new(), np_outer_index(xv, key), np_outer_index(xp, key))
     monkeypatch.undo()
-    with pytest.raises(IndexOutOfBound):
+    with pytest.raises(IndexError):
         X[3]
     with pytest.raises(IndexOutOfBound):
-        X[:, [0, 4]]
+        X[:, [0, 4]].new()
     with pytest.raises(IndexError, match="too many"):
         X[0, 0, 0, 0]
     with pytest.raises(IndexError, match="ellipsis"):
@@ -5364,6 +5364,91 @@ def test_indexing(layout, monkeypatch):
         X[np.array([True, False, True])]
     with pytest.raises(TypeError, match="boolean"):
         X[np.array([True, False, True])] = 1  # (assignment takes the same keys)
+
+
+def _raised(f):
+    try:
+        f()
+    except Exception as exc:
+        return type(exc)
+    return None
+
+
+_INDEX_OPS = {
+    "get": lambda X, k: X[k].new(),
+    "set": lambda X, k: X.__setitem__(k, 1),
+    "<<": lambda X, k: X[k] << 1,
+    "accum <<": lambda X, k: X(accum=binary.plus)[k] << 1,
+    "del": lambda X, k: X.__delitem__(k),
+}
+
+
+def _index_key(text):
+    """A key from text: ":" a slice, "S3" a Scalar, "[0,3]" a list, "3" an int; "|" between
+    axes.
+    """
+
+    def part(p):
+        if p == ":":
+            return slice(None)
+        if p.startswith("S"):
+            return Scalar.from_value(int(p[1:]))
+        if p.startswith("["):
+            return [int(x) for x in p[1:-1].split(",")]
+        return int(p)
+
+    return tuple(part(p) for p in text.split("|"))
+
+
+# Out of range on a 3 x 3 Matrix: ints, Scalars and lists, above and below, as an element or a
+# region, and mixed (a Scalar and an int, lists of one and of two)
+_BAD_KEYS = [
+    "3|0", "-4|0", "0|3", "3|:", ":|-4", "S3|0", "S-4|0", "S3|:", ":|S3", "S-4|:", "[3]|0",
+    "[3]|:", "[0,3]|0", "[-4]|0", "[3]|[0]", "S3|9", "[3]|9", "S3|[9]", "[3]|S9", "[3]|S0",
+    "S3|[0,9]", "S3|S-9", "[3]|[-9]", "[-4]|:", "S3|2", "S3|S-4", "S3|[5]", "[3]|S5",
+]  # fmt: skip
+
+
+@pytest.mark.parametrize("op", list(_INDEX_OPS))
+@pytest.mark.parametrize("key", _BAD_KEYS)
+def test_out_of_range_index_raises_as_matrix(key, op):
+    """An index out of range raises what the same Matrix (or Vector) call raises, with the
+    Tensor's message, which names the axis. Matrix raises IndexError for an int out of range
+    and for any index below -size, which it checks itself; the rest GraphBLAS refuses, with
+    InvalidIndex for an assignment to one element or an extraction with a Scalar out of range,
+    else IndexOutOfBound. take and vindex raise numpy's IndexError.
+    """
+
+    def call(X, k):
+        return _raised(lambda: _INDEX_OPS[op](X, k))
+
+    M = Matrix.from_dense(np.arange(9.0).reshape(3, 3))
+    # The same key on a Matrix and a 2-d Tensor of it
+    want = call(M.dup(), _index_key(key))
+    assert want is not None
+    assert call(Tensor.from_matrix(M), _index_key(key)) is want
+    # The first part of the key on a Vector and a 1-d Tensor, where it alone is out of range
+    first = key.split("|")[0]
+    if first not in {":", "0", "[0]", "S0"}:
+        v = Vector.from_dense(np.arange(3.0))
+        want = call(v.dup(), _index_key(first)[0])
+        assert want is not None
+        assert call(Tensor.from_vector(v), _index_key(first)[0]) is want
+    # A 3 x 3 x 3 Tensor with the key's two parts on two of its axes and the third whole, or
+    # an int where the key selects one element of the Matrix (a region stays a region)
+    W = Tensor.from_dense(np.arange(27.0).reshape(3, 3, 3))
+    k = _index_key(key)
+    element = all(not isinstance(p, slice) and np.size(p) == 1 for p in k)
+    want = call(M.dup(), _index_key(key))
+    for axes in [(0, 1), (1, 2), (0, 2)]:
+        k3 = [0 if element else slice(None)] * 3
+        k3[axes[0]], k3[axes[1]] = _index_key(key)
+        assert call(W, tuple(k3)) is want, axes
+    if op == "get":
+        with pytest.raises(IndexError):
+            W.take(3, axis=0)
+        with pytest.raises(IndexError):
+            W.vindex[[3], [0], [0]]
 
 
 def test_indexing_hypersparse_slab():
@@ -6531,7 +6616,7 @@ def test_assign_views_duplicates_and_matrix_parity():
         T[0](Tensor.from_dense(np.ones((2, 3, 4), bool)).S) << 1.0
     with pytest.raises(IndexError, match="too many"):
         T[0, 0, 0, 0] = 1.0
-    with pytest.raises(IndexOutOfBound):
+    with pytest.raises(IndexError):
         T[2] = 1.0
     with pytest.raises(TypeError, match="Bad type"):
         T[0] << "x"
