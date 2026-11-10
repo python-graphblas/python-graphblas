@@ -971,6 +971,42 @@ def test_broadcast_wide_groups_onto_nonempty_ids(monkeypatch):
             check(R2, np.where(xp & yp, yv - xv, 0), xp & yp)
 
 
+@pytest.mark.parametrize("dtype", [dtypes.FP64, dtypes.FP32, dtypes.FC64])
+def test_broadcast_diagonal_keeps_values_bit_exact(dtype):
+    """A broadcast through a diagonal product (one term per output entry) returns each value
+    bit for bit (see _put_specials) when the small side is expanded onto the nonempty rows of
+    a hypersparse row group whose rows are full (under plus, a -0.0 came back +0.0).
+    """
+    from graphblas.core import tensor_census as census
+
+    rng = np.random.default_rng(1110)
+    shape = (200, 70, 3)
+    # Fibers full along axis 2: 300 at random and one at each j < 16 (where Y's specials are)
+    lin = np.union1d(rng.choice(200 * 70, 300, replace=False), np.arange(16) * 71)
+    xp = np.zeros(shape, bool)
+    xp[np.unravel_index(lin, shape[:2])] = True
+    X = Tensor.from_coo(np.nonzero(xp), 1, dtype, shape=shape, layout=((0, 1), (2,)))
+    assert X.ss.format == "hypercsr"
+    yv = (rng.random(70) - 0.5).astype(dtype.np_type)
+    _put_specials(yv)
+    Y = Tensor.from_dense(yv.reshape(1, 70, 1))
+    values = np.where(xp, yv.reshape(1, 70, 1), 0)
+    label = "diagonal rows, nonempty rows"
+    census.start()
+    try:
+        census.force["bcast"] = label
+        R1 = X.ewise_mult(Y, binary.second).new()
+        R2 = Y.ewise_mult(X, binary.first).new()
+        records = census.stop()
+    finally:
+        census.stop()
+        census.force.clear()
+        census.records.clear()
+    assert [r["choice"] for r in records if r["point"] == "bcast"] == [label, label]
+    _check_bits(R1, values, xp)
+    _check_bits(R2, values, xp)
+
+
 def test_lookup_sorted_ways():
     """``lookup_sorted`` indexes a full vector directly, uses a dense table while the vector
     is within a few times its entries and the positions looked up, and a binary search past
