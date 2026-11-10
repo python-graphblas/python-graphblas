@@ -22,10 +22,11 @@ from functools import lru_cache
 
 import numpy as np
 
+from .. import _STANDARD_OPERATOR_NAMES
 from ..dtypes import FP64, lookup_dtype
 from . import utils
 from .dtypes import _nats_in_leaf_units, _view_if_same_layout
-from .operator import IndexUnaryOp, SelectOp, TypedOpBase, binary_from_string
+from .operator import IndexUnaryOp, ParameterizedUdf, SelectOp, TypedOpBase, binary_from_string
 from .operator.binary import BinaryOp
 from .operator.monoid import Monoid
 from .udt import (
@@ -97,7 +98,7 @@ def _literal_operand(dtype, value, op, *, left=False):
             # by a comparison or by an op that gives another type (truediv).
             if isinstance(op, str):
                 op = binary_from_string(op)
-            if op.name in _COMPARISONS:
+            if op.name in _COMPARISONS and not op._anonymous:
                 return (math.inf if value > 0 else -math.inf), FP64
         return value, literal_dtype
     if getattr(op, "_udt_types", True) is None:
@@ -114,7 +115,9 @@ def _literal_operand(dtype, value, op, *, left=False):
             exact = is_comparison or op.name == "truediv"
             if is_comparison and not isinstance(value, (np.generic, np.ndarray)):
                 np_type = dtype.np_type
-                parts = _dict_to_record(np_type, value) if isinstance(value, dict) else value
+                parts = value
+                if isinstance(value, dict) and np_type.names is not None:
+                    parts = _dict_to_record(np_type, value)
                 # First: making an int beyond its leaf infinity reshapes the part.
                 _refuse_misfit_fields(dtype, np_type, parts)
                 if _int_beyond_leaf(np_type, parts) is not None:
@@ -179,13 +182,15 @@ def _weak_builtin_literal_dtype(dtype, value, op=None):
         # keep, so an int out of range is typed exactly, as for a comparison:
         # int8_vec / 300 is FP64, as numpy divides integers in float64.
         np_type = _weak_literal_leaf([value], kind, dtype.np_type, exact=True)
-    if np_type == dtype.np_type:
-        rv = dtype
-    else:
-        try:
-            rv = lookup_dtype(np_type)
-        except ValueError:  # A complex literal where the backend has no complex types
-            return None
+        if np.result_type(dtype.np_type, np_type).kind not in "iu" and not _is_builtin_op(op):
+            # The two then unify to a float type, which rounds an int beyond 64
+            # bits: in FP64, the INT64 2**63 - 1 and the int 2**63 are equal. A
+            # built-in op that gives another type computes in float anyway (a
+            # comparison is given infinity instead), but a user's op may compare.
+            raise
+    # Where the backend has no complex types (vanilla), lookup_dtype registers a
+    # complex literal's dtype as a UDT, so the literal keeps its own type.
+    rv = dtype if np_type == dtype.np_type else lookup_dtype(np_type)
     if kind != "b" and rv.np_type in _SINGLE_PRECISION:
         parts = (value.real, value.imag) if kind == "c" else (float(value),)
         try:
@@ -204,15 +209,29 @@ def _weak_builtin_literal_dtype(dtype, value, op=None):
     return rv
 
 
-def _gives_another_type(op, dtype):
-    """Whether built-in ``op`` on two operands of built-in ``dtype`` gives another type.
+def _is_builtin_op(op):
+    """Whether python-graphblas defines ``op``, or a built-in parameterized op made it."""
+    if op._anonymous:
+        info = getattr(getattr(op, "orig_func", None), "_parameterized_info", None)
+        return info is not None and _is_builtin_op(info[0])
+    module = op._op_class._modname if isinstance(op, ParameterizedUdf) else op._modname
+    return f"{module}.{op.name}" in _STANDARD_OPERATOR_NAMES
 
-    ``truediv`` on integers gives FP64, and the numpy ufuncs that compute in
-    float give a float type, as numpy computes them in a float loop.
+
+def _gives_another_type(op, dtype):
+    """Whether ``op`` on two operands of built-in ``dtype`` gives another type.
+
+    ``truediv`` on integers gives FP64, ``isclose`` gives BOOL, and the numpy
+    ufuncs that compute in float give a float type, as numpy computes them in
+    a float loop. A user's op counts by the type it gives too. A
+    parameterized op is typed with its default parameters, as
+    ``get_typed_op`` types it.
     """
-    if op is None or getattr(op, "_anonymous", True) or not hasattr(op, "__getitem__"):
+    if op is None:
         return False
     try:
+        if isinstance(op, ParameterizedUdf):
+            op = op()
         return op[dtype].return_type != dtype
     except Exception:  # An op that does not take this dtype reports it itself, later.
         return False
@@ -257,7 +276,7 @@ def _literal_type(dtype, value, *, exact=False):
         if _keeps_value(value, np_type):
             return dtype
         return lookup_dtype(np.dtype(f"{np_type.kind}{max(len(value), 1)}"))
-    if np_type.kind in "mM" and (date := _as_numpy_date(value, np_type.kind)) is not None:
+    if np_type.kind in "mM" and (date := _as_numpy_date(value, np_type)) is not None:
         if date.dtype.kind == np_type.kind and _keeps_value(date, np_type):
             return dtype
         return lookup_dtype(date.dtype)
@@ -611,7 +630,7 @@ def _weak_literal_udt(dtype, value, *, exact=False):
             # takes the field's type, and converting it reports what is wrong.
             if isinstance(part, (str, bytes)) and base.kind in "SU":
                 own = np.dtype(f"{base.kind}{max(len(part), 1)}")
-            elif (date := _as_numpy_date(part, base.kind)) is not None:
+            elif (date := _as_numpy_date(part, base)) is not None:
                 part = date
                 own = date.dtype
                 if own.kind != base.kind:
@@ -674,21 +693,27 @@ def _weak_literal_udt(dtype, value, *, exact=False):
     return dtype if literal_type == np_type else lookup_dtype(literal_type)
 
 
-def _as_numpy_date(value, kind):
+def _as_numpy_date(value, leaf):
     """Return ``value`` as numpy's ``datetime64`` or ``timedelta64``, or ``None`` if it is neither.
 
     A numpy date or duration is itself; a Python ``datetime.date`` or
     ``datetime.datetime`` is a date in days or microseconds and a
     ``datetime.timedelta`` a duration in microseconds, as numpy makes them;
     text is a date in the unit it is written to (``"2020-01-01T12:00"`` is in
-    minutes) when ``kind``, the leaf's, is ``"M"`` and numpy can read it.
+    minutes) when ``leaf``, the numpy dtype it meets, is a date and numpy can
+    read it. Text numpy reads as NaT (``"NaT"`` in any case, or empty) is NaT
+    in the leaf's unit: numpy would give it no unit, which numpy 2.5 deprecates.
     """
     if isinstance(value, (np.datetime64, np.timedelta64)):
         return value
     try:
         if isinstance(value, datetime.timedelta):
             return np.timedelta64(value)
-        if isinstance(value, datetime.date) or (kind == "M" and isinstance(value, (str, bytes))):
+        if isinstance(value, datetime.date):
+            return np.datetime64(value)
+        if leaf.kind == "M" and isinstance(value, (str, bytes)):
+            if value.lower() in ("nat", "", b"nat", b""):
+                return np.datetime64("NaT", np.datetime_data(leaf)[0])
             return np.datetime64(value)
     except ValueError:  # text that is not a date; converting it reports that
         pass

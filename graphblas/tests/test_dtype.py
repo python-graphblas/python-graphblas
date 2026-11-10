@@ -378,10 +378,12 @@ def test_register_anonymous_zero_size():
 
 
 def test_register_anonymous_array_numba_cannot_type():
-    # Numba cannot type an array of these, alone or in a record. Its own error was
-    # "AttributeError: 'Boolean' object has no attribute 'bitwidth'" and the like.
+    # Numba cannot type an array of these, alone, in a record or in an array of records.
+    # Its own error was "AttributeError: 'Boolean' object has no attribute 'bitwidth'"
+    # and the like.
     for np_type, element, instead in [
         (np.dtype((np.bool_, (2,))), "bool", "uint8"),
+        (np.dtype(([("_nbt_e", np.bool_, (2,))], (3,))), "bool", "uint8"),
         (np.dtype(("M8[s]", (2, 3))), "datetime64", "int64"),
         (np.dtype([("_nbt_a", np.int8), ("_nbt_b", "m8[ns]", (2,))]), "timedelta64", "int64"),
         (np.dtype(("U3", (2,))), "str", "uint32"),

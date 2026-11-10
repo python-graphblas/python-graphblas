@@ -365,7 +365,7 @@ class BaseType:
                 expr = expr._extract_delayed()
             elif type(expr) is type(self):
                 # Simple assignment (w << v)
-                if (cast_op := _store_cast_op(expr.dtype, self.dtype)) is not None:
+                if (cast_op := _store_cast_op(expr.dtype, self.dtype, is_value=True)) is not None:
                     expr = expr.apply(cast_op)
                     self._update(expr, mask, accum, replace, input_mask, opts=opts)
                     return
@@ -407,7 +407,9 @@ class BaseType:
                 from .matrix import Matrix, MatrixExpression, TransposedMatrix
 
                 if type(expr) is TransposedMatrix and type(self) is Matrix:
-                    if (cast_op := _store_cast_op(expr.dtype, self.dtype)) is not None:
+                    if (
+                        cast_op := _store_cast_op(expr.dtype, self.dtype, is_value=True)
+                    ) is not None:
                         # C << A.T of another UDT type: the cast reads A transposed.
                         expr = expr.apply(cast_op)
                     else:
@@ -570,6 +572,7 @@ class BaseExpression:
         "expr_repr",
         "dtype",
         "_value",
+        "_right_literal",
         "__weakref__",
     )
     output_type = None
@@ -605,6 +608,9 @@ class BaseExpression:
             self.dtype = op.return_type
         else:
             self.dtype = dtype
+        # The right operand as the caller gave it, a literal a comparison typed
+        # beside the values; the select helpers compare indices with it instead.
+        self._right_literal = None
         self._value = None
 
     def new(self, dtype=None, *, mask=None, name=None, **opts):

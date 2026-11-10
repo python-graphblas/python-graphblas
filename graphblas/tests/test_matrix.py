@@ -1273,6 +1273,57 @@ def test_select(A):
     assert pickle.loads(pickle.dumps(select.tril[bool])) is select.tril[bool]
 
 
+def test_select_row_and_column_compare_indices_with_the_bound_given():
+    # The comparison types its literal beside the values, where 300 beside INT8 or UINT8
+    # is infinity and 2**24 + 1 beside FP32 rounds; the helpers used that for indices
+    # (row(B < 300) kept all 400 rows, row(B > 299) none; main was right).
+    n = 400
+    for dtype in ["INT8", "UINT8"]:
+        B = Matrix.from_coo(np.arange(n), np.zeros(n, int), 1, dtype=dtype, nrows=n, ncols=1)
+        assert select.row(B < 300).new().nvals == 300
+        assert select.row(B > 299).new().nvals == 100
+        assert select.row(B <= 299).new().nvals == 300
+        assert select.row(B >= 300).new().nvals == 100
+        assert select.column(B.T <= 299).new().nvals == 300
+        assert select.column(B.T > 299).new().nvals == 100
+        assert select.row(B < 2**70).new().nvals == select.row(B > -(2**70)).new().nvals == n
+    rows = [2**24 - 1, 2**24, 2**24 + 1]
+    F = Matrix.from_coo(rows, [0, 0, 0], [1.0, 2.0, 3.0], dtype="FP32", nrows=2**24 + 3, ncols=1)
+    assert select.row(F < 2**24 + 1).new().to_coo()[0].tolist() == rows[:2]
+    # A fractional bound: i < 2.5 keeps 2, i > -0.5 keeps 0 (a float thunk was truncated)
+    A = Matrix.from_coo(np.arange(5), np.zeros(5, int), 1.0, nrows=5, ncols=1)
+    for expr, expected in [
+        (A < A.nrows / 2, [0, 1, 2]),
+        (A <= 2.5, [0, 1, 2]),
+        (A >= 2.5, [3, 4]),
+        (A > 2.5, [3, 4]),
+        (A > -0.5, [0, 1, 2, 3, 4]),
+        (A < -0.5, []),
+        (A < float("inf"), [0, 1, 2, 3, 4]),
+        (A < Scalar.from_value(2.5), [0, 1, 2]),
+        # A bound that is not a Python or numpy number: the thunk keeps its own type
+        (A < np.array(3), [0, 1, 2]),
+        (A >= np.array(3), [3, 4]),
+        (A < np.True_, [0]),
+    ]:
+        assert select.row(expr).new().to_coo()[0].tolist() == expected, expr
+    assert select.column(A.T < 2.5).new().to_coo()[1].tolist() == [0, 1, 2]
+    w = Vector.from_coo([0], [3])
+    with gb.config.set(autocompute=True):
+        assert select.row(A < w[0]).new().to_coo()[0].tolist() == [0, 1, 2]
+        assert select.row(A >= w[0]).new().to_coo()[0].tolist() == [3, 4]
+    # A comparison with the scalar on the left gives the op's TypeError, as on main; it
+    # was AttributeError ('Matrix' object has no attribute 'value')
+    with pytest.raises(TypeError, match="Bad type for keyword argument `thunk=`"):
+        select.row(A.apply(binary.le, left=3))
+    # NaN compares False with every index, so it keeps none; NaN cast to the INT64 thunk
+    # was 0, so < and <= kept row 0, and > and >= every other row (main too)
+    nan = float("nan")
+    for expr in [A < nan, A <= nan, A > nan, A >= nan, A < Scalar.from_value(nan)]:
+        assert select.row(expr).new().nvals == 0, expr
+    assert select.column(A.T >= np.float32(nan)).new().nvals == 0
+
+
 @autocompute
 def test_select_bools_and_masks(A):
     A3 = Matrix.from_coo([0, 3, 3, 6], [3, 0, 2, 4], [3, 3, 3, 3], nrows=7, ncols=7)

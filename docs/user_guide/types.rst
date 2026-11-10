@@ -48,7 +48,14 @@ follow the same rule, field by field (see :doc:`udt`).
 A comparison has no result type to keep, so an integer outside the operand's
 range compares exactly, as in numpy: ``v < 300`` is True for every element, as
 is ``w < 2**63`` for an INT64 vector ``w``.
-Nor does ``v / 300`` raise, since its result is FP64 whatever the integer. An
+Nor does an operator whose result has another type raise: ``v / 300`` is FP64
+whatever the integer, and ``v.apply(binary.isclose, right=300)`` is False for
+every element. A user-defined operator whose result has another type gets the
+integer exactly where the operand's type and the integer's share an integer
+type (INT16 for ``300`` here), and raises ``OverflowError`` where they would
+share only a floating-point type, which can round the integer: beside an INT64
+vector, ``2**63`` would meet the elements in FP64, where ``2**63 - 1`` and
+``2**63`` are equal. An
 FP32 vector ``== 0.1`` compares in FP32, and ``== 1e300`` compares with
 infinity, with a ``RuntimeWarning`` as in numpy. The defaults of ``ewise_union``
 follow the rule, and so does the ``fill_value`` of ``to_dense``, except that a

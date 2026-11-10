@@ -74,10 +74,19 @@ Field type rules:
   struct) are supported as fields, and built-in operators lift through them.
   In the dict and dataclass forms, write an array field as ``"FP64[3]"``; the
   dict form also takes an existing UDT, such as ``{"id": int, "pos": point3}``.
-- Numba cannot type an array of ``bool``, ``datetime64`` or ``timedelta64``, so
-  with Numba installed, registering a UDT that holds one raises ``ValueError``.
-  Use an array of ``uint8`` for ``bool``, and of ``int64`` for the others.
-- Strings and Python objects are not supported.
+- Numba cannot type an array of ``bool``, ``datetime64``, ``timedelta64``,
+  ``str`` or ``bytes``, so with Numba installed, registering a UDT that holds
+  one raises ``ValueError``. Use an array of ``uint8`` for ``bool`` and
+  ``bytes`` (one per byte), of ``uint32`` for ``str`` (one per character), and
+  of ``int64`` for the others.
+- Text (``str`` or ``bytes``, such as ``np.dtype("S5")``), ``datetime64`` and
+  ``timedelta64`` may be fields, or a whole UDT that is neither record nor
+  array. Such a UDT can be stored and extracted. With Numba, it can also be
+  compared (``==``, ``!=`` and ``isequal``), and ``first``, ``second``, ``pair``
+  and ``any`` work on it, but arithmetic operators do not lift to it: ``plus``
+  and ``min`` raise ``KeyError``. Without Numba, only a ``Scalar``'s ``==``,
+  ``!=`` and ``isequal``, and ``pair``, work on it.
+- Python objects (``np.dtype(object)``) are not supported.
 - Dataclass annotation strings (e.g., ``"int"``) resolve through
   ``lookup_dtype``.
 

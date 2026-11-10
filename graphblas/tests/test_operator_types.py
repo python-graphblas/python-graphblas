@@ -204,6 +204,7 @@ IGNORE = {
     "binary_pickle",
     "monoid_pickle",
     "semiring_pickle",
+    "_test_weak_lt",
     # numpy-graphblas commutation (can we clean this up?)
     "band_land",
     "band_lor",

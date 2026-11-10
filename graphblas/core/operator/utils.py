@@ -1,6 +1,7 @@
 from types import BuiltinFunctionType, FunctionType, ModuleType
 
 from ... import (
+    _STANDARD_OPERATOR_NAMES,
     backend,
     binary,
     config,
@@ -14,6 +15,7 @@ from ... import (
 )
 from ...dtypes import UINT64, lookup_dtype, unify
 from ..expr import InfixExprBase
+from ..udt import _monoid_pair_type
 from .base import (
     _SS_OPERATORS,
     OpBase,
@@ -49,6 +51,18 @@ try:
     # the tuple-form ``__reduce__`` that re-registers the function in the
     # child.
     IndexBinaryOp._initialize()
+    # Every op the namespaces hold now is python-graphblas's own, also ones made
+    # outside ``register_new`` (cdiv, truediv, rtruediv, the semirings on cdiv) and
+    # ones made on first use (binom). Record them all as standard: they pickle by
+    # name, and ``literals._is_builtin_op`` counts them built-in, with no list to
+    # keep in step.
+    for _module in [binary, unary, monoid, semiring, indexunary, select, indexbinary]:
+        _modname = _module.__name__.rsplit(".", 1)[-1]
+        _STANDARD_OPERATOR_NAMES.update(f"{_modname}.{key}" for key in _module._delayed)
+        for _val in list(vars(_module).values()):
+            if isinstance(_val, (OpBase, ParameterizedUdf)) and not _val._anonymous:
+                _STANDARD_OPERATOR_NAMES.add(f"{_modname}.{_val.name}")
+    del _module, _modname, _val
 except Exception:  # pragma: no cover (debug)
     # Exceptions here can often get ignored by Python
     import traceback
@@ -78,12 +92,14 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
                 return op[UINT64]
             if op._udt_types is None:
                 raise KeyError(f"{op.name} does not work with ({dtype}, {dtype2})")
-            if kind == "binary" and isinstance(op, Monoid):
+            if isinstance(op, Monoid):
                 # A Monoid takes one type, but used element-wise it is its
                 # BinaryOp, which takes the pair: ``v.ewise_mult(w, monoid.plus)``
-                # works where ``v * w`` does. Indexing (``monoid.plus[X, Y]``)
-                # still raises.
-                return get_typed_op(op.binaryop, dtype, dtype2)
+                # works where ``v * w`` does.
+                if kind == "binary":
+                    return get_typed_op(op.binaryop, dtype, dtype2)
+                # Indexed with the pair, it takes the type the pair promotes to.
+                return op[_monoid_pair_type(op.binaryop.name, dtype, dtype2)]
             return op._compile_udt(dtype, dtype2)
         # Generic case: try to unify the two dtypes
         try:

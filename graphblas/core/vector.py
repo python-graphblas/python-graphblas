@@ -1408,6 +1408,7 @@ class Vector(BaseType):
 
         """
         method_name = "apply"
+        right_literal = None
         extra_message = (
             "apply only accepts UnaryOp with no scalars or BinaryOp with `left` or `right` scalar"
             "or IndexUnaryOp with `right` thunk."
@@ -1477,6 +1478,7 @@ class Vector(BaseType):
             expr_repr = "{1.name}.apply({op}, left={0._expr_name})"
         elif left is None:
             if type(right) is not Scalar:
+                right_literal = right
                 right, dtype = _literal_operand(self.dtype, right, op)
                 try:
                     right = Scalar.from_value(right, dtype, is_cscalar=None, name="")
@@ -1520,7 +1522,7 @@ class Vector(BaseType):
             expr_repr = "{0.name}.apply({op}, right={1._expr_name})"
         else:
             raise TypeError("Cannot provide both `left` and `right` to apply")
-        return VectorExpression(
+        expr = VectorExpression(
             method_name,
             cfunc_name,
             args,
@@ -1528,6 +1530,8 @@ class Vector(BaseType):
             expr_repr=expr_repr,
             size=self._size,
         )
+        expr._right_literal = right_literal
+        return expr
 
     def select(self, op, thunk=None):
         """Create a new Vector by applying ``op`` to each element of the Vector and keeping

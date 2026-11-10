@@ -751,6 +751,11 @@ def test_select(v):
     w8 = select.index(v >= 4).new()
     expected = Vector.from_coo([4, 6], [2, 0], size=7)
     assert w8.isequal(expected)
+    # The index is compared with the bound given, not with 300 typed beside INT8 (inf)
+    w = Vector.from_coo([0, 200, 399], 1, dtype=dtypes.INT8, size=400)
+    assert select.index(w < 300).new().to_coo()[0].tolist() == [0, 200]
+    assert select.index(w >= 300).new().to_coo()[0].tolist() == [399]
+    assert select.index(w > 2.5).new().to_coo()[0].tolist() == [200, 399]
 
 
 @autocompute
@@ -1608,6 +1613,59 @@ def test_python_number_is_weak_beside_builtin_dtypes():
         plus = binary.register_anonymous(lambda x, y: x + y)
         with pytest.raises(OverflowError, match="out of bounds"):
             i8.apply(plus, right=300)
+        # Any op whose result is another type, as truediv's and a comparison's are, takes
+        # an int out of range exactly: a parameterized op, a user's, and the instances a
+        # parameterized op makes (these raised OverflowError; main and numpy give False).
+        gt = binary.register_anonymous(lambda x, y: x > y)
+        for op, values in [
+            (binary.isclose, [False, False]),
+            (binary.isclose(0.1), [False, False]),
+            (gt, [False, False]),
+        ]:
+            assert i8.apply(op, right=300).new().to_coo()[1].tolist() == values
+            assert i8.apply(op, left=-300).new().to_coo()[1].tolist() == values
+        result = i8.ewise_union(w8, binary.isclose, 0, 300).new()
+        assert result.to_coo()[1].tolist() == [False, False]
+        # A user's op named like a comparison is not one: the int is not made infinity
+        # (it gave [-inf, -inf] and [True, True]; main gives these, as numpy would)
+
+        def ge(x, y):
+            return x * 1.0 - y
+
+        def eq(x, y):
+            return y - x > 250
+
+        result = i8.apply(binary.register_anonymous(ge), right=300).new()
+        assert result.to_coo()[1].tolist() == [-200.0, -400.0]
+        result = i8.apply(binary.register_anonymous(eq), right=300).new()
+        assert result.to_coo()[1].tolist() == [False, True]
+        # Where the op and the int would compute in a float type, which rounds an int
+        # beyond 64 bits, a user's op raises (it gave [False, True]: 2**63 - 1 < 2**63 is
+        # False in FP64). A built-in op that computes in float anyway does not.
+        i64 = Vector.from_coo([0, 1], [2**63 - 1, 0], dtype=dtypes.INT64)
+        u64 = Vector.from_coo([0, 1], [2**64 - 1, 0], dtype=dtypes.UINT64)
+        lt = binary.register_anonymous(lambda x, y: x < y)
+        if not hasattr(binary, "_test_weak_lt"):
+            binary.register_new("_test_weak_lt", lambda x, y: x < y)
+        for vec, value in [(i64, 2**63), (i64, -(2**63) - 1), (u64, 2**64)]:
+            for op in [lt, binary._test_weak_lt]:
+                with pytest.raises(OverflowError, match="out of bounds"):
+                    vec.apply(op, right=value)
+            assert vec.apply(binary.lt, right=value).new().to_coo()[1].tolist() == [value > 0] * 2
+        result = i64.apply(binary.isclose, right=2**63).new()
+        assert result.to_coo()[1].tolist() == [True, False]  # as numpy's isclose
+        # Built-in ops made outside register_new (truediv) or on first use (binom) count
+        # as built-in too: truediv computes beside a 64-bit int, as numpy divides
+        # (these raised OverflowError).
+        assert (i64 / 2**63).new().to_coo()[1].tolist() == [1.0, 0.0]
+        assert (u64 / -1).new().to_coo()[1].tolist() == [-(2.0**64), 0.0]
+        assert (i8 / 2**70).new().to_coo()[1].tolist() == [100 / 2**70, -100 / 2**70]
+        from graphblas.core.literals import _is_builtin_op
+
+        assert all(
+            _is_builtin_op(op)
+            for op in [binary.truediv, binary.rtruediv, binary.cdiv, binary.binom]
+        )
     # Typed scalars promote as numpy 2 promotes them, on numpy 1 too.
     assert dtypes.unify(dtypes.INT8, dtypes.INT64, is_right_scalar=True) == dtypes.INT64
 

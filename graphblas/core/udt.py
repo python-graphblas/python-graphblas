@@ -80,11 +80,12 @@ def _iter_record_leaves(np_type, python_prefix="", c_prefix=""):
     ``("['outer']['inner_a']", "outer.inner_a", float64_dtype)``.
 
     Only record-in-record nesting is recognised. Array-typed fields are
-    yielded as a single leaf, which the Numba path handles: the generated
-    expression operates on the whole sub-array and the wrapper slice-assigns
-    it back. The JIT path never sees such a record, because a subarray dtype
-    has no entry in ``udt_codegen.NP_TO_C_TYPES`` and ``udt_codegen._udt_c_typedef``
-    bails out, so the op keeps the cfunc for every call.
+    yielded as a single leaf, which the Numba path handles: a binary op
+    computes it element by element, a unary op applies its expression to the
+    whole sub-array, and the wrapper slice-assigns the result back. The JIT
+    path never sees such a record, because a subarray dtype has no entry in
+    ``udt_codegen.NP_TO_C_TYPES`` and ``udt_codegen._udt_c_typedef`` bails out,
+    so the op keeps the cfunc for every call.
     """
     for name in np_type.names:
         field_dtype = np_type.fields[name][0]
@@ -300,6 +301,20 @@ def _udt_op_types(op_name, dtype, dtype2):
     return lookup_dtype(result), [(in_x, in_y)]
 
 
+def _monoid_pair_type(binaryop_name, dtype, dtype2):
+    """Return the type a built-in Monoid indexed with a UDT pair takes, compiling nothing.
+
+    It is the type the pair promotes to, as ``monoid.plus["INT8", "INT16"]`` is
+    ``monoid.plus["INT16"]``: the type lifted arithmetic gives the pair, leaf by
+    leaf. ``binary.any`` keeps the second operand's type, so ``monoid.any``
+    promotes as ``plus`` does, the same in either order. A pair that does not
+    pair raises the ``KeyError`` compiling the op would.
+    """
+    op_name = binaryop_name if binaryop_name in BUILTIN_UDT_BINARY_OPS else "plus"
+    _check_udt_pair(op_name, dtype, dtype2, _get_udt_info(dtype), _get_udt_info(dtype2))
+    return _udt_op_types(op_name, dtype, dtype2)[0]
+
+
 def _promoted_record(records, result_leaves):
     """Build a record laid out like ``records`` with ``result_leaves`` for its leaves.
 
@@ -430,7 +445,7 @@ def _casts_safely_into(literal_type, dtype):
     return reason is None and all(np.can_cast(x, z, "safe") for x, z in pairs)
 
 
-def _store_cast_op(result_dtype, output_dtype):
+def _store_cast_op(result_dtype, output_dtype, *, is_value=False):
     """Return the UnaryOp that converts a result for an object of ``output_dtype``, or ``None``.
 
     GraphBLAS casts between built-in types on store (C's casts, with a float
@@ -442,6 +457,8 @@ def _store_cast_op(result_dtype, output_dtype):
     UDTs whose layouts correspond (:func:`_udt_cast_error`). Any other
     pair raises ``DomainMismatch``. ``None`` means GraphBLAS stores the result
     as it is. This is the one place that decides what may be stored where.
+    ``is_value`` says the error is for an object stored or accumulated as it
+    is, not a computed result.
     """
     if result_dtype is output_dtype or not (result_dtype._is_udt or output_dtype._is_udt):
         return None
@@ -453,6 +470,11 @@ def _store_cast_op(result_dtype, output_dtype):
             return _udt_cast_op(result_dtype, output_dtype)
     elif _has_numba:
         reason = "a UDT casts only to another UDT"
+    if is_value:
+        raise DomainMismatch(
+            f"cannot store a value of type {result_dtype} in an object of type "
+            f"{output_dtype}: {reason}."
+        )
     raise DomainMismatch(
         f"cannot store a result of type {result_dtype} in an object of type "
         f"{output_dtype}: {reason}. Use .new() for an object of the result's type, or "
@@ -530,10 +552,13 @@ def _cast_for_store(value, dtype):
     another UDT type needs a converted copy: one element for a Scalar, which
     is made here, but the whole value for a Vector or Matrix, which raises.
     """
-    if (cast_op := _store_cast_op(value.dtype, dtype)) is None:
-        return value
     from .base import BaseType
     from .scalar import Scalar
+
+    # An expression (``v[:] << w.apply(op)``) is a computed result, not a value.
+    is_value = isinstance(value, BaseType)
+    if (cast_op := _store_cast_op(value.dtype, dtype, is_value=is_value)) is None:
+        return value
 
     if output_type(value) is not Scalar:
         raise DomainMismatch(
