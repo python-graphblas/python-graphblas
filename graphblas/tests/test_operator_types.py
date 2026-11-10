@@ -206,6 +206,9 @@ IGNORE = {
     "monoid_pickle",
     "semiring_pickle",
     "_test_weak_lt",
+    # Made by a float Tensor broadcast's diagonal product (any monoid) in test_tensor.py
+    "any_atan2",
+    "any_pow",
     # numpy-graphblas commutation (can we clean this up?)
     "band_land",
     "band_lor",
