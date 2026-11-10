@@ -870,7 +870,7 @@ def test_broadcast_on_nonempty_rows_sized_by_entries():
     xd = {(0, 3, 1, 4): 2.0, (5, 7, 2, 9): 3.0, (6, 8, 0, 0): 4.0}
     X = Tensor.from_coo(list(zip(*xd, strict=True)), list(xd.values()), shape=shape,
                         layout=((0, 1), (2, 3)))  # fmt: skip
-    yd = {3: 2.0, 8: 5.0, 9: 7.0}
+    yd = {3: 2.0, 8: 5.0, 9: 7.0}  # (along axis 1)
     Y = Tensor.from_coo(([0, 0, 0], list(yd), [0, 0, 0], [0, 0, 0]), list(yd.values()),
                         shape=(1, 2**40, 1, 1))  # fmt: skip
     for op, f in [(binary.pow, operator.pow), (binary.minus, operator.sub)]:
