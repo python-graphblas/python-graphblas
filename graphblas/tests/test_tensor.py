@@ -569,6 +569,134 @@ def test_relayout_hypersparse():
         assert M.isequal(Tensor.from_coo(coords, vals, shape=shape, layout=dst).ss.matrix)
 
 
+def _put_specials(values):
+    """Set the first entries of ``values`` (floating or complex) to NaNs (quiet with a payload,
+    signaling with a payload, negative), -0.0, +inf, -inf and subnormals of either sign. For
+    complex, they go in the real parts, then in the imaginary parts of the next entries.
+    """
+    real = values.real.dtype
+    if real == np.float64:
+        bits = [0x7FF8000000000123, 0x7FF0000000000077, 0xFFF8000000000000, 0x8000000000000000]
+        bits += [0x7FF0000000000000, 0xFFF0000000000000, 0x0000000000000001, 0x8000000000000003]
+        sp = np.array(bits, np.uint64).view(real)
+    else:
+        bits = [0x7FC00123, 0x7F800077, 0xFFC00000, 0x80000000]
+        bits += [0x7F800000, 0xFF800000, 0x00000001, 0x80000003]
+        sp = np.array(bits, np.uint32).view(real)
+    if values.dtype.kind == "c":
+        values.real[: sp.size] = sp
+        values.imag[sp.size : 2 * sp.size] = sp
+    else:
+        values[: sp.size] = sp
+
+
+def _check_bits(T, values, present):
+    """``check`` with the values compared bit for bit."""
+    assert T.shape == values.shape
+    coords, vals = T.to_coo()
+    got = np.zeros(values.shape, bool)
+    got[coords] = True
+    np.testing.assert_array_equal(got, present)
+    expected = values[present]
+    assert vals.dtype == expected.dtype
+    np.testing.assert_array_equal(vals.view(np.uint8), expected.view(np.uint8))
+
+
+@pytest.mark.parametrize("ncols", [1, 4])
+@pytest.mark.parametrize("dtype", [dtypes.FP64, dtypes.FP32, dtypes.FC64, dtypes.FC32])
+def test_perm_rows_keeps_values_bit_exact(dtype, ncols):
+    """A row permutation or row pick (P @ M, one term per output entry) returns each value bit
+    for bit (see _put_specials), through relayout, to_coo, perm_rows and an extract. The row
+    group is hypersparse and stored out of order, and its rows are full, so SuiteSparse's saxpy
+    starts each output column from the monoid's identity (under min_second a NaN came back
+    +inf).
+    """
+    from graphblas.core import tensor_census as census
+
+    rng = np.random.default_rng(1109 + ncols)
+    shape = (60, 60, ncols)
+    # 40 fibers, full along axis 2; X[5, 2:18] holds the special values
+    lin = np.union1d(rng.choice(3600, 24, replace=False), 5 * 60 + np.arange(2, 18))
+    xp = np.zeros(shape, bool)
+    xp[np.unravel_index(lin, shape[:2])] = True
+    xv = np.zeros(shape, dtype.np_type)
+    xv[xp] = rng.random(xp.sum()) - 0.5
+    if np.dtype(dtype.np_type).kind == "c":
+        xv[xp] += 1j * (rng.random(xp.sum()) - 0.5)
+    sel = xv[5, 2:18].reshape(-1)  # (a copy)
+    _put_specials(sel)
+    xv[5, 2:18] = sel.reshape(16, ncols)
+    X = Tensor.from_coo(np.nonzero(xp), xv[xp], dtype, shape=shape, layout=((1, 0), (2,)))
+    assert X.ss.format == "hypercsr"
+    _check_bits(X, xv, xp)  # (to_coo relayouts to the rows (0, 1))
+    _check_bits(X.relayout(((0, 1), (2,))), xv, xp)
+    # The Matrix the relayout makes, from tl.perm_rows itself
+    M = tl.perm_rows(X.ss.matrix, shape, (1, 0), (0, 1))
+    _check_bits(Tensor.from_matrix(M), xv.reshape(3600, ncols), xp.reshape(3600, ncols))
+    census.start()
+    try:
+        census.force["extract"] = "rows"
+        R = X[5, 2:18].new()
+        records = census.stop()
+    finally:
+        census.stop()
+        census.force.clear()
+        census.records.clear()
+    assert [r["choice"] for r in records if r["point"] == "extract"] == ["rows"]
+    _check_bits(R, xv[5, 2:18], xp[5, 2:18])
+
+
+@pytest.mark.parametrize("small_format", ["full", "sparse"])
+@pytest.mark.parametrize("dtype", [dtypes.FP64, dtypes.FP32, dtypes.FC64])
+def test_selector_expansion_keeps_values_bit_exact(dtype, small_format):
+    """The small side of a broadcast or a TTV, expanded over a group by a selector (St @ v, one
+    term per output entry), keeps each value bit for bit (see _put_specials). Stored full, v
+    goes through a dot product; stored sparse with every entry, through SuiteSparse's saxpy,
+    which starts each output column from the monoid's identity (under min_second a NaN came
+    back +inf).
+    """
+    from graphblas.core import tensor_census as census
+
+    def forced(point, label, method, *args, **kwargs):
+        census.start()
+        try:
+            census.force[point] = label
+            R = method(*args, **kwargs).new()
+            records = census.stop()
+        finally:
+            census.stop()
+            census.force.clear()
+            census.records.clear()
+        assert [r["choice"] for r in records if r["point"] == point] == [label]
+        return R
+
+    rng = np.random.default_rng(1111)
+    wv = (rng.random(50) - 0.5).astype(dtype.np_type)
+    _put_specials(wv)
+    W = Tensor.from_dense(wv)
+    Y = Tensor.from_dense(wv.reshape(1, 50, 1))
+    for T in [W, Y]:
+        T.ss.matrix.ss.config["sparsity_control"] = [small_format]
+        assert T.ss.format == {"full": "fullr", "sparse": "csr"}[small_format]
+    # A broadcast: Y's values at X's entries
+    shape = (12, 50, 5)
+    xp = rng.random(shape) < 0.5
+    X = Tensor.from_coo(np.nonzero(xp), 1, dtype, shape=shape, layout=((0, 1), (2,)))
+    R = forced("bcast", "diagonal rows, selector-expanded", X.ewise_mult, Y, binary.second)
+    _check_bits(R, np.where(xp, wv.reshape(1, 50, 1), 0), xp)
+    # A TTV over axis 1 with one entry in each fiber along it: W's value at that entry
+    ii = np.repeat(np.arange(40), 30)
+    kk = np.tile(np.arange(30), 40)
+    jj = rng.integers(0, 50, ii.size)
+    jj[:16] = np.arange(16)
+    values = np.zeros((40, 30), dtype.np_type)
+    values[ii, kk] = wv[jj]
+    for layout, label in [(((0, 1), (2,)), "rowsel"), (((2,), (0, 1)), "colsel")]:
+        X = Tensor.from_coo([ii, jj, kk], 1, dtype, shape=(40, 50, 30), layout=layout)
+        R = forced("ttv", label, X.tensordot, W, ([1], [0]), op=gb.semiring.any_second)
+        _check_bits(R, values, np.ones((40, 30), bool))
+
+
 def test_relayout_4d_and_big():
     rng = np.random.default_rng(7)
     shape = (3, 1, 4, 5)
@@ -742,7 +870,7 @@ def test_broadcast_on_nonempty_rows_sized_by_entries():
     xd = {(0, 3, 1, 4): 2.0, (5, 7, 2, 9): 3.0, (6, 8, 0, 0): 4.0}
     X = Tensor.from_coo(list(zip(*xd, strict=True)), list(xd.values()), shape=shape,
                         layout=((0, 1), (2, 3)))  # fmt: skip
-    yd = {3: 2.0, 8: 5.0, 9: 7.0}  # (along axis 1)
+    yd = {3: 2.0, 8: 5.0, 9: 7.0}
     Y = Tensor.from_coo(([0, 0, 0], list(yd), [0, 0, 0], [0, 0, 0]), list(yd.values()),
                         shape=(1, 2**40, 1, 1))  # fmt: skip
     for op, f in [(binary.pow, operator.pow), (binary.minus, operator.sub)]:
@@ -4287,6 +4415,43 @@ def test_engines_selectable(monkeypatch):
             ran.clear()
             check(X.mttkrp(factors, mode).new(), *_mttkrp_model(xv, xp, dense, mode), approx=True)
             assert ran == expected, (engine, mode)
+
+
+@pytest.mark.parametrize("dtype", [dtypes.FP64, dtypes.FP32])
+@pytest.mark.parametrize("engine", ["numba", "udt"])
+def test_ttm_engine_results_keep_nan(engine, dtype, monkeypatch):
+    """The Numba and array-UDT TTM engines write their result hypersparse by row, with its row
+    axes in the input's stored order, so reading it back permutes the rows. An output entry
+    whose fiber holds a NaN, or +inf and -inf, is NaN after that permutation (under min_second
+    it came back +inf). FP32 tensors use these engines too.
+    """
+    from graphblas.core import tensor
+
+    if engine == "numba" and not gb.core._has_numba:
+        pytest.skip("needs numba")
+    if engine == "udt":
+        _require_jit_compile()
+    ran = _engine_spies(monkeypatch)
+    monkeypatch.setattr(tensor, "_TTM_ENGINES", (engine,))
+    rng = np.random.default_rng(66)
+    shape = (8, 9, 10)
+    xp = rng.random(shape) < 0.05
+    xp[:2, 3, 7] = xp[:2, 4, 2] = True
+    xv = np.where(xp, np.round(rng.random(shape) * 10 - 5, 1), 0).astype(dtype.np_type)
+    xv[0, 3, 7] = np.nan
+    xv[:2, 4, 2] = [np.inf, -np.inf]
+    X = Tensor.from_coo(np.nonzero(xp), xv[xp], dtype, shape=shape, layout=((2,), (1, 0)))
+    for R in [1, 3]:
+        U = rng.random((8, R)) + 0.5
+        ran.clear()
+        T = X.tensordot(U, ([0], [0])).new()
+        assert ran == [engine]
+        assert T.ss.format == "hypercsr"
+        assert T.layout == Layout((1, 0), (2,))
+        values, present = _ttm_model(xv.astype(np.float64), xp, U, 0)
+        assert np.isnan(values[3, 7]).all()
+        assert np.isnan(values[4, 2]).all()
+        check(T, values, present, approx=True)
 
 
 @pytest.mark.usefixtures("numba_boundscheck")
