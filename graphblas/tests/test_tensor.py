@@ -4649,7 +4649,10 @@ def test_ttm_engine_results_keep_nan(engine, dtype, monkeypatch):
         assert ran == [engine]
         assert T.ss.format == "hypercsr"
         assert T.layout == Layout((1, 0), (2,))
-        values, present = _ttm_model(xv.astype(np.float64), xp, U, 0)
+        # +inf and -inf in one fiber sum to NaN, on purpose: numpy's dot flags that as invalid
+        # where its BLAS reports it (OpenBLAS on Linux, MKL on Windows), and CI raises warnings.
+        with np.errstate(invalid="ignore"):
+            values, present = _ttm_model(xv.astype(np.float64), xp, U, 0)
         assert np.isnan(values[3, 7]).all()
         assert np.isnan(values[4, 2]).all()
         check(T, values, present, approx=True)
