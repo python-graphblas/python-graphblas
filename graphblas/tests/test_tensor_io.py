@@ -231,9 +231,17 @@ def test_pydata_gcxs_repeated_or_unsorted_columns():
         want = np.zeros((3, 4))
         np.maximum.at(want, (r, np.array(indices)), data)
         check(T, want, want != 0)
-        T = Tensor.from_pydata_sparse(g.astype(bool))
+        # BOOL, built from the arrays so the repeats survive (astype merges them, and in
+        # sparse 0.14 cannot count uint64 indices); a mix of True and False shows the OR
+        bools = np.array([False, True, False, True, True, False])
+        b = sparse.GCXS((bools, *arrays[1:]), shape=(3, 4), compressed_axes=(0,))
+        T = Tensor.from_pydata_sparse(b)
         assert valid(T)
-        check(T, want != 0, want != 0)
+        want = np.zeros((3, 4), bool)
+        np.logical_or.at(want, (r, np.array(indices)), bools)
+        present = np.zeros((3, 4), bool)
+        present[r, np.array(indices)] = True
+        check(T, want, present)
     # 3-d, compressed along axis 1: rows of axis 1, columns of (0, 2) raveled
     g = sparse.GCXS(
         (data, np.array([5, 5, 0, 1, 1, 2]), np.array([0, 3, 6])),
