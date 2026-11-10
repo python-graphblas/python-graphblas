@@ -1215,9 +1215,10 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (uint64 for indptr and col_indices)
-                - own its own data, from the allocator GraphBLAS frees with:
-                  NumPy's default memory handler, unless suitesparse-graphblas
-                  was initialized with ``memory_manager="c"``
+                - own its own data, allocated by GraphBLAS (arrays from ``export``,
+                  ``unpack`` and ``suitesparse_graphblas.utils.empty``) or by NumPy's
+                  default allocator (unless suitesparse-graphblas was initialized
+                  with ``memory_manager="c"``)
                 - be writeable
             If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
@@ -1418,9 +1419,10 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (uint64 for indptr and row_indices)
-                - own its own data, from the allocator GraphBLAS frees with:
-                  NumPy's default memory handler, unless suitesparse-graphblas
-                  was initialized with ``memory_manager="c"``
+                - own its own data, allocated by GraphBLAS (arrays from ``export``,
+                  ``unpack`` and ``suitesparse_graphblas.utils.empty``) or by NumPy's
+                  default allocator (unless suitesparse-graphblas was initialized
+                  with ``memory_manager="c"``)
                 - be writeable
             If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
@@ -1627,9 +1629,10 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (uint64 for rows, indptr, col_indices)
-                - own its own data, from the allocator GraphBLAS frees with:
-                  NumPy's default memory handler, unless suitesparse-graphblas
-                  was initialized with ``memory_manager="c"``
+                - own its own data, allocated by GraphBLAS (arrays from ``export``,
+                  ``unpack`` and ``suitesparse_graphblas.utils.empty``) or by NumPy's
+                  default allocator (unless suitesparse-graphblas was initialized
+                  with ``memory_manager="c"``)
                 - be writeable
             If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
@@ -1865,9 +1868,10 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (uint64 for indptr and row_indices)
-                - own its own data, from the allocator GraphBLAS frees with:
-                  NumPy's default memory handler, unless suitesparse-graphblas
-                  was initialized with ``memory_manager="c"``
+                - own its own data, allocated by GraphBLAS (arrays from ``export``,
+                  ``unpack`` and ``suitesparse_graphblas.utils.empty``) or by NumPy's
+                  default allocator (unless suitesparse-graphblas was initialized
+                  with ``memory_manager="c"``)
                 - be writeable
             If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
@@ -2102,9 +2106,10 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (bool for bitmap)
-                - own its own data, from the allocator GraphBLAS frees with:
-                  NumPy's default memory handler, unless suitesparse-graphblas
-                  was initialized with ``memory_manager="c"``
+                - own its own data, allocated by GraphBLAS (arrays from ``export``,
+                  ``unpack`` and ``suitesparse_graphblas.utils.empty``) or by NumPy's
+                  default allocator (unless suitesparse-graphblas was initialized
+                  with ``memory_manager="c"``)
                 - be writeable
             If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
@@ -2308,9 +2313,10 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be FORTRAN contiguous
                 - have the correct dtype (bool for bitmap)
-                - own its own data, from the allocator GraphBLAS frees with:
-                  NumPy's default memory handler, unless suitesparse-graphblas
-                  was initialized with ``memory_manager="c"``
+                - own its own data, allocated by GraphBLAS (arrays from ``export``,
+                  ``unpack`` and ``suitesparse_graphblas.utils.empty``) or by NumPy's
+                  default allocator (unless suitesparse-graphblas was initialized
+                  with ``memory_manager="c"``)
                 - be writeable
             If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
@@ -2507,9 +2513,10 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype
-                - own its own data, from the allocator GraphBLAS frees with:
-                  NumPy's default memory handler, unless suitesparse-graphblas
-                  was initialized with ``memory_manager="c"``
+                - own its own data, allocated by GraphBLAS (arrays from ``export``,
+                  ``unpack`` and ``suitesparse_graphblas.utils.empty``) or by NumPy's
+                  default allocator (unless suitesparse-graphblas was initialized
+                  with ``memory_manager="c"``)
                 - be writeable
             If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
@@ -2679,9 +2686,10 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be FORTRAN contiguous
                 - have the correct dtype
-                - own its own data, from the allocator GraphBLAS frees with:
-                  NumPy's default memory handler, unless suitesparse-graphblas
-                  was initialized with ``memory_manager="c"``
+                - own its own data, allocated by GraphBLAS (arrays from ``export``,
+                  ``unpack`` and ``suitesparse_graphblas.utils.empty``) or by NumPy's
+                  default allocator (unless suitesparse-graphblas was initialized
+                  with ``memory_manager="c"``)
                 - be writeable
             If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
@@ -3041,9 +3049,10 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (uint64 for indptr and row_indices)
-                - own its own data, from the allocator GraphBLAS frees with:
-                  NumPy's default memory handler, unless suitesparse-graphblas
-                  was initialized with ``memory_manager="c"``
+                - own its own data, allocated by GraphBLAS (arrays from ``export``,
+                  ``unpack`` and ``suitesparse_graphblas.utils.empty``) or by NumPy's
+                  default allocator (unless suitesparse-graphblas was initialized
+                  with ``memory_manager="c"``)
                 - be writeable
             If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
@@ -3213,9 +3222,10 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (uint64 for indptr and row_indices)
-                - own its own data, from the allocator GraphBLAS frees with:
-                  NumPy's default memory handler, unless suitesparse-graphblas
-                  was initialized with ``memory_manager="c"``
+                - own its own data, allocated by GraphBLAS (arrays from ``export``,
+                  ``unpack`` and ``suitesparse_graphblas.utils.empty``) or by NumPy's
+                  default allocator (unless suitesparse-graphblas was initialized
+                  with ``memory_manager="c"``)
                 - be writeable
             If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
