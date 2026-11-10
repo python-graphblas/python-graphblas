@@ -1225,15 +1225,20 @@ def relayout_costs(shape, src, dsts, nnz, nthreads):
 # Selectors: kron-structured 0/1 matrices that reduce a subset of a group's axes in one mxm
 
 
-def selector(group_shape, kept, *, transposed=False, dtype=BOOL):
+def selector(group_shape, kept, *, transposed=False, dtype=BOOL, pad=False):
     """S with ``S[ravel(x[kept]), ravel(x)] = True`` over the positions ``x`` of a group, as a
     BOOL iso Matrix (``prod(kept) x prod(group)``); its transpose if ``transposed``. With
-    another ``dtype``, its entries are 1 of that type.
+    another ``dtype``, its entries are 1 of that type. With ``pad`` (transposed only), the
+    transpose has one more column, which stays empty (see tensor_reduce._selector_mxm).
 
     ``kept`` are positions within the group, in group order. ``S @ M`` reduces the other row
     axes and ``M @ S.T`` the other column axes, with semiring ``(monoid, second/first)``.
     """
     key = ("S", group_shape, kept, transposed) + (() if dtype == BOOL else (dtype,))
+    if pad:
+        if not transposed:  # pragma: no cover (safety)
+            raise ValueError("only a transposed selector accepts pad")
+        key += ("pad",)
     if (S := _matrix_cache.get(key)) is not None:
         return S
     n = math.prod(group_shape)
@@ -1244,7 +1249,7 @@ def selector(group_shape, kept, *, transposed=False, dtype=BOOL):
     dst = ravel(co, group_shape, kept, n=n)
     nkept = prod(group_shape, kept)
     if transposed:
-        S = from_coo(src, dst, True, dtype, n, nkept)
+        S = from_coo(src, dst, True, dtype, n, nkept + bool(pad))
     else:
         S = from_coo(dst, src, True, dtype, nkept, n)
     _matrix_cache.put(key, S, n)
@@ -1310,6 +1315,114 @@ class _VectorArray:
             ),
             "GxB_Vector_load",
         )
+
+
+_CONTAINER_FIELDS = (
+    "nrows", "ncols", "nrows_nonempty", "ncols_nonempty", "nvals", "format", "orientation", "iso",
+    "jumbled",
+)  # fmt: skip
+
+
+def _read_container(cont):
+    """The fields of a Container and ``{name: (pointer, type, n, size)}`` for its nonempty
+    vectors, each read by unloading it and loading it straight back.
+    """
+    fields = {f: getattr(cont, f) for f in _CONTAINER_FIELDS}
+    arrays = {}
+    for name in ("p", "h", "b", "i", "x"):
+        X = ffi.new("void**")
+        gtype = ffi.new("GrB_Type*")
+        n = ffi.new("uint64_t*")
+        size = ffi.new("uint64_t*")
+        handling = ffi.new("int*")
+        vec = getattr(cont, name)
+        _check(lib.GxB_Vector_unload(vec, X, gtype, n, size, handling, NULL), "GxB_Vector_unload")
+        if n[0] > 0:
+            arrays[name] = (X[0], gtype[0], n[0], size[0])
+        _check(
+            lib.GxB_Vector_load(vec, X, gtype[0], n[0], size[0], handling[0], NULL),
+            "GxB_Vector_load",
+        )
+    return fields, arrays
+
+
+def _load_readonly(cont, fields, arrays):
+    """Fill an unloaded Container with ``fields`` and the ``arrays`` (see _read_container),
+    loaded GxB_IS_READONLY: GraphBLAS neither frees nor changes them.
+    """
+    for f, value in fields.items():
+        setattr(cont, f, value)
+    for name, (ptr, gtype, n, size) in arrays.items():
+        _check(
+            lib.GxB_Vector_load(
+                getattr(cont, name), ffi.new("void**", ptr), gtype, n, size, lib.GxB_IS_READONLY,
+                NULL,
+            ),
+            "GxB_Vector_load",
+        )  # fmt: skip
+
+
+def _readonly_alias(A):
+    """A new GrB_Matrix (a handle) that reads the arrays of the GrB_Matrix handle ``A``."""
+    Cp = ffi.new("GxB_Container*")
+    _check(lib.GxB_Container_new(Cp), "GxB_Container_new")
+    try:
+        _check(lib.GxB_unload_Matrix_into_Container(A, Cp[0], NULL), "GxB_unload")
+        fields, arrays = _read_container(Cp[0])
+        _check(lib.GxB_load_Matrix_from_Container(A, Cp[0], NULL), "GxB_load")
+        Bp = ffi.new("GrB_Matrix*")
+        _check(lib.GrB_Matrix_new(Bp, arrays["x"][1], fields["nrows"], fields["ncols"]), "new")
+        _check(lib.GxB_unload_Matrix_into_Container(Bp[0], Cp[0], NULL), "GxB_unload")
+        _load_readonly(Cp[0], fields, arrays)
+        _check(lib.GxB_load_Matrix_from_Container(Bp[0], Cp[0], NULL), "GxB_load")
+    finally:
+        lib.GxB_Container_free(Cp)
+    return Bp[0]
+
+
+def padded_view(M):
+    """A Matrix with the entries of ``M`` (sparse or hypersparse, held by row) and one more
+    column, which stays empty, in O(1) with no copy; None where that does not fit (a 32-bit
+    column index at 2^31 columns). It reads ``M``'s arrays, and its hyper hash, loaded
+    GxB_IS_READONLY, so GraphBLAS neither frees nor changes them through it: free it before
+    ``M`` changes. ``M`` is unloaded only while its array pointers are read.
+    """
+    if M._ncols + 1 >= 2**31:
+        return None
+    with _Unloaded(M) as cont:
+        fields, arrays = _read_container(cont)
+        # The hyper hash maps rows, which the view shares. M has one when it is large (loading
+        # a Container builds it); without it, loading the view would build another each time
+        # (20 ms for 1e6 rows, as long as the product itself)
+        Y = NULL if cont.Y == NULL else _readonly_alias(cont.Y)
+    fields["ncols"] += 1
+    fields["ncols_nonempty"] = -1
+    V = new_matrix(M.dtype, M._nrows, M._ncols + 1)
+    with _Unloaded(V) as cont:
+        _load_readonly(cont, fields, arrays)
+        if Y != NULL:
+            if cont.Y != NULL:  # pragma: no cover (an empty Matrix has no hyper hash)
+                _check(lib.GrB_Matrix_free(ffi.new("GrB_Matrix*", cont.Y)), "GrB_Matrix_free")
+            cont.Y = Y
+    return V
+
+
+def drop_last_column(M):
+    """Remove the last column of ``M`` (held by row, sparse or hypersparse, that column empty)
+    in O(1) through the Container. Unlike _Unloaded, it does not wait first: SuiteSparse
+    unloads rows that are still jumbled, and sorting them here would do early work the
+    product left for later (0.4 ms of 1 ms for 4e4 entries).
+    """
+    Cp = ffi.new("GxB_Container*")
+    _check(lib.GxB_Container_new(Cp), "GxB_Container_new")
+    try:
+        _check(lib.GxB_unload_Matrix_into_Container(M.gb_obj[0], Cp[0], NULL), "GxB_unload")
+        Cp[0].ncols -= 1
+    finally:
+        rc = lib.GxB_load_Matrix_from_Container(M.gb_obj[0], Cp[0], NULL)
+        lib.GxB_Container_free(Cp)
+    _check(rc, "GxB_load_Matrix_from_Container")
+    M._ncols -= 1  # (as Matrix.resize keeps it)
 
 
 def gather_operand(M, shape, layout, axes, values, dtype):

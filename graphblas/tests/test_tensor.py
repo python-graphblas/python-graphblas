@@ -2448,6 +2448,171 @@ def test_empty_region_of_iso_tensor():
                 check(P, np.zeros(P.shape), np.zeros(P.shape, bool))
 
 
+@pytest.mark.parametrize("fmt", [None, "hypersparse", "bitmap"])
+@pytest.mark.parametrize("path", ["row selector", "column selector"])
+@pytest.mark.parametrize("dtype", [dtypes.FP64, dtypes.FP32, dtypes.FC64, dtypes.FC32])
+def test_reduce_by_selector_keeps_values_bit_exact(dtype, path, fmt):
+    """Tensor.reduce over part of a group, by a selector product under the caller's monoid,
+    returns a fiber of one term bit for bit (see _put_specials), and keeps a fiber of NaNs NaN
+    and a fiber of -0.0 at -0.0. The rows of the product are full, where SuiteSparse's saxpy
+    starts a row from the monoid's identity (under min, a fiber of NaNs came back +inf, and
+    under plus a fiber of -0.0 came back +0.0).
+    """
+    from graphblas.core import tensor_census as census
+    from graphblas.core.operator import BinaryOp, Monoid
+
+    rng = np.random.default_rng(1112)
+    if path == "row selector":
+        shape, layout, axis = (300, 15, 8), ((0, 1), (2,)), 0
+    else:
+        shape, layout, axis = (8, 15, 300), ((0,), (1, 2)), 2
+    other = [a for a in range(3) if a != axis]
+    xp = rng.random(shape) < 0.03
+    xv = np.zeros(shape, dtype.np_type)
+    xv[xp] = rng.random(xp.sum()) + 0.5
+    # 20 fibers along `axis`: 16 with one special value, 2 of three NaNs, 2 of three -0.0
+    sp = np.zeros(16, dtype.np_type)
+    _put_specials(sp)
+    scalar = np.dtype(dtype.np_type).type
+    complex_ = np.dtype(dtype.np_type).kind == "c"
+    nan = scalar(complex(np.nan, 0.0) if complex_ else np.nan)
+    neg0 = scalar(complex(-0.0, -0.0) if complex_ else -0.0)
+    picks = rng.choice(shape[other[0]] * shape[other[1]], 20, replace=False)
+    outs = []
+    for k, f in enumerate(picks):
+        idx = [slice(None)] * 3
+        idx[other[0]], idx[other[1]] = np.unravel_index(f, (shape[other[0]], shape[other[1]]))
+        fp, fv = xp[tuple(idx)], xv[tuple(idx)]  # (views along `axis`)
+        fp[:] = False
+        fv[:] = 0
+        pos = rng.choice(shape[axis], 1 if k < 16 else 3, replace=False)
+        fp[pos] = True
+        fv[pos] = sp[k] if k < 16 else nan if k < 18 else neg0
+        outs.append(tuple(int(idx[a]) for a in other))
+    X = Tensor.from_coo(np.nonzero(xp), xv[xp], dtype, shape=shape, layout=layout)
+    if fmt is None:
+        assert X.ss.format in {"csr", "hypercsr"}
+    else:
+        # Bitmap data takes SuiteSparse's dot product, which starts from the first term
+        X.ss.matrix.ss.config["sparsity_control"] = [fmt]
+        assert X.ss.format == {"hypersparse": "hypercsr", "bitmap": "bitmapr"}[fmt]
+    monoids = ["plus", "times", "any"] if complex_ else ["min", "max", "plus", "times", "any"]
+    monoids = [getattr(monoid, name) for name in monoids]
+    if gb.core._has_numba and not complex_:
+        # A user monoid: whether its identity is exact is unknown, so it is padded too
+        monoids.append(
+            Monoid.register_anonymous(BinaryOp.register_anonymous(lambda x, y: x + y), 0)
+        )
+    for mon in monoids:
+        census.start()
+        try:
+            census.force["reduce"] = path
+            R = X.reduce(mon, axis=axis).new()
+            records = census.stop()
+        finally:
+            census.stop()
+            census.force.clear()
+            census.records.clear()
+        assert [r["choice"] for r in records if r["point"] == "reduce"] == [path]
+        got = R.to_dense(fill_value=7)
+        present = np.zeros(R.shape, bool)
+        present[R.to_coo()[0]] = True
+        np.testing.assert_array_equal(present, xp.any(axis))
+        for k, out in enumerate(outs):
+            g = got[out]
+            if k < 16:
+                assert np.array(g).tobytes() == np.array(sp[k]).tobytes(), (mon, k, g, sp[k])
+            elif k < 18:
+                assert np.isnan(g.real), (mon, k, g)
+            elif not (complex_ and mon.name == "times"):
+                # ((-0.0-0.0j) cubed has a +0.0 part)
+                assert g == 0, (mon, g)
+                assert np.signbit(g.real), (mon, g)
+                assert np.signbit(g.imag) == complex_, (mon, g)
+    # The row selector reads X's arrays through a padded view; X itself is unchanged
+    _check_bits(X, xv, xp)
+
+
+@pytest.mark.parametrize("path", ["row selector", "column selector"])
+@pytest.mark.parametrize("value", [np.nan, -0.0])
+def test_reduce_by_selector_iso(value, path):
+    """An iso Tensor of NaN (or -0.0) reduced by a selector keeps NaN under every monoid (and
+    -0.0 under min, max and plus), as in test_reduce_by_selector_keeps_values_bit_exact.
+    """
+    from graphblas.core import tensor_census as census
+
+    rng = np.random.default_rng(1114)
+    if path == "row selector":
+        shape, layout, axis = (300, 15, 8), ((0, 1), (2,)), 0
+    else:
+        shape, layout, axis = (8, 15, 300), ((0,), (1, 2)), 2
+    xp = rng.random(shape) < 0.03
+    X = Tensor.from_coo(np.nonzero(xp), value, shape=shape, layout=layout)
+    assert X.ss.is_iso
+    assert X.ss.format in {"csr", "hypercsr"}
+    names = ["min", "max", "plus"] + (["times"] if np.isnan(value) else [])
+    for mon in [getattr(monoid, name) for name in names]:
+        census.start()
+        try:
+            census.force["reduce"] = path
+            R = X.reduce(mon, axis=axis).new()
+            records = census.stop()
+        finally:
+            census.stop()
+            census.force.clear()
+            census.records.clear()
+        assert [r["choice"] for r in records if r["point"] == "reduce"] == [path]
+        vals = R.to_coo()[1]
+        assert vals.size == np.count_nonzero(xp.any(axis))
+        if np.isnan(value):
+            assert np.isnan(vals).all(), mon
+        else:
+            assert (vals == 0).all(), mon
+            assert np.signbit(vals).all(), mon
+
+
+def test_reduce_two_selector_steps_keep_values():
+    """A reduction in two selector steps: a column selector, then a row selector on its result,
+    each padded (see test_reduce_by_selector_keeps_values_bit_exact). The rows (i, j) are
+    hypersparse and each has an entry at every k, so both products have full rows.
+    """
+    from graphblas.core import tensor_census as census
+
+    rng = np.random.default_rng(1113)
+    shape = (4096, 4096, 8, 5)
+    # 200 rows (i, j), j >= 2, with one to three entries at each k; then j = 0 in one row (i = 7),
+    # holding a NaN at k = 1, and j = 1 in rows i = 3, 5, holding -0.0 at k = 2
+    ij = np.unique(rng.integers([0, 2], 4096, (200, 2)), axis=0)
+    ij = np.vstack([ij, [[7, 0], [3, 1], [5, 1]]])
+    coords = []
+    for i, j in ij:
+        for k in range(8):
+            for m in rng.choice(5, rng.integers(1, 4), replace=False):
+                coords.append((i, j, k, m))
+    coords = np.array(coords).T
+    vals = rng.random(coords.shape[1]) + 0.5
+    vals[(coords[1] == 0) & (coords[2] == 1)] = np.nan
+    vals[(coords[1] == 1) & (coords[2] == 2)] = -0.0
+    X = Tensor.from_coo(coords, vals, shape=shape, layout=((0, 1), (2, 3)))
+    assert X.ss.format == "hypercsr"
+    for mon in [monoid.min, monoid.max, monoid.plus]:
+        census.start()
+        try:
+            R = X.reduce(mon, axis=(0, 3)).new()
+            records = census.stop()
+        finally:
+            census.stop()
+            census.records.clear()
+        assert [r["choice"] for r in records if r["point"] == "reduce"] == [
+            "column selector",
+            "row selector",
+        ]
+        got = R.to_dense(fill_value=7.0)
+        assert np.isnan(got[0, 1]), mon
+        assert got[1, 2] == 0, mon
+        assert np.signbit(got[1, 2]), mon
+
+
 def test_reduce_target_layout():
     rng = np.random.default_rng(27)
     T, values, present = random_tensor((3, 4, 5), rng)
