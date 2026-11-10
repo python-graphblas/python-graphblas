@@ -179,6 +179,52 @@ the API settles. `design.md` describes how the code implements these.
     alternative was to leave the signature alone and make the refusal name `Tensor.select`
     and say `.to_scalar()`. Decided 2026-11-08 by the coordinator. _Revisit_ if a Tensor
     operand of another rank is proposed here (it stays refused).
+29. **A float fiber's NaN or -0.0 is not replaced by a monoid's identity,** except where a
+    reduction hands the work to a Matrix method, which it then matches. SuiteSparse 10.5.1
+    and 10.5.2, in their factory and JIT kernels, start a full column of a saxpy product from
+    the monoid's identity and add each term (`GB_COMPUTE_DENSE_C_j`), and the identity is not
+    exact for every float: under min a NaN came back +inf, under plus a -0.0 came back +0.0.
+    Two kinds of Tensor path met it and were changed. Row permutations of float and complex
+    values (relayout, `to_coo`, row picks, selector expansions) use `any_second` where they
+    used `min_second` or `plus_second`, and a broadcast's diagonal product of floats and
+    complex uses `any` where it used plus (integers keep plus, which is exact for them).
+    `reduce` over part of an axis group, whose monoid is the caller's, pads its selector
+    product with one column that nothing fills, so no output row is full (sparse and
+    hypersparse data; float, complex and user monoids). _Cost,_ without the JIT where a build
+    lacks the `any` kernels: the permutations up to 2x for FP64 on 10.5.1 (1e7 entries in 1e6
+    sparse rows; 1.1-1.25x in hypersparse rows) and 1.5x for complex on conda-forge's 10.5.2,
+    and the diagonal product 0-15%; and in every build, the padded reduce 0.92-1.23x, worst
+    under plus over wide sparse rows. _Where Matrix's result is kept:_ a whole column group
+    goes through `Matrix.reduce_rowwise`, and full data under plus through a dot product, and
+    SuiteSparse's dot kernels fold plus from 0 (`GB_AxB_dot_cij.c`), so a fiber of two or
+    more -0.0 sums to +0.0 there (on sparse, hypersparse and full data; bitmap keeps -0.0),
+    as it does for Matrix. _Why not that too:_ a copy and a format conversion on every dense
+    sum over row axes, for the sign of a zero, and a Tensor that disagreed with Matrix there
+    would be a second surprise. Decided 2026-11-10 by the coordinator. _Revisit_ if
+    SuiteSparse's dot kernels or Matrix change.
+30. **A reduction over every axis returns what `Matrix.reduce_scalar` returns,** including
+    on bitmap data, where SuiteSparse 10.5.1 and 10.5.2 start from the monoid's identity
+    (`GB_reduce_to_scalar.c`): entries all NaN reduce to +inf under min (-inf under max),
+    and all -0.0 to +0.0 under plus. Sparse, hypersparse and full data keep the NaN. _Why
+    not work around it in the Tensor:_ the behavior is Matrix's, and a fix belongs in Matrix
+    or SuiteSparse, where it fixes both; a Tensor-only fix would make `T.reduce()` and
+    `T.to_matrix().reduce_scalar()` disagree. Decided 2026-11-10 by the coordinator.
+    _Revisit_ when Matrix or SuiteSparse changes.
+31. **An index out of range raises what the same Matrix call raises,** with the Tensor's own
+    message naming the axis and its size. An int out of range, or any index below minus the
+    axis length, raises `IndexError` when `T[key]` is written. Otherwise the error comes when
+    the extraction is computed or assigned to, as GraphBLAS reports it for Matrix:
+    `InvalidIndex` for assigning to one element or extracting with a Scalar out of range,
+    else `IndexOutOfBound`. `take`, `take_along_axis` and `vindex` follow numpy and raise
+    `IndexError` (3). Outer indexing used to raise `IndexOutOfBound` for every kind of index,
+    when `T[key]` was written. _Why:_ `IndexOutOfBound` is not an `IndexError`, so
+    `except IndexError` around `T[i]` missed it, and code written against Matrix's exceptions
+    should work on a Tensor. Matrix's choice depends on the call (one element or a region,
+    get or set); following it call by call leaves one rule to learn. Going beyond Matrix (22)
+    is for better behavior, and a second set of names for the same mistakes is not. Decided
+    2026-11-10 by the coordinator. _Revisit_ if Matrix's exceptions change; a test compares
+    28 keys under five operations (and on a Vector and a 3-d Tensor) against the same Matrix
+    call.
 
 ## Deferred, on purpose
 
