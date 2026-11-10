@@ -301,6 +301,20 @@ def _udt_op_types(op_name, dtype, dtype2):
     return lookup_dtype(result), [(in_x, in_y)]
 
 
+def _monoid_pair_type(binaryop_name, dtype, dtype2):
+    """Return the type a built-in Monoid indexed with a UDT pair takes, compiling nothing.
+
+    It is the type the pair promotes to, as ``monoid.plus["INT8", "INT16"]`` is
+    ``monoid.plus["INT16"]``: the type lifted arithmetic gives the pair, leaf by
+    leaf. ``binary.any`` keeps the second operand's type, so ``monoid.any``
+    promotes as ``plus`` does, the same in either order. A pair that does not
+    pair raises the ``KeyError`` compiling the op would.
+    """
+    op_name = binaryop_name if binaryop_name in BUILTIN_UDT_BINARY_OPS else "plus"
+    _check_udt_pair(op_name, dtype, dtype2, _get_udt_info(dtype), _get_udt_info(dtype2))
+    return _udt_op_types(op_name, dtype, dtype2)[0]
+
+
 def _promoted_record(records, result_leaves):
     """Build a record laid out like ``records`` with ``result_leaves`` for its leaves.
 

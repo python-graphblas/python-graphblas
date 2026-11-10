@@ -15,7 +15,7 @@ from ... import (
 )
 from ...dtypes import UINT64, lookup_dtype, unify
 from ..expr import InfixExprBase
-from ..udt import BUILTIN_UDT_BINARY_OPS
+from ..udt import _monoid_pair_type
 from .base import (
     _SS_OPERATORS,
     OpBase,
@@ -98,14 +98,8 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
                 # works where ``v * w`` does.
                 if kind == "binary":
                     return get_typed_op(op.binaryop, dtype, dtype2)
-                # Indexed with the pair, it takes the type the pair promotes to, as
-                # ``monoid.plus["INT8", "INT16"]`` is ``monoid.plus["INT16"]``: the
-                # type lifted arithmetic gives the pair. ``any`` gives the second
-                # operand's type, so ``plus`` types the pair for it.
-                arithmetic = op.binaryop
-                if arithmetic.name not in BUILTIN_UDT_BINARY_OPS:
-                    arithmetic = binary.plus
-                return op[get_typed_op(arithmetic, dtype, dtype2).return_type]
+                # Indexed with the pair, it takes the type the pair promotes to.
+                return op[_monoid_pair_type(op.binaryop.name, dtype, dtype2)]
             return op._compile_udt(dtype, dtype2)
         # Generic case: try to unify the two dtypes
         try:

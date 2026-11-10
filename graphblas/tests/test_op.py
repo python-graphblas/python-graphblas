@@ -6395,7 +6395,7 @@ def test_udt_pair_is_never_unified():
     assert monoid.plus[R8, R16] is monoid.plus[R16]
     assert monoid.plus[R8, "INT16"] is monoid.plus[R16]
     # binary.any gives the second operand's type, but monoid.any promotes the pair in
-    # either order, as main did (``monoid.any[R16, R8]`` was ``monoid.any[R8]``)
+    # either order, as main did
     for pair in [(R8, R16), (R16, R8), (R8, "INT16"), ("INT16", R8)]:
         assert monoid.any[pair] is monoid.any[R16], pair
     assert monoid.any[X, Y] is monoid.any[Y, X] is monoid.any[XY]
