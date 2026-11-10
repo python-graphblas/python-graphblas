@@ -199,6 +199,18 @@ def test_ss_iso_value_of_an_empty_iso_matrix():
                 M.ss.iso_value
 
 
+@pytest.mark.skipif("not suitesparse")
+@pytest.mark.parametrize("method", ["export", "unpack"])
+@pytest.mark.parametrize("fmt", ["fullr", "fullc"])
+def test_ss_export_full_of_a_matrix_that_is_not_full(method, fmt):
+    # SuiteSparse refuses with GrB_INVALID_VALUE and sets no message, so the
+    # error used to be blank.
+    A = Matrix.from_coo([0], [1], [2.0], nrows=2, ncols=2)
+    with pytest.raises(InvalidValue, match="1 of 4 entries is not full"):
+        getattr(A.ss, method)(fmt)
+    assert A.isequal(Matrix.from_coo([0], [1], [2.0], nrows=2, ncols=2))
+
+
 def test_from_coo_default_values():
     B = Matrix.from_coo([1, 3], [2, 4])
     C = Matrix.from_coo([1, 3], [2, 4], [1.0, 1.0])
