@@ -10,6 +10,7 @@ from ..dtypes import BOOL, UINT32, UINT64
 from . import tensor_census as census
 from . import tensor_layout as tl
 from .operator import get_semiring, get_typed_op
+from .operator.monoid import TypedBuiltinMonoid
 from .scalar import Scalar
 from .tensor_layout import Layout
 from .vector import Vector
@@ -130,6 +131,48 @@ def _vector_to_row(v):
     return tl.steal_vector_as_row(v)
 
 
+def _exact_identity(op):
+    """Whether monoid ``op``'s identity, combined with any value of its type, returns that
+    value bit for bit: the built-in monoids on integers and BOOL, and any on every type.
+    """
+    return isinstance(op, TypedBuiltinMonoid) and (
+        op.name == "any" or op.type.name not in {"FP32", "FP64", "FC32", "FC64"}
+    )
+
+
+def _selector_mxm(left, right, sr, dtype, opts, pad):
+    """``left @ right`` under ``sr``, which multiplies by a selector, into a new Matrix.
+
+    With ``pad``, ``right`` has one more column than the result, which no entry fills, so no
+    row of the product has an entry in every column. SuiteSparse's saxpy computes a row that
+    does (a dense column of the transpose it computes) by starting from the monoid's identity
+    and adding each term (GB_COMPUTE_DENSE_C_j, 10.5.1 and 10.5.2). That identity is not exact
+    for every value of a floating type, nor for a user monoid: under min, a fiber of NaNs
+    reduces to +inf there. Every other row starts from its first term, which keeps a lone term
+    as it is, a fiber of NaNs NaN and a fiber of -0.0 at -0.0. The padding column is then
+    dropped.
+
+    The dot method also starts from the first term, but folds the rest under plus from 0 (an
+    OpenMP SIMD reduction), so a fiber of -0.0 sums to +0.0 there, as in
+    Matrix.reduce_rowwise. SuiteSparse 10.5 picks it for this product only when ``right`` is
+    hypersparse and ``left`` bitmap or full (it computes the transposes), and in a padded
+    product ``left`` is then a sparse selector, so forcing saxpy changes no method today and
+    cost nothing measured (2026-11-10); it keeps it so if that choice changes. The padding
+    itself cost 0.92-1.14x against none, and 1.16-1.23x under plus over wide sparse rows
+    (10.5.1 and 10.5.2, 2026-11-10).
+    """
+    out = tl.new_matrix(dtype, left._nrows, right._ncols)
+    if not pad:
+        out(**opts) << left.mxm(right, sr)
+        return out
+    # Sparse or hypersparse, so the Container drops the padding column in O(1)
+    out.ss.config["sparsity_control"] = {"sparse", "hypersparse"}
+    out(**dict(opts, axb_method="saxpy")) << left.mxm(right, sr)
+    tl.drop_last_column(out)
+    out.ss.config["sparsity_control"] = "auto"
+    return out
+
+
 def _reduce_matrix(M, shape, layout, A, op, opts):
     """Reduce the axes ``A`` of ``M`` (stored in ``layout``); return the result Matrix and
     its layout over the kept axes (with their original numbers).
@@ -148,6 +191,9 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
     if len(A) == ndim:
         if census.on:
             census.note("reduce", "all axes: reduce_scalar")
+        # As Matrix.reduce_scalar: on bitmap data SuiteSparse starts from the monoid's identity
+        # (GB_reduce_to_scalar.c, 10.5.1 and 10.5.2), so entries all NaN reduce to +inf under
+        # min (-inf under max) and all -0.0 to +0.0 under plus; other formats keep them
         s = Scalar(dtype)
         s(**opts) << M.reduce_scalar(op)
         out = tl.new_matrix(dtype, 1, 1)
@@ -161,6 +207,11 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
     # Pass on only the descriptor options the user gave: building one costs microseconds.
     nthreads = opts.get("nthreads") or tl._nthreads()
     ti = _ti(nthreads)
+    # A selector product on sparse data under a monoid whose identity is not exact is padded
+    # (see _selector_mxm). On bitmap or full data, SuiteSparse runs it as a dot product, which
+    # starts from the first term; under plus, a full one folds the rest from 0, as
+    # Matrix.reduce_rowwise does.
+    exact = _exact_identity(op)
     A = set(A)
     while A:
         rows, cols = layout
@@ -169,6 +220,9 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
             if Ac == set(cols):
                 if census.on:
                     census.note("reduce", "column group: reduce_rowwise", nvals=M._nvals)
+                # As Matrix.reduce_rowwise: its dot kernels fold the terms after the first
+                # under plus from 0 (GB_AxB_dot_cij.c), so a fiber of two or more -0.0 sums
+                # to +0.0 on sparse and full data (bitmap keeps -0.0)
                 v = Vector(dtype, M._nrows)
                 v(**opts) << M.reduce_rowwise(op)
                 M = _vector_to_row(v)
@@ -186,10 +240,9 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
                 if sel > reb:
                     return _reduce_rebuild(M, shape, layout, A, op)
                 kept = tuple(i for i, x in enumerate(cols) if x not in Ac)
-                St = tl.selector(gshape, kept, transposed=True)
-                out = tl.new_matrix(dtype, M._nrows, St._ncols)
-                out(**opts) << M.mxm(St, _selector_semiring(op, binary.first))
-                M = out
+                pad = not exact and tl.stored_format(M) in {"csr", "hypercsr"}
+                St = tl.selector(gshape, kept, transposed=True, pad=pad)
+                M = _selector_mxm(M, St, _selector_semiring(op, binary.first), dtype, opts, pad)
                 layout = Layout(rows, tuple(cols[i] for i in kept))
             A -= Ac
             continue
@@ -245,8 +298,16 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
                 return _reduce_rebuild(M, shape, layout, A, op)
             kept = tuple(i for i, x in enumerate(rows) if x not in Ar)
             S = _row_reducer(M, shape, rows, kept, _selector_dtype(op))
-            out = tl.new_matrix(dtype, S._nrows, M._ncols)
-            out(**opts) << S.mxm(M, _selector_semiring(op, binary.second))
+            # The padding column (see _selector_mxm) is M's: a view of M with one more column
+            V = None
+            if not exact and tl.stored_format(M) in {"csr", "hypercsr"}:
+                V = tl.padded_view(M)
+                if V is None:  # pragma: no cover (2^31 columns)
+                    V = M.dup()
+                    V.resize(M._nrows, M._ncols + 1)
+            sr = _selector_semiring(op, binary.second)
+            out = _selector_mxm(S, M if V is None else V, sr, dtype, opts, V is not None)
+            del V  # (before M, whose arrays it reads)
             M = out
             layout = Layout(tuple(rows[i] for i in kept), cols)
         A -= Ar
