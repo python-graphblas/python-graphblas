@@ -2,6 +2,7 @@ import ctypes
 import os
 import subprocess
 import sys
+import tracemalloc
 from pathlib import Path
 
 import numpy as np
@@ -10,6 +11,7 @@ from numpy.testing import assert_array_equal
 
 import graphblas as gb
 from graphblas import Matrix, Vector, backend
+from graphblas.core.utils import _distinct_buffers, values_to_numpy_buffer
 from graphblas.exceptions import InvalidValue
 
 if backend != "suitesparse":
@@ -465,14 +467,56 @@ def test_take_ownership_without_can_unclaim_buffer(monkeypatch):
     assert not d["values"].flags.owndata
 
 
+def test_distinct_buffers():
+    # (Importing an array given twice is tested in a subprocess, below.)
+    a = np.arange(3, dtype=np.uint64)
+    b = np.asfortranarray(np.ones((2, 3), np.bool_))
+    rv = _distinct_buffers(a, b, a, b)
+    assert rv[0] is a
+    assert rv[1] is b
+    for orig, copy in [(a, rv[2]), (b, rv[3])]:
+        assert copy is not orig
+        assert copy.flags.owndata
+        assert copy.flags.f_contiguous == orig.flags.f_contiguous
+        assert_array_equal(copy, orig)
+
+
+def test_ownable_copy_of_nested_subarray_values_is_made_once():
+    # Values whose record dtype nests subarrays are viewed with the flattened
+    # dtype. A view of the copy would not own its data, so it was copied again.
+    point = np.dtype((np.float64, (3,)))
+    layered = np.dtype([("oc_k", np.int64), ("oc_pts", point, (2,))], align=True)
+    vals = np.zeros(2**16, layered)
+    vals["oc_pts"] = np.arange(vals.size * 6.0).reshape(-1, 2, 3)
+    started = not tracemalloc.is_tracing()
+    if started:  # pragma: no branch (safety)
+        tracemalloc.start()
+    try:
+        tracemalloc.reset_peak()
+        before = tracemalloc.get_traced_memory()[0]
+        arr, dtype = values_to_numpy_buffer(vals, copy=True, ownable=True)
+        numpy_bytes = tracemalloc.get_traced_memory()[1] - before
+    finally:
+        if started:  # pragma: no branch (safety)
+            tracemalloc.stop()
+    assert numpy_bytes < 1.5 * vals.nbytes
+    assert dtype.np_type != layered
+    assert arr.dtype == dtype.np_type
+    assert arr.flags.owndata
+    assert_array_equal(arr["oc_pts"], vals["oc_pts"])
+
+
 # Run in a subprocess: GraphBLAS is initialized once per process, and this needs
 # it initialized with libc's allocator before python-graphblas starts.
 _LIBC_ALLOCATOR_PROBE = """
+import tracemalloc
+
 import numpy as np
 import suitesparse_graphblas as ssgb
 
 ssgb.initialize(memory_manager="c")
 import graphblas as gb
+from suitesparse_graphblas.utils import empty
 
 print("package: " + gb.__file__)
 for take_ownership in [False, True]:
@@ -480,6 +524,38 @@ for take_ownership in [False, True]:
     v = gb.Vector.ss.import_full(values=values, take_ownership=take_ownership)
     assert v.reduce().new().value == values.sum()
     del v
+
+# GraphBLAS can't own memory NumPy allocates here, so each array is copied, or
+# converted, once, straight into libc's memory, which tracemalloc doesn't see.
+# A copy NumPy made first would show up as an array's worth of NumPy memory.
+n = 2**20
+indptr = np.arange(n + 1)  # int64, converted to uint64
+indices = np.arange(n)
+values = np.arange(n, dtype=np.float64)
+tracemalloc.start()
+for dtype in [None, np.float32]:
+    for kwargs in [{}, {"take_ownership": True}, {"take_ownership": True, "secure_import": True}]:
+        tracemalloc.reset_peak()
+        before = tracemalloc.get_traced_memory()[0]
+        A = gb.Matrix.ss.import_csr(
+            nrows=n, ncols=n, indptr=indptr, col_indices=indices, values=values, dtype=dtype,
+            **kwargs,
+        )
+        numpy_bytes = tracemalloc.get_traced_memory()[1] - before
+        assert numpy_bytes < values.nbytes // 4, (dtype, kwargs, numpy_bytes)
+        assert A.nvals == n, (dtype, kwargs)
+        assert A[n - 1, n - 1].new().value == n - 1, (dtype, kwargs)
+        assert values.flags.owndata, (dtype, kwargs)
+        del A
+tracemalloc.stop()
+
+# Memory from GraphBLAS's allocator is still taken, not copied
+values = empty(n)
+values[:] = 1
+v = gb.Vector.ss.import_full(values=values, take_ownership=True)
+assert not values.flags.owndata
+assert v.reduce().new().value == n
+del v
 print("done")
 """
 
@@ -487,7 +563,8 @@ print("done")
 def _run_probe(source, **env):
     """Run ``source`` in a new process that imports this tree's graphblas, and check it ends."""
     repo_root = Path(__file__).resolve().parents[2]
-    env = dict(os.environ, PYTHONPATH=str(repo_root), PYTHONUNBUFFERED="1", **env)
+    pythonpath = os.pathsep.join(filter(None, [str(repo_root), os.environ.get("PYTHONPATH")]))
+    env = dict(os.environ, PYTHONPATH=pythonpath, PYTHONUNBUFFERED="1", **env)
     result = subprocess.run(
         [sys.executable, "-c", source],
         capture_output=True,

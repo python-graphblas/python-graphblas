@@ -93,11 +93,28 @@ def ints_to_numpy_buffer(array, dtype, *, name="array", copy=False, ownable=Fals
         and not np.issubdtype(array.dtype, np.bool_)
     ):
         raise ValueError(f"{name} must be integers, not {array.dtype.name}")
-    # https://numpy.org/doc/stable/release/2.0.0-notes.html#new-copy-keyword-meaning-for-array-and-asarray-constructors
-    array = np.array(array, dtype, copy=copy or _NP2 and None, order=order)
     if ownable:
-        array = _ownable(array, order)
-    return array
+        return _ownable_array(array, dtype, copy=copy, order=order)
+    # https://numpy.org/doc/stable/release/2.0.0-notes.html#new-copy-keyword-meaning-for-array-and-asarray-constructors
+    return np.array(array, dtype, copy=copy or _NP2 and None, order=order)
+
+
+def _ownable_array(array, dtype, *, copy, order):
+    """Return ``np.array(array, dtype, copy=copy, order=order)`` with data GraphBLAS can own.
+
+    A NumPy array is copied (or converted) at most once, straight into memory
+    GraphBLAS can own. A copy NumPy made would have to be copied again whenever
+    GraphBLAS can't own NumPy's memory (``memory_manager="c"``, or a custom
+    NumPy memory handler).
+    """
+    if not isinstance(array, np.ndarray):
+        # NumPy reads a list or a scalar into an array of its own
+        array = np.array(array, dtype, copy=copy or _NP2 and None, order=order)
+        return _ownable(array, order)
+    contiguous = array.flags.c_contiguous if order == "C" else array.flags.f_contiguous
+    if not copy and type(array) is np.ndarray and array.dtype == dtype and contiguous:
+        return _ownable(array, order)  # np.array would return it as it is
+    return _ownable_copy(array, order, dtype)
 
 
 def _ownable(array, order):
@@ -115,14 +132,14 @@ def _ownable(array, order):
     return array if ownable else _ownable_copy(array, order)
 
 
-def _ownable_copy(array, order):
-    """Copy ``array`` into memory GraphBLAS can take ownership of."""
-    if empty is None:
-        return array.copy(order)
-    # A NumPy copy may be no better: a custom memory handler may be in effect, or
-    # GraphBLAS may use libc's allocator (``memory_manager="c"``)
-    buf = empty(array.shape, array.dtype, order)
-    np.copyto(buf, array)
+def _ownable_copy(array, order, dtype=None):
+    """Copy ``array``, cast to ``dtype`` if given, into memory GraphBLAS can take ownership of."""
+    if empty is None or can_unclaim_buffer(np.empty(0, np.uint8)):
+        # GraphBLAS can own what NumPy allocates, as it can by default
+        return np.array(array, dtype, copy=True, order=order)
+    # Not with libc's allocator (``memory_manager="c"``), nor a custom NumPy memory handler
+    buf = empty(array.shape, array.dtype if dtype is None else dtype, order)
+    np.copyto(buf, array, casting="unsafe")  # the cast np.array(array, dtype) makes
     return buf
 
 
@@ -162,17 +179,21 @@ def values_to_numpy_buffer(
     if dtype is not None:
         dtype = lookup_dtype(dtype)
         np_type = _get_subdtype(dtype.np_type)
+        array = _nats_in_leaf_units(_view_if_same_layout(array, np_type), np_type)
+        if ownable:
+            return _ownable_array(array, np_type, copy=copy, order=order), dtype
         # https://numpy.org/doc/stable/release/2.0.0-notes.html#new-copy-keyword-meaning-for-array-and-asarray-constructors
-        array = np.array(
-            _nats_in_leaf_units(_view_if_same_layout(array, np_type), np_type),
-            np_type,
-            copy=copy or _NP2 and None,
-            order=order,
-        )
+        array = np.array(array, np_type, copy=copy or _NP2 and None, order=order)
     else:
         is_input_np = isinstance(array, np.ndarray)
-        # https://numpy.org/doc/stable/release/2.0.0-notes.html#new-copy-keyword-meaning-for-array-and-asarray-constructors
-        array = np.array(array, copy=copy or _NP2 and None, order=order)
+        if ownable and is_input_np and not array.dtype.hasobject:
+            # View nested subarrays flattened (as below) before copying, not after:
+            # a view of the copy would not own its data, so it would be copied again
+            array = _view_if_same_layout(array, lookup_dtype(array.dtype).np_type)
+            array = _ownable_array(array, array.dtype, copy=copy, order=order)
+        else:
+            # https://numpy.org/doc/stable/release/2.0.0-notes.html#new-copy-keyword-meaning-for-array-and-asarray-constructors
+            array = np.array(array, copy=copy or _NP2 and None, order=order)
         if array.dtype.hasobject:
             raise ValueError("object dtype for values is not allowed")
         if not is_input_np and array.dtype == np.int32:  # pragma: no cover
@@ -185,8 +206,8 @@ def values_to_numpy_buffer(
         array = _view_if_same_layout(array, dtype.np_type)
         if subarray_after is not None and array.ndim > subarray_after:
             dtype = lookup_dtype(np.dtype((dtype.np_type, array.shape[subarray_after:])))
-    if ownable:
-        array = _ownable(array, order)
+        if ownable and not is_input_np:
+            array = _ownable(array, order)  # an array NumPy made from a list, say
     return array, dtype
 
 
