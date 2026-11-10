@@ -835,18 +835,29 @@ def plan_each(shape, src, states, nnz, nthreads):
 
 
 def _perm_semiring(M):
-    # For P @ M (or S @ v) where P (a permutation or a selector) has one True entry per row:
-    # the monoid never combines two values, so pick one with a factory kernel (the JIT at
-    # "off" or "run" runs a generic kernel otherwise, about 2x slower). M may be a Vector.
-    # min_second is one for the 32- and 64-bit integer and floating types, and
-    # it keeps an iso M iso; SuiteSparse 10 compiled out any_second, and plus_second is generic
-    # for UINT32 / UINT64 and drops iso (as SuiteSparse's burble shows).
+    # P @ M (or S @ v), where P (a permutation or a selector) has one True entry per row, so
+    # each output entry has one term, which must come back bit for bit. M may be a Vector.
+    # The monoid still matters. SuiteSparse's factory and JIT saxpy kernels compute an output
+    # column that has every row (as a row of M with every column filled produces) by starting
+    # from the monoid's identity and adding each term (GB_COMPUTE_DENSE_C_j in 10.5.1 and
+    # 10.5.2). There min_second returns +inf for a NaN, since fmin(inf, NaN) is inf.
+    # plus_second returns +0.0 for -0.0 and quiets a signaling NaN, and so does times_second.
+    # any_second writes the term unchanged, so floats and complex use it.
+    # Its cost: SuiteSparse 10 has no factory ANY_SECOND kernels for the real types, except in
+    # builds that add them back (conda-forge's 10.5.2), and none for complex, so with the JIT
+    # at "off" or "run" it runs generic there. On 10.5.1, FP64 was 2x slower than min_second
+    # for 1e7 entries in 1e6 sparse rows and 1.1-1.25x in hypersparse rows. On conda-forge's
+    # 10.5.2, complex was 1.5x slower than plus_second (a factory kernel there) in sparse rows
+    # and 1.04-1.11x in hypersparse rows (2026-11-09).
+    # Integers have no such values, so they use min_second, which keeps an iso M iso
+    # (plus_second does not). The conda-forge builds have factory min_second kernels for the
+    # 32- and 64-bit integers; python-suitesparse-graphblas's wheels drop UINT32, and no build
+    # has them for the 8- and 16-bit integers.
     # BOOL has no factory SECOND kernel, but lor_land has one, and land(True, m) is m.
-    # The 8- and 16-bit integers have no factory kernels at all; complex has no min.
     if M.dtype._is_udt:
         return _semiring.plus_second  # (a UDT never moves by P @ M; this is for S @ v)
-    if M.dtype.name in {"FC32", "FC64"}:
-        return _semiring.any_second if M.ss.is_iso else _semiring.plus_second
+    if M.dtype.name in {"FP32", "FP64", "FC32", "FC64"}:
+        return _semiring.any_second
     if M.dtype == BOOL:
         return _semiring.lor_land
     return _semiring.min_second
