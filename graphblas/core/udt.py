@@ -552,10 +552,13 @@ def _cast_for_store(value, dtype):
     another UDT type needs a converted copy: one element for a Scalar, which
     is made here, but the whole value for a Vector or Matrix, which raises.
     """
-    if (cast_op := _store_cast_op(value.dtype, dtype, is_value=True)) is None:
-        return value
     from .base import BaseType
     from .scalar import Scalar
+
+    # An expression (``v[:] << w.apply(op)``) is a computed result, not a value.
+    is_value = isinstance(value, BaseType)
+    if (cast_op := _store_cast_op(value.dtype, dtype, is_value=is_value)) is None:
+        return value
 
     if output_type(value) is not Scalar:
         raise DomainMismatch(

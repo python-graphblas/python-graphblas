@@ -5867,6 +5867,9 @@ def test_udt_store_casts_reach_every_store_path():
     assert u.to_coo()[1].tolist() == [[-1, -2, -3]] * 2
     with pytest.raises(DomainMismatch, match="result of type .*casts only to another UDT. Use"):
         gb.Scalar(FP64) << v.reduce(agg.sum)
+    # Assigned to part of an object, a computed result is still a result.
+    with pytest.raises(DomainMismatch, match="result of type FP64 .*another UDT. Use"):
+        v[:] << Vector.from_coo([0], [0.5], size=3).apply(unary.ainv)
     w = Vector(f8s, size=3)
     w[0] = [0.5, 0.5, 0.5]
     w[1] = [1.5, 1.5, 1.5]
