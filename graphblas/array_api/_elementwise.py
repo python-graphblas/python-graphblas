@@ -260,7 +260,9 @@ def _first_of(*getters):
 def abs(x, /):  # noqa: A001 (the Array API's name)
     # (GraphBLAS's integer abs of the most negative value is undefined in C; numpy wraps)
     gb = _first_of(_typed(unary.abs, _FLOAT), _copy_if("ub"))
-    return _unary("abs", np.abs, x, gb, keeps=_ALL_FACTS)
+    # (|z| of a finite complex z may overflow, and |inf + nan j| is inf: only "zero" holds)
+    keeps = ("zero",) if isinstance(x, Array) and x.dtype.kind == "c" else _ALL_FACTS
+    return _unary("abs", np.abs, x, gb, keeps=keeps)
 
 
 def negative(x, /):
