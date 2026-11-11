@@ -628,26 +628,39 @@ bitwise_right_shift = _make_binary("bitwise_right_shift")
 
 
 def clip(x, /, min=None, max=None):
-    """``minimum(maximum(x, min), max)`` in the dtype of ``x`` (NaN propagates)."""
+    """``x`` clipped to ``[min, max]`` in the dtype of ``x``; NaN propagates.
+
+    With scalar bounds this is numpy's ``clip`` (which keeps ``-0.0`` against a bound of
+    ``0.0``); with array bounds it is ``minimum(maximum(x, min), max)``, as numpy's ``clip``
+    with array bounds is.
+    """
     if not isinstance(x, Array):
         raise TypeError(f"clip needs an Array, not {type(x).__name__}")
-    out = x
-    if min is not None:
-        out = maximum(out, _clip_bound(min, x))
-    if max is not None:
-        out = minimum(out, _clip_bound(max, x))
-    if out is x:
-        return x._copy()
+    lo = _clip_bound(min, x)
+    hi = _clip_bound(max, x)
+    if lo is None and hi is None:
+        out = x._copy()
+    elif all(b is None or not isinstance(b, Array) or b.ndim == 0 for b in (lo, hi)):
+        lo_v, hi_v = (b._fill if isinstance(b, Array) else b for b in (lo, hi))
+        out = _unary("clip", lambda v: np.clip(v, lo_v, hi_v), x)
+    else:
+        out = x
+        if lo is not None:
+            out = maximum(out, lo)
+        if hi is not None:
+            out = minimum(out, hi)
     if out.dtype != x.dtype:
         out = cast(out, x.dtype)
     return out
 
 
 def _clip_bound(bound, x):
-    """A Python scalar bound in the dtype of ``x`` when it fits (the Array API's clip keeps the
-    dtype of ``x``).
+    """A Python integer bound clamped to the range of an integer ``x`` (the Array API's clip
+    keeps the dtype of ``x``, and numpy refuses an integer out of its range).
     """
-    if isinstance(bound, (builtins.bool, int, float)) and not isinstance(bound, np.generic):
+    if isinstance(bound, (np.generic, np.ndarray)):
+        return _as_operand(bound, "clip")
+    if isinstance(bound, (builtins.bool, int, float)):
         if x.dtype.kind in _INTEGRAL and isinstance(bound, float):
             return bound
         if x.dtype.kind in _INTEGRAL and not _python_scalar_fits(bound, x.dtype):
