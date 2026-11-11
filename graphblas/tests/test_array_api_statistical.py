@@ -8,6 +8,7 @@ import pytest
 import graphblas as gb
 import graphblas.array_api as xp
 
+from .test_array_api_elementwise import _strict_signed_zeros  # noqa: F401 (autouse)
 from .test_array_api_elementwise import (
     DTYPES,
     assert_array_equal,
@@ -261,3 +262,105 @@ def test_var_of_a_huge_sparse_array():
         mean = values.sum() / n
         expected = (((values - mean) ** 2).sum() + (n - values.size) * mean**2) / n
         assert float(v[col]) == pytest.approx(expected, rel=1e-12)
+
+
+def test_sum_starts_from_positive_zero():
+    # numpy's sum starts from +0.0: a sum of -0.0 is 0.0 (review finding M1)
+    for a in [
+        np.array([-0.0, -0.0]),
+        np.array([[-0.0, 0.0], [-0.0, 1.0]]),
+        np.array([-0.0], np.float32),
+    ]:
+        x = make(a, 0.0)
+        for axis in [None, -1]:
+            assert_array_equal(xp.sum(x, axis=axis), np.sum(a, axis=axis))
+            assert_array_equal(xp.mean(x, axis=axis), np.mean(a, axis=axis))
+    c = np.array([complex(-0.0, -0.0)])
+    assert_array_equal(xp.sum(make(c, 0j)), np.sum(c))
+    x = make(np.array([1.0, -0.0]), -0.0)
+    assert_array_equal(xp.sum(x, axis=0), np.sum(np.array([1.0, -0.0])))
+    assert_array_equal(xp.sum(xp.full((3,), -0.0)), np.sum(np.full(3, -0.0)))
+
+
+def test_min_max_order_signed_zeros():
+    # GraphBLAS's fmin/fmax take either zero; numpy orders -0.0 below 0.0 (review finding M2)
+    cases = [
+        (np.array([-0.0, 0.0]), 1.0),
+        (np.array([0.0, -0.0]), 1.0),
+        (np.array([[0.0, 2.0], [-0.0, 3.0]]), 5.0),
+        (np.array([[np.nan, -0.0], [np.nan, 0.0]]), np.nan),
+        (np.array([[0.0, 1.0], [2.0, 0.0]]), -0.0),
+        (np.array([[-0.0, 1.0], [2.0, -0.0]]), 0.0),
+    ]
+    for a, fill in cases:
+        for x in [make(a, fill), make(np.where(a == 0, fill, a), fill)]:
+            dense = x.todense()
+            for name in ["min", "max"]:
+                for axis in [None, 0, -1]:
+                    assert_array_equal(
+                        getattr(xp, name)(x, axis=axis), getattr(np, name)(dense, axis=axis)
+                    )
+
+
+def test_complex_sum_of_infinite_fill():
+    # k copies of inf+0j sum to inf+0j, not inf+nanj (review finding M3)
+    for fill in [complex(np.inf, 0), complex(np.nan, 0), complex(0, -np.inf)]:
+        a = np.array([[1 + 1j, fill, fill], [fill, fill, fill]])
+        x = make(a, fill)
+        for axis in [None, 0, 1]:
+            for name in ["sum", "mean"]:
+                assert_array_equal(
+                    np_call(getattr(xp, name), x, axis=axis),
+                    np_call(getattr(np, name), a, axis=axis),
+                )
+
+
+def test_sum_in_bool():
+    # a sum of booleans in bool is their logical or (review finding M5)
+    a = np.array([[1, 0, 3], [0, 0, 2]])
+    for fill in [0, 2]:
+        x = make(np.where(a == 0, fill, a), fill)
+        dense = x.todense()
+        for axis in [None, 0, 1]:
+            assert_array_equal(
+                xp.sum(x, axis=axis, dtype=xp.bool), np.sum(dense, axis=axis, dtype=bool)
+            )
+            assert_array_equal(
+                xp.prod(x, axis=axis, dtype=xp.bool), np.prod(dense, axis=axis, dtype=bool)
+            )
+
+
+def test_mean_of_empty_complex():
+    # 0j / 0 is nan+nanj, as numpy's mean of nothing (review finding L1)
+    for dt in [np.complex128, np.complex64, np.float32]:
+        assert_array_equal(
+            np_call(xp.mean, xp.zeros((0,), dtype=dt)), np_call(np.mean, np.zeros(0, dt))
+        )
+        assert_array_equal(
+            np_call(xp.mean, xp.zeros((2, 0), dtype=dt), axis=1),
+            np_call(np.mean, np.zeros((2, 0), dt), axis=1),
+        )
+
+
+def test_diff_n0_ignores_prepend_append():
+    # (review finding L4)
+    a = np.array([1.0, 0.0, 2.0])
+    x = make(a, 0.0)
+    assert_array_equal(
+        xp.diff(x, n=0, prepend=make(np.array([5.0]), 0.0)), np.diff(a, n=0, prepend=5.0)
+    )
+    assert_array_equal(xp.diff(x, n=0, append=7.0), np.diff(a, n=0, append=7.0))
+
+
+def test_reductions_of_fibers_past_2_63_positions():
+    # (review finding L6) a fiber of 2**63 positions: counts do not overflow
+    shape = (2**21,) * 3
+    y = xp.full(shape, 1.0)
+    y[0, 0, 0] = 3.0
+    assert float(xp.sum(y)) == float(2**63 + 2)
+    assert float(xp.sum(y, axis=(1, 2))[0]) == 2.0**42 + 2
+    assert float(xp.max(y)) == 3.0
+    z = xp.full(shape, 1, dtype=xp.int64)
+    z[0, 0, 0] = 3
+    assert int(xp.sum(z)) == 3 + (2**63 - 1) - 2**64  # (wraps, as integer sums do)
+    assert int(xp.prod(z)) == 3
