@@ -278,3 +278,29 @@ def test_tensordot_axes_out_of_bounds():
     with pytest.raises(IndexError, match="out of bounds"):
         xp.tensordot(x, x.T, axes=([1], [-3]))
     assert_close(xp.tensordot(x, x.T, axes=([-1], [0])), np.ones((2, 3)) @ np.ones((3, 2)))
+
+
+def test_finite_fills_are_stored_in_full():
+    # (review findings R1, R3) an operand with a finite nonzero fill that fits under the
+    # densify limit is stored in full, whatever the other operands store: matrices of ones
+    # by a large sparse matrix stay sparse, and explicit zeros in the other operand do not
+    # change the answer (D10)
+    rng = np.random.default_rng(20)
+    n = 400
+    a = np.zeros((n, n))
+    a[rng.integers(0, n, 600), rng.integers(0, n, 600)] = rng.random(600) + 0.5
+    A = xp.from_coo(np.nonzero(a), a[np.nonzero(a)], (n, n))
+    with gb.config.set(array_api_densify_limit=10 * n):
+        r1 = A @ xp.ones((n, 8))
+        r2 = A @ xp.full((n, 8), 2.5)
+    assert_close(r1, a @ np.ones((n, 8)))
+    assert_close(r2, a @ np.full((n, 8), 2.5))
+    b = np.ones((2, 1500))
+    b[0, 0] = np.inf
+    B = xp.asarray(b, fill_value=1.0)
+    A1 = xp.from_coo(([0], [0]), np.array([1.0]), (3000, 2))
+    r = np.arange(1, 2001)
+    A2 = xp.from_coo((np.r_[0, r], np.r_[0, np.zeros(2000, int)]), np.r_[1.0, np.zeros(2000)],
+                     (3000, 2))  # fmt: skip
+    for x in [A1, A2, xp.prune(A2)]:
+        assert (x @ B).todense()[1, 0] == 0.0  # (D6: an unstored zero times inf is no term)
