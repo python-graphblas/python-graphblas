@@ -7,6 +7,7 @@ The helpers here (``make``, ``assert_array_equal``, ``inputs``) are shared by th
 import math
 import operator
 import warnings
+import zlib
 
 import numpy as np
 import pytest
@@ -274,7 +275,7 @@ def test_all_elementwise_functions_are_tested():
 @pytest.mark.parametrize("shape", [(), (7,), (3, 4), (2, 3, 4)])
 def test_unary(name, func, shape):
     for dtype in DTYPES:
-        for dense, x in inputs(dtype, shape, seed=hash(name) % 1000):
+        for dense, x in inputs(dtype, shape, seed=zlib.crc32(name.encode()) % 1000):
             expected = expected_or_error(func, dense)
             if expected is None:
                 with pytest.raises(TypeError):
@@ -324,7 +325,9 @@ def _binary_cases(dt1, dt2, shapes, seed):
 @pytest.mark.parametrize("shapes", BINARY_SHAPES, ids=str)
 def test_binary(name, func, shapes):
     for dt1, dt2 in DTYPE_PAIRS:
-        for dense1, x1, dense2, x2 in _binary_cases(dt1, dt2, shapes, hash(name) % 1000):
+        for dense1, x1, dense2, x2 in _binary_cases(
+            dt1, dt2, shapes, zlib.crc32(name.encode()) % 1000
+        ):
             expected = expected_or_error(func, dense1, dense2)
             if expected is None:
                 with pytest.raises(TypeError):
@@ -728,7 +731,42 @@ def test_operands_storing_every_position_keep_products_sparse():
         assert_array_equal(i * full, i.todense() * full.todense())
     # strict mode: the intersection only for values whose product with 0.0 is 0.0
     p = A * xp.reshape(inv, (40, 1))
+    assert p.nnz == A.nnz
     assert_array_equal(p, A.todense() * inv.todense()[:, None])
+    assert (A / xp.exp(d)).nnz == A.nnz
+    assert_array_equal(A / xp.exp(d), A.todense() / np.exp(d.todense()))
+    signed = xp.asarray(rng.normal(size=40))
+    assert_array_equal(A / signed, A.todense() / signed.todense())
+
+
+def test_one_sided_products():
+    # one operand's fill is 0, the other's is not: the result lies within the first's entries
+    # (a broadcast second operand is stored in full first, not replicated)
+    rng = np.random.default_rng(4)
+    A = make(np.where(rng.random((30, 30)) < 0.05, rng.normal(size=(30, 30)), 0.0), 0.0)
+    v = make(np.where(rng.random(30) < 0.5, 0.0, rng.normal(size=30)), 0.0)
+    e = xp.exp(v)  # (fill 1, some positions unstored)
+    w = make(np.where(rng.random(30) < 0.3, 1.0, rng.normal(size=30) + 4), 1.0)
+    for mode in [False, True]:
+        with gb.config.set(array_api_signed_zeros=mode):
+            for out, expected in [
+                (A * xp.reshape(e, (1, 30)), A.todense() * e.todense()[None, :]),
+                (xp.reshape(e, (30, 1)) * A, e.todense()[:, None] * A.todense()),
+                (A / xp.reshape(w, (30, 1)), A.todense() / w.todense()[:, None]),
+                (A / e, A.todense() / e.todense()),
+            ]:
+                assert out.nnz <= A.nnz
+                if mode:
+                    assert_array_equal(out, expected)
+                else:
+                    np.testing.assert_array_equal(out.todense(), expected)
+        # a second operand as large as the result: the masked union, no full copy
+    B = make(np.where(rng.random((60, 60)) < 0.05, rng.normal(size=(60, 60)), 0.0), 0.0)
+    big = make(np.where(rng.random((60, 60)) < 0.5, 2.0, rng.normal(size=(60, 60)) + 5), 2.0)
+    with gb.config.set(array_api_signed_zeros=False):
+        out = B / big
+        assert out.nnz == B.nnz
+        np.testing.assert_array_equal(out.todense(), B.todense() / big.todense())
 
 
 def test_clip_fill_uses_numpys_array_loop():
@@ -738,3 +776,13 @@ def test_clip_fill_uses_numpys_array_loop():
     a, b = np.zeros(3), np.full(3, -0.0)
     assert_array_equal(xp.clip(x, min=lo, max=0.5), np.clip(a, b, 0.5))
     assert_array_equal(xp.clip(x, min=-0.0, max=0.5), np.clip(a, -0.0, 0.5))
+
+
+def test_fill_follows_numpys_loop_choice():
+    # numpy's power of an array by a 0-d 0.5 is sqrt (pow(-inf, 0.5) is NaN), and between two
+    # arrays it is pow (inf): an array's fill takes the loop the dense array would
+    x = make(np.array([[-np.inf, 2.0], [-np.inf, -np.inf]], np.float32), np.float32(-np.inf))
+    half = xp.asarray(np.float32(0.5))
+    halves = make(np.full((2, 2), 0.5, np.float32), np.float32(0.5))
+    assert_array_equal(np_call(xp.pow, x, half), np_call(np.power, x.todense(), np.float32(0.5)))
+    assert_array_equal(np_call(xp.pow, x, halves), np_call(np.power, x.todense(), halves.todense()))
