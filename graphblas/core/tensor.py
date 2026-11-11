@@ -803,7 +803,10 @@ class Tensor(BaseType):
         if layout is not None:
             M, lay = tl.relayout(M, self._shape, lay, tl.as_layout(layout, self._shape))
         if dtype != self.dtype:
-            M = M.dup(dtype)
+            # (Matrix.dup would hold an n x 1 Matrix by column, as SuiteSparse holds a Vector)
+            D = tl.new_matrix(dtype, M._nrows, M._ncols)
+            D << M
+            M = D
         if M is self._M:
             T = Tensor._from_M(M, self._shape, lay, name=name, store=self._store)
         else:
