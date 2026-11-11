@@ -620,8 +620,14 @@ def _one_sided(spec, a, b, fa, fb, op, ct, rdt, shape):
         Tx, Ty = X._T(), Y._T()
         with np.errstate(all="ignore"):
             fill = spec.ufunc(fx, fy) if X is a else spec.ufunc(fy, fx)
-        if not _stores_all(Y) and Y.size <= Tx.nvals + 1024:
-            # (O(size of Y): every position of Y stored, so the product is an intersection)
+        broadcast = Ty.shape != shape
+        if not _stores_all(Y) and (
+            Y.size <= Tx.nvals + 1024 or (broadcast and Y.size <= _utils.densify_limit())
+        ):
+            # (O(size of Y): every position of Y stored, so the product is an intersection.
+            # A broadcast Y is small along its broadcast axes; the union with it would
+            # replicate it over them: exp(v)[None, :] times X of shape (1000, 1e6) with 4
+            # entries replicated v 1000 times)
             other = 0 if Y._fill != 0 else 1
             Ty = _utils.with_fill(Y, other)._T()
         Ta, Tb = (Tx, Ty) if X is a else (Ty, Tx)
