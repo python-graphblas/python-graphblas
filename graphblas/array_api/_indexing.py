@@ -308,6 +308,10 @@ def setitem(x, key, value):
     axes_key = [k for k in items if not isinstance(k, (_NewAxis, _Gap))]
     if any(isinstance(k, _NewAxis) and k.length == 0 for k in items):
         return  # (a False index selects nothing)
+    if isinstance(value, Array) and not _has_adv(items):
+        value = _without_new_axes(value, items)
+        if value.ndim == 0:
+            value = _scalar_value(value._fill, x.dtype)
     if x.ndim == 0:
         if isinstance(value, Array):
             raise ValueError(f"cannot assign an array of shape {value.shape} to a 0-d array")
@@ -328,6 +332,26 @@ def setitem(x, key, value):
         else:
             _region_setitem(x, tuple(axes_key), value)
     x._facts = None
+
+
+def _without_new_axes(value, items):
+    """``value`` for a basic key with new axes (``None``): the selection numpy broadcasts it
+    against has those axes, of length 1, which the region assigned to does not; drop the
+    value's axes that line up with them.
+    """
+    kinds = [k for k in items if isinstance(k, (_NewAxis, slice))]
+    offset = len(kinds) - value.ndim
+    drop = [p - offset for p, k in enumerate(kinds) if isinstance(k, _NewAxis) and p - offset >= 0]
+    if not drop:
+        return value
+    if any(value.shape[q] != 1 for q in drop):
+        raise ValueError(
+            f"cannot assign an array of shape {value.shape} to a selection of "
+            f"{len(kinds)} dimensions whose new axes have length 1"
+        )
+    from ._manipulation import squeeze
+
+    return squeeze(value, axis=tuple(drop))
 
 
 def _setitem_value(x, value):
