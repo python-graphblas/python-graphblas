@@ -367,6 +367,35 @@ def test_nan_propagates_through_min_and_max():
                  np.array(1.0))  # fmt: skip
 
 
+def test_fully_stored_operands_take_the_identity():
+    # An operand that stores every position never shows its fill: a semiring accepts it
+    # whatever its fill, when its dtype holds the identity
+    a = np.array([[1.0, 2.0], [np.inf, 3.0]])
+    b = np.array([[0.5, 1.0], [2.0, 4.0]])
+    A, B = make(a, 0.0), make(b, 0.0)
+    assert A.nnz == A.size
+    expected = np.min(a[:, :, None] + b[None], axis=1)
+    for R in [
+        xp.matmul(A, B, semiring="min_plus"),
+        xp.tensordot(A, B, axes=1, semiring="min_plus"),
+        xp.einsum("ij,jk->ik", A, B, semiring="min_plus"),
+        xp.vecdot(A[:, :, None], B[None], axis=1, semiring="min_plus"),
+    ]:
+        assert_close(R, expected, np.inf)
+    # (the inf entry is an explicit fill once relabeled; a NaN elsewhere still propagates)
+    a2 = a.copy()
+    a2[0, 0] = np.nan
+    R = xp.matmul(make(a2, 0.0), B, semiring="min_plus")
+    assert np.isnan(R.todense()[0]).all()
+    # An integer operand cannot hold inf: still refused
+    i = make(np.array([[1, 2], [3, 4]]), 0)
+    with pytest.raises(ValueError, match="needs operands whose fill"):
+        xp.matmul(i, make(b, np.inf), semiring="min_plus")
+    # Partly stored: refused as before
+    with pytest.raises(ValueError, match="needs operands whose fill"):
+        xp.matmul(make(np.array([[0.0, 1.0]]), 0.0), B, semiring="min_plus")
+
+
 def test_soundness_is_cached_per_semiring_object():
     # (review finding L1) two semirings of one name: each is checked
     from graphblas.core.operator import Semiring
