@@ -648,3 +648,16 @@ def test_einsum_three_operands_not_masked(masks):
         assert_close(xp.einsum("ij,jk,ik->", A, B, S), np.einsum("ij,jk,ik->", a, b, s))
     finally:
         _lazy.enabled = True
+
+
+def test_compute():
+    a, b = _rand((4, 5)), _rand((5, 3))
+    A, B = make(a, 0.0), make(b, 0.0)
+    P = A @ B
+    assert pending(P)
+    assert xp.compute(P) is P
+    assert not pending(P)
+    assert_close(P, a @ b)
+    assert xp.compute(A) is A
+    with pytest.raises(TypeError, match="needs Arrays"):
+        xp.compute(a)

@@ -39,7 +39,7 @@ from ._array import Array
 from ._dtypes import check_supported
 from ._utils import gb_dtype, np_dtype
 
-__all__ = ["einsum", "matmul", "matrix_transpose", "tensordot", "vecdot"]
+__all__ = ["compute", "einsum", "matmul", "matrix_transpose", "tensordot", "vecdot"]
 
 
 def _check(x, name):
@@ -53,6 +53,17 @@ def _operand(x):
         from ._creation import asarray
 
         return asarray(x)
+    return x
+
+
+def compute(x, /):
+    """``x``, computed now (an extension). matmul, tensordot, vecdot and einsum return an Array
+    that computes its value on first use, or only where a consumer needs it (DESIGN D9);
+    ``compute`` computes it at once (to time it, or before handing it on). Any other Array
+    is returned as it is.
+    """
+    _check(x, "compute")
+    x._T()
     return x
 
 
