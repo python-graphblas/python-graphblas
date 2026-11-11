@@ -533,3 +533,118 @@ def test_product_times_itself_computes_once(masks):
     # (without the result's shape, one batch is assumed)
     P = make(a, 0.0) @ make(a, 0.0)
     assert _lazy._dot_hint(P._pending, 1) == {"axb_method": "dot"}
+
+
+THREE = [
+    ("ij,jk,ik->", [(5, 6), (6, 7), (5, 7)]),  # (triangle counting)
+    ("ij,jk,ik->i", [(5, 6), (6, 7), (5, 7)]),
+    ("ij,jk,ik->ki", [(5, 6), (6, 7), (5, 7)]),
+    ("ik,ij,jk->ik", [(5, 7), (5, 6), (6, 7)]),  # (an SDDMM)
+    ("qn,qf,nf->qn", [(5, 7), (5, 3), (7, 3)]),
+    ("ij,j,i->", [(5, 6), (6,), (5,)]),
+    ("bij,bjk,bik->b", [(2, 3, 4), (2, 4, 5), (2, 3, 5)]),
+]
+
+
+@pytest.mark.parametrize(("subscripts", "shapes"), THREE, ids=[s for s, _ in THREE])
+def test_einsum_three_operands_masked(subscripts, shapes, masks):
+    # One operand's indices are what the other two leave: their product is computed at that
+    # operand's stored positions only
+    for dtype in [np.float64, np.int64, np.bool_, np.complex128]:
+        arrays = [_rand(s, 0, dtype, density=0.4) for s in shapes]
+        fill = np.zeros((), dtype)[()]
+        Xs = [make(a, fill, rng) for a in arrays]
+        masks.clear()
+        R = xp.einsum(subscripts, *Xs)
+        assert_close(R, np.einsum(subscripts, *arrays))
+        if all(xp.prune(x).nnz for x in Xs):  # (an empty operand: an empty pair, no product)
+            assert masks[0] is not None
+    # Semirings whose multiply distributes over the monoid
+    from .test_array_api_semiring import SEMIRINGS, semiring_einsum
+
+    for name in ["min_plus", "max_plus", "min_max", "max_min"]:
+        reduce, mult, e = SEMIRINGS[name]
+        arrays = [_rand(s, e, density=0.4) for s in shapes]
+        masks.clear()
+        Xs = [make(a, e, rng) for a in arrays]
+        R = xp.einsum(subscripts, *Xs, semiring=name)
+        assert_close(R, semiring_einsum(subscripts, *arrays, reduce=reduce, mult=mult))
+        assert R.fill_value == e or not R.ndim
+        if all(xp.prune(x).nnz for x in Xs):
+            assert masks[0] is not None
+
+
+def _structural_three(a, b, s, mult=np.multiply):
+    """``ij,jk,ik->ik`` with a term only where all three operands are nonzero (DESIGN D6)."""
+    stored = (a[:, :, None] != 0) & (b[None] != 0) & (s[:, None, :] != 0)
+    with np.errstate(invalid="ignore", over="ignore"):
+        terms = mult(mult(a[:, :, None], b[None]), s[:, None, :])
+        return np.where(stored, terms, 0).sum(axis=1)
+
+
+def test_einsum_three_operands_nonfinite(masks, monkeypatch):
+    # An operand holding inf or NaN: explicit fills go first (D12a), and the terms are the
+    # full einsum's (D6): no NaN where the masking operand stores nothing. The values do not
+    # depend on which path ran.
+    from graphblas.array_api import _linalg
+
+    a, b, s = _rand((4, 5)), _rand((5, 6)), _rand((4, 6))
+    for bad in [np.inf, -np.inf, np.nan]:
+        for which in range(3):
+            arrays = [a.copy(), b.copy(), s.copy()]
+            arrays[which][0, 1] = bad
+            Xs = [make(x, 0.0, rng) for x in arrays]
+            masks.clear()
+            R = xp.einsum("ij,jk,ik->ik", *Xs)
+            # (only the third operand covers the output "ik": when it is the non-finite one,
+            # the full einsum runs)
+            assert any(m is not None for m in masks) == (which != 2)
+            if which != 2:
+                assert_close(R, _structural_three(*arrays))
+            with monkeypatch.context() as m:
+                m.setattr(_linalg, "_masked_three", lambda *args: None)
+                assert_close(R, xp.einsum("ij,jk,ik->ik", *Xs).todense())
+    # With plus_times, a non-finite operand is never the one the pair is computed under
+    # (inf * (x + y) differs from inf * x + inf * y), and complex goes whole
+    c = [x.astype(np.complex128) for x in (a, b, s)]
+    c[0][0, 1] = np.inf
+    masks.clear()
+    R = xp.einsum("ij,jk,ik->ik", *[make(x, 0j) for x in c])
+    assert all(m is None for m in masks)
+    assert_close(R, _structural_three(*c))
+    # A NaN under a float min or max monoid: the full einsum, which propagates it (D12b)
+    inf = np.inf
+    arrays = [np.where(x == 0, inf, x) for x in (a, b, s)]
+    arrays[0][0, 0] = np.nan
+    masks.clear()
+    R = xp.einsum("ij,jk,ik->ik", *[make(x, inf) for x in arrays], semiring="min_plus")
+    assert all(m is None for m in masks)
+    x, y, z = arrays[0][:, :, None], arrays[1][None], arrays[2][:, None, :]
+    stored = (x != inf) & (y != inf) & (z != inf)  # (a NaN is stored: the term is NaN)
+    assert_close(R, np.min(np.where(stored, x + y + z, inf), axis=1))
+
+
+def test_einsum_three_operands_not_masked(masks):
+    a, b, s = _rand((4, 5)), _rand((5, 6)), _rand((4, 6))
+    A, B, S = make(a, 0.0), make(b, 0.0), make(s, 0.0)
+    # No operand is what the other two leave, or no index is shared
+    for subscripts, arrays in [
+        ("ij,jk,kl->il", [a, b, _rand((6, 3))]),
+        ("ij,kl,ik->", [a, _rand((3, 2)), _rand((4, 3))]),
+    ]:
+        masks.clear()
+        R = xp.einsum(subscripts, *[make(x, 0.0) for x in arrays])
+        assert_close(R, np.einsum(subscripts, *arrays))
+        assert all(m is None for m in masks)
+    # A semiring whose multiply does not distribute over its monoid: plus_min (unsigned)
+    p, q, r = (np.abs(x).astype(np.uint8) for x in (a, b, s))
+    masks.clear()
+    R = xp.einsum("ij,jk,ik->ik", make(p, 0), make(q, 0), make(r, 0), semiring="plus_min")
+    assert all(m is None for m in masks)
+    assert_close(R, _structural_three(p, q, r, np.minimum).astype(np.uint8))
+    # Deferral off: the pair is computed whole, then intersected
+    _lazy.enabled = False
+    try:
+        assert_close(xp.einsum("ij,jk,ik->", A, B, S), np.einsum("ij,jk,ik->", a, b, s))
+    finally:
+        _lazy.enabled = True

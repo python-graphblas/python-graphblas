@@ -493,6 +493,10 @@ def einsum(subscripts, /, *operands, semiring=None):
         return tensor_einsum(subscripts, *tensors, op=op)
 
     terms, output = _einsum_plan(subscripts, shapes, "greedy")[:2]
+    if len(ops) == 3:
+        masked = _masked_three(terms, output, ops, typed, out_dt, fill)
+        if masked is not None:
+            return masked
     sizes = {
         c: n for term, s in zip(terms, shapes, strict=True) for c, n in zip(term, s, strict=True)
     }
@@ -501,6 +505,61 @@ def einsum(subscripts, /, *operands, semiring=None):
     return _lazy.contraction(
         ops, build, shape, out_dt, fill, (terms, output, typed), nterms, product, typed
     )
+
+
+# (monoid, multiply) pairs where the multiply distributes over the monoid, so that a term's
+# third factor can multiply the sum of the other two's products: s * (a + b) = s*a + s*b
+_DISTRIBUTES = {
+    ("plus", "times"),
+    ("lor", "land"),
+    ("min", "plus"),
+    ("max", "plus"),
+    ("min", "max"),
+    ("max", "min"),
+}
+
+
+def _masked_three(terms, output, ops, typed, out_dt, fill):
+    """An einsum of three operands in which one operand's indices are exactly those the
+    other two leave after contracting their shared ones (triangle counting's
+    "ij,jk,ik->", an SDDMM's "ik,ij,jk->ik"), computed as that pair's product at the third
+    operand's stored positions only, times the third, then summed into the output; else
+    None. Every term of the full einsum is a term of this one: a position the third operand
+    does not store gives no term either way (DESIGN D6). Sums differ only in their order
+    (rounding, and where a sum overflows). An operand holding inf or NaN prunes the explicit
+    fills first, as every contraction does (D12a); a NaN under a float min or max monoid
+    takes the full einsum, which propagates it (D12b). With plus_times the third operand
+    must be finite: inf * (x + y) is not inf * x + inf * y when x and y differ in sign.
+    """
+    if (typed.monoid.name, typed.binaryop.name) not in _DISTRIBUTES:
+        return None
+    finite = [x.dtype.kind not in "fc" or _utils.fact(x, "finite") for x in ops]
+    if not all(finite):
+        if typed.monoid.name in {"min", "max"} and any(_utils.fact(x, "nan") for x in ops):
+            return None
+        if any(x.dtype.kind == "c" for x in ops):
+            return None  # (complex infinities do not distribute)
+        from ._manipulation import prune
+
+        ops = [prune(x) for x in ops]
+    for m, tm in enumerate(terms):
+        a, b = (t for i, t in enumerate(terms) if i != m)
+        contracted = (set(a) & set(b)) - set(tm)
+        # (the pair's other indices, batch ones included, are exactly the third's)
+        if not contracted or set(a) | set(b) != set(tm) | contracted or not set(output) <= set(tm):
+            continue
+        if typed.monoid.name == "plus" and not finite[m]:
+            continue
+        A, B = (x for i, x in enumerate(ops) if i != m)
+        P = einsum(f"{a},{b}->{tm}", A, B, semiring=typed)
+        TS = ops[m]._T()
+        if (node := P._pending) is not None:
+            TP = node.compute(mask=TS.S, **_lazy._dot_hint(node, TS.nvals, P.shape))
+        else:
+            TP = P._T()  # (computed already: a NaN or deferral off)
+        R = Array._new(TS.ewise_mult(TP, typed.binaryop).new(dtype=gb_dtype(out_dt)), fill)
+        return R if output == tm else einsum(f"{tm}->{output}", R, semiring=typed)
+    return None
 
 
 def _einsum_scalars(subscripts, ops):
