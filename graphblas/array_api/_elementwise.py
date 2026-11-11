@@ -666,13 +666,15 @@ def _one_sided(spec, a, b, fa, fb, op, ct, rdt, shape):
         Tx, Ty = X._T(), Y._T()
         with np.errstate(all="ignore"):
             fill = spec.ufunc(fx, fy) if X is a else spec.ufunc(fy, fx)
-        if Ty.shape != shape and not _stores_all(Y):
-            # Y broadcasts and shows its fill: its value at each of X's entries, gathered
-            # from Y itself at the projected coordinates, O(entries of X). (Storing Y in full
-            # cost O(size of Y), and the union replicated Y over its broadcast axes:
-            # exp(v)[None, :] times X of shape (1000, 1e6) with 4 entries made v 1000 times.)
+        if Ty.shape != shape and not _stores_all(Y) and Tx.nvals < Y.size:
+            # Y broadcasts, shows its fill, and is larger than X's entries: its value at each
+            # of X's entries, gathered from Y itself at the projected coordinates, O(entries
+            # of X). (Storing Y in full cost O(size of Y), and the union replicated Y over its
+            # broadcast axes: exp(v)[None, :] times X of shape (1000, 1e6) with 4 entries made
+            # v 1000 times.) A Y no larger is stored in full below: the broadcast ewise_mult
+            # then needs no coordinates (a row scaling of 1e7 entries: 5 ms, against 143)
             Ty = _gather(Tx, Y, shape)
-        elif not _stores_all(Y) and Y.size <= Tx.nvals + 1024:
+        elif not _stores_all(Y) and (Y.size <= Tx.nvals + 1024 or Ty.shape != shape):
             # (O(size of Y): every position of Y stored, so the product is an intersection)
             other = 0 if Y._fill != 0 else 1
             Ty = _utils.with_fill(Y, other)._T()
