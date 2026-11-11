@@ -137,8 +137,11 @@ def _fill_of(ufunc, rdt, operands):
     (integers to a negative power) and one operand is such an Array, the result's fill is
     never seen either, and 0 stands in for it.
     """
+    # (1-element arrays: numpy's loop for arrays, which a few functions, clip among them, do
+    # not share with their 0-d path; a Python scalar stays weak)
+    args = [np.reshape(x._fill, (1,)) if isinstance(x, Array) else x for x in operands]
     try:
-        return ufunc(*[_fill_operand(x) for x in operands])
+        return np.asarray(ufunc(*args)).reshape(-1)[0]
     except (ValueError, ArithmeticError):
         if any(isinstance(x, Array) and x.ndim and x._T().nvals == x.size for x in operands):
             return _utils.scalar(0, rdt)
@@ -485,20 +488,35 @@ def _binary_arrays(spec, a, b, op, ct, rdt, fill):
     if op is not None:
         fa = _utils.scalar(a._fill, ct)
         fb = _utils.scalar(b._fill, ct)
-        if spec.annihilator is not None and spec.annihilator(a, b, fa, fb, ct):
-            # Where either operand holds its fill the result is the fill: the intersection
-            _utils.mult_expansion_check(Ta, Tb, shape)
-            R = Ta.ewise_mult(Tb, op).new(dtype=gb_dtype(rdt))
-            return _result(R, fill)
+        if spec.annihilator is not None:
+            # An operand that stores every position never shows its fill: take it as 0
+            zero = _zero(ct)
+            fa_seen = zero if _stores_all(a) else fa
+            fb_seen = zero if _stores_all(b) else fb
+            if spec.annihilator(a, b, fa_seen, fb_seen, ct):
+                # Where either operand holds its fill the result is the fill: the intersection
+                _utils.mult_expansion_check(Ta, Tb, shape)
+                R = Ta.ewise_mult(Tb, op).new(dtype=gb_dtype(rdt))
+                with np.errstate(all="ignore"):
+                    return _result(R, spec.ufunc(fa_seen, fb_seen))
+        if spec.name == "divide" and Ta.shape == shape:
+            fb_seen = _utils.scalar(1, ct) if _stores_all(b) else fb
+            if _divide_left_joins(b, fa, fb_seen):
+                # The result's entries lie within the numerator's: compute only there
+                with np.errstate(all="ignore"):
+                    fill = spec.ufunc(fa, fb_seen)
+                if _stores_all(b):
+                    _utils.mult_expansion_check(Ta, Tb, shape)
+                    return _result(Ta.ewise_mult(Tb, op).new(dtype=gb_dtype(rdt)), fill)
+                _utils.expansion_check(Ta, Tb, shape)
+                R = Tensor(gb_dtype(rdt), shape)
+                R(Ta.S) << Ta.ewise_union(
+                    Tb, op, gb_scalar(fa, ct), gb_scalar(fb, ct), allow_expansion=True
+                )
+                return _result(R, fill)
         _utils.expansion_check(Ta, Tb, shape)
         expr = Ta.ewise_union(Tb, op, gb_scalar(fa, ct), gb_scalar(fb, ct), allow_expansion=True)
-        if spec.name == "divide" and Ta.shape == shape and _divide_left_joins(b, fa, fb):
-            # The result's entries lie within the numerator's: compute only there
-            R = Tensor(gb_dtype(rdt), shape)
-            R(Ta.S) << expr
-        else:
-            R = expr.new(dtype=gb_dtype(rdt))
-        return _result(R, fill)
+        return _result(expr.new(dtype=gb_dtype(rdt)), fill)
     # numpy over the values: both operands' values on the union of entries, aligned
     _utils.expansion_check(Ta, Tb, shape)
     da, db = a.dtype, b.dtype
@@ -525,6 +543,11 @@ def _typed_for(op_by_kind):
 
 def _zero(dtype):
     return _utils.scalar(0, dtype)
+
+
+def _stores_all(x):
+    """Whether ``x`` stores every position, so that its fill is never seen."""
+    return x._T().nvals == x.size
 
 
 def _both_fills_zero(a, b, fa, fb, ct):
@@ -751,9 +774,12 @@ def _clip_arrays(x, lo, hi):
     def probe(b):
         return np.empty(0, b.dtype) if isinstance(b, Array) else b
 
+    def value1(b):  # (as a 1-element array: numpy's 0-d clip breaks ties otherwise)
+        return np.reshape(b._fill, (1,)) if isinstance(b, Array) else b
+
     with np.errstate(all="ignore"):
         rdt = np.clip(probe(x), probe(lo), probe(hi)).dtype
-        fill = np.clip(value(x), value(lo), value(hi))
+        fill = np.clip(value1(x), value1(lo), value1(hi))[0]
     if math.prod(shape) == 0:
         return _result(_utils.empty_tensor(rdt, shape), fill)
 
