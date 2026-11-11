@@ -137,7 +137,10 @@ def asarray(obj, /, *, dtype=None, device=None, copy=None, fill_value=None):
     check_device(device)
     if isinstance(obj, Array):
         if fill_value is not None and not _utils.same_value(fill_value, obj._fill):
-            raise ValueError("asarray of an Array keeps its fill value; use full_like to refill")
+            raise ValueError(
+                "asarray of an Array keeps its fill value; xp.refill(x, fill_value) gives one "
+                "with another (the same values)"
+            )
         if dtype is not None and as_dtype(dtype) != obj.dtype:
             if copy is False:
                 raise ValueError("changing the data type needs a copy, and copy=False")
