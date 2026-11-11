@@ -179,16 +179,17 @@ def map_values(func, tensors, dtype):
     W = tl.new_matrix(gbdt, template._nrows, template._ncols)
     W << template
     with contextlib.ExitStack() as stack:
-        unloaded = {}
-        for M in Ms:
-            if id(M) not in unloaded:
-                unloaded[id(M)] = stack.enter_context(tl._Unloaded(M))
-        conts = [unloaded[id(M)] for M in Ms]
+        # (tensors sharing one Matrix, copy-on-write, unload it once)
+        unique = {id(M): M for M in Ms}
+        conts = {key: stack.enter_context(tl._Unloaded(M)) for key, M in unique.items()}
         wcont = stack.enter_context(tl._Unloaded(W))
-        formats = {c.format for c in conts} | {wcont.format}
-        nvals = {c.nvals for c in conts} | {wcont.nvals}
+        formats = {c.format for c in conts.values()} | {wcont.format}
+        nvals = {c.nvals for c in conts.values()} | {wcont.nvals}
         if len(formats) == 1 and len(nvals) == 1:
-            arrays = [_x_array(c, np_dtype(M.dtype), stack) for c, M in zip(conts, Ms, strict=True)]
+            values = {
+                key: _x_array(conts[key], np_dtype(M.dtype), stack) for key, M in unique.items()
+            }
+            arrays = [values[id(M)] for M in Ms]
             out = _x_array(wcont, dtype, stack)
             with np.errstate(all="ignore"):
                 result = func(*arrays)
