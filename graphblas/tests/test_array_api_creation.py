@@ -12,6 +12,7 @@ import graphblas as gb
 import graphblas.array_api as xp
 from graphblas import Matrix, Scalar, Tensor, Vector
 
+from .test_array_api_elementwise import _strict_signed_zeros  # noqa: F401 (autouse)
 from .test_array_api_elementwise import (
     DTYPES,
     assert_array_equal,
@@ -527,3 +528,31 @@ def test_permute_expand_squeeze():
     assert_array_equal(xp.expand_dims(xp.asarray(3), axis=0), np.array([3]))
     assert_array_equal(xp.permute_dims(xp.asarray(3), ()), np.array(3))
     check_invariants(xp.squeeze(one, axis=(0, 1)))
+
+
+def test_asarray_of_arrays_stays_sparse():
+    # a list of Arrays is stacked, not densified (review finding L7)
+    import graphblas as gb
+
+    x = xp.zeros((10**5, 10**5))
+    x[1, 2] = 3.0
+    s = xp.asarray([x, x])
+    assert s.shape == (2, 10**5, 10**5)
+    assert s.nnz == 2
+    assert_array_equal(
+        xp.asarray([[make(np.array([1, 0]), 0), make(np.array([0, 2]), 0)]]),
+        np.array([[[1, 0], [0, 2]]]),
+    )
+    assert_array_equal(xp.asarray([xp.asarray([1, 2]), [3, 4]]), np.array([[1, 2], [3, 4]]))
+    assert_array_equal(
+        xp.asarray([make(np.array([1.0]), 0.0)], dtype=xp.float32), np.array([[1.0]], np.float32)
+    )
+    del gb
+
+
+def test_asarray_byte_order():
+    # (review finding L9)
+    assert_array_equal(xp.asarray(np.array([1, 2], dtype=">i8")), np.array([1, 2]))
+    assert_array_equal(
+        xp.asarray(np.array([1.5, 0.0], dtype=">f4")), np.array([1.5, 0.0], np.float32)
+    )

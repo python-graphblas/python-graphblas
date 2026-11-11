@@ -93,6 +93,35 @@ def _int_power(base, exponent, dtype):
     return np.asarray(value).astype(dtype)[()]
 
 
+def _unstored(L, c, ct):
+    """``L - c`` (counts of unstored positions), in a dtype that does not overflow: uint64
+    for integer sums (which wrap anyway), float64 otherwise (a fiber may hold 2**63 or more
+    positions).
+    """
+    if ct.kind in "iub":
+        return np.uint64(L % (1 << 64)) - np.asarray(c).astype(np.uint64)
+    return np.float64(L) - c
+
+
+def _scaled(k, fill, ct):
+    """``fill`` added ``k`` times (k >= 0), as repeated additions give it: wrapping for
+    integers, logical or for bool, and part by part for complex (0 * inf in one part must not
+    make NaN in the other).
+    """
+    with np.errstate(all="ignore"):
+        if ct.kind in "iu":
+            f = np.asarray(fill).astype(np.int64 if ct.kind == "i" else np.uint64)
+            return (np.asarray(k, dtype=np.uint64) * f.astype(np.uint64)).astype(ct)
+        if ct.kind == "b":
+            return np.logical_and(np.asarray(k) > 0, fill)
+        if ct.kind == "c":
+            out = np.empty(np.shape(k), ct)
+            out.real = k * fill.real
+            out.imag = k * fill.imag
+            return out
+        return np.asarray(np.multiply(k, fill)).astype(ct)
+
+
 class _Monoid:
     def __init__(self, name, gb, npfunc, identity):
         self.name = name
@@ -102,17 +131,16 @@ class _Monoid:
 
     def repeat(self, fill, L, ct):
         """The monoid over ``L`` copies of ``fill``."""
-        with np.errstate(all="ignore"):
-            if self.name == "sum":
-                if ct.kind in "iu":
-                    return np.multiply(fill, np.asarray(L % (1 << 64)).astype(ct), dtype=ct)
-                return np.multiply(fill, L, dtype=ct)
-            if self.name == "prod":
+        if self.name == "sum":
+            k = np.uint64(L % (1 << 64)) if ct.kind in "iub" else np.float64(L)
+            return _scaled(k, fill, ct)[()]
+        if self.name == "prod":
+            with np.errstate(all="ignore"):
                 if ct.kind in "iu":
                     return _int_power(fill, L, ct)
                 if ct.kind == "b":
                     return fill
-                return np.power(fill, ct.type(L), dtype=ct)
+                return np.power(fill, np.float64(L), dtype=ct)
         return fill
 
     def combine(self, L, fill, ct):
@@ -121,17 +149,14 @@ class _Monoid:
         """
         name = self.name
         if name == "sum":
-            if ct.kind in "iu":
-                return lambda r, c: r + (L - c).astype(ct) * fill
             # (a fiber with no unstored position must not see 0 * inf)
-            return lambda r, c: np.where(c < L, r + (L - c) * fill, r)
+            return lambda r, c: np.where(c < L, r + _scaled(_unstored(L, c, ct), fill, ct), r)
         if name == "prod":
             if ct.kind in "iu":
-                big = np.dtype("uint64" if ct.kind == "u" else "int64")
-                return lambda r, c: r * np.power(big.type(fill), (L - c).astype(big)).astype(ct)
+                return lambda r, c: r * _int_powers(fill, _unstored(L, c, ct), ct)
             if ct.kind == "b":
                 return lambda r, c: np.where(c < L, r & fill, r)
-            return lambda r, c: np.where(c < L, r * np.power(fill, (L - c).astype(ct)), r)
+            return lambda r, c: np.where(c < L, r * np.power(fill, _unstored(L, c, ct)), r)
         func = {
             "min": np.minimum,
             "max": np.maximum,
@@ -139,6 +164,13 @@ class _Monoid:
             "all": np.logical_and,
         }[name]
         return lambda r, c: np.where(c < L, func(r, fill), r)
+
+
+def _int_powers(base, exponents, dtype):
+    """``base ** e`` for each count ``e`` (uint64), wrapped to the integer ``dtype``."""
+    big = np.dtype("uint64" if dtype.kind == "u" else "int64")
+    with np.errstate(all="ignore"):
+        return np.power(big.type(base), exponents.astype(big)).astype(dtype)
 
 
 def _min_identity(dt):
@@ -168,6 +200,16 @@ _MONOIDS = {
 
 
 def _reduce(name, x, axis, keepdims, dtype=None):
+    out = _reduce_main(name, x, axis, keepdims, dtype)
+    if name == "sum" and out.dtype.kind in "fc":
+        # numpy's sum starts from +0.0: a sum of -0.0 is 0.0 (GraphBLAS starts from the first)
+        from ._elementwise import add
+
+        out = add(out, 0.0)
+    return out
+
+
+def _reduce_main(name, x, axis, keepdims, dtype):
     _check_array(x, name)
     spec = _MONOIDS[name]
     if name in {"min", "max"} and x.dtype.kind == "c":
@@ -202,11 +244,15 @@ def _reduce(name, x, axis, keepdims, dtype=None):
     fill_out = spec.repeat(fill, L, ct)
     if T.nvals == 0 or math.prod(shape) == 0:
         return _keepdims(Array._new(Tensor(gb_dtype(ct), shape), fill_out), x, axes, keepdims)
+    if name in {"min", "max"} and ct.kind == "f" and _signed_zeros(x, fill):
+        # GraphBLAS's min and max are C's fmin and fmax, which may take either of 0.0 and -0.0
+        out = _reduce_numpy(x, axes, np.minimum if name == "min" else np.maximum, fill, ct)
+        return _keepdims(out, x, axes, keepdims)
     nan_fix = name in {"min", "max"} and ct.kind == "f" and _has_nan(x)
     full = T.nvals == x.size
     if len(axes) == x.ndim:
         # Over every axis: one Scalar, and the count is the number of entries
-        r = T.reduce_scalar(spec.gb[gb_dtype(ct)]).new().value
+        r = T.reduce_scalar(_gb_monoid(spec, ct)).new().value
         if nan_fix:
             value = np.nan
         elif full or _utils.same_value(fill, spec.identity(ct)):
@@ -217,7 +263,7 @@ def _reduce(name, x, axis, keepdims, dtype=None):
                 value = spec.combine(L, fill, ct)(np.array([r], dtype=ct), count)[0]
         out = Array._new(Tensor(gb_dtype(ct), ()), value)
         return _keepdims(out, x, axes, keepdims)
-    R = _reduce_tensor(T, spec.gb[gb_dtype(ct)], axes)
+    R = _reduce_tensor(T, _gb_monoid(spec, ct), axes)
     if not nan_fix and (full or _utils.same_value(fill, spec.identity(ct))):
         out = Array._new(R, fill if full else fill_out)
     else:
@@ -247,6 +293,43 @@ def _reduce_no_axes(name, x, ct):
         out = (add if name == "sum" else multiply)(identity, x if x.dtype == ct else cast(x, ct))
         return out if out.dtype == ct else cast(out, ct)
     return cast(x, ct) if x.dtype != ct else x._copy()
+
+
+def _gb_monoid(spec, ct):
+    # (a sum of booleans in bool is their logical or, a product their logical and)
+    if ct.kind == "b" and spec.name in {"sum", "prod"}:
+        return (monoid.lor if spec.name == "sum" else monoid.land)[gb_dtype(ct)]
+    return spec.gb[gb_dtype(ct)]
+
+
+def _signed_zeros(x, fill):
+    """Whether a min or max might meet both zeros: a stored -0.0, or a fill of -0.0."""
+    return _utils.summary(x)["negzero"] or bool(fill == 0 and np.signbit(fill))
+
+
+def _reduce_numpy(x, axes, ufunc, fill, ct):
+    """``ufunc.reduce`` over ``axes`` by numpy on the stored entries of each fiber, then with
+    the fill once where a fiber has an unstored position: O(entries log entries).
+    """
+    from ._manipulation import permute_dims
+
+    others = tuple(a for a in range(x.ndim) if a not in axes)
+    shape = tuple(x.shape[a] for a in others)
+    L = math.prod(x.shape[a] for a in axes)
+    coords, values = permute_dims(x, others + tuple(axes))._T().to_coo()
+    if shape:
+        fiber = np.ravel_multi_index(coords[: len(others)], shape)
+    else:
+        fiber = np.zeros(len(values), np.int64)
+    starts = np.flatnonzero(np.r_[True, fiber[1:] != fiber[:-1]])
+    counts = np.diff(np.r_[starts, len(fiber)])
+    with np.errstate(all="ignore"):
+        r = ufunc.reduceat(values, starts)
+        r = np.where(counts < L, ufunc(r, fill), r).astype(ct)
+    if not shape:
+        return Array._new(Tensor(gb_dtype(ct), ()), r[0])
+    idx = np.unravel_index(fiber[starts], shape)
+    return Array._new(Tensor.from_coo(idx, r, gb_dtype(ct), shape=shape), fill)
 
 
 def _has_nan(x):
@@ -287,10 +370,8 @@ def mean(x, /, *, axis=None, keepdims=False):
     _check_array(x, "mean")
     rdt = _mean_dtype(x, "mean")
     L = math.prod(x.shape[a] for a in _axes(x, axis))
-    total = _reduce("sum", x, axis, keepdims, rdt)
-    if L == 0:
-        return Array._new(Tensor(total._T().dtype, total.shape), np.nan)
-    return divide(total, L)
+    # (an empty axis divides 0 by 0, as numpy does: nan, or nan+nanj for complex)
+    return divide(_reduce("sum", x, axis, keepdims, rdt), L)
 
 
 def _squared_magnitude(x):
@@ -413,11 +494,11 @@ def diff(x, /, *, axis=-1, n=1, prepend=None, append=None):
     n = int(n)
     if n < 0:
         raise ValueError(f"diff's n must be nonnegative, not {n}")
+    if n == 0:
+        return x._copy()  # (numpy's diff ignores prepend and append then)
     parts = [_diff_part(p, x, axis) for p in (prepend, x, append) if p is not None]
     if len(parts) > 1:
         x = concat(parts, axis=axis)
-    if n == 0:
-        return x._copy()
     # (numpy's diff of booleans is not_equal: subtracting booleans is an error)
     op = not_equal if x.dtype.kind == "b" else subtract
     before = (slice(None),) * axis
