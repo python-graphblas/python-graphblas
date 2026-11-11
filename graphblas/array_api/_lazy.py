@@ -14,8 +14,8 @@ Two consumers use a pending product P without computing it whole:
   is 0, and 0 times P's value there is 0 when that value is finite. That holds when the
   operands are finite and no sum of products can overflow: the number of terms of each sum
   times the largest magnitude of each operand stays below the dtype's largest value (one
-  GraphBLAS pass per operand for each). Otherwise P is computed whole, as numpy would, under
-  the densify limit: the whole of a product meant for an SDDMM may be dense.
+  GraphBLAS pass per operand for each). Otherwise P is computed whole (a sparse product, as
+  without deferral), then multiplied.
 - ``P[key]`` with a basic index (ints and slices) slices the operands along the indexed axes
   of the result, then contracts (pending again).
 
@@ -138,11 +138,7 @@ def masked_multiply(a, b):
         return None
     node = P._pending
     if not node.all_finite():
-        _utils.check_dense(
-            P.size,
-            "multiply(S, P) where P may hold inf or NaN outside S's entries (P computed whole)",
-        )
-        return None
+        return None  # (P is computed whole, a sparse product as without deferral)
     TS = S._T()
     PS = Array._new(node.compute(mask=TS.S, **_dot_hint(node, TS.nvals)), P._fill)
     from ._elementwise import multiply
