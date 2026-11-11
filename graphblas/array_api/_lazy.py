@@ -25,9 +25,9 @@ was deferred; ``enabled = False`` turns deferral off, for debugging.
 
 import numpy as np
 
-from .. import monoid, unary
+from .. import binary, monoid, select, semiring, unary
 from ..core.tensor import Tensor
-from ..dtypes import FC64, FP64
+from ..dtypes import FC64, FP64, lookup_dtype
 from . import _utils
 from ._array import Array
 from ._utils import gb_dtype, np_dtype
@@ -107,19 +107,59 @@ def _known_finite(x):
     return None if facts is None else facts.get("finite")
 
 
-def contraction(arrays, build, shape, dtype, fill, spec=None, nterms=1, product=False):
-    """The Array of ``build(*tensors)`` over the arrays' Tensors, with fill ``fill``: pending
-    when deferral is on and the result has a dimension, else computed now. ``nterms``: the
-    number of terms each result position sums; ``product``: see ``Contraction``.
+def contraction(arrays, build, shape, dtype, fill, spec=None, nterms=1, product=False, typed=None):
+    """The Array of ``build(*tensors)`` over the arrays' Tensors (``build(*tensors, op=)``
+    with another semiring), with fill ``fill``: pending when deferral is on and the result
+    has a dimension, else computed now. ``nterms``: the number of terms each result position
+    sums; ``product``: see ``Contraction``; ``typed``: the semiring.
+
+    When an operand holds inf or NaN, the operands' stored entries equal to their fill go
+    first, so that such a value meets an explicit fill as it meets an unstored one, with no
+    term (DESIGN D12a). When a float min or max monoid would drop a stored NaN term, the
+    result is computed now and NaN set where such a term is (D12b).
     """
+    if any(x.dtype.kind in "fc" and not _utils.fact(x, "finite") for x in arrays):
+        from ._manipulation import prune
+
+        arrays = [prune(x) for x in arrays]
     tensors = [x._T() for x in arrays]
     gbdt = gb_dtype(dtype)
+    nan = (
+        typed is not None
+        and typed.monoid.name in {"min", "max"}
+        and np_dtype(typed.return_type).kind == "f"
+        and any(x.dtype.kind == "f" and _utils.fact(x, "nan") for x in arrays)
+    )
+    if nan:
+        return Array._new(_with_nan_terms(build, tensors, gbdt), fill)
     if not enabled or not shape:
         return Array._new(build(*tensors).new(dtype=gbdt), fill)
     snapshots = [T.dup() for T in tensors]
     finite = [_known_finite(x) for x in arrays]
     node = Contraction(snapshots, build, gbdt, spec, finite, nterms, product)
     return Array._deferred(node, shape, dtype, fill)
+
+
+def _with_nan_terms(build, tensors, gbdt):
+    """``build(*tensors)`` with NaN wherever a term holds a stored NaN: SuiteSparse's float
+    min and max are fmin and fmax, which skip NaN, where numpy's propagate it. Those positions
+    are the product of one operand's NaN entries with the others' patterns (any_pair).
+    """
+    R = build(*tensors).new(dtype=gbdt)
+    bool_ = lookup_dtype(bool)
+    patterns = [T.apply(unary.one[bool_]).new() for T in tensors]
+    N = None
+    for i, T in enumerate(tensors):
+        # (every operand is float here: its fill is the identity of min or max, an infinity)
+        nan = T.apply(unary.isnan).new().select(select.valueeq, True).new()
+        if nan.nvals == 0:
+            continue
+        ops = [nan if j == i else P for j, P in enumerate(patterns)]
+        Ni = build(*ops, op=semiring.any_pair[bool_]).new()
+        N = Ni if N is None else N.ewise_add(Ni, binary.lor).new()
+    if N is not None and N.nvals:
+        R(N.S) << _utils.gb_scalar(np.nan, np_dtype(gbdt))
+    return R
 
 
 def masked_multiply(a, b):
@@ -195,8 +235,8 @@ def sliced(x, axes_key):
 
     subscripts = ",".join(new_terms) + "->" + out
 
-    def build(*tensors):
-        return einsum(subscripts, *tensors, op=typed)
+    def build(*tensors, op=typed):
+        return einsum(subscripts, *tensors, op=op)
 
     # (a slice of a finite operand is finite)
     spec = (tuple(new_terms), out, typed)

@@ -322,3 +322,46 @@ def test_probes():
         if p.dtype.kind in "fc":
             assert np.isfinite(p).all()
     assert {-128, 127, 0} <= set(_probes(np.dtype("int8")).tolist())
+
+
+def test_explicit_fills_do_not_change_values():
+    # (review finding M2, DESIGN D12a) a stored entry equal to the fill meets an inf as an
+    # unstored position does: no term
+    a = xp.from_coo(([0], [0]), [0.0], (1, 1))
+    b = make(np.array([[np.inf]]), 0.0)
+    assert_close(a @ b, [[0.0]])
+    assert_close(xp.prune(a) @ b, [[0.0]])
+    a = xp.from_coo(([0], [0]), [np.inf], (1, 1), fill_value=np.inf)
+    b = make(np.array([[-np.inf]]), np.inf)
+    for x in [a, xp.prune(a)]:
+        assert_close(xp.matmul(x, b, semiring="min_plus"), [[np.inf]], np.inf)
+    # with no inf or NaN anywhere, explicit fills stay (nothing to prune)
+    a = xp.from_coo(([0, 0], [0, 1]), [0.0, 2.0], (1, 2))
+    b = make(np.array([[1.0], [3.0]]), 0.0)
+    assert_close(a @ b, [[6.0]])
+
+
+def test_nan_propagates_through_min_and_max():
+    # (review finding M1, DESIGN D12b) a stored NaN term makes the min or max NaN, as numpy's
+    # do, although SuiteSparse's fmin and fmax skip it; positions it does not reach keep theirs
+    inf = np.inf
+    a = np.array([[np.nan, 5.0], [inf, 2.0]])
+    b = np.array([[1.0, inf], [3.0, 4.0]])
+    A, B = make(a, inf), make(b, inf)
+    for name, (reduce, mult, e) in [("min_plus", SEMIRINGS["min_plus"]),
+                                    ("min_max", SEMIRINGS["min_max"])]:  # fmt: skip
+        with np.errstate(invalid="ignore"):
+            expected = reduce(mult(a[:, :, None], b[None]), axis=1)
+        # (D6: a NaN meeting an unstored inf is no term, so [0, 1] keeps its value)
+        expected[0, 1] = reduce(mult(a[0, 1], b[1, 1]))
+        assert_close(xp.matmul(A, B, semiring=name), expected, e)
+        assert_close(xp.tensordot(A, B, axes=1, semiring=name), expected, e)
+        assert_close(xp.einsum("ij,jk->ik", A, B, semiring=name), expected, e)
+    m = make(np.array([[np.nan, 5.0]]), -inf)
+    n = make(np.array([[1.0], [3.0]]), -inf)
+    assert_close(xp.matmul(m, n, semiring="max_plus"), [[np.nan]], -inf)
+    assert_close(xp.vecdot(m, xp.matrix_transpose(n), semiring="max_plus"), [np.nan], -inf)
+    x = make(np.array([2.0, np.nan, 1.0]), inf)
+    assert_close(xp.einsum("b->", x, semiring="min_max"), np.array(np.nan))
+    assert_close(xp.einsum("b->", make(np.array([2.0, 1.0]), inf), semiring="min_max"),
+                 np.array(1.0))  # fmt: skip

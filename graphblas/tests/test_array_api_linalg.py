@@ -243,3 +243,38 @@ def test_dense_algebra():
         xp.linalg.det(xp.zeros(3))
     with pytest.raises(TypeError, match="Array"):
         xp.linalg.det(a)
+
+
+def test_nonzero_fills_follow_d6():
+    # (review finding M3, DESIGN D12c) a nonzero fill of an operand that stores every
+    # position is taken as 0; any other nonzero fill goes dense (no rank-1 split, which turned
+    # inf into NaN and lost every digit when the fill dwarfs the values)
+    inf = make(np.array([np.inf]), 0.0)
+    five = xp.from_coo(([0],), [1.0], (1,), fill_value=5.0)
+    assert_close(xp.vecdot(inf, five), np.array(np.inf))
+    m = make(np.array([[np.inf, 0.0]]), 0.0)
+    k = xp.from_coo(([0, 1], [0, 0]), [1.0, 5.0], (2, 1), fill_value=5.0)
+    assert_close(m @ k, [[np.inf]])
+    big = xp.from_coo(([0, 1],), [1.0, 2.0], (2,), fill_value=1e20)
+    assert_close(xp.vecdot(make(np.array([1.0, -1.0]), 0.0), big), np.array(-1.0))
+    big32 = xp.from_coo(([0, 1],), np.array([1.0, 2.0], np.float32), (2,), fill_value=1e8)
+    out = xp.vecdot(make(np.array([1.0, -1.0], np.float32), 0.0), big32)
+    assert_close(out, np.array(-1.0, np.float32))
+    # dense under the limit on the result, not only on the operands (review finding L8)
+    with gb.config.set(array_api_densify_limit=1000):
+        c = make(np.full((100, 1), np.inf), np.inf)
+        d = make(np.full((1, 100), 2.0), np.inf)
+        with pytest.raises(xp.DensifyError):
+            c @ d
+        with pytest.raises(xp.DensifyError):
+            xp.tensordot(c, d, axes=0)
+
+
+def test_tensordot_axes_out_of_bounds():
+    # (review finding L2) as numpy: no wrapping modulo the number of axes
+    x = make(np.ones((2, 3)), 0.0)
+    with pytest.raises(IndexError, match="out of bounds"):
+        xp.tensordot(x, x.T, axes=([5], [0]))
+    with pytest.raises(IndexError, match="out of bounds"):
+        xp.tensordot(x, x.T, axes=([1], [-3]))
+    assert_close(xp.tensordot(x, x.T, axes=([-1], [0])), np.ones((2, 3)) @ np.ones((3, 2)))

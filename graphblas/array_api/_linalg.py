@@ -3,10 +3,10 @@ the extension einsum.
 
 Contractions treat a fill of zero as a structural zero (DESIGN D6), as scipy.sparse and
 pydata/sparse do: a product with an unstored position is skipped, so 0 * inf there is not NaN,
-unlike numpy. Sums may round differently from numpy's (the order of the terms differs). A
-nonzero fill is the fill times a matrix of ones plus an array with fill zero, which turns into
-sums of the operands broadcast over the result: the result is then dense in general (under the
-densify limit). A fill that is not finite, or True, makes the result go through numpy densely.
+unlike numpy. Sums may round differently from numpy's (the order of the terms differs). An
+operand that stores every position never shows its fill, so a nonzero fill there is taken as
+0; another nonzero fill makes the contraction go through numpy densely, under the densify
+limit on its operands and its result (DESIGN D12c).
 
 Semirings (an extension, DESIGN D11): ``semiring=`` takes a ``graphblas`` Semiring or its
 name ("min_plus", "max_min", ...), whose monoid takes the place of the sum and whose binary
@@ -187,32 +187,34 @@ def _is_zero(fill):
     return not bool(fill)
 
 
-def _dense_ok(*arrays):
-    """Whether the decomposition A = A0 + fill works: finite fills, not bool."""
+def _zero_fills(*arrays):
+    """The arrays with fill 0, or None when one cannot have it. An array that stores every
+    position never shows its fill, so its fill is relabeled 0 (O(1)); any other nonzero fill
+    gives None (the contraction is then dense).
+    """
+    out = []
     for x in arrays:
-        if _is_zero(x._fill):
-            continue
-        if x.dtype.kind == "b" or (x.dtype.kind in "fc" and not np.isfinite(x._fill)):
-            return False
-    return True
+        if not _is_zero(x._fill):
+            T = x._T()
+            if T.nvals != x.size:
+                return None
+            x = Array._new(T, _utils.scalar(0, x.dtype))
+        out.append(x)
+    return out
 
 
-def _dense(func, *arrays):
+def _dense(func, shape, *arrays):
+    """``func`` of the arrays densely by numpy, under the densify limit on the operands and on
+    the result of ``shape``.
+    """
     from ._creation import _from_numpy
 
+    what = "a contraction with a nonzero fill that does not store every position"
     for x in arrays:
-        _utils.check_dense(x.size, "a contraction with a fill that is not finite or is True")
+        _utils.check_dense(x.size, what)
+    _utils.check_dense(math.prod(shape), what)
     out = np.asarray(func(*[x.todense() for x in arrays]))
     return _from_numpy(out)
-
-
-def _zero_fill(x):
-    """``x`` minus its fill (exact where the fill is 0), and the fill."""
-    from ._elementwise import subtract
-
-    if _is_zero(x._fill):
-        return x, None
-    return subtract(x, x._fill), x._fill
 
 
 def _rdt(name, func, x1, x2):
@@ -226,10 +228,6 @@ def matmul(x1, x2, /, *, semiring=None):
     """The matrix product (numpy's matmul rules). ``semiring`` (an extension): a graphblas
     Semiring or its name, under the module's rules for fills.
     """
-    from ._elementwise import add, multiply
-    from ._manipulation import expand_dims
-    from ._statistical import sum as sum_
-
     x1, x2 = _operand(x1), _operand(x2)
     _check(x1, "matmul")
     _check(x2, "matmul")
@@ -249,32 +247,14 @@ def matmul(x1, x2, /, *, semiring=None):
     if not default:
         out_dt, fill = _sound(typed, (x1, x2), "matmul")
         return _product(x1, x2, typed, out_dt, fill)
-    if not _dense_ok(x1, x2):
-        return _dense(np.matmul, x1, x2)
-    a0, fa = _zero_fill(x1)
-    b0, fb = _zero_fill(x2)
-    out = _product(a0, b0, typed, rdt, _utils.scalar(0, rdt))
-    if fa is None and fb is None:
-        return out
-    terms = []
-    if fa is not None:
-        # fa * (ones @ b0): b0 summed over its rows, one row of the result
-        s = sum_(b0, axis=-2 if x2.ndim > 1 else 0, dtype=rdt)
-        if x1.ndim > 1 and x2.ndim > 1:
-            s = expand_dims(s, axis=-2)
-        terms.append(multiply(fa, s))
-    if fb is not None:
-        r = sum_(a0, axis=-1, dtype=rdt)
-        if x2.ndim > 1 and x1.ndim > 1:
-            r = expand_dims(r, axis=-1)
-        terms.append(multiply(fb, r))
-    if fa is not None and fb is not None:
-        terms.append(multiply(multiply(fa, fb), K))
-    for t in terms:
-        out = add(out, t)
-    from ._elementwise import cast
+    if (ops := _zero_fills(x1, x2)) is None:
+        return _dense(np.matmul, _matmul_shape(x1, x2), x1, x2)
+    return _product(*ops, typed, rdt, _utils.scalar(0, rdt))
 
-    return out if out.dtype == rdt else cast(out, rdt)
+
+def _matmul_shape(a, b):
+    shape = np.broadcast_shapes(a.shape[:-2], b.shape[:-2])
+    return shape + (a.shape[-2:-1] if a.ndim > 1 else ()) + (b.shape[-1:] if b.ndim > 1 else ())
 
 
 def _product(a, b, typed, out_dt, fill):
@@ -282,17 +262,16 @@ def _product(a, b, typed, out_dt, fill):
     ``_lazy``); the result's fill is ``fill``.
     """
     Ta, Tb = a._T(), b._T()
-    shape = np.broadcast_shapes(a.shape[:-2], b.shape[:-2])
-    shape = shape + (a.shape[-2:-1] if a.ndim > 1 else ()) + (b.shape[-1:] if b.ndim > 1 else ())
+    shape = _matmul_shape(a, b)
     if Ta.nvals == 0 or Tb.nvals == 0 or math.prod(shape) == 0:
         return Array._new(Tensor(gb_dtype(out_dt), shape), fill)
 
-    def build(Ta, Tb):
-        return Ta.matmul(Tb, typed)
+    def build(Ta, Tb, op=typed):
+        return Ta.matmul(Tb, op)
 
     spec = _matmul_terms(a.shape, b.shape)
     spec = None if spec is None else (*spec, typed)
-    return _lazy.contraction((a, b), build, shape, out_dt, fill, spec, a.shape[-1], True)
+    return _lazy.contraction((a, b), build, shape, out_dt, fill, spec, a.shape[-1], True, typed)
 
 
 # Index letters for the einsum that computes a contraction (for slicing a pending result)
@@ -346,21 +325,24 @@ def _tensordot_axes(x1, x2, axes):
             raise ValueError("tensordot: more axes than the arrays have")
         return tuple(range(x1.ndim - axes, x1.ndim)), tuple(range(axes))
     a, b = axes
-    a = tuple(int(i) % x1.ndim for i in (a if isinstance(a, (list, tuple)) else (a,)))
-    b = tuple(int(i) % x2.ndim for i in (b if isinstance(b, (list, tuple)) else (b,)))
+    a = tuple(_axis(i, x1.ndim) for i in (a if isinstance(a, (list, tuple)) else (a,)))
+    b = tuple(_axis(i, x2.ndim) for i in (b if isinstance(b, (list, tuple)) else (b,)))
     if len(a) != len(b):
         raise ValueError("tensordot needs as many axes of each array")
     return a, b
+
+
+def _axis(i, ndim):
+    i = int(i)
+    if not -ndim <= i < ndim:
+        raise IndexError(f"tensordot: axis {i} is out of bounds for an array of {ndim} dimensions")
+    return i % ndim
 
 
 def tensordot(x1, x2, /, *, axes=2, semiring=None):
     """The tensor dot product (numpy's tensordot). ``semiring`` (an extension): a graphblas
     Semiring or its name, under the module's rules for fills.
     """
-    from ._elementwise import add, cast, multiply
-    from ._manipulation import reshape
-    from ._statistical import sum as sum_
-
     _check(x1, "tensordot")
     _check(x2, "tensordot")
     a_axes, b_axes = _tensordot_axes(x1, x2, axes)
@@ -375,21 +357,10 @@ def tensordot(x1, x2, /, *, axes=2, semiring=None):
     if not default:
         out_dt, fill = _sound(typed, (x1, x2), "tensordot")
         return _tensordot(x1, x2, a_axes, b_axes, shape, typed, out_dt, fill)
-    if not _dense_ok(x1, x2):
-        return _dense(lambda a, b: np.tensordot(a, b, axes=(a_axes, b_axes)), x1, x2)
-    a0, fa = _zero_fill(x1)
-    b0, fb = _zero_fill(x2)
-    out = _tensordot(a0, b0, a_axes, b_axes, shape, typed, rdt, _utils.scalar(0, rdt))
-    if fa is not None:
-        s = sum_(b0, axis=b_axes, dtype=rdt) if b_axes else cast(b0, rdt)
-        out = add(out, multiply(fa, reshape(s, (1,) * len(free1) + free2)))
-    if fb is not None:
-        r = sum_(a0, axis=a_axes, dtype=rdt) if a_axes else cast(a0, rdt)
-        out = add(out, multiply(fb, reshape(r, free1 + (1,) * len(free2))))
-    if fa is not None and fb is not None:
-        K = math.prod(x1.shape[a] for a in a_axes)
-        out = add(out, multiply(multiply(fa, fb), K))
-    return out if out.dtype == rdt else cast(out, rdt)
+    if (ops := _zero_fills(x1, x2)) is None:
+        func = lambda a, b: np.tensordot(a, b, axes=(a_axes, b_axes))  # noqa: E731
+        return _dense(func, shape, x1, x2)
+    return _tensordot(*ops, a_axes, b_axes, shape, typed, rdt, _utils.scalar(0, rdt))
 
 
 def _tensordot(a, b, a_axes, b_axes, shape, typed, out_dt, fill):
@@ -398,13 +369,13 @@ def _tensordot(a, b, a_axes, b_axes, shape, typed, out_dt, fill):
         return Array._new(Tensor(gb_dtype(out_dt), shape), fill)
     axes = (list(a_axes), list(b_axes))
 
-    def build(Ta, Tb):
-        return Ta.tensordot(Tb, axes, typed)
+    def build(Ta, Tb, op=typed):
+        return Ta.tensordot(Tb, axes, op)
 
     spec = _tensordot_terms(a.ndim, b.ndim, a_axes, b_axes)
     spec = None if spec is None else (*spec, typed)
     nterms = math.prod(a.shape[i] for i in a_axes)
-    return _lazy.contraction((a, b), build, shape, out_dt, fill, spec, nterms, True)
+    return _lazy.contraction((a, b), build, shape, out_dt, fill, spec, nterms, True, typed)
 
 
 def vecdot(x1, x2, /, *, axis=-1, semiring=None):
@@ -413,8 +384,7 @@ def vecdot(x1, x2, /, *, axis=-1, semiring=None):
     ``semiring`` (an extension): a graphblas Semiring or its name, whose monoid reduces
     ``mult(x1, x2)`` over ``axis`` (no conjugate), under the module's rules for fills.
     """
-    from ._elementwise import add, cast, conj, multiply
-    from ._statistical import sum as sum_
+    from ._elementwise import conj
 
     _check(x1, "vecdot")
     _check(x2, "vecdot")
@@ -435,20 +405,12 @@ def vecdot(x1, x2, /, *, axis=-1, semiring=None):
     if not default:
         out_dt, fill = _sound(typed, (x1, x2), "vecdot")
         return _vecdot(x1, x2, axis, shape, out_shape, typed, out_dt, fill)
-    if not _dense_ok(x1, x2):
-        return _dense(lambda a, b: np.vecdot(a, b, axis=axis), x1, x2)
-    if x1.dtype.kind == "c":
-        x1 = conj(x1)
-    a0, fa = _zero_fill(x1)
-    b0, fb = _zero_fill(x2)
-    out = _vecdot(a0, b0, axis, shape, out_shape, typed, rdt, _utils.scalar(0, rdt))
-    if fa is not None:
-        out = add(out, multiply(fa, sum_(b0, axis=axis, dtype=rdt)))
-    if fb is not None:
-        out = add(out, multiply(fb, sum_(a0, axis=axis, dtype=rdt)))
-    if fa is not None and fb is not None:
-        out = add(out, multiply(multiply(fa, fb), shape[axis]))
-    return out if out.dtype == rdt else cast(out, rdt)
+    if (ops := _zero_fills(x1, x2)) is None:
+        return _dense(lambda a, b: np.vecdot(a, b, axis=axis), out_shape, x1, x2)
+    a0, b0 = ops
+    if a0.dtype.kind == "c":
+        a0 = conj(a0)
+    return _vecdot(a0, b0, axis, shape, out_shape, typed, rdt, _utils.scalar(0, rdt))
 
 
 def _vecdot(a, b, axis, shape, out_shape, typed, out_dt, fill):
@@ -461,10 +423,12 @@ def _vecdot(a, b, axis, shape, out_shape, typed, out_dt, fill):
         _utils.expansion_check(Ta, Tb, shape)
     axis += len(shape)
 
-    def build(Ta, Tb):
-        return Ta.ewise_mult(Tb, typed.binaryop).new().reduce(typed.monoid, axis=axis)
+    def build(Ta, Tb, op=typed):
+        return Ta.ewise_mult(Tb, op.binaryop).new().reduce(op.monoid, axis=axis)
 
-    return _lazy.contraction((a, b), build, out_shape, out_dt, fill, nterms=shape[axis])
+    return _lazy.contraction(
+        (a, b), build, out_shape, out_dt, fill, nterms=shape[axis], typed=typed
+    )
 
 
 def _both_broadcast(sa, sb, shape):
@@ -499,17 +463,17 @@ def einsum(subscripts, /, *operands, semiring=None):
     shapes = tuple(x.shape for x in ops)
     shape = _einsum_plan(subscripts, shapes, "greedy")[2]
     if default:
-        if not all(_is_zero(x._fill) for x in ops):
-            _utils.check_dense(math.prod(shape), "einsum with a nonzero fill")
-            return _dense(lambda *a: np.einsum(subscripts, *a), *ops)
+        if (zeroed := _zero_fills(*ops)) is None:
+            return _dense(lambda *a: np.einsum(subscripts, *a), shape, *ops)
+        ops = zeroed
         out_dt, fill = rdt, _utils.scalar(0, rdt)
     else:
         out_dt, fill = _sound(typed, ops, "einsum", multiplies=len(ops) > 1)
     if math.prod(shape) == 0 or any(x._T().nvals == 0 for x in ops):
         return Array._new(Tensor(gb_dtype(out_dt), shape), fill)
 
-    def build(*tensors):
-        return tensor_einsum(subscripts, *tensors, op=typed)
+    def build(*tensors, op=typed):
+        return tensor_einsum(subscripts, *tensors, op=op)
 
     terms, output = _einsum_plan(subscripts, shapes, "greedy")[:2]
     sizes = {
@@ -518,5 +482,5 @@ def einsum(subscripts, /, *operands, semiring=None):
     nterms = math.prod(n for c, n in sizes.items() if c not in output)
     product = _lazy._one_product(terms, output)
     return _lazy.contraction(
-        ops, build, shape, out_dt, fill, (terms, output, typed), nterms, product
+        ops, build, shape, out_dt, fill, (terms, output, typed), nterms, product, typed
     )

@@ -96,7 +96,8 @@ def test_contractions_are_pending(masks):
     assert not pending(xp.vecdot(make(a[0], 0.0), make(a[1], 0.0)))
     assert not pending(xp.einsum("ij,ij->", x1, x1))
     assert not pending(x1 @ xp.zeros((5, 3)))
-    assert not pending(x1 @ make(b, 1.0))
+    assert not pending(x1 @ make(np.where(b == 0, 1.0, b), 1.0))  # (dense: a fill shows)
+    assert pending(x1 @ make(b, 1.0))  # (every position stored: its fill is taken as 0)
     with gb.config.set(), pytest.MonkeyPatch.context() as mp:
         mp.setattr(_lazy, "enabled", False)
         P = x1 @ x2
@@ -351,7 +352,7 @@ def test_finite_facts():
     assert _lazy._known_finite(y) is True
     assert _lazy._known_finite(make(np.array([1, 2]), 0)) is True
     P = xp.matmul(y, make(np.array([[1.0], [2.0]]), 0.0))
-    assert P._pending.finite == [True, None]
+    assert P._pending.finite == [True, True]  # (every contraction asks: DESIGN D12a)
 
 
 SLICES = [
