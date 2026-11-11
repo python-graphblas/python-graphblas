@@ -710,15 +710,38 @@ def test_intersection_of_broadcast_operands_is_guarded():
     # an intersection of two broadcast operands is an outer product (review finding M4)
     x = make(np.arange(1, 101).reshape(100, 1), 0)
     y = make(np.arange(1, 101).reshape(1, 100), 0)
-    b = x > 0
-    for func, args in [
-        (xp.multiply, (x, y)),
-        (xp.bitwise_and, (x, y)),
-        (xp.logical_and, (b, b.mT)),
+    b = make(np.ones((100, 1), bool), False)
+    for func, args, nnz in [
+        (xp.multiply, (x, y), 10000),
+        (xp.bitwise_and, (x, y), 10000),
+        (xp.logical_and, (b, b.mT), 0),  # (all True, every position stored: fill True)
     ]:
         with gb.config.set(array_api_densify_limit=1000), pytest.raises(xp.DensifyError):
             func(*args)
-        assert func(*args).nnz == 10000
+        assert func(*args).nnz == nnz
+
+
+def test_fully_stored_bool_results_take_the_common_value_as_fill():
+    # A bool result that stores every position never shows its fill: the value most of its
+    # entries hold becomes the fill and those entries go, when at most a quarter stay
+    # (equal(deg, 0) of a fully stored deg stores the zero-degree positions only)
+    deg = xp.asarray(np.array([3, 1, 0, 2, 5, 0, 4, 1, 2, 7]))
+    assert deg.nnz == 8
+    assert deg.fill_value == 0
+    full = xp.asarray(np.array([3, 1, 9, 2, 5, 6, 4, 1, 2, 7]), fill_value=-1)
+    assert full.nnz == 10
+    for out, expected, nnz, fill in [
+        (xp.equal(full, 1), full.todense() == 1, 2, False),
+        (xp.greater(full, 1), full.todense() > 1, 2, True),
+        (xp.less(full, 5), full.todense() < 5, 10, (-1 < 5)),  # (6 of 10 True: kept)
+        (xp.isfinite(xp.astype(full, xp.float64)), np.ones(10, bool), 0, True),
+        (xp.astype(full == 9, xp.bool), full.todense() == 9, 1, False),
+    ]:
+        assert_array_equal(out, expected)
+        assert (out.nnz, out.fill_value) == (nnz, fill)
+    # a 0-d result and a result with unstored positions are left as they are
+    assert xp.equal(deg, 0).nnz == 8
+    assert_array_equal(xp.equal(xp.asarray(3), 3), np.array(True))
 
 
 def test_clip_with_array_bounds_ties():
