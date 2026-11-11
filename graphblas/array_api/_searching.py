@@ -6,6 +6,7 @@ import math
 import numpy as np
 
 from ..core.tensor import Tensor
+from ..core.vector import Vector
 from . import _utils
 from ._array import Array
 from ._dtypes import check_supported
@@ -147,10 +148,17 @@ def _check_array(x, name):
 
 def _arg(name, x, axis, keepdims):
     """The first position of the extreme value of each fiber (argmax, argmin), NaN counting
-    as the extreme (numpy's rule). O(entries log entries): the stored entries of each fiber
-    are ranked, and the fill competes once if the fiber has an unstored position.
+    as the extreme (numpy's rule), computed in GraphBLAS on the stored entries.
+
+    With the fibers as the rows (or columns) of the stored Matrix: the extreme of each fiber
+    (a reduction), the entries equal to it (the Matrix scaled by the extremes as a diagonal,
+    under ``eq``), and the smallest position among those (a positional reduction); likewise
+    the first stored NaN. A fiber with an unstored position holds the fill there: when the
+    fill beats or ties the stored extreme, or is NaN, the fiber's first unstored position
+    takes part. That is 0 unless the fiber stores position 0, and otherwise is found from
+    that fiber's entries alone. Each step is a pass over the entries; nothing is sorted.
     """
-    from ._manipulation import _normalize_axis, expand_dims, permute_dims, reshape
+    from ._manipulation import _normalize_axis, expand_dims, reshape
 
     _check_array(x, name)
     if x.dtype.kind == "c":
@@ -165,75 +173,116 @@ def _arg(name, x, axis, keepdims):
     if L == 0:
         raise ValueError(f"{name} of an empty axis")
     out_shape = tuple(n for a, n in enumerate(x.shape) if a != axis)
-    others = tuple(a for a in range(x.ndim) if a != axis)
-    T = permute_dims(x, (*others, axis))._T()
-    nfibers = math.prod(out_shape)
-    if T.nvals == 0 or nfibers == 0:
+    T = x._T()
+    if T.nvals == 0 or math.prod(out_shape) == 0:
         out = Array._new(Tensor(gb_dtype(np.int64), out_shape), 0)
         return expand_dims(out, axis) if keepdims else out
-    coords, values = T.to_coo()  # (C order: by fiber, then by position along the axis)
-    fiber = (
-        np.ravel_multi_index(coords[:-1], out_shape)
-        if out_shape
-        else np.zeros(len(values), np.int64)
-    )
-    pos = coords[-1]
-    starts = np.flatnonzero(np.r_[True, fiber[1:] != fiber[:-1]])
-    counts = np.diff(np.r_[starts, len(fiber)])
-    # Rank the values, NaN first: then the lowest key, earliest position, wins
-    isnan = np.isnan(values) if values.dtype.kind == "f" else np.zeros(len(values), bool)
-    _, rank = np.unique(values, return_inverse=True)
-    rank = rank.reshape(-1)
-    if name == "argmax":
-        rank = rank.max(initial=0) - rank
-    key = np.where(isnan, -1, rank)
-    order = np.lexsort((pos, key, fiber))
-    best = order[starts]
-    best_pos, best_val = pos[best], values[best]
-    # The first position each fiber does not store (L if it stores them all)
-    within = np.arange(len(pos)) - np.repeat(starts, counts)
-    gap = pos != within
-    first_gap = np.where(
-        np.add.reduceat(gap, starts) > 0,
-        _first_true(gap, starts, counts, within),
-        counts,
-    )
-    fill = x._fill
-    with np.errstate(invalid="ignore"):
-        if fill != fill:  # (NaN)
-            better = ~np.isnan(best_val) if best_val.dtype.kind == "f" else np.ones(len(best), bool)
-            tie = ~better
-        else:
-            best_is_nan = (
-                np.isnan(best_val) if best_val.dtype.kind == "f" else np.zeros(len(best), bool)
-            )
-            beats = (fill > best_val) if name == "argmax" else (fill < best_val)
-            better = beats & ~best_is_nan
-            tie = (fill == best_val) & ~best_is_nan
-    unstored = first_gap < L
-    result = np.where(
-        unstored & better,
-        first_gap,
-        np.where(unstored & tie, np.minimum(first_gap, best_pos), best_pos),
-    )
-    fibers = fiber[starts]
+    R = _arg_fibers(name, x, T, axis)
     if out_shape:
-        R = Tensor.from_coo(
-            np.unravel_index(fibers, out_shape), result.astype(np.int64), gb_dtype(np.int64),
-            shape=out_shape,
-        )  # fmt: skip
-        out = Array._new(R, 0)
+        out = Array._new(Tensor.from_vector(R).reshape(out_shape), 0)
     else:
-        out = Array._new(_utils.empty_0d(np.int64), result[0])
+        out = Array._new(_utils.empty_0d(np.int64), np.int64(R.get(0, 0)))
     return expand_dims(out, axis) if keepdims else out
 
 
-def _first_true(flags, starts, counts, within):
-    """Per group (``starts``, ``counts``): ``within`` at the group's first True flag."""
-    idx = np.where(flags, np.arange(len(flags)), len(flags))
-    first = np.minimum.reduceat(idx, starts)
-    first = np.minimum(first, len(flags) - 1)
-    return within[first]
+def _arg_fibers(name, x, T, axis):
+    """A Vector over the fibers of ``T`` along ``axis`` (in C order) holding the first
+    position of each one's extreme (see ``_arg``), storing only the positions that are not 0.
+    """
+    from .. import binary, monoid, select, semiring, unary
+    from ..dtypes import BOOL, INT64
+
+    L = T.shape[axis]
+    others = tuple(a for a in range(T.ndim) if a != axis)
+    # The fibers as the rows of M (byrow) or its columns: as stored when the layout allows
+    if T._layout == (others, (axis,)):
+        M, byrow = T._M, True
+    elif T._layout == ((axis,), others):
+        M, byrow = T._M, False
+    else:
+        M, byrow = T.to_matrix(rows=others), True
+    nfibers = M.nrows if byrow else M.ncols
+    if M.dtype == BOOL:
+        top = monoid.lor if name == "argmax" else monoid.land
+    else:
+        top = monoid.max if name == "argmax" else monoid.min
+    every = Vector(BOOL, L)
+    every << True  # (iso: no values stored)
+
+    def first(P, mask=None):
+        # (the smallest position along each fiber of P's entries)
+        v = Vector(INT64, nfibers)
+        if byrow:
+            v(mask=mask) << P.mxv(every, semiring.ss.min_firstj)
+        else:
+            v(mask=mask) << every.vxm(P, semiring.ss.min_secondi)
+        return v
+
+    ext = (M.reduce_rowwise(top) if byrow else M.reduce_columnwise(top)).new()  # (skips NaN)
+    # The entries equal to their fiber's extreme. With a value at every diagonal position,
+    # SuiteSparse runs the product as a row (column) scaling, one pass over M.
+    if nfibers <= 4 * M.nvals:
+        diag = Vector(ext.dtype, nfibers)
+        diag << 0  # (the value at a fiber with no entries scales nothing)
+        diag(accum=binary.second) << ext
+    else:
+        diag = ext
+    D = diag.diag()
+    eq = semiring.any_eq[M.dtype]
+    hits = (D.mxm(M, eq) if byrow else M.mxm(D, eq)).new()
+    R = first(hits.select(select.valueeq, True).new())
+    del hits
+    # The first stored NaN, which beats every value
+    nan = None
+    if x.dtype.kind == "f" and _utils.fact(x, "nan"):
+        nan = first(M.apply(unary.isnan).new().select(select.valueeq, True).new())
+        R(accum=binary.second) << nan
+    # The fibers where the fill takes part, if they have an unstored position: those whose
+    # stored extreme the fill beats or ties (and that store no NaN), or all, for a NaN fill
+    fill = x._fill
+    fill_nan = x.dtype.kind == "f" and np.isnan(fill)
+    if fill_nan:
+        need = ext
+    else:
+        beats = select.valuelt if name == "argmax" else select.valuegt
+        need = ext.select(beats, fill).new()
+        need(accum=binary.first) << ext.select(select.valueeq, fill)
+        if nan is not None:
+            keep = Vector(need.dtype, nfibers)
+            keep(~nan.S, replace=True) << need
+            need = keep
+    if need.nvals:
+        # A fiber whose first entry is past position 0 has its first unstored position at 0
+        firsts = first(M, need.S)
+        R(~firsts.select(select.valuegt, 0).new().S, replace=True) << R  # (there: 0)
+        at_0 = firsts.select(select.valueeq, 0).new()
+        if at_0.nvals:
+            _fill_at_0(name, M, byrow, R, ext, nan, fill, fill_nan, at_0, L)
+    return R.select(select.valuene, 0).new()
+
+
+def _fill_at_0(name, M, byrow, R, ext, nan, fill, fill_nan, at_0, L):
+    """Update R at the fibers ``at_0`` (those that take the fill and store position 0) with
+    the fill's first position, read from those fibers' entries: the first position not equal
+    to its rank among the fiber's entries, or the number of entries when they fill a prefix
+    (none when that number is L: the fiber stores every position).
+    """
+    fibers = at_0.to_coo(values=False)[0]
+    sub = M[fibers, :].new() if byrow else M[:, fibers].new().T.new()
+    r, c, _ = sub.to_coo()  # (by fiber, positions sorted)
+    starts = np.flatnonzero(np.r_[True, r[1:] != r[:-1]])
+    counts = np.diff(np.r_[starts, len(r)])
+    rank = np.arange(len(r)) - np.repeat(starts, counts)
+    gap = np.minimum.reduceat(np.where(c != rank, rank, np.repeat(counts, counts)), starts)
+    best = R[fibers].new().to_dense(fill_value=L)
+    if fill_nan:
+        stored_nan = nan[fibers].new().to_dense(fill_value=L) if nan is not None else L
+        new = np.where(gap < L, np.minimum(gap, stored_nan), best)
+    else:
+        e = ext[fibers].new().to_dense()
+        wins = (fill > e) if name == "argmax" else (fill < e)
+        new = np.where(gap < L, np.where(wins, gap, np.minimum(gap, best)), best)
+    R[fibers] << Vector.from_coo(np.arange(len(fibers)), new.astype(np.int64), size=len(fibers))
 
 
 def argmax(x, /, *, axis=None, keepdims=False):
