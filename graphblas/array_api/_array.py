@@ -27,8 +27,8 @@ class Array:
     """
 
     # The shape and dtype are kept here, not read from the Tensor, so that an Array whose
-    # Tensor is not computed yet can answer them
-    __slots__ = "_tensor", "_fill", "_facts", "_shape", "_dtype", "__weakref__"
+    # Tensor is not computed yet (``_pending``, a deferred contraction) can answer them
+    __slots__ = "_tensor", "_pending", "_fill", "_facts", "_shape", "_dtype", "__weakref__"
     # numpy hands its operators over to ours (``ndarray + Array``), as it does for other
     # array types, rather than converting the Array to a dense ndarray
     __array_ufunc__ = None
@@ -50,17 +50,33 @@ class Array:
             tensor = Tensor(tensor.dtype, ())
         self = object.__new__(cls)
         self._tensor = tensor
+        self._pending = None
         self._shape = tensor.shape
         self._dtype = np_dtype(tensor.dtype)
         self._fill = _utils.scalar(fill, self._dtype)
         self._facts = None
         return self
 
+    @classmethod
+    def _deferred(cls, pending, shape, dtype, fill):
+        """An Array whose Tensor ``pending.compute()`` gives on first use (see ``_lazy``)."""
+        self = object.__new__(cls)
+        self._tensor = None
+        self._pending = pending
+        self._shape = tuple(shape)
+        self._dtype = np.dtype(dtype)
+        self._fill = _utils.scalar(fill, self._dtype)
+        self._facts = None
+        return self
+
     def _T(self):
-        """The Tensor of stored entries. Every read of it goes through here, so that an Array
-        may later hold an unevaluated expression and compute it on first use.
+        """The Tensor of stored entries. Every read of it goes through here: a pending Array
+        computes it here, once.
         """
-        return self._tensor
+        if (T := self._tensor) is None:
+            T = self._tensor = self._pending.compute()
+            self._pending = None  # (releases the operands' snapshots)
+        return T
 
     def _replace(self, other):
         """Make this Array hold ``other``'s values (for in-place operators and assignment)."""
@@ -164,6 +180,8 @@ class Array:
         fill = self._fill.item()
         if self.ndim == 0:
             return f"Array({fill!r}, dtype={self.dtype})"
+        if self._tensor is None:  # (its nnz would compute it)
+            return f"Array(shape={self.shape}, dtype={self.dtype}, fill_value={fill!r}, pending)"
         return f"Array(shape={self.shape}, dtype={self.dtype}, nnz={self.nnz}, fill_value={fill!r})"
 
     # Protocols
@@ -232,6 +250,8 @@ class Array:
     def __iter__(self):
         if self.ndim == 0:
             raise TypeError("iteration over a 0-d array")
+        # (computed first: each row of a pending product would be a product of its own)
+        self._T()
         return (self[i] for i in range(self.shape[0]))
 
     __hash__ = None
