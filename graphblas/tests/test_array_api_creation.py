@@ -2,6 +2,7 @@
 functions, against numpy.
 """
 
+import copy
 import math
 import pickle
 
@@ -429,6 +430,18 @@ def test_array_protocol_is_guarded():
         x.todense()
     assert big.nnz == 0
     assert xp.sum(big) == 0.0
+
+
+def test_copy_module():
+    a = np.array([[1.0, 0.0], [2.0, 3.0]])
+    x = make(a, 0.0)
+    for func in [copy.copy, copy.deepcopy]:
+        y = func(x)
+        y[0, 0] = 5.0
+        assert_array_equal(x, a)
+        assert y[0, 0] == 5.0
+        z = func(x @ x)
+        assert_array_equal(z, a @ a)
 
 
 def test_pickle_not_supported_yet_or_roundtrips():
