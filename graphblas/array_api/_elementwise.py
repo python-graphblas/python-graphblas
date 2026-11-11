@@ -137,9 +137,18 @@ def _fill_of(ufunc, rdt, operands):
     (integers to a negative power) and one operand is such an Array, the result's fill is
     never seen either, and 0 stands in for it.
     """
-    # (1-element arrays: numpy's loop for arrays, which a few functions, clip among them, do
-    # not share with their 0-d path; a Python scalar stays weak)
-    args = [np.reshape(x._fill, (1,)) if isinstance(x, Array) else x for x in operands]
+    # numpy picks its loop by its operands' shapes (an array and a 0-d exponent of 0.5 is
+    # sqrt, so pow(-inf, 0.5) is NaN there and inf between two arrays; clip breaks ties by
+    # its 0-d path otherwise): a fill stands in for an array as a 1-element array, a 0-d
+    # Array stays 0-d, and a Python scalar stays weak
+    args = [
+        (
+            (np.reshape(x._fill, (1,)) if x.ndim else np.asarray(x._fill))
+            if isinstance(x, Array)
+            else x
+        )
+        for x in operands
+    ]
     try:
         return np.asarray(ufunc(*args)).reshape(-1)[0]
     except (ValueError, ArithmeticError):
@@ -499,21 +508,10 @@ def _binary_arrays(spec, a, b, op, ct, rdt, fill):
                 R = Ta.ewise_mult(Tb, op).new(dtype=gb_dtype(rdt))
                 with np.errstate(all="ignore"):
                     return _result(R, spec.ufunc(fa_seen, fb_seen))
-        if spec.name == "divide" and Ta.shape == shape:
-            fb_seen = _utils.scalar(1, ct) if _stores_all(b) else fb
-            if _divide_left_joins(b, fa, fb_seen):
-                # The result's entries lie within the numerator's: compute only there
-                with np.errstate(all="ignore"):
-                    fill = spec.ufunc(fa, fb_seen)
-                if _stores_all(b):
-                    _utils.mult_expansion_check(Ta, Tb, shape)
-                    return _result(Ta.ewise_mult(Tb, op).new(dtype=gb_dtype(rdt)), fill)
-                _utils.expansion_check(Ta, Tb, shape)
-                R = Tensor(gb_dtype(rdt), shape)
-                R(Ta.S) << Ta.ewise_union(
-                    Tb, op, gb_scalar(fa, ct), gb_scalar(fb, ct), allow_expansion=True
-                )
-                return _result(R, fill)
+        if spec.name in {"multiply", "divide"} and ct.kind == "f":
+            out = _one_sided(spec, a, b, fa, fb, op, ct, rdt, shape)
+            if out is not None:
+                return out
         _utils.expansion_check(Ta, Tb, shape)
         expr = Ta.ewise_union(Tb, op, gb_scalar(fa, ct), gb_scalar(fb, ct), allow_expansion=True)
         return _result(expr.new(dtype=gb_dtype(rdt)), fill)
@@ -573,17 +571,56 @@ def _multiply_intersects(a, b, fa, fb, ct):
     return _finite_nonnegative(a) and _finite_nonnegative(b)
 
 
-def _divide_left_joins(b, fa, fb):
-    """Whether ``a / b`` stores only ``a``'s entries: ``a``'s fill is 0, and 0 divided by
-    any value of ``b`` is a zero (b holds no 0 or NaN). The zero's sign then reads as the
-    fill's, which numpy's may not be: only when signed zeros give way (the default).
+def _one_sided(spec, a, b, fa, fb, op, ct, rdt, shape):
+    """``a * b`` or ``a / b`` on the entries of one operand only, when that operand's fill
+    is 0 and every value of the other makes 0 times (or divided by) it a zero: a row scaling
+    ``A * d[:, None]`` or ``A / d`` stores A's entries. The other operand's fill is computed
+    at the first operand's entries (a broadcast operand smaller than them is stored in full
+    first, so that it is not replicated). None when that does not hold.
     """
-    if config.get("array_api_signed_zeros", False) or fa != 0:
+    strict = config.get("array_api_signed_zeros", False)
+    sides = [(a, b)] if spec.name == "divide" else [(a, b), (b, a)]
+    for X, Y in sides:
+        fx = fa if X is a else fb
+        fy = fb if X is a else fa
+        if _stores_all(X) or X._T().shape != shape or fx != 0:
+            continue
+        if _stores_all(Y):
+            fy = _utils.scalar(1, ct)  # (never seen)
+        if not _zero_times(spec, Y, fy, strict) or (strict and np.signbit(fx)):
+            continue
+        Tx, Ty = X._T(), Y._T()
+        with np.errstate(all="ignore"):
+            fill = spec.ufunc(fx, fy) if X is a else spec.ufunc(fy, fx)
+        if not _stores_all(Y) and Y.size <= Tx.nvals + 1024:
+            # (O(size of Y): every position of Y stored, so the product is an intersection)
+            other = 0 if Y._fill != 0 else 1
+            Ty = _utils.with_fill(Y, other)._T()
+        Ta, Tb = (Tx, Ty) if X is a else (Ty, Tx)
+        if Ty.nvals == Y.size:
+            _utils.mult_expansion_check(Ta, Tb, shape)
+            return _result(Ta.ewise_mult(Tb, op).new(dtype=gb_dtype(rdt)), fill)
+        _utils.expansion_check(Ta, Tb, shape)
+        R = Tensor(gb_dtype(rdt), shape)
+        fa_s, fb_s = gb_scalar(fa, ct), gb_scalar(fb, ct)
+        R(Tx.S) << Ta.ewise_union(Tb, op, fa_s, fb_s, allow_expansion=True)
+        return _result(R, fill)
+    return None
+
+
+def _zero_times(spec, y, fy, strict):
+    """Whether 0 * v (or 0 / v) is a zero for every value v of ``y`` (its fill ``fy`` too):
+    finite values (for divide also no 0), and in the strict mode nonnegative ones (so that
+    the zero is +0.0, the fill). NaN never qualifies.
+    """
+    facts = _utils.summary(y)
+    if spec.name == "divide":
+        ok = not facts["zero"] and not facts["nan"] and fy != 0 and not np.isnan(fy)
+        # (strict: 0.0 / -2.0 is -0.0, which an unstored position would read as 0.0)
+        return ok and (not strict or (facts["nonnegative"] and fy > 0))
+    if not facts["finite"] or not np.isfinite(fy):
         return False
-    if fb == 0 or np.isnan(fb):
-        return False
-    facts = _utils.summary(b)
-    return not facts["zero"] and not facts["nan"]
+    return not strict or (facts["nonnegative"] and not np.signbit(fy))
 
 
 def _finite_nonnegative(x):
@@ -774,8 +811,11 @@ def _clip_arrays(x, lo, hi):
     def probe(b):
         return np.empty(0, b.dtype) if isinstance(b, Array) else b
 
-    def value1(b):  # (as a 1-element array: numpy's 0-d clip breaks ties otherwise)
-        return np.reshape(b._fill, (1,)) if isinstance(b, Array) else b
+    def value1(b):  # (an array's fill as a 1-element array: numpy's 0-d clip breaks ties
+        # otherwise)
+        if isinstance(b, Array):
+            return np.reshape(b._fill, (1,)) if b.ndim else np.asarray(b._fill)
+        return b
 
     with np.errstate(all="ignore"):
         rdt = np.clip(probe(x), probe(lo), probe(hi)).dtype
