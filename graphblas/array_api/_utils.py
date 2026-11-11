@@ -45,9 +45,22 @@ def scalar(value, dtype):
         return np.asarray(value).astype(dtype, copy=False)[()]
 
 
+_SCALARS = {}
+
+
 def gb_scalar(value, dtype):
-    """A GraphBLAS Scalar of the numpy ``dtype`` holding ``value`` cast as numpy casts it."""
-    return Scalar.from_value(scalar(value, dtype), gb_dtype(dtype))
+    """A GraphBLAS Scalar of the numpy ``dtype`` holding ``value`` cast as numpy casts it.
+
+    The Scalars are only read (as operands), so they are cached by their bytes: a new one
+    costs about as much as a small element-wise operation.
+    """
+    value = scalar(value, dtype)
+    key = (value.dtype.str, value.tobytes())
+    if (s := _SCALARS.get(key)) is None:
+        if len(_SCALARS) > 1024:
+            _SCALARS.clear()
+        s = _SCALARS[key] = Scalar.from_value(value, gb_dtype(dtype))
+    return s
 
 
 def same_value(a, b):
@@ -80,6 +93,8 @@ def expansion_check(Ta, Tb, shape):
 
     The union replicates each broadcast operand's entries over the axes it broadcasts along.
     """
+    if Ta.shape == Tb.shape:
+        return
     replicated = 0
     for T in (Ta, Tb):
         factor = _broadcast_factor(T.shape, shape)
