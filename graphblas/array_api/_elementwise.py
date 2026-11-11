@@ -17,9 +17,10 @@ import math
 
 import numpy as np
 
-from .. import binary, unary
+from .. import binary, monoid, select, unary
 from ..core.scalar import Scalar
 from ..core.tensor import Tensor
+from ..dtypes import BOOL, INT64
 from . import _lazy, _utils
 from ._array import Array
 from ._dtypes import check_supported
@@ -160,7 +161,24 @@ def _fill_of(ufunc, rdt, operands):
 
 
 def _result(T, fill):
+    if T.dtype == BOOL and T.ndim and T.nvals == T.size and T.nvals:
+        T, fill = _normalize_bool(T, fill)
     return Array._new(T, fill)
+
+
+def _normalize_bool(T, fill):
+    """A bool Tensor that stores every position never shows its fill: make the fill the value
+    most entries hold and drop those entries, when at most a quarter of them stay (so
+    ``equal(deg, 0)`` of a fully stored ``deg`` stores only its True entries, with fill
+    False). One count, then one select; else ``T`` and ``fill`` as they were (dropping more
+    than a quarter costs about as much as the comparison and saves a later consumer little).
+    """
+    n = T.nvals
+    ntrue = T.reduce_scalar(monoid.plus[INT64]).new().value
+    major = 2 * ntrue > n
+    if 4 * (n - ntrue if major else ntrue) > n:
+        return T, fill
+    return T.select(select.valueeq, not major).new(), major
 
 
 def _zero_d(dtype, fill):
