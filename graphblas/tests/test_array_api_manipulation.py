@@ -175,3 +175,27 @@ def test_prune():
     assert_array_equal(xp.prune(xp.asarray(5.0)), np.array(5.0))
     with pytest.raises(TypeError, match="Array"):
         xp.prune(np.zeros(3))
+
+
+@pytest.mark.parametrize("axis", [0, 1, 2])
+def test_concat_any_layout(axis):
+    # One GxB concat of the stored Matrices, whatever layout each part is stored in (a part in
+    # another layout moves), parts of size 0 along the axis included
+    from graphblas import Tensor
+
+    rng = np.random.default_rng(7)
+    shapes = [[4, 3, 5], [4, 3, 5], [4, 3, 5]]
+    shapes[1][axis] = 2
+    shapes[2][axis] = 0
+    dense = [np.where(rng.random(s) < 0.4, rng.normal(size=s), 0.0) for s in shapes]
+    layouts = [((0,), (1, 2)), ((0, 1), (2,)), ((2, 0), (1,)), ((1,), (2, 0))]
+    for la in layouts:
+        for lb in layouts:
+            parts = []
+            for d, lay in zip(dense, [la, lb, la], strict=True):
+                idx = np.nonzero(d)
+                T = Tensor.from_coo(idx, d[idx], shape=d.shape).relayout(lay)
+                parts.append(xp.asarray(T))
+            assert_array_equal(xp.concat(parts, axis=axis), np.concatenate(dense, axis=axis))
+    empty = [xp.zeros((0, 3)), xp.zeros((0, 3))]
+    assert_array_equal(xp.concat(empty), np.zeros((0, 3)))
