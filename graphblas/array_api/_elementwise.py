@@ -653,14 +653,14 @@ def _one_sided(spec, a, b, fa, fb, op, ct, rdt, shape):
         Tx, Ty = X._T(), Y._T()
         with np.errstate(all="ignore"):
             fill = spec.ufunc(fx, fy) if X is a else spec.ufunc(fy, fx)
-        broadcast = Ty.shape != shape
-        if not _stores_all(Y) and (
-            Y.size <= Tx.nvals + 1024 or (broadcast and Y.size <= _utils.densify_limit())
-        ):
-            # (O(size of Y): every position of Y stored, so the product is an intersection.
-            # A broadcast Y is small along its broadcast axes; the union with it would
-            # replicate it over them: exp(v)[None, :] times X of shape (1000, 1e6) with 4
-            # entries replicated v 1000 times)
+        if Ty.shape != shape and not _stores_all(Y):
+            # Y broadcasts and shows its fill: its value at each of X's entries, gathered
+            # from Y itself at the projected coordinates, O(entries of X). (Storing Y in full
+            # cost O(size of Y), and the union replicated Y over its broadcast axes:
+            # exp(v)[None, :] times X of shape (1000, 1e6) with 4 entries made v 1000 times.)
+            Ty = _gather(Tx, Y, shape)
+        elif not _stores_all(Y) and Y.size <= Tx.nvals + 1024:
+            # (O(size of Y): every position of Y stored, so the product is an intersection)
             other = 0 if Y._fill != 0 else 1
             Ty = _utils.with_fill(Y, other)._T()
         Ta, Tb = (Tx, Ty) if X is a else (Ty, Tx)
@@ -673,6 +673,22 @@ def _one_sided(spec, a, b, fa, fb, op, ct, rdt, shape):
         R(Tx.S) << Ta.ewise_union(Tb, op, fa_s, fb_s, allow_expansion=True)
         return _result(R, fill)
     return None
+
+
+def _gather(Tx, Y, shape):
+    """A Tensor with ``Tx``'s entries (of ``shape``) holding the values of ``Y`` (an Array
+    that broadcasts to ``shape``) there: its stored value, or its fill.
+    """
+    coords = Tx.to_coo(values=False)[0]
+    Ty = Y._T()
+    lead = len(shape) - Y.ndim
+    # (a broadcast axis of Y has size 1: index 0 there)
+    index = tuple(
+        coords[lead + i] if n != 1 else np.zeros(len(coords[0]), np.int64)
+        for i, n in enumerate(Ty.shape)
+    )
+    values = Ty.vindex[index].to_dense(fill_value=Y._fill)
+    return Tensor.from_coo(coords, values, Ty.dtype, shape=shape)
 
 
 def _zero_times(spec, y, fy):

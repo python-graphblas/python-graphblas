@@ -882,10 +882,10 @@ def test_unstored_zero_signs_in_the_oracle():
         assert_array_equal(xp.asarray(-0.0), np.array(0.0))
 
 
-def test_one_sided_broadcast_operand_is_stored_in_full():
-    # (review finding M9) a broadcast operand that does not store every position is stored in
-    # full, not replicated over the axes it broadcasts along: X of shape (1000, 1e6) with 4
-    # entries times exp(v)[None, :] (fill 1) stores 4 entries, under a densify limit of 2e6
+def test_one_sided_broadcast_operand_is_gathered():
+    # (review findings rev1 M9, rev2 M5) a broadcast operand that shows its fill is read at the
+    # other operand's entries only, O(those entries): X of shape (1000, 1e6) with 4 entries
+    # times exp(v)[None, :] (fill 1) stores 4 entries, under a densify limit of 1000
     rng = np.random.default_rng(12)
     n = 10**6
     rows, cols = [0, 10, 500, 999], [5, 77, n - 1, 123_456]
@@ -893,26 +893,36 @@ def test_one_sided_broadcast_operand_is_stored_in_full():
     v = xp.from_coo((np.sort(rng.choice(n, n // 2, replace=False)),), rng.normal(size=n // 2), (n,))
     w = make(np.where(rng.random(n) < 0.5, 2.0, rng.random(n) + 1), 2.0)
     vals = np.array([1.0, 2.0, 3.0, 4.0])
-    with gb.config.set(array_api_densify_limit=2 * n):
-        e = xp.exp(v)
-        ed, wd = e.todense()[cols], w.todense()[cols]
+    e = xp.exp(v)
+    ed, wd = e.todense()[cols], w.todense()[cols]
+    with gb.config.set(array_api_densify_limit=1000):
         for out, expected in [
             (X * e[None, :], vals * ed),
             (e[None, :] * X, ed * vals),
             (X / w, vals / wd),
+            (X * xp.asarray(-2.0), vals * -2.0),
         ]:
             assert out.nnz == 4
             assert out.fill_value == 0.0
             coords, values = out.to_coo()
             assert coords[0].tolist() == rows
             np.testing.assert_array_equal(values, expected)
-    # numpy's answer at every position, on a small one
-    A = make(np.where(rng.random((6, 50)) < 0.05, rng.normal(size=(6, 50)), 0.0), 0.0)
-    u = make(np.where(rng.random(50) < 0.5, 1.0, rng.normal(size=50)), 1.0)
-    with gb.config.set(array_api_densify_limit=60):
-        out = A * u[None, :]
-    assert out.nnz == A.nnz
-    assert_array_equal(out, A.todense() * u.todense()[None, :])
+    # numpy's answer at every position, on small ones: broadcast along either axis, 3-d, a
+    # 0-d operand, explicit fills, an X with no entries
+    A = make(np.where(rng.random((6, 50)) < 0.05, rng.normal(size=(6, 50)), 0.0), 0.0, rng)
+    u = make(np.where(rng.random(50) < 0.5, 1.0, rng.normal(size=50)), 1.0, rng)
+    c = make(np.where(rng.random((6, 1)) < 0.5, 3.0, rng.normal(size=(6, 1))), 3.0)
+    B = make(np.where(rng.random((4, 6, 5)) < 0.2, rng.normal(size=(4, 6, 5)), 0.0), 0.0)
+    g = make(np.where(rng.random((6, 1)) < 0.5, 2.0, rng.normal(size=(6, 1)) + 3), 2.0)
+    for out, expected in [
+        (A * u[None, :], A.todense() * u.todense()[None, :]),
+        (A * c, A.todense() * c.todense()),
+        (B * c, B.todense() * c.todense()),
+        (B / g, B.todense() / g.todense()),
+        (xp.zeros((6, 50)) * u, np.zeros((6, 50)) * u.todense()),
+    ]:
+        assert out.nnz <= max(A.nnz, B.nnz)
+        assert_array_equal(out, expected)
 
 
 def test_clip_fill_uses_numpys_array_loop():
