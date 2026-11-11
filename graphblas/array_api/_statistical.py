@@ -245,10 +245,6 @@ def _reduce_main(name, x, axis, keepdims, dtype):
     fill_out = spec.repeat(fill, L, ct)
     if T.nvals == 0 or math.prod(shape) == 0:
         return _keepdims(Array._new(Tensor(gb_dtype(ct), shape), fill_out), x, axes, keepdims)
-    if name in {"min", "max"} and ct.kind == "f" and _signed_zeros(x, fill):
-        # GraphBLAS's min and max are C's fmin and fmax, which may take either of 0.0 and -0.0
-        out = _reduce_numpy(x, axes, np.minimum if name == "min" else np.maximum, fill, ct)
-        return _keepdims(out, x, axes, keepdims)
     nan_fix = name in {"min", "max"} and ct.kind == "f" and _has_nan(x)
     full = T.nvals == x.size
     if len(axes) == x.ndim:
@@ -303,38 +299,8 @@ def _gb_monoid(spec, ct):
     return spec.gb[gb_dtype(ct)]
 
 
-def _signed_zeros(x, fill):
-    """Whether a min or max might meet both zeros: a stored -0.0, or a fill of -0.0."""
-    return _utils.summary(x)["negzero"] or bool(fill == 0 and np.signbit(fill))
-
-
-def _reduce_numpy(x, axes, ufunc, fill, ct):
-    """``ufunc.reduce`` over ``axes`` by numpy on the stored entries of each fiber, then with
-    the fill once where a fiber has an unstored position: O(entries log entries).
-    """
-    from ._manipulation import permute_dims
-
-    others = tuple(a for a in range(x.ndim) if a not in axes)
-    shape = tuple(x.shape[a] for a in others)
-    L = math.prod(x.shape[a] for a in axes)
-    coords, values = permute_dims(x, others + tuple(axes))._T().to_coo()
-    if shape:
-        fiber = np.ravel_multi_index(coords[: len(others)], shape)
-    else:
-        fiber = np.zeros(len(values), np.int64)
-    starts = np.flatnonzero(np.r_[True, fiber[1:] != fiber[:-1]])
-    counts = np.diff(np.r_[starts, len(fiber)])
-    with np.errstate(all="ignore"):
-        r = ufunc.reduceat(values, starts)
-        r = np.where(counts < L, ufunc(r, fill), r).astype(ct)
-    if not shape:
-        return Array._new(Tensor(gb_dtype(ct), ()), r[0])
-    idx = np.unravel_index(fiber[starts], shape)
-    return Array._new(Tensor.from_coo(idx, r, gb_dtype(ct), shape=shape), fill)
-
-
 def _has_nan(x):
-    return _utils.summary(x)["nan"]
+    return _utils.fact(x, "nan")
 
 
 def sum(x, /, *, axis=None, dtype=None, keepdims=False):  # noqa: A001 (the Array API's name)

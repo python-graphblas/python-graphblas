@@ -199,12 +199,36 @@ def test_scalar_cache_is_bounded():
     assert _utils.gb_scalar(-0.0, np.dtype(float)).value == 0.0
 
 
-def test_summary_of_complex_values():
+def test_facts_of_stored_values():
     x = make(np.array([1 + 0j, complex(-0.0, 1), complex(np.nan, 0)]), 0j)
-    facts = _utils.summary(x)
-    assert facts == {
-        "finite": False, "nonnegative": False, "nan": True, "negzero": True, "zero": False
-    }  # fmt: skip
+    assert [_utils.fact(x, k) for k in ["finite", "nan", "zero"]] == [False, True, False]
+    assert x._facts == {"finite": False, "nan": True, "zero": False}
+    y = make(np.array([-0.0, np.inf, 2.0]), 1.0)
+    assert [_utils.fact(y, k) for k in ["finite", "nan", "zero"]] == [False, False, True]
+    # NaN and finiteness exclude each other: one is known from the other
+    z = make(np.array([np.nan, 2.0]), 0.0)
+    assert _utils.fact(z, "nan")
+    assert not _utils.fact(z, "finite")
+    w = make(np.array([3.0, 2.0]), 0.0)
+    assert _utils.fact(w, "finite")
+    assert not _utils.fact(w, "nan")
+    # integers are finite without a look; empty arrays hold nothing
+    i = make(np.array([0, 5]), 1)
+    assert _utils.fact(i, "finite")
+    assert not _utils.fact(i, "nan")
+    assert _utils.fact(i, "zero")
+    e = xp.zeros(4)
+    assert [_utils.fact(e, k) for k in ["finite", "nan", "zero"]] == [True, False, False]
+    # abs, negative, positive and conj keep all three; roundings keep two
+    v = make(np.array([-1.5, np.nan, 0.0]), 0.0)
+    for k in ["finite", "nan", "zero"]:
+        _utils.fact(v, k)
+    for func in [xp.abs, xp.negative, xp.positive, xp.conj]:
+        assert func(v)._facts == v._facts
+    for func in [xp.floor, xp.ceil, xp.trunc, xp.round]:
+        assert func(v)._facts == {"finite": False, "nan": True}
+    assert xp.exp(v)._facts is None
+    assert xp.abs(xp.zeros(3))._facts is None
 
 
 def test_thread3_argument_checks():
