@@ -292,7 +292,7 @@ def _product(a, b, typed, out_dt, fill):
 
     spec = _matmul_terms(a.shape, b.shape)
     spec = None if spec is None else (*spec, typed)
-    return _lazy.contraction((a, b), build, shape, out_dt, fill, spec)
+    return _lazy.contraction((a, b), build, shape, out_dt, fill, spec, a.shape[-1])
 
 
 # Index letters for the einsum that computes a contraction (for slicing a pending result)
@@ -403,7 +403,8 @@ def _tensordot(a, b, a_axes, b_axes, shape, typed, out_dt, fill):
 
     spec = _tensordot_terms(a.ndim, b.ndim, a_axes, b_axes)
     spec = None if spec is None else (*spec, typed)
-    return _lazy.contraction((a, b), build, shape, out_dt, fill, spec)
+    nterms = math.prod(a.shape[i] for i in a_axes)
+    return _lazy.contraction((a, b), build, shape, out_dt, fill, spec, nterms)
 
 
 def vecdot(x1, x2, /, *, axis=-1, semiring=None):
@@ -463,7 +464,7 @@ def _vecdot(a, b, axis, shape, out_shape, typed, out_dt, fill):
     def build(Ta, Tb):
         return Ta.ewise_mult(Tb, typed.binaryop).new().reduce(typed.monoid, axis=axis)
 
-    return _lazy.contraction((a, b), build, out_shape, out_dt, fill)
+    return _lazy.contraction((a, b), build, out_shape, out_dt, fill, nterms=shape[axis])
 
 
 def _both_broadcast(sa, sb, shape):
@@ -511,4 +512,8 @@ def einsum(subscripts, /, *operands, semiring=None):
         return tensor_einsum(subscripts, *tensors, op=typed)
 
     terms, output = _einsum_plan(subscripts, shapes, "greedy")[:2]
-    return _lazy.contraction(ops, build, shape, out_dt, fill, (terms, output, typed))
+    sizes = {
+        c: n for term, s in zip(terms, shapes, strict=True) for c, n in zip(term, s, strict=True)
+    }
+    nterms = math.prod(n for c, n in sizes.items() if c not in output)
+    return _lazy.contraction(ops, build, shape, out_dt, fill, (terms, output, typed), nterms)

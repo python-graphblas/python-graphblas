@@ -11,23 +11,24 @@ Two consumers use a pending product P without computing it whole:
 
 - ``multiply(S, P)`` or ``multiply(P, S)``, with S of P's shape and both fills 0, computes P
   only at S's stored positions (a masked product, then the multiply: an SDDMM). Elsewhere S
-  is 0, and 0 times P's value there is 0 when that value is finite, which holds when P's
-  operands are finite (checked, else P is computed whole). A product of finite values that
-  overflows to inf outside S's stored positions then reads 0 where numpy gives NaN: the same
-  structural reading of 0 as in D6's 0 * inf.
+  is 0, and 0 times P's value there is 0 when that value is finite. That holds when the
+  operands are finite and no sum of products can overflow: the number of terms of each sum
+  times the largest magnitude of each operand stays below the dtype's largest value (one
+  GraphBLAS pass per operand for each). Otherwise P is computed whole, as numpy would, under
+  the densify limit: the whole of a product meant for an SDDMM may be dense.
 - ``P[key]`` with a basic index (ints and slices) slices the operands along the indexed axes
   of the result, then contracts (pending again).
 
 Everything else reads the Tensor, which computes it. Values do not depend on whether a result
-was deferred, but for the overflow above; ``enabled = False`` turns deferral off, for
-debugging.
+was deferred; ``enabled = False`` turns deferral off, for debugging.
 """
 
 import numpy as np
 
-from .. import monoid
+from .. import monoid, unary
 from ..core.tensor import Tensor
 from ..dtypes import FC64, FP64
+from . import _utils
 from ._array import Array
 from ._utils import gb_dtype, np_dtype
 
@@ -41,42 +42,53 @@ class Contraction:
     ``build(*tensors)`` gives its TensorExpression; ``tensors`` are snapshots of the operands'
     Tensors. ``spec``, ``(terms, output, semiring)`` of an einsum that computes it, lets a
     slice of the result slice the operands instead (None: no such einsum). ``finite`` holds
-    each operand's finiteness: True, False, or None when not checked yet.
+    each operand's finiteness: True, False, or None when not checked yet. ``nterms``: the
+    number of terms each result position sums (the product of the contracted sizes).
     """
 
-    __slots__ = "tensors", "build", "gbdt", "spec", "finite"
+    __slots__ = "tensors", "build", "gbdt", "spec", "finite", "nterms"
 
-    def __init__(self, tensors, build, gbdt, spec, finite):
+    def __init__(self, tensors, build, gbdt, spec, finite, nterms):
         self.tensors = tensors
         self.build = build
         self.gbdt = gbdt
         self.spec = spec
         self.finite = finite
+        self.nterms = nterms
 
     def compute(self, mask=None):
         return self.build(*self.tensors).new(dtype=self.gbdt, mask=mask)
 
     def all_finite(self):
-        """Whether every operand value is finite: then so is every product, but for
-        overflow.
+        """Whether every value of the product is finite: every operand value is finite, and
+        ``nterms`` times the largest magnitude of each operand is below half the largest
+        value of the result's dtype (the half covers the rounding of the sums).
         """
         for i, ok in enumerate(self.finite):
             if ok is None:
                 ok = self.finite[i] = _all_finite(self.tensors[i])
             if not ok:
                 return False
-        return True
+        dt = np_dtype(self.gbdt)
+        if dt.kind not in "fc":
+            return True  # (integers wrap, as numpy's do: 0 times a wrapped sum is 0)
+        bound = float(self.nterms)
+        for T in self.tensors:
+            bound *= _max_abs(T)  # (an overflow here is inf, and fails the test)
+        return bound < float(np.finfo(dt).max) / 2
 
 
 def _all_finite(T):
+    return np_dtype(T.dtype).kind not in "fc" or _utils.tensor_fact(T, "finite")
+
+
+def _max_abs(T):
+    """The largest magnitude of the stored values of ``T``, as a float."""
+    if T.nvals == 0:
+        return 0.0
     kind = np_dtype(T.dtype).kind
-    if kind not in "fc" or T.nvals == 0:
-        return True
-    # A NaN or an infinity makes the sum non-finite. Finite values whose sum overflows make
-    # this False too, which costs the masked product, not the answer. One parallel pass over
-    # the values, with no copy.
-    total = T.reduce_scalar(monoid.plus[FC64 if kind == "c" else FP64]).new().value
-    return bool(np.isfinite(total))
+    A = T.apply(unary.abs[FC64 if kind == "c" else FP64]).new()
+    return float(A.reduce_scalar(monoid.max[FP64]).new().value)
 
 
 def _known_finite(x):
@@ -89,16 +101,18 @@ def _known_finite(x):
     return None if facts is None else facts.get("finite")
 
 
-def contraction(arrays, build, shape, dtype, fill, spec=None):
+def contraction(arrays, build, shape, dtype, fill, spec=None, nterms=1):
     """The Array of ``build(*tensors)`` over the arrays' Tensors, with fill ``fill``: pending
-    when deferral is on and the result has a dimension, else computed now.
+    when deferral is on and the result has a dimension, else computed now. ``nterms``: the
+    number of terms each result position sums.
     """
     tensors = [x._T() for x in arrays]
     gbdt = gb_dtype(dtype)
     if not enabled or not shape:
         return Array._new(build(*tensors).new(dtype=gbdt), fill)
     snapshots = [T.dup() for T in tensors]
-    node = Contraction(snapshots, build, gbdt, spec, [_known_finite(x) for x in arrays])
+    finite = [_known_finite(x) for x in arrays]
+    node = Contraction(snapshots, build, gbdt, spec, finite, nterms)
     return Array._deferred(node, shape, dtype, fill)
 
 
@@ -118,6 +132,10 @@ def masked_multiply(a, b):
         return None
     node = P._pending
     if not node.all_finite():
+        _utils.check_dense(
+            P.size,
+            "multiply(S, P) where P may hold inf or NaN outside S's entries (P computed whole)",
+        )
         return None
     PS = Array._new(node.compute(mask=S._T().S), P._fill)
     from ._elementwise import multiply
@@ -162,5 +180,5 @@ def sliced(x, axes_key):
 
     # (a slice of a finite operand is finite)
     spec = (tuple(new_terms), out, typed)
-    sub = Contraction(tensors, build, node.gbdt, spec, list(node.finite))
+    sub = Contraction(tensors, build, node.gbdt, spec, list(node.finite), node.nterms)
     return Array._deferred(sub, shape, x.dtype, x._fill)

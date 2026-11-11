@@ -208,13 +208,17 @@ def _compute_fact(x, name):
         return False
     if name == "finite" and facts.get("nan"):
         return False
+    return tensor_fact(x._T(), name)
+
+
+def tensor_fact(T, name):
+    """``fact`` of the stored values of the Tensor ``T``, by one pass, not cached."""
     op, combine, empty = _FACT_SCANS[name]
-    T = x._T()
     if T.nvals == 0:
         return empty
-    dt = gb_dtype(x.dtype)
+    dt = T.dtype
     if op is None:
-        B = T.apply(binary.eq[dt], right=gb_scalar(0, x.dtype)).new()
+        B = T.apply(binary.eq[dt], right=gb_scalar(0, np_dtype(dt))).new()
     else:
         B = T.apply(op[dt]).new()
     return bool(B.reduce_scalar(combine[lookup_dtype(bool)]).new().value)
