@@ -1269,11 +1269,16 @@ class Matrix(BaseType):
 
         """
         if backend == "suitesparse":
+            values, dtype = values_to_numpy_buffer(values, dtype, subarray_after=1)
+            is_iso = values.ndim == 0
+            if is_iso:
+                values = np.broadcast_to(values, dtype.np_type.shape)  # One whole element
             return cls.ss.import_hypercsr(
                 rows=compressed_rows,
                 indptr=indptr,
                 col_indices=col_indices,
                 values=values,
+                is_iso=is_iso,
                 nrows=nrows,
                 ncols=ncols,
                 dtype=dtype,
@@ -1354,11 +1359,16 @@ class Matrix(BaseType):
 
         """
         if backend == "suitesparse":
+            values, dtype = values_to_numpy_buffer(values, dtype, subarray_after=1)
+            is_iso = values.ndim == 0
+            if is_iso:
+                values = np.broadcast_to(values, dtype.np_type.shape)  # One whole element
             return cls.ss.import_hypercsc(
                 cols=compressed_cols,
                 indptr=indptr,
                 row_indices=row_indices,
                 values=values,
+                is_iso=is_iso,
                 nrows=nrows,
                 ncols=ncols,
                 dtype=dtype,
