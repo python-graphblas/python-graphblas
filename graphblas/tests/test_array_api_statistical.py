@@ -327,8 +327,10 @@ def test_sum_starts_from_positive_zero():
     assert_array_equal(xp.sum(xp.full((3,), -0.0)), np.sum(np.full(3, -0.0)))
 
 
-def test_min_max_order_signed_zeros():
-    # GraphBLAS's fmin/fmax take either zero; numpy orders -0.0 below 0.0 (review finding M2)
+def test_min_max_of_signed_zeros():
+    # GraphBLAS's fmin and fmax take either zero, and numpy orders -0.0 below 0.0: the Array
+    # API leaves that order unspecified (review finding M2 closed by the contract); NaN
+    # propagates
     cases = [
         (np.array([-0.0, 0.0]), 1.0),
         (np.array([0.0, -0.0]), 1.0),
@@ -343,7 +345,9 @@ def test_min_max_order_signed_zeros():
             for name in ["min", "max"]:
                 for axis in [None, 0, -1]:
                     assert_array_equal(
-                        getattr(xp, name)(x, axis=axis), getattr(np, name)(dense, axis=axis)
+                        getattr(xp, name)(x, axis=axis),
+                        getattr(np, name)(dense, axis=axis),
+                        zero_signs=False,
                     )
 
 

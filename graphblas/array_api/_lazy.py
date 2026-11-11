@@ -86,9 +86,7 @@ def _known_finite(x):
     if x.dtype.kind not in "fc":
         return True
     facts = x._facts
-    if facts is not None and "summary" in facts:
-        return facts["summary"]["finite"]
-    return None
+    return None if facts is None else facts.get("finite")
 
 
 def contraction(arrays, build, shape, dtype, fill, spec=None):
