@@ -105,9 +105,17 @@ def _where_at_condition(cond, a, b, shape, rdt):
             pick = select.valueeq if bool(cond._fill) else select.valuene
             sel = Tc.select(pick, False if Tc.dtype == BOOL else 0).new()
             second = binary.second[gdt]
+            To = other._T() if isinstance(other, Array) and other.ndim else None
+            if To is not None and other.shape != shape and other.size <= 4 * sel.nvals:
+                # (stored at every position, the broadcast operand makes the product a
+                # diagonal scaling, one pass; with gaps in the diagonal SuiteSparse multiplies
+                # in general, 17x slower at 1e7 entries)
+                if To.nvals < other.size:
+                    To = _utils.with_fill(other, 0 if other._fill else 1)._T()
+                return sel.ewise_mult(To, second).new(dtype=gdt)
             R = sel.apply(second, right=_utils.gb_scalar(_value(other), rdt)).new(dtype=gdt)
-            if isinstance(other, Array) and other.ndim and other._T().nvals:
-                R(accum=second) << sel.ewise_mult(other._T(), second)
+            if To is not None and To.nvals:
+                R(accum=second) << sel.ewise_mult(To, second)
             return R
         coords, c = Tc.to_coo()
         c = np.asarray(c, dtype=bool)
