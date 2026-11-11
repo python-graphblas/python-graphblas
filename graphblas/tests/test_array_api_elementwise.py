@@ -836,6 +836,39 @@ def test_unstored_zero_signs_in_the_oracle():
         assert_array_equal(xp.asarray(-0.0), np.array(0.0))
 
 
+def test_one_sided_broadcast_operand_is_stored_in_full():
+    # (review finding M9) a broadcast operand that does not store every position is stored in
+    # full, not replicated over the axes it broadcasts along: X of shape (1000, 1e6) with 4
+    # entries times exp(v)[None, :] (fill 1) stores 4 entries, under a densify limit of 2e6
+    rng = np.random.default_rng(12)
+    n = 10**6
+    rows, cols = [0, 10, 500, 999], [5, 77, n - 1, 123_456]
+    X = xp.from_coo((rows, cols), [1.0, 2.0, 3.0, 4.0], (1000, n))
+    v = xp.from_coo((np.sort(rng.choice(n, n // 2, replace=False)),), rng.normal(size=n // 2), (n,))
+    w = make(np.where(rng.random(n) < 0.5, 2.0, rng.random(n) + 1), 2.0)
+    vals = np.array([1.0, 2.0, 3.0, 4.0])
+    with gb.config.set(array_api_densify_limit=2 * n):
+        e = xp.exp(v)
+        ed, wd = e.todense()[cols], w.todense()[cols]
+        for out, expected in [
+            (X * e[None, :], vals * ed),
+            (e[None, :] * X, ed * vals),
+            (X / w, vals / wd),
+        ]:
+            assert out.nnz == 4
+            assert out.fill_value == 0.0
+            coords, values = out.to_coo()
+            assert coords[0].tolist() == rows
+            np.testing.assert_array_equal(values, expected)
+    # numpy's answer at every position, on a small one
+    A = make(np.where(rng.random((6, 50)) < 0.05, rng.normal(size=(6, 50)), 0.0), 0.0)
+    u = make(np.where(rng.random(50) < 0.5, 1.0, rng.normal(size=50)), 1.0)
+    with gb.config.set(array_api_densify_limit=60):
+        out = A * u[None, :]
+    assert out.nnz == A.nnz
+    assert_array_equal(out, A.todense() * u.todense()[None, :])
+
+
 def test_clip_fill_uses_numpys_array_loop():
     # numpy's 0-d clip breaks a tie differently from its array loop (review finding N3)
     x = xp.full((3,), 0.0)
