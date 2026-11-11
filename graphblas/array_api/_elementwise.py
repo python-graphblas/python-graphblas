@@ -171,13 +171,24 @@ def _normalize_bool(T, fill):
     (the fill contractions and masks work with; a fill True made a mostly-True mask times a
     sparse matrix dense). Its False entries are dropped when at most a quarter of the
     entries are True (``equal(deg, 0)`` of a fully stored ``deg`` then stores only its True
-    entries): one count, then one select. Otherwise they stay; dropping more costs about as
-    much as the comparison and saves a later consumer little.
+    entries). Otherwise they stay; dropping more costs about as much as the comparison and
+    saves a later consumer little.
+
+    A sample of the leading entries says whether dropping is likely: a mostly-True result pays
+    only for the sample (a count over all 2e7 values cost as much as the comparison at 1
+    thread). Then one select of the True values decides, and is the result when few.
     """
     n = T.nvals
-    if 4 * T.reduce_scalar(monoid.plus[INT64]).new().value > n:
-        return T, False
-    return T.select(select.valueeq, True).new(), False
+    rows = -(-_SAMPLE * T.shape[0] // n)  # (leading rows holding about _SAMPLE entries)
+    if rows < T.shape[0]:
+        sample = T[(slice(0, rows),) + (slice(None),) * (T.ndim - 1)].new()
+        if 3 * sample.reduce_scalar(monoid.plus[INT64]).new().value > sample.nvals:
+            return T, False  # (over a third True in the sample: dropping is unlikely)
+    S = T.select(select.valueeq, True).new()
+    return (S if 4 * S.nvals <= n else T), False
+
+
+_SAMPLE = 2**16
 
 
 def _zero_d(dtype, fill):
