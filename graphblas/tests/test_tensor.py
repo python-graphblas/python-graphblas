@@ -383,6 +383,10 @@ def test_dup_and_clear():
     D.clear()
     assert D.nvals == 0
     check(T, values, present)
+    # A new dtype keeps an n x 1 stored Matrix held by row (Matrix.dup holds it by column)
+    for shape in [(2, 1), (3, 1, 1)]:
+        T, values, present = random_tensor(shape, rng, density=1.0)
+        check(T.dup(dtypes.FP32), values.astype(np.float32), present)
 
 
 def test_vanilla_check(monkeypatch):
