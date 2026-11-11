@@ -752,14 +752,11 @@ def _computes_itself(expr):
     """Whether infix ``expr`` computes without an op, as ``x @ y`` and BOOL ``x & y`` do."""
     if expr.method_name not in {"ewise_add", "ewise_mult"}:
         return True
-    return _is_bool(expr.left) and _is_bool(expr.right)
-
-
-def _is_bool(operand):
-    if _is_literal(operand):
-        # Beside a Scalar, as in `s & True`, a literal is BOOL beside BOOL if it is a bool
-        return type(operand) in {bool, np.bool_}
-    return operand.dtype == BOOL
+    # A literal beside a Scalar, as in `s & True`, is BOOL beside BOOL if it is a bool
+    return all(
+        type(x) in {bool, np.bool_} if _is_literal(x) else x.dtype == BOOL
+        for x in (expr.left, expr.right)
+    )
 
 
 def format_scalar_infix_expression(expr):

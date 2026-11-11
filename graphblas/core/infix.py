@@ -22,11 +22,10 @@ InfixExprBase._expect_type = _expect_type
 def _typed_operands(self, op):
     """Return the operands of ``self``, with a literal beside a Scalar typed as ``op``'s operand."""
     left, right = self.left, self.right
-    if self._is_scalar:
-        if output_type(left) is not Scalar:
-            left = _literal_scalar(right, left, op, within=self.method_name, argname="left")
-        elif output_type(right) is not Scalar:
-            right = _literal_scalar(left, right, op, within=self.method_name, argname="right")
+    if _is_literal(left):
+        left = _literal_scalar(right, left, op, within=self.method_name, argname="left")
+    elif _is_literal(right):
+        right = _literal_scalar(left, right, op, within=self.method_name, argname="right")
     return left, right
 
 
@@ -73,14 +72,6 @@ def _operand_name(operand, *, html=False):
     return operand._name_html if html else operand.name
 
 
-def _scalar_call_left(self, method_name, *args, **kwargs):
-    if output_type(self.left) is Scalar:
-        return getattr(self.left, method_name)(self.right, *args, **kwargs)
-    # A literal stays on the left: `binary.minus(1 & s)` is `1 - s`. Scalar's method types
-    # it beside `s` once the op is known, as it types a literal on the right.
-    return getattr(Scalar, method_name)(self.left, self.right, *args, **kwargs)
-
-
 class ScalarInfixExpr(InfixExprBase):
     __slots__ = ()
     ndim = 0
@@ -113,6 +104,13 @@ class ScalarInfixExpr(InfixExprBase):
         left = _operand_name(self.left, html=True)
         right = _operand_name(self.right, html=True)
         return f"{left} {self._infix} {right}"
+
+    def _call_left(self, method_name, *args, **kwargs):
+        if _is_literal(self.left):
+            # A literal stays on the left: `binary.minus(1 & s)` is `1 - s`. Scalar's method
+            # types it beside `s` once the op is known, as it types a literal on the right.
+            return getattr(Scalar, method_name)(self.left, self.right, *args, **kwargs)
+        return super()._call_left(method_name, *args, **kwargs)
 
     __hash__ = None
 
@@ -171,7 +169,6 @@ class ScalarEwiseAddExpr(ScalarInfixExpr):
     _infix = "|"
 
     _to_expr = _ewise_add_to_expr
-    _call_left = _scalar_call_left
 
     # Allow e.g. `plus(x | y | z)`
     __or__ = Scalar.__or__
@@ -200,7 +197,6 @@ class ScalarEwiseMultExpr(ScalarInfixExpr):
     _infix = "&"
 
     _to_expr = _ewise_mult_to_expr
-    _call_left = _scalar_call_left
 
     # Allow e.g. `plus(x & y & z)`
     __and__ = Scalar.__and__

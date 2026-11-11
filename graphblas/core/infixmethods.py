@@ -34,8 +34,8 @@ def call_op(self, other, op, *, outer=False, union=False):
         return op(self, other)
     # Scalars. A literal on the left stays there: `1 - s` is minus(1, s), typed as
     # `binary.minus(1 & s)` is, since rminus may not exist for s's dtype (a UDT).
-    method = "ewise_add" if outer else "ewise_union" if union else "ewise_mult"
     if type1 is not Scalar:
+        method = "ewise_add" if outer else "ewise_union" if union else "ewise_mult"
         self = _literal_scalar(other, self, op, within=method, argname="left")
     if outer:
         return self.ewise_add(other, op)
