@@ -223,6 +223,14 @@ def test_facts_of_stored_values():
         assert func(v)._facts == {"finite": False, "nan": True}
     assert xp.exp(v)._facts is None
     assert xp.abs(xp.zeros(3))._facts is None
+    # (review finding M4) |z| of a finite complex z may be inf: abs keeps only "zero" there
+    z = make(np.array([1.5e308 + 1.5e308j, 1, 0, 0]), 0j)
+    assert _utils.fact(z, "finite")
+    _utils.fact(z, "zero")
+    assert set(xp.abs(z)._facts) == {"zero"}
+    zz = make(np.array([0.0, 0.0, 2.0, 3.0]), 0.0)
+    with np.errstate(over="ignore", invalid="ignore"):
+        assert_array_equal(xp.abs(z) * zz, np.abs(z.todense()) * zz.todense())
 
 
 def test_thread3_argument_checks():
