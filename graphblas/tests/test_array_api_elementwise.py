@@ -763,6 +763,20 @@ def test_bool_normalization_decides_by_a_sample(monkeypatch):
         assert (out.nnz, out.fill_value) == (nnz, False)
 
 
+def test_one_sided_stores_a_small_broadcast_operand():
+    # (review finding R2) a broadcast operand no larger than the other's entries is stored in
+    # full and taken by the broadcast product, with no coordinates exported
+    rng = np.random.default_rng(21)
+    a = np.where(rng.random((50, 40)) < 0.6, rng.random((50, 40)) + 0.5, 0.0)
+    y = np.where(rng.random(50) < 0.1, rng.random(50), 0.0)
+    A, Y = make(a, 0.0), xp.exp(make(y, 0.0))
+    assert Y.nnz < 50
+    assert Y.fill_value == 1.0
+    out = A * Y[:, None]
+    assert out.nnz == A.nnz
+    assert_array_equal(out, a * np.exp(y)[:, None])
+
+
 def test_mostly_true_masks_stay_sparse_in_contractions():
     # (review finding H3) a mostly-True fully stored mask keeps fill False, so a contraction
     # with a sparse bool matrix stays sparse (it raised DensifyError with fill True)

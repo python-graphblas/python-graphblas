@@ -192,18 +192,18 @@ def _is_zero(fill):
 def _zero_fills(*arrays):
     """The arrays with fill 0, or None when one cannot have it. An array that stores every
     position never shows its fill, so its fill is relabeled 0 (O(1)). One with a finite fill
-    that is no larger than the entries of the largest operand (a vector of ones by a matrix:
-    row sums) is stored in full first, O(its size): an unstored zero of another operand times
-    its finite values is 0 either way. Any other nonzero fill gives None: the contraction is
-    dense (a non-finite fill times another's unstored zero is NaN there, as numpy has it).
+    whose size fits under the densify limit (a vector or matrix of ones by a sparse matrix) is
+    stored in full first, O(its size): an unstored zero of another operand times its finite
+    values is 0 either way, so the answer does not depend on what the others store. Any other
+    nonzero fill gives None: the contraction is dense (a non-finite fill times another's
+    unstored zero is NaN there, as numpy has it).
     """
-    most = max(x._T().nvals for x in arrays)
     out = []
     for x in arrays:
         if not _is_zero(x._fill):
             T = x._T()
             if T.nvals != x.size:
-                small = x.size <= min(most + 1024, _utils.densify_limit())
+                small = x.size <= _utils.densify_limit()
                 if x.ndim == 0 or not small or not np.isfinite(x._fill):
                     return None
                 # (its fill stored at every position it does not store, the new fill 0)
