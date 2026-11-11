@@ -26,7 +26,9 @@ class Array:
     fill value.
     """
 
-    __slots__ = "_tensor", "_fill", "_facts", "__weakref__"
+    # The shape and dtype are kept here, not read from the Tensor, so that an Array whose
+    # Tensor is not computed yet can answer them
+    __slots__ = "_tensor", "_fill", "_facts", "_shape", "_dtype", "__weakref__"
     # numpy hands its operators over to ours (``ndarray + Array``), as it does for other
     # array types, rather than converting the Array to a dense ndarray
     __array_ufunc__ = None
@@ -48,7 +50,9 @@ class Array:
             tensor = Tensor(tensor.dtype, ())
         self = object.__new__(cls)
         self._tensor = tensor
-        self._fill = _utils.scalar(fill, np_dtype(tensor.dtype))
+        self._shape = tensor.shape
+        self._dtype = np_dtype(tensor.dtype)
+        self._fill = _utils.scalar(fill, self._dtype)
         self._facts = None
         return self
 
@@ -61,6 +65,8 @@ class Array:
     def _replace(self, other):
         """Make this Array hold ``other``'s values (for in-place operators and assignment)."""
         self._tensor = other._T()
+        self._shape = other._shape
+        self._dtype = other._dtype
         self._fill = other._fill
         self._facts = None
 
@@ -81,7 +87,7 @@ class Array:
     # Attributes
     @property
     def dtype(self):
-        return np_dtype(self._T().dtype)
+        return self._dtype
 
     @property
     def device(self):
@@ -89,15 +95,15 @@ class Array:
 
     @property
     def shape(self):
-        return self._T().shape
+        return self._shape
 
     @property
     def ndim(self):
-        return self._T().ndim
+        return len(self._shape)
 
     @property
     def size(self):
-        return math.prod(self._T().shape)
+        return math.prod(self._shape)
 
     @property
     def T(self):
