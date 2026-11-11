@@ -189,7 +189,7 @@ def masked_multiply(a, b):
     return multiply(PS, S) if P is a else multiply(S, PS)
 
 
-def _dot_hint(node, nmask, shape):
+def _dot_hint(node, nmask, shape=()):
     """``axb_method="dot"`` for a product under a mask of ``nmask`` entries when dot products
     at the mask's entries cost well below a saxpy over the whole product, else nothing.
 
@@ -202,7 +202,9 @@ def _dot_hint(node, nmask, shape):
     Ta, Tb = node.tensors
     k = max(node.nterms, 1)
     # (a batched product pairs entries within each batch only)
-    if node.spec is not None:
+    if not shape:
+        nbatch = 1
+    elif node.spec is not None:
         (ta, tb), output = node.spec[:2]
         nbatch = math.prod(shape[output.index(c)] for c in output if c in ta and c in tb)
     else:

@@ -530,3 +530,6 @@ def test_product_times_itself_computes_once(masks):
     P = make(a, 0.0) @ make(a, 0.0)
     assert_close(P * P, (a @ a) * (a @ a))
     assert masks == [None]
+    # (without the result's shape, one batch is assumed)
+    P = make(a, 0.0) @ make(a, 0.0)
+    assert _lazy._dot_hint(P._pending, 1) == {"axb_method": "dot"}
