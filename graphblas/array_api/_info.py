@@ -20,7 +20,7 @@ class Info:
         return CPU_DEVICE
 
     def devices(self):
-        return [CPU_DEVICE]
+        return (CPU_DEVICE,)
 
     def default_dtypes(self, *, device=None):
         _check(device)
