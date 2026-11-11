@@ -443,13 +443,26 @@ def test_copy_module():
         assert_array_equal(z, a @ a)
 
 
-def test_pickle_not_supported_yet_or_roundtrips():
-    x = make(np.array([1.0, 0.0, 2.0]), 0.0)
-    try:
+def test_pickle_roundtrips():
+    # (review finding L7) through coordinates, values, shape, dtype and fill; explicit fills
+    # stay stored, and a pending product is computed first
+    rng = np.random.default_rng(19)
+    for dense, fill in [
+        (np.array([1.0, 0.0, 2.0]), 0.0),
+        (np.array([[1, 7], [7, 3]], np.int16), 7),
+        (np.array([True, False, True]), True),
+        (np.array([1j, 0, np.nan]), 0j),
+        (np.array(2.5), 0.0),
+        (np.zeros((0, 3)), 1.0),
+    ]:
+        x = make(dense, fill, rng)
         y = pickle.loads(pickle.dumps(x))
-    except (TypeError, AttributeError, pickle.PicklingError):
-        return
-    assert_array_equal(y, x.todense())
+        assert_array_equal(y, dense)
+        assert y.nnz == x.nnz
+        assert y.fill_value == x.fill_value or np.isnan(fill)
+    a = make(np.array([[1.0, 2.0], [0.0, 3.0]]), 0.0)
+    P = a @ a
+    assert_array_equal(pickle.loads(pickle.dumps(P)), a.todense() @ a.todense())
 
 
 # Indexing and shape functions
