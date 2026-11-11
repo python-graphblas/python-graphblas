@@ -91,22 +91,26 @@ def _where_at_condition(cond, a, b, shape, rdt):
     base = a if bool(cond._fill) else b
     if isinstance(base, Array) and base.ndim and base.shape != shape and base._T().nvals:
         return None
-    coords, c = Tc.to_coo()
-    c = np.asarray(c, dtype=bool)
     gdt = gb_dtype(rdt)
     if not (isinstance(base, Array) and base.ndim and base._T().nvals):
         # The base holds only the result's fill: the condition's entries that select it
         # (those equal to its fill) would store the fill, so only the others are kept, and
         # the other operand is read there only (where(x > t, x, 0) stores x's entries > t)
         other = b if bool(cond._fill) else a
-        if Tc.dtype == BOOL and isinstance(other, Array) and other.shape == shape:
-            # (all in GraphBLAS, in parallel: the entries that select ``other``, holding
-            # its value, or its fill where it stores nothing)
-            sel = Tc.select(select.valueeq, not bool(cond._fill)).new()
+        if cond.dtype.kind != "c":
+            # All in GraphBLAS, in parallel: the entries that select ``other`` (the truthy
+            # ones, or the falsy ones under a truthy fill; NaN is truthy), holding its fill,
+            # then its stored values written over. A broadcast ``other`` is read through a
+            # diagonal scaling, without replicating it (xp.where(graph, labels, big)).
+            pick = select.valueeq if bool(cond._fill) else select.valuene
+            sel = Tc.select(pick, False if Tc.dtype == BOOL else 0).new()
             second = binary.second[gdt]
-            R = sel.apply(second, right=_utils.gb_scalar(other._fill, rdt)).new(dtype=gdt)
-            R(accum=second) << sel.ewise_mult(other._T(), second)
+            R = sel.apply(second, right=_utils.gb_scalar(_value(other), rdt)).new(dtype=gdt)
+            if isinstance(other, Array) and other.ndim and other._T().nvals:
+                R(accum=second) << sel.ewise_mult(other._T(), second)
             return R
+        coords, c = Tc.to_coo()
+        c = np.asarray(c, dtype=bool)
         keep = c != bool(cond._fill)
         coords = tuple(i[keep] for i in coords)
         if isinstance(other, Array) and other.ndim:
@@ -115,6 +119,8 @@ def _where_at_condition(cond, a, b, shape, rdt):
             V = np.full(len(coords[0]), _value(other))
         V = np.asarray(V).astype(rdt, copy=False)
         return Tensor.from_coo(coords, V, gdt, shape=shape) if len(V) else Tensor(gdt, shape)
+    coords, c = Tc.to_coo()
+    c = np.asarray(c, dtype=bool)
     values = [
         (
             (_values_at(coords, x, shape) if len(c) else c)
