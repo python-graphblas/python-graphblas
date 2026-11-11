@@ -702,3 +702,39 @@ def test_default_mode_matches_numpy_but_for_zero_signs(name):
                     expected = np_call(func, dense1, dense2)
                     assert out.dtype == expected.dtype
                     np.testing.assert_array_equal(out, expected)  # (NaN == NaN, 0.0 == -0.0)
+
+
+def test_operands_storing_every_position_keep_products_sparse():
+    # An operand that stores every position never shows its fill (review finding N1): A / d
+    # and A * (1 / deg)[:, None] store A's entries, whatever d's fill
+    rng = np.random.default_rng(3)
+    A = make(np.where(rng.random((40, 40)) < 0.05, rng.normal(size=(40, 40)), 0.0), 0.0)
+    d = xp.asarray(rng.normal(size=40) + 5.0)
+    deg = xp.asarray(rng.integers(1, 9, 40).astype(float))
+    with gb.config.set(array_api_signed_zeros=False):
+        q = A / d
+        assert q.nnz == A.nnz
+        np.testing.assert_array_equal(q.todense(), A.todense() / d.todense())
+        inv = 1 / deg
+        assert inv.fill_value == np.inf
+        p = A * xp.reshape(inv, (40, 1))
+        assert p.nnz == A.nnz
+        assert p.fill_value == 0.0
+        np.testing.assert_array_equal(p.todense(), A.todense() * inv.todense()[:, None])
+        # integers too: a full operand's fill takes no part
+        i = make(np.where(rng.random((5, 6)) < 0.5, 0, rng.integers(1, 5, (5, 6))), 0)
+        full = xp.asarray(rng.integers(1, 5, 6), fill_value=7)
+        assert (i * full).nnz == i.nnz
+        assert_array_equal(i * full, i.todense() * full.todense())
+    # strict mode: the intersection only for values whose product with 0.0 is 0.0
+    p = A * xp.reshape(inv, (40, 1))
+    assert_array_equal(p, A.todense() * inv.todense()[:, None])
+
+
+def test_clip_fill_uses_numpys_array_loop():
+    # numpy's 0-d clip breaks a tie differently from its array loop (review finding N3)
+    x = xp.full((3,), 0.0)
+    lo = xp.full((3,), -0.0)
+    a, b = np.zeros(3), np.full(3, -0.0)
+    assert_array_equal(xp.clip(x, min=lo, max=0.5), np.clip(a, b, 0.5))
+    assert_array_equal(xp.clip(x, min=-0.0, max=0.5), np.clip(a, -0.0, 0.5))
