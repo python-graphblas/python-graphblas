@@ -386,3 +386,34 @@ def test_vecdot_plus_times_conjugates():
     y = make(np.array([1j, 1.0]), 0j)
     for semiring in [None, "plus_times"]:
         assert_close(xp.vecdot(x, y, semiring=semiring), np.array(3 + 0j))
+
+
+def test_einsum_with_scalars_and_ones_stays_sparse():
+    # (review finding L5) a 0-d operand is a scalar factor, and a small operand with a finite
+    # nonzero fill (a vector of ones: row sums) is stored in full, not densified with the rest
+    rng = np.random.default_rng(18)
+    n = 400
+    a = np.zeros((n, n))
+    a[rng.integers(0, n, 600), rng.integers(0, n, 600)] = rng.random(600) + 0.5
+    A = xp.from_coo(np.nonzero(a), a[np.nonzero(a)], (n, n))
+    two, ones = xp.asarray(2.0), xp.ones(n)
+    with gb.config.set(array_api_densify_limit=10 * n):
+        outs = [
+            xp.einsum("ij,j->i", A, ones),
+            A @ ones,
+            xp.tensordot(A, ones, axes=1),
+            xp.einsum("ij,->ij", A, two),
+            xp.einsum(",ij,->ji", two, A, two),
+            xp.einsum("ij,", A, two),
+        ]
+    for out, expected in zip(
+        outs, [a.sum(1), a.sum(1), a.sum(1), 2 * a, 4 * a.T, 2 * a], strict=True
+    ):
+        assert_close(out, expected)
+    assert_close(xp.einsum(",->", two, xp.asarray(3.0)), np.array(6.0))
+    # a non-finite fill that shows goes dense, as numpy computes it (inf * 0 is NaN there)
+    c = np.array([[1.0, np.inf], [np.inf, 2.0]])
+    d = np.array([[0.0, 1.0], [1.0, 0.0]])
+    with np.errstate(invalid="ignore"):
+        expected = np.einsum("ij,jk->ik", c, d)
+    assert_close(xp.einsum("ij,jk->ik", make(c, np.inf), make(d, 0.0)), expected)
