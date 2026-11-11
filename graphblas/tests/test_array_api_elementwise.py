@@ -744,6 +744,25 @@ def test_fully_stored_bool_results_take_fill_false():
     assert_array_equal(xp.equal(xp.asarray(3), 3), np.array(True))
 
 
+def test_bool_normalization_decides_by_a_sample(monkeypatch):
+    # (review finding L10) a sample of the leading entries says whether dropping the False
+    # entries is likely; values never change, only what is stored
+    from graphblas.array_api import _elementwise
+
+    monkeypatch.setattr(_elementwise, "_SAMPLE", 4)
+    v = np.arange(40.0).reshape(10, 4)
+    full = xp.asarray(v + 1)
+    for out, expected, nnz in [
+        (xp.greater(full, 4), v + 1 > 4, 40),  # (sample mostly True: kept, fill False)
+        (xp.greater(full, 36), v + 1 > 36, 4),  # (few True: dropped)
+        (xp.less(full, 37), v + 1 < 37, 40),  # (sample all True, most True: kept)
+        (xp.less(full, 5), v + 1 < 5, 40),  # (the sample is all True: kept, though few are)
+        (xp.greater(full, 3), v + 1 > 3, 40),  # (a quarter of the sample: the select decides)
+    ]:
+        assert_array_equal(out, expected)
+        assert (out.nnz, out.fill_value) == (nnz, False)
+
+
 def test_mostly_true_masks_stay_sparse_in_contractions():
     # (review finding H3) a mostly-True fully stored mask keeps fill False, so a contraction
     # with a sparse bool matrix stays sparse (it raised DensifyError with fill True)
