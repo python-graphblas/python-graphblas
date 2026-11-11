@@ -54,3 +54,89 @@ def test_where_dtypes():
             assert_array_equal(
                 np_call(xp.where, xp.asarray(c), x, 2), np_call(np.where, c, dense, 2)
             )
+
+
+SEARCH_DTYPES = [np.dtype(t) for t in ("bool", "int8", "uint16", "int64", "float32", "float64")]
+
+
+@pytest.mark.parametrize("name", ["argmax", "argmin"])
+@pytest.mark.parametrize("keepdims", [False, True])
+def test_argmax_argmin(name, keepdims):
+    func = getattr(np, name)
+    for dtype in SEARCH_DTYPES:
+        for shape, axes in [((7,), [None, 0, -1]), ((3, 5), [None, 0, 1]), ((2, 3, 4), [0, 1, 2])]:
+            for dense, x in inputs(dtype, shape, seed=8):
+                for axis in axes:
+                    expected = func(dense, axis=axis, keepdims=keepdims)
+                    out = getattr(xp, name)(x, axis=axis, keepdims=keepdims)
+                    assert_array_equal(out, np.asarray(expected, dtype=np.int64))
+    with pytest.raises(ValueError, match="empty"):
+        getattr(xp, name)(xp.zeros((0, 3)), axis=0)
+    with pytest.raises(TypeError, match="real"):
+        getattr(xp, name)(xp.zeros(3, dtype=xp.complex64))
+    assert_array_equal(getattr(xp, name)(xp.zeros((2, 0)), axis=0), np.zeros(0, np.int64))
+
+
+def test_argmax_ties_with_the_fill():
+    # the fill ties with a stored value: the first of either position
+    for a, fill in [
+        ([0.0, 3.0, 0.0, 3.0], 3.0),
+        ([3.0, 3.0, 1.0, 0.0], 3.0),
+        ([-0.0, 0.0, -1.0], 0.0),
+        ([np.nan, 1.0, 1.0, np.nan], np.nan),
+        ([1.0, 1.0, np.nan, 1.0], 1.0),
+    ]:
+        a = np.array(a)
+        for x in [make(a, fill), make(a, fill, np.random.default_rng(0), explicit=0.7)]:
+            assert int(xp.argmax(x)) == np.argmax(a)
+            assert int(xp.argmin(x)) == np.argmin(a)
+
+
+@pytest.mark.parametrize("axis", [None, 0, 1, (0, 1), ()])
+def test_count_nonzero(axis):
+    for dtype in [*SEARCH_DTYPES, np.dtype("complex64")]:
+        for dense, x in inputs(dtype, (3, 4), seed=9):
+            for keepdims in [False, True]:
+                expected = np.count_nonzero(dense, axis=axis, keepdims=keepdims)
+                out = xp.count_nonzero(x, axis=axis, keepdims=keepdims)
+                assert_array_equal(out, np.asarray(expected, dtype=np.int64))
+
+
+def test_nonzero():
+    for dtype in [*SEARCH_DTYPES, np.dtype("complex128")]:
+        for shape in [(7,), (3, 4), (2, 3, 2)]:
+            for dense, x in inputs(dtype, shape, seed=10):
+                out = xp.nonzero(x)
+                expected = np.nonzero(dense)
+                assert isinstance(out, tuple)
+                assert len(out) == len(expected)
+                for o, e in zip(out, expected, strict=True):
+                    assert_array_equal(o, e.astype(np.int64))
+    with pytest.raises(ValueError, match="dimension"):
+        xp.nonzero(xp.asarray(1))
+    big = xp.zeros((10**6, 10**6))
+    big[3, 4] = 1.0
+    out = xp.nonzero(big)
+    assert [int(c[0]) for c in out] == [3, 4]
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_searchsorted(side):
+    rng = np.random.default_rng(11)
+    for fill in [0.0, 2.0, -np.inf, np.nan]:
+        for _ in range(20):
+            a = np.sort(np.where(rng.random(9) < 0.5, fill, np.round(rng.normal(size=9) * 2)))
+            x1 = make(a, fill)
+            v = np.array([-10.0, -1.0, 0.0, fill, 1.0, 2.0, 2.5, np.inf, np.nan])
+            for x2, vv in [(make(v, 0.0), v), (make(v, fill), v), (xp.asarray(1.0), np.array(1.0))]:
+                out = xp.searchsorted(x1, x2, side=side)
+                assert_array_equal(out, np.searchsorted(a, vv, side=side).astype(np.int64))
+            assert int(xp.searchsorted(x1, 2.0, side=side)) == np.searchsorted(a, 2.0, side=side)
+    a = np.array([3, 0, 1, 0, 5])
+    sorter = np.argsort(a, kind="stable")
+    out = xp.searchsorted(make(a, 0), xp.asarray([0, 4]), side=side, sorter=xp.asarray(sorter))
+    assert_array_equal(out, np.searchsorted(a, [0, 4], side=side, sorter=sorter).astype(np.int64))
+    with pytest.raises(ValueError, match="1-d"):
+        xp.searchsorted(xp.zeros((2, 2)), 1.0)
+    with pytest.raises(ValueError, match="side"):
+        xp.searchsorted(xp.zeros(2), 1.0, side="middle")
