@@ -1,6 +1,11 @@
+import operator
+
+import numpy as np
 import pytest
 
-from graphblas import binary, monoid, op
+from graphblas import binary, dtypes, monoid, op, unary
+from graphblas.core import _supports_udfs as supports_udfs
+from graphblas.core.utils import output_type
 from graphblas.exceptions import DimensionMismatch
 
 from .conftest import autocompute
@@ -119,6 +124,11 @@ def test_bad_ewise(s1, v1, A1, A2):
         (s1, A1.T),
         (A1, 1),
         (1, A1),
+        # A Scalar takes a literal, but not just any object, as `s1 + object()` does not
+        (s1, object()),
+        (object(), s1),
+        (s1, "x"),
+        (None, s1),
     ]:
         with pytest.raises(TypeError, match="Bad type for argument"):
             left | right
@@ -163,6 +173,13 @@ def test_bad_ewise(s1, v1, A1, A2):
         A1.T | A1
     with pytest.raises(DimensionMismatch):
         A1.T & A1
+    # Beside an infix expression, on either side
+    for left, right in [(v1 | v1, w), (w, v1 | v1), (A2 | A2, A1), (A1, A2 | A2)]:
+        with pytest.raises(DimensionMismatch):
+            left | right
+    for left, right in [(v1 & v1, w), (w, v1 & v1), (A2 & A2, A1), (A1, A2 & A2)]:
+        with pytest.raises(DimensionMismatch):
+            left & right
 
     # These are okay now
     # with pytest.raises(TypeError):
@@ -220,6 +237,15 @@ def test_bad_matmul(s1, v1, A1, A2):
         A1.T @ A1.T
     with pytest.raises(DimensionMismatch):
         A1 @= A1
+    # Beside an infix expression, on either side
+    for left, right in [
+        (A1 @ A2, v1),
+        (v1, A1 @ A2),
+        (A2 @ A1, A2.T),
+        (A2, A2 @ A1),
+    ]:
+        with pytest.raises(DimensionMismatch):
+            left @ right
     with pytest.raises(TypeError):
         s1 @ 1
     with pytest.raises(TypeError):
@@ -761,6 +787,183 @@ def test_multi_infix_scalar():
         v1.ewise_mult(v2 | v3)
     with pytest.raises(TypeError, match="Automatic computation"):
         (v1 | v2).ewise_mult(v3)
+
+
+def test_scalar_infix_literal_keeps_its_side():
+    # `op(2 & s)` applies op to 2 and s in that order, as `op(2, s)` does
+    s = Scalar.from_value(5, dtype=dtypes.INT8)
+    expr = 2 & s
+    assert expr.left == 2
+    assert expr.right is s
+    for binop, expected, dtype in [
+        (binary.minus, -3, dtypes.INT8),
+        (binary.rminus, 3, dtypes.INT8),
+        (binary.cdiv, 0, dtypes.INT8),
+        (binary.rdiv, 2, dtypes.INT8),
+        (binary.truediv, 0.4, dtypes.FP64),
+        (binary.first, 2, dtypes.INT8),
+        (binary.second, 5, dtypes.INT8),
+        (binary.pow, 32, dtypes.INT8),
+        (binary.lt, True, dtypes.BOOL),
+        (binary.gt, False, dtypes.BOOL),
+        (binary.isgt, 0, dtypes.INT8),
+    ]:
+        for expr in [2 & s, 2 | s]:
+            result = binop(expr).new()
+            assert result.value == expected
+            assert result.dtype == dtype
+            assert result.isequal(binop(2, s).new(), check_dtype=True)
+    # Each default goes with its side
+    empty = Scalar(dtypes.INT8)
+    assert binary.minus(2 | empty, left_default=0, right_default=10).new().value == -8
+    assert binary.minus(empty | 2, left_default=0, right_default=10).new().value == -2
+    assert binary.minus(2 | s, left_default=0, right_default=10).new().value == -3
+    # And so does each literal in a chain
+    assert binary.minus(1 & (2 & s)).new().value == 4
+    assert binary.minus((2 & s) & 1).new().value == -4
+    assert binary.minus(1 | (2 | s)).new().value == 4
+
+    # A Python literal is typed beside the Scalar as by `-` (weak), once the op is known
+    f32 = Scalar.from_value(2.5, dtype=dtypes.FP32)
+    t = Scalar.from_value(True)
+    for lit, x in [(2, s), (0.5, s), (0.5, f32), (2, f32), (2, t)]:
+        for expr in [lit & x, lit | x]:
+            assert binary.minus(expr).new().isequal((lit - x).new(), check_dtype=True)
+    assert binary.minus(0.5 & s).new().dtype == dtypes.FP64
+    assert binary.minus(0.5 & f32).new().dtype == dtypes.FP32
+    assert binary.first(False & t).new().dtype == dtypes.BOOL
+    assert binary.lt(False | t).new().value is True
+    # 300 does not fit INT8, which `-` reports, and `<` compares it as it is
+    with pytest.raises(OverflowError):
+        binary.minus(300 & s)
+    assert binary.lt(300 & s).new().value is False
+    assert binary.gt(300 | s).new().value is True
+
+    # BOOL `&` and `|` with a literal compute themselves, by LAND and LOR
+    for expr, expected in [
+        (t & True, True),
+        (False & t, False),
+        (t | False, True),
+        (False | t, True),
+    ]:
+        result = expr.new()
+        assert result.dtype == dtypes.BOOL
+        assert result.value is expected
+    with pytest.raises(TypeError, match="The argument dtypes are INT64 and BOOL"):
+        (1 & t).new()
+    with pytest.raises(TypeError, match="only valid for BOOL"):
+        (s | 2).new()
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_scalar_infix_literal_keeps_its_side_udt():
+    # The op types a literal beside a UDT, on the left as on the right: a lifted op as numpy
+    # would, and `first` as an element of the UDT, which 0.5 is not
+    udt = dtypes.register_anonymous(np.dtype((np.int8, (2,))), "_InfixLiteralI8")
+    s = Scalar.from_value([5, 7], udt)
+    result = binary.minus((1, 2) & s).new()
+    assert result.dtype == udt
+    np.testing.assert_array_equal(result.value, [-4, -5])
+    result = binary.minus(0.5 | s).new()
+    assert result.dtype.np_type == np.dtype((np.float64, (2,)))
+    np.testing.assert_array_equal(result.value, [-4.5, -6.5])
+    np.testing.assert_array_equal(binary.first([1, 2] & s).new().value, [1, 2])
+    with pytest.raises(ValueError, match="does not fit"):
+        binary.first(0.5 & s)
+    with pytest.raises(TypeError, match="Bad type for argument `left`"):
+        object() & s
+    # 1e300 overflows a float32 leaf: the op warns once, as `+` does, and `&` does not
+    f32s = Scalar.from_value(
+        [1, 2], dtypes.register_anonymous(np.dtype((np.float32, (2,))), "_InfixLiteralF32")
+    )
+    expr = f32s & (1e300, 1.0)  # the tests turn warnings into errors
+    with pytest.warns(RuntimeWarning, match="overflow") as record:
+        result = binary.plus(expr).new()
+    assert len(record) == 1
+    np.testing.assert_array_equal(result.value, [np.inf, 3])
+
+
+@autocompute
+def test_numpy_value_on_the_left():
+    # numpy's operators defer to ours (__array_priority__), so a numpy scalar or 0-d array on
+    # the left is a literal operand, as on the right, and numpy does not compute the result
+    s = Scalar.from_value(5, dtype=dtypes.INT8)
+    v = Vector.from_coo([0, 2], [5, 6], dtype=dtypes.INT8, size=3)
+    A = Matrix.from_coo([0, 1], [1, 0], [5, 6], dtype=dtypes.INT8)
+    ops = [
+        (operator.add, binary.plus),
+        (operator.sub, binary.minus),
+        (operator.mul, binary.times),
+        (operator.truediv, binary.truediv),
+        (operator.pow, binary.pow),
+        (operator.lt, binary.lt),
+        (operator.le, binary.le),
+        (operator.gt, binary.gt),
+        (operator.ge, binary.ge),
+    ]
+    if supports_udfs:  # integer floordiv and numpy.mod are Numba functions
+        ops += [(operator.floordiv, binary.floordiv), (operator.mod, binary.numpy.mod)]
+    operands = [
+        (s, s),
+        (s.apply(unary.identity), s),
+        (v[0], s),
+        (v @ v, (v @ v).new()),
+        (v, v),
+        (v.apply(unary.identity), v),
+        (v[[0, 1, 2]], v),
+        (A, A),
+        (A.T, A.T.new()),
+        (A.apply(unary.identity), A),
+        (A[:, :], A),
+        (A @ A, (A @ A).new()),
+    ]
+    for x, computed in operands:
+        is_scalar = output_type(x) is Scalar
+        cases = ops if is_scalar else [*ops, (operator.eq, binary.eq), (operator.ne, binary.ne)]
+        for lit in [np.int16(2), np.float32(0.5), np.array(3)]:
+            for infix, binop in cases:
+                expected = binop(lit, computed).new()
+                assert infix(lit, x).new().isequal(expected, check_dtype=True)
+        if is_scalar:
+            # A Scalar's `==` is a bool, not numpy's np.bool_
+            assert (np.int16(computed.value) == x) is True
+            assert (np.int16(computed.value) != x) is False
+            with pytest.raises(TypeError, match="unsupported operand"):
+                np.int16(2) @ x
+        else:
+            with pytest.raises(TypeError, match="Bad type for argument `left`"):
+                np.int16(2) @ x
+            with pytest.raises(TypeError, match="Bad type for argument `left`"):
+                np.ones(x.shape[0]) @ x
+        # Before, numpy computed these from s.__array__() and raised for v and A
+        with pytest.raises(TypeError, match="Bad type"):
+            np.array([1, 2]) - x
+        with pytest.raises(TypeError, match="unsupported operand"):
+            np.int16(2) << x
+
+    # `&`, `|` and `^` as with a Python literal
+    t = Scalar.from_value(True)
+    bv = Vector.from_coo([0, 2], [True, False], size=3)
+    for infix in [operator.and_, operator.or_, operator.xor]:
+        assert infix(np.False_, t).new().isequal(infix(False, t).new(), check_dtype=True)
+    assert (np.True_ ^ bv).new().isequal((True ^ bv).new(), check_dtype=True)
+    for infix in [operator.and_, operator.or_]:
+        with pytest.raises(TypeError, match="Bad type for argument `left`"):
+            infix(np.True_, bv)
+    with pytest.raises(TypeError, match="only valid for BOOL"):
+        (np.int16(2) & s).new()
+
+    # In place, numpy no longer computes an array minus a Scalar
+    arr = np.array([1, 2])
+    with pytest.raises(TypeError, match="Bad type"):
+        arr -= s
+    np.testing.assert_array_equal(arr, [1, 2])
+    # Ufuncs still convert a Scalar with __array__
+    assert np.sin(s) == np.sin(np.int8(5))
+    np.testing.assert_array_equal(np.asarray(s), np.array(5, np.int8))
+    result = np.subtract(np.int16(2), s)
+    assert isinstance(result, np.int16)
+    assert result == -3
 
 
 @autocompute

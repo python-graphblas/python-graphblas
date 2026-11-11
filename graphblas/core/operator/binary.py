@@ -203,9 +203,7 @@ class TypedBuiltinBinaryOp(TypedOpBase):
                     f">>> {self}(x | y, left_default=0, right_default=0)\n\nwhere x and y "
                     "are Vectors or Matrices, and left_default and right_default are scalars."
                 )
-            return left.left._ewise_union(
-                left.right, self, left_default, right_default, is_infix=True
-            )
+            return left._call_left("_ewise_union", self, left_default, right_default, is_infix=True)
         return _call_op(self, left, right)
 
     @property

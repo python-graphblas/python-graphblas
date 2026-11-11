@@ -3893,6 +3893,7 @@ class TransposedMatrix:
     ndim = 2
     _is_scalar = False
     _is_transposed = True
+    __array_priority__ = BaseType.__array_priority__  # numpy's operators defer to ours
     __networkx_backend__ = "graphblas"
     __networkx_plugin__ = "graphblas"
 
