@@ -155,9 +155,10 @@ def _spell(value):
 
 def _sound(typed, arrays, name, *, multiplies=True):
     """The result dtype and fill of a contraction of ``arrays`` with a typed semiring other
-    than the default, after checking that it may skip their unstored positions (ValueError
-    if not). ``multiplies``: whether values meet the multiply (einsum of one operand only
-    sums).
+    than the default, and the arrays, after checking that it may skip their unstored
+    positions (ValueError if not). An array that stores every position never shows its fill,
+    so it is relabeled with the identity when its dtype holds it (O(1)). ``multiplies``:
+    whether values meet the multiply (einsum of one operand only sums).
     """
     e = typed.monoid.identity
     out_dt = check_supported(np_dtype(typed.return_type), name)
@@ -169,9 +170,13 @@ def _sound(typed, arrays, name, *, multiplies=True):
             f"annihilate {mult} ({mult}(e, y) and {mult}(y, e) must be e for every y), so no "
             "fill works. Use it on Tensors (x.tensor), which skip missing entries."
         )
+    out = []
     for i, x in enumerate(arrays):
         in_dt = np_dtype(typed.type if i == 0 else typed.type2)
         fill = _utils.scalar(x._fill, in_dt)
+        if fill != e and (relabeled := _relabel_full(x, e)) is not None:
+            x, fill = relabeled, e
+        out.append(x)
         if fill != e:  # (a NaN fill too)
             spelled = _spell(e)
             raise ValueError(
@@ -182,7 +187,20 @@ def _sound(typed, arrays, name, *, multiplies=True):
                 f"with fill_value={spelled} (xp.asarray(x.tensor, fill_value={spelled}) reads "
                 f"x's unstored positions as {e!r})."
             )
-    return out_dt, _utils.scalar(e, out_dt)
+    return out_dt, _utils.scalar(e, out_dt), out
+
+
+def _relabel_full(x, e):
+    """``x`` with fill ``e`` when it stores every position (its fill is never seen) and its
+    dtype holds ``e`` exactly; else None.
+    """
+    if x._T().nvals != x.size:
+        return None
+    with np.errstate(all="ignore"):
+        fill = np.asarray(e).astype(x.dtype)[()]  # (inf as an integer: no longer inf)
+    if not _utils.same_value(np.asarray(fill).astype(np.asarray(e).dtype)[()], e):
+        return None
+    return Array._new(x._T(), fill)
 
 
 def _is_zero(fill):
@@ -255,7 +273,7 @@ def matmul(x1, x2, /, *, semiring=None):
     rdt = _rdt("matmul", np.matmul, x1, x2)
     typed, default = _resolve(semiring, rdt, "matmul")
     if not default:
-        out_dt, fill = _sound(typed, (x1, x2), "matmul")
+        out_dt, fill, (x1, x2) = _sound(typed, (x1, x2), "matmul")
         return _product(x1, x2, typed, out_dt, fill)
     if (ops := _zero_fills(x1, x2)) is None:
         return _dense(np.matmul, _matmul_shape(x1, x2), x1, x2)
@@ -365,7 +383,7 @@ def tensordot(x1, x2, /, *, axes=2, semiring=None):
     free2 = tuple(n for i, n in enumerate(x2.shape) if i not in b_axes)
     shape = free1 + free2
     if not default:
-        out_dt, fill = _sound(typed, (x1, x2), "tensordot")
+        out_dt, fill, (x1, x2) = _sound(typed, (x1, x2), "tensordot")
         return _tensordot(x1, x2, a_axes, b_axes, shape, typed, out_dt, fill)
     if (ops := _zero_fills(x1, x2)) is None:
         func = lambda a, b: np.tensordot(a, b, axes=(a_axes, b_axes))  # noqa: E731
@@ -414,7 +432,7 @@ def vecdot(x1, x2, /, *, axis=-1, semiring=None):
     typed, default = _resolve(semiring, rdt, "vecdot")
     out_shape = tuple(n for i, n in enumerate(shape) if i != len(shape) + axis)
     if not default:
-        out_dt, fill = _sound(typed, (x1, x2), "vecdot")
+        out_dt, fill, (x1, x2) = _sound(typed, (x1, x2), "vecdot")
         return _vecdot(x1, x2, axis, shape, out_shape, typed, out_dt, fill)
     if (ops := _zero_fills(x1, x2)) is None:
         return _dense(lambda a, b: np.vecdot(a, b, axis=axis), out_shape, x1, x2)
@@ -485,7 +503,7 @@ def einsum(subscripts, /, *operands, semiring=None):
         ops = zeroed
         out_dt, fill = rdt, _utils.scalar(0, rdt)
     else:
-        out_dt, fill = _sound(typed, ops, "einsum", multiplies=len(ops) > 1)
+        out_dt, fill, ops = _sound(typed, ops, "einsum", multiplies=len(ops) > 1)
     if math.prod(shape) == 0 or any(x._T().nvals == 0 for x in ops):
         return Array._new(Tensor(gb_dtype(out_dt), shape), fill)
 
