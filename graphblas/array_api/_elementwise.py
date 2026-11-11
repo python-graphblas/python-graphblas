@@ -381,17 +381,19 @@ class _Binary:
     ``kind`` is "arith" (the op works in the result dtype), "cmp" (in the promoted dtype of
     the operands, with a bool result) or "logical" (in bool). ``gb(dtype)`` gives the
     GraphBLAS operator that equals ``ufunc`` on operands of the dtype it works in, or None.
+    ``gb_values(a, b, dtype)``, in place of ``gb``, may look at the operands' values too.
     ``annihilator(a, b, fill_a, fill_b, dtype)`` says whether the union equals the
     intersection (``ewise_mult``): whether each operand's fill makes the result the result's
     fill whatever the other operand holds.
     """
 
-    def __init__(self, name, ufunc, kind="arith", gb=None, annihilator=None):
+    def __init__(self, name, ufunc, kind="arith", gb=None, annihilator=None, gb_values=None):
         self.name = name
         self.ufunc = ufunc
         self.kind = kind
         self.gb = gb
         self.annihilator = annihilator
+        self.gb_values = gb_values
 
 
 def _binary(spec, x1, x2):
@@ -448,6 +450,10 @@ def _gb_op(spec, a, b, ct):
     """The typed GraphBLAS op for ``spec`` working in ``ct``, when it gives numpy's answer;
     else None.
     """
+    if spec.gb_values is not None:
+        if any(not isinstance(x, Array) and not _python_scalar_fits(x, ct) for x in (a, b)):
+            return None
+        return spec.gb_values(a, b, ct)
     if spec.gb is None:
         return None
     for x in (a, b):
@@ -526,18 +532,34 @@ def _multiply_intersects(a, b, fa, fb, ct):
 
 
 def _finite_nonnegative(x):
-    """Whether every stored value is finite with its sign bit clear (cached per Array)."""
+    facts = _utils.summary(x)
+    return facts["finite"] and facts["nonnegative"]
 
-    def compute(x):
-        T = x._T()
-        if x.dtype.kind == "b" or T.nvals == 0:
-            return True
-        values = _utils.tensor_values(T)
-        if x.dtype.kind in _INTEGRAL:
-            return bool((values >= 0).all())
-        return bool(np.isfinite(values).all() and not np.signbit(values).any())
 
-    return x._fact("finite_nonnegative", compute)
+def _max_min_gb(op):
+    """GraphBLAS's max and min of floats are C's fmax and fmin, which skip NaN and may take
+    either zero of 0.0 and -0.0; numpy's propagate NaN and order -0.0 below 0.0. They agree
+    when neither operand holds NaN or -0.0 (cached per Array), fills included.
+    """
+
+    def get(a, b, ct):
+        if ct.kind in "biu":
+            return op[gb_dtype(ct)]
+        if ct.kind != "f":
+            return None
+        for x in (a, b):
+            if isinstance(x, Array):
+                fill = np.asarray(x._fill)
+                if np.isnan(fill) or (fill == 0 and np.signbit(fill)):
+                    return None
+                facts = _utils.summary(x)
+                if facts["nan"] or facts["negzero"]:
+                    return None
+            elif isinstance(x, float) and (np.isnan(x) or (x == 0 and np.signbit(x))):
+                return None
+        return op[gb_dtype(ct)]
+
+    return get
 
 
 _SPECS = {
@@ -600,9 +622,8 @@ _SPECS = {
         np.bitwise_xor,
         gb=_typed_for({"b": binary.lxor, "i": binary.bxor, "u": binary.bxor}),
     ),
-    # GraphBLAS's max and min of floats drop NaN (C's fmax); numpy's propagate it
-    "maximum": _Binary("maximum", np.maximum, gb=_typed_for(dict.fromkeys("biu", binary.max))),
-    "minimum": _Binary("minimum", np.minimum, gb=_typed_for(dict.fromkeys("biu", binary.min))),
+    "maximum": _Binary("maximum", np.maximum, gb_values=_max_min_gb(binary.max)),
+    "minimum": _Binary("minimum", np.minimum, gb_values=_max_min_gb(binary.min)),
     "copysign": _Binary("copysign", np.copysign, gb=_typed_for({"f": binary.copysign})),
     # numpy's own definitions: floored division and remainder (with its results for division
     # by zero), integer powers, shifts past the width, and libm-free special values

@@ -105,6 +105,38 @@ def tensor_values(T):
     return T._M.to_coo(rows=False, columns=False, sort=False)[2]
 
 
+def summary(x):
+    """Facts about the stored values of the Array ``x``, computed once (cached on ``x``):
+    ``finite`` (all finite), ``nonnegative`` (no sign bit set: no negative value, no -0.0),
+    ``nan`` (some NaN) and ``negzero`` (some -0.0).
+    """
+
+    def compute(x):
+        T = x._T()
+        kind = x.dtype.kind
+        if kind == "b" or T.nvals == 0:
+            return {"finite": True, "nonnegative": True, "nan": False, "negzero": False}
+        values = tensor_values(T)
+        if kind in "iu":
+            nonneg = kind == "u" or bool((values >= 0).all())
+            return {"finite": True, "nonnegative": nonneg, "nan": False, "negzero": False}
+        if kind == "c":
+            parts = [values.real, values.imag]
+        else:
+            parts = [values]
+        signbit = [np.signbit(p) for p in parts]
+        return {
+            "finite": all(bool(np.isfinite(p).all()) for p in parts),
+            "nonnegative": not any(bool(sb.any()) for sb in signbit),
+            "nan": any(bool(np.isnan(p).any()) for p in parts),
+            "negzero": any(
+                bool((sb & (p == 0)).any()) for p, sb in zip(parts, signbit, strict=True)
+            ),
+        }
+
+    return x._fact("summary", compute)
+
+
 def _x_array(cont, dtype, stack):
     """The value array of an unloaded Container as a numpy view (None when it is empty)."""
     return stack.enter_context(tl._VectorArray(cont.x, np.dtype(dtype))).array
