@@ -81,11 +81,19 @@ def test_where_stores_the_condition_and_the_selected_operand():
         ]:
             assert_array_equal(xp.where(cond, x1, x2), e)
     # A condition that is not bool selects by truth value (NaN is true), with a broadcast
-    # operand read at its entries; a complex condition goes through numpy
+    # operand read at its entries, or over a base with entries (where(frontier, k, level));
+    # a complex condition goes through numpy
     f = np.where(c, np.where(rng.random((n, n)) < 0.3, np.nan, 2.5), 0.0)
     f[0, 0] = -0.0
+    level = make(a, 0.0)
     for cond, fill in [(f, 0.0), (np.where(c, 0, 3).astype(np.int8), 3), (f + 1j * f, 0j)]:
-        for x1, x2 in [(xp.arange(n), big), (big, xp.arange(n)[:, None]), (labels[0], -1)]:
+        for x1, x2 in [
+            (xp.arange(n), big),
+            (big, xp.arange(n)[:, None]),
+            (labels[0], -1),
+            (7, level),
+            (xp.arange(n), level),
+        ]:
             e = np.where(cond, np.asarray(x1), np.asarray(x2))
             assert_array_equal(xp.where(make(cond, fill), x1, x2), e)
     # The selected operand broadcasts over stored entries, or the condition broadcasts: the
