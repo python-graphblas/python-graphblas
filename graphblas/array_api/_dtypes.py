@@ -71,11 +71,10 @@ def _dtype_of(x):
 
 
 def isdtype(dtype, kind):
+    if isinstance(dtype, type) and issubclass(dtype, np.generic):
+        dtype = np.dtype(dtype)
     if not isinstance(dtype, np.dtype) or dtype not in _SUPPORTED:
-        try:
-            dtype = as_dtype(dtype)
-        except TypeError:
-            raise TypeError(f"isdtype needs a data type, not {dtype!r}") from None
+        raise TypeError(f"isdtype needs a data type of this namespace, not {dtype!r}")
     if isinstance(kind, tuple):
         return builtins.any(isdtype(dtype, k) for k in kind)
     if isinstance(kind, str):
