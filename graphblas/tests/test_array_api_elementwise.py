@@ -161,7 +161,7 @@ def _assert_identical(a, b, unstored):
 # in the last place. libm and numpy's own loops are each within 1 to 2 ulp of the exact value
 # for these (glibc's libm-test-ulps lists at most 2 for the real ones in double; numpy's float32
 # SIMD loops document up to 1.5), so two of them differ by up to 4; on macOS arm64 the largest
-# difference seen was 1 (tanh, float32 sin and cos, complex log2 and log10).
+# difference seen was 1 (tanh, float32 sin and cos). Complex values stay on numpy.
 LIBM = {"acos", "acosh", "asin", "asinh", "atan", "atanh", "cos", "cosh", "exp", "expm1", "log",
         "log1p", "log2", "log10", "sin", "sinh", "tan", "tanh"}  # fmt: skip
 MAXULP = 4
