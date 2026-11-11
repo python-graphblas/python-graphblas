@@ -415,5 +415,8 @@ def test_einsum_with_scalars_and_ones_stays_sparse():
     c = np.array([[1.0, np.inf], [np.inf, 2.0]])
     d = np.array([[0.0, 1.0], [1.0, 0.0]])
     with np.errstate(invalid="ignore"):
+        assert_close(xp.einsum("ij,->", make(d, 0.0), xp.asarray(np.inf)),
+                     np.einsum("ij,->", d, np.inf))  # fmt: skip
+    with np.errstate(invalid="ignore"):
         expected = np.einsum("ij,jk->ik", c, d)
     assert_close(xp.einsum("ij,jk->ik", make(c, np.inf), make(d, 0.0)), expected)

@@ -473,8 +473,11 @@ def einsum(subscripts, /, *operands, semiring=None):
     typed, default = _resolve(semiring, rdt, "einsum")
     shapes = tuple(x.shape for x in ops)
     shape = _einsum_plan(subscripts, shapes, "greedy")[2]
-    if default and any(x.ndim == 0 and not _is_zero(x._fill) for x in ops):
-        # A 0-d operand is a scalar factor of every term (and of the sum, for plus_times)
+    scalars = [x._fill for x in ops if x.ndim == 0]
+    if default and any(map(bool, scalars)) and all(np.isfinite(scalars)):
+        # A finite 0-d operand is a scalar factor of every term (and of the sum, for
+        # plus_times); a non-finite one goes dense, as numpy has it (inf times the unstored
+        # zeros is NaN)
         return _einsum_scalars(subscripts, ops)
     if default:
         if (zeroed := _zero_fills(*ops)) is None:
