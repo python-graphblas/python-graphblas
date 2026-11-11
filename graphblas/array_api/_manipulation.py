@@ -71,7 +71,7 @@ def reshape(x, /, shape, *, copy=None):
         return Array._new(Tensor(T.dtype, shape), x._fill)
     if shape == ():
         # (one position: its entry, as a 0-d Array's value)
-        return Array._new(Tensor(T.dtype, ()), T.to_coo()[1][0])
+        return Array._new(_utils.empty_0d(T.dtype), T.to_coo()[1][0])
     if shape == T.shape:
         return x._copy() if copy else Array._new(T.dup(), x._fill)
     return Array._new(T.reshape(shape, copy=copy), x._fill)

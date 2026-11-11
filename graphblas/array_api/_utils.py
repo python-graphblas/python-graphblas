@@ -8,7 +8,7 @@ from .. import binary, config, monoid, unary
 from ..core.scalar import Scalar
 from ..core.tensor import Tensor
 from ..core.tensor_ewise import _broadcast_factor
-from ..dtypes import lookup_dtype
+from ..dtypes import DataType, lookup_dtype
 
 
 class DensifyError(ValueError):
@@ -113,7 +113,23 @@ def mult_expansion_check(Ta, Tb, shape):
 
 
 def empty_tensor(dtype, shape):
-    return Tensor(gb_dtype(dtype), tuple(shape))
+    shape = tuple(shape)
+    return empty_0d(dtype) if not shape else Tensor(gb_dtype(dtype), shape)
+
+
+_EMPTY_0D = {}
+
+
+def empty_0d(dtype):
+    """An empty 0-d Tensor of ``dtype`` (a numpy dtype or a graphblas one): a 0-d Array
+    stores nothing, its value is its fill. An O(1) copy-on-write copy of one made once per
+    dtype: making one costs a Matrix and a format setting, about 6 us, half of a 0-d
+    operation (SAPS's time-stepping loops make one per operation).
+    """
+    gdt = dtype if isinstance(dtype, DataType) else gb_dtype(dtype)
+    if (T := _EMPTY_0D.get(gdt)) is None:
+        T = _EMPTY_0D[gdt] = Tensor(gdt, ())
+    return T.dup()
 
 
 def full_tensor(dtype, shape, value):

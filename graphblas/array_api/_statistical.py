@@ -229,7 +229,7 @@ def _reduce_main(name, x, axis, keepdims, dtype):
         kwargs = {"dtype": ct} if name in {"sum", "prod"} else {}
         with np.errstate(all="ignore"):
             value = spec.npfunc(np.asarray(x._fill), **kwargs)
-        return Array._new(Tensor(gb_dtype(ct), ()), value)
+        return Array._new(_utils.empty_0d(ct), value)
     if not axes:
         return _reduce_no_axes(name, x, ct)
     T = x._T()
@@ -258,7 +258,7 @@ def _reduce_main(name, x, axis, keepdims, dtype):
             with np.errstate(all="ignore"):
                 count = np.array([T.nvals], dtype=np.int64)
                 value = spec.combine(L, fill, ct)(np.array([r], dtype=ct), count)[0]
-        out = Array._new(Tensor(gb_dtype(ct), ()), value)
+        out = Array._new(_utils.empty_0d(ct), value)
         return _keepdims(out, x, axes, keepdims)
     R = _reduce_tensor(T, _gb_monoid(spec, ct), axes)
     if not nan_fix and (full or _utils.same_value(fill, spec.identity(ct))):
@@ -286,7 +286,7 @@ def _reduce_no_axes(name, x, ct):
     from ._elementwise import add, cast, multiply
 
     if name in {"sum", "prod"}:
-        identity = Array._new(Tensor(gb_dtype(ct), ()), 0 if name == "sum" else 1)
+        identity = Array._new(_utils.empty_0d(ct), 0 if name == "sum" else 1)
         out = (add if name == "sum" else multiply)(identity, x if x.dtype == ct else cast(x, ct))
         return out if out.dtype == ct else cast(out, ct)
     return cast(x, ct) if x.dtype != ct else x._copy()
@@ -379,7 +379,7 @@ def var(x, /, *, axis=None, correction=0.0, keepdims=False):
         S2 = Tensor(gb_dtype(real_dt), m.shape)
         C = Tensor(gb_dtype(np.int64), m.shape)
     k = subtract(L, Array._new(C, 0))
-    dev = subtract(Array._new(Tensor(gb_dtype(rdt), ()), x._fill), m)
+    dev = subtract(Array._new(_utils.empty_0d(rdt), x._fill), m)
     # k unstored positions, each (fill - mean) ** 2 away; none for k == 0 (the fill may be inf)
     missing = binary_numpy("var", _times_count, k, _squared_magnitude(dev))
     out = divide(add(Array._new(S2, 0), missing), denominator)
