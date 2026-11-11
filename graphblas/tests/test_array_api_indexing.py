@@ -1,6 +1,7 @@
 """graphblas.array_api indexing (get and set), take and take_along_axis against numpy."""
 
 import itertools
+import math
 
 import numpy as np
 import pytest
@@ -271,3 +272,34 @@ def test_mixed_keys_order_axes_as_numpy():
         b = np.arange(24.0).reshape(2, 3, 4)
         b[:, 1, ..., [0, 2]] = -expected
         assert_array_equal(y, b)
+
+
+def test_setitem_with_new_axes():
+    # (review finding L3) the value of a basic key with None is shaped like numpy's selection,
+    # new axes included
+    parts = [slice(None), 1, slice(0, 2), Ellipsis, None]
+    count = 0
+    for a in [np.arange(12.0).reshape(3, 4) + 1, np.arange(24.0).reshape(2, 3, 4) + 1]:
+        for n in range(1, 5):
+            for key in itertools.product(parts, repeat=n):
+                if None not in key or sum(k is Ellipsis for k in key) > 1:
+                    continue
+                try:
+                    shape = a[key].shape
+                except IndexError:
+                    continue
+                for vshape in [shape, shape[1:], (1,) * len(shape)]:
+                    value = np.arange(math.prod(vshape), dtype=np.float64).reshape(vshape) - 50
+                    b = a.copy()
+                    b[key] = value
+                    y = make(a, 0.0)
+                    y[key] = make(value, 0.0) if value.ndim else xp.asarray(value)
+                    assert_array_equal(y, b)
+                    count += 1
+    assert count > 300
+    z = xp.asarray(1.0)
+    z[None] = xp.asarray([5.0])
+    assert_array_equal(z, np.array(5.0))
+    x = make(np.ones((3, 4)), 0.0)
+    with pytest.raises(ValueError, match="new axes"):
+        x[None] = xp.ones((2, 3, 4))
