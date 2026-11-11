@@ -365,3 +365,24 @@ def test_nan_propagates_through_min_and_max():
     assert_close(xp.einsum("b->", x, semiring="min_max"), np.array(np.nan))
     assert_close(xp.einsum("b->", make(np.array([2.0, 1.0]), inf), semiring="min_max"),
                  np.array(1.0))  # fmt: skip
+
+
+def test_soundness_is_cached_per_semiring_object():
+    # (review finding L1) two semirings of one name: each is checked
+    from graphblas.core.operator import Semiring
+
+    s1 = Semiring.register_anonymous(gb.monoid.min, gb.binary.plus, name="same_name")
+    s2 = Semiring.register_anonymous(gb.monoid.min, gb.binary.minus, name="same_name")
+    a = make(np.array([[1.0, 2.0]]), np.inf)
+    b = make(np.array([[1.0], [3.0]]), np.inf)
+    assert_close(xp.matmul(a, b, semiring=s1), [[2.0]], np.inf)
+    with pytest.raises(ValueError, match="cannot skip"):
+        xp.matmul(a, b, semiring=s2)
+
+
+def test_vecdot_plus_times_conjugates():
+    # (review finding L4) the default semiring, given or not, conjugates x1
+    x = make(np.array([1j, 2.0]), 0j)
+    y = make(np.array([1j, 1.0]), 0j)
+    for semiring in [None, "plus_times"]:
+        assert_close(xp.vecdot(x, y, semiring=semiring), np.array(3 + 0j))

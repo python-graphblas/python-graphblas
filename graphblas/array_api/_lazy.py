@@ -23,6 +23,8 @@ Everything else reads the Tensor, which computes it. Values do not depend on whe
 was deferred; ``enabled = False`` turns deferral off, for debugging.
 """
 
+import math
+
 import numpy as np
 
 from .. import binary, monoid, select, semiring, unary
@@ -174,19 +176,20 @@ def masked_multiply(a, b):
         S, P = b, a
     else:
         return None
-    if S.shape != P.shape or bool(S._fill) or bool(P._fill):
-        return None
+    if S is P or S.shape != P.shape or bool(S._fill) or bool(P._fill):
+        return None  # (P * P: computed once, as a whole)
     node = P._pending
     if not node.all_finite():
         return None  # (P is computed whole, a sparse product as without deferral)
     TS = S._T()
-    PS = Array._new(node.compute(mask=TS.S, **_dot_hint(node, TS.nvals)), P._fill)
+    hint = _dot_hint(node, TS.nvals, P.shape)
+    PS = Array._new(node.compute(mask=TS.S, **hint), P._fill)
     from ._elementwise import multiply
 
     return multiply(PS, S) if P is a else multiply(S, PS)
 
 
-def _dot_hint(node, nmask):
+def _dot_hint(node, nmask, shape):
     """``axb_method="dot"`` for a product under a mask of ``nmask`` entries when dot products
     at the mask's entries cost well below a saxpy over the whole product, else nothing.
 
@@ -198,7 +201,13 @@ def _dot_hint(node, nmask):
         return {}
     Ta, Tb = node.tensors
     k = max(node.nterms, 1)
-    saxpy = Ta.nvals * Tb.nvals / k
+    # (a batched product pairs entries within each batch only)
+    if node.spec is not None:
+        (ta, tb), output = node.spec[:2]
+        nbatch = math.prod(shape[output.index(c)] for c in output if c in ta and c in tb)
+    else:
+        nbatch = math.prod(shape[:-2])  # (a matmul whose batch axes broadcast)
+    saxpy = Ta.nvals * Tb.nvals / (k * max(nbatch, 1))
     dot = nmask * k * (Ta.nvals / max(Ta.size, 1) + Tb.nvals / max(Tb.size, 1))
     return {"axb_method": "dot"} if 4 * dot < saxpy else {}
 
