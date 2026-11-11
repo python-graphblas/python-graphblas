@@ -166,19 +166,19 @@ def test_statistical_errors():
         xp.diff(xp.zeros(3), n=-1)
 
 
-def test_concat_helper():
-    from graphblas.array_api._manipulation import _broadcast_to, _concat
+def test_concat_errors():
+    from graphblas.array_api._manipulation import _broadcast_to
 
     a = make(np.array([[1.0, 0.0]]), 0.0)
     b = make(np.array([[2.0, 2.0]]), 2.0)
-    assert_array_equal(_concat([a, b], 0), np.array([[1.0, 0.0], [2.0, 2.0]]))
-    assert_array_equal(_concat([xp.zeros((1, 2)), xp.zeros((2, 2))], 0), np.zeros((3, 2)))
+    assert_array_equal(xp.concat([a, b]), np.array([[1.0, 0.0], [2.0, 2.0]]))
+    assert_array_equal(xp.concat([xp.zeros((1, 2)), xp.zeros((2, 2))]), np.zeros((3, 2)))
     with pytest.raises(ValueError, match="at least one"):
-        _concat([], 0)
-    with pytest.raises(ValueError, match="positive number"):
-        _concat([xp.asarray(1.0)], 0)
+        xp.concat([])
+    with pytest.raises(ValueError, match="at least 1"):
+        xp.concat([xp.asarray(1.0)])
     with pytest.raises(ValueError, match="do not concatenate"):
-        _concat([a, xp.zeros((1, 3))], 0)
+        xp.concat([a, xp.zeros((1, 3))])
     with pytest.raises(ValueError, match="broadcast"):
         _broadcast_to(a, (3, 3))
     with pytest.raises(ValueError, match="cannot broadcast"):
