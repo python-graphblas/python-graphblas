@@ -451,3 +451,32 @@ def test_sddmm_dot_products(masks):
         masks.hints.clear()
         assert_close(xp.multiply(S2, P), expected)
         assert masks.hints == [{}]
+
+
+@pytest.mark.parametrize(
+    "op",
+    ["iadd", "isub", "imul", "itruediv", "ifloordiv", "imod", "ipow", "imatmul", "iand", "ior",
+     "ixor", "ilshift", "irshift"],
+)  # fmt: skip
+def test_inplace_operators_on_a_pending_array(op):
+    # (review finding H1) an in-place operator replaces a pending product: later consumers
+    # (the SDDMM, slicing) must read the new value, not the old product
+    import operator
+
+    func = getattr(operator, op)
+    rng = np.random.default_rng(14)
+    dtype = np.int64 if op in {"iand", "ior", "ixor", "ilshift", "irshift"} else np.float64
+    a = rng.integers(1, 5, (4, 4)).astype(dtype)
+    s = np.zeros((4, 4), dtype)
+    s[0, 0], s[1, 2], s[3, 3] = 2, 3, 1
+    s2 = np.eye(4, dtype=dtype)
+    P = make(a, 0) @ make(a, 0)
+    assert pending(P)
+    with np.errstate(all="ignore"):
+        expected = func((a @ a).copy(), s if op != "imatmul" else s2)
+        P = func(P, make(s, 0) if op != "imatmul" else make(s2, 0))
+        assert not pending(P)
+        assert P._pending is None
+        assert_close(P, expected)
+        assert_close(xp.multiply(make(s2, 0), P), s2 * expected)
+        assert_close(P[1:], expected[1:])

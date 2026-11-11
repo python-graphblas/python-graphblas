@@ -81,6 +81,7 @@ class Array:
     def _replace(self, other):
         """Make this Array hold ``other``'s values (for in-place operators and assignment)."""
         self._tensor = other._T()
+        self._pending = None  # (a pending product it was is not its value any more)
         self._shape = other._shape
         self._dtype = other._dtype
         self._fill = other._fill
