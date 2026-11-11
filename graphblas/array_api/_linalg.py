@@ -27,6 +27,15 @@ def _check(x, name):
         raise TypeError(f"{name} needs Arrays, not {type(x).__name__}")
 
 
+def _operand(x):
+    """A numpy array as an Array (``ndarray @ Array`` comes here through ``__rmatmul__``)."""
+    if isinstance(x, np.ndarray):
+        from ._creation import asarray
+
+        return asarray(x)
+    return x
+
+
 def _semiring(dt):
     return (semiring.lor_land if dt.kind == "b" else semiring.plus_times)[gb_dtype(dt)]
 
@@ -75,6 +84,7 @@ def matmul(x1, x2, /):
     from ._manipulation import expand_dims
     from ._statistical import sum as sum_
 
+    x1, x2 = _operand(x1), _operand(x2)
     _check(x1, "matmul")
     _check(x2, "matmul")
     if x1.ndim == 0 or x2.ndim == 0:
@@ -169,14 +179,9 @@ def tensordot(x1, x2, /, *, axes=2):
     Ta, Tb = a0._T(), b0._T()
     if Ta.nvals == 0 or Tb.nvals == 0 or math.prod(shape) == 0:
         out = Array._new(Tensor(gb_dtype(rdt), shape), 0)
-    elif not shape:
-        value = Ta.tensordot(Tb, (list(a_axes), list(b_axes)), _semiring(rdt)).new()
-        out = Array._new(value, 0)
     else:
         R = Ta.tensordot(Tb, (list(a_axes), list(b_axes)), _semiring(rdt)).new(dtype=gb_dtype(rdt))
         out = Array._new(R, 0)
-    if out.dtype != rdt:
-        out = cast(out, rdt)
     if fa is not None:
         s = sum_(b0, axis=b_axes, dtype=rdt) if b_axes else cast(b0, rdt)
         out = add(out, multiply(fa, reshape(s, (1,) * len(free1) + free2)))
