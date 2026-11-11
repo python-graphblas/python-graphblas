@@ -82,8 +82,7 @@ def _where_at_condition(cond, a, b, shape, rdt):
     ``cond``'s stored positions written over (see ``where``), or None when that operand
     would have to be broadcast over stored entries, or ``cond`` itself broadcasts.
     """
-    from .. import binary, select
-    from ..dtypes import BOOL
+    from .. import binary
 
     Tc = cond._T()
     if Tc.shape != shape:
@@ -92,31 +91,19 @@ def _where_at_condition(cond, a, b, shape, rdt):
     if isinstance(base, Array) and base.ndim and base.shape != shape and base._T().nvals:
         return None
     gdt = gb_dtype(rdt)
-    if not (isinstance(base, Array) and base.ndim and base._T().nvals):
-        # The base holds only the result's fill: the condition's entries that select it
-        # (those equal to its fill) would store the fill, so only the others are kept, and
-        # the other operand is read there only (where(x > t, x, 0) stores x's entries > t)
-        other = b if bool(cond._fill) else a
-        if cond.dtype.kind != "c":
-            # All in GraphBLAS, in parallel: the entries that select ``other`` (the truthy
-            # ones, or the falsy ones under a truthy fill; NaN is truthy), holding its fill,
-            # then its stored values written over. A broadcast ``other`` is read through a
-            # diagonal scaling, without replicating it (xp.where(graph, labels, big)).
-            pick = select.valueeq if bool(cond._fill) else select.valuene
-            sel = Tc.select(pick, False if Tc.dtype == BOOL else 0).new()
-            second = binary.second[gdt]
-            To = other._T() if isinstance(other, Array) and other.ndim else None
-            if To is not None and other.shape != shape and other.size <= 4 * sel.nvals:
-                # (stored at every position, the broadcast operand makes the product a
-                # diagonal scaling, one pass; with gaps in the diagonal SuiteSparse multiplies
-                # in general, 17x slower at 1e7 entries)
-                if To.nvals < other.size:
-                    To = _utils.with_fill(other, 0 if other._fill else 1)._T()
-                return sel.ewise_mult(To, second).new(dtype=gdt)
-            R = sel.apply(second, right=_utils.gb_scalar(_value(other), rdt)).new(dtype=gdt)
-            if To is not None and To.nvals:
-                R(accum=second) << sel.ewise_mult(To, second)
-            return R
+    has_base = isinstance(base, Array) and base.ndim and base._T().nvals
+    other = b if bool(cond._fill) else a
+    if cond.dtype.kind != "c":
+        # All in GraphBLAS, in parallel. The condition's entries that select the base (those
+        # equal to its fill) hold the base's values, which the base supplies; only the others
+        # are computed, and the other operand is read there only (where(x > t, x, 0)
+        # stores x's entries > t; where(frontier, k, level) is a select and a union).
+        R = _selecting(Tc, cond, other, shape, rdt)
+        if has_base:
+            R = base._T().ewise_add(R, binary.second[gdt]).new(dtype=gdt)
+        return R
+    if not has_base:
+        # (a complex condition: through numpy)
         coords, c = Tc.to_coo()
         c = np.asarray(c, dtype=bool)
         keep = c != bool(cond._fill)
@@ -140,6 +127,33 @@ def _where_at_condition(cond, a, b, shape, rdt):
     V = np.where(c, *values).astype(rdt, copy=False)
     R = Tensor.from_coo(coords, V, gdt, shape=shape) if len(c) else Tensor(gdt, shape)
     return base._T().ewise_add(R, binary.second[gdt]).new(dtype=gdt)
+
+
+def _selecting(Tc, cond, other, shape, rdt):
+    """The entries of ``Tc`` (cond's Tensor, not complex) that select ``other`` (the truthy
+    ones, or the falsy ones under a truthy fill; NaN is truthy), holding ``other``'s values:
+    its fill, then its stored values written over. A broadcast ``other`` is read through a
+    diagonal scaling, without replicating it (xp.where(graph, labels, big)).
+    """
+    from .. import binary, select
+    from ..dtypes import BOOL
+
+    gdt = gb_dtype(rdt)
+    pick = select.valueeq if bool(cond._fill) else select.valuene
+    sel = Tc.select(pick, False if Tc.dtype == BOOL else 0).new()
+    second = binary.second[gdt]
+    To = other._T() if isinstance(other, Array) and other.ndim else None
+    if To is not None and other.shape != shape and other.size <= 4 * sel.nvals:
+        # (stored at every position, the broadcast operand makes the product a diagonal
+        # scaling, one pass; with gaps in the diagonal SuiteSparse multiplies in general,
+        # 17x slower at 1e7 entries)
+        if To.nvals < other.size:
+            To = _utils.with_fill(other, 0 if other._fill else 1)._T()
+        return sel.ewise_mult(To, second).new(dtype=gdt)
+    R = sel.apply(second, right=_utils.gb_scalar(_value(other), rdt)).new(dtype=gdt)
+    if To is not None and To.nvals:
+        R(accum=second) << sel.ewise_mult(To, second)
+    return R
 
 
 def _values_at(coords, x, shape):
