@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+import graphblas as gb
 import graphblas.array_api as xp
 from graphblas.array_api import _utils
 from graphblas.core.tensor import Tensor
@@ -204,3 +205,96 @@ def test_summary_of_complex_values():
     x = make(np.array([1 + 0j, complex(-0.0, 1), complex(np.nan, 0)]), 0j)
     facts = _utils.summary(x)
     assert facts == {"finite": False, "nonnegative": False, "nan": True, "negzero": True}
+
+
+def test_thread3_argument_checks():
+    x = make(np.arange(6.0).reshape(2, 3), 0.0)
+    for func in [xp.take, xp.take_along_axis]:
+        with pytest.raises(TypeError, match="Array"):
+            func(np.zeros(3), np.array([0]))
+    with pytest.raises(TypeError, match="integer"):
+        xp.take(x, np.array([0.5]), axis=0)
+    with pytest.raises(ValueError, match="dimension"):
+        xp.take(xp.asarray(1.0), np.array([0]))
+    with pytest.raises(TypeError, match="Arrays"):
+        xp.matmul(x, [[1.0], [2.0], [3.0]])
+    with pytest.raises(ValueError, match="nonnegative"):
+        xp.tensordot(x, x, axes=-1)
+    with pytest.raises(ValueError, match="more axes"):
+        xp.tensordot(x, x, axes=3)
+    with pytest.raises(ValueError, match="as many"):
+        xp.tensordot(x, x, axes=([0], [0, 1]))
+    with pytest.raises(ValueError, match="dimension"):
+        xp.vecdot(xp.asarray(1.0), x)
+    with pytest.raises(ValueError, match="differs"):
+        xp.vecdot(x, make(np.ones((2, 2)), 0.0))
+    assert_array_equal(xp.vecdot(x, x, axis=1), np.vecdot(x.todense(), x.todense(), axis=1))
+    with pytest.raises(ValueError, match="repeated"):
+        xp.flip(x, axis=(0, 0))
+    with pytest.raises(TypeError, match="Python scalars"):
+        xp.where(x > 0, x, "a")
+    with pytest.raises(TypeError, match="Array"):
+        xp.argmax(np.zeros(3))
+    with pytest.raises(ValueError, match="negative"):
+        xp.linalg.cross(xp.zeros(3), xp.zeros(3), axis=0)
+    with pytest.raises(TypeError, match="Array"):
+        xp.linalg.vector_norm(np.zeros(3))
+    a = np.array([[1.0, 2.0], [3.0, 4.0]])
+    rtol = xp.asarray(1e-3)
+    assert_array_equal(xp.linalg.pinv(make(a, 0.0), rtol=rtol), np.linalg.pinv(a, rtol=1e-3))
+    assert int(xp.linalg.matrix_rank(make(a, 0.0), rtol=rtol)) == 2
+    assert_array_equal(x @ x.mT, x.todense() @ x.todense().T)
+
+
+def test_thread3_edge_cases():
+    x = make(np.arange(6.0).reshape(2, 3), 0.0)
+    assert_array_equal(x[np.array([], dtype=float)], np.zeros((0, 3)))
+    assert_array_equal(x[xp.asarray(True)], x.todense()[None])
+    assert_array_equal(x[np.array(False)], x.todense()[np.array(False)])
+    y = make(np.arange(6.0).reshape(2, 3), 0.0)
+    y[:, 0:0] = 5.0
+    y[[0, 1], 0:0] = xp.zeros((2, 0))
+    y[[], 1] = 3.0
+    assert_array_equal(y, x.todense())
+    e = xp.zeros((2, 3))
+    e[0] = 0.0  # (deleting from an array that stores nothing)
+    assert e.nnz == 0
+    assert_array_equal(
+        xp.take_along_axis(xp.zeros((2, 3)), np.zeros((2, 1), int), axis=1), np.zeros((2, 1))
+    )
+    assert_array_equal(xp.nonzero(xp.zeros(4))[0], np.zeros(0, np.int64))
+    assert_array_equal(xp.sort(xp.zeros(3)), np.zeros(3))
+    assert_array_equal(xp.sort(make(np.array([0.0, 2.0, 0.0]), 2.0)), np.array([0.0, 0.0, 2.0]))
+    z = make(np.array([[2.0, 2.0], [2.0, 2.0]]), 2.0, np.random.default_rng(0), explicit=1.0)
+    assert_array_equal(xp.sort(z, axis=0), np.full((2, 2), 2.0))
+    full = make(np.array([[1.0, 2.0], [3.0, 1.0]]), 0.0)
+    assert_array_equal(xp.unique_inverse(full).inverse_indices, np.array([[0, 1], [2, 0]]))
+    assert_array_equal(xp.unique_values(xp.zeros((2, 0))), np.zeros(0))
+    assert_array_equal(
+        xp.unique_inverse(xp.zeros((2, 0))).inverse_indices, np.zeros((2, 0), np.int64)
+    )
+    assert_array_equal(xp.isin(full, full), np.ones((2, 2), bool))
+    with np.errstate(all="ignore"):
+        assert_array_equal(xp.var(xp.zeros((0, 3)), axis=0, keepdims=True), np.full((1, 3), np.nan))
+    # tensordot with a nonzero fill on a 0-d result, and int32 * int8 promotion
+    a = make(np.array([1.0, 0.0, 2.0]), 1.0)
+    assert_array_equal(xp.tensordot(a, a, axes=1), np.tensordot(a.todense(), a.todense(), axes=1))
+    i32 = make(np.array([[1, 2], [3, 4]], np.int32), 0)
+    i8 = make(np.array([[1, 0], [0, 1]], np.int8), 0)
+    assert_array_equal(
+        xp.tensordot(i32, i8, axes=1), np.tensordot(i32.todense(), i8.todense(), axes=1)
+    )
+    inf = make(np.array([[np.inf, 1.0], [2.0, np.inf]]), np.inf)
+    assert_array_equal(
+        xp.tensordot(inf, i32, axes=1), np.tensordot(inf.todense(), i32.todense(), axes=1)
+    )
+    # both operands broadcast: an outer product of the entries, under the limit
+    u, v = make(np.ones((3, 1, 4)), 0.0), make(np.ones((5, 4)), 0.0)
+    assert_array_equal(xp.vecdot(u, v), np.vecdot(u.todense(), v.todense()))
+    with gb.config.set(array_api_densify_limit=4), pytest.raises(xp.DensifyError):
+        xp.vecdot(u, v)
+    # numpy operands
+    c = np.array([True, False, True])
+    assert_array_equal(xp.where(c, np.array([1, 2, 3]), 0), np.where(c, [1, 2, 3], 0))
+    assert_array_equal(xp.where(True, x, 0.0), x.todense())
+    assert_array_equal(np.eye(3) @ x.mT, np.eye(3) @ x.todense().T)
