@@ -246,3 +246,18 @@ def test_axis_errors():
         xp.sum(x, axis=2)
     with pytest.raises(ValueError, match="repeated"):
         xp.sum(x, axis=(0, -2))
+
+
+def test_var_of_a_huge_sparse_array():
+    # The means are not stored densely: a 1e9 x 1e9 array with 4 entries
+    n = 10**9
+    coords = (np.array([0, 5, 5, 10**8]), np.array([3, 3, 7, 3]))
+    x = xp.from_coo(coords, np.array([1.0, 2.0, 4.0, 8.0]), (n, n))
+    v = xp.var(x, axis=0)
+    assert v.nnz == 2
+    assert v.fill_value == 0.0
+    for col, values in [(3, [1.0, 2.0, 8.0]), (7, [4.0])]:
+        values = np.array(values)
+        mean = values.sum() / n
+        expected = (((values - mean) ** 2).sum() + (n - values.size) * mean**2) / n
+        assert float(v[col]) == pytest.approx(expected, rel=1e-12)

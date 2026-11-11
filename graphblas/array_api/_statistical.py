@@ -322,17 +322,11 @@ def var(x, /, *, axis=None, correction=0.0, keepdims=False):
         return out if out.dtype == real_dt else cast(out, real_dt)
     T = x._T()
     m = mean(x, axis=axes)
-    keep_shape = _out_shape(x.shape, axes, keepdims=True)
     if T.nvals:
-        _utils.check_dense(math.prod(keep_shape), "var or std (the means)")
-        M = _utils.full_tensor(rdt, keep_shape, m._fill)
-        Tm = m._T()
-        if Tm.nvals:
-            M(accum=binary.second) << Tm.expand_dims(axes)
-        D = T.ewise_mult(M, binary.minus[gb_dtype(rdt)]).new()
+        C = _reduce_tensor(T, agg.count, axes)
+        D = _deviations(T, m, C, axes, rdt)
         S2 = _utils.map_values(lambda d: np.real(d * np.conj(d)).astype(real_dt), [D], real_dt)
         S2 = _reduce_tensor(S2, monoid.plus[gb_dtype(real_dt)], axes)
-        C = _reduce_tensor(T, agg.count, axes)
     else:
         S2 = Tensor(gb_dtype(real_dt), m.shape)
         C = Tensor(gb_dtype(np.int64), m.shape)
@@ -344,6 +338,23 @@ def var(x, /, *, axis=None, correction=0.0, keepdims=False):
     if out.dtype != real_dt:
         out = cast(out, real_dt)
     return _keepdims(out, x, axes, keepdims)
+
+
+def _deviations(T, m, C, axes, rdt):
+    """Each entry of ``T`` minus its fiber's mean (``m``, ``C`` the entries per fiber)."""
+    minus = binary.minus[gb_dtype(rdt)]
+    if m.ndim == 0:
+        return T.apply(minus, right=_utils.gb_scalar(m._fill, rdt)).new()
+    Tm = m._T()
+    if Tm.nvals != C.nvals:  # pragma: no cover (safety: store the mean of every fiber)
+        keep_shape = _out_shape(T.shape, axes, keepdims=True)
+        _utils.check_dense(math.prod(keep_shape), "var or std (the means)")
+        M = _utils.full_tensor(rdt, keep_shape, m._fill)
+        M(accum=binary.second) << Tm.expand_dims(axes)
+        return T.ewise_mult(M, minus).new()
+    # The means store exactly the fibers that hold entries (the pattern of the sums), and every
+    # entry lies in one of them: broadcast them as they are, with no dense copy
+    return T.ewise_mult(Tm.expand_dims(axes), minus).new()
 
 
 def _times_count(k, d):
