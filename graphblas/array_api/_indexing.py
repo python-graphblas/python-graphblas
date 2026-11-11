@@ -96,4 +96,6 @@ def _advanced_getitem(x, key):
 
 
 def setitem(x, key, value):
+    # (an implementation that changes x's Tensor in place must also clear x._facts, the cached
+    # summary of its stored values; Array._replace does both)
     raise NotImplementedError("assignment by index is not supported yet")
