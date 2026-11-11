@@ -37,8 +37,13 @@ def _value(x):
 def where(condition, x1, x2, /):
     """``x1`` where ``condition`` is true, else ``x2`` (broadcast); numpy's ``where``.
 
-    The entries are the union of the three arrays' entries, O(entries) (with the broadcast
-    operands' entries replicated, as for any union).
+    Where the condition stores nothing it reads its fill, so the result there is the operand
+    that fill selects. When that operand needs no broadcast (or is a scalar, or stores
+    nothing), the result is that operand with the condition's stored positions written over:
+    O(entries of the condition and of that operand), the other operand read only at the
+    condition's entries (``xp.where(graph, labels, big)``, with ``labels`` broadcast along an
+    axis of ``graph``, stores ``graph``'s entries). Otherwise the entries are the union of
+    the three arrays' entries, with the broadcast operands' entries replicated.
     """
     cond = _operand(condition, "where")
     if not isinstance(cond, Array):
@@ -54,6 +59,8 @@ def where(condition, x1, x2, /):
     arrays = [x for x in (cond, a, b) if isinstance(x, Array) and x.ndim]
     if not shape or all(x._T().nvals == 0 for x in arrays):
         return Array._new(Tensor(gb_dtype(rdt), shape), fill)
+    if (R := _where_at_condition(cond, a, b, shape, rdt)) is not None:
+        return Array._new(R, fill)
     tensors = iter(_utils.aligned(arrays, shape))
     slots = [next(tensors) if isinstance(x, Array) and x.ndim else None for x in (cond, a, b)]
     constants = [_value(x) for x in (cond, a, b)]
@@ -67,6 +74,47 @@ def where(condition, x1, x2, /):
 
     R = _utils.map_values(func, [t for t in slots if t is not None], rdt)
     return Array._new(R, fill)
+
+
+def _where_at_condition(cond, a, b, shape, rdt):
+    """``where(cond, a, b)``'s Tensor built from the operand ``cond``'s fill selects, with
+    ``cond``'s stored positions written over (see ``where``), or None when that operand
+    would have to be broadcast over stored entries, or ``cond`` itself broadcasts.
+    """
+    from .. import binary
+
+    Tc = cond._T()
+    if Tc.shape != shape:
+        return None
+    base = a if bool(cond._fill) else b
+    if isinstance(base, Array) and base.ndim and base.shape != shape and base._T().nvals:
+        return None
+    coords, c = Tc.to_coo()
+    values = []
+    for x in (a, b):
+        if isinstance(x, Array) and x.ndim:
+            values.append(_values_at(coords, x, shape) if len(c) else c)
+        else:
+            values.append(_value(x))
+    V = np.where(np.asarray(c, dtype=bool), *values).astype(rdt, copy=False)
+    gdt = gb_dtype(rdt)
+    R = Tensor.from_coo(coords, V, gdt, shape=shape) if len(c) else Tensor(gdt, shape)
+    if isinstance(base, Array) and base.ndim and base._T().nvals:
+        R = base._T().ewise_add(R, binary.second[gdt]).new(dtype=gdt)
+    return R
+
+
+def _values_at(coords, x, shape):
+    """The values of ``x`` (an Array that broadcasts to ``shape``) at ``coords`` of
+    ``shape``: its stored value, or its fill. O(len(coords)), read from x's own entries.
+    """
+    lead = len(shape) - x.ndim
+    n = len(coords[0])
+    # (a broadcast axis of x has size 1: index 0 there)
+    index = tuple(
+        coords[lead + i] if size != 1 else np.zeros(n, np.int64) for i, size in enumerate(x.shape)
+    )
+    return x._T().vindex[index].to_dense(fill_value=x._fill)
 
 
 def _check_array(x, name):

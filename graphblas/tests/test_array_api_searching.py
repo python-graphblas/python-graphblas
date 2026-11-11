@@ -46,6 +46,42 @@ def test_where(shapes):
         xp.where(make(np.ones(3, bool), False), x, x)
 
 
+def test_where_stores_the_condition_and_the_selected_operand():
+    # Where the condition stores nothing, its fill selects one operand: the result is that
+    # operand with the condition's stored positions written over, and the other operand is
+    # read only there (no replication of a broadcast operand)
+    rng = np.random.default_rng(7)
+    n = 60
+    c = rng.random((n, n)) < 0.05
+    labels = np.arange(n)
+    big = np.iinfo(np.int64).max
+    G = make(c, False, rng)  # (with explicit False entries)
+    W = xp.where(G, xp.arange(n), big)
+    assert_array_equal(W, np.where(c, labels, big))
+    assert W.nnz == G.nnz
+    assert W.fill_value == big
+    # other layouts of the condition, and a fill of True (the base is then x1)
+    for cond, cn in [(xp.matrix_transpose(G), c.T), (xp.logical_not(G), ~c)]:
+        a = rng.normal(size=(n, n))
+        a[rng.random((n, n)) < 0.5] = 0
+        a[0, 0] = np.nan
+        for x1, x2, e in [
+            (make(a, 0.0), xp.arange(n) * 1.0, np.where(cn, a, labels * 1.0)),
+            (xp.arange(n) * 1.0, make(a, 0.0, rng), np.where(cn, labels * 1.0, a)),
+            (xp.arange(n)[:, None] * 1.0, -1.0, np.where(cn, labels[:, None] * 1.0, -1.0)),
+        ]:
+            assert_array_equal(xp.where(cond, x1, x2), e)
+    # The selected operand broadcasts over stored entries, or the condition broadcasts: the
+    # union (the result really holds the operand's entries along the broadcast axis)
+    v = np.where(rng.random(n) < 0.5, rng.normal(size=n), 0.0)
+    assert_array_equal(xp.where(G, -1.0, make(v, 0.0)), np.where(c, -1.0, v))
+    assert_array_equal(xp.where(make(c[0], False), make(a, 0.0), 2.0), np.where(c[0], a, 2.0))
+    # An empty condition: the selected operand
+    E = xp.zeros((n, n), dtype=xp.bool)
+    assert_array_equal(xp.where(E, 1.0, make(a, 0.0)), a)
+    assert xp.where(E, 1.0, make(a, 0.0)).nnz == make(a, 0.0).nnz
+
+
 def test_where_dtypes():
     for dt in DTYPES:
         for dense, x in inputs(dt, (5,), seed=6):
