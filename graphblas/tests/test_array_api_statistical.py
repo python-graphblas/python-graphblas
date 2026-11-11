@@ -214,7 +214,42 @@ def test_cumulative(name, include_initial):
 
 def test_cumulative_is_guarded():
     with gb.config.set(array_api_densify_limit=10), pytest.raises(xp.DensifyError):
-        xp.cumulative_sum(xp.zeros(100))
+        xp.cumulative_sum(xp.full(100, 1.0))
+    # with the identity as fill only the positions from each fiber's first entry are stored
+    # (review finding L8)
+    y = xp.zeros((20000, 20000))
+    y[[1, 5, 9], [3, 19000, 7]] = 1.0
+    assert xp.cumulative_sum(y, axis=1).nnz == 19997 + 1000 + 19993
+    assert xp.cumulative_sum(xp.zeros(10**12)).nnz == 0
+    with gb.config.set(array_api_densify_limit=100), pytest.raises(xp.DensifyError):
+        xp.cumulative_sum(y, axis=1)
+
+
+@pytest.mark.parametrize("name", ["cumulative_sum", "cumulative_prod"])
+def test_cumulative_sparse_exact(name):
+    # runs of unstored positions add (multiply by) the fill: 0.0 + -0.0 is 0.0, as in numpy
+    func = np.cumsum if name == "cumulative_sum" else np.cumprod
+    identity = 0 if name == "cumulative_sum" else 1
+    rng = np.random.default_rng(17)
+    specials = np.array([-0.0, 1.5, -2.0, 3.0, np.inf, np.nan, 0.5])
+    for dtype in [np.float64, np.float32, np.int16, np.uint8, np.bool_]:
+        for shape in [(9,), (3, 7), (2, 3, 5), (1, 40)]:
+            if np.dtype(dtype).kind == "f":
+                vals = rng.choice(specials, shape)
+            else:
+                vals = rng.integers(0, 4, shape)
+            a = np.where(rng.random(shape) < 0.6, identity, vals).astype(dtype)
+            x = make(a, identity, rng)
+            for axis in range(len(shape)):
+                for include_initial in [False, True]:
+                    expected = np_call(func, a, axis=axis)
+                    if include_initial:
+                        s = list(expected.shape)
+                        s[axis] = 1
+                        initial = np.full(s, identity, expected.dtype)
+                        expected = np.concatenate([initial, expected], axis=axis)
+                    out = np_call(getattr(xp, name), x, axis=axis, include_initial=include_initial)
+                    assert_array_equal(out, expected)
 
 
 @pytest.mark.parametrize("n", [0, 1, 2, 5])
