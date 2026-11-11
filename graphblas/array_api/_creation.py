@@ -11,6 +11,7 @@ import math
 
 import numpy as np
 
+from .. import binary
 from ..core.tensor import Tensor
 from . import _utils
 from ._array import Array, check_device
@@ -208,7 +209,9 @@ def _unwrap_nested(obj):
 
 def from_coo(coords, data, shape=None, *, fill_value=None, dtype=None):
     """An Array storing ``data`` at ``coords`` (one index array per axis, or an (ndim, nnz)
-    array), and ``fill_value`` (0 by default) elsewhere. ``data`` may be a scalar.
+    array), and ``fill_value`` (0 by default) elsewhere. ``data`` may be a scalar. Values at a
+    repeated coordinate are summed (logical or for bool), as pydata/sparse and scipy.sparse
+    do.
     """
     data = np.asarray(data)
     dt = as_dtype(dtype) if dtype is not None else check_supported(data.dtype, "from_coo data")
@@ -225,7 +228,17 @@ def from_coo(coords, data, shape=None, *, fill_value=None, dtype=None):
         value = data.reshape(-1)[0] if data.size else fill
         return Array._new(Tensor(gb_dtype(dt), ()), value)
     if coords and coords[0].size:
-        T = Tensor.from_coo(coords, data, gb_dtype(dt), shape=shape)
+        gdt = gb_dtype(dt)
+        plus = binary.plus[gdt]  # (lor for bool)
+        if data.ndim:
+            T = Tensor.from_coo(coords, data, gdt, shape=shape, dup_op=plus)
+        else:
+            # One value everywhere (iso, which keeps no duplicates); when coordinates
+            # repeat, each sums its copies: built again from the value repeated
+            T = Tensor.from_coo(coords, data, gdt, shape=shape)
+            if T.nvals < coords[0].size and dt.kind != "b":
+                data = np.broadcast_to(data, coords[0].shape)
+                T = Tensor.from_coo(coords, data, gdt, shape=shape, dup_op=plus)
     else:
         T = Tensor(gb_dtype(dt), shape)
     return Array._new(T, fill)

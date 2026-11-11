@@ -147,6 +147,18 @@ def test_asarray_scipy_and_pydata_sparse():
 def test_from_coo():
     x = xp.from_coo(([0, 2], [1, 0]), [1.0, 2.0], (3, 2), fill_value=5.0)
     assert_array_equal(x, np.array([[5.0, 1.0], [5.0, 5.0], [2.0, 5.0]]))
+    # a repeated coordinate sums its values (or for bool), as pydata/sparse and scipy do
+    x = xp.from_coo(([0, 0, 1], [1, 1, 0]), [1.0, 2.0, 5.0], (2, 2))
+    assert_array_equal(x, np.array([[0.0, 3.0], [5.0, 0.0]]))
+    x = xp.from_coo(([0, 0],), [True, False], (3,))
+    assert_array_equal(x, np.array([True, False, False]))
+    x = xp.from_coo(([1, 1],), np.array([100, 100], np.int8), (2,))
+    assert_array_equal(x, np.array([0, -56], np.int8))  # (wraps, as numpy's int8 sum)
+    # one value for every coordinate: stored once (iso), summed where coordinates repeat
+    x = xp.from_coo(([0, 2, 0],), 7, (3,))
+    assert_array_equal(x, np.array([14, 0, 7]))
+    assert_array_equal(xp.from_coo(([0, 0],), True, (2,)), np.array([True, False]))
+    assert_array_equal(xp.from_coo(([1, 0],), 2.5, (2,)), np.array([2.5, 2.5]))
     x = xp.from_coo(np.array([[0, 2], [1, 0]]), 7, (3, 2))
     assert x.dtype == np.dtype(int)
     assert_array_equal(x, np.array([[0, 7], [0, 0], [7, 0]]))
