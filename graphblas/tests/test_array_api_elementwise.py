@@ -145,10 +145,10 @@ def _assert_identical(a, b):
         raise AssertionError(f"{bad.sum()} positions differ (position, got, expected): {detail}")
 
 
-def np_call(func, *args):
+def np_call(func, *args, **kwargs):
     with np.errstate(all="ignore"), warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        return func(*args)
+        return func(*args, **kwargs)
 
 
 def inputs(dtype, shape, seed=0):
