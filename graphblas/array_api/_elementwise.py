@@ -359,14 +359,19 @@ def signbit(x, /):
     return _unary("signbit", np.signbit, x)
 
 
-def _libm_unary(name, ufunc, op, kinds=_INEXACT):
-    """``ufunc`` computed by the SuiteSparse unary op ``op`` (C's libm, in parallel) for
-    floating dtypes of ``kinds``, by numpy otherwise: within libm's rounding of numpy's
-    answer, special values (NaN, inf, signed zeros) exact (DESIGN D3b).
+def _libm_unary(name, ufunc, op):
+    """``ufunc`` computed by the SuiteSparse unary op ``op`` (C's libm, in parallel) for real
+    floating dtypes, by numpy otherwise: within libm's rounding of numpy's answer, special
+    values (NaN, inf, signed zeros) exact (DESIGN D3b).
+
+    Complex values stay on numpy: C libraries treat the many special cases of complex
+    arguments differently from platform to platform, and SuiteSparse's complex expm1 and
+    log1p are formulas of its own, inexact near 0. Integer inputs stay too (numpy's result
+    dtype there, such as float16 for int8, is its own).
     """
 
     def func(x, /):
-        return _unary(name, ufunc, x, _typed(op, kinds))
+        return _unary(name, ufunc, x, _typed(op, _FLOAT))
 
     func.__name__ = name
     func.__qualname__ = name
@@ -389,10 +394,8 @@ sin = _libm_unary("sin", np.sin, unary.sin)
 sinh = _libm_unary("sinh", np.sinh, unary.sinh)
 tan = _libm_unary("tan", np.tan, unary.tan)
 tanh = _libm_unary("tanh", np.tanh, unary.tanh)
-# SuiteSparse's complex expm1 and log1p are formulas of its own, not libm's: inexact near 0
-# and off numpy's special values (expm1(-inf + nan j) is -1 there, not nan + nan j)
-expm1 = _libm_unary("expm1", np.expm1, unary.expm1, _FLOAT)
-log1p = _libm_unary("log1p", np.log1p, unary.log1p, _FLOAT)
+expm1 = _libm_unary("expm1", np.expm1, unary.expm1)
+log1p = _libm_unary("log1p", np.log1p, unary.log1p)
 
 
 # Binary functions
