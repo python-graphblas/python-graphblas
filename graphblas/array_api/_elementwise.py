@@ -129,6 +129,21 @@ def _fill_operand(x):
     return x
 
 
+def _fill_of(ufunc, rdt, operands):
+    """``ufunc`` of the operands' fills: the result's fill.
+
+    An Array that stores every position never shows its fill, so where the fills raise
+    (integers to a negative power) and one operand is such an Array, the result's fill is
+    never seen either, and 0 stands in for it.
+    """
+    try:
+        return ufunc(*[_fill_operand(x) for x in operands])
+    except (ValueError, ArithmeticError):
+        if any(isinstance(x, Array) and x.ndim and x._T().nvals == x.size for x in operands):
+            return _utils.scalar(0, rdt)
+        raise
+
+
 def _result(T, fill):
     return Array._new(T, fill)
 
@@ -152,7 +167,7 @@ def _unary(name, ufunc, x, gb=None, *, const=None):
         x = asarray(x)
     with np.errstate(all="ignore"):
         rdt = ufunc(np.empty(0, x.dtype)).dtype
-        fill = ufunc(np.asarray(x._fill))
+        fill = _fill_of(ufunc, rdt, (x,))
     check_supported(rdt, f"{name} of {x.dtype}")
     T = x._T()
     if T.ndim == 0:
@@ -406,7 +421,7 @@ def _binary(spec, x1, x2):
         a = asarray(a)
     with np.errstate(all="ignore"):
         rdt = ufunc(_probe(a), _probe(b)).dtype
-        fill = ufunc(_fill_operand(a), _fill_operand(b))
+        fill = _fill_of(ufunc, rdt, (a, b))
     check_supported(rdt, f"{spec.name} of {_dtype_name(a)} and {_dtype_name(b)}")
     a_arr = isinstance(a, Array) and a.ndim > 0
     b_arr = isinstance(b, Array) and b.ndim > 0

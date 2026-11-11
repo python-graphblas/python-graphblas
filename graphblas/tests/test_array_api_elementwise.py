@@ -553,6 +553,15 @@ def test_values_mapped_on_every_storage_format():
     del gb
 
 
+def test_unseen_fill_does_not_raise():
+    # x stores every position, so its fill (-1) never meets y's fill as an exponent
+    x = xp.from_coo(([0, 1, 2],), [2, 3, 4], (3,), fill_value=-1)
+    y = xp.full((3,), -2)
+    assert_array_equal(xp.pow(y, x), np.power(np.full(3, -2), [2, 3, 4]))
+    with pytest.raises(ValueError, match="negative"):
+        xp.pow(make(np.array([2, 0, 3]), 0), -1)
+
+
 def test_zero_d_results_store_nothing():
     x = xp.asarray(2.5)
     y = xp.add(x, 1)
