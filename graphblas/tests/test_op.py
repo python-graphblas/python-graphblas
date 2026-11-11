@@ -6982,3 +6982,38 @@ def test_initialize_does_not_build_lazy_udfs():
 
     still_lazy = lines.get("still lazy", "").split()
     assert still_lazy == ["floordiv", "rfloordiv", "absfirst", "abssecond", "rpow"], report
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_builtin_udfs_are_disk_cached():
+    # The built-in UDF binops are module-level functions, so numba can persist
+    # their compilation across processes. Anything a user registers cannot be:
+    # numba keys a cache entry on a stable on-disk source, which a lambda or an
+    # interactively defined function does not have.
+    from numba.core.caching import NullCache
+
+    for name in ["floordiv", "rfloordiv", "absfirst", "abssecond", "rpow"]:
+        numba_func = getattr(binary, name)._numba_func
+        assert not isinstance(numba_func._cache, NullCache), name
+
+    def _uncached_probe(x, y):  # pragma: no cover (numba)
+        return x + y
+
+    user_op = BinaryOp.register_anonymous(_uncached_probe)
+    assert isinstance(user_op._numba_func._cache, NullCache)
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_builtin_udf_compiles_uncached_where_numba_cannot_cache(monkeypatch):
+    # A read-only install whose user has no writable cache directory either
+    # leaves Numba no cache locator, and njit(cache=True) raises RuntimeError.
+    # The op then compiles uncached instead of failing.
+    from numba.core import caching
+
+    from graphblas.core.operator.binary import _floordiv
+
+    monkeypatch.setattr(caching.CacheImpl, "_locator_classes", [])
+    op = BinaryOp._build("floordiv", _floordiv, anonymous=True, cache=True)
+    assert isinstance(op._numba_func._cache, caching.NullCache)
+    v = Vector.from_coo([0, 1], [-3, 4])
+    assert v.ewise_mult(v, op).new().isequal(Vector.from_coo([0, 1], [1, 1]))
