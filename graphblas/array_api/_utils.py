@@ -179,17 +179,21 @@ def with_fill(x, fill):
 # pass and cached on the Array; ``fact`` documents them. For each: the unary op that says
 # whether a value has the property, the monoid that combines those answers, and the answer when
 # the Array stores nothing.
+# (A number in place of the unary op: whether a value equals it.)
 _FACT_SCANS = {
     "finite": (unary.isfinite, monoid.land, True),
     "nan": (unary.isnan, monoid.lor, False),
-    "zero": (None, monoid.lor, False),
+    "zero": (0, monoid.lor, False),
+    "posinf": (np.inf, monoid.lor, False),
+    "neginf": (-np.inf, monoid.lor, False),
 }
 
 
 def fact(x, name):
     """A fact about the stored values of the Array ``x``, computed once (cached on ``x``):
-    "finite" (every value finite), "nan" (some value is NaN) or "zero" (some value is 0 or
-    -0.0). Integers and bools are finite and not NaN without a look; each other fact is one
+    "finite" (every value finite), "nan" (some value is NaN), "zero" (some value is 0 or
+    -0.0), "posinf" or "neginf" (some value is inf, or -inf). Integers and bools are finite,
+    with no NaN or infinity, without a look; each other fact is one
     parallel GraphBLAS pass with no copy of the values (an apply to bool, then a reduction
     that stops at the first deciding value).
     """
@@ -202,7 +206,7 @@ def _compute_fact(x, name):
     facts = x._facts
     if name != "zero" and x.dtype.kind not in "fc":
         return name == "finite"
-    if name == "nan" and facts.get("finite"):
+    if name in {"nan", "posinf", "neginf"} and facts.get("finite"):
         return False
     if name == "finite" and facts.get("nan"):
         return False
@@ -215,8 +219,8 @@ def tensor_fact(T, name):
     if T.nvals == 0:
         return empty
     dt = T.dtype
-    if op is None:
-        B = T.apply(binary.eq[dt], right=gb_scalar(0, np_dtype(dt))).new()
+    if not callable(op):
+        B = T.apply(binary.eq[dt], right=gb_scalar(op, np_dtype(dt))).new()
     else:
         B = T.apply(op[dt]).new()
     return bool(B.reduce_scalar(combine[lookup_dtype(bool)]).new().value)
