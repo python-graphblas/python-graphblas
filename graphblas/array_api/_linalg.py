@@ -292,7 +292,7 @@ def _product(a, b, typed, out_dt, fill):
 
     spec = _matmul_terms(a.shape, b.shape)
     spec = None if spec is None else (*spec, typed)
-    return _lazy.contraction((a, b), build, shape, out_dt, fill, spec, a.shape[-1])
+    return _lazy.contraction((a, b), build, shape, out_dt, fill, spec, a.shape[-1], True)
 
 
 # Index letters for the einsum that computes a contraction (for slicing a pending result)
@@ -404,7 +404,7 @@ def _tensordot(a, b, a_axes, b_axes, shape, typed, out_dt, fill):
     spec = _tensordot_terms(a.ndim, b.ndim, a_axes, b_axes)
     spec = None if spec is None else (*spec, typed)
     nterms = math.prod(a.shape[i] for i in a_axes)
-    return _lazy.contraction((a, b), build, shape, out_dt, fill, spec, nterms)
+    return _lazy.contraction((a, b), build, shape, out_dt, fill, spec, nterms, True)
 
 
 def vecdot(x1, x2, /, *, axis=-1, semiring=None):
@@ -516,4 +516,7 @@ def einsum(subscripts, /, *operands, semiring=None):
         c: n for term, s in zip(terms, shapes, strict=True) for c, n in zip(term, s, strict=True)
     }
     nterms = math.prod(n for c, n in sizes.items() if c not in output)
-    return _lazy.contraction(ops, build, shape, out_dt, fill, (terms, output, typed), nterms)
+    product = _lazy._one_product(terms, output)
+    return _lazy.contraction(
+        ops, build, shape, out_dt, fill, (terms, output, typed), nterms, product
+    )

@@ -40,15 +40,23 @@ def pending(x):
     return x._tensor is None
 
 
+class _Seen(list):
+    hints = None
+
+
 @pytest.fixture
 def masks(monkeypatch):
     """The masks the pending products were computed under (None: whole)."""
-    seen = []
+    seen = _Seen()
     compute = _lazy.Contraction.compute
 
-    def recording(self, mask=None):
+    def recording(self, mask=None, **opts):
         seen.append(mask)
-        return compute(self, mask)
+        hints.append(opts)
+        return compute(self, mask, **opts)
+
+    hints = []
+    seen.hints = hints  # (the options each computation got)
 
     monkeypatch.setattr(_lazy.Contraction, "compute", recording)
     return seen
@@ -411,3 +419,35 @@ def test_iteration_computes_once(masks):
     assert masks == [None]
     for row, expected in zip(rows, a @ b, strict=True):
         assert_close(row, expected)
+
+
+def test_sddmm_dot_products(masks):
+    # A @ B with B held by row (k x n) under a sparse mask: dot products at the mask's
+    # entries, not SuiteSparse's masked saxpy over the whole product (found by the SAPS run)
+    rng = np.random.default_rng(13)
+    n, k = 60, 4
+    s = np.where(rng.random((n, n)) < 0.02, rng.random((n, n)), 0.0)
+    a, b = rng.random((n, k)) + 0.5, rng.random((k, n)) + 0.5
+    S, A, B = make(s, 0.0), xp.asarray(a), xp.asarray(b)
+    for P, expected in [
+        (A @ B, s * (a @ b)),
+        (xp.tensordot(A, B, axes=1), s * (a @ b)),
+        (xp.einsum("ik,kj->ij", A, B), s * (a @ b)),
+        (xp.einsum("ik,jk->ij", A, xp.asarray(b.T)), s * (a @ b)),
+        ((A @ B)[: n // 2], s[: n // 2] * (a @ b)[: n // 2]),
+    ]:
+        masks.clear()
+        masks.hints.clear()
+        S2 = S if expected.shape == s.shape else S[: n // 2]
+        assert_close(xp.multiply(S2, P), expected)
+        assert masks.hints == [{"axb_method": "dot"}]
+    # Not for a dense mask, a vecdot, or an einsum whose product is permuted after
+    for S2, P, expected in [
+        (make(np.ones((n, n)), 0.0), A @ B, a @ b),
+        (S, xp.vecdot(A[:, None, :], xp.asarray(b.T)[None, :, :]), s * (a @ b)),
+        (S, xp.einsum("ik,kj->ji", A, B), s * (a @ b).T),
+    ]:
+        masks.clear()
+        masks.hints.clear()
+        assert_close(xp.multiply(S2, P), expected)
+        assert masks.hints == [{}]

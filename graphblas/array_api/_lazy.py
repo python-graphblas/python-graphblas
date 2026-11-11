@@ -44,20 +44,22 @@ class Contraction:
     slice of the result slice the operands instead (None: no such einsum). ``finite`` holds
     each operand's finiteness: True, False, or None when not checked yet. ``nterms``: the
     number of terms each result position sums (the product of the contracted sizes).
+    ``product``: whether it is one product of its two operands, which takes the mask.
     """
 
-    __slots__ = "tensors", "build", "gbdt", "spec", "finite", "nterms"
+    __slots__ = "tensors", "build", "gbdt", "spec", "finite", "nterms", "product"
 
-    def __init__(self, tensors, build, gbdt, spec, finite, nterms):
+    def __init__(self, tensors, build, gbdt, spec, finite, nterms, product=False):
         self.tensors = tensors
         self.build = build
         self.gbdt = gbdt
         self.spec = spec
         self.finite = finite
         self.nterms = nterms
+        self.product = product
 
-    def compute(self, mask=None):
-        return self.build(*self.tensors).new(dtype=self.gbdt, mask=mask)
+    def compute(self, mask=None, **opts):
+        return self.build(*self.tensors).new(dtype=self.gbdt, mask=mask, **opts)
 
     def all_finite(self):
         """Whether every value of the product is finite: every operand value is finite, and
@@ -101,10 +103,10 @@ def _known_finite(x):
     return None if facts is None else facts.get("finite")
 
 
-def contraction(arrays, build, shape, dtype, fill, spec=None, nterms=1):
+def contraction(arrays, build, shape, dtype, fill, spec=None, nterms=1, product=False):
     """The Array of ``build(*tensors)`` over the arrays' Tensors, with fill ``fill``: pending
     when deferral is on and the result has a dimension, else computed now. ``nterms``: the
-    number of terms each result position sums.
+    number of terms each result position sums; ``product``: see ``Contraction``.
     """
     tensors = [x._T() for x in arrays]
     gbdt = gb_dtype(dtype)
@@ -112,7 +114,7 @@ def contraction(arrays, build, shape, dtype, fill, spec=None, nterms=1):
         return Array._new(build(*tensors).new(dtype=gbdt), fill)
     snapshots = [T.dup() for T in tensors]
     finite = [_known_finite(x) for x in arrays]
-    node = Contraction(snapshots, build, gbdt, spec, finite, nterms)
+    node = Contraction(snapshots, build, gbdt, spec, finite, nterms, product)
     return Array._deferred(node, shape, dtype, fill)
 
 
@@ -137,10 +139,28 @@ def masked_multiply(a, b):
             "multiply(S, P) where P may hold inf or NaN outside S's entries (P computed whole)",
         )
         return None
-    PS = Array._new(node.compute(mask=S._T().S), P._fill)
+    TS = S._T()
+    PS = Array._new(node.compute(mask=TS.S, **_dot_hint(node, TS.nvals)), P._fill)
     from ._elementwise import multiply
 
     return multiply(PS, S) if P is a else multiply(S, PS)
+
+
+def _dot_hint(node, nmask):
+    """``axb_method="dot"`` for a product under a mask of ``nmask`` entries when dot products
+    at the mask's entries cost well below a saxpy over the whole product, else nothing.
+
+    SuiteSparse takes a masked saxpy for A @ B with B held by row, all of A @ B's work: an
+    SDDMM with full A (n x 32) and B (32 x n), n = 4000 and 4e4 mask entries, took 0.6 s,
+    against 0.6 ms as dot products (SuiteSparse transposes B for them).
+    """
+    if not node.product:
+        return {}
+    Ta, Tb = node.tensors
+    k = max(node.nterms, 1)
+    saxpy = Ta.nvals * Tb.nvals / k
+    dot = nmask * k * (Ta.nvals / max(Ta.size, 1) + Tb.nvals / max(Tb.size, 1))
+    return {"axb_method": "dot"} if 4 * dot < saxpy else {}
 
 
 def sliced(x, axes_key):
@@ -180,5 +200,15 @@ def sliced(x, axes_key):
 
     # (a slice of a finite operand is finite)
     spec = (tuple(new_terms), out, typed)
-    sub = Contraction(tensors, build, node.gbdt, spec, list(node.finite), node.nterms)
+    product = _one_product(new_terms, out)
+    sub = Contraction(tensors, build, node.gbdt, spec, list(node.finite), node.nterms, product)
     return Array._deferred(sub, shape, x.dtype, x._fill)
+
+
+def _one_product(terms, output):
+    """Whether an einsum of ``terms`` into ``output`` is one product of two operands, whose
+    result needs no permutation or sum after it (so a mask goes into the product).
+    """
+    from ..core.tensor_einsum import _direct_axes
+
+    return len(terms) == 2 and _direct_axes(*terms, output) is not None
