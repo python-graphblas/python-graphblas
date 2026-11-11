@@ -388,6 +388,17 @@ def test_array_attributes():
         hash(x)
 
 
+def test_metadata_is_stored():
+    # shape, dtype, ndim and size never read the Tensor (one may not be computed yet)
+    x = make(np.arange(24, dtype=np.int32).reshape(2, 3, 4), 0)
+    x._tensor = None  # (any read of it would fail)
+    assert (x.shape, x.dtype, x.ndim, x.size) == ((2, 3, 4), xp.int32, 3, 24)
+    assert x.fill_value == 0
+    y = xp.zeros((5, 0), dtype=xp.bool)
+    y += xp.ones((5, 0), dtype=xp.bool)
+    assert (y.shape, y.dtype) == ((5, 0), xp.bool)
+
+
 def test_python_scalars():
     assert bool(xp.asarray(True)) is True
     assert int(xp.asarray(-3)) == -3
