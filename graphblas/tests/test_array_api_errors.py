@@ -118,16 +118,6 @@ def test_object_protocol_errors():
         xp.astype(x, None)
 
 
-def test_indexing_not_supported_yet():
-    x = make(np.arange(4.0), 0.0)
-    with pytest.raises(NotImplementedError):
-        x[True]
-    with pytest.raises(NotImplementedError):
-        x[[0, 1]]
-    with pytest.raises(NotImplementedError):
-        x[0] = 1.0
-
-
 def test_clip_mixed_bounds():
     a = np.array([1, 5, 0, 9], np.int16)
     x = make(a, 0)
