@@ -156,6 +156,49 @@ def _assert_identical(a, b, unstored):
         raise AssertionError(f"{bad.sum()} positions differ (position, got, expected): {detail}")
 
 
+# Functions computed by libm (SuiteSparse's unary ops) for floating dtypes: special values
+# (NaN, inf, zeros and their signs) exactly as numpy has them, other values within MAXULP units
+# in the last place. libm and numpy's own loops are each within 1 to 2 ulp of the exact value
+# for these (glibc's libm-test-ulps lists at most 2 for the real ones in double; numpy's float32
+# SIMD loops document up to 1.5), so two of them differ by up to 4; on macOS arm64 the largest
+# difference seen was 1 (tanh, float32 sin and cos, complex log2 and log10).
+LIBM = {"acos", "acosh", "asin", "asinh", "atan", "atanh", "cos", "cosh", "exp", "expm1", "log",
+        "log1p", "log2", "log10", "sin", "sinh", "tan", "tanh"}  # fmt: skip
+MAXULP = 4
+
+
+def assert_libm_close(x, expected):
+    """``x`` holds ``expected`` but for libm's rounding: special values exact, the rest within
+    MAXULP (complex: each part's special values exact, the rest within MAXULP * eps of the
+    magnitude).
+    """
+    expected = np.asarray(expected)
+    check_invariants(x)
+    assert x.dtype == expected.dtype, (x.dtype, expected.dtype)
+    assert x.shape == expected.shape, (x.shape, expected.shape)
+    got = x.todense()
+    if got.dtype.kind not in "fc":
+        _assert_identical(got, expected, np.zeros(got.shape, bool))
+        return
+    if got.dtype.kind == "f":
+        parts = [(got, expected)]
+    else:
+        parts = [(got.real, expected.real), (got.imag, expected.imag)]
+    with np.errstate(all="ignore"):
+        scale = np.abs(expected)
+    for g, e in parts:
+        special = ~np.isfinite(g) | ~np.isfinite(e) | (g == 0) | (e == 0)
+        _assert_identical(g[special], e[special], np.zeros(special.sum(), bool))
+        g, e = g[~special], e[~special]
+        if got.dtype.kind == "f":
+            np.testing.assert_array_max_ulp(g, e, maxulp=MAXULP)
+        else:
+            # (a part much smaller than the whole is only as exact as the whole)
+            s = scale[~special]
+            s = np.where(np.isfinite(s), s, np.abs(e))
+            assert (np.abs(g - e) <= MAXULP * np.finfo(e.dtype).eps * s).all(), (g, e)
+
+
 def np_call(func, *args, **kwargs):
     with np.errstate(all="ignore"), warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -287,7 +330,7 @@ def test_unary(name, func, shape):
                 continue
             out = getattr(xp, name)(x)
             try:
-                assert_array_equal(out, expected)
+                (assert_libm_close if name in LIBM else assert_array_equal)(out, expected)
             except AssertionError as exc:
                 raise AssertionError(f"{name} of {dtype} fill {x.fill_value!r}: {exc}") from None
 
@@ -595,8 +638,40 @@ def test_results_do_not_share_writes():
     assert_array_equal(y, np.array([2.0, 1.0, 3.0]))
 
 
+@pytest.mark.parametrize("dtype", ["float32", "float64", "complex64", "complex128"])
+def test_libm_functions_on_wide_values(dtype):
+    # Values over the whole range, the edges of each domain and the special values
+    rng = np.random.default_rng(11)
+    dt = np.dtype(dtype)
+    info = np.finfo(dt)
+    edges = [0.0, -0.0, 1.0, -1.0, 0.5, -0.5, 2.0, info.tiny, -info.tiny, info.tiny / 8,
+             info.max, -info.max, 88.0, 89.0, 709.0, 711.0, -745.0, np.pi, np.nan, np.inf,
+             -np.inf]  # fmt: skip
+    n = 3000
+    v = np.concatenate([
+        np.array(edges),
+        rng.normal(size=n) * 3,
+        np.exp(rng.uniform(-60, 60, n)) * rng.choice([-1.0, 1.0], n),
+        rng.uniform(-1.2, 1.2, n),
+    ])  # fmt: skip
+    with np.errstate(all="ignore"):
+        if dt.kind == "c":
+            w = np.empty(v.size, dt)
+            w.real, w.imag = v, rng.permutation(v)
+            v = w
+        v = v.astype(dt)
+    x = make(v, 0)
+    for name in sorted(LIBM):
+        func = dict(UNARY)[name]
+        try:
+            assert_libm_close(getattr(xp, name)(x), np_call(func, v))
+        except AssertionError as exc:
+            raise AssertionError(f"{name} of {dtype}: {exc}") from None
+
+
 def test_math_consistency_of_fill():
-    # An entry equal to the fill maps to the new fill, bit for bit
+    # An entry equal to the fill maps to the new fill, bit for bit (DESIGN D10: no value
+    # depends on which positions are stored), also where libm computes the entries
     for name, _ in UNARY:
         if name in {"logical_not", "bitwise_invert"}:
             continue
