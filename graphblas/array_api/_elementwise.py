@@ -572,6 +572,12 @@ def _binary_arrays(spec, a, b, op, ct, rdt, fill):
                 R = Ta.ewise_mult(Tb, op).new(dtype=gb_dtype(rdt))
                 with np.errstate(all="ignore"):
                     return _result(R, spec.ufunc(fa_seen, fb_seen))
+        if (e := _absorbing(spec, a, b, fa, fb, ct)) is not None:
+            # Each operand's fill absorbs the op: where either holds its fill the result is
+            # that fill, so the intersection, which never replicates a broadcast operand
+            _utils.mult_expansion_check(Ta, Tb, shape)
+            R = Ta.ewise_mult(Tb, op).new(dtype=gb_dtype(rdt))
+            return _result(R, _utils.scalar(e, rdt))
         if spec.name in {"multiply", "divide"} and ct.kind == "f":
             out = _one_sided(spec, a, b, fa, fb, op, ct, rdt, shape)
             if out is not None:
@@ -591,6 +597,46 @@ def _binary_arrays(spec, a, b, op, ct, rdt, fill):
         allow_expansion=True,
     ).new()  # fmt: skip
     return _result(_utils.map_values(spec.ufunc, [A, B], rdt), fill)
+
+
+def _absorbing_values(name, ct):
+    """The values ``e`` with ``op(e, y) == op(y, e) == e`` for the binary ``name`` working in
+    ``ct``, for every y but those ``_absorbing`` excludes (NaN, the opposite infinity).
+    """
+    if name in {"add", "maximum", "logical_or"} and ct.kind == "b":
+        return (True,)
+    if name == "minimum" and ct.kind == "b":
+        return (False,)
+    if ct.kind == "f":
+        return {"add": (np.inf, -np.inf), "maximum": (np.inf,), "minimum": (-np.inf,)}.get(name, ())
+    if ct.kind in "iu":
+        info = np.iinfo(ct)
+        return {"maximum": (info.max,), "minimum": (info.min,)}.get(name, ())
+    return ()
+
+
+def _absorbing(spec, a, b, fa, fb, ct):
+    """The value both operands' fills take when it absorbs the op (inf for add and maximum,
+    -inf for add and minimum, True for logical_or, the integer extremes), so that the result
+    is the intersection of their entries with that fill; else None. An operand that stores
+    every position never shows its fill, so it counts as having that value, but not both.
+    Floats: no operand may hold NaN (numpy propagates it) or, for add, the opposite infinity
+    (inf + -inf is NaN): cached facts.
+    """
+    full_a, full_b = _stores_all(a), _stores_all(b)
+    if full_a and full_b:
+        return None  # (the union is the intersection already)
+    for e in _absorbing_values(spec.name, ct):
+        e = _utils.scalar(e, ct)
+        if not (full_a or _utils.same_value(fa, e)) or not (full_b or _utils.same_value(fb, e)):
+            continue
+        if ct.kind == "f":
+            opposite = "neginf" if e > 0 else "posinf"
+            for x in (a, b):
+                if _utils.fact(x, "nan") or (spec.name == "add" and _utils.fact(x, opposite)):
+                    return None
+        return e
+    return None
 
 
 def _power(x1, x2):

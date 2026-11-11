@@ -721,6 +721,66 @@ def test_intersection_of_broadcast_operands_is_guarded():
         assert func(*args).nnz == nnz
 
 
+def test_absorbing_fills_intersect():
+    # A fill that absorbs the op (inf + y is inf) on both operands: the result is the
+    # intersection of their entries, and a broadcast operand is not replicated
+    rng = np.random.default_rng(31)
+    n = 40
+    g = np.where(rng.random((n, n)) < 0.1, rng.random((n, n)) + 1, np.inf)
+    d = np.where(rng.random(n) < 0.5, rng.random(n), np.inf)
+    G, D = make(g, np.inf, rng), make(d, np.inf, rng)
+    for func, nf in [(xp.add, np.add), (xp.maximum, np.maximum)]:
+        R = func(xp.expand_dims(D, 1), G)
+        assert_array_equal(R, nf(d[:, None], g))
+        assert R.nnz <= G.nnz
+        assert R.fill_value == np.inf
+    R = xp.minimum(make(-g, -np.inf), make(-d[:, None], -np.inf))
+    assert_array_equal(R, np.minimum(-g, -d[:, None]))
+    assert R.nnz <= G.nnz
+    R = xp.add(make(-g, -np.inf), make(-d, -np.inf))  # (-inf absorbs add too)
+    assert_array_equal(R, -g + -d)
+    assert R.nnz <= G.nnz
+    # integers' extremes, and bools
+    big = np.iinfo(np.int64).max
+    gi = np.where(np.isinf(g), big, (np.where(np.isinf(g), 0, g) * 10).astype(np.int64))
+    di = np.where(np.isinf(d), big, (np.where(np.isinf(d), 0, d) * 10).astype(np.int64))
+    R = xp.maximum(make(gi, big), make(di, big))
+    assert_array_equal(R, np.maximum(gi, di))
+    assert R.nnz <= G.nnz
+    small = np.iinfo(np.int8).min
+    R = xp.minimum(make(np.int8(-3) * (gi % 2), 0), make(np.full((n, n), small, np.int8), small))
+    assert_array_equal(R, np.minimum(np.int8(-3) * (gi % 2), np.int8(small)))
+    gb_, db_ = np.isinf(g), np.isinf(d)
+    for func, nf in [(xp.logical_or, np.logical_or), (xp.add, np.add), (xp.maximum, np.maximum)]:
+        R = func(make(gb_, True), make(db_, True))
+        assert_array_equal(R, nf(gb_, db_))
+        assert R.nnz <= (~gb_).sum()
+    R = xp.minimum(make(~gb_, False), make(~db_, False))
+    assert_array_equal(R, np.minimum(~gb_, ~db_))
+    # An operand that stores every position counts as holding the absorbing fill
+    full = rng.random(n) + 1
+    R = xp.expand_dims(make(full, 0.0), 1) + G
+    assert_array_equal(R, full[:, None] + g)
+    assert R.nnz <= G.nnz
+    assert R.fill_value == np.inf
+    # NaN, or for add the opposite infinity, anywhere: the union, exact
+    for bad in [np.nan, -np.inf]:
+        d2 = d.copy()
+        d2[0] = bad
+        R = xp.add(xp.expand_dims(make(d2, np.inf), 1), G)
+        with np.errstate(invalid="ignore"):
+            assert_array_equal(R, d2[:, None] + g)
+    g2 = g.copy()
+    g2[0, 0] = -np.inf
+    assert_array_equal(xp.add(make(d, np.inf), make(g2, np.inf)), d + g2)
+    # Fills that do not both absorb, and two fully stored operands: the union as before
+    assert_array_equal(xp.add(make(d, np.inf), make(d, 0.0)), d + d)
+    R = xp.add(make(full, 0.0), make(full, 1.0))
+    assert_array_equal(R, full + full)
+    with np.errstate(invalid="ignore"):
+        assert_array_equal(xp.subtract(make(d, np.inf), make(d, np.inf)), d - d)
+
+
 def test_fully_stored_bool_results_take_fill_false():
     # A bool result that stores every position never shows its fill: it takes fill False,
     # and its False entries go when at most a quarter of the entries are True (equal(deg, 0)

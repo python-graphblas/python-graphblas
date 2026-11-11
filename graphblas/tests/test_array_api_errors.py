@@ -213,6 +213,12 @@ def test_facts_of_stored_values():
     assert _utils.fact(i, "zero")
     e = xp.zeros(4)
     assert [_utils.fact(e, k) for k in ["finite", "nan", "zero"]] == [True, False, False]
+    # infinities by sign; known absent from finiteness, and for integers
+    u = make(np.array([np.inf, 2.0]), 0.0)
+    assert [_utils.fact(u, k) for k in ["posinf", "neginf"]] == [True, False]
+    assert _utils.fact(make(np.array([-np.inf]), 0.0), "neginf")
+    assert not _utils.fact(w, "posinf")
+    assert not _utils.fact(i, "neginf")
     # abs, negative, positive and conj keep all three; roundings keep two
     v = make(np.array([-1.5, np.nan, 0.0]), 0.0)
     for k in ["finite", "nan", "zero"]:
