@@ -2816,6 +2816,36 @@ def test_tensordot_semirings_masks_and_errors():
     assert ("ttv", "entries") in {(r["point"], r["choice"]) for r in recs}
 
 
+def test_private_map_values():
+    # Tensor._map_values (for graphblas.array_api): numpy over the stored values, in place
+    rng = np.random.default_rng(33)
+    X, xv, xp = random_tensor((4, 5, 3), rng, density=0.4)
+    Y = Tensor(dtypes.FP64, (4, 5, 3))
+    Y(X.S) << X.apply(binary.plus, right=1.0)  # (X's pattern)
+    Y = Y.relayout(((2,), (0, 1)))  # (another layout)
+    R = X._map_values(np.hypot, [Y])
+    check(R, np.where(xp, np.hypot(xv, xv + 1), 0), xp, approx=True)
+    assert R.layout == X.layout
+    # one Matrix shared by two Tensors, a dtype change, an iso Tensor, and no entries
+    R = X._map_values(lambda a, b: a * b > 1, [X.dup()], dtype=dtypes.BOOL)
+    check(R, np.where(xp, xv * xv > 1, False), xp)
+    iso = Tensor.from_coo(([0, 2], [1, 3]), 2.5, shape=(3, 4))
+    assert iso.ss.is_iso
+    check(iso._map_values(np.sqrt), np.where(iso.to_dense(0) != 0, np.sqrt(2.5), 0),
+          iso.to_dense(0) != 0, approx=True)  # fmt: skip
+    E = Tensor(dtypes.INT64, (2, 3))
+    assert E._map_values(np.negative, dtype=dtypes.FP32).dtype == dtypes.FP32
+    assert E._map_values(np.negative).nvals == 0
+    # The fallback through coordinates
+    from graphblas.core.tensor import _map_values_coo
+
+    T = Tensor.from_coo([[0, 1], [1, 2]], [1.0, 2.0], shape=(2, 3))
+    assert _map_values_coo(np.add, [T, T], dtypes.FP64).to_coo()[1].tolist() == [2.0, 4.0]
+    assert _map_values_coo(np.negative, [T], dtypes.FP64).to_coo()[1].tolist() == [-1.0, -2.0]
+    out = _map_values_coo(lambda v: np.float64(7.0), [T], dtypes.FP64)
+    assert out.to_coo()[1].tolist() == [7.0, 7.0]
+
+
 def test_masked_contraction_takes_a_transpose_descriptor():
     # Under a mask, an operand stored as the transpose of what the product needs is not
     # copied (SuiteSparse's masked dot product, an SDDMM); the values are the masked product

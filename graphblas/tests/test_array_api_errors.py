@@ -183,12 +183,6 @@ def test_map_values_storage_cases():
     np.testing.assert_array_equal(out.to_coo()[1], [2.0, 4.0])
     E = Tensor(T.dtype, (2, 3))
     assert _utils.map_values(np.sin, [E], np.dtype(float)).nvals == 0
-    out = _utils._map_values_coo(np.add, [T, T], np.dtype(float))
-    np.testing.assert_array_equal(out.to_coo()[1], [2.0, 4.0])
-    out = _utils._map_values_coo(np.negative, [T], np.dtype(float))
-    np.testing.assert_array_equal(out.to_coo()[1], [-1.0, -2.0])
-    out = _utils._map_values_coo(lambda v: np.float64(7.0), [T], np.dtype(float))
-    np.testing.assert_array_equal(out.to_coo()[1], [7.0, 7.0])
     assert _utils.full_tensor(np.dtype(float), (0, 3), 1.0).nvals == 0
 
 
