@@ -301,11 +301,30 @@ def test_sddmm_overflow_outside_s(masks):
     R = xp.multiply(make(np.eye(3, dtype=np.float32), 0), make(a, 0) @ make(a.T, 0))
     assert_array_equal(R, expected)
     assert [m is None for m in masks] == [True]
-    # Computing it whole is guarded: that whole may be dense
-    big = make(np.full((4, 1), 1e200), 0.0)
-    eye = make(np.eye(4), 0.0)
-    with gb.config.set(array_api_densify_limit=10), pytest.raises(xp.DensifyError, match="inf"):
-        xp.multiply(eye, big @ xp.matrix_transpose(big))
+
+
+def test_sddmm_with_inf_stays_sparse(masks):
+    # (review finding H2) an operand holding inf, or values whose products may overflow,
+    # computes the product whole: a sparse product, as without deferral, with no densify
+    # check on its logical size
+    rng = np.random.default_rng(16)
+    n = 400
+    r, c = rng.integers(0, n, 400), rng.integers(0, n, 400)
+    a = np.zeros((n, n))
+    a[r, c] = rng.random(400) + 0.5
+    a[r[0], c[0]] = np.inf
+    s = np.zeros((n, n))
+    s[rng.integers(0, n, 400), rng.integers(0, n, 400)] = 1.0
+    A = xp.from_coo(np.nonzero(a), a[np.nonzero(a)], (n, n))
+    S = xp.from_coo(np.nonzero(s), s[np.nonzero(s)], (n, n))
+    with gb.config.set(array_api_densify_limit=n * n // 10):
+        R = xp.multiply(S, A @ A)
+    # (the product as computed without deferral: D6 skips an unstored zero times inf)
+    P = A @ A
+    with np.errstate(invalid="ignore"):
+        assert_close(R, s * P.todense())
+    assert [m is None for m in masks] == [True, True]
+    assert np.isinf(P.todense()).any()
 
 
 def test_max_abs():
