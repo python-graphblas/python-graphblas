@@ -10,7 +10,23 @@ from . import _utils
 from ._array import Array
 from ._utils import gb_dtype
 
-__all__ = ["concat", "expand_dims", "permute_dims", "reshape", "squeeze", "stack"]
+__all__ = [
+    "broadcast_arrays",
+    "broadcast_shapes",
+    "broadcast_to",
+    "concat",
+    "expand_dims",
+    "flip",
+    "moveaxis",
+    "permute_dims",
+    "repeat",
+    "reshape",
+    "roll",
+    "squeeze",
+    "stack",
+    "tile",
+    "unstack",
+]
 
 
 def _check_array(x, name):
@@ -100,9 +116,27 @@ def squeeze(x, /, axis):
     return Array._new(T.squeeze(tuple(norm)), x._fill)
 
 
+def broadcast_to(x, /, shape):
+    """``x`` broadcast to ``shape``: its entries replicated over the broadcast axes (the
+    result's entries, under the densify limit for the replication).
+    """
+    _check_array(x, "broadcast_to")
+    return _broadcast_to(x, shape)
+
+
+def broadcast_shapes(*shapes):
+    return tuple(np.broadcast_shapes(*shapes))
+
+
+def broadcast_arrays(*arrays):
+    for x in arrays:
+        _check_array(x, "broadcast_arrays")
+    shape = np.broadcast_shapes(*[x.shape for x in arrays])
+    return tuple(_broadcast_to(x, shape) for x in arrays)
+
+
 def _broadcast_to(x, shape):
-    """``x`` broadcast to ``shape``: its entries replicated over the broadcast axes."""
-    shape = tuple(shape)
+    shape = tuple(int(n) for n in shape)
     if np.broadcast_shapes(x.shape, shape) != shape:
         raise ValueError(f"cannot broadcast shape {x.shape} to {shape}")
     if x.shape == shape:
@@ -189,3 +223,134 @@ def stack(arrays, /, *, axis=0):
         raise ValueError(f"stack needs arrays of one shape, not {[a.shape for a in arrays]}")
     axis = _normalize_axis(axis, arrays[0].ndim + 1)
     return concat([expand_dims(a, axis=axis) for a in arrays], axis=axis)
+
+
+def unstack(x, /, *, axis=0):
+    _check_array(x, "unstack")
+    if x.ndim == 0:
+        raise ValueError("unstack needs an array of at least one dimension")
+    axis = _normalize_axis(axis, x.ndim)
+    before = (slice(None),) * axis
+    return tuple(x[(*before, i)] for i in range(x.shape[axis]))
+
+
+def _axes(axis, ndim):
+    if axis is None:
+        return tuple(range(ndim))
+    axes = axis if isinstance(axis, tuple) else (axis,)
+    norm = tuple(_normalize_axis(a, ndim) for a in axes)
+    if len(set(norm)) != len(norm):
+        raise ValueError(f"repeated axis in {axis}")
+    return norm
+
+
+def flip(x, /, *, axis=None):
+    _check_array(x, "flip")
+    axes = _axes(axis, x.ndim)
+    if x.ndim == 0:
+        return x._copy()
+    return x[tuple(slice(None, None, -1) if a in axes else slice(None) for a in range(x.ndim))]
+
+
+def moveaxis(x, source, destination, /):
+    _check_array(x, "moveaxis")
+    src = source if isinstance(source, tuple) else (source,)
+    dst = destination if isinstance(destination, tuple) else (destination,)
+    if len(src) != len(dst):
+        raise ValueError("moveaxis needs as many destinations as sources")
+    src = _axes(src, x.ndim)
+    dst = _axes(dst, x.ndim)
+    order = [a for a in range(x.ndim) if a not in src]
+    for d, s in sorted(zip(dst, src, strict=True)):
+        order.insert(d, s)
+    return permute_dims(x, tuple(order))
+
+
+def _entries(x):
+    """The stored entries of ``x`` as (coordinates, values), in stored order."""
+    T = x._T()
+    if T.nvals == 0:
+        return [np.empty(0, np.int64) for _ in range(x.ndim)], np.empty(0, x.dtype)
+    idx, values = T.to_coo(sort=False)
+    return list(idx), values
+
+
+def _from_entries(coords, values, shape, x):
+    """An Array of ``x``'s dtype and fill storing ``values`` at ``coords`` in ``shape``."""
+    shape = tuple(shape)
+    if len(values) == 0:
+        return Array._new(Tensor(x._T().dtype, shape), x._fill)
+    T = Tensor.from_coo(tuple(coords), values, x._T().dtype, shape=shape)
+    return Array._new(T, x._fill)
+
+
+def repeat(x, repeats, /, *, axis=None):
+    """Each element repeated along ``axis``, O(entries of the result)."""
+    _check_array(x, "repeat")
+    if axis is None:
+        x = reshape(x, (-1,))
+        axis = 0
+    axis = _normalize_axis(axis, x.ndim)
+    n = x.shape[axis]
+    if isinstance(repeats, Array):
+        if repeats.dtype.kind not in "iu" or repeats.ndim != 1:
+            raise TypeError("repeats must be an int or a 1-d integer array")
+        counts = repeats.todense().astype(np.int64)
+    else:
+        counts = np.asarray(int(repeats), dtype=np.int64)
+    counts = np.broadcast_to(counts, (n,))
+    if (counts < 0).any():
+        raise ValueError("repeats must be nonnegative")
+    starts = np.zeros(n + 1, np.int64)
+    np.cumsum(counts, out=starts[1:])
+    shape = list(x.shape)
+    shape[axis] = int(starts[-1])
+    coords, values = _entries(x)
+    k = counts[coords[axis]]
+    which = np.repeat(np.arange(len(values)), k)
+    within = np.arange(which.size) - np.repeat(np.cumsum(k) - k, k)
+    coords = [c[which] for c in coords]
+    coords[axis] = starts[:-1][coords[axis]] + within
+    return _from_entries(coords, values[which], shape, x)
+
+
+def roll(x, /, shift, *, axis=None):
+    _check_array(x, "roll")
+    if axis is None:
+        return reshape(roll(reshape(x, (-1,)), shift, axis=0), x.shape)
+    shifts = shift if isinstance(shift, tuple) else (shift,)
+    axes = axis if isinstance(axis, tuple) else (axis,)
+    if len(shifts) == 1 and len(axes) > 1:
+        shifts = shifts * len(axes)
+    if len(shifts) != len(axes):
+        raise ValueError("roll needs one shift per axis, or one shift")
+    total = [0] * x.ndim
+    for s, a in zip(shifts, axes, strict=True):
+        total[_normalize_axis(a, x.ndim)] += int(s)
+    coords, values = _entries(x)
+    for a, s in enumerate(total):
+        if s and x.shape[a]:
+            coords[a] = (coords[a] + s) % x.shape[a]
+    return _from_entries(coords, values, x.shape, x)
+
+
+def tile(x, repetitions, /):
+    """``x`` repeated ``repetitions`` times along each axis, O(entries of the result)."""
+    _check_array(x, "tile")
+    reps = tuple(int(r) for r in repetitions)
+    if any(r < 0 for r in reps):
+        raise ValueError("repetitions must be nonnegative")
+    ndim = max(len(reps), x.ndim)
+    reps = (1,) * (ndim - len(reps)) + reps
+    if x.ndim < ndim:
+        x = reshape(x, (1,) * (ndim - x.ndim) + x.shape)
+    shape = tuple(n * r for n, r in zip(x.shape, reps, strict=True))
+    coords, values = _entries(x)
+    ntiles = math.prod(reps)
+    if ntiles == 0 or len(values) == 0:
+        return Array._new(Tensor(x._T().dtype, shape), x._fill)
+    tiles = np.unravel_index(np.arange(ntiles), reps)
+    out = []
+    for c, t, n in zip(coords, tiles, x.shape, strict=True):
+        out.append((c[None, :] + (t * n)[:, None]).reshape(-1))
+    return _from_entries(out, np.tile(values, ntiles), shape, x)
