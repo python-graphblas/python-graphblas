@@ -81,7 +81,8 @@ def _where_at_condition(cond, a, b, shape, rdt):
     ``cond``'s stored positions written over (see ``where``), or None when that operand
     would have to be broadcast over stored entries, or ``cond`` itself broadcasts.
     """
-    from .. import binary
+    from .. import binary, select
+    from ..dtypes import BOOL
 
     Tc = cond._T()
     if Tc.shape != shape:
@@ -96,9 +97,17 @@ def _where_at_condition(cond, a, b, shape, rdt):
         # The base holds only the result's fill: the condition's entries that select it
         # (those equal to its fill) would store the fill, so only the others are kept, and
         # the other operand is read there only (where(x > t, x, 0) stores x's entries > t)
+        other = b if bool(cond._fill) else a
+        if Tc.dtype == BOOL and isinstance(other, Array) and other.shape == shape:
+            # (all in GraphBLAS, in parallel: the entries that select ``other``, holding
+            # its value, or its fill where it stores nothing)
+            sel = Tc.select(select.valueeq, not bool(cond._fill)).new()
+            second = binary.second[gdt]
+            R = sel.apply(second, right=_utils.gb_scalar(other._fill, rdt)).new(dtype=gdt)
+            R(accum=second) << sel.ewise_mult(other._T(), second)
+            return R
         keep = c != bool(cond._fill)
         coords = tuple(i[keep] for i in coords)
-        other = b if bool(cond._fill) else a
         if isinstance(other, Array) and other.ndim:
             V = _values_at(coords, other, shape) if len(coords[0]) else c[keep]
         else:
