@@ -283,13 +283,7 @@ def logical_not(x, /):
 
 
 def bitwise_invert(x, /):
-    def gb(dtype):
-        if dtype.kind == "b":
-            return unary.lnot[gb_dtype(dtype)]
-        if dtype.kind in _INTEGRAL:
-            return unary.bnot[gb_dtype(dtype)]
-        return None
-
+    gb = _first_of(_typed(unary.lnot, "b"), _typed(unary.bnot, _INTEGRAL))
     return _unary("bitwise_invert", np.invert, x, gb)
 
 
@@ -430,13 +424,12 @@ def _binary(spec, x1, x2):
     if spec.kind == "arith":
         ct = rdt
     elif spec.kind == "cmp":
-        try:
-            ct = np.result_type(_probe(a), _probe(b))
-        except (OverflowError, TypeError):
-            ct = None  # (a Python int out of range: numpy compares it exactly)
+        # (a Python int out of range of an integer dtype keeps that dtype here; _gb_op then
+        # leaves the comparison to numpy, which compares such an int exactly)
+        ct = np.result_type(_probe(a), _probe(b))
     else:
         ct = np.dtype(bool)
-    op = None if ct is None else _gb_op(spec, a, b, ct)
+    op = _gb_op(spec, a, b, ct)
     if a_arr and b_arr:
         return _binary_arrays(spec, a, b, op, ct, rdt, fill)
     if a_arr:
@@ -466,8 +459,6 @@ def _gb_op(spec, a, b, ct):
     else None.
     """
     if spec.gb_values is not None:
-        if any(not isinstance(x, Array) and not _python_scalar_fits(x, ct) for x in (a, b)):
-            return None
         return spec.gb_values(a, b, ct)
     if spec.gb is None:
         return None

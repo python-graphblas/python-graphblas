@@ -79,15 +79,8 @@ def _reduce_tensor(T, op, axes):
 
 def _combine(func, tensors, dtype, fill):
     """An Array whose entries are ``func`` of the aligned values of ``tensors`` (one
-    pattern), and ``fill`` elsewhere; 0-d tensors give a 0-d Array.
+    pattern), and ``fill`` elsewhere.
     """
-    T0 = tensors[0]
-    if T0.ndim == 0:
-        if T0.nvals == 0:
-            return Array._new(Tensor(gb_dtype(dtype), ()), fill)
-        values = [T.to_coo()[1] for T in tensors]
-        with np.errstate(all="ignore"):
-            return Array._new(Tensor(gb_dtype(dtype), ()), np.asarray(func(*values))[0])
     return Array._new(_utils.map_values(func, tensors, dtype), fill)
 
 
