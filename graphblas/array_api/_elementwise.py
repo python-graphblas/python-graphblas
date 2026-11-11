@@ -11,6 +11,7 @@ to the new fill.
 """
 
 import builtins
+import math
 
 import numpy as np
 
@@ -728,40 +729,42 @@ def clip(x, /, min=None, max=None):
     hi = _clip_bound(max, x)
     if lo is None and hi is None:
         return x._copy()
-    operands = [x] + [b for b in (lo, hi) if isinstance(b, Array) and b.ndim]
-    if len(operands) == 1:
+    if all(not isinstance(b, Array) or b.ndim == 0 for b in (lo, hi)):
         lo_v, hi_v = (b._fill if isinstance(b, Array) else b for b in (lo, hi))
         out = _unary("clip", lambda v: np.clip(v, lo_v, hi_v), x)
     else:
-        out = _clip_arrays(x, lo, hi, operands)
+        out = _clip_arrays(x, lo, hi)
     return out if out.dtype == x.dtype else cast(out, x.dtype)
 
 
-def _clip_arrays(x, lo, hi, operands):
-    """Clip with array bounds as numpy does, over the union of the entries (aligned values)."""
-    shape = np.broadcast_shapes(*[b.shape for b in operands])
-    if shape != x.shape:
-        raise ValueError(f"clip's bounds do not broadcast to the shape {x.shape}")
-    is_array = [isinstance(b, Array) and b.ndim > 0 for b in (lo, hi)]
+def _clip_arrays(x, lo, hi):
+    """Clip with array bounds as numpy does, over the union of the entries (aligned values);
+    the result has the shape the three broadcast to.
+    """
+    operands = (x, lo, hi)
+    shape = np.broadcast_shapes(*[b.shape for b in operands if isinstance(b, Array)])
+    is_array = [isinstance(b, Array) and b.ndim > 0 for b in operands]
 
-    def value(b):  # (a bound's value where it stores nothing, typed as numpy types it)
+    def value(b):  # (a value where nothing is stored, typed as numpy types it)
         return np.asarray(b._fill) if isinstance(b, Array) else b
 
     def probe(b):
         return np.empty(0, b.dtype) if isinstance(b, Array) else b
 
     with np.errstate(all="ignore"):
-        rdt = np.clip(np.empty(0, x.dtype), probe(lo), probe(hi)).dtype
-        fill = np.clip(np.asarray(x._fill), value(lo), value(hi))
+        rdt = np.clip(probe(x), probe(lo), probe(hi)).dtype
+        fill = np.clip(value(x), value(lo), value(hi))
+    if math.prod(shape) == 0:
+        return _result(_utils.empty_tensor(rdt, shape), fill)
 
-    def func(v, *arrays):
+    def func(*arrays):
         it = iter(arrays)
-        lo_v, hi_v = (
-            next(it) if is_nd else value(b) for b, is_nd in zip((lo, hi), is_array, strict=True)
+        v, lo_v, hi_v = (
+            next(it) if arr else value(b) for b, arr in zip(operands, is_array, strict=True)
         )
         return np.clip(v, lo_v, hi_v)
 
-    tensors = _utils.aligned(operands, shape)
+    tensors = _utils.aligned([b for b, arr in zip(operands, is_array, strict=True) if arr], shape)
     return _result(_utils.map_values(func, tensors, rdt), fill)
 
 

@@ -225,6 +225,17 @@ def test_cumulative_is_guarded():
         xp.cumulative_sum(y, axis=1)
 
 
+def test_cumulative_sparse_uneven_fibers():
+    # one long fiber among many short ones: the fibers accumulate one by one
+    a = np.zeros((200, 300))
+    a[0] = np.arange(1.0, 301.0)
+    a[np.arange(1, 200), np.arange(1, 200)] = -0.5
+    x = make(a, 0.0)
+    assert_array_equal(xp.cumulative_sum(x, axis=1), np.cumsum(a, axis=1))
+    c = xp.zeros(1, dtype=xp.complex64)
+    assert_array_equal(xp.cumulative_sum(c, include_initial=True), np.zeros(2, np.complex64))
+
+
 @pytest.mark.parametrize("name", ["cumulative_sum", "cumulative_prod"])
 def test_cumulative_sparse_exact(name):
     # runs of unstored positions add (multiply by) the fill: 0.0 + -0.0 is 0.0, as in numpy

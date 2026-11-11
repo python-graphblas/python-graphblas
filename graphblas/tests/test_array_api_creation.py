@@ -248,6 +248,10 @@ def test_from_dlpack():
     x = make(a, 0.0)
     assert_array_equal(xp.from_dlpack(x), a)
     np.testing.assert_array_equal(np.from_dlpack(x), a)
+    assert xp.from_dlpack(x, copy=False) is x
+    assert xp.from_dlpack(x, copy=True) is not x
+    with pytest.raises(ValueError, match="copy"):
+        xp.from_dlpack(a, copy=False)
 
 
 # Data type functions
@@ -544,6 +548,9 @@ def test_asarray_of_arrays_stays_sparse():
         np.array([[[1, 0], [0, 2]]]),
     )
     assert_array_equal(xp.asarray([xp.asarray([1, 2]), [3, 4]]), np.array([[1, 2], [3, 4]]))
+    ragged = [make(np.array([1, 2]), 0), make(np.array([3]), 0)]
+    with pytest.raises(ValueError, match="inhomogeneous"):  # (as numpy refuses it)
+        xp.asarray(ragged)
     assert_array_equal(
         xp.asarray([make(np.array([1.0]), 0.0)], dtype=xp.float32), np.array([[1.0]], np.float32)
     )
