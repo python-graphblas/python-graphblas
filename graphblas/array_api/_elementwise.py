@@ -586,6 +586,13 @@ _SPECS = {
 }
 
 
+def binary_numpy(name, func, x1, x2):
+    """``func`` (a numpy function of two arrays, which broadcasts) of two operands with the
+    fill rules of a binary function, computed by numpy over the values (for internal use).
+    """
+    return _binary(_Binary(name, func), x1, x2)
+
+
 def _make_binary(name):
     spec = _SPECS[name]
 
