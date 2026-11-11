@@ -11,6 +11,7 @@ import warnings
 import numpy as np
 import pytest
 
+import graphblas as gb
 import graphblas.array_api as xp
 from graphblas import backend
 from graphblas.core.tensor import _has_container as tensor_has_container
@@ -19,6 +20,15 @@ if backend != "suitesparse":
     pytest.skip("graphblas.array_api needs the suitesparse backend", allow_module_level=True)
 if not tensor_has_container():
     pytest.skip("graphblas.array_api needs SuiteSparse:GraphBLAS 10", allow_module_level=True)
+
+
+@pytest.fixture(autouse=True)
+def _strict_signed_zeros():
+    """These tests compare with numpy bit for bit: keep every signed zero (DESIGN D3a's strict
+    mode). The default mode, where products with unstored zeros read 0.0, has its own tests.
+    """
+    with gb.config.set(array_api_signed_zeros=True):
+        yield
 
 
 DTYPES = [
@@ -615,3 +625,76 @@ def test_unsupported_operands():
     assert (x == "a") is False
     with pytest.raises(TypeError):
         xp.sin(make(np.array([True, False]), False))  # numpy would give float16
+
+
+def test_intersection_of_broadcast_operands_is_guarded():
+    # an intersection of two broadcast operands is an outer product (review finding M4)
+    import graphblas as gb
+
+    x = make(np.arange(1, 101).reshape(100, 1), 0)
+    y = make(np.arange(1, 101).reshape(1, 100), 0)
+    b = x > 0
+    for func, args in [
+        (xp.multiply, (x, y)),
+        (xp.bitwise_and, (x, y)),
+        (xp.logical_and, (b, b.mT)),
+    ]:
+        with gb.config.set(array_api_densify_limit=1000), pytest.raises(xp.DensifyError):
+            func(*args)
+        assert func(*args).nnz == 10000
+
+
+def test_clip_with_array_bounds_ties():
+    # numpy's clip gives the bound on a tie, so the sign of a zero is the bound's (review M6)
+    x = make(np.array([0.0, -0.0, 0.0, 1.0, np.nan]), 0.0)
+    lo = make(np.array([-0.0, 0.0, 0.0, -0.0, 0.0]), 0.0)
+    hi = make(np.array([-0.0, 0.0, 2.0, 0.5, 1.0]), 0.0)
+    a, b, c = x.todense(), lo.todense(), hi.todense()
+    assert_array_equal(xp.clip(x, min=lo, max=hi), np_call(np.clip, a, b, c))
+    assert_array_equal(xp.clip(x, min=lo), np_call(np.clip, a, b, None))
+    assert_array_equal(xp.clip(x, max=hi), np_call(np.clip, a, None, c))
+    assert_array_equal(xp.clip(x, min=lo, max=0.5), np_call(np.clip, a, b, 0.5))
+    with pytest.raises(ValueError, match="broadcast"):
+        xp.clip(x, min=make(np.zeros((2, 5)), 0.0))
+
+
+def test_signed_zeros_give_way_by_default():
+    # (review finding H1, DESIGN D3a) by default a product with an unstored zero is the fill
+    # whatever its sign: a row scaling stores only A's entries
+    rng = np.random.default_rng(0)
+    A = make(np.where(rng.random((50, 50)) < 0.05, rng.normal(size=(50, 50)), 0.0), 0.0)
+    d = make(rng.normal(size=(50, 1)), 0.0)
+    exact = d * A
+    assert_array_equal(exact, d.todense() * A.todense())
+    assert exact.nnz == 2500
+    with gb.config.set(array_api_signed_zeros=False):
+        loose = d * A
+        assert loose.nnz == A.nnz
+        np.testing.assert_array_equal(loose.todense(), d.todense() * A.todense())  # (0.0 == -0.0)
+        # inf and NaN stay exact
+        inf = make(np.array([[np.inf, 0.0]]), 0.0)
+        assert_array_equal(inf * make(np.array([[0.0, 1.0]]), 0.0), np.array([[np.nan, 0.0]]))
+        # divide: the numerator's entries, when no value of the denominator is 0 or NaN
+        a = np.where(rng.random((4, 5)) < 0.5, 0.0, rng.normal(size=(4, 5)))
+        b = rng.normal(size=5) + 3.0
+        for fb in [1.0, -2.0]:
+            q = make(a, 0.0) / make(b, fb)
+            assert q.nnz == np.count_nonzero(a)
+            np.testing.assert_array_equal(q.todense(), a / b)
+        q = make(a, 0.0) / make(np.r_[b[:4], 0.0], 1.0)
+        np.testing.assert_array_equal(
+            np_call(np.isnan, q.todense()), np.isnan(np_call(np.divide, a, np.r_[b[:4], 0.0]))
+        )
+
+
+@pytest.mark.parametrize("name", ["multiply", "divide"])
+def test_default_mode_matches_numpy_but_for_zero_signs(name):
+    func = getattr(np, name)
+    with gb.config.set(array_api_signed_zeros=False):
+        for shapes in [((5,), (5,)), ((3, 4), (4,)), ((3, 1), (1, 4))]:
+            for dt1, dt2 in [(np.dtype("float64"),) * 2, (np.dtype("float32"), np.dtype("int8"))]:
+                for dense1, x1, dense2, x2 in _binary_cases(dt1, dt2, shapes, 5):
+                    out = getattr(xp, name)(x1, x2).todense()
+                    expected = np_call(func, dense1, dense2)
+                    assert out.dtype == expected.dtype
+                    np.testing.assert_array_equal(out, expected)  # (NaN == NaN, 0.0 == -0.0)

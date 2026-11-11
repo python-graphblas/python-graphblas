@@ -103,6 +103,17 @@ def expansion_check(Ta, Tb, shape):
     check_dense(replicated, f"broadcasting shapes {Ta.shape} and {Tb.shape} to {shape}")
 
 
+def mult_expansion_check(Ta, Tb, shape):
+    """Before an intersection (ewise_mult) of ``Ta`` and ``Tb`` broadcast to ``shape``: when
+    both broadcast, one is replicated (an outer product); raise past the limit.
+    """
+    fa = _broadcast_factor(Ta.shape, shape)
+    fb = _broadcast_factor(Tb.shape, shape)
+    if fa > 1 and fb > 1:
+        replicated = min(fa * Ta.nvals, fb * Tb.nvals)
+        check_dense(replicated, f"an outer product of shapes {Ta.shape} and {Tb.shape}")
+
+
 def empty_tensor(dtype, shape):
     return Tensor(gb_dtype(dtype), tuple(shape))
 
@@ -174,18 +185,31 @@ def tensor_values(T):
 def summary(x):
     """Facts about the stored values of the Array ``x``, computed once (cached on ``x``):
     ``finite`` (all finite), ``nonnegative`` (no sign bit set: no negative value, no -0.0),
-    ``nan`` (some NaN) and ``negzero`` (some -0.0).
+    ``nan`` (some NaN), ``negzero`` (some -0.0) and ``zero`` (some 0.0 or -0.0).
     """
 
     def compute(x):
         T = x._T()
         kind = x.dtype.kind
-        if kind == "b" or T.nvals == 0:
-            return {"finite": True, "nonnegative": True, "nan": False, "negzero": False}
+        if T.nvals == 0:
+            return {
+                "finite": True,
+                "nonnegative": True,
+                "nan": False,
+                "negzero": False,
+                "zero": False,
+            }
         values = tensor_values(T)
-        if kind in "iu":
-            nonneg = kind == "u" or bool((values >= 0).all())
-            return {"finite": True, "nonnegative": nonneg, "nan": False, "negzero": False}
+        if kind in "biu":
+            nonneg = kind in "bu" or bool((values >= 0).all())
+            zero = not bool(values.all())
+            return {
+                "finite": True,
+                "nonnegative": nonneg,
+                "nan": False,
+                "negzero": False,
+                "zero": zero,
+            }
         if kind == "c":
             parts = [values.real, values.imag]
         else:
@@ -198,6 +222,7 @@ def summary(x):
             "negzero": any(
                 bool((sb & (p == 0)).any()) for p, sb in zip(parts, signbit, strict=True)
             ),
+            "zero": not bool(values.all()),
         }
 
     return x._fact("summary", compute)

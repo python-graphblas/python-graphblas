@@ -14,7 +14,7 @@ import builtins
 
 import numpy as np
 
-from .. import binary, unary
+from .. import binary, config, unary
 from ..core.tensor import Tensor
 from . import _utils
 from ._array import Array
@@ -486,12 +486,17 @@ def _binary_arrays(spec, a, b, op, ct, rdt, fill):
         fb = _utils.scalar(b._fill, ct)
         if spec.annihilator is not None and spec.annihilator(a, b, fa, fb, ct):
             # Where either operand holds its fill the result is the fill: the intersection
+            _utils.mult_expansion_check(Ta, Tb, shape)
             R = Ta.ewise_mult(Tb, op).new(dtype=gb_dtype(rdt))
             return _result(R, fill)
         _utils.expansion_check(Ta, Tb, shape)
-        R = Ta.ewise_union(Tb, op, gb_scalar(fa, ct), gb_scalar(fb, ct), allow_expansion=True).new(
-            dtype=gb_dtype(rdt)
-        )
+        expr = Ta.ewise_union(Tb, op, gb_scalar(fa, ct), gb_scalar(fb, ct), allow_expansion=True)
+        if spec.name == "divide" and Ta.shape == shape and _divide_left_joins(b, fa, fb):
+            # The result's entries lie within the numerator's: compute only there
+            R = Tensor(gb_dtype(rdt), shape)
+            R(Ta.S) << expr
+        else:
+            R = expr.new(dtype=gb_dtype(rdt))
         return _result(R, fill)
     # numpy over the values: both operands' values on the union of entries, aligned
     _utils.expansion_check(Ta, Tb, shape)
@@ -529,12 +534,32 @@ def _both_fills_zero(a, b, fa, fb, ct):
 def _multiply_intersects(a, b, fa, fb, ct):
     """Whether ``a * b`` stores only the intersection of entries: both fills are 0 and, for
     floats, ``value * 0.0`` is ``0.0`` for every stored value (not ``-0.0``, nor NaN for inf).
+
+    Unless ``graphblas.config["array_api_signed_zeros"]`` is True (strict), a ``-0.0``
+    product counts as the fill: finite values suffice (the union of a row scaling
+    ``d[:, None] * A`` with signed ``d`` would store every position, to keep the signs of its
+    zeros; DESIGN D3a).
     """
     if not _both_fills_zero(a, b, fa, fb, ct):
         return False
     if ct.kind != "f":
         return True
+    if not config.get("array_api_signed_zeros", False):
+        return _utils.summary(a)["finite"] and _utils.summary(b)["finite"]
     return _finite_nonnegative(a) and _finite_nonnegative(b)
+
+
+def _divide_left_joins(b, fa, fb):
+    """Whether ``a / b`` stores only ``a``'s entries: ``a``'s fill is 0, and 0 divided by
+    any value of ``b`` is a zero (b holds no 0 or NaN). The zero's sign then reads as the
+    fill's, which numpy's may not be: only when signed zeros give way (the default).
+    """
+    if config.get("array_api_signed_zeros", False) or fa != 0:
+        return False
+    if fb == 0 or np.isnan(fb):
+        return False
+    facts = _utils.summary(b)
+    return not facts["zero"] and not facts["nan"]
 
 
 def _finite_nonnegative(x):
@@ -694,30 +719,50 @@ bitwise_right_shift = _make_binary("bitwise_right_shift")
 
 
 def clip(x, /, min=None, max=None):
-    """``x`` clipped to ``[min, max]`` in the dtype of ``x``; NaN propagates.
-
-    With scalar bounds this is numpy's ``clip`` (which keeps ``-0.0`` against a bound of
-    ``0.0``); with array bounds it is ``minimum(maximum(x, min), max)``, as numpy's ``clip``
-    with array bounds is.
+    """``x`` clipped as numpy's ``clip`` does (NaN propagates; a tie gives the bound), in
+    the dtype of ``x``, over the union of the entries of ``x`` and of array bounds.
     """
     if not isinstance(x, Array):
         raise TypeError(f"clip needs an Array, not {type(x).__name__}")
     lo = _clip_bound(min, x)
     hi = _clip_bound(max, x)
     if lo is None and hi is None:
-        out = x._copy()
-    elif all(b is None or not isinstance(b, Array) or b.ndim == 0 for b in (lo, hi)):
+        return x._copy()
+    operands = [x] + [b for b in (lo, hi) if isinstance(b, Array) and b.ndim]
+    if len(operands) == 1:
         lo_v, hi_v = (b._fill if isinstance(b, Array) else b for b in (lo, hi))
         out = _unary("clip", lambda v: np.clip(v, lo_v, hi_v), x)
     else:
-        out = x
-        if lo is not None:
-            out = maximum(out, lo)
-        if hi is not None:
-            out = minimum(out, hi)
-    if out.dtype != x.dtype:
-        out = cast(out, x.dtype)
-    return out
+        out = _clip_arrays(x, lo, hi, operands)
+    return out if out.dtype == x.dtype else cast(out, x.dtype)
+
+
+def _clip_arrays(x, lo, hi, operands):
+    """Clip with array bounds as numpy does, over the union of the entries (aligned values)."""
+    shape = np.broadcast_shapes(*[b.shape for b in operands])
+    if shape != x.shape:
+        raise ValueError(f"clip's bounds do not broadcast to the shape {x.shape}")
+    is_array = [isinstance(b, Array) and b.ndim > 0 for b in (lo, hi)]
+
+    def value(b):  # (a bound's value where it stores nothing, typed as numpy types it)
+        return np.asarray(b._fill) if isinstance(b, Array) else b
+
+    def probe(b):
+        return np.empty(0, b.dtype) if isinstance(b, Array) else b
+
+    with np.errstate(all="ignore"):
+        rdt = np.clip(np.empty(0, x.dtype), probe(lo), probe(hi)).dtype
+        fill = np.clip(np.asarray(x._fill), value(lo), value(hi))
+
+    def func(v, *arrays):
+        it = iter(arrays)
+        lo_v, hi_v = (
+            next(it) if is_nd else value(b) for b, is_nd in zip((lo, hi), is_array, strict=True)
+        )
+        return np.clip(v, lo_v, hi_v)
+
+    tensors = _utils.aligned(operands, shape)
+    return _result(_utils.map_values(func, tensors, rdt), fill)
 
 
 def _clip_bound(bound, x):
