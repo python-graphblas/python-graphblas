@@ -468,7 +468,7 @@ def _gb_op(spec, a, b, ct):
 def _binary_arrays(spec, a, b, op, ct, rdt, fill):
     Ta, Tb = a._T(), b._T()
     try:
-        shape = np.broadcast_shapes(Ta.shape, Tb.shape)
+        shape = Ta.shape if Ta.shape == Tb.shape else np.broadcast_shapes(Ta.shape, Tb.shape)
     except ValueError:
         raise ValueError(
             f"{spec.name}: shapes {Ta.shape} and {Tb.shape} do not broadcast"

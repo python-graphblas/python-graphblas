@@ -209,9 +209,22 @@ def _reduce(name, x, axis, keepdims, dtype=None):
     fill_out = spec.repeat(fill, L, ct)
     if T.nvals == 0 or math.prod(shape) == 0:
         return _keepdims(Array._new(Tensor(gb_dtype(ct), shape), fill_out), x, axes, keepdims)
-    R = _reduce_tensor(T, spec.gb[gb_dtype(ct)], axes)
     nan_fix = name in {"min", "max"} and ct.kind == "f" and _has_nan(x)
     full = T.nvals == x.size
+    if len(axes) == x.ndim:
+        # Over every axis: one Scalar, and the count is the number of entries
+        r = T.reduce_scalar(spec.gb[gb_dtype(ct)]).new().value
+        if nan_fix:
+            value = np.nan
+        elif full or _utils.same_value(fill, spec.identity(ct)):
+            value = r
+        else:
+            with np.errstate(all="ignore"):
+                count = np.array([T.nvals], dtype=np.int64)
+                value = spec.combine(L, fill, ct)(np.array([r], dtype=ct), count)[0]
+        out = Array._new(Tensor(gb_dtype(ct), ()), value)
+        return _keepdims(out, x, axes, keepdims)
+    R = _reduce_tensor(T, spec.gb[gb_dtype(ct)], axes)
     if not nan_fix and (full or _utils.same_value(fill, spec.identity(ct))):
         out = Array._new(R, fill if full else fill_out)
     else:
