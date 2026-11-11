@@ -483,6 +483,31 @@ def test_float_multiply_of_nonnegative_values_intersects():
     assert_array_equal(z * y, np_call(np.multiply, z.todense(), y.todense()))
 
 
+@pytest.mark.parametrize("name", ["maximum", "minimum"])
+def test_float_maximum_minimum(name):
+    # Without NaN or -0.0 GraphBLAS's max and min are numpy's; with them, numpy computes
+    rng = np.random.default_rng(8)
+    func = getattr(np, name)
+    for fill1, fill2 in [(0.0, 0.0), (2.5, -1.0), (np.inf, 0.0), (0.0, -0.0), (np.nan, 1.0)]:
+        a = np.where(rng.random((4, 5)) < 0.5, fill1, np.round(rng.normal(size=(4, 5)), 1))
+        b = np.where(rng.random(5) < 0.5, fill2, np.round(rng.normal(size=5), 1))
+        x, y = make(a, fill1), make(b, fill2)
+        assert_array_equal(getattr(xp, name)(x, y), func(a, b))
+        for s in [0.0, -0.0, 1.5, np.nan, -np.inf, 3]:
+            assert_array_equal(getattr(xp, name)(x, s), func(a, s))
+            assert_array_equal(getattr(xp, name)(s, y), func(s, b))
+        a[0, 0] = -0.0
+        a[1, 1] = np.nan
+        x = make(a, fill1)
+        assert_array_equal(getattr(xp, name)(x, y), func(a, b))
+        assert_array_equal(getattr(xp, name)(y, x), func(b, a))
+    x = make(np.array([1.0, 0.0, 2.0]), 0.0)
+    y = make(np.array([0.5, 0.5, 0.5]), 0.0)
+    assert_array_equal(getattr(xp, name)(x, y), func(x.todense(), y.todense()))
+    x *= -0.0  # (the cached facts about x's values must not survive)
+    assert_array_equal(getattr(xp, name)(x, y), func(x.todense(), y.todense()))
+
+
 def test_float_multiply_keeps_union():
     x = make(np.array([-1.0, 0.0, 2.0, np.inf]), 0.0)
     y = make(np.array([0.0, 4.0, 5.0, 0.0]), 0.0)
