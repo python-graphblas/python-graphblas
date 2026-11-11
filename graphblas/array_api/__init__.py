@@ -20,6 +20,7 @@ from . import (
     _set,
     _sorting,
     _statistical,
+    linalg,
 )
 from ._array import Array
 from ._constants import *  # noqa: F403
