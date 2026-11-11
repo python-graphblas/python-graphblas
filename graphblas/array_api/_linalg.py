@@ -1,4 +1,5 @@
-"""Linear algebra in the main namespace: matmul, matrix_transpose, tensordot and vecdot.
+"""Linear algebra in the main namespace: matmul, matrix_transpose, tensordot and vecdot, and
+the extension einsum.
 
 Contractions treat a fill of zero as a structural zero (DESIGN D6), as scipy.sparse and
 pydata/sparse do: a product with an unstored position is skipped, so 0 * inf there is not NaN,
@@ -6,20 +7,34 @@ unlike numpy. Sums may round differently from numpy's (the order of the terms di
 nonzero fill is the fill times a matrix of ones plus an array with fill zero, which turns into
 sums of the operands broadcast over the result: the result is then dense in general (under the
 densify limit). A fill that is not finite, or True, makes the result go through numpy densely.
+
+Semirings (an extension, DESIGN D11): ``semiring=`` takes a ``graphblas`` Semiring or its
+name ("min_plus", "max_min", ...), whose monoid takes the place of the sum and whose binary
+operator that of the product. A contraction skips the unstored positions, which is right when
+every operand's fill is the identity ``e`` of the semiring's monoid and ``e`` annihilates the
+multiply from both sides, ``mult(e, y) == mult(y, e) == e``: inf for min_plus, -inf for
+max_plus, False for lor_land, 0 for plus_times. The result's fill is then ``e``; other fills
+raise ValueError. As in D6 the skipping is structural: an infinity meeting an unstored
+position makes no NaN (inf + -inf in min_plus). The annihilator is checked on a set of finite
+probe values of each operand type, once per typed semiring. The default (None) is plus_times,
+or lor_land for bool, under the rules of the first paragraph.
 """
 
 import math
 
 import numpy as np
 
-from .. import semiring
+from .. import semiring as semirings
+from ..core.operator.semiring import Semiring, TypedBuiltinSemiring, TypedUserSemiring
+from ..core.scalar import Scalar
 from ..core.tensor import Tensor
+from ..core.vector import Vector
 from . import _utils
 from ._array import Array
 from ._dtypes import check_supported
-from ._utils import gb_dtype
+from ._utils import gb_dtype, np_dtype
 
-__all__ = ["matmul", "matrix_transpose", "tensordot", "vecdot"]
+__all__ = ["einsum", "matmul", "matrix_transpose", "tensordot", "vecdot"]
 
 
 def _check(x, name):
@@ -37,7 +52,131 @@ def _operand(x):
 
 
 def _semiring(dt):
-    return (semiring.lor_land if dt.kind == "b" else semiring.plus_times)[gb_dtype(dt)]
+    return (semirings.lor_land if dt.kind == "b" else semirings.plus_times)[gb_dtype(dt)]
+
+
+def _resolve(semiring, dt, name):
+    """``(typed semiring, whether it is the default)`` for the ``semiring=`` argument, typed
+    for ``dt``, the operands' promoted dtype.
+    """
+    default = _semiring(dt)
+    if semiring is None:
+        return default, True
+    if isinstance(semiring, str):
+        try:
+            sr = semirings.from_string(semiring)
+        except ValueError:
+            raise ValueError(f"{name}: unknown semiring {semiring!r}") from None
+    elif isinstance(semiring, (Semiring, TypedBuiltinSemiring, TypedUserSemiring)):
+        sr = semiring
+    else:
+        raise TypeError(
+            f"{name}'s semiring must be a graphblas Semiring or its name, not "
+            f"{type(semiring).__name__}"
+        )
+    if isinstance(sr, Semiring):
+        if dt.kind == "b" and sr.name == "plus_times":
+            return default, True  # (numpy's sum of bools is their lor)
+        try:
+            sr = sr[gb_dtype(dt)]
+        except KeyError:
+            raise TypeError(f"{name}: the semiring {sr.name} does not work with {dt}") from None
+    same = sr is default or (
+        sr.name == default.name and sr.type == default.type and sr.type2 == default.type2
+    )
+    return sr, same
+
+
+def _probes(dt):
+    """Values of the numpy dtype ``dt`` to check an annihilator on: both signs, zeros and the
+    extremes, all finite (an infinity meets an unstored position only structurally, as in D6).
+    """
+    if dt.kind == "b":
+        return np.array([False, True])
+    if dt.kind in "iu":
+        info = np.iinfo(dt)
+        values = [0, 1, 2, 7, info.max, info.max // 3]
+        if dt.kind == "i":
+            values += [-1, -5, info.min, info.min // 3]
+        return np.array(values, dtype=dt)
+    big = np.finfo(dt).max
+    values = [0.0, -0.0, 1.0, -1.0, 0.5, -2.5, 3e9, big, -big, np.finfo(dt).tiny]
+    if dt.kind == "c":
+        values += [1j, -1j, 1 + 2j, -3.5 + 0.5j, complex(0, big)]
+    return np.array(values, dtype=dt)
+
+
+_ANNIHILATES = {}
+
+
+def _annihilates(typed):
+    """Whether the identity of the typed semiring's monoid annihilates its multiply from both
+    sides on the probe values (cached).
+    """
+    key = (typed.name, typed.type.name, typed.type2.name)
+    if (ok := _ANNIHILATES.get(key)) is None:
+        ok = _ANNIHILATES[key] = _check_annihilates(typed)
+    return ok
+
+
+def _check_annihilates(typed):
+    if typed.is_positional:
+        return False
+    mult = typed.binaryop
+    e = typed.monoid.identity
+    for left in (True, False):
+        e_type, y_type = (typed.type, typed.type2) if left else (typed.type2, typed.type)
+        ys = _probes(np_dtype(y_type))
+        v = Vector.from_coo(np.arange(ys.size), ys, dtype=y_type, size=ys.size)
+        s = Scalar.from_value(_utils.scalar(e, np_dtype(e_type)), dtype=e_type)
+        r = (v.apply(mult, left=s) if left else v.apply(mult, right=s)).new()
+        if r.nvals != ys.size or not bool(np.all(r.to_coo()[1] == e)):
+            return False
+    return True
+
+
+def _operand_name(name, i):
+    return f"operand {i}" if name == "einsum" else f"x{i + 1}"
+
+
+def _spell(value):
+    """``value`` as the namespace spells it (``xp.inf`` for inf)."""
+    value = np.asarray(value).item()
+    if isinstance(value, float) and np.isinf(value):
+        return "xp.inf" if value > 0 else "-xp.inf"
+    return repr(value)
+
+
+def _sound(typed, arrays, name, *, multiplies=True):
+    """The result dtype and fill of a contraction of ``arrays`` with a typed semiring other
+    than the default, after checking that it may skip their unstored positions (ValueError
+    if not). ``multiplies``: whether values meet the multiply (einsum of one operand only
+    sums).
+    """
+    e = typed.monoid.identity
+    out_dt = check_supported(np_dtype(typed.return_type), name)
+    if multiplies and not _annihilates(typed):
+        mult = typed.binaryop.name
+        raise ValueError(
+            f"{name}: the semiring {typed.name} on {np_dtype(typed.type)} cannot skip unstored "
+            f"positions: the identity {e!r} of its monoid {typed.monoid.name} does not "
+            f"annihilate {mult} ({mult}(e, y) and {mult}(y, e) must be e for every y), so no "
+            "fill works. Use it on Tensors (x.tensor), which skip missing entries."
+        )
+    for i, x in enumerate(arrays):
+        in_dt = np_dtype(typed.type if i == 0 else typed.type2)
+        fill = _utils.scalar(x._fill, in_dt)
+        if fill != e:  # (a NaN fill too)
+            spelled = _spell(e)
+            raise ValueError(
+                f"{name} with the semiring {typed.name} needs operands whose fill is {e!r}, "
+                f"the identity of {typed.monoid.name}"
+                + (f", which annihilates {typed.binaryop.name}" if multiplies else "")
+                + f"; {_operand_name(name, i)} has the fill {x._fill.item()!r}. Make the array "
+                f"with fill_value={spelled} (xp.asarray(x.tensor, fill_value={spelled}) reads "
+                f"x's unstored positions as {e!r})."
+            )
+    return out_dt, _utils.scalar(e, out_dt)
 
 
 def _is_zero(fill):
@@ -79,7 +218,10 @@ def _rdt(name, func, x1, x2):
     return check_supported(np.asarray(probe).dtype, name)
 
 
-def matmul(x1, x2, /):
+def matmul(x1, x2, /, *, semiring=None):
+    """The matrix product (numpy's matmul rules). ``semiring`` (an extension): a graphblas
+    Semiring or its name, under the module's rules for fills.
+    """
     from ._elementwise import add, multiply
     from ._manipulation import expand_dims
     from ._statistical import sum as sum_
@@ -99,11 +241,15 @@ def matmul(x1, x2, /):
     except ValueError:
         raise ValueError(f"matmul: shapes {x1.shape} and {x2.shape} do not broadcast") from None
     rdt = _rdt("matmul", np.matmul, x1, x2)
+    typed, default = _resolve(semiring, rdt, "matmul")
+    if not default:
+        out_dt, fill = _sound(typed, (x1, x2), "matmul")
+        return _product(x1, x2, typed, out_dt, fill)
     if not _dense_ok(x1, x2):
         return _dense(np.matmul, x1, x2)
     a0, fa = _zero_fill(x1)
     b0, fb = _zero_fill(x2)
-    out = _product(a0, b0, rdt)
+    out = _product(a0, b0, typed, rdt, _utils.scalar(0, rdt))
     if fa is None and fb is None:
         return out
     terms = []
@@ -127,14 +273,17 @@ def matmul(x1, x2, /):
     return out if out.dtype == rdt else cast(out, rdt)
 
 
-def _product(a, b, rdt):
-    """``a @ b`` of arrays with fill 0, in GraphBLAS."""
+def _product(a, b, typed, out_dt, fill):
+    """``a @ b`` with the typed semiring, skipping unstored positions; the result's fill is
+    ``fill``.
+    """
     Ta, Tb = a._T(), b._T()
     shape = np.broadcast_shapes(a.shape[:-2], b.shape[:-2])
     shape = shape + (a.shape[-2:-1] if a.ndim > 1 else ()) + (b.shape[-1:] if b.ndim > 1 else ())
+    gbdt = gb_dtype(out_dt)
     if Ta.nvals == 0 or Tb.nvals == 0 or math.prod(shape) == 0:
-        return Array._new(Tensor(gb_dtype(rdt), shape), 0)
-    return Array._new(Ta.matmul(Tb, _semiring(rdt)).new(dtype=gb_dtype(rdt)), 0)
+        return Array._new(Tensor(gbdt, shape), fill)
+    return Array._new(Ta.matmul(Tb, typed).new(dtype=gbdt), fill)
 
 
 def matrix_transpose(x, /):
@@ -157,7 +306,10 @@ def _tensordot_axes(x1, x2, axes):
     return a, b
 
 
-def tensordot(x1, x2, /, *, axes=2):
+def tensordot(x1, x2, /, *, axes=2, semiring=None):
+    """The tensor dot product (numpy's tensordot). ``semiring`` (an extension): a graphblas
+    Semiring or its name, under the module's rules for fills.
+    """
     from ._elementwise import add, cast, multiply
     from ._manipulation import reshape
     from ._statistical import sum as sum_
@@ -169,19 +321,18 @@ def tensordot(x1, x2, /, *, axes=2):
         if x1.shape[a] != x2.shape[b]:
             raise ValueError(f"tensordot: axis {a} of x1 and axis {b} of x2 differ in size")
     rdt = check_supported(np.result_type(x1.dtype, x2.dtype), "tensordot")
-    if not _dense_ok(x1, x2):
-        return _dense(lambda a, b: np.tensordot(a, b, axes=(a_axes, b_axes)), x1, x2)
+    typed, default = _resolve(semiring, rdt, "tensordot")
     free1 = tuple(n for i, n in enumerate(x1.shape) if i not in a_axes)
     free2 = tuple(n for i, n in enumerate(x2.shape) if i not in b_axes)
     shape = free1 + free2
+    if not default:
+        out_dt, fill = _sound(typed, (x1, x2), "tensordot")
+        return _tensordot(x1, x2, a_axes, b_axes, shape, typed, out_dt, fill)
+    if not _dense_ok(x1, x2):
+        return _dense(lambda a, b: np.tensordot(a, b, axes=(a_axes, b_axes)), x1, x2)
     a0, fa = _zero_fill(x1)
     b0, fb = _zero_fill(x2)
-    Ta, Tb = a0._T(), b0._T()
-    if Ta.nvals == 0 or Tb.nvals == 0 or math.prod(shape) == 0:
-        out = Array._new(Tensor(gb_dtype(rdt), shape), 0)
-    else:
-        R = Ta.tensordot(Tb, (list(a_axes), list(b_axes)), _semiring(rdt)).new(dtype=gb_dtype(rdt))
-        out = Array._new(R, 0)
+    out = _tensordot(a0, b0, a_axes, b_axes, shape, typed, rdt, _utils.scalar(0, rdt))
     if fa is not None:
         s = sum_(b0, axis=b_axes, dtype=rdt) if b_axes else cast(b0, rdt)
         out = add(out, multiply(fa, reshape(s, (1,) * len(free1) + free2)))
@@ -194,8 +345,21 @@ def tensordot(x1, x2, /, *, axes=2):
     return out if out.dtype == rdt else cast(out, rdt)
 
 
-def vecdot(x1, x2, /, *, axis=-1):
-    """Sum over ``axis`` of ``conj(x1) * x2`` (broadcast), with zero fills structural."""
+def _tensordot(a, b, a_axes, b_axes, shape, typed, out_dt, fill):
+    Ta, Tb = a._T(), b._T()
+    gbdt = gb_dtype(out_dt)
+    if Ta.nvals == 0 or Tb.nvals == 0 or math.prod(shape) == 0:
+        return Array._new(Tensor(gbdt, shape), fill)
+    R = Ta.tensordot(Tb, (list(a_axes), list(b_axes)), typed).new(dtype=gbdt)
+    return Array._new(R, fill)
+
+
+def vecdot(x1, x2, /, *, axis=-1, semiring=None):
+    """Sum over ``axis`` of ``conj(x1) * x2`` (broadcast), with zero fills structural.
+
+    ``semiring`` (an extension): a graphblas Semiring or its name, whose monoid reduces
+    ``mult(x1, x2)`` over ``axis`` (no conjugate), under the module's rules for fills.
+    """
     from ._elementwise import add, cast, conj, multiply
     from ._statistical import sum as sum_
 
@@ -213,23 +377,23 @@ def vecdot(x1, x2, /, *, axis=-1):
         raise ValueError("vecdot: the axis differs in size")
     shape = np.broadcast_shapes(x1.shape, x2.shape)
     rdt = check_supported(np.result_type(x1.dtype, x2.dtype), "vecdot")
+    typed, default = _resolve(semiring, rdt, "vecdot")
+    out_shape = tuple(n for i, n in enumerate(shape) if i != len(shape) + axis)
+    if not default:
+        out_dt, fill = _sound(typed, (x1, x2), "vecdot")
+        return _vecdot(x1, x2, axis, shape, out_shape, typed, out_dt, fill)
     if not _dense_ok(x1, x2):
         return _dense(lambda a, b: np.vecdot(a, b, axis=axis), x1, x2)
     if x1.dtype.kind == "c":
         x1 = conj(x1)
     a0, fa = _zero_fill(x1)
     b0, fb = _zero_fill(x2)
-    out_shape = tuple(n for i, n in enumerate(shape) if i != len(shape) + axis)
     Ta, Tb = a0._T(), b0._T()
     gbdt = gb_dtype(rdt)
     if Ta.nvals == 0 or Tb.nvals == 0 or math.prod(shape) == 0:
         out = Array._new(Tensor(gbdt, out_shape), 0)
     else:
-        mult = _semiring(rdt).binaryop
-        if _both_broadcast(Ta.shape, Tb.shape, shape):
-            # (an outer product: ewise_mult replicates one operand)
-            _utils.expansion_check(Ta, Tb, shape)
-        P = Array._new(Ta.ewise_mult(Tb, mult).new(dtype=gbdt), 0)
+        P = Array._new(_vecdot_product(Ta, Tb, shape, typed.binaryop, gbdt), 0)
         out = sum_(P, axis=axis, dtype=rdt) if rdt.kind != "b" else _any(P, axis)
     if fa is not None:
         out = add(out, multiply(fa, sum_(b0, axis=axis, dtype=rdt)))
@@ -238,6 +402,22 @@ def vecdot(x1, x2, /, *, axis=-1):
     if fa is not None and fb is not None:
         out = add(out, multiply(multiply(fa, fb), shape[axis]))
     return out if out.dtype == rdt else cast(out, rdt)
+
+
+def _vecdot_product(Ta, Tb, shape, mult, gbdt=None):
+    if _both_broadcast(Ta.shape, Tb.shape, shape):
+        # (an outer product: ewise_mult replicates one operand)
+        _utils.expansion_check(Ta, Tb, shape)
+    return Ta.ewise_mult(Tb, mult).new(dtype=gbdt)
+
+
+def _vecdot(a, b, axis, shape, out_shape, typed, out_dt, fill):
+    Ta, Tb = a._T(), b._T()
+    gbdt = gb_dtype(out_dt)
+    if Ta.nvals == 0 or Tb.nvals == 0 or math.prod(shape) == 0:
+        return Array._new(Tensor(gbdt, out_shape), fill)
+    P = _vecdot_product(Ta, Tb, shape, typed.binaryop)
+    return Array._new(P.reduce(typed.monoid, axis=len(shape) + axis).new(dtype=gbdt), fill)
 
 
 def _any(x, axis):
@@ -250,3 +430,42 @@ def _both_broadcast(sa, sb, shape):
     from ..core.tensor_ewise import _broadcast_factor
 
     return _broadcast_factor(sa, shape) > 1 and _broadcast_factor(sb, shape) > 1
+
+
+def einsum(subscripts, /, *operands, semiring=None):
+    """Einstein summation (an extension), with numpy's subscripts: ``einsum("ij,jk->ik", a,
+    b)`` is ``a @ b``. Each index appears at most once per operand (no diagonals), and
+    ``...`` is not supported.
+
+    ``semiring``: a graphblas Semiring or its name; the default is plus_times, or lor_land
+    for bool. Its multiply combines the operands of each term, and its monoid sums the terms
+    over the indices not in the output. Fills follow the module's rules; with the default
+    semiring an operand whose fill is not zero makes the computation go through numpy
+    densely (under the densify limit).
+    """
+    from ..core.tensor_einsum import _einsum_plan
+    from ..core.tensor_einsum import einsum as tensor_einsum
+
+    if not isinstance(subscripts, str):
+        raise TypeError(f"einsum's subscripts must be a str, not {type(subscripts).__name__}")
+    if not operands:
+        raise ValueError("einsum needs at least one operand")
+    ops = [_operand(x) for x in operands]
+    for x in ops:
+        _check(x, "einsum")
+    rdt = check_supported(np.result_type(*(x.dtype for x in ops)), "einsum")
+    typed, default = _resolve(semiring, rdt, "einsum")
+    shapes = tuple(x.shape for x in ops)
+    shape = _einsum_plan(subscripts, shapes, "greedy")[2]
+    if default:
+        if not all(_is_zero(x._fill) for x in ops):
+            _utils.check_dense(math.prod(shape), "einsum with a nonzero fill")
+            return _dense(lambda *a: np.einsum(subscripts, *a), *ops)
+        out_dt, fill = rdt, _utils.scalar(0, rdt)
+    else:
+        out_dt, fill = _sound(typed, ops, "einsum", multiplies=len(ops) > 1)
+    tensors = [x._T() for x in ops]
+    gbdt = gb_dtype(out_dt)
+    if math.prod(shape) == 0 or any(T.nvals == 0 for T in tensors):
+        return Array._new(Tensor(gbdt, shape), fill)
+    return Array._new(tensor_einsum(subscripts, *tensors, op=typed).new(dtype=gbdt), fill)

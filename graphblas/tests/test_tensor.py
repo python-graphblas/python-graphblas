@@ -2816,6 +2816,42 @@ def test_tensordot_semirings_masks_and_errors():
     assert ("ttv", "entries") in {(r["point"], r["choice"]) for r in recs}
 
 
+def test_masked_contraction_takes_a_transpose_descriptor():
+    # Under a mask, an operand stored as the transpose of what the product needs is not
+    # copied (SuiteSparse's masked dot product, an SDDMM); the values are the masked product
+    from graphblas.core import tensor as tensor_mod
+    from graphblas.core import tensor_census as census
+
+    rng = np.random.default_rng(32)
+    X, xv, xp = random_tensor((6, 4), rng, density=0.7)
+    Y, yv, yp = random_tensor((5, 4), rng, density=0.7)
+    Mk, _, mp = random_tensor((6, 5), rng, dtype=dtypes.BOOL, density=0.4)
+    ev, ep = np_matmul(xv, xp, yv.T, yp.T)
+    rv, rp = model_update(np.zeros((6, 5)), np.zeros((6, 5), bool), ev, ep, mask=mp)
+    XT = X.relayout(((1,), (0,)))  # (X's transpose in storage)
+    for expr in [
+        X.matmul(Y.T),
+        X.tensordot(Y, ([1], [1])),
+        tensor_mod.einsum("ik,jk->ij", X, Y),
+        XT.T.T.matmul(Y.T),
+    ]:
+        census.start()
+        try:
+            R = expr.new(mask=Mk.S)
+            recs = census.stop()
+        finally:
+            census.stop()
+            census.records.clear()
+        check(R, rv, rp, approx=True)
+        moved = [r["moved"] for r in recs if r["point"] == "contract" and "moved" in r]
+        assert moved == [[False, False]], moved
+    # Unmasked, the planner's relayout stays
+    check(X.matmul(Y.T).new(), ev, ep, approx=True)
+    C, cv, cp = random_tensor((6, 5), rng)
+    C(Mk.S, binary.plus) << X.matmul(Y.T)
+    check(C, *model_update(cv, cp, ev, ep, mask=mp, accum=np.add), approx=True)
+
+
 # --------------------------------------------------------------------------------------------
 # Core hooks (Matrix, Vector, Scalar and operators meet a Tensor)
 
