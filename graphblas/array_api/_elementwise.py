@@ -381,8 +381,9 @@ class _Binary:
     ``kind`` is "arith" (the op works in the result dtype), "cmp" (in the promoted dtype of
     the operands, with a bool result) or "logical" (in bool). ``gb(dtype)`` gives the
     GraphBLAS operator that equals ``ufunc`` on operands of the dtype it works in, or None.
-    ``annihilator(dtype)`` gives the fill value that, held by both operands, makes the union
-    equal to the intersection (``ewise_mult``), or None.
+    ``annihilator(a, b, fill_a, fill_b, dtype)`` says whether the union equals the
+    intersection (``ewise_mult``): whether each operand's fill makes the result the result's
+    fill whatever the other operand holds.
     """
 
     def __init__(self, name, ufunc, kind="arith", gb=None, annihilator=None):
@@ -471,8 +472,7 @@ def _binary_arrays(spec, a, b, op, ct, rdt, fill):
     if op is not None:
         fa = _utils.scalar(a._fill, ct)
         fb = _utils.scalar(b._fill, ct)
-        zero = spec.annihilator(ct) if spec.annihilator is not None else None
-        if zero is not None and _utils.same_value(fa, zero) and _utils.same_value(fb, zero):
+        if spec.annihilator is not None and spec.annihilator(a, b, fa, fb, ct):
             # Where either operand holds its fill the result is the fill: the intersection
             R = Ta.ewise_mult(Tb, op).new(dtype=gb_dtype(rdt))
             return _result(R, fill)
@@ -509,6 +509,37 @@ def _zero(dtype):
     return _utils.scalar(0, dtype)
 
 
+def _both_fills_zero(a, b, fa, fb, ct):
+    zero = _zero(ct)
+    return _utils.same_value(fa, zero) and _utils.same_value(fb, zero)
+
+
+def _multiply_intersects(a, b, fa, fb, ct):
+    """Whether ``a * b`` stores only the intersection of entries: both fills are 0 and, for
+    floats, ``value * 0.0`` is ``0.0`` for every stored value (not ``-0.0``, nor NaN for inf).
+    """
+    if not _both_fills_zero(a, b, fa, fb, ct):
+        return False
+    if ct.kind != "f":
+        return True
+    return _finite_nonnegative(a) and _finite_nonnegative(b)
+
+
+def _finite_nonnegative(x):
+    """Whether every stored value is finite with its sign bit clear (cached per Array)."""
+
+    def compute(x):
+        T = x._T()
+        if x.dtype.kind == "b" or T.nvals == 0:
+            return True
+        values = _utils.tensor_values(T)
+        if x.dtype.kind in _INTEGRAL:
+            return bool((values >= 0).all())
+        return bool(np.isfinite(values).all() and not np.signbit(values).any())
+
+    return x._fact("finite_nonnegative", compute)
+
+
 _SPECS = {
     "add": _Binary(
         "add", np.add, gb=_typed_for({"b": binary.lor, **dict.fromkeys("iufc", binary.plus)})
@@ -517,12 +548,13 @@ _SPECS = {
         "subtract", np.subtract, gb=_typed_for(dict.fromkeys("iufc", binary.minus))
     ),
     # Complex products and quotients are computed by numpy: C's formulas round otherwise.
-    # A float zero fill is not an annihilator: 0.0 * -1.0 is -0.0, and 0.0 * inf is NaN.
+    # A float zero fill annihilates only nonnegative finite values: 0.0 * -1.0 is -0.0, and
+    # 0.0 * inf is NaN.
     "multiply": _Binary(
         "multiply",
         np.multiply,
         gb=_typed_for({"b": binary.land, **dict.fromkeys("iuf", binary.times)}),
-        annihilator=lambda dt: _zero(dt) if dt.kind in "biu" else None,
+        annihilator=_multiply_intersects,
     ),
     "divide": _Binary("divide", np.divide, gb=_typed_for({"f": binary.truediv})),
     "equal": _Binary("equal", np.equal, "cmp", gb=_typed_for(dict.fromkeys("biufc", binary.eq))),
@@ -544,7 +576,7 @@ _SPECS = {
         np.logical_and,
         "logical",
         gb=lambda dt: binary.land[gb_dtype(dt)],
-        annihilator=_zero,
+        annihilator=_both_fills_zero,
     ),
     "logical_or": _Binary(
         "logical_or", np.logical_or, "logical", gb=lambda dt: binary.lor[gb_dtype(dt)]
@@ -556,7 +588,7 @@ _SPECS = {
         "bitwise_and",
         np.bitwise_and,
         gb=_typed_for({"b": binary.land, "i": binary.band, "u": binary.band}),
-        annihilator=_zero,
+        annihilator=_both_fills_zero,
     ),
     "bitwise_or": _Binary(
         "bitwise_or",
