@@ -248,15 +248,64 @@ def test_sddmm_falls_back(masks):
         with np.errstate(invalid="ignore"):
             assert_close(R, s * (a2 @ b.T))
         assert [m is None for m in masks] == [True]
-    # Overflow to inf outside S: masked, it reads 0 (numpy: NaN), as D6's 0 * inf
-    big = make(np.full((2, 1), 1e200), 0.0)
+
+
+def test_sddmm_overflow_outside_s(masks):
+    # A product that may overflow to inf outside S's entries is computed whole: 0 * inf there
+    # is NaN, as numpy has it
     s = np.array([[1.0, 0.0], [0.0, 0.0]])
-    R = xp.multiply(make(s, 0.0), big @ xp.matrix_transpose(big))
-    assert_array_equal(R, [[np.inf, 0.0], [0.0, 0.0]])
-    with pytest.MonkeyPatch.context() as mp, np.errstate(invalid="ignore", over="ignore"):
-        mp.setattr(_lazy, "enabled", False)
-        R = xp.multiply(make(s, 0.0), big @ xp.matrix_transpose(big))
-        assert_array_equal(R, s * (np.full((2, 1), 1e200) @ np.full((1, 2), 1e200)))
+    a = np.full((2, 1), 1e200)
+    with np.errstate(invalid="ignore", over="ignore"):
+        expected = s * (a @ a.T)
+    assert np.isnan(expected[0, 1])
+    for func in [
+        lambda A, B: A @ xp.matrix_transpose(B),
+        lambda A, B: xp.einsum("ik,jk->ij", A, B),
+        lambda A, B: xp.vecdot(A[:, None, :], B[None, :, :]),
+    ]:
+        masks.clear()
+        R = xp.multiply(make(s, 0.0), func(make(a, 0.0), make(a, 0.0)))
+        assert_array_equal(R, expected)
+        assert [m is None for m in masks] == [True]
+    # The bound counts the terms of each sum (and keeps half the range for rounding): one
+    # term of 6e153 * 6e153 is 3.6e307, three may reach 1.1e308
+    a = np.full((3, 3), 6e153)
+    for k, pushed in [(1, True), (3, False)]:
+        masks.clear()
+        A = make(a[:, :k], 0.0)
+        with np.errstate(over="ignore", invalid="ignore"):
+            expected = s[:1, :1] * (a[:1, :k] @ a[:1, :k].T)
+            R = xp.multiply(make(s[:1, :1], 0.0), A[:1] @ xp.matrix_transpose(A[:1]))
+        assert_array_equal(R, expected)
+        assert [m is not None for m in masks] == [pushed]
+    # Large values well within the bound, float32 too, and complex
+    for dtype, value in [(np.float64, 1e100), (np.float32, 1e15), (np.complex128, 1e100j)]:
+        a = np.full((3, 2), value, dtype=dtype)
+        s3 = np.eye(3, dtype=dtype)
+        masks.clear()
+        R = xp.multiply(make(s3, 0), make(a, 0) @ xp.matrix_transpose(make(a, 0)))
+        assert_array_equal(R, s3 * (a @ a.T))
+        assert [m is not None for m in masks] == [True]
+    masks.clear()
+    a = np.full((3, 2), 1e20, dtype=np.float32)
+    with np.errstate(over="ignore", invalid="ignore"):
+        expected = np.eye(3, dtype=np.float32) * (a @ a.T)
+    R = xp.multiply(make(np.eye(3, dtype=np.float32), 0), make(a, 0) @ make(a.T, 0))
+    assert_array_equal(R, expected)
+    assert [m is None for m in masks] == [True]
+    # Computing it whole is guarded: that whole may be dense
+    big = make(np.full((4, 1), 1e200), 0.0)
+    eye = make(np.eye(4), 0.0)
+    with gb.config.set(array_api_densify_limit=10), pytest.raises(xp.DensifyError, match="inf"):
+        xp.multiply(eye, big @ xp.matrix_transpose(big))
+
+
+def test_max_abs():
+    assert _lazy._max_abs(xp.zeros(3)._T()) == 0.0
+    assert _lazy._max_abs(make(np.array([-5, 3], np.int64), 0)._T()) == 5.0
+    assert _lazy._max_abs(make(np.array([True, False]), False)._T()) == 1.0
+    assert _lazy._max_abs(make(np.array([3 + 4j, 1j]), 0)._T()) == 5.0
+    assert _lazy._max_abs(make(np.array([-2.5, np.nan, 1.0]), 0.0)._T()) == 2.5
 
 
 def test_finite_facts():
