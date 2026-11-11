@@ -404,7 +404,7 @@ def cumulative_prod(x, /, *, axis=None, dtype=None, include_initial=False):
 
 def diff(x, /, *, axis=-1, n=1, prepend=None, append=None):
     from ._elementwise import not_equal, subtract
-    from ._manipulation import _concat
+    from ._manipulation import concat
 
     _check_array(x, "diff")
     if x.ndim == 0:
@@ -415,7 +415,7 @@ def diff(x, /, *, axis=-1, n=1, prepend=None, append=None):
         raise ValueError(f"diff's n must be nonnegative, not {n}")
     parts = [_diff_part(p, x, axis) for p in (prepend, x, append) if p is not None]
     if len(parts) > 1:
-        x = _concat(parts, axis)
+        x = concat(parts, axis=axis)
     if n == 0:
         return x._copy()
     # (numpy's diff of booleans is not_equal: subtracting booleans is an error)
