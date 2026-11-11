@@ -58,8 +58,17 @@ def test_where_stores_the_condition_and_the_selected_operand():
     G = make(c, False, rng)  # (with explicit False entries)
     W = xp.where(G, xp.arange(n), big)
     assert_array_equal(W, np.where(c, labels, big))
-    assert W.nnz == G.nnz
+    assert W.nnz == c.sum()  # (G's explicit False entries select big, the fill: not stored)
     assert W.fill_value == big
+    # where(x > t, x, 0): x's entries above t only, read there only
+    a = np.where(rng.random((n, n)) < 0.3, rng.normal(size=(n, n)), 0.0)
+    X = make(a, 0.0, rng)
+    R = xp.where(xp.greater(X, 0.5), X, 0.0)
+    assert_array_equal(R, np.where(a > 0.5, a, 0.0))
+    assert R.nnz == (a > 0.5).sum()
+    R = xp.where(xp.less_equal(X, 0.5), 0.0, X)  # (a condition with fill True)
+    assert_array_equal(R, np.where(a <= 0.5, 0.0, a))
+    assert R.nnz == (a > 0.5).sum()
     # other layouts of the condition, and a fill of True (the base is then x1)
     for cond, cn in [(xp.matrix_transpose(G), c.T), (xp.logical_not(G), ~c)]:
         a = rng.normal(size=(n, n))

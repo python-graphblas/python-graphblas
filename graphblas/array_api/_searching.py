@@ -90,18 +90,32 @@ def _where_at_condition(cond, a, b, shape, rdt):
     if isinstance(base, Array) and base.ndim and base.shape != shape and base._T().nvals:
         return None
     coords, c = Tc.to_coo()
-    values = []
-    for x in (a, b):
-        if isinstance(x, Array) and x.ndim:
-            values.append(_values_at(coords, x, shape) if len(c) else c)
-        else:
-            values.append(_value(x))
-    V = np.where(np.asarray(c, dtype=bool), *values).astype(rdt, copy=False)
+    c = np.asarray(c, dtype=bool)
     gdt = gb_dtype(rdt)
+    if not (isinstance(base, Array) and base.ndim and base._T().nvals):
+        # The base holds only the result's fill: the condition's entries that select it
+        # (those equal to its fill) would store the fill, so only the others are kept, and
+        # the other operand is read there only (where(x > t, x, 0) stores x's entries > t)
+        keep = c != bool(cond._fill)
+        coords = tuple(i[keep] for i in coords)
+        other = b if bool(cond._fill) else a
+        if isinstance(other, Array) and other.ndim:
+            V = _values_at(coords, other, shape) if len(coords[0]) else c[keep]
+        else:
+            V = np.full(len(coords[0]), _value(other))
+        V = np.asarray(V).astype(rdt, copy=False)
+        return Tensor.from_coo(coords, V, gdt, shape=shape) if len(V) else Tensor(gdt, shape)
+    values = [
+        (
+            (_values_at(coords, x, shape) if len(c) else c)
+            if isinstance(x, Array) and x.ndim
+            else _value(x)
+        )
+        for x in (a, b)
+    ]
+    V = np.where(c, *values).astype(rdt, copy=False)
     R = Tensor.from_coo(coords, V, gdt, shape=shape) if len(c) else Tensor(gdt, shape)
-    if isinstance(base, Array) and base.ndim and base._T().nvals:
-        R = base._T().ewise_add(R, binary.second[gdt]).new(dtype=gdt)
-    return R
+    return base._T().ewise_add(R, binary.second[gdt]).new(dtype=gdt)
 
 
 def _values_at(coords, x, shape):
