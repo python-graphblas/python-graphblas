@@ -161,9 +161,28 @@ def _fill_of(ufunc, rdt, operands):
 
 
 def _result(T, fill):
-    if T.dtype == BOOL and T.ndim and T.nvals == T.size and T.nvals:
-        T, fill = _normalize_bool(T, fill)
+    if T.dtype == BOOL and T.ndim and T.nvals:
+        if T.nvals == T.size:
+            T, fill = _normalize_bool(T, fill)
+        elif fill and 2 * T.nvals > T.size:
+            T, fill = _majority_false(T)
     return Array._new(T, fill)
+
+
+def _majority_false(T):
+    """A bool Tensor with fill True that stores mostly False entries, more than half its
+    positions (``equal(deg, 0)`` of a ``deg`` that leaves a few zero degrees unstored):
+    the same values with fill False, storing only the True positions (its unstored ones and
+    its stored True entries). O(size), which is under twice its entries. Else as it is.
+    """
+    ntrue = T.reduce_scalar(monoid.plus[INT64]).new().value
+    if 2 * (T.nvals - ntrue) <= T.size:
+        return T, True
+    R = Tensor(BOOL, T.shape)
+    R(~T.S)[...] << True
+    if ntrue:
+        R(T.select(select.valueeq, True).new().S)[...] << True
+    return R, False
 
 
 def _normalize_bool(T, fill):
