@@ -1165,6 +1165,36 @@ class Tensor(BaseType):
         # (formats differ: a fallback through coordinates, which aligns the values by position)
         return _map_values_coo(func, tensors, gbdt)  # pragma: no cover (safety)
 
+    @classmethod
+    def _concat(cls, tensors, axis):
+        """``tensors`` (of one dtype, and of one shape but along ``axis``) joined along
+        ``axis``, by one GxB_Matrix_concat of their stored Matrices: row blocks when ``axis``
+        leads the row group of the first one's layout, column blocks when it leads the column
+        group. Otherwise every part moves to a layout with ``axis`` leading the rows first.
+        The others take the first one's layout. Private, for ``graphblas.array_api``.
+        """
+        T0 = tensors[0]
+        shape = list(T0._shape)
+        shape[axis] = sum(T._shape[axis] for T in tensors)
+        shape = tuple(shape)
+        rows, cols = T0._layout
+        if rows[:1] == (axis,) or cols[:1] == (axis,):
+            layout = T0._layout
+        else:
+            layout = Layout(
+                (axis, *(a for a in rows if a != axis)), tuple(a for a in cols if a != axis)
+            )
+        by_rows = layout.rows[:1] == (axis,)
+        Ms = [
+            T._M if T._layout == layout else tl.relayout(T._M, T._shape, T._layout, layout)[0]
+            for T in tensors
+            if T._shape[axis]  # (a part of size 0 along the axis adds nothing)
+        ]
+        R = tl.new_matrix(T0.dtype, tl.prod(shape, layout.rows), tl.prod(shape, layout.cols))
+        if Ms:
+            R.ss.concat([[M] for M in Ms] if by_rows else [Ms])
+        return cls._from_M(R, shape, layout)
+
     # Reductions
     def reduce(self, op=monoid.plus, axis=None, *, keepdims=False):
         """Reduce over ``axis`` (None: all axes, giving a 0-d Tensor) with the monoid ``op``,

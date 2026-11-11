@@ -152,7 +152,7 @@ def _broadcast_to(x, shape):
 
 
 def concat(arrays, /, *, axis=0):
-    """Join arrays along ``axis`` (None: flattened first), O(entries).
+    """Join arrays along ``axis`` (None: flattened first), O(entries), in parallel.
 
     The result's fill is the one held by the most positions; a part with another fill stores
     its fill explicitly (O(that part's size), under the densify limit).
@@ -181,22 +181,8 @@ def concat(arrays, /, *, axis=0):
     dtype = result_type(*arrays)
     arrays = [a if a.dtype == dtype else cast(a, dtype) for a in arrays]
     fill = _common_fill(arrays)
-    coords, values = [], []
-    offset = 0
-    for a in arrays:
-        T = _utils.with_fill(a, fill)._T()
-        if T.nvals:
-            # (stored order: no relayout to C order; the build sorts)
-            idx, vals = T.to_coo(sort=False)
-            idx = list(idx)
-            idx[axis] = idx[axis] + offset
-            coords.append(idx)
-            values.append(vals)
-        offset += a.shape[axis]
-    if not values:
-        return Array._new(Tensor(gb_dtype(dtype), shape), fill)
-    coords = tuple(np.concatenate([c[i] for c in coords]) for i in range(ndim))
-    T = Tensor.from_coo(coords, np.concatenate(values), gb_dtype(dtype), shape=shape)
+    # (one GxB_Matrix_concat of the stored Matrices; a part stored in another layout moves)
+    T = Tensor._concat([_utils.with_fill(a, fill)._T() for a in arrays], axis)
     return Array._new(T, fill)
 
 
