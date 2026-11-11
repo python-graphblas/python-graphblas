@@ -46,6 +46,18 @@ class _NewAxis:
         self.length = length
 
 
+class _Gap:
+    """A ``...`` that covers no axis. It takes no axis, but separates the advanced indices on
+    either side of it, as in numpy: ``x[:, 1, ..., [0, 2]]`` of a 3-d ``x`` puts the
+    broadcast advanced axis first.
+    """
+
+    __slots__ = ()
+
+
+_GAP = _Gap()
+
+
 def _is_int(k):
     return isinstance(k, (int, np.integer)) and not isinstance(k, (bool, np.bool_))
 
@@ -138,11 +150,11 @@ def _normalize(x, key):
     if i is None:
         items.extend([slice(None)] * (x.ndim - consumed))
     else:
-        items[i : i + 1] = [slice(None)] * (x.ndim - consumed)
+        items[i : i + 1] = [slice(None)] * (x.ndim - consumed) or [_GAP]
     out = []
     axis = 0
     for k in items:
-        if isinstance(k, _NewAxis):
+        if isinstance(k, (_NewAxis, _Gap)):
             out.append(k)
             continue
         if isinstance(k, (np.ndarray, Array)) and k.dtype.kind == "b":
@@ -196,6 +208,8 @@ def _finish(out, items, nadv):
     for k in items:
         if isinstance(k, (_NewAxis, slice)):
             comps.append(k)
+        elif isinstance(k, _Gap):
+            continue
         elif not placed:
             comps.append("adv")
             placed = True
@@ -231,7 +245,7 @@ def _basic_shape(shape, axes_key):
 # getitem
 def getitem(x, key):
     items = _normalize(x, key)
-    axes_key = [k for k in items if not isinstance(k, _NewAxis)]
+    axes_key = [k for k in items if not isinstance(k, (_NewAxis, _Gap))]
     if _has_adv(items):
         out, nadv = _advanced_extract(x, axes_key)
     else:
@@ -291,7 +305,7 @@ def setitem(x, key, value):
         raise TypeError(type(x))
     value = _setitem_value(x, value)
     items = _normalize(x, key)
-    axes_key = [k for k in items if not isinstance(k, _NewAxis)]
+    axes_key = [k for k in items if not isinstance(k, (_NewAxis, _Gap))]
     if any(isinstance(k, _NewAxis) and k.length == 0 for k in items):
         return  # (a False index selects nothing)
     if x.ndim == 0:
@@ -310,7 +324,7 @@ def setitem(x, key, value):
                 x, tuple(k.index if isinstance(k, _Adv) else k for k in axes_key), value
             )
         elif adv:
-            _scatter_setitem(x, axes_key, value)
+            _scatter_setitem(x, [k for k in items if not isinstance(k, _NewAxis)], value)
         else:
             _region_setitem(x, tuple(axes_key), value)
     x._facts = None
@@ -371,8 +385,11 @@ def _region_setitem(x, key, value):
 
 def _scatter_setitem(x, axes_key, value):
     """Assign by several index arrays: write every selected position."""
-    # numpy lays out the selection; index broadcast views of the coordinates with the key
-    key = tuple(k.index if isinstance(k, _Adv) else k for k in axes_key)
+    # numpy lays out the selection; index broadcast views of the coordinates with the key (a
+    # ``...`` that covers no axis stays: it decides where the advanced axes go)
+    key = tuple(
+        k.index if isinstance(k, _Adv) else Ellipsis if isinstance(k, _Gap) else k for k in axes_key
+    )
     coords = []
     for a, n in enumerate(x.shape):
         grid = np.arange(n, dtype=np.int64).reshape([n if b == a else 1 for b in range(x.ndim)])
