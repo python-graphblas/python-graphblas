@@ -156,15 +156,40 @@ def asarray(obj, /, *, dtype=None, device=None, copy=None, fill_value=None):
         return _from_sparse(obj, dtype, fill_value)
     dt = None if dtype is None else as_dtype(dtype)
     if isinstance(obj, (list, tuple)):
+        stacked = _stack_arrays(obj)
+        if stacked is not None:
+            return asarray(stacked, dtype=dtype, fill_value=fill_value)
         obj = _unwrap_nested(obj)
     if dt is None and isinstance(obj, builtins.bool):
         dt = np.dtype(bool)
     elif dt is None and isinstance(obj, int) and not isinstance(obj, np.generic):
         dt = np.dtype("int64")
     a = np.asarray(obj, dtype=dt)
+    if not a.dtype.isnative:
+        a = a.astype(a.dtype.newbyteorder("="))
     if dt is None and a.dtype.kind == "f" and a.dtype.itemsize < 4:
         a = a.astype(np.float32)
     return _from_numpy(a, fill_value)
+
+
+def _stack_arrays(obj):
+    """A sequence of n-d Arrays of one shape (or such sequences), stacked sparsely; None for
+    anything else.
+    """
+    from ._manipulation import stack
+
+    if not obj:
+        return None
+    parts = []
+    for o in obj:
+        if isinstance(o, (list, tuple)):
+            o = _stack_arrays(o)
+        if not isinstance(o, Array) or o.ndim == 0:
+            return None
+        parts.append(o)
+    if len({p.shape for p in parts}) != 1:
+        return None
+    return stack(parts)
 
 
 def _unwrap_nested(obj):
