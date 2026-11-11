@@ -168,7 +168,7 @@ AmbiguousAssignOrExtract._expect_op = _expect_op
 AmbiguousAssignOrExtract._expect_type = _expect_type
 
 
-def _check_mask(mask, output=None):
+def _check_mask(mask, output=None, strict_kind=False):
     if not isinstance(mask, Mask):
         # Convert bool objects to value masks
         if output_type(mask).__name__ in {"Vector", "Matrix"}:
@@ -180,9 +180,32 @@ def _check_mask(mask, output=None):
             mask = mask.V  # auto-compute (will raise if disabled)
         else:
             raise TypeError(f"Invalid mask: {type(mask)}")
-    if output is not None and output.ndim == 1 and mask.parent.ndim != 1:
-        raise TypeError(f"Mask object must be type Vector; got {type(mask.parent)}")
+    if output is not None:
+        if output.ndim == 1 and mask.parent.ndim != 1:
+            raise TypeError(f"Mask object must be type Vector; got {type(mask.parent)}")
+        # A full-tensor op (ewise, mxm, apply, extract, ...) into a Matrix needs
+        # a Matrix mask. Assignment is exempt (`strict_kind` stays False for it):
+        # a Vector mask on a Matrix row/column assign is valid and is validated
+        # separately in Matrix.__setitem__. Without this, a Vector mask on a
+        # full-Matrix op leaked a raw cffi "struct GB_Matrix_opaque" error.
+        if strict_kind and output.ndim == 2 and mask.parent.ndim != 2:
+            raise TypeError(f"Mask object must be type Matrix; got {type(mask.parent)}")
     return mask
+
+
+# Curated hints for common attribute-access mistakes on Vector/Matrix/Scalar.
+# Only consulted from __getattr__, which fires solely on a genuine attribute
+# miss, so the normal (slotted) attribute hot path is untouched.
+_INSTANCE_ATTR_HINTS = {
+    # `.new()` resolves expressions (e.g. `A.mxm(B).new()`); a concrete
+    # object is copied with `.dup()`.
+    "new": (
+        "`.new()` resolves an expression (e.g. `A.mxm(B).new()`); a concrete "
+        "object has no `.new()`. Use `.dup()` to copy this object."
+    ),
+    # transpose is the `.T` property, not a method.
+    "transpose": "transpose is the `.T` property, e.g. `A.T` (not a method call).",
+}
 
 
 class BaseType:
@@ -196,6 +219,18 @@ class BaseType:
     # not numpy's value of `s.__array__()`. Ufuncs such as `np.sin(s)` still use __array__.
     # Expressions, TransposedMatrix and the index expressions set it too.
     __array_priority__ = 1000
+
+    def __getattr__(self, name):
+        # Python calls this only after normal lookup fails (slots and methods resolve
+        # first), so it is free on the hot path. It fails both for a missing name and
+        # for a property that raises AttributeError, such as ``v.ss`` on the vanilla
+        # backend or ``__index__`` on a float Scalar. Add hints for common mistakes,
+        # and otherwise look the name up again, so a property raises its own message.
+        if (hint := _INSTANCE_ATTR_HINTS.get(name)) is not None:
+            raise AttributeError(
+                f"{type(self).__name__!r} object has no attribute {name!r}; {hint}"
+            )
+        return object.__getattribute__(self, name)
 
     def __call__(
         self,
@@ -495,7 +530,11 @@ class BaseType:
             complement = False
             structure = False
         else:
-            mask = _check_mask(mask, self)
+            # Assignment (`method_name == "__setitem__"`) may target a Matrix
+            # row/column with a Vector mask, so only enforce the strict
+            # mask-kind match for full-tensor operations.
+            strict_kind = expr.method_name != "__setitem__"
+            mask = _check_mask(mask, self, strict_kind=strict_kind)
             complement = mask.complement
             structure = mask.structure
 
@@ -651,7 +690,9 @@ class BaseExpression:
         elif mask is None:
             output.update(self, **opts)
         else:
-            mask = _check_mask(mask, output)
+            # `.new()` always builds a full output matching this expression, so
+            # the mask kind must match the output dimensions.
+            mask = _check_mask(mask, output, strict_kind=True)
             output(mask=mask, **opts).update(self)
         return output
 

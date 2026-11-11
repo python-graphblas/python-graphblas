@@ -612,6 +612,28 @@ def lookup_dtype(key, value=None):
     raise ValueError(f"Unknown dtype: {key} of type {type(key)}")
 
 
+def _raise_dtype_or_arraylike(cls_name, dtype, exc):
+    """Turn a failed constructor dtype lookup into a helpful error.
+
+    Call from ``Vector``/``Matrix`` after ``lookup_dtype(dtype)`` has already
+    raised ``exc``. The constructors take a dtype as the first argument, so a
+    common mistake is to pass the data instead (``Vector([1, 2, 3])``). When
+    ``dtype`` is array-like data rather than a dtype spec, point at the ``from_*``
+    constructors; otherwise re-raise the original ``Unknown dtype`` error. Valid
+    list/tuple dtype specs (structured and subarray dtypes) never reach here
+    because ``lookup_dtype`` accepts them, but a malformed one does, so the
+    lookup's error stays attached as the cause.
+    """
+    if isinstance(dtype, (list, tuple, np.ndarray)):
+        raise TypeError(
+            f"{cls_name}() expects a dtype as the first argument, not "
+            f"{type(dtype).__name__} data. If you meant to pass values, use a "
+            f"constructor such as {cls_name}.from_coo(...) or "
+            f"{cls_name}.from_dense(...)."
+        ) from exc
+    raise exc
+
+
 def unify(type1, type2, *, is_left_scalar=False, is_right_scalar=False):
     """Returns a type that can hold both type1 and type2.
 

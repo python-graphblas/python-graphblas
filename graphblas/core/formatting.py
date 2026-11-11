@@ -379,7 +379,7 @@ def matrix_info(matrix, *, mask=None, expr=None, for_html=True):
     vals = [matrix._nvals, matrix._nrows, matrix._ncols, matrix.dtype.name]
     if expr is None and backend == "suitesparse":
         keys.append("format")
-        if type(matrix) is Matrix:
+        if not matrix._is_transposed:
             vals.append(get_format(matrix))
         else:  # TransposedMatrix
             vals.append(get_format(matrix._matrix, is_transposed=True))
