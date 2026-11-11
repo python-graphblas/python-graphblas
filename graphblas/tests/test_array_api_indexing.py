@@ -1,5 +1,7 @@
 """graphblas.array_api indexing (get and set), take and take_along_axis against numpy."""
 
+import itertools
+
 import numpy as np
 import pytest
 
@@ -220,3 +222,45 @@ def test_take_along_axis(axis):
         )
     with pytest.raises(ValueError, match="dimensions"):
         xp.take_along_axis(xp.zeros((2, 2)), xp.asarray([0]))
+
+
+def _index_patterns():
+    """Keys mixing ints, slices, integer arrays, ``...`` and ``None`` with at least one
+    integer array, as numpy accepts them for a 4-d array.
+    """
+    parts = [slice(None), 1, np.array([0, 2]), np.array([[1], [0]]), Ellipsis, None, slice(0, 2)]
+    for n in range(1, 5):
+        for key in itertools.product(parts, repeat=n):
+            if not any(isinstance(k, np.ndarray) for k in key):
+                continue
+            if sum(k is Ellipsis for k in key) > 1:
+                continue
+            yield key
+
+
+def test_mixed_keys_order_axes_as_numpy():
+    # (shim finding B1) the advanced axes go first when the advanced indices are apart, a
+    # "..." that covers no axis included; in place when they are next to each other
+    count = 0
+    for a, key in itertools.chain(
+        ((np.arange(36.0).reshape(3, 4, 3) + 1, k) for k in _index_patterns()),
+        ((np.arange(108.0).reshape(3, 4, 3, 3) + 1, k) for k in _index_patterns()),
+    ):
+        x = make(a, 0.0)
+        try:
+            expected = a[key]
+        except IndexError:
+            continue
+        count += 1
+        assert_array_equal(x[key], expected)
+        if any(k is None for k in key):
+            continue  # (a value for a key with new axes is not read with them yet)
+        b = a.copy()
+        value = np.arange(expected.size, dtype=np.float64).reshape(expected.shape) - 50
+        b[key] = value
+        y = make(a, 0.0)
+        y[key] = make(value, 0.0) if value.ndim else xp.asarray(value)
+        assert_array_equal(y, b)
+    assert count > 2000
+    x = make(np.arange(24.0).reshape(2, 3, 4), 0.0)
+    assert_array_equal(x[:, 1, ..., [0, 2]], np.array([[4.0, 16.0], [6.0, 18.0]]))
