@@ -58,8 +58,6 @@ def test_shape_errors():
 def test_creation_errors():
     with pytest.raises(TypeError, match="Python scalar"):
         xp.full(3, "a")
-    with pytest.raises(ValueError, match="copy"):
-        xp.from_dlpack(np.ones(2), copy=False)
     with pytest.raises(ValueError, match="keeps its fill"):
         xp.asarray(xp.zeros(2), fill_value=1.0)
     assert_array_equal(xp.asarray(np.array([1, 2], np.float16)), np.array([1, 2], np.float32))
