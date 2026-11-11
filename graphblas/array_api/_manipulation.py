@@ -10,7 +10,7 @@ from . import _utils
 from ._array import Array
 from ._utils import gb_dtype
 
-__all__ = ["expand_dims", "permute_dims", "reshape", "squeeze"]
+__all__ = ["concat", "expand_dims", "permute_dims", "reshape", "squeeze", "stack"]
 
 
 def _check_array(x, name):
@@ -116,46 +116,76 @@ def _broadcast_to(x, shape):
     return Array._new(T.ewise_add(E, first, allow_expansion=True).new(), x._fill)
 
 
-def _concat(arrays, axis):
-    """The arrays joined along ``axis``. Parts whose fill differs from the first part's store
-    their fill explicitly (densely, under the limit).
+def concat(arrays, /, *, axis=0):
+    """Join arrays along ``axis`` (None: flattened first), O(entries).
+
+    The result's fill is the one held by the most positions; a part with another fill stores
+    its fill explicitly (O(that part's size), under the densify limit).
     """
-    from ._creation import _from_numpy
     from ._dtypes import result_type
     from ._elementwise import cast
 
     arrays = list(arrays)
     if not arrays:
-        raise ValueError("need at least one array to concatenate")
+        raise ValueError("concat needs at least one array")
+    for a in arrays:
+        _check_array(a, "concat")
+    if axis is None:
+        arrays = [reshape(a, (-1,)) for a in arrays]
+        axis = 0
     ndim = arrays[0].ndim
     if ndim == 0 or any(a.ndim != ndim for a in arrays):
-        raise ValueError("concatenation needs arrays of one positive number of dimensions")
+        raise ValueError("concat needs arrays of one number of dimensions, at least 1")
     axis = _normalize_axis(axis, ndim)
     shape = list(arrays[0].shape)
     for a in arrays[1:]:
         if any(a.shape[i] != n for i, n in enumerate(shape) if i != axis):
             raise ValueError(f"shapes {arrays[0].shape} and {a.shape} do not concatenate")
     shape[axis] = sum(a.shape[axis] for a in arrays)
+    shape = tuple(shape)
     dtype = result_type(*arrays)
     arrays = [a if a.dtype == dtype else cast(a, dtype) for a in arrays]
-    fill = arrays[0]._fill
+    fill = _common_fill(arrays)
     coords, values = [], []
     offset = 0
     for a in arrays:
-        if not _utils.same_value(a._fill, fill):
-            _utils.check_dense(a.size, "concatenating arrays with different fill values")
-            a = _from_numpy(a.todense(), fill)
-        T = a._T()
+        T = _utils.with_fill(a, fill)._T()
         if T.nvals:
-            idx, vals = T.to_coo()
+            # (stored order: no relayout to C order; the build sorts)
+            idx, vals = T.to_coo(sort=False)
             idx = list(idx)
             idx[axis] = idx[axis] + offset
             coords.append(idx)
             values.append(vals)
         offset += a.shape[axis]
-    shape = tuple(shape)
     if not values:
         return Array._new(Tensor(gb_dtype(dtype), shape), fill)
     coords = tuple(np.concatenate([c[i] for c in coords]) for i in range(ndim))
     T = Tensor.from_coo(coords, np.concatenate(values), gb_dtype(dtype), shape=shape)
     return Array._new(T, fill)
+
+
+def _common_fill(arrays):
+    """The fill held by the most positions of ``arrays`` (the first such, on ties)."""
+    totals = []
+    for a in arrays:
+        for i, (fill, _) in enumerate(totals):
+            if _utils.same_value(fill, a._fill):
+                totals[i] = (fill, totals[i][1] + a.size)
+                break
+        else:
+            totals.append((a._fill, a.size))
+    best = max(n for _, n in totals)
+    return next(fill for fill, n in totals if n == best)
+
+
+def stack(arrays, /, *, axis=0):
+    arrays = list(arrays)
+    if not arrays:
+        raise ValueError("stack needs at least one array")
+    for a in arrays:
+        _check_array(a, "stack")
+    if len({a.shape for a in arrays}) > 1:
+        raise ValueError(f"stack needs arrays of one shape, not {[a.shape for a in arrays]}")
+    axis = _normalize_axis(axis, arrays[0].ndim + 1)
+    return concat([expand_dims(a, axis=axis) for a in arrays], axis=axis)

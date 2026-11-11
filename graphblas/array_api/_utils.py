@@ -5,7 +5,7 @@ import math
 
 import numpy as np
 
-from .. import config
+from .. import binary, config
 from ..core import tensor_layout as tl
 from ..core.scalar import Scalar
 from ..core.tensor import Tensor
@@ -113,6 +113,57 @@ def full_tensor(dtype, shape, value):
     if math.prod(shape) > 0:
         T << gb_scalar(value, dtype)
     return T
+
+
+def union_pattern(tensors, shape):
+    """A BOOL Tensor of ``shape`` with an entry wherever one of ``tensors``, broadcast to
+    ``shape``, has one.
+    """
+    pair = binary.pair[lookup_dtype(bool)]
+    P = None
+    for T in tensors:
+        if P is None:
+            if T.shape == shape:
+                P = T.apply(pair, right=True).new()
+                continue
+            P = Tensor(lookup_dtype(bool), shape)
+        expansion_check(P, T, shape)
+        P = P.ewise_add(T, pair, allow_expansion=True).new()
+    return P
+
+
+def aligned(arrays, shape):
+    """Tensors of ``shape`` with one pattern, the union of the arrays' entries (broadcast),
+    holding each array's values there: its entry, or its fill where it has none.
+    """
+    tensors = [x._T() for x in arrays]
+    if len(tensors) == 1 and tensors[0].shape == shape:
+        return tensors
+    P = union_pattern(tensors, shape)
+    out = []
+    for x, T in zip(arrays, tensors, strict=True):
+        dt = x.dtype
+        second = binary.second[gb_dtype(dt)]
+        V = P.ewise_union(T, second, gb_scalar(0, dt), gb_scalar(x._fill, dt), allow_expansion=True)
+        out.append(V.new())
+    return out
+
+
+def with_fill(x, fill):
+    """``x`` with the fill ``fill``: where it stores nothing, its old fill is stored (every
+    position it does not store is written: O(size), under the densify limit).
+    """
+    from ._array import Array
+
+    fill = scalar(fill, x.dtype)
+    if same_value(fill, x._fill):
+        return x
+    check_dense(x.size, "giving an array another fill value")
+    T = full_tensor(x.dtype, x.shape, x._fill)
+    Tx = x._T()
+    if Tx.nvals:
+        T(accum=binary.second[gb_dtype(x.dtype)]) << Tx
+    return Array._new(T, fill)
 
 
 def tensor_values(T):
