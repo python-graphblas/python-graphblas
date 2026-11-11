@@ -799,8 +799,7 @@ def test_fully_stored_bool_results_take_fill_false():
     ]:
         assert_array_equal(out, expected)
         assert (out.nnz, out.fill_value) == (nnz, fill)
-    # a 0-d result and a result with unstored positions are left as they are
-    assert xp.equal(deg, 0).nnz == 8
+    # a 0-d result is left as it is
     assert_array_equal(xp.equal(xp.asarray(3), 3), np.array(True))
 
 
@@ -835,6 +834,33 @@ def test_one_sided_stores_a_small_broadcast_operand():
     out = A * Y[:, None]
     assert out.nnz == A.nnz
     assert_array_equal(out, a * np.exp(y)[:, None])
+
+
+def test_partly_stored_bool_results_with_mostly_false_take_fill_false():
+    # equal(deg, 0) of a deg that leaves its zero degrees unstored has fill True and stores
+    # a False at every other position; when those are more than half of all positions, it
+    # takes fill False and stores the True positions only
+    deg = xp.asarray(np.array([3, 1, 0, 2, 5, 0, 4, 1, 2, 7]))
+    out = xp.equal(deg, 0)
+    assert_array_equal(out, deg.todense() == 0)
+    assert (out.nnz, out.fill_value) == (2, False)
+    # with stored True entries too (explicit fills of a fill-True operand)
+    x = make(np.array([True, False, False, False, True, False]), True, np.random.default_rng(3))
+    out = xp.logical_and(x, x)
+    assert_array_equal(out, x.todense())
+    assert out.fill_value == np.False_ or out.nnz * 2 <= out.size
+    for dense in [np.eye(6, dtype=bool), np.array([[True, False], [False, False]])]:
+        out = xp.logical_not(xp.logical_not(make(dense, False)))
+        assert_array_equal(out, dense)
+        assert out.fill_value == np.False_
+        assert out.nnz == dense.sum()
+    # mostly True, or not more than half stored: left with fill True
+    sparse_deg = xp.asarray(np.array([0, 0, 0, 2, 0, 0]))
+    assert (xp.equal(sparse_deg, 0).nnz, xp.equal(sparse_deg, 0).fill_value) == (1, True)
+    y = make(
+        np.array([True, True, True, False, True]), True, np.random.default_rng(4), explicit=0.9
+    )
+    assert xp.logical_and(y, y).fill_value == np.True_ or y.nnz * 2 <= y.size
 
 
 def test_mostly_true_masks_stay_sparse_in_contractions():
