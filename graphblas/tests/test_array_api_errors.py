@@ -8,6 +8,7 @@ import graphblas.array_api as xp
 from graphblas.array_api import _utils
 from graphblas.core.tensor import Tensor
 
+from .test_array_api_elementwise import _strict_signed_zeros  # noqa: F401 (autouse)
 from .test_array_api_elementwise import assert_array_equal, make
 
 
@@ -204,7 +205,9 @@ def test_scalar_cache_is_bounded():
 def test_summary_of_complex_values():
     x = make(np.array([1 + 0j, complex(-0.0, 1), complex(np.nan, 0)]), 0j)
     facts = _utils.summary(x)
-    assert facts == {"finite": False, "nonnegative": False, "nan": True, "negzero": True}
+    assert facts == {
+        "finite": False, "nonnegative": False, "nan": True, "negzero": True, "zero": False
+    }  # fmt: skip
 
 
 def test_thread3_argument_checks():
