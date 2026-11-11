@@ -101,6 +101,11 @@ class Array:
     def _copy(self):
         return Array._new(self._T().dup(), self._fill)
 
+    def __reduce__(self):
+        # (a Tensor holds weak references, which do not pickle: rebuild from coordinates)
+        coords, values = self._T().to_coo()
+        return _unpickle, (coords, values, self._shape, self._dtype.str, self._fill)
+
     # (copy.copy would share the Tensor, which __setitem__ changes in place)
     def __copy__(self):
         return self._copy()
@@ -329,6 +334,14 @@ class Array:
         from ._elementwise import bitwise_invert
 
         return bitwise_invert(self)
+
+
+def _unpickle(coords, values, shape, dtype, fill):
+    if not shape:
+        return Array._new(Tensor(_utils.gb_dtype(dtype), ()), fill)
+    from ._creation import from_coo
+
+    return from_coo(coords, values, shape, fill_value=fill, dtype=np.dtype(dtype))
 
 
 def _is_operand(x):
