@@ -13,6 +13,14 @@ import pytest
 import graphblas as gb
 from graphblas.core import _supports_udfs as supports_udfs
 
+try:
+    from numpy._core._multiarray_umath import _set_numpy_warn_if_no_mem_policy
+except ImportError:  # pragma: no cover (NumPy < 1.26)
+    try:
+        from numpy.core._multiarray_umath import _set_numpy_warn_if_no_mem_policy
+    except ImportError:  # NumPy 1.24 lacks it, and it is private, so it may go away
+        _set_numpy_warn_if_no_mem_policy = None
+
 # Under ``pytest -n`` (xdist), give each worker its own ``GRAPHBLAS_CACHE_PATH``
 # so concurrent JIT compiles within a single session don't race on the same
 # ``.c``/``.dylib`` paths. SuiteSparse reads this env var at first GraphBLAS
@@ -160,6 +168,27 @@ def _reset_name_counters():
     gb.Matrix._name_counter = itertools.count()
     gb.Vector._name_counter = itertools.count()
     gb.Scalar._name_counter = itertools.count()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _warn_if_no_memory_handler():
+    """Fail a test that frees an array that owns its data but has no memory handler.
+
+    NumPy frees such data with libc ``free``, which is right only if libc's
+    ``malloc`` made it; GraphBLAS's allocator is NumPy's. NumPy warns about
+    this only when asked, and ``filterwarnings = error`` makes the warning fail
+    the test. suitesparse-graphblas before 10.5.1.1 (which lacks
+    ``can_unclaim_buffer``) exports arrays with no handler, so it would fail
+    every export.
+    """
+    from suitesparse_graphblas import utils
+
+    if _set_numpy_warn_if_no_mem_policy is None or not hasattr(utils, "can_unclaim_buffer"):
+        yield
+        return
+    prev = _set_numpy_warn_if_no_mem_policy(True)
+    yield
+    _set_numpy_warn_if_no_mem_policy(prev)
 
 
 @pytest.fixture(scope="session", autouse=True)

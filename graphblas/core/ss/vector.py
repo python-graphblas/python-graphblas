@@ -1,7 +1,7 @@
 import itertools
 
 import numpy as np
-from suitesparse_graphblas.utils import claim_buffer, unclaim_buffer
+from suitesparse_graphblas.utils import claim_buffer
 
 import graphblas as gb
 
@@ -14,13 +14,14 @@ from ..operator import get_typed_op
 from ..scalar import Scalar, _as_scalar
 from ..utils import (
     _CArray,
+    _distinct_buffers,
     _MatrixArray,
     ints_to_numpy_buffer,
     normalize_chunks,
     values_to_numpy_buffer,
     wrapdoc,
 )
-from ._utils import _resolve_serialized_dtype
+from ._utils import _pack_securely, _resolve_serialized_dtype, _unclaim_taken
 from .config import BaseConfig
 from .descriptor import get_descriptor
 from .matrix import _concat_mn, njit
@@ -879,12 +880,17 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (uint64 for indices)
-                - own its own data
+                - own its own data, allocated by GraphBLAS (arrays from ``export``,
+                  ``unpack`` and ``suitesparse_graphblas.utils.empty``) or by NumPy's
+                  default allocator (unless suitesparse-graphblas was initialized
+                  with ``memory_manager="c"``)
                 - be writeable
-            If all of these conditions are not met, then the data will be
+            If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
         dtype : dtype, optional
             dtype of the new Vector.
             If not specified, this will be inferred from ``values``.
@@ -974,15 +980,27 @@ class ss:
     ):
         if format is not None and format.lower() != "sparse":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'sparse'.")
-        copy = not take_ownership
+        if method == "pack" and secure_import:
+            return _pack_securely(
+                cls._import_sparse,
+                vector,
+                "sparse",
+                opts,
+                indices=indices,
+                values=values,
+                nvals=nvals,
+                is_iso=is_iso,
+                sorted_index=sorted_index,
+                take_ownership=take_ownership,
+            )
+        copy = not take_ownership or secure_import
         indices = ints_to_numpy_buffer(indices, np.uint64, copy=copy, ownable=True, name="indices")
         if method == "pack":
             dtype = vector.dtype
         values, dtype = values_to_numpy_buffer(
             values, dtype, copy=copy, ownable=True, subarray_after=1
         )
-        if indices is values:
-            values = np.copy(values)
+        indices, values = _distinct_buffers(indices, values)
         vi = ffi_new("GrB_Index**", ffi.from_buffer("GrB_Index*", indices))
         vx = ffi_new("void**", ffi.from_buffer("void*", values))
         if nvals is None:
@@ -1011,6 +1029,7 @@ class ss:
             not sorted_index,
             NULL if desc is None else desc._carg,
         )
+        _unclaim_taken((indices, vi), (values, vx))
         if method == "import":
             check_status_carg(
                 status,
@@ -1020,8 +1039,6 @@ class ss:
             vector = gb.Vector._from_obj(vhandle, dtype, size, name=name)
         else:
             check_status(status, vector)
-        unclaim_buffer(indices)
-        unclaim_buffer(values)
         return vector
 
     @classmethod
@@ -1063,12 +1080,17 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (bool for bitmap)
-                - own its own data
+                - own its own data, allocated by GraphBLAS (arrays from ``export``,
+                  ``unpack`` and ``suitesparse_graphblas.utils.empty``) or by NumPy's
+                  default allocator (unless suitesparse-graphblas was initialized
+                  with ``memory_manager="c"``)
                 - be writeable
-            If all of these conditions are not met, then the data will be
+            If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
         dtype : dtype, optional
             dtype of the new Vector.
             If not specified, this will be inferred from ``values``.
@@ -1154,7 +1176,19 @@ class ss:
     ):
         if format is not None and format.lower() != "bitmap":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'bitmap'.")
-        copy = not take_ownership
+        if method == "pack" and secure_import:
+            return _pack_securely(
+                cls._import_bitmap,
+                vector,
+                "bitmap",
+                opts,
+                bitmap=bitmap,
+                values=values,
+                nvals=nvals,
+                is_iso=is_iso,
+                take_ownership=take_ownership,
+            )
+        copy = not take_ownership or secure_import
         bitmap = ints_to_numpy_buffer(bitmap, np.bool_, copy=copy, ownable=True, name="bitmap")
         if method == "pack":
             dtype = vector.dtype
@@ -1162,8 +1196,7 @@ class ss:
         values, dtype = values_to_numpy_buffer(
             values, dtype, copy=copy, ownable=True, subarray_after=1
         )
-        if bitmap is values:
-            values = np.copy(values)
+        bitmap, values = _distinct_buffers(bitmap, values)
         vhandle = ffi_new("GrB_Vector*")
         vb = ffi_new("int8_t**", ffi.from_buffer("int8_t*", bitmap))
         vx = ffi_new("void**", ffi.from_buffer("void*", values))
@@ -1197,6 +1230,7 @@ class ss:
             nvals,
             NULL if desc is None else desc._carg,
         )
+        _unclaim_taken((bitmap, vb), (values, vx))
         if method == "import":
             check_status_carg(
                 status,
@@ -1206,8 +1240,6 @@ class ss:
             vector = gb.Vector._from_obj(vhandle, dtype, size, name=name)
         else:
             check_status(status, vector)
-        unclaim_buffer(bitmap)
-        unclaim_buffer(values)
         return vector
 
     @classmethod
@@ -1243,12 +1275,17 @@ class ss:
             memory buffers to GraphBLAS, the arrays must:
                 - be C contiguous
                 - have the correct dtype (bool for bitmap)
-                - own its own data
+                - own its own data, allocated by GraphBLAS (arrays from ``export``,
+                  ``unpack`` and ``suitesparse_graphblas.utils.empty``) or by NumPy's
+                  default allocator (unless suitesparse-graphblas was initialized
+                  with ``memory_manager="c"``)
                 - be writeable
-            If all of these conditions are not met, then the data will be
+            If any of these conditions is not met, then the data will be
             copied and the original array will be unmodified.  If zero copy
             to GraphBLAS is successful, then the array will be modified to be
             read-only and will no longer own the data.
+            With ``secure_import=True`` the data is always copied, so the
+            arrays stay valid if the check fails.
         dtype : dtype, optional
             dtype of the new Vector.
             If not specified, this will be inferred from ``values``.
@@ -1326,7 +1363,17 @@ class ss:
     ):
         if format is not None and format.lower() != "full":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'full'.")
-        copy = not take_ownership
+        if method == "pack" and secure_import:
+            return _pack_securely(
+                cls._import_full,
+                vector,
+                "full",
+                opts,
+                values=values,
+                is_iso=is_iso,
+                take_ownership=take_ownership,
+            )
+        copy = not take_ownership or secure_import
         if method == "pack":
             dtype = vector.dtype
             size = vector._size
@@ -1355,6 +1402,7 @@ class ss:
             is_iso,
             NULL if desc is None else desc._carg,
         )
+        _unclaim_taken((values, vx))
         if method == "import":
             check_status_carg(
                 status,
@@ -1364,7 +1412,6 @@ class ss:
             vector = gb.Vector._from_obj(vhandle, dtype, size, name=name)
         else:
             check_status(status, vector)
-        unclaim_buffer(values)
         return vector
 
     @wrapdoc(head)
