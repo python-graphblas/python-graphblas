@@ -100,6 +100,13 @@ class Array:
     def _copy(self):
         return Array._new(self._T().dup(), self._fill)
 
+    # (copy.copy would share the Tensor, which __setitem__ changes in place)
+    def __copy__(self):
+        return self._copy()
+
+    def __deepcopy__(self, memo):
+        return self._copy()
+
     # Attributes
     @property
     def dtype(self):
