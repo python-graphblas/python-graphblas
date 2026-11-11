@@ -263,4 +263,11 @@ def test_mixed_keys_order_axes_as_numpy():
         assert_array_equal(y, b)
     assert count > 2000
     x = make(np.arange(24.0).reshape(2, 3, 4), 0.0)
-    assert_array_equal(x[:, 1, ..., [0, 2]], np.array([[4.0, 16.0], [6.0, 18.0]]))
+    expected = np.array([[4.0, 16.0], [6.0, 18.0]])
+    for index in [[0, 2], np.array([0, 2]), xp.asarray([0, 2])]:
+        assert_array_equal(x[:, 1, ..., index], expected)
+        y = make(np.arange(24.0).reshape(2, 3, 4), 0.0)
+        y[:, 1, ..., index] = make(-expected, 0.0)
+        b = np.arange(24.0).reshape(2, 3, 4)
+        b[:, 1, ..., [0, 2]] = -expected
+        assert_array_equal(y, b)
