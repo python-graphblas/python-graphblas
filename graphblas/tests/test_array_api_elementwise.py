@@ -878,11 +878,51 @@ def test_clip_fill_uses_numpys_array_loop():
     assert_array_equal(xp.clip(x, min=-0.0, max=0.5), np.clip(a, -0.0, 0.5))
 
 
-def test_fill_follows_numpys_loop_choice():
-    # numpy's power of an array by a 0-d 0.5 is sqrt (pow(-inf, 0.5) is NaN), and between two
-    # arrays it is pow (inf): an array's fill takes the loop the dense array would
-    x = make(np.array([[-np.inf, 2.0], [-np.inf, -np.inf]], np.float32), np.float32(-np.inf))
-    half = xp.asarray(np.float32(0.5))
-    halves = make(np.full((2, 2), 0.5, np.float32), np.float32(0.5))
-    assert_array_equal(np_call(xp.pow, x, half), np_call(np.power, x.todense(), np.float32(0.5)))
-    assert_array_equal(np_call(xp.pow, x, halves), np_call(np.power, x.todense(), halves.todense()))
+def _spec_pow(x1, x2):
+    """The Array API's pow of two Python floats, case by case (its special cases)."""
+    odd = math.isfinite(x2) and x2 % 2 == 1
+    if math.isnan(x2):
+        return 1.0 if x1 == 1 else math.nan
+    if x2 == 0:
+        return 1.0
+    if math.isnan(x1):
+        return math.nan
+    if math.isinf(x2):
+        if abs(x1) == 1:
+            return 1.0
+        return math.inf if (abs(x1) > 1) == (x2 > 0) else 0.0
+    if x1 == math.inf:
+        return math.inf if x2 > 0 else 0.0
+    if x1 == -math.inf:
+        if x2 > 0:
+            return -math.inf if odd else math.inf
+        return -0.0 if odd else 0.0
+    if x1 == 0:
+        negative = math.copysign(1.0, x1) < 0 and odd
+        if x2 > 0:
+            return -0.0 if negative else 0.0
+        return -math.inf if negative else math.inf
+    if x1 < 0 and x2 != int(x2):
+        return math.nan
+    return x1**x2
+
+
+def test_pow_special_cases():
+    # The Array API's special cases of pow, with arrays, 0-d arrays and Python scalars as
+    # exponents (numpy takes sqrt for an exponent of 0.5 that repeats: pow(-inf, 0.5) was NaN
+    # there, review finding L11)
+    bases = [np.nan, np.inf, -np.inf, 0.0, -0.0, 2.0, 0.5, 1.0, -1.0, -2.0, -0.5]
+    exponents = [np.nan, 0.0, -0.0, np.inf, -np.inf, 0.5, 2.0, 3.0, -1.0, -2.0, -3.0, 1.5, -0.5]
+    for dt in [np.float64, np.float32]:
+        b = np.array(bases, dt)
+        for e in exponents:
+            expected = np.array([_spec_pow(float(v), e) for v in b], dt)
+            x = make(b, dt(-np.inf))
+            for exponent in [e, xp.asarray(dt(e)), xp.full((len(b),), dt(e))]:
+                assert_array_equal(np_call(xp.pow, x, exponent), expected)
+            assert_array_equal(np_call(xp.pow, make(b, dt(0.0)), e), expected)
+        # a base that repeats: a scalar, or a 0-d array
+        for v in bases:
+            e = make(np.array(exponents, dt), dt(0.5))
+            expected = np.array([_spec_pow(v, float(k)) for k in e.todense()], dt)
+            assert_array_equal(np_call(xp.pow, xp.asarray(dt(v)), e), expected)
