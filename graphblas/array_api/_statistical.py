@@ -10,6 +10,7 @@ everything else is exact.
 """
 
 import builtins
+import itertools
 import math
 
 import numpy as np
@@ -462,6 +463,11 @@ def _cumulative(name, npfunc, x, axis, dtype, include_initial):
         ct = check_supported(_MONOIDS[reduce_name].npfunc(np.zeros(1, x.dtype)).dtype, name)
     else:
         ct = as_dtype(dtype)
+    with np.errstate(all="ignore"):
+        fill = np.asarray(x._fill).astype(ct)
+    identity = 0 if name == "cumulative_sum" else 1
+    if x.size and fill == identity and not (include_initial and np.signbit(fill)):
+        return _cumulative_sparse(npfunc, x, axis, ct, fill, include_initial)
     _utils.check_dense(x.size + (x.size // builtins.max(x.shape[axis], 1)), name)
     with np.errstate(all="ignore"):
         out = npfunc(x.todense(), axis=axis, dtype=ct)
@@ -473,6 +479,96 @@ def _cumulative(name, npfunc, x, axis, dtype, include_initial):
     from ._creation import _from_numpy
 
     return _from_numpy(out)
+
+
+def _cumulative_sparse(npfunc, x, axis, ct, fill, include_initial):
+    """A cumulative sum (product) along ``axis`` when the fill is the identity, 0 (1): each
+    fiber is the fill up to its first entry, so only the positions from there on are stored,
+    O(sum over fibers of the positions from the first entry on).
+
+    numpy accumulates one position at a time, so each run of unstored positions adds the fill
+    once more (0.0 + -0.0 is 0.0): each run becomes one element of the fiber's sequence, and
+    the sequences are accumulated by numpy itself, in order, for numpy's rounding.
+    """
+    from ._manipulation import permute_dims
+
+    T = x._T()
+    L = x.shape[axis]
+    others = tuple(a for a in range(x.ndim) if a != axis)
+    shape = tuple(x.shape[a] for a in others)
+    out_L = L + 1 if include_initial else L
+    perm = (*others, axis)
+    out_shape = (*shape, out_L)
+    if T.nvals == 0:
+        out = Array._new(Tensor(gb_dtype(ct), out_shape), fill)
+        return permute_dims(out, tuple(int(i) for i in np.argsort(perm)))
+    coords, values = permute_dims(x, perm)._T().to_coo()
+    with np.errstate(all="ignore"):
+        values = values.astype(ct)
+    fiber = np.ravel_multi_index(coords[:-1], shape) if shape else np.zeros(len(values), np.int64)
+    pos = coords[-1]
+    first = np.r_[True, fiber[1:] != fiber[:-1]]
+    last = np.r_[fiber[1:] != fiber[:-1], True]
+    prev = np.where(first, -1, np.r_[0, pos[:-1]])
+    # The sequence per fiber: [fill if a run precedes the entry] + entry, ..., [fill if a run
+    # follows the last entry]
+    gap = pos > prev + 1
+    tail = last & (pos < L - 1)
+    n_elem = 1 + gap + tail
+    seq_index = np.cumsum(n_elem) - n_elem  # (where each entry's elements start)
+    seq = np.full(int(n_elem.sum()), fill, dtype=ct)
+    entry_at = seq_index + gap
+    seq[entry_at] = values
+    starts = np.flatnonzero(first)
+    acc = _grouped_accumulate(npfunc, seq, seq_index[starts], ct)
+    # Positions and values: each entry; the run before it (not before the first entry: there
+    # the values are the fill); the run after the last entry
+    out_pos, out_val, out_fib = [pos], [acc[entry_at]], [fiber]
+    inner = gap & ~first
+    if inner.any():
+        lengths = (pos - prev - 1)[inner]
+        out_pos.append(_runs(prev[inner] + 1, lengths))
+        out_val.append(np.repeat(acc[seq_index[inner]], lengths))
+        out_fib.append(np.repeat(fiber[inner], lengths))
+    if tail.any():
+        lengths = (L - 1 - pos)[tail]
+        out_pos.append(_runs(pos[tail] + 1, lengths))
+        out_val.append(np.repeat(acc[entry_at[tail] + 1], lengths))
+        out_fib.append(np.repeat(fiber[tail], lengths))
+    out_pos = np.concatenate(out_pos) + (1 if include_initial else 0)
+    _utils.check_dense(len(out_pos), "a cumulative sum or product (the positions after an entry)")
+    idx = list(np.unravel_index(np.concatenate(out_fib), shape)) if shape else []
+    idx.append(out_pos)
+    R = Tensor.from_coo(idx, np.concatenate(out_val), gb_dtype(ct), shape=out_shape)
+    return permute_dims(Array._new(R, fill), tuple(int(i) for i in np.argsort(perm)))
+
+
+def _runs(starts, lengths):
+    """Concatenated ranges ``start, start + 1, ..., start + length - 1``."""
+    offsets = np.arange(int(lengths.sum())) - np.repeat(np.cumsum(lengths) - lengths, lengths)
+    return np.repeat(starts, lengths) + offsets
+
+
+def _grouped_accumulate(npfunc, seq, group_starts, ct):
+    """The cumsum (cumprod) of each group of ``seq`` by numpy (groups start at ``group_starts``),
+    each in order, as numpy accumulates one fiber.
+    """
+    bounds = np.r_[group_starts, len(seq)]
+    lengths = np.diff(bounds)
+    longest = int(lengths.max())
+    out = np.empty_like(seq)
+    with np.errstate(all="ignore"):
+        if longest * len(lengths) <= 4 * len(seq) + 1024:
+            # One 2-d accumulation, the groups padded at their ends (padding comes after)
+            padded = np.zeros((len(lengths), longest), dtype=ct)
+            col = np.arange(len(seq)) - np.repeat(group_starts, lengths)
+            row = np.repeat(np.arange(len(lengths)), lengths)
+            padded[row, col] = seq
+            out[:] = npfunc(padded, axis=1, dtype=ct)[row, col]
+        else:
+            for a, b in itertools.pairwise(bounds):
+                out[a:b] = npfunc(seq[a:b], dtype=ct)
+    return out
 
 
 def cumulative_sum(x, /, *, axis=None, dtype=None, include_initial=False):
