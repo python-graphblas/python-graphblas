@@ -440,6 +440,24 @@ def test_monoid_rejects_builtin_binaryop():
     assert not hasattr(gb.monoid, "_bad_builtin_monoid")
 
 
+def test_monoid_rejects_builtin_binaryop_with_udt_fallback():
+    """binary.any, first, pair, and second are built-ins that carry a Python
+    func as their UDT fallback, so a func-based probe alone misses them. They
+    must be rejected like the other built-ins: their typed ops have no _monoid
+    slot, and a failed registration used to leave binary.<name>._monoid
+    pointing at the half-built monoid.
+    """
+    for binop in [binary.any, binary.first, binary.pair, binary.second]:
+        with pytest.raises(TypeError, match="must be a user-defined BinaryOp"):
+            Monoid.register_anonymous(binop, 0)
+    # State is untouched: any's built-in monoid association survives, and the
+    # ops without a built-in monoid still have none.
+    assert binary.any.monoid is monoid.any
+    assert binary.first.monoid is None
+    assert binary.pair.monoid is None
+    assert binary.second.monoid is None
+
+
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_semiring_parameterized():
@@ -1188,6 +1206,9 @@ def test_lazy_op():
     Monoid.register_new("lazy2", binary.lazy, 0, lazy=True)
     assert isinstance(op.lazy2, Monoid)
     assert isinstance(monoid.lazy2, Monoid)
+    BinaryOp.register_new("lazy_idem", _isidem_pick_first, lazy=True)
+    Monoid.register_new("lazy_idem", "lazy_idem", 0, is_idempotent=True, lazy=True)
+    assert monoid.lazy_idem.is_idempotent
     Semiring.register_new("lazy", "lazy", "lazy", lazy=True)
     assert isinstance(semiring.lazy, Semiring)
     Semiring.register_new("lazy_lazy", monoid.lazy, binary.lazy, lazy=True)
@@ -1983,6 +2004,27 @@ def test_udt_tuple_return_monoid(record_udt):
 
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
+def test_udt_monoid_op_must_return_its_input_type(record_udt):
+    """A UDT monoid whose op returns another type fails up front, with a message.
+
+    It used to reach ``GrB_Monoid_new_UDT``, which raised DomainMismatch with an
+    empty message, also from ``udt in monoid``.
+    """
+
+    def _sum_a(x, y):
+        return x["a"] + y["a"]  # pragma: no cover (numba)
+
+    sum_a = BinaryOp.register_anonymous(_sum_a, "test_sum_a_mon", is_udt=True)
+    sum_a_monoid = Monoid.register_anonymous(sum_a, 0)
+    # Not "_BuiltinOpsRec": registering this record dtype again under another name, as
+    # test_udt_op_pickle does, renames the one DataType
+    with pytest.raises(TypeError, match=f"must return its input type, {record_udt}, not INT64"):
+        sum_a_monoid[record_udt]
+    assert record_udt not in sum_a_monoid
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
 def test_udt_tuple_return_semiring(record_udt):
     """A Semiring built from tuple-returning ops drives mxm correctly."""
     v, _ = _record_pair(record_udt)
@@ -2454,6 +2496,56 @@ def test_udt_auto_monoid():
     # Compare via Scalar.__eq__ over a tuple of candidates (a set would require
     # Scalar to be hashable, which it isn't).
     assert any_res in ((7, 8.0), (11, 12.0))
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_auto_monoid_time_fields():
+    """Monoid min and max generate no identity for a datetime64 or timedelta64 field.
+
+    numpy files timedelta64 under ``np.integer``, so a timedelta64 field used to
+    reach ``np.iinfo`` and raise ``ValueError: Invalid integer data type 'm'``,
+    from ``udt in agg.min`` too, where a datetime64 field gets a KeyError.
+    """
+    for code in ["M8[s]", "m8[s]"]:
+        udt = dtypes.register_anonymous(np.dtype([("tf_n", np.int64), ("tf_t", code)]))
+        for mon in [monoid.min, monoid.max]:
+            with pytest.raises(KeyError, match="field 'tf_t' has unsupported dtype"):
+                mon[udt]
+            assert udt not in mon
+        assert udt not in agg.min
+        assert udt not in agg.max
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_monoid_named_like_builtin_gets_no_identity():
+    """Only the built-in monoids generate a UDT identity, not a user monoid of the same name.
+
+    A user monoid named plus, times, min or max (after its op's function, or by
+    ``name=``) used to get that built-in's generated identity. The op here takes
+    the field-wise max, so the generated ``min`` identity, INT64_MAX in every
+    field, absorbed every value: the reduce below gave that instead of (5, 2).
+    """
+    udt = dtypes.register_anonymous(np.dtype([("ni_a", np.int64), ("ni_b", np.int64)]))
+    v = Vector(udt, size=2)
+    v[0] = (1, 2)
+    v[1] = (5, -3)
+
+    def _fieldwise_max(x, y):
+        return (max(x["ni_a"], y["ni_a"]), max(x["ni_b"], y["ni_b"]))  # pragma: no cover (numba)
+
+    fieldwise_max = BinaryOp.register_anonymous(_fieldwise_max, "min", is_udt=True)
+    named_by_op = Monoid.register_anonymous(fieldwise_max, None)
+    assert named_by_op.name == "min"
+    for mon in [named_by_op] + [
+        Monoid.register_anonymous(fieldwise_max, None, name) for name in ["plus", "times", "max"]
+    ]:
+        with pytest.raises(KeyError, match="no identity value"):
+            mon[udt]
+        assert udt not in mon
+    lowest = np.iinfo(np.int64).min
+    assert v.reduce(Monoid.register_anonymous(fieldwise_max, (lowest, lowest))).new() == (5, 2)
 
 
 @pytest.mark.skipif("not supports_udfs")
