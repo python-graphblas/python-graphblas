@@ -350,10 +350,10 @@ def linspace(start, stop, /, num, *, dtype=None, device=None, endpoint=True):
 
 def from_dlpack(x, /, *, device=None, copy=None):
     check_device(device)
-    if copy is False:
-        raise ValueError("from_dlpack stores its own copy; copy=False")
     if isinstance(x, Array):
-        return x._copy()
+        return x._copy() if copy else x
+    if copy is False:
+        raise ValueError("from_dlpack stores its own copy of anything but an Array; copy=False")
     return _from_numpy(np.from_dlpack(x))
 
 

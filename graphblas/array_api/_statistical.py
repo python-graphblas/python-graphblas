@@ -466,7 +466,7 @@ def _cumulative(name, npfunc, x, axis, dtype, include_initial):
     with np.errstate(all="ignore"):
         fill = np.asarray(x._fill).astype(ct)
     identity = 0 if name == "cumulative_sum" else 1
-    if x.size and fill == identity and not (include_initial and np.signbit(fill)):
+    if x.size and fill == identity and not (include_initial and _negative_zero(fill)):
         return _cumulative_sparse(npfunc, x, axis, ct, fill, include_initial)
     _utils.check_dense(x.size + (x.size // builtins.max(x.shape[axis], 1)), name)
     with np.errstate(all="ignore"):
@@ -479,6 +479,12 @@ def _cumulative(name, npfunc, x, axis, dtype, include_initial):
     from ._creation import _from_numpy
 
     return _from_numpy(out)
+
+
+def _negative_zero(fill):
+    """Whether a zero ``fill`` has a sign bit (an included initial 0 would then be stored)."""
+    parts = [fill.real, fill.imag] if np.iscomplexobj(fill) else [fill]
+    return builtins.any(bool(np.signbit(p)) for p in parts if np.asarray(p).dtype.kind == "f")
 
 
 def _cumulative_sparse(npfunc, x, axis, ct, fill, include_initial):

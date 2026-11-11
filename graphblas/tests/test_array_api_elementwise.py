@@ -654,8 +654,12 @@ def test_clip_with_array_bounds_ties():
     assert_array_equal(xp.clip(x, min=lo), np_call(np.clip, a, b, None))
     assert_array_equal(xp.clip(x, max=hi), np_call(np.clip, a, None, c))
     assert_array_equal(xp.clip(x, min=lo, max=0.5), np_call(np.clip, a, b, 0.5))
-    with pytest.raises(ValueError, match="broadcast"):
-        xp.clip(x, min=make(np.zeros((2, 5)), 0.0))
+    # the bounds may broadcast x, as in numpy
+    lo2 = make(np.array([[0.5] * 5, [-1.0] * 5]), 0.0)
+    assert_array_equal(xp.clip(x, min=lo2), np_call(np.clip, a, lo2.todense(), None))
+    s = xp.asarray(np.uint8(0))
+    assert_array_equal(xp.clip(s, max=xp.zeros((0,), dtype=xp.uint8)), np.zeros(0, np.uint8))
+    assert_array_equal(xp.clip(xp.asarray(2.0), min=make(np.array([1.0, 3.0]), 0.0)), [2.0, 3.0])
 
 
 def test_signed_zeros_give_way_by_default():
