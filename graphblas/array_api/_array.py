@@ -65,7 +65,9 @@ class Array:
         self._facts = None
 
     def _fact(self, name, compute):
-        """A cached property of the stored values; assignment clears the cache."""
+        """A cached property of the stored values. Code that changes the stored entries in
+        place must clear the cache (``_facts = None``), as ``_replace`` does.
+        """
         facts = self._facts
         if facts is None:
             facts = self._facts = {}

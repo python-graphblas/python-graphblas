@@ -468,6 +468,21 @@ def test_integer_multiply_intersects():
     assert_array_equal(out, np.array([0, 0, 10, 0, 18]))
 
 
+def test_float_multiply_of_nonnegative_values_intersects():
+    x = make(np.array([1.0, 0.0, 2.0, 0.0, 3.0]), 0.0)
+    y = make(np.array([0.0, 4.0, 5.0, 0.0, 6.0]), 0.0)
+    out = x * y
+    assert out.nnz == 2
+    assert_array_equal(out, x.todense() * y.todense())
+    # a negative value makes -0.0 where the other operand is unstored
+    x *= -1
+    out = x * y
+    assert_array_equal(out, x.todense() * y.todense())
+    assert out.nnz > 2
+    z = make(np.array([0.0, np.inf, 1.0, 0.0, 0.0]), 0.0)
+    assert_array_equal(z * y, np_call(np.multiply, z.todense(), y.todense()))
+
+
 def test_float_multiply_keeps_union():
     x = make(np.array([-1.0, 0.0, 2.0, np.inf]), 0.0)
     y = make(np.array([0.0, 4.0, 5.0, 0.0]), 0.0)
