@@ -4,7 +4,7 @@ import math
 
 import numpy as np
 
-from .. import binary
+from .. import binary, select
 from ..core.tensor import Tensor
 from . import _utils
 from ._array import Array
@@ -19,6 +19,7 @@ __all__ = [
     "flip",
     "moveaxis",
     "permute_dims",
+    "prune",
     "repeat",
     "reshape",
     "roll",
@@ -354,3 +355,27 @@ def tile(x, repetitions, /):
     for c, t, n in zip(coords, tiles, x.shape, strict=True):
         out.append((c[None, :] + (t * n)[:, None]).reshape(-1))
     return _from_entries(out, np.tile(values, ntiles), shape, x)
+
+
+def prune(x, /):
+    """``x`` without the stored entries that equal its fill value (an extension): the same
+    values, fewer stored entries. "Equal" is "identical": with fill 0.0 a stored -0.0 stays,
+    and with fill NaN the stored NaNs go. ``nnz`` counts stored entries, these included,
+    until they are pruned.
+    """
+    if not isinstance(x, Array):
+        raise TypeError(f"prune needs an Array, not {type(x).__name__}")
+    T = x._T()
+    fill = x._fill
+    if T.nvals == 0:
+        return x._copy()
+    kind = x.dtype.kind
+    if kind in "biu" or (kind == "f" and fill != 0 and not np.isnan(fill)):
+        # (a value equal to a nonzero number is that number)
+        return Array._new(T.select(select.valuene, fill).new(), fill)
+    if fill == 0 and not _utils.fact(x, "zero"):
+        return x._copy()  # (no stored zero of either sign)
+    keep = _utils.map_values(lambda v: _utils.differs(v, fill), [T], np.dtype(bool))
+    R = Tensor(T.dtype, T.shape)
+    R(keep.V) << T
+    return Array._new(R, fill)

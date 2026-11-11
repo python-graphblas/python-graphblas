@@ -5,7 +5,7 @@ import pytest
 
 import graphblas.array_api as xp
 
-from .test_array_api_elementwise import assert_array_equal, inputs, make
+from .test_array_api_elementwise import assert_array_equal, inputs, make, same_value
 
 
 @pytest.mark.parametrize(
@@ -148,3 +148,30 @@ def test_tile(reps):
     assert_array_equal(xp.tile(xp.asarray(2.0), (3,)), np.tile(np.array(2.0), 3))
     with pytest.raises(ValueError, match="nonnegative"):
         xp.tile(xp.zeros(2), (-1,))
+
+
+def test_prune():
+    cases = [
+        (np.array([3, 1, 3, 0]), 3),
+        (np.array([True, False, True]), True),
+        (np.array([2.5, 1.0, 2.5, np.nan, -0.0]), 2.5),
+        (np.array([1.0, np.nan, 2.0]), 0.0),
+        (np.array([0.0, -0.0, 1.0, np.nan, 0.0]), 0.0),
+        (np.array([-0.0, 0.0, 2.0]), -0.0),
+        (np.array([np.nan, 1.0, np.nan, 0.0]), np.nan),
+        (np.array([0j, complex(-0.0, 0.0), 1j, complex(0.0, -0.0)]), 0j),
+        (np.zeros(0), 0.0),
+    ]
+    for dense, fill in cases:
+        # every position stored, explicit fills included
+        idx = np.nonzero(np.ones(dense.shape, bool))
+        x = xp.from_coo(idx, dense[idx], dense.shape, fill_value=fill, dtype=dense.dtype)
+        out = xp.prune(x)
+        assert_array_equal(out, dense)
+        assert out.fill_value == x.fill_value or np.isnan(fill)
+        expected = sum(not same_value(v, out.fill_value) for v in dense.reshape(-1))
+        assert out.nnz == expected
+        assert x.nnz == dense.size
+    assert_array_equal(xp.prune(xp.asarray(5.0)), np.array(5.0))
+    with pytest.raises(TypeError, match="Array"):
+        xp.prune(np.zeros(3))
