@@ -714,17 +714,17 @@ def test_intersection_of_broadcast_operands_is_guarded():
     for func, args, nnz in [
         (xp.multiply, (x, y), 10000),
         (xp.bitwise_and, (x, y), 10000),
-        (xp.logical_and, (b, b.mT), 0),  # (all True, every position stored: fill True)
+        (xp.logical_and, (b, b.mT), 10000),
     ]:
         with gb.config.set(array_api_densify_limit=1000), pytest.raises(xp.DensifyError):
             func(*args)
         assert func(*args).nnz == nnz
 
 
-def test_fully_stored_bool_results_take_the_common_value_as_fill():
-    # A bool result that stores every position never shows its fill: the value most of its
-    # entries hold becomes the fill and those entries go, when at most a quarter stay
-    # (equal(deg, 0) of a fully stored deg stores the zero-degree positions only)
+def test_fully_stored_bool_results_take_fill_false():
+    # A bool result that stores every position never shows its fill: it takes fill False,
+    # and its False entries go when at most a quarter of the entries are True (equal(deg, 0)
+    # of a fully stored deg stores the zero-degree positions only)
     deg = xp.asarray(np.array([3, 1, 0, 2, 5, 0, 4, 1, 2, 7]))
     assert deg.nnz == 8
     assert deg.fill_value == 0
@@ -732,9 +732,9 @@ def test_fully_stored_bool_results_take_the_common_value_as_fill():
     assert full.nnz == 10
     for out, expected, nnz, fill in [
         (xp.equal(full, 1), full.todense() == 1, 2, False),
-        (xp.greater(full, 1), full.todense() > 1, 2, True),
-        (xp.less(full, 5), full.todense() < 5, 10, (-1 < 5)),  # (6 of 10 True: kept)
-        (xp.isfinite(xp.astype(full, xp.float64)), np.ones(10, bool), 0, True),
+        (xp.greater(full, 1), full.todense() > 1, 10, False),  # (8 of 10 True: kept)
+        (xp.less(full, 5), full.todense() < 5, 10, False),
+        (xp.isfinite(xp.astype(full, xp.float64)), np.ones(10, bool), 10, False),
         (xp.astype(full == 9, xp.bool), full.todense() == 9, 1, False),
     ]:
         assert_array_equal(out, expected)
@@ -742,6 +742,29 @@ def test_fully_stored_bool_results_take_the_common_value_as_fill():
     # a 0-d result and a result with unstored positions are left as they are
     assert xp.equal(deg, 0).nnz == 8
     assert_array_equal(xp.equal(xp.asarray(3), 3), np.array(True))
+
+
+def test_mostly_true_masks_stay_sparse_in_contractions():
+    # (review finding H3) a mostly-True fully stored mask keeps fill False, so a contraction
+    # with a sparse bool matrix stays sparse (it raised DensifyError with fill True)
+    rng = np.random.default_rng(15)
+    n = 300
+    a = np.zeros((n, n), bool)
+    a[rng.integers(0, n, 900), rng.integers(0, n, 900)] = True
+    A = make(a, False)
+    d = rng.integers(1, 10, n).astype(float)
+    m = xp.greater(xp.asarray(d), 1.5)
+    assert m.fill_value == False  # noqa: E712
+    mv = d > 1.5
+    with gb.config.set(array_api_densify_limit=n * 10):
+        assert_array_equal(m @ A, mv @ a)
+        assert_array_equal(xp.einsum("i,ij->j", m, A), np.einsum("i,ij->j", mv, a))
+        assert_array_equal(
+            xp.matmul(m, A, semiring="lxor_land"),
+            np.logical_xor.reduce(mv[:, None] & a, axis=0),
+        )
+        out = xp.matmul(xp.astype(m, xp.uint8), xp.astype(A, xp.uint8), semiring="max_times")
+        assert_array_equal(out, np.max(mv[:, None].astype(np.uint8) * a, axis=0))
 
 
 def test_clip_with_array_bounds_ties():
