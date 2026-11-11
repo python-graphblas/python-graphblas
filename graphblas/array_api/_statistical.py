@@ -244,13 +244,7 @@ def _reduce_no_axes(name, x, ct):
 
 
 def _has_nan(x):
-    def compute(x):
-        T = x._T()
-        if T.nvals == 0:
-            return False
-        return bool(T.apply(unary.isnan).new().reduce_scalar(monoid.lor).new().value)
-
-    return x._fact("has_nan", compute)
+    return _utils.summary(x)["nan"]
 
 
 def sum(x, /, *, axis=None, dtype=None, keepdims=False):  # noqa: A001 (the Array API's name)
