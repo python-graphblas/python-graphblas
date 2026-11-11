@@ -140,10 +140,9 @@ def _fill_of(ufunc, rdt, operands):
     (integers to a negative power) and one operand is such an Array, the result's fill is
     never seen either, and 0 stands in for it.
     """
-    # numpy picks its loop by its operands' shapes (an array and a 0-d exponent of 0.5 is
-    # sqrt, so pow(-inf, 0.5) is NaN there and inf between two arrays; clip breaks ties by
-    # its 0-d path otherwise): a fill stands in for an array as a 1-element array, a 0-d
-    # Array stays 0-d, and a Python scalar stays weak
+    # numpy picks its loop by its operands' shapes (clip breaks ties by its 0-d path
+    # otherwise): a fill stands in for an array as a 1-element array, a 0-d Array stays 0-d,
+    # and a Python scalar stays weak
     args = [
         (
             (np.reshape(x._fill, (1,)) if x.ndim else np.asarray(x._fill))
@@ -561,6 +560,20 @@ def _binary_arrays(spec, a, b, op, ct, rdt, fill):
     return _result(_utils.map_values(spec.ufunc, [A, B], rdt), fill)
 
 
+def _power(x1, x2):
+    """The power by numpy, but where numpy takes a square root for an exponent of 0.5 that
+    repeats (a scalar, or an exponent of stride 0): the Array API's pow(-inf, 0.5) is +inf and
+    pow(-0.0, 0.5) is +0.0, where sqrt gives NaN and -0.0 (review finding L11).
+    """
+    out = np.power(x1, x2)
+    if out.dtype.kind == "f":
+        x1 = np.asarray(x1)
+        fix = (np.asarray(x2) == 0.5) & ((x1 == -np.inf) | (x1 == 0))
+        if fix.any():
+            out = np.where(fix, np.where(x1 == 0, 0.0, np.inf), out).astype(out.dtype)
+    return out
+
+
 def _typed_for(op_by_kind):
     """``gb`` for _Binary: ``op_by_kind[dtype.kind]`` typed for the dtype, else None."""
 
@@ -742,7 +755,7 @@ _SPECS = {
     # by zero), integer powers, shifts past the width, and libm-free special values
     "floor_divide": _Binary("floor_divide", np.floor_divide),
     "remainder": _Binary("remainder", np.remainder),
-    "pow": _Binary("pow", np.power),
+    "pow": _Binary("pow", _power),
     "atan2": _Binary("atan2", np.arctan2),
     "hypot": _Binary("hypot", np.hypot),
     "logaddexp": _Binary("logaddexp", np.logaddexp),
