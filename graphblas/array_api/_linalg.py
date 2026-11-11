@@ -184,8 +184,8 @@ def _sound(typed, arrays, name, *, multiplies=True):
                 f"the identity of {typed.monoid.name}"
                 + (f", which annihilates {typed.binaryop.name}" if multiplies else "")
                 + f"; {_operand_name(name, i)} has the fill {x._fill.item()!r}. Make the array "
-                f"with fill_value={spelled} (xp.asarray(x.tensor, fill_value={spelled}) reads "
-                f"x's unstored positions as {e!r})."
+                f"with fill_value={spelled}, or use xp.refill(x, {spelled}), which keeps its "
+                "values (it stores the positions that held the old fill)."
             )
     return out_dt, _utils.scalar(e, out_dt), out
 

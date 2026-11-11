@@ -20,6 +20,7 @@ __all__ = [
     "moveaxis",
     "permute_dims",
     "prune",
+    "refill",
     "repeat",
     "reshape",
     "roll",
@@ -341,6 +342,32 @@ def tile(x, repetitions, /):
     for c, t, n in zip(coords, tiles, x.shape, strict=True):
         out.append((c[None, :] + (t * n)[:, None]).reshape(-1))
     return _from_entries(out, np.tile(values, ntiles), shape, x)
+
+
+def refill(x, /, fill_value):
+    """``x`` with the fill value ``fill_value`` (an extension): the same value at every
+    position. Positions ``x`` does not store held its old fill, so they are stored now
+    (O(size), under the densify limit; O(1) when ``x`` stores every position), and stored
+    entries equal to ``fill_value`` go (``prune``). A 0-d array's value is its fill, so it
+    is returned as it is. ``fill_value`` must be a value of ``x``'s dtype.
+    """
+    if not isinstance(x, Array):
+        raise TypeError(f"refill needs an Array, not {type(x).__name__}")
+    with np.errstate(all="ignore"):
+        fill = _utils.scalar(fill_value, x.dtype)
+        back = np.asarray(fill).astype(np.result_type(np.asarray(fill_value), x.dtype))[()]
+    if not _utils.same_value(back, np.asarray(fill_value)[()]):
+        raise ValueError(f"refill: {fill_value!r} is not a value of {x.dtype}")
+    if x.ndim == 0:
+        return x._copy()
+    T = x._T()
+    if _utils.same_value(fill, x._fill):
+        y = x
+    elif T.nvals == x.size:
+        y = Array._new(T, fill)
+    else:
+        y = _utils.with_fill(x, fill)
+    return prune(y)
 
 
 def prune(x, /):

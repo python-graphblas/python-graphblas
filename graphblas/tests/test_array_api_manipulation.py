@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+import graphblas as gb
 import graphblas.array_api as xp
 
 from .test_array_api_elementwise import assert_array_equal, inputs, make, same_value
@@ -148,6 +149,47 @@ def test_tile(reps):
     assert_array_equal(xp.tile(xp.asarray(2.0), (3,)), np.tile(np.array(2.0), 3))
     with pytest.raises(ValueError, match="nonnegative"):
         xp.tile(xp.zeros(2), (-1,))
+
+
+def test_refill():
+    rng = np.random.default_rng(12)
+    a = np.where(rng.random((6, 7)) < 0.3, rng.normal(size=(6, 7)), 0.0)
+    a[0, 0] = np.inf
+    x = make(a, 0.0, rng)
+    for fill in [np.inf, 1.5, 0.0, np.nan, -0.0]:
+        y = xp.refill(x, fill)
+        assert_array_equal(y, a)
+        assert same_value(y.fill_value, np.float64(fill))
+        expected = sum(not same_value(v, y.fill_value) for v in a.reshape(-1))
+        assert y.nnz == expected
+    # a dense distance matrix: inf becomes the fill, the zeros stay (the hint of the
+    # semiring error)
+    g = np.full((4, 4), np.inf)
+    np.fill_diagonal(g, 0.0)
+    g[0, 1] = 1.0
+    G = xp.refill(xp.asarray(g), np.inf)
+    assert (G.nnz, G.fill_value) == (5, np.inf)
+    assert_array_equal(xp.matmul(G, G, semiring="min_plus"), np.min(g[:, :, None] + g[None], 1))
+    # stores every position: relabeled, then pruned; other dtypes; a 0-d array keeps its value
+    full = xp.asarray(np.array([1, 2, 2, 3]))
+    out = xp.refill(full, 2)
+    assert_array_equal(out, np.array([1, 2, 2, 3]))
+    assert (out.nnz, out.fill_value) == (2, 2)
+    b = xp.refill(make(np.array([True, False, False]), False), True)
+    assert_array_equal(b, np.array([True, False, False]))
+    assert (b.nnz, b.fill_value) == (2, True)
+    assert_array_equal(xp.refill(xp.asarray(5.0), 1.0), np.array(5.0))
+    # errors: not an Array, a value the dtype does not hold, past the densify limit
+    with pytest.raises(TypeError, match="needs an Array"):
+        xp.refill(a, 1.0)
+    with pytest.raises(ValueError, match="not a value of int64"):
+        xp.refill(full, np.inf)
+    with pytest.raises(ValueError, match="not a value of int64"):
+        xp.refill(full, 1.5)
+    with gb.config.set(array_api_densify_limit=10), pytest.raises(xp.DensifyError):
+        xp.refill(x, 1.0)
+    with pytest.raises(ValueError, match="xp.refill"):
+        xp.asarray(x, fill_value=1.0)
 
 
 def test_prune():
