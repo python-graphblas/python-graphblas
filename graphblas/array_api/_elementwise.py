@@ -167,18 +167,17 @@ def _result(T, fill):
 
 
 def _normalize_bool(T, fill):
-    """A bool Tensor that stores every position never shows its fill: make the fill the value
-    most entries hold and drop those entries, when at most a quarter of them stay (so
-    ``equal(deg, 0)`` of a fully stored ``deg`` stores only its True entries, with fill
-    False). One count, then one select; else ``T`` and ``fill`` as they were (dropping more
-    than a quarter costs about as much as the comparison and saves a later consumer little).
+    """A bool Tensor that stores every position never shows its fill, so it takes fill False
+    (the fill contractions and masks work with; a fill True made a mostly-True mask times a
+    sparse matrix dense). Its False entries are dropped when at most a quarter of the
+    entries are True (``equal(deg, 0)`` of a fully stored ``deg`` then stores only its True
+    entries): one count, then one select. Otherwise they stay; dropping more costs about as
+    much as the comparison and saves a later consumer little.
     """
     n = T.nvals
-    ntrue = T.reduce_scalar(monoid.plus[INT64]).new().value
-    major = 2 * ntrue > n
-    if 4 * (n - ntrue if major else ntrue) > n:
-        return T, fill
-    return T.select(select.valueeq, not major).new(), major
+    if 4 * T.reduce_scalar(monoid.plus[INT64]).new().value > n:
+        return T, False
+    return T.select(select.valueeq, True).new(), False
 
 
 def _zero_d(dtype, fill):
