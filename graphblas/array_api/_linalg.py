@@ -191,15 +191,23 @@ def _is_zero(fill):
 
 def _zero_fills(*arrays):
     """The arrays with fill 0, or None when one cannot have it. An array that stores every
-    position never shows its fill, so its fill is relabeled 0 (O(1)); any other nonzero fill
-    gives None (the contraction is then dense).
+    position never shows its fill, so its fill is relabeled 0 (O(1)). One with a finite fill
+    that is no larger than the entries of the largest operand (a vector of ones by a matrix:
+    row sums) is stored in full first, O(its size): an unstored zero of another operand times
+    its finite values is 0 either way. Any other nonzero fill gives None: the contraction is
+    dense (a non-finite fill times another's unstored zero is NaN there, as numpy has it).
     """
+    most = max(x._T().nvals for x in arrays)
     out = []
     for x in arrays:
         if not _is_zero(x._fill):
             T = x._T()
             if T.nvals != x.size:
-                return None
+                small = x.size <= min(most + 1024, _utils.densify_limit())
+                if x.ndim == 0 or not small or not np.isfinite(x._fill):
+                    return None
+                # (its fill stored at every position it does not store, the new fill 0)
+                T = _utils.with_fill(x, _utils.scalar(0, x.dtype))._T()
             x = Array._new(T, _utils.scalar(0, x.dtype))
         out.append(x)
     return out
@@ -465,6 +473,9 @@ def einsum(subscripts, /, *operands, semiring=None):
     typed, default = _resolve(semiring, rdt, "einsum")
     shapes = tuple(x.shape for x in ops)
     shape = _einsum_plan(subscripts, shapes, "greedy")[2]
+    if default and any(x.ndim == 0 and not _is_zero(x._fill) for x in ops):
+        # A 0-d operand is a scalar factor of every term (and of the sum, for plus_times)
+        return _einsum_scalars(subscripts, ops)
     if default:
         if (zeroed := _zero_fills(*ops)) is None:
             return _dense(lambda *a: np.einsum(subscripts, *a), shape, *ops)
@@ -487,3 +498,26 @@ def einsum(subscripts, /, *operands, semiring=None):
     return _lazy.contraction(
         ops, build, shape, out_dt, fill, (terms, output, typed), nterms, product, typed
     )
+
+
+def _einsum_scalars(subscripts, ops):
+    """Einsum with the 0-d operands taken out as a product of scalars: the einsum of the
+    others, times that product.
+    """
+    from ._elementwise import multiply
+
+    inputs, arrow, output = subscripts.replace(" ", "").partition("->")
+    terms = inputs.split(",")
+    keep = [i for i, x in enumerate(ops) if x.ndim > 0]
+    factor = None
+    for x in ops:
+        if x.ndim == 0:
+            factor = x if factor is None else multiply(factor, x)
+    if not keep:
+        return _dense(lambda *a: np.einsum(subscripts, *a), (), *ops)
+    rest = ",".join(terms[i] for i in keep) + arrow + output
+    if not arrow:
+        # (implicit output: the letters that appear once, in order, as numpy picks them)
+        counts = {c: "".join(terms).count(c) for c in "".join(terms)}
+        rest += "->" + "".join(sorted(c for c, k in counts.items() if k == 1))
+    return multiply(einsum(rest, *(ops[i] for i in keep)), factor)

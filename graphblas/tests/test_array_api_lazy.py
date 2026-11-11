@@ -96,8 +96,9 @@ def test_contractions_are_pending(masks):
     assert not pending(xp.vecdot(make(a[0], 0.0), make(a[1], 0.0)))
     assert not pending(xp.einsum("ij,ij->", x1, x1))
     assert not pending(x1 @ xp.zeros((5, 3)))
-    assert not pending(x1 @ make(np.where(b == 0, 1.0, b), 1.0))  # (dense: a fill shows)
+    assert not pending(x1 @ make(np.where(b == 0, np.inf, b), np.inf))  # (dense: inf shows)
     assert pending(x1 @ make(b, 1.0))  # (every position stored: its fill is taken as 0)
+    assert pending(x1 @ make(np.where(b == 0, 1.0, b), 1.0))  # (small: stored in full)
     with gb.config.set(), pytest.MonkeyPatch.context() as mp:
         mp.setattr(_lazy, "enabled", False)
         P = x1 @ x2
