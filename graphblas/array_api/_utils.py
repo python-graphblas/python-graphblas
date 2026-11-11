@@ -1,12 +1,10 @@
 """Private helpers shared by the modules of ``graphblas.array_api``."""
 
-import contextlib
 import math
 
 import numpy as np
 
 from .. import binary, config, monoid, unary
-from ..core import tensor_layout as tl
 from ..core.scalar import Scalar
 from ..core.tensor import Tensor
 from ..core.tensor_ewise import _broadcast_factor
@@ -237,66 +235,9 @@ def keep_facts(src, dst, names=("finite", "nan", "zero")):
     return dst
 
 
-def _x_array(cont, dtype, stack):
-    """The value array of an unloaded Container as a numpy view (None when it is empty)."""
-    return stack.enter_context(tl._VectorArray(cont.x, np.dtype(dtype))).array
-
-
 def map_values(func, tensors, dtype):
-    """A Tensor with the entries of ``tensors`` (all of one shape, layout and pattern) whose
-    values are ``func(*value_arrays)``, computed by numpy over the stored values.
-
-    The pattern is copied in GraphBLAS and the values written into the copy's own array
-    through a GxB_Container, so the entries are never rebuilt from coordinates.
+    """A Tensor with the entries of ``tensors`` (all of one shape and pattern) whose values
+    are ``func(*value_arrays)`` in ``dtype``, computed by numpy over the stored values
+    (``Tensor._map_values``: the values in place, the pattern copied in GraphBLAS).
     """
-    T0 = tensors[0]
-    shape, layout = T0._shape, T0._layout
-    gbdt = gb_dtype(dtype)
-    Ms = [T._M for T in tensors]
-    if T0._M._nvals == 0:
-        return Tensor._from_M(tl.new_matrix(gbdt, Ms[0]._nrows, Ms[0]._ncols), shape, layout)
-    if any(T._layout != layout for T in tensors[1:]):
-        Ms = [Ms[0]] + [tl.relayout(T._M, shape, T._layout, layout)[0] for T in tensors[1:]]
-    # An iso Matrix has one value; the template for the result is one that holds them all,
-    # if any does, so that its value array has the length of func's output.
-    isos = [M.ss.is_iso for M in Ms]
-    template = Ms[isos.index(False)] if False in isos else Ms[0]
-    W = tl.new_matrix(gbdt, template._nrows, template._ncols)
-    W << template
-    with contextlib.ExitStack() as stack:
-        # (tensors sharing one Matrix, copy-on-write, unload it once)
-        unique = {id(M): M for M in Ms}
-        conts = {key: stack.enter_context(tl._Unloaded(M)) for key, M in unique.items()}
-        wcont = stack.enter_context(tl._Unloaded(W))
-        formats = {c.format for c in conts.values()} | {wcont.format}
-        nvals = {c.nvals for c in conts.values()} | {wcont.nvals}
-        if len(formats) == 1 and len(nvals) == 1:
-            values = {
-                key: _x_array(conts[key], np_dtype(M.dtype), stack) for key, M in unique.items()
-            }
-            arrays = [values[id(M)] for M in Ms]
-            out = _x_array(wcont, dtype, stack)
-            with np.errstate(all="ignore"):
-                result = func(*arrays)
-            result = np.asarray(result)
-            if out is not None and result.shape == out.shape:
-                out[...] = result
-                return Tensor._from_M(W, shape, layout)
-    # (formats differ: a fallback through coordinates, which aligns the values by position)
-    return _map_values_coo(func, tensors, dtype)  # pragma: no cover (safety)
-
-
-def _map_values_coo(func, tensors, dtype):
-    coords = None
-    arrays = []
-    for T in tensors:
-        idx, vals = T.to_coo()
-        if coords is None:
-            coords = idx
-        arrays.append(vals)
-    with np.errstate(all="ignore"):
-        result = np.asarray(func(*arrays), dtype=dtype)
-    if result.ndim == 0:
-        result = np.broadcast_to(result, coords[0].shape if coords else (1,))
-    T0 = tensors[0]
-    return Tensor.from_coo(coords, result, gb_dtype(dtype), shape=T0._shape)
+    return tensors[0]._map_values(func, tensors[1:], gb_dtype(dtype))
