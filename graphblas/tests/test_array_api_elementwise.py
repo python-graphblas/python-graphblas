@@ -23,15 +23,6 @@ if not tensor_has_container():
     pytest.skip("graphblas.array_api needs SuiteSparse:GraphBLAS 10", allow_module_level=True)
 
 
-@pytest.fixture(autouse=True)
-def _strict_signed_zeros():
-    """These tests compare with numpy bit for bit: keep every signed zero (DESIGN D3a's strict
-    mode). The default mode, where products with unstored zeros read 0.0, has its own tests.
-    """
-    with gb.config.set(array_api_signed_zeros=True):
-        yield
-
-
 DTYPES = [
     np.dtype(name)
     for name in (
@@ -130,24 +121,32 @@ def check_invariants(x):
 
 
 def assert_array_equal(x, expected):
-    """``x`` holds ``expected`` exactly: dtype, shape, NaN, signed zeros."""
+    """``x`` holds ``expected`` exactly (dtype, shape, NaN, signed zeros), but for the sign of
+    a zero at a position ``x`` does not store, which the contract leaves unspecified (DESIGN
+    D3b). A 0-d array's value is exact.
+    """
     expected = np.asarray(expected)
     check_invariants(x)
     assert x.dtype == expected.dtype, (x.dtype, expected.dtype)
     assert x.shape == expected.shape, (x.shape, expected.shape)
     dense = x.todense()
     assert dense.dtype == expected.dtype
-    _assert_identical(dense, expected)
+    unstored = np.zeros(x.shape, dtype=bool)
+    if x.ndim:
+        unstored[...] = True
+        unstored[x.to_coo()[0]] = False
+    _assert_identical(dense, expected, unstored)
 
 
-def _assert_identical(a, b):
+def _assert_identical(a, b, unstored):
     if a.dtype.kind == "c":
-        _assert_identical(a.real, b.real)
-        _assert_identical(a.imag, b.imag)
+        _assert_identical(a.real, b.real, unstored)
+        _assert_identical(a.imag, b.imag, unstored)
         return
     if a.dtype.kind == "f":
         nan_a, nan_b = np.isnan(a), np.isnan(b)
-        bad = (nan_a != nan_b) | (~nan_a & ((a != b) | (np.signbit(a) != np.signbit(b))))
+        sign = (np.signbit(a) != np.signbit(b)) & ~(unstored & (a == 0) & (b == 0))
+        bad = (nan_a != nan_b) | (~nan_a & ((a != b) | sign))
     else:
         bad = a != b
     if bad.any():
@@ -528,8 +527,6 @@ def test_float_multiply_keeps_union():
 
 
 def test_broadcast_expansion_is_guarded():
-    import graphblas as gb
-
     x = make(np.arange(1, 101, dtype=np.float64).reshape(100, 1), 0.0)
     y = make(np.arange(1, 101, dtype=np.float64).reshape(1, 100), 0.0)
     with gb.config.set(array_api_densify_limit=1000), pytest.raises(xp.DensifyError):
@@ -540,8 +537,6 @@ def test_broadcast_expansion_is_guarded():
 def test_values_mapped_on_every_storage_format():
     # numpy maps the stored values through the Container in place: check bitmap, full,
     # hypersparse and iso storage
-    import graphblas as gb
-
     rng = np.random.default_rng(5)
     for density in [0.0, 0.05, 0.5, 1.0]:
         for shape in [(40,), (30, 20), (6, 5, 4)]:
@@ -563,7 +558,6 @@ def test_values_mapped_on_every_storage_format():
     other = make(np.arange(8.0), 0.0)
     assert_array_equal(xp.atan2(iso, other), np.arctan2(iso.todense(), other.todense()))
     assert_array_equal(xp.atan2(other, iso), np.arctan2(other.todense(), iso.todense()))
-    del gb
 
 
 def test_unseen_fill_does_not_raise():
@@ -632,8 +626,6 @@ def test_unsupported_operands():
 
 def test_intersection_of_broadcast_operands_is_guarded():
     # an intersection of two broadcast operands is an outer product (review finding M4)
-    import graphblas as gb
-
     x = make(np.arange(1, 101).reshape(100, 1), 0)
     y = make(np.arange(1, 101).reshape(1, 100), 0)
     b = x > 0
@@ -665,46 +657,37 @@ def test_clip_with_array_bounds_ties():
     assert_array_equal(xp.clip(xp.asarray(2.0), min=make(np.array([1.0, 3.0]), 0.0)), [2.0, 3.0])
 
 
-def test_signed_zeros_give_way_by_default():
-    # (review finding H1, DESIGN D3a) by default a product with an unstored zero is the fill
+def test_signed_zeros_give_way():
+    # (review finding H1, DESIGN D3a, D3b) a product with an unstored zero is the fill
     # whatever its sign: a row scaling stores only A's entries
     rng = np.random.default_rng(0)
     A = make(np.where(rng.random((50, 50)) < 0.05, rng.normal(size=(50, 50)), 0.0), 0.0)
     d = make(rng.normal(size=(50, 1)), 0.0)
-    exact = d * A
-    assert_array_equal(exact, d.todense() * A.todense())
-    assert exact.nnz == 2500
-    with gb.config.set(array_api_signed_zeros=False):
-        loose = d * A
-        assert loose.nnz == A.nnz
-        np.testing.assert_array_equal(loose.todense(), d.todense() * A.todense())  # (0.0 == -0.0)
-        # inf and NaN stay exact
-        inf = make(np.array([[np.inf, 0.0]]), 0.0)
-        assert_array_equal(inf * make(np.array([[0.0, 1.0]]), 0.0), np.array([[np.nan, 0.0]]))
-        # divide: the numerator's entries, when no value of the denominator is 0 or NaN
-        a = np.where(rng.random((4, 5)) < 0.5, 0.0, rng.normal(size=(4, 5)))
-        b = rng.normal(size=5) + 3.0
-        for fb in [1.0, -2.0]:
-            q = make(a, 0.0) / make(b, fb)
-            assert q.nnz == np.count_nonzero(a)
-            np.testing.assert_array_equal(q.todense(), a / b)
-        q = make(a, 0.0) / make(np.r_[b[:4], 0.0], 1.0)
-        np.testing.assert_array_equal(
-            np_call(np.isnan, q.todense()), np.isnan(np_call(np.divide, a, np.r_[b[:4], 0.0]))
-        )
+    out = d * A
+    assert out.nnz == A.nnz
+    assert_array_equal(out, d.todense() * A.todense())
+    # inf and NaN stay exact
+    inf = make(np.array([[np.inf, 0.0]]), 0.0)
+    assert_array_equal(inf * make(np.array([[0.0, 1.0]]), 0.0), np.array([[np.nan, 0.0]]))
+    # divide: the numerator's entries, when no value of the denominator is 0 or NaN
+    a = np.where(rng.random((4, 5)) < 0.5, 0.0, rng.normal(size=(4, 5)))
+    b = rng.normal(size=5) + 3.0
+    for fb in [1.0, -2.0]:
+        q = make(a, 0.0) / make(b, fb)
+        assert q.nnz == np.count_nonzero(a)
+        assert_array_equal(q, a / b)
+    q = make(a, 0.0) / make(np.r_[b[:4], 0.0], 1.0)
+    assert_array_equal(q, np_call(np.divide, a, np.r_[b[:4], 0.0]))
 
 
 @pytest.mark.parametrize("name", ["multiply", "divide"])
-def test_default_mode_matches_numpy_but_for_zero_signs(name):
+def test_products_match_numpy_but_for_unstored_zero_signs(name):
     func = getattr(np, name)
-    with gb.config.set(array_api_signed_zeros=False):
-        for shapes in [((5,), (5,)), ((3, 4), (4,)), ((3, 1), (1, 4))]:
-            for dt1, dt2 in [(np.dtype("float64"),) * 2, (np.dtype("float32"), np.dtype("int8"))]:
-                for dense1, x1, dense2, x2 in _binary_cases(dt1, dt2, shapes, 5):
-                    out = getattr(xp, name)(x1, x2).todense()
-                    expected = np_call(func, dense1, dense2)
-                    assert out.dtype == expected.dtype
-                    np.testing.assert_array_equal(out, expected)  # (NaN == NaN, 0.0 == -0.0)
+    for shapes in [((5,), (5,)), ((3, 4), (4,)), ((3, 1), (1, 4))]:
+        for dt1, dt2 in [(np.dtype("float64"),) * 2, (np.dtype("float32"), np.dtype("int8"))]:
+            for dense1, x1, dense2, x2 in _binary_cases(dt1, dt2, shapes, 5):
+                out = getattr(xp, name)(x1, x2)
+                assert_array_equal(out, np_call(func, dense1, dense2))
 
 
 def test_operands_storing_every_position_keep_products_sparse():
@@ -714,28 +697,24 @@ def test_operands_storing_every_position_keep_products_sparse():
     A = make(np.where(rng.random((40, 40)) < 0.05, rng.normal(size=(40, 40)), 0.0), 0.0)
     d = xp.asarray(rng.normal(size=40) + 5.0)
     deg = xp.asarray(rng.integers(1, 9, 40).astype(float))
-    with gb.config.set(array_api_signed_zeros=False):
-        q = A / d
-        assert q.nnz == A.nnz
-        np.testing.assert_array_equal(q.todense(), A.todense() / d.todense())
-        inv = 1 / deg
-        assert inv.fill_value == np.inf
-        p = A * xp.reshape(inv, (40, 1))
-        assert p.nnz == A.nnz
-        assert p.fill_value == 0.0
-        np.testing.assert_array_equal(p.todense(), A.todense() * inv.todense()[:, None])
-        # integers too: a full operand's fill takes no part
-        i = make(np.where(rng.random((5, 6)) < 0.5, 0, rng.integers(1, 5, (5, 6))), 0)
-        full = xp.asarray(rng.integers(1, 5, 6), fill_value=7)
-        assert (i * full).nnz == i.nnz
-        assert_array_equal(i * full, i.todense() * full.todense())
-    # strict mode: the intersection only for values whose product with 0.0 is 0.0
+    q = A / d
+    assert q.nnz == A.nnz
+    assert_array_equal(q, A.todense() / d.todense())
+    inv = 1 / deg
+    assert inv.fill_value == np.inf
     p = A * xp.reshape(inv, (40, 1))
     assert p.nnz == A.nnz
+    assert p.fill_value == 0.0
     assert_array_equal(p, A.todense() * inv.todense()[:, None])
+    # integers too: a full operand's fill takes no part
+    i = make(np.where(rng.random((5, 6)) < 0.5, 0, rng.integers(1, 5, (5, 6))), 0)
+    full = xp.asarray(rng.integers(1, 5, 6), fill_value=7)
+    assert (i * full).nnz == i.nnz
+    assert_array_equal(i * full, i.todense() * full.todense())
     assert (A / xp.exp(d)).nnz == A.nnz
     assert_array_equal(A / xp.exp(d), A.todense() / np.exp(d.todense()))
     signed = xp.asarray(rng.normal(size=40))
+    assert (A / signed).nnz == A.nnz
     assert_array_equal(A / signed, A.todense() / signed.todense())
 
 
@@ -747,26 +726,32 @@ def test_one_sided_products():
     v = make(np.where(rng.random(30) < 0.5, 0.0, rng.normal(size=30)), 0.0)
     e = xp.exp(v)  # (fill 1, some positions unstored)
     w = make(np.where(rng.random(30) < 0.3, 1.0, rng.normal(size=30) + 4), 1.0)
-    for mode in [False, True]:
-        with gb.config.set(array_api_signed_zeros=mode):
-            for out, expected in [
-                (A * xp.reshape(e, (1, 30)), A.todense() * e.todense()[None, :]),
-                (xp.reshape(e, (30, 1)) * A, e.todense()[:, None] * A.todense()),
-                (A / xp.reshape(w, (30, 1)), A.todense() / w.todense()[:, None]),
-                (A / e, A.todense() / e.todense()),
-            ]:
-                assert out.nnz <= A.nnz
-                if mode:
-                    assert_array_equal(out, expected)
-                else:
-                    np.testing.assert_array_equal(out.todense(), expected)
-        # a second operand as large as the result: the masked union, no full copy
+    for out, expected in [
+        (A * xp.reshape(e, (1, 30)), A.todense() * e.todense()[None, :]),
+        (xp.reshape(e, (30, 1)) * A, e.todense()[:, None] * A.todense()),
+        (A / xp.reshape(w, (30, 1)), A.todense() / w.todense()[:, None]),
+        (A / e, A.todense() / e.todense()),
+    ]:
+        assert out.nnz <= A.nnz
+        assert_array_equal(out, expected)
+    # a second operand as large as the result: the masked union, no full copy
     B = make(np.where(rng.random((60, 60)) < 0.05, rng.normal(size=(60, 60)), 0.0), 0.0)
     big = make(np.where(rng.random((60, 60)) < 0.5, 2.0, rng.normal(size=(60, 60)) + 5), 2.0)
-    with gb.config.set(array_api_signed_zeros=False):
-        out = B / big
-        assert out.nnz == B.nnz
-        np.testing.assert_array_equal(out.todense(), B.todense() / big.todense())
+    out = B / big
+    assert out.nnz == B.nnz
+    assert_array_equal(out, B.todense() / big.todense())
+
+
+def test_unstored_zero_signs_in_the_oracle():
+    # The tests' oracle: a stored -0.0 must match, an unstored one may read 0.0
+    x = make(np.array([-0.0, 1.0]), 0.0)
+    assert x.nnz == 2
+    with pytest.raises(AssertionError, match="differ"):
+        assert_array_equal(x, np.array([0.0, 1.0]))
+    y = make(np.array([0.0, 1.0]), 0.0)
+    assert_array_equal(y, np.array([-0.0, 1.0]))
+    with pytest.raises(AssertionError, match="differ"):
+        assert_array_equal(xp.asarray(-0.0), np.array(0.0))
 
 
 def test_clip_fill_uses_numpys_array_loop():

@@ -15,7 +15,7 @@ import math
 
 import numpy as np
 
-from .. import binary, config, unary
+from .. import binary, unary
 from ..core.tensor import Tensor
 from . import _lazy, _utils
 from ._array import Array
@@ -557,20 +557,17 @@ def _both_fills_zero(a, b, fa, fb, ct):
 
 def _multiply_intersects(a, b, fa, fb, ct):
     """Whether ``a * b`` stores only the intersection of entries: both fills are 0 and, for
-    floats, ``value * 0.0`` is ``0.0`` for every stored value (not ``-0.0``, nor NaN for inf).
+    floats, no stored value is inf or NaN (whose product with 0.0 is NaN).
 
-    Unless ``graphblas.config["array_api_signed_zeros"]`` is True (strict), a ``-0.0``
-    product counts as the fill: finite values suffice (the union of a row scaling
-    ``d[:, None] * A`` with signed ``d`` would store every position, to keep the signs of its
-    zeros; DESIGN D3a).
+    A ``-0.0`` product with an unstored zero reads as the fill, 0.0: the sign of a zero at an
+    unstored position is unspecified (DESIGN D3a, D3b), and keeping it would make a row
+    scaling ``d[:, None] * A`` with signed ``d`` store every position.
     """
     if not _both_fills_zero(a, b, fa, fb, ct):
         return False
     if ct.kind != "f":
         return True
-    if not config.get("array_api_signed_zeros", False):
-        return _utils.summary(a)["finite"] and _utils.summary(b)["finite"]
-    return _finite_nonnegative(a) and _finite_nonnegative(b)
+    return _utils.summary(a)["finite"] and _utils.summary(b)["finite"]
 
 
 def _one_sided(spec, a, b, fa, fb, op, ct, rdt, shape):
@@ -580,7 +577,6 @@ def _one_sided(spec, a, b, fa, fb, op, ct, rdt, shape):
     at the first operand's entries (a broadcast operand smaller than them is stored in full
     first, so that it is not replicated). None when that does not hold.
     """
-    strict = config.get("array_api_signed_zeros", False)
     sides = [(a, b)] if spec.name == "divide" else [(a, b), (b, a)]
     for X, Y in sides:
         fx = fa if X is a else fb
@@ -589,7 +585,7 @@ def _one_sided(spec, a, b, fa, fb, op, ct, rdt, shape):
             continue
         if _stores_all(Y):
             fy = _utils.scalar(1, ct)  # (never seen)
-        if not _zero_times(spec, Y, fy, strict) or (strict and np.signbit(fx)):
+        if not _zero_times(spec, Y, fy):
             continue
         Tx, Ty = X._T(), Y._T()
         with np.errstate(all="ignore"):
@@ -610,24 +606,15 @@ def _one_sided(spec, a, b, fa, fb, op, ct, rdt, shape):
     return None
 
 
-def _zero_times(spec, y, fy, strict):
+def _zero_times(spec, y, fy):
     """Whether 0 * v (or 0 / v) is a zero for every value v of ``y`` (its fill ``fy`` too):
-    finite values (for divide also no 0), and in the strict mode nonnegative ones (so that
-    the zero is +0.0, the fill). NaN never qualifies.
+    finite values (for divide, also no 0). NaN never qualifies; the sign of the zero does not
+    matter (an unstored position reads the fill).
     """
     facts = _utils.summary(y)
     if spec.name == "divide":
-        ok = not facts["zero"] and not facts["nan"] and fy != 0 and not np.isnan(fy)
-        # (strict: 0.0 / -2.0 is -0.0, which an unstored position would read as 0.0)
-        return ok and (not strict or (facts["nonnegative"] and fy > 0))
-    if not facts["finite"] or not np.isfinite(fy):
-        return False
-    return not strict or (facts["nonnegative"] and not np.signbit(fy))
-
-
-def _finite_nonnegative(x):
-    facts = _utils.summary(x)
-    return facts["finite"] and facts["nonnegative"]
+        return not facts["zero"] and not facts["nan"] and fy != 0 and not np.isnan(fy)
+    return facts["finite"] and bool(np.isfinite(fy))
 
 
 def _max_min_gb(op):
