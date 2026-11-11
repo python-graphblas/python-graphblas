@@ -560,7 +560,7 @@ def _masked_three(terms, output, ops, typed, out_dt, fill):
     takes the full einsum, which propagates it (D12b). With plus_times the third operand
     must be finite: inf * (x + y) is not inf * x + inf * y when x and y differ in sign.
     """
-    if (typed.monoid.name, typed.binaryop.name) not in _DISTRIBUTES:
+    if (typed.monoid.name, typed.binaryop.name) not in _DISTRIBUTES or not all(x.ndim for x in ops):
         return None
     finite = [x.dtype.kind not in "fc" or _utils.fact(x, "finite") for x in ops]
     if not all(finite):
