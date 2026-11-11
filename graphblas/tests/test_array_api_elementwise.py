@@ -120,10 +120,11 @@ def check_invariants(x):
     T._check_invariants()
 
 
-def assert_array_equal(x, expected):
+def assert_array_equal(x, expected, *, zero_signs=True):
     """``x`` holds ``expected`` exactly (dtype, shape, NaN, signed zeros), but for the sign of
     a zero at a position ``x`` does not store, which the contract leaves unspecified (DESIGN
-    D3b). A 0-d array's value is exact.
+    D3b). A 0-d array's value is exact. ``zero_signs=False`` ignores every zero's sign (as
+    for max and min, where the Array API leaves the order of -0.0 and 0.0 unspecified).
     """
     expected = np.asarray(expected)
     check_invariants(x)
@@ -131,8 +132,8 @@ def assert_array_equal(x, expected):
     assert x.shape == expected.shape, (x.shape, expected.shape)
     dense = x.todense()
     assert dense.dtype == expected.dtype
-    unstored = np.zeros(x.shape, dtype=bool)
-    if x.ndim:
+    unstored = np.full(x.shape, not zero_signs)
+    if x.ndim and zero_signs:
         unstored[...] = True
         unstored[x.to_coo()[0]] = False
     _assert_identical(dense, expected, unstored)
@@ -338,7 +339,7 @@ def test_binary(name, func, shapes):
                 continue
             out = getattr(xp, name)(x1, x2)
             try:
-                assert_array_equal(out, expected)
+                assert_array_equal(out, expected, zero_signs=name not in MAX_MIN)
             except AssertionError as exc:
                 raise AssertionError(
                     f"{name} of {dt1} fill {x1.fill_value!r} and {dt2} fill {x2.fill_value!r}: "
@@ -346,6 +347,7 @@ def test_binary(name, func, shapes):
                 ) from None
 
 
+MAX_MIN = {"maximum", "minimum"}
 PY_SCALARS = [0, 1, 2, -3, 200, 2**40, True, False, 0.0, -0.0, 0.5, -1.5, np.nan, np.inf, 1j]
 
 
@@ -367,7 +369,7 @@ def test_binary_python_scalar(name, func, shape):
                     continue
                 out = np_call(getattr(xp, name), *args)
                 try:
-                    assert_array_equal(out, expected)
+                    assert_array_equal(out, expected, zero_signs=name not in MAX_MIN)
                 except AssertionError as exc:
                     raise AssertionError(f"{name}{tuple(map(repr, dargs))}: {exc}") from None
 
@@ -497,27 +499,32 @@ def test_float_multiply_of_nonnegative_values_intersects():
 
 @pytest.mark.parametrize("name", ["maximum", "minimum"])
 def test_float_maximum_minimum(name):
-    # Without NaN or -0.0 GraphBLAS's max and min are numpy's; with them, numpy computes
+    # Without NaN GraphBLAS's max and min are numpy's; with it, numpy computes. The order of
+    # -0.0 and 0.0 is unspecified.
     rng = np.random.default_rng(8)
     func = getattr(np, name)
+
+    def check(x, expected):
+        assert_array_equal(x, expected, zero_signs=False)
+
     for fill1, fill2 in [(0.0, 0.0), (2.5, -1.0), (np.inf, 0.0), (0.0, -0.0), (np.nan, 1.0)]:
         a = np.where(rng.random((4, 5)) < 0.5, fill1, np.round(rng.normal(size=(4, 5)), 1))
         b = np.where(rng.random(5) < 0.5, fill2, np.round(rng.normal(size=5), 1))
         x, y = make(a, fill1), make(b, fill2)
-        assert_array_equal(getattr(xp, name)(x, y), func(a, b))
+        check(getattr(xp, name)(x, y), func(a, b))
         for s in [0.0, -0.0, 1.5, np.nan, -np.inf, 3]:
-            assert_array_equal(getattr(xp, name)(x, s), func(a, s))
-            assert_array_equal(getattr(xp, name)(s, y), func(s, b))
+            check(getattr(xp, name)(x, s), func(a, s))
+            check(getattr(xp, name)(s, y), func(s, b))
         a[0, 0] = -0.0
         a[1, 1] = np.nan
         x = make(a, fill1)
-        assert_array_equal(getattr(xp, name)(x, y), func(a, b))
-        assert_array_equal(getattr(xp, name)(y, x), func(b, a))
+        check(getattr(xp, name)(x, y), func(a, b))
+        check(getattr(xp, name)(y, x), func(b, a))
     x = make(np.array([1.0, 0.0, 2.0]), 0.0)
     y = make(np.array([0.5, 0.5, 0.5]), 0.0)
-    assert_array_equal(getattr(xp, name)(x, y), func(x.todense(), y.todense()))
+    check(getattr(xp, name)(x, y), func(x.todense(), y.todense()))
     x *= -0.0  # (the cached facts about x's values must not survive)
-    assert_array_equal(getattr(xp, name)(x, y), func(x.todense(), y.todense()))
+    check(getattr(xp, name)(x, y), func(x.todense(), y.todense()))
 
 
 def test_float_multiply_keeps_union():

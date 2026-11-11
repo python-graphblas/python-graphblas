@@ -5,7 +5,7 @@ import math
 
 import numpy as np
 
-from .. import binary, config
+from .. import binary, config, monoid, unary
 from ..core import tensor_layout as tl
 from ..core.scalar import Scalar
 from ..core.tensor import Tensor
@@ -177,55 +177,60 @@ def with_fill(x, fill):
     return Array._new(T, fill)
 
 
-def tensor_values(T):
-    """The stored values of ``T`` in storage order (a copy)."""
-    return T._M.to_coo(rows=False, columns=False, sort=False)[2]
+# Facts about an Array's stored values (not its fill), each found by one parallel GraphBLAS
+# pass and cached on the Array; ``fact`` documents them. For each: the unary op that says
+# whether a value has the property, the monoid that combines those answers, and the answer when
+# the Array stores nothing.
+_FACT_SCANS = {
+    "finite": (unary.isfinite, monoid.land, True),
+    "nan": (unary.isnan, monoid.lor, False),
+    "zero": (None, monoid.lor, False),
+}
 
 
-def summary(x):
-    """Facts about the stored values of the Array ``x``, computed once (cached on ``x``):
-    ``finite`` (all finite), ``nonnegative`` (no sign bit set: no negative value, no -0.0),
-    ``nan`` (some NaN), ``negzero`` (some -0.0) and ``zero`` (some 0.0 or -0.0).
+def fact(x, name):
+    """A fact about the stored values of the Array ``x``, computed once (cached on ``x``):
+    "finite" (every value finite), "nan" (some value is NaN) or "zero" (some value is 0 or
+    -0.0). Integers and bools are finite and not NaN without a look; each other fact is one
+    parallel GraphBLAS pass with no copy of the values (an apply to bool, then a reduction
+    that stops at the first deciding value).
     """
+    if name not in _FACT_SCANS:  # pragma: no cover (safety)
+        raise KeyError(name)
+    return x._fact(name, lambda x: _compute_fact(x, name))
 
-    def compute(x):
-        T = x._T()
-        kind = x.dtype.kind
-        if T.nvals == 0:
-            return {
-                "finite": True,
-                "nonnegative": True,
-                "nan": False,
-                "negzero": False,
-                "zero": False,
-            }
-        values = tensor_values(T)
-        if kind in "biu":
-            nonneg = kind in "bu" or bool((values >= 0).all())
-            zero = not bool(values.all())
-            return {
-                "finite": True,
-                "nonnegative": nonneg,
-                "nan": False,
-                "negzero": False,
-                "zero": zero,
-            }
-        if kind == "c":
-            parts = [values.real, values.imag]
-        else:
-            parts = [values]
-        signbit = [np.signbit(p) for p in parts]
-        return {
-            "finite": all(bool(np.isfinite(p).all()) for p in parts),
-            "nonnegative": not any(bool(sb.any()) for sb in signbit),
-            "nan": any(bool(np.isnan(p).any()) for p in parts),
-            "negzero": any(
-                bool((sb & (p == 0)).any()) for p, sb in zip(parts, signbit, strict=True)
-            ),
-            "zero": not bool(values.all()),
-        }
 
-    return x._fact("summary", compute)
+def _compute_fact(x, name):
+    facts = x._facts
+    if name != "zero" and x.dtype.kind not in "fc":
+        return name == "finite"
+    if name == "nan" and facts.get("finite"):
+        return False
+    if name == "finite" and facts.get("nan"):
+        return False
+    op, combine, empty = _FACT_SCANS[name]
+    T = x._T()
+    if T.nvals == 0:
+        return empty
+    dt = gb_dtype(x.dtype)
+    if op is None:
+        B = T.apply(binary.eq[dt], right=gb_scalar(0, x.dtype)).new()
+    else:
+        B = T.apply(op[dt]).new()
+    return bool(B.reduce_scalar(combine[lookup_dtype(bool)]).new().value)
+
+
+def keep_facts(src, dst, names=("finite", "nan", "zero")):
+    """Give ``dst`` the facts ``src`` already knows among ``names`` (for results whose stored
+    values keep them: ``abs`` and ``negative`` keep all three, a rounding keeps finiteness).
+    """
+    if facts := src._facts:
+        kept = {k: v for k, v in facts.items() if k in names}
+        if kept:
+            if dst._facts is None:
+                dst._facts = {}
+            dst._facts.update(kept)
+    return dst
 
 
 def _x_array(cont, dtype, stack):

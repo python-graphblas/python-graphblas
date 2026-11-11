@@ -166,12 +166,17 @@ def _zero_d(dtype, fill):
 
 
 # Unary functions
-def _unary(name, ufunc, x, gb=None, *, const=None):
+_ALL_FACTS = ("finite", "nan", "zero")
+
+
+def _unary(name, ufunc, x, gb=None, *, const=None, keeps=()):
     """``ufunc`` of every position of ``x``.
 
     ``gb(dtype)`` gives a GraphBLAS UnaryOp equal to ``ufunc`` on that dtype, a callable
     taking the Tensor, or None; ``const(dtype)`` gives the value of every position when the
     result does not depend on the entries (``isnan`` of an integer array), else None.
+    ``keeps``: the facts about the stored values (``_utils.fact``) that hold for the result
+    when they hold for ``x``.
     """
     x = _as_operand(x, name)
     if not isinstance(x, Array):
@@ -198,7 +203,7 @@ def _unary(name, ufunc, x, gb=None, *, const=None):
         R = op(T)
     else:
         R = T.apply(op).new(dtype=gb_dtype(rdt))
-    return _result(R, fill)
+    return _utils.keep_facts(x, _result(R, fill), keeps)
 
 
 def _typed(op, kinds):
@@ -229,15 +234,20 @@ def _first_of(*getters):
 
 def abs(x, /):  # noqa: A001 (the Array API's name)
     # (GraphBLAS's integer abs of the most negative value is undefined in C; numpy wraps)
-    return _unary("abs", np.abs, x, _first_of(_typed(unary.abs, _FLOAT), _copy_if("ub")))
+    gb = _first_of(_typed(unary.abs, _FLOAT), _copy_if("ub"))
+    return _unary("abs", np.abs, x, gb, keeps=_ALL_FACTS)
 
 
 def negative(x, /):
-    return _unary("negative", np.negative, x, _typed(unary.ainv, "iufc"))
+    return _unary("negative", np.negative, x, _typed(unary.ainv, "iufc"), keeps=_ALL_FACTS)
 
 
 def positive(x, /):
-    return _unary("positive", np.positive, x, _copy_if("iufc"))
+    return _unary("positive", np.positive, x, _copy_if("iufc"), keeps=_ALL_FACTS)
+
+
+# (a rounding keeps a value finite, or NaN; it may make a zero)
+_ROUNDING_KEEPS = ("finite", "nan")
 
 
 def sqrt(x, /):
@@ -246,20 +256,23 @@ def sqrt(x, /):
 
 
 def floor(x, /):
-    return _unary("floor", np.floor, x, _first_of(_typed(unary.floor, _FLOAT), _copy_if("biu")))
+    gb = _first_of(_typed(unary.floor, _FLOAT), _copy_if("biu"))
+    return _unary("floor", np.floor, x, gb, keeps=_ROUNDING_KEEPS)
 
 
 def ceil(x, /):
-    return _unary("ceil", np.ceil, x, _first_of(_typed(unary.ceil, _FLOAT), _copy_if("biu")))
+    gb = _first_of(_typed(unary.ceil, _FLOAT), _copy_if("biu"))
+    return _unary("ceil", np.ceil, x, gb, keeps=_ROUNDING_KEEPS)
 
 
 def trunc(x, /):
-    return _unary("trunc", np.trunc, x, _first_of(_typed(unary.trunc, _FLOAT), _copy_if("biu")))
+    gb = _first_of(_typed(unary.trunc, _FLOAT), _copy_if("biu"))
+    return _unary("trunc", np.trunc, x, gb, keeps=_ROUNDING_KEEPS)
 
 
 def round(x, /):  # noqa: A001 (the Array API's name)
     # numpy rounds half to even; C's round (GraphBLAS's) rounds half away from zero
-    return _unary("round", np.round, x, _copy_if("biu"))
+    return _unary("round", np.round, x, _copy_if("biu"), keeps=_ROUNDING_KEEPS)
 
 
 def _const_unless(kinds, value):
@@ -315,7 +328,8 @@ def reciprocal(x, /):
 
 
 def conj(x, /):
-    return _unary("conj", np.conj, x, _first_of(_typed(unary.conj, "c"), _copy_if(_REAL)))
+    gb = _first_of(_typed(unary.conj, "c"), _copy_if(_REAL))
+    return _unary("conj", np.conj, x, gb, keeps=_ALL_FACTS)
 
 
 def real(x, /):
@@ -567,7 +581,7 @@ def _multiply_intersects(a, b, fa, fb, ct):
         return False
     if ct.kind != "f":
         return True
-    return _utils.summary(a)["finite"] and _utils.summary(b)["finite"]
+    return _utils.fact(a, "finite") and _utils.fact(b, "finite")
 
 
 def _one_sided(spec, a, b, fa, fb, op, ct, rdt, shape):
@@ -611,16 +625,16 @@ def _zero_times(spec, y, fy):
     finite values (for divide, also no 0). NaN never qualifies; the sign of the zero does not
     matter (an unstored position reads the fill).
     """
-    facts = _utils.summary(y)
     if spec.name == "divide":
-        return not facts["zero"] and not facts["nan"] and fy != 0 and not np.isnan(fy)
-    return facts["finite"] and bool(np.isfinite(fy))
+        ok = fy != 0 and not np.isnan(fy)
+        return ok and not _utils.fact(y, "zero") and not _utils.fact(y, "nan")
+    return bool(np.isfinite(fy)) and _utils.fact(y, "finite")
 
 
 def _max_min_gb(op):
-    """GraphBLAS's max and min of floats are C's fmax and fmin, which skip NaN and may take
-    either zero of 0.0 and -0.0; numpy's propagate NaN and order -0.0 below 0.0. They agree
-    when neither operand holds NaN or -0.0 (cached per Array), fills included.
+    """GraphBLAS's max and min of floats are C's fmax and fmin, which skip NaN; numpy's
+    propagate it. They agree when neither operand holds NaN (a cached fact), fills included.
+    Either may take either zero of 0.0 and -0.0: the Array API leaves that order unspecified.
     """
 
     def get(a, b, ct):
@@ -630,13 +644,9 @@ def _max_min_gb(op):
             return None
         for x in (a, b):
             if isinstance(x, Array):
-                fill = np.asarray(x._fill)
-                if np.isnan(fill) or (fill == 0 and np.signbit(fill)):
+                if np.isnan(x._fill) or _utils.fact(x, "nan"):
                     return None
-                facts = _utils.summary(x)
-                if facts["nan"] or facts["negzero"]:
-                    return None
-            elif isinstance(x, float) and (np.isnan(x) or (x == 0 and np.signbit(x))):
+            elif isinstance(x, float) and np.isnan(x):
                 return None
         return op[gb_dtype(ct)]
 

@@ -271,7 +271,7 @@ def test_finite_facts():
     # Facts an Array already knows are taken as they are
     y = make(np.array([1.0, 2.0]), 0.0)
     assert _lazy._known_finite(y) is None
-    _utils.summary(y)
+    _utils.fact(y, "finite")
     assert _lazy._known_finite(y) is True
     assert _lazy._known_finite(make(np.array([1, 2]), 0)) is True
     P = xp.matmul(y, make(np.array([[1.0], [2.0]]), 0.0))
