@@ -10,3 +10,7 @@ jit_c_control: null
 tensor_max_expansion: 1000000000
 # graphblas.array_api: most elements an array may hold densely (np.asarray, cumulative_sum, ...)
 array_api_densify_limit: 100000000
+# graphblas.array_api: keep the sign of every zero a product or quotient makes with an unstored
+# zero, as numpy (True), even where that stores every position (a row scaling d[:, None] * A with
+# negative d); by default (False) those positions read 0.0, and multiply stores the intersection
+array_api_signed_zeros: false
