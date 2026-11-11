@@ -330,3 +330,19 @@ def test_thread3_edge_cases():
     assert_array_equal(xp.where(c, np.array([1, 2, 3]), 0), np.where(c, [1, 2, 3], 0))
     assert_array_equal(xp.where(True, x, 0.0), x.todense())
     assert_array_equal(np.eye(3) @ x.mT, np.eye(3) @ x.todense().T)
+
+
+def test_zero_d_tensors_are_copies_of_one_empty_tensor():
+    # (a 0-d Array stores nothing; its Tensor is an O(1) copy-on-write copy of one per dtype,
+    # which no change to a copy reaches)
+    x = xp.asarray(1.5)
+    y = xp.multiply(x, 2.0)
+    assert float(y) == 3.0
+    t = x.tensor
+    t[()] = 7.0
+    assert t.nvals == 1
+    template = _utils._EMPTY_0D[_utils.gb_dtype(np.float64)]
+    assert template.nvals == 0
+    assert xp.asarray(2.5)._T().nvals == 0
+    assert float(xp.asarray(2.5)) == 2.5
+    assert _utils.empty_tensor(np.int8, ()).nvals == 0

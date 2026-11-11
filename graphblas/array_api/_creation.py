@@ -59,7 +59,7 @@ def _from_numpy(a, fill_value=None):
     dt = check_supported(a.dtype, "an array")
     fill = _default_fill(dt) if fill_value is None else _utils.scalar(fill_value, dt)
     if a.ndim == 0:
-        return Array._new(Tensor(gb_dtype(dt), ()), a[()])
+        return Array._new(_utils.empty_0d(dt), a[()])
     if a.size == 0:
         return Array._new(Tensor(gb_dtype(dt), a.shape), fill)
     keep = _utils.differs(a, fill)
@@ -79,7 +79,7 @@ def _from_graphblas(obj, dtype, fill_value):
     if isinstance(obj, Scalar):
         dt = _utils.np_dtype(obj.dtype)
         value = obj.value if obj.nvals else fill_value if fill_value is not None else 0
-        out = Array._new(Tensor(gb_dtype(dt), ()), value)
+        out = Array._new(_utils.empty_0d(dt), value)
     else:
         if isinstance(obj, Tensor):
             T = obj.dup()
@@ -226,7 +226,7 @@ def from_coo(coords, data, shape=None, *, fill_value=None, dtype=None):
     fill = _default_fill(dt) if fill_value is None else _utils.scalar(fill_value, dt)
     if len(shape) == 0:
         value = data.reshape(-1)[0] if data.size else fill
-        return Array._new(Tensor(gb_dtype(dt), ()), value)
+        return Array._new(_utils.empty_0d(dt), value)
     if coords and coords[0].size:
         gdt = gb_dtype(dt)
         plus = binary.plus[gdt]  # (lor for bool)

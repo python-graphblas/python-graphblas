@@ -211,7 +211,7 @@ _SAMPLE = 2**16
 
 
 def _zero_d(dtype, fill):
-    return Array._new(Tensor(gb_dtype(dtype), ()), fill)
+    return Array._new(_utils.empty_0d(dtype), fill)
 
 
 # Unary functions

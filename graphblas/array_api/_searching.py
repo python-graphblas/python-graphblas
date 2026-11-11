@@ -201,7 +201,7 @@ def _arg(name, x, axis, keepdims):
         )  # fmt: skip
         out = Array._new(R, 0)
     else:
-        out = Array._new(Tensor(gb_dtype(np.int64), ()), result[0])
+        out = Array._new(_utils.empty_0d(np.int64), result[0])
     return expand_dims(out, axis) if keepdims else out
 
 

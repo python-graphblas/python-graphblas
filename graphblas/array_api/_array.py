@@ -4,7 +4,6 @@ import math
 
 import numpy as np
 
-from ..core.tensor import Tensor
 from . import _utils
 from ._utils import np_dtype
 
@@ -47,7 +46,7 @@ class Array:
         """
         if tensor.ndim == 0 and tensor.nvals:
             fill = tensor.to_scalar().value
-            tensor = Tensor(tensor.dtype, ())
+            tensor = _utils.empty_0d(tensor.dtype)
         self = object.__new__(cls)
         self._tensor = tensor
         self._pending = None
@@ -338,7 +337,7 @@ class Array:
 
 def _unpickle(coords, values, shape, dtype, fill):
     if not shape:
-        return Array._new(Tensor(_utils.gb_dtype(dtype), ()), fill)
+        return Array._new(_utils.empty_0d(dtype), fill)
     from ._creation import from_coo
 
     return from_coo(coords, values, shape, fill_value=fill, dtype=np.dtype(dtype))

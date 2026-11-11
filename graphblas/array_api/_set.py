@@ -84,9 +84,7 @@ def _unique(x, *, index=False, inverse=False, counts=False):
         if k:
             uinverse = np.delete(uinverse, at)
         if x.ndim == 0:
-            inv = Array._new(
-                Tensor(gb_dtype(np.int64), ()), uinverse[0] if len(uinverse) else inv_fill
-            )
+            inv = Array._new(_utils.empty_0d(np.int64), uinverse[0] if len(uinverse) else inv_fill)
         elif T.nvals:
             R = Tensor.from_coo(
                 coords, uinverse.astype(np.int64), gb_dtype(np.int64), shape=x.shape
