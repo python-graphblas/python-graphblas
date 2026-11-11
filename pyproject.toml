@@ -115,6 +115,7 @@ all = [
 packages = [
   "graphblas",
   "graphblas.agg",
+  "graphblas.array_api",
   "graphblas.binary",
   "graphblas.core",
   "graphblas.core.operator",
