@@ -238,7 +238,7 @@ def test_meshgrid(indexing):
         assert len(out) == len(expected)
         for o, e in zip(out, expected, strict=True):
             assert_array_equal(o, e)
-    assert xp.meshgrid() == []
+    assert xp.meshgrid() == ()
 
 
 def test_from_dlpack():
@@ -336,7 +336,7 @@ def test_result_type():
 def test_info():
     info = xp.__array_namespace_info__()
     assert info.default_device() == "cpu"
-    assert info.devices() == ["cpu"]
+    assert info.devices() == ("cpu",)
     assert info.default_dtypes()["real floating"] == xp.float64
     assert info.default_dtypes(device="cpu")["indexing"] == xp.int64
     assert set(info.dtypes()) == {str(dt) for dt in DTYPES}
