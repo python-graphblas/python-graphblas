@@ -275,6 +275,13 @@ def test_semiring_errors():
         xp.vecdot(a, a, semiring="max_plus")
     with pytest.raises(ValueError, match="fill is inf"):
         xp.matmul(make(_rand((3, 4), np.nan), np.nan), b, semiring="min_plus")
+    with pytest.raises(ValueError, match="fill_value=xp.inf"):
+        xp.matmul(z.T, z, semiring="min_plus")
+    with pytest.raises(ValueError, match="fill_value=-xp.inf"):
+        xp.matmul(z.T, z, semiring="max_plus")
+    t = xp.zeros((4, 2), dtype=xp.bool)
+    with pytest.raises(ValueError, match="fill_value=True"):
+        xp.matmul(t.T, t, semiring="land_lor")
     # Semirings whose identity does not annihilate the multiply: no fill works
     for sr, dtype in [
         ("max_times", np.float64),

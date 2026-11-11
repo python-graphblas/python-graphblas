@@ -18,6 +18,10 @@ raise ValueError. As in D6 the skipping is structural: an infinity meeting an un
 position makes no NaN (inf + -inf in min_plus). The annihilator is checked on a set of finite
 probe values of each operand type, once per typed semiring. The default (None) is plus_times,
 or lor_land for bool, under the rules of the first paragraph.
+
+A contraction that skips the unstored positions is deferred: its result computes on first use,
+or only where a consumer needs it (``multiply`` by a zero-filled array, a slice; see
+``_lazy``).
 """
 
 import math
@@ -29,7 +33,7 @@ from ..core.operator.semiring import Semiring, TypedBuiltinSemiring, TypedUserSe
 from ..core.scalar import Scalar
 from ..core.tensor import Tensor
 from ..core.vector import Vector
-from . import _utils
+from . import _lazy, _utils
 from ._array import Array
 from ._dtypes import check_supported
 from ._utils import gb_dtype, np_dtype
@@ -274,16 +278,59 @@ def matmul(x1, x2, /, *, semiring=None):
 
 
 def _product(a, b, typed, out_dt, fill):
-    """``a @ b`` with the typed semiring, skipping unstored positions; the result's fill is
-    ``fill``.
+    """``a @ b`` with the typed semiring, skipping unstored positions (deferred, see
+    ``_lazy``); the result's fill is ``fill``.
     """
     Ta, Tb = a._T(), b._T()
     shape = np.broadcast_shapes(a.shape[:-2], b.shape[:-2])
     shape = shape + (a.shape[-2:-1] if a.ndim > 1 else ()) + (b.shape[-1:] if b.ndim > 1 else ())
-    gbdt = gb_dtype(out_dt)
     if Ta.nvals == 0 or Tb.nvals == 0 or math.prod(shape) == 0:
-        return Array._new(Tensor(gbdt, shape), fill)
-    return Array._new(Ta.matmul(Tb, typed).new(dtype=gbdt), fill)
+        return Array._new(Tensor(gb_dtype(out_dt), shape), fill)
+
+    def build(Ta, Tb):
+        return Ta.matmul(Tb, typed)
+
+    spec = _matmul_terms(a.shape, b.shape)
+    spec = None if spec is None else (*spec, typed)
+    return _lazy.contraction((a, b), build, shape, out_dt, fill, spec)
+
+
+# Index letters for the einsum that computes a contraction (for slicing a pending result)
+_LETTERS = "abcdefghlmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
+def _matmul_terms(sa, sb):
+    """``(terms, output)`` of the einsum equal to matmul of shapes ``sa`` and ``sb``, or None
+    when a batch axis of size 1 broadcasts (einsum has no broadcasting).
+    """
+    ba, bb = sa[:-2], sb[:-2]
+    nb = max(len(ba), len(bb))
+    if nb > len(_LETTERS):
+        return None  # pragma: no cover (safety)
+    batch = _LETTERS[:nb]
+    for b in (ba, bb):
+        for n, m in zip(b[::-1], np.broadcast_shapes(ba, bb)[::-1], strict=False):
+            if n != m:
+                return None
+    ta = batch[nb - len(ba) :] + ("ik" if len(sa) > 1 else "k")
+    tb = batch[nb - len(bb) :] + ("kj" if len(sb) > 1 else "k")
+    out = batch + ("i" if len(sa) > 1 else "") + ("j" if len(sb) > 1 else "")
+    return (ta, tb), out
+
+
+def _tensordot_terms(na, nb, a_axes, b_axes):
+    """``(terms, output)`` of the einsum equal to tensordot of arrays of ``na`` and ``nb``
+    axes contracting ``a_axes`` with ``b_axes``.
+    """
+    if na + nb > len(_LETTERS):
+        return None  # pragma: no cover (safety)
+    ta = _LETTERS[:na]
+    tb = list(_LETTERS[na : na + nb])
+    for i, j in zip(a_axes, b_axes, strict=True):
+        tb[j] = ta[i]
+    tb = "".join(tb)
+    out = "".join(c for c in ta if c not in tb) + "".join(c for c in tb if c not in ta)
+    return (ta, tb), out
 
 
 def matrix_transpose(x, /):
@@ -347,11 +394,16 @@ def tensordot(x1, x2, /, *, axes=2, semiring=None):
 
 def _tensordot(a, b, a_axes, b_axes, shape, typed, out_dt, fill):
     Ta, Tb = a._T(), b._T()
-    gbdt = gb_dtype(out_dt)
     if Ta.nvals == 0 or Tb.nvals == 0 or math.prod(shape) == 0:
-        return Array._new(Tensor(gbdt, shape), fill)
-    R = Ta.tensordot(Tb, (list(a_axes), list(b_axes)), typed).new(dtype=gbdt)
-    return Array._new(R, fill)
+        return Array._new(Tensor(gb_dtype(out_dt), shape), fill)
+    axes = (list(a_axes), list(b_axes))
+
+    def build(Ta, Tb):
+        return Ta.tensordot(Tb, axes, typed)
+
+    spec = _tensordot_terms(a.ndim, b.ndim, a_axes, b_axes)
+    spec = None if spec is None else (*spec, typed)
+    return _lazy.contraction((a, b), build, shape, out_dt, fill, spec)
 
 
 def vecdot(x1, x2, /, *, axis=-1, semiring=None):
@@ -388,13 +440,7 @@ def vecdot(x1, x2, /, *, axis=-1, semiring=None):
         x1 = conj(x1)
     a0, fa = _zero_fill(x1)
     b0, fb = _zero_fill(x2)
-    Ta, Tb = a0._T(), b0._T()
-    gbdt = gb_dtype(rdt)
-    if Ta.nvals == 0 or Tb.nvals == 0 or math.prod(shape) == 0:
-        out = Array._new(Tensor(gbdt, out_shape), 0)
-    else:
-        P = Array._new(_vecdot_product(Ta, Tb, shape, typed.binaryop, gbdt), 0)
-        out = sum_(P, axis=axis, dtype=rdt) if rdt.kind != "b" else _any(P, axis)
+    out = _vecdot(a0, b0, axis, shape, out_shape, typed, rdt, _utils.scalar(0, rdt))
     if fa is not None:
         out = add(out, multiply(fa, sum_(b0, axis=axis, dtype=rdt)))
     if fb is not None:
@@ -404,26 +450,20 @@ def vecdot(x1, x2, /, *, axis=-1, semiring=None):
     return out if out.dtype == rdt else cast(out, rdt)
 
 
-def _vecdot_product(Ta, Tb, shape, mult, gbdt=None):
+def _vecdot(a, b, axis, shape, out_shape, typed, out_dt, fill):
+    """The semiring's monoid over ``axis`` of ``mult(a, b)`` (broadcast to ``shape``)."""
+    Ta, Tb = a._T(), b._T()
+    if Ta.nvals == 0 or Tb.nvals == 0 or math.prod(shape) == 0:
+        return Array._new(Tensor(gb_dtype(out_dt), out_shape), fill)
     if _both_broadcast(Ta.shape, Tb.shape, shape):
         # (an outer product: ewise_mult replicates one operand)
         _utils.expansion_check(Ta, Tb, shape)
-    return Ta.ewise_mult(Tb, mult).new(dtype=gbdt)
+    axis += len(shape)
 
+    def build(Ta, Tb):
+        return Ta.ewise_mult(Tb, typed.binaryop).new().reduce(typed.monoid, axis=axis)
 
-def _vecdot(a, b, axis, shape, out_shape, typed, out_dt, fill):
-    Ta, Tb = a._T(), b._T()
-    gbdt = gb_dtype(out_dt)
-    if Ta.nvals == 0 or Tb.nvals == 0 or math.prod(shape) == 0:
-        return Array._new(Tensor(gbdt, out_shape), fill)
-    P = _vecdot_product(Ta, Tb, shape, typed.binaryop)
-    return Array._new(P.reduce(typed.monoid, axis=len(shape) + axis).new(dtype=gbdt), fill)
-
-
-def _any(x, axis):
-    from ._statistical import any as any_
-
-    return any_(x, axis=axis)
+    return _lazy.contraction((a, b), build, out_shape, out_dt, fill)
 
 
 def _both_broadcast(sa, sb, shape):
@@ -464,8 +504,11 @@ def einsum(subscripts, /, *operands, semiring=None):
         out_dt, fill = rdt, _utils.scalar(0, rdt)
     else:
         out_dt, fill = _sound(typed, ops, "einsum", multiplies=len(ops) > 1)
-    tensors = [x._T() for x in ops]
-    gbdt = gb_dtype(out_dt)
-    if math.prod(shape) == 0 or any(T.nvals == 0 for T in tensors):
-        return Array._new(Tensor(gbdt, shape), fill)
-    return Array._new(tensor_einsum(subscripts, *tensors, op=typed).new(dtype=gbdt), fill)
+    if math.prod(shape) == 0 or any(x._T().nvals == 0 for x in ops):
+        return Array._new(Tensor(gb_dtype(out_dt), shape), fill)
+
+    def build(*tensors):
+        return tensor_einsum(subscripts, *tensors, op=typed)
+
+    terms, output = _einsum_plan(subscripts, shapes, "greedy")[:2]
+    return _lazy.contraction(ops, build, shape, out_dt, fill, (terms, output, typed))

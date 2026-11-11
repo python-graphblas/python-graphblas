@@ -20,7 +20,7 @@ import operator
 import numpy as np
 
 from ..core.tensor import Tensor
-from . import _utils
+from . import _lazy, _utils
 from ._array import Array
 from ._utils import gb_dtype
 
@@ -235,7 +235,10 @@ def getitem(x, key):
     if _has_adv(items):
         out, nadv = _advanced_extract(x, axes_key)
     else:
-        out, nadv = _basic_extract(x, tuple(axes_key)), 0
+        # (a pending product slices its operands instead)
+        if (out := _lazy.sliced(x, axes_key)) is None:
+            out = _basic_extract(x, tuple(axes_key))
+        nadv = 0
     return _finish(out, items, nadv)
 
 

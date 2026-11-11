@@ -17,7 +17,7 @@ import numpy as np
 
 from .. import binary, config, unary
 from ..core.tensor import Tensor
-from . import _utils
+from . import _lazy, _utils
 from ._array import Array
 from ._dtypes import check_supported
 from ._utils import gb_dtype, gb_scalar
@@ -421,6 +421,8 @@ class _Binary:
 def _binary(spec, x1, x2):
     a = _as_operand(x1, spec.name)
     b = _as_operand(x2, spec.name)
+    if spec.name == "multiply" and (out := _lazy.masked_multiply(a, b)) is not None:
+        return out  # (an SDDMM)
     ufunc = spec.ufunc
     if not isinstance(a, Array) and not isinstance(b, Array):
         from ._creation import asarray
