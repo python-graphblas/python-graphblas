@@ -137,6 +137,39 @@ def test_argmax_ties_with_the_fill():
             assert int(xp.argmin(x)) == np.argmin(a)
 
 
+def test_argmax_argmin_random():
+    # numpy's rules (first occurrence, NaN the extreme, the fill at unstored positions)
+    # over fills, densities, shapes, axes and stored layouts
+    rng = np.random.default_rng(12)
+    pools = {
+        "float64": [0.0, -0.0, 1.0, -1.0, 2.5, np.nan, np.inf, -np.inf],
+        "float32": [0.0, -0.0, 1.0, -1.0, np.nan, np.inf],
+        "int8": [-3, -1, 0, 1, 2],
+        "uint16": [0, 1, 2, 3],
+        "bool": [False, True],
+    }
+    shapes = [(1,), (6,), (1, 1), (3, 4), (6, 1), (1, 7), (2, 3, 4), (3, 1, 2, 2)]
+    for _ in range(250):
+        dt = np.dtype(list(pools)[rng.integers(len(pools))])
+        pool = np.array(pools[dt.name], dt)
+        shape = shapes[rng.integers(len(shapes))]
+        fill = pool[rng.integers(len(pool))]
+        values = rng.choice(pool[: rng.integers(1, len(pool) + 1)], shape)
+        dense = np.where(rng.random(shape) < rng.choice([0.0, 0.2, 0.6, 1.0]), values, fill)
+        x = make(dense, fill, rng, explicit=0.2)
+        if dense.ndim > 1 and rng.random() < 0.5:
+            # (a stored layout other than the default)
+            perm = tuple(int(a) for a in rng.permutation(dense.ndim))
+            inverse = tuple(int(a) for a in np.argsort(perm))
+            x = xp.permute_dims(xp.asarray(xp.permute_dims(x, perm), copy=True), inverse)
+        axis = int(rng.integers(-dense.ndim, dense.ndim)) if rng.random() < 0.8 else None
+        keepdims = rng.random() < 0.3
+        for name in ["argmax", "argmin"]:
+            expected = getattr(np, name)(dense, axis=axis, keepdims=keepdims)
+            out = getattr(xp, name)(x, axis=axis, keepdims=keepdims)
+            assert_array_equal(out, np.asarray(expected, dtype=np.int64))
+
+
 @pytest.mark.parametrize("axis", [None, 0, 1, (0, 1), ()])
 def test_count_nonzero(axis):
     for dtype in [*SEARCH_DTYPES, np.dtype("complex64")]:
