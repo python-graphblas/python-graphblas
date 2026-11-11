@@ -642,6 +642,15 @@ def test_einsum_three_operands_not_masked(masks):
     R = xp.einsum("ij,jk,ik->ik", make(p, 0), make(q, 0), make(r, 0), semiring="plus_min")
     assert all(m is None for m in masks)
     assert_close(R, _structural_three(p, q, r, np.minimum).astype(np.uint8))
+    # A 0-d operand (its value is the identity here): the full einsum
+    inf = np.inf
+    m = [np.where(x == 0, inf, x) for x in (a, a)]
+    masks.clear()
+    R = xp.einsum(
+        "ij,ij,->", make(m[0], inf), make(m[1], inf), xp.asarray(inf), semiring="min_plus"
+    )
+    assert all(x is None for x in masks)
+    assert_close(R, np.array(inf))  # (every term holds the identity inf)
     # Deferral off: the pair is computed whole, then intersected
     _lazy.enabled = False
     try:
