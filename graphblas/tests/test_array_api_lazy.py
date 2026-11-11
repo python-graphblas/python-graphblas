@@ -500,3 +500,32 @@ def test_inplace_operators_on_a_pending_array(op):
         assert_close(P, expected)
         assert_close(xp.multiply(make(s2, 0), P), s2 * expected)
         assert_close(P[1:], expected[1:])
+
+
+def test_sddmm_dot_hint_counts_batches(masks):
+    # (review finding L9) a batched product pairs entries within a batch only: the saxpy
+    # estimate divides by the number of batches, so sparse batches keep SuiteSparse's choice
+    rng = np.random.default_rng(17)
+    for dens_ab, dens_s, hint in [(1.0, 0.02, {"axb_method": "dot"}), (0.02, 0.5, {})]:
+        a = np.where(rng.random((8, 16, 4)) < dens_ab, rng.random((8, 16, 4)) + 0.5, 0.0)
+        b = np.where(rng.random((8, 4, 16)) < dens_ab, rng.random((8, 4, 16)) + 0.5, 0.0)
+        s = np.where(rng.random((8, 16, 16)) < dens_s, 1.0, 0.0)
+        masks.clear()
+        masks.hints.clear()
+        assert_close(xp.multiply(make(s, 0.0), make(a, 0.0) @ make(b, 0.0)), s * (a @ b))
+        assert masks.hints == [hint]
+    # a matmul whose batch axes broadcast (no einsum terms): the batches of the result
+    a = rng.random((1, 16, 4)) + 0.5
+    b = rng.random((8, 4, 16)) + 0.5
+    s = np.where(rng.random((8, 16, 16)) < 0.005, 1.0, 0.0)
+    masks.hints.clear()
+    assert_close(xp.multiply(make(s, 0.0), xp.asarray(a) @ xp.asarray(b)), s * (a @ b))
+    assert masks.hints == [{"axb_method": "dot"}]
+
+
+def test_product_times_itself_computes_once(masks):
+    # (review finding L6) P * P: no push-down, one computation
+    a = _rand((5, 5))
+    P = make(a, 0.0) @ make(a, 0.0)
+    assert_close(P * P, (a @ a) * (a @ a))
+    assert masks == [None]

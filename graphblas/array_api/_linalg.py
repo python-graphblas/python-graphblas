@@ -25,6 +25,7 @@ or only where a consumer needs it (``multiply`` by a zero-filled array, a slice;
 """
 
 import math
+import weakref
 
 import numpy as np
 
@@ -110,14 +111,15 @@ def _probes(dt):
     return np.array(values, dtype=dt)
 
 
-_ANNIHILATES = {}
+_ANNIHILATES = weakref.WeakKeyDictionary()
 
 
 def _annihilates(typed):
     """Whether the identity of the typed semiring's monoid annihilates its multiply from both
-    sides on the probe values (cached).
+    sides on the probe values (cached per typed semiring object: two user semirings may share
+    a name).
     """
-    key = (typed.name, typed.type.name, typed.type2.name)
+    key = typed
     if (ok := _ANNIHILATES.get(key)) is None:
         ok = _ANNIHILATES[key] = _check_annihilates(typed)
     return ok
@@ -382,7 +384,8 @@ def vecdot(x1, x2, /, *, axis=-1, semiring=None):
     """Sum over ``axis`` of ``conj(x1) * x2`` (broadcast), with zero fills structural.
 
     ``semiring`` (an extension): a graphblas Semiring or its name, whose monoid reduces
-    ``mult(x1, x2)`` over ``axis`` (no conjugate), under the module's rules for fills.
+    ``mult(x1, x2)`` over ``axis``, under the module's rules for fills. The default semiring
+    (plus_times, or lor_land for bool), given or not, conjugates ``x1``; others do not.
     """
     from ._elementwise import conj
 
