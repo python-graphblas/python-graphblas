@@ -153,7 +153,9 @@ class Array:
 
     @property
     def nnz(self):
-        """The number of stored entries (some may equal the fill value)."""
+        """The number of stored entries, entries equal to the fill value included (as in
+        pydata/sparse); ``prune`` drops those. No other function's value depends on it.
+        """
         return self._T().nvals
 
     @property
