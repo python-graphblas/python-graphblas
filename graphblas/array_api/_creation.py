@@ -354,7 +354,7 @@ def meshgrid(*arrays, indexing="xy"):
         s = [1] * n
         s[axis] = x.shape[0]
         out.append(_broadcast_to(reshape(x, tuple(s)), tuple(shape)))
-    return out
+    return tuple(out)
 
 
 def _tri(x, k, lower):
