@@ -13,7 +13,6 @@ import graphblas as gb
 import graphblas.array_api as xp
 from graphblas import Matrix, Scalar, Tensor, Vector
 
-from .test_array_api_elementwise import _strict_signed_zeros  # noqa: F401 (autouse)
 from .test_array_api_elementwise import (
     DTYPES,
     assert_array_equal,

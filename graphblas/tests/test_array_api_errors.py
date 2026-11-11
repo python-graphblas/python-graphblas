@@ -8,7 +8,6 @@ import graphblas.array_api as xp
 from graphblas.array_api import _utils
 from graphblas.core.tensor import Tensor
 
-from .test_array_api_elementwise import _strict_signed_zeros  # noqa: F401 (autouse)
 from .test_array_api_elementwise import assert_array_equal, make
 
 
