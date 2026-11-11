@@ -1,4 +1,6 @@
-"""Element-wise functions: numpy's answer, bit for bit, on every position.
+"""Element-wise functions: numpy's answer on every position (DESIGN D3b: NaN, inf and signed
+zeros exact, transcendental functions within libm's rounding, the sign of a zero at an unstored
+position unspecified).
 
 A function of one array maps the stored entries and the fill alike. A function of two arrays
 takes the union of their entries, an unstored position of one operand taking its fill there,
@@ -16,6 +18,7 @@ import math
 import numpy as np
 
 from .. import binary, unary
+from ..core.scalar import Scalar
 from ..core.tensor import Tensor
 from . import _lazy, _utils
 from ._array import Array
@@ -183,9 +186,16 @@ def _unary(name, ufunc, x, gb=None, *, const=None, keeps=()):
         from ._creation import asarray
 
         x = asarray(x)
+    op = gb(x.dtype) if gb is not None else None
     with np.errstate(all="ignore"):
         rdt = ufunc(np.empty(0, x.dtype)).dtype
-        fill = _fill_of(ufunc, rdt, (x,))
+        if getattr(op, "opclass", None) == "UnaryOp":
+            # The fill by the op that maps the entries, so that an entry equal to the fill maps
+            # to the new fill (libm's rounding may differ from numpy's by an ulp)
+            s = Scalar.from_value(x._fill, gb_dtype(x.dtype))
+            fill = s.apply(op).new(dtype=gb_dtype(rdt)).value
+        else:
+            fill = _fill_of(ufunc, rdt, (x,))
     check_supported(rdt, f"{name} of {x.dtype}")
     T = x._T()
     if T.ndim == 0:
@@ -194,7 +204,6 @@ def _unary(name, ufunc, x, gb=None, *, const=None, keeps=()):
         return _result(_utils.empty_tensor(rdt, T.shape), value)
     if T.nvals == 0:
         return _result(_utils.empty_tensor(rdt, T.shape), fill)
-    op = gb(x.dtype) if gb is not None else None
     if op is None:
         R = _utils.map_values(ufunc, [T], rdt)
     elif op == "copy":
@@ -351,33 +360,40 @@ def signbit(x, /):
     return _unary("signbit", np.signbit, x)
 
 
-def _numpy_unary(name, ufunc):
+def _libm_unary(name, ufunc, op, kinds=_INEXACT):
+    """``ufunc`` computed by the SuiteSparse unary op ``op`` (C's libm, in parallel) for
+    floating dtypes of ``kinds``, by numpy otherwise: within libm's rounding of numpy's
+    answer, special values (NaN, inf, signed zeros) exact (DESIGN D3b).
+    """
+
     def func(x, /):
-        return _unary(name, ufunc, x)
+        return _unary(name, ufunc, x, _typed(op, kinds))
 
     func.__name__ = name
     func.__qualname__ = name
     return func
 
 
-acos = _numpy_unary("acos", np.arccos)
-acosh = _numpy_unary("acosh", np.arccosh)
-asin = _numpy_unary("asin", np.arcsin)
-asinh = _numpy_unary("asinh", np.arcsinh)
-atan = _numpy_unary("atan", np.arctan)
-atanh = _numpy_unary("atanh", np.arctanh)
-cos = _numpy_unary("cos", np.cos)
-cosh = _numpy_unary("cosh", np.cosh)
-exp = _numpy_unary("exp", np.exp)
-expm1 = _numpy_unary("expm1", np.expm1)
-log = _numpy_unary("log", np.log)
-log1p = _numpy_unary("log1p", np.log1p)
-log2 = _numpy_unary("log2", np.log2)
-log10 = _numpy_unary("log10", np.log10)
-sin = _numpy_unary("sin", np.sin)
-sinh = _numpy_unary("sinh", np.sinh)
-tan = _numpy_unary("tan", np.tan)
-tanh = _numpy_unary("tanh", np.tanh)
+acos = _libm_unary("acos", np.arccos, unary.acos)
+acosh = _libm_unary("acosh", np.arccosh, unary.acosh)
+asin = _libm_unary("asin", np.arcsin, unary.asin)
+asinh = _libm_unary("asinh", np.arcsinh, unary.asinh)
+atan = _libm_unary("atan", np.arctan, unary.atan)
+atanh = _libm_unary("atanh", np.arctanh, unary.atanh)
+cos = _libm_unary("cos", np.cos, unary.cos)
+cosh = _libm_unary("cosh", np.cosh, unary.cosh)
+exp = _libm_unary("exp", np.exp, unary.exp)
+log = _libm_unary("log", np.log, unary.log)
+log2 = _libm_unary("log2", np.log2, unary.log2)
+log10 = _libm_unary("log10", np.log10, unary.log10)
+sin = _libm_unary("sin", np.sin, unary.sin)
+sinh = _libm_unary("sinh", np.sinh, unary.sinh)
+tan = _libm_unary("tan", np.tan, unary.tan)
+tanh = _libm_unary("tanh", np.tanh, unary.tanh)
+# SuiteSparse's complex expm1 and log1p are formulas of its own, not libm's: inexact near 0
+# and off numpy's special values (expm1(-inf + nan j) is -1 there, not nan + nan j)
+expm1 = _libm_unary("expm1", np.expm1, unary.expm1, _FLOAT)
+log1p = _libm_unary("log1p", np.log1p, unary.log1p, _FLOAT)
 
 
 # Binary functions
