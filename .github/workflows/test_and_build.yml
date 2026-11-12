@@ -272,7 +272,10 @@ jobs:
           else
             interpreter="python=$PYVER python-gil"
           fi
-          $(command -v mamba || command -v conda) install -c nodefaults \
+          # No -c: the channels are the ones setup-miniconda configured. On the command
+          # line, nodefaults is not the environment-file keyword but a channel on
+          # anaconda.org, which -c would put first.
+          $(command -v mamba || command -v conda) install \
             packaging pip pytest coverage pytest-randomly cffi donfig tomli c-compiler make \
             pyyaml${yamlver} ${sparse} pandas${pdver} scipy${spver} numpy${npver} ${awkward} \
             networkx${nxver} ${numba} ${psg} \
