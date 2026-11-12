@@ -320,8 +320,9 @@ class Scalar(BaseType):
         # We can't yet call a UDF on a scalar as part of the spec, so let's do it ourselves
         isclose_func = isclose(rel_tol, abs_tol)
         if not _has_numba:
-            # Check if types are compatible
-            get_typed_op(
+            # Check if types are compatible, and compare in the type they unify to, as
+            # with Numba (INT64 with UINT64 is in FP64). Python ints do not wrap in x - y.
+            eq = get_typed_op(
                 binary.eq,
                 self.dtype,
                 other.dtype,
@@ -329,7 +330,9 @@ class Scalar(BaseType):
                 is_right_scalar=True,
                 kind="binary",
             )
-            return isclose_func(self.value, other.value)
+            x = eq.type.np_type.type(self.value).item()
+            y = eq.type2.np_type.type(other.value).item()
+            return isclose_func(x, y)
         isclose_func = get_typed_op(
             isclose_func,
             self.dtype,

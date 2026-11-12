@@ -226,6 +226,19 @@ def test_isclose_integers_do_not_wrap():
             assert left.isclose(right, rel_tol=rel_tol) is expected, (lt, lv, rt, rv)
 
 
+def test_isclose_in_the_type_the_dtypes_unify_to():
+    # INT64 and UINT64 unify to FP64, where 2**62 + 1 rounds to 2**62, so they are close
+    # even with no tolerance, as in Vector.isclose; with Numba and without
+    x = Scalar.from_value(2**62 + 1, dtype="INT64")
+    y = Scalar.from_value(2**62, dtype="UINT64")
+    assert x.isclose(y, rel_tol=0)
+    assert y.isclose(x, rel_tol=0)
+    v = Vector.from_coo([0], [2**62 + 1])
+    assert v.isclose(Vector.from_coo([0], [2**62], "UINT64"), rel_tol=0)
+    # Two INT64 values are compared exactly
+    assert not x.isclose(Scalar.from_value(2**62, dtype="INT64"), rel_tol=0)
+
+
 def test_isclose_udt_raises():
     """Reject ``isclose`` on UDTs with a clear message that points to isequal."""
     arr_udt = dtypes.register_anonymous(np.dtype((np.int64, (3,))), "_IscloseUdt3")
