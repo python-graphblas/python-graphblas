@@ -306,11 +306,8 @@ class Scalar(BaseType):
                 # INT64, a Python int's dtype, cannot hold it; compare in Python, as isequal does
                 if self._is_empty:
                     return False
-                x = self.value
                 try:
-                    return x == other or abs(x - other) <= max(
-                        rel_tol * max(abs(x), abs(other)), abs_tol
-                    )
+                    return _isclose(rel_tol, abs_tol)(self.value, other)
                 except OverflowError:  # An int too large for a float, beside a float
                     return False
             try:
