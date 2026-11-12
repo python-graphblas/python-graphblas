@@ -5859,17 +5859,35 @@ def test_udt_select_by_equality():
     w[0] = (1, 1.0)
     w(accum=binary.plus) << v.select("==", x)
     assert w.to_coo()[1].tolist() == [(2, 3.0), (1, 2.0)]
-    A = Matrix(rec, nrows=2, ncols=2)
-    A[0, 0] = x
-    A[1, 1] = (5, 6.0)
+    # On a matrix that is not square, with entries off the diagonal, so that a lost
+    # transpose would show
+    A = Matrix(rec, nrows=2, ncols=3)
+    A[0, 2] = x
+    A[1, 0] = (5, 6.0)
     for expr, expected in [
-        (lambda: A.select("==", x), ([0], [0])),
-        (lambda: A.select("!=", x), ([1], [1])),
-        (lambda: A.select(A == x), ([0], [0])),
-        (lambda: A.T.select("==", (5, 6.0)), ([1], [1])),
+        (lambda: A.select("==", x), ([0], [2])),
+        (lambda: A.select("!=", x), ([1], [0])),
+        (lambda: A.select(A == x), ([0], [2])),
+        (lambda: A.T.select("==", (5, 6.0)), ([0], [1])),
     ]:
         rows, cols, _ = expr().new().to_coo()
         assert (rows.tolist(), cols.tolist()) == expected
+    # A.select(A.T == x) was rewritten to A.select("==", x); it selects by the mask now
+    with gb.config.set(autocompute=True):
+        rows, cols, _ = A.T.select(A.T == x).new().to_coo()
+        assert (rows.tolist(), cols.tolist()) == ([2], [0])
+        with pytest.raises(DimensionMismatch):
+            A.select(A.T == x).new()
+    # A mask and replace act on the selected entries as for any select
+    m = Matrix(rec, nrows=2, ncols=3)
+    m[0, 2] = (9, 9.0)
+    m[1, 1] = (9, 9.0)
+    m(Matrix.from_coo([0, 1], [2, 1], [True, True], nrows=2, ncols=3).S, replace=True) << (
+        A.select("==", x)
+    )
+    rows, cols, _ = m.to_coo()
+    assert (rows.tolist(), cols.tolist()) == ([0], [2])
+    assert m[0, 2].new().value.tolist() == x
     # Ordering does not lift to UDTs
     with pytest.raises(KeyError, match="valuelt does not work with _SelEq"):
         v.select("<", x)
