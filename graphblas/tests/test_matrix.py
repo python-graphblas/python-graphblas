@@ -1303,8 +1303,8 @@ def test_apply_indexunary(A):
 def test_select_by_a_transposed_comparison():
     """``A.select(A.T == x)`` keeps the entries where ``A.T == x``, as a computed mask does.
 
-    It was rewritten to ``select.valueeq(A, x)``, which drops the transpose, and
-    for a matrix that is not square the DimensionMismatch (on main since #252).
+    Rewriting it to ``select.valueeq(A, x)`` would drop the transpose and, for a matrix
+    that is not square, the DimensionMismatch.
     """
     S = Matrix.from_coo([0, 1], [1, 0], [1, 5], nrows=2, ncols=2)
     expected = Matrix.from_coo([1], [0], [5], nrows=2, ncols=2)

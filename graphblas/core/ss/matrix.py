@@ -4564,11 +4564,10 @@ def issorted(arr):  # pragma: no cover (numba)
 
 @njit
 def indices_to_indptr(indices, size):  # pragma: no cover (numba)
-    """Calculate the indptr for e.g. CSR from sorted uint64 COO rows, each below size - 1.
+    """Calculate the indptr, e.g. for CSR, from uint64 COO rows, each below ``size - 1``.
 
-    Each row's count goes at ``indptr[row + 1]``, then a running sum. Setting only the
-    rows that appear left 0 for every empty row after the first one, so an empty row
-    in the middle moved entries to another row, and an empty last row lost them all.
+    Each row's count goes at ``indptr[row + 1]``, then a running sum makes the offsets,
+    so every empty row, wherever it is, gets an empty range.
     """
     indptr = np.zeros(size, dtype=indices.dtype)
     one = np.uint64(1)
@@ -4580,7 +4579,7 @@ def indices_to_indptr(indices, size):  # pragma: no cover (numba)
 
 
 def _coo_indptr(indices, size, name, size_name):
-    """Return the indptr, of ``size + 1``, of sorted COO ``indices`` (rows or columns)."""
+    """Return the CSR (or CSC) indptr, of length ``size + 1``, for sorted COO rows (or columns)."""
     # Read 2-D indices as a flat buffer, as other imports do. The kernel would index
     # a 2-D array by its rows, past the end of its first axis.
     indices = ints_to_numpy_buffer(indices, np.uint64, name=name).ravel()
