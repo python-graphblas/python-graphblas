@@ -168,7 +168,8 @@ def test_to_networkx_keeps_rows_without_entries():
     M = gb.Matrix.from_coo([2, 0, 3], [0, 3, 3], [5, 6, 7], nrows=5, ncols=5)
     G = gb.io.to_networkx(M)
     assert list(G) == [0, 1, 2, 3, 4]
-    assert gb.io.from_networkx(G).isequal(M, check_dtype=True)
+    # The dtype is given so the round trip does not depend on the one inferred
+    assert gb.io.from_networkx(G, dtype=M.dtype).isequal(M, check_dtype=True)
     G = gb.io.to_networkx(M, edge_attribute=None)
     assert list(G) == [0, 1, 2, 3, 4]
     assert sorted(G.edges) == [(0, 3), (2, 0), (3, 3)]
@@ -183,7 +184,7 @@ def test_to_networkx_without_isolates():
     G = gb.io.to_networkx(M, create_isolates=False)
     assert list(G) == [0, 2, 3]
     expected = M[[0, 2, 3], [0, 2, 3]].new()
-    assert gb.io.from_networkx(G).isequal(expected, check_dtype=True)
+    assert gb.io.from_networkx(G, dtype=M.dtype).isequal(expected, check_dtype=True)
     G = gb.io.to_networkx(M, edge_attribute=None, create_isolates=False)
     assert list(G) == [0, 2, 3]
     assert sorted(G.edges) == [(0, 3), (2, 0), (3, 3)]
