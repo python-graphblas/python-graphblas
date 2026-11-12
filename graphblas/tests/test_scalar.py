@@ -225,6 +225,10 @@ def test_isclose_infinity():
             assert Scalar.from_value(x).isclose(y, abs_tol=abs_tol) is expected, (x, y)
             other = Scalar.from_value(y)
             assert Scalar.from_value(x).isclose(other, abs_tol=abs_tol) is expected, (x, y)
+    # An int that INT64 cannot hold compares in Python, with the same rule
+    assert not Scalar.from_value(math.inf).isclose(2**70)
+    assert not Scalar.from_value(-math.inf).isclose(-(2**70))
+    assert Scalar.from_value(2.0**70).isclose(2**70)
 
 
 def test_isclose_integers_do_not_wrap():
@@ -238,6 +242,7 @@ def test_isclose_integers_do_not_wrap():
             left = Scalar.from_value(lv, dtype=lt)
             right = Scalar.from_value(rv, dtype=rt)
             assert left.isclose(right, rel_tol=rel_tol) is expected, (lt, lv, rt, rv)
+    assert Scalar.from_value(2**64 - 1, dtype="UINT64").isclose(2**64 - 1)
 
 
 def test_isclose_in_the_type_the_dtypes_unify_to():
