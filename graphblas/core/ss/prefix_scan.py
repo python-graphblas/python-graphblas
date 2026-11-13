@@ -4,7 +4,6 @@ import numpy as np
 
 from ... import binary
 from ..operator import get_semiring, get_typed_op
-from .matrix import compact_indices
 
 
 # By default, scans on matrices are done along rows.
@@ -181,3 +180,8 @@ def prefix_scan(A, monoid, *, name=None, within, **opts):
         rv_info = RV.ss.export("hypercsr", sort=True, give_ownership=True)
         RV = Matrix.ss.import_hypercsr(name=name, **dict(info, values=rv_info["values"]))
     return RV
+
+
+# Imported last: matrix.py imports prefix_scan from here, so this module can be the
+# first one imported only if it defines prefix_scan before it imports matrix.py.
+from .matrix import compact_indices  # noqa: E402 isort:skip

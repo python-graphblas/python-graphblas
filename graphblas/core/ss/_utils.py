@@ -5,7 +5,7 @@ import re
 from suitesparse_graphblas.utils import unclaim_buffer
 
 from ...exceptions import _error_code_lookup
-from .. import ffi, lib
+from .. import _has_numba, ffi, lib
 from ..dtypes import _string_to_dtype
 
 
@@ -114,3 +114,17 @@ def _jit_c_source(name, funcname, jit_c_definition, types=()):
         return c_name
 
     return c_name, re.sub(rf"\b{re.escape(funcname)}\b", rename, jit_c_definition)
+
+
+# Here rather than in matrix.py, so vector.py can decorate with njit before it imports
+# matrix.py (see the end of vector.py)
+if _has_numba:
+    from numba import njit, prange
+else:
+
+    def njit(func=None, **kwargs):
+        if func is not None:
+            return func
+        return njit
+
+    prange = range

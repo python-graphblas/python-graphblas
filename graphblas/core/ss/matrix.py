@@ -17,7 +17,6 @@ from ...exceptions import (
 from .. import NULL, _has_numba, ffi, lib
 from ..base import call
 from ..operator import get_typed_op
-from ..scalar import Scalar, _as_scalar, _scalar_index
 from ..utils import (
     _CArray,
     _distinct_buffers,
@@ -32,20 +31,10 @@ from ..utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
-from ._utils import _pack_securely, _resolve_serialized_dtype, _unclaim_taken
+from ._utils import _pack_securely, _resolve_serialized_dtype, _unclaim_taken, njit, prange
 from .config import BaseConfig
 from .descriptor import get_descriptor
 
-if _has_numba:
-    from numba import njit, prange
-else:
-
-    def njit(func=None, **kwargs):
-        if func is not None:
-            return func
-        return njit
-
-    prange = range
 ffi_new = ffi.new
 
 
@@ -4606,4 +4595,7 @@ def indptr_to_indices(indptr):  # pragma: no cover (numba)
     return indices
 
 
+# Imported last, so this module can be the first one imported: each leads back here
+# for names defined above (core.scalar through core.vector and vector.py).
+from ..scalar import Scalar, _as_scalar, _scalar_index  # noqa: E402 isort:skip
 from .prefix_scan import prefix_scan  # noqa: E402 isort:skip

@@ -11,7 +11,6 @@ from ...exceptions import InvalidValue, _error_code_lookup, check_status, check_
 from .. import NULL, ffi, lib
 from ..base import call
 from ..operator import get_typed_op
-from ..scalar import Scalar, _as_scalar
 from ..utils import (
     _CArray,
     _distinct_buffers,
@@ -22,11 +21,9 @@ from ..utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
-from ._utils import _pack_securely, _resolve_serialized_dtype, _unclaim_taken
+from ._utils import _pack_securely, _resolve_serialized_dtype, _unclaim_taken, njit
 from .config import BaseConfig
 from .descriptor import get_descriptor
-from .matrix import _concat_mn, njit
-from .prefix_scan import prefix_scan
 
 ffi_new = ffi.new
 
@@ -1853,3 +1850,10 @@ def random_choice(n, k):  # pragma: no cover (numba)
         for i in range(k):
             choices[i] = a[n + i]
     return choices
+
+
+# Imported last, so this module can be the first one imported: core.scalar imports
+# core.vector, which needs `ss` from here, and matrix.py leads to core.scalar too.
+from ..scalar import Scalar, _as_scalar  # noqa: E402 isort:skip
+from .matrix import _concat_mn  # noqa: E402 isort:skip
+from .prefix_scan import prefix_scan  # noqa: E402 isort:skip
