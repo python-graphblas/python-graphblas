@@ -58,4 +58,4 @@ jobs:
       # - run: pip install --pre suitesparse-graphblas  # Use if we need pre-release
       - run: pip install -e .[default]
       - name: Run test imports
-        run: ./scripts/test_imports.sh
+        run: python scripts/test_imports.py
