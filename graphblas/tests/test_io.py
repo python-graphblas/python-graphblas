@@ -160,6 +160,57 @@ def test_matrix_to_from_networkx():
     assert M.shape == (1, 1)
 
 
+@pytest.mark.skipif("not nx")
+def test_to_networkx_keeps_rows_without_entries():
+    # Nodes 1 and 4 have no edges, and the entries name the others in the order
+    # 0, 3, 2: every row is still a node, in index order, so the round trip gives
+    # back the same matrix.
+    M = gb.Matrix.from_coo([2, 0, 3], [0, 3, 3], [5, 6, 7], nrows=5, ncols=5)
+    G = gb.io.to_networkx(M)
+    assert list(G) == [0, 1, 2, 3, 4]
+    # The dtype is given so the round trip does not depend on the one inferred
+    assert gb.io.from_networkx(G, dtype=M.dtype).isequal(M, check_dtype=True)
+    G = gb.io.to_networkx(M, edge_attribute=None)
+    assert list(G) == [0, 1, 2, 3, 4]
+    assert sorted(G.edges) == [(0, 3), (2, 0), (3, 3)]
+    assert len(gb.io.to_networkx(Matrix(int, 3, 3))) == 3
+
+
+@pytest.mark.skipif("not nx")
+def test_to_networkx_without_isolates():
+    # The nodes are the indices with entries, still in index order, so the round
+    # trip gives back the matrix without its empty rows and columns.
+    M = gb.Matrix.from_coo([2, 0, 3], [0, 3, 3], [5, 6, 7], nrows=5, ncols=5)
+    G = gb.io.to_networkx(M, create_isolates=False)
+    assert list(G) == [0, 2, 3]
+    expected = M[[0, 2, 3], [0, 2, 3]].new()
+    assert gb.io.from_networkx(G, dtype=M.dtype).isequal(expected, check_dtype=True)
+    G = gb.io.to_networkx(M, edge_attribute=None, create_isolates=False)
+    assert list(G) == [0, 2, 3]
+    assert sorted(G.edges) == [(0, 3), (2, 0), (3, 3)]
+    assert len(gb.io.to_networkx(Matrix(int, 3, 3), create_isolates=False)) == 0
+    # Too many rows to make each a node, as in a hypersparse matrix
+    n = 2**60
+    M = gb.Matrix.from_coo([5, n - 1], [n - 1, 5], [1, 2], nrows=n, ncols=n)
+    with pytest.raises(ValueError, match="create_isolates=False"):
+        gb.io.to_networkx(M)
+    G = gb.io.to_networkx(M, create_isolates=False)
+    assert list(G) == [5, n - 1]
+    assert dict(G.edges) == {(5, n - 1): {"weight": 1}, (n - 1, 5): {"weight": 2}}
+
+
+@pytest.mark.skipif("not nx")
+def test_to_networkx_limits(monkeypatch):
+    for create_isolates in [True, False]:
+        with pytest.raises(ValueError, match="square"):
+            gb.io.to_networkx(Matrix(int, 2, 3), create_isolates=create_isolates)
+    monkeypatch.setattr(gb.io._networkx, "_MAX_ISOLATES", 4)
+    assert len(gb.io.to_networkx(Matrix(int, 4, 4))) == 4
+    with pytest.raises(ValueError, match="create_isolates=False"):
+        gb.io.to_networkx(Matrix(int, 5, 5))
+    assert len(gb.io.to_networkx(Matrix(int, 5, 5), create_isolates=False)) == 0
+
+
 @pytest.mark.skipif("not ss")
 @pytest.mark.parametrize("engine", ["auto", "scipy", "fmm"])
 def test_mmread_mmwrite(engine):
