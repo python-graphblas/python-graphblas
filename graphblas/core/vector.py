@@ -8,7 +8,7 @@ from ..exceptions import DimensionMismatch, GrB_NO_VALUE, NoValue, check_status,
 from . import _supports_udfs, automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _is_recording, call
 from .descriptor import lookup as descriptor_lookup
-from .dtypes import _raise_dtype_or_arraylike
+from .dtypes import _raise_dtype_or_arraylike, _supports_complex
 from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, InfixExprBase, Updater
 from .literals import _literal_operand, _literal_store_dtype, _weak_builtin_literal_dtype
 from .mask import Mask, StructuralMask, ValueMask, _check_mask
@@ -53,6 +53,11 @@ if backend == "suitesparse":
     from .ss.vector import ss
 
 ffi_new = ffi.new
+
+# Python scalar types that the `v[i] = x` and `A[i, j] = x` fast paths store with
+# GrB_*_setElement_<type>. Without complex support a complex value is a UDT, which the
+# full assign path refuses with DomainMismatch, so it must not take the fast path.
+_SET_ELEMENT_TYPES = (int, float, bool, complex) if _supports_complex else (int, float, bool)
 
 
 # Custom recipes
@@ -337,8 +342,8 @@ class Vector(BaseType):
         # Python scalar, with no mask/accum/opts, a non-UDT dtype, and no active
         # Recorder. This mirrors what Updater -> _assign_element does for a
         # single element, but skips building the resolver, Updater, and Scalar.
-        # Only int/float/bool/complex values are taken here so the dtype
-        # inference and cffi coercion match _assign_element exactly, and only
+        # Only int/float/bool/complex values (_SET_ELEMENT_TYPES) are taken here so the
+        # dtype inference and cffi coercion match _assign_element exactly, and only
         # int and np.integer keys (bools excluded) so the accepted indices
         # match parse_index; everything else (slices, fancy indexing, 0-d
         # arrays and other __index__ objects, numpy or Scalar values,
@@ -348,7 +353,7 @@ class Vector(BaseType):
         # (``uint64_vec[i] = 2**63``; literals._literal_store_dtype).
         if (
             not opts
-            and type(expr) in (int, float, bool, complex)
+            and type(expr) in _SET_ELEMENT_TYPES
             and (type(expr) is not int or -(2**63) <= expr < 2**63)
             and (type(keys) is int or isinstance(keys, np.integer))
             and not self.dtype._is_udt

@@ -495,10 +495,13 @@ CROSS_COERCION = [
     (dtypes.UINT64, 2**63),  # fits uint64
     (dtypes.FP64, 1e308),  # large float
     (dtypes.FP32, 1e308),  # overflow FP32 -> inf via SS cast
+    # complex -> real (whatever SS does). Without complex support the value is a
+    # UDT, which both paths must refuse with the same DomainMismatch.
+    (dtypes.FP64, 3 + 0j),
+    (dtypes.BOOL, 1j),
 ]
 if dtypes._supports_complex:
     CROSS_COERCION += [
-        (dtypes.FP64, 3 + 0j),  # complex -> real (whatever SS does)
         (dtypes.FC64, 3),  # int -> FC64
         (dtypes.FC64, 3.5),  # float -> FC64
     ]

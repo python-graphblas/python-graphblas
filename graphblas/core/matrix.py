@@ -60,7 +60,14 @@ from .utils import (
     values_to_numpy_buffer,
     wrapdoc,
 )
-from .vector import Vector, VectorExpression, VectorIndexExpr, _isclose_recipe, _select_mask
+from .vector import (
+    _SET_ELEMENT_TYPES,
+    Vector,
+    VectorExpression,
+    VectorIndexExpr,
+    _isclose_recipe,
+    _select_mask,
+)
 
 if backend == "suitesparse":
     from .ss.matrix import ss
@@ -383,8 +390,8 @@ class Matrix(BaseType):
         # an exact-fit Python scalar, with no mask/accum/opts, a non-UDT dtype,
         # and no active Recorder. Mirrors Updater -> _assign_element for a single
         # element while skipping the resolver, Updater, and Scalar objects. Only
-        # int/float/bool/complex are taken here so dtype inference and cffi
-        # coercion match _assign_element exactly; everything else (slices, fancy
+        # int/float/bool/complex (_SET_ELEMENT_TYPES) are taken here so dtype inference
+        # and cffi coercion match _assign_element exactly; everything else (slices, fancy
         # indexing, numpy or Scalar values, `A(mask)[i, j] << x`) falls back to
         # the full assign path, leaving mask/accum and coercion unchanged. So
         # does an int beyond INT64, which that path types as the matrix's dtype
@@ -393,7 +400,7 @@ class Matrix(BaseType):
             not opts
             and type(keys) is tuple
             and len(keys) == 2
-            and type(expr) in (int, float, bool, complex)
+            and type(expr) in _SET_ELEMENT_TYPES
             and (type(expr) is not int or -(2**63) <= expr < 2**63)
             and not self.dtype._is_udt
             and not _is_recording()
