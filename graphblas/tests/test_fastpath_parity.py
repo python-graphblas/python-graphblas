@@ -6,13 +6,14 @@ expression machinery: ``Vector.get`` / ``Matrix.get``, ``index in obj``
 ``obj[i].new()`` on a scalar index expression, and the plain-int lane in
 ``parse_index``. Each fast path is only correct if it produces exactly what the
 slower general path would. These tests pin that equivalence: for every case we
-run the shipped fast path and an inlined copy of the pre-fast-path reference,
-then require the results (values, dtypes, and raised exceptions with their
-messages) to match.
+run the fast path and a reference built from the general path, then require the
+results (values, dtypes, and raised exceptions with their messages) to match.
 
-The references here are deliberately self-contained rather than imported from
-the throwaway benchmark scripts they were distilled from, so a refactor of the
-production code can never silently drag the reference along with it.
+Each reference is a copy of the code its fast path stands in for, kept in this
+file so that a refactor of the production code cannot change both sides of a
+comparison at once. The ``get`` and ``in`` references still go through
+``parse_index`` and ``ScalarIndexExpr.new()``, whose own fast lanes are tested
+against the general path below.
 """
 
 import numpy as np
@@ -21,6 +22,7 @@ import pytest
 import graphblas as gb
 from graphblas import Matrix, Vector, binary, dtypes
 from graphblas.core import _supports_udfs as supports_udfs  # noqa: F401
+from graphblas.core import automethods
 from graphblas.core.expr import Updater
 from graphblas.core.recorder import Recorder
 from graphblas.core.scalar import Scalar
@@ -49,7 +51,7 @@ DTYPE_IDS = [dt.name for dt in BUILTIN_DTYPES]
 
 
 def _hit_value(dt):
-    """A value that fits every builtin dtype (matches the source harnesses)."""
+    """A value that fits every builtin dtype."""
     if "FC" in dt.name:
         return 3 + 4j
     if dt == dtypes.BOOL:
@@ -69,7 +71,7 @@ class _IndexLike:
     """Implements ``__index__`` without being an int; must not take any fast lane.
 
     ``parse_index`` rejects it, so a fast lane that duck-types ``__index__``
-    would diverge from the expression path (gh: scalar fast-path parity).
+    would diverge from the expression path.
     """
 
     def __init__(self, value):
@@ -808,10 +810,9 @@ def test_scalarnew_autocompute_false_raises():
 # ScalarIndexExpr value reads (.value / float / int / ...): the single-extract
 # fast path in automethods._get_value via ScalarIndexExpr._extract_fast.
 # ---------------------------------------------------------------------------
-# The reference is the pre-fast-path resolution: _get_value used to resolve the
-# expression to a GrB_Scalar (is_cscalar=False) via `.new()`, then read that
-# scalar's attribute. `_new_slow` reproduces that GrB_Scalar exactly, so
-# `getattr(_new_slow(expr), attr)` is the old behavior for every read attr.
+# The reference reads each attribute from the GrB_Scalar (is_cscalar=False) that
+# `_new_slow` extracts: the kind of Scalar `_get_value` resolves to for every
+# attribute outside `_fast_scalar_attrs`.
 _VALUE_READ_ATTRS = [
     "value",
     "is_empty",
@@ -846,9 +847,14 @@ def _read_attr(scalar, attr):
     return cap
 
 
+def test_scalarvalue_attrs_are_the_fast_attrs():
+    # Each attribute _get_value resolves with one extract must be in the sweep below
+    assert set(_VALUE_READ_ATTRS) == automethods._fast_scalar_attrs
+
+
 @pytest.mark.parametrize("dt", BUILTIN_DTYPES, ids=DTYPE_IDS)
 def test_scalarvalue_dtype_parity(dt):
-    """Every read attr matches the pre-fast-path GrB_Scalar result, hit and miss."""
+    """Every value read matches the read from a GrB_Scalar, hit and miss."""
     val = _hit_value(dt)
     v = Vector(dt, 10)
     v[2] = val
@@ -856,7 +862,7 @@ def test_scalarvalue_dtype_parity(dt):
     A[1, 2] = val
     with gb.config.set(autocompute=True):
         for probe in [v[2], v[3], A[1, 2], A[0, 0]]:
-            slow = _new_slow(probe)  # GrB_Scalar, old path
+            slow = _new_slow(probe)  # GrB_Scalar
             for attr in _VALUE_READ_ATTRS:
                 assert _read_attr(probe, attr) == _read_attr(slow, attr), (dt.name, attr)
 
