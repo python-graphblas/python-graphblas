@@ -104,4 +104,6 @@ def register_new(name, jit_c_definition, *, np_type=None):
     # array of bool, say) leaves the name free to register again. The type it
     # made is never used, so no JIT kernel knows its name.
     _jit_c_type_defs[name] = jit_c_definition
+    # Its C name and definition are the user's, which ops lifted to it name it by.
+    rv._jit_c_info = (name, jit_c_definition)
     return rv

@@ -2387,7 +2387,7 @@ def test_udt_jit_op_definitions():
         typed = getattr(binary, op_name)[udt]
         lib.GrB_BinaryOp_get_String(typed.gb_obj, buf, lib.GxB_JIT_C_DEFINITION)
         defn = ffi.string(buf).decode()
-        assert f"{op_name}_JitOpTest" in defn
+        assert f"{op_name}_gbudt_JitOpTest" in defn
         assert "jp" in defn
         assert "jq" in defn
         assert expected_c_op in defn
@@ -2396,7 +2396,7 @@ def test_udt_jit_op_definitions():
     typed = unary.ainv[udt]
     lib.GrB_UnaryOp_get_String(typed.gb_obj, buf, lib.GxB_JIT_C_DEFINITION)
     defn = ffi.string(buf).decode()
-    assert "ainv_JitOpTest" in defn
+    assert "ainv_gbudt_JitOpTest" in defn
     assert "jp" in defn
 
     # Array UDT JIT definitions, of a length no other test uses (see test_udt_jit_typedef)
@@ -2405,14 +2405,14 @@ def test_udt_jit_op_definitions():
     typed = binary.plus[arr_udt]
     lib.GrB_BinaryOp_get_String(typed.gb_obj, buf, lib.GxB_JIT_C_DEFINITION)
     defn = ffi.string(buf).decode()
-    assert "plus_Vec37Jit" in defn
+    assert "plus_gbudt_Vec37Jit" in defn
     assert "z->v[i] = (x->v[i]) + (y->v[i])" in defn
     assert "i < 37" in defn
 
     typed = unary.ainv[arr_udt]
     lib.GrB_UnaryOp_get_String(typed.gb_obj, buf, lib.GxB_JIT_C_DEFINITION)
     defn = ffi.string(buf).decode()
-    assert "ainv_Vec37Jit" in defn
+    assert "ainv_gbudt_Vec37Jit" in defn
 
 
 @pytest.mark.skipif("not supports_udfs")

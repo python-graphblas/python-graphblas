@@ -67,6 +67,8 @@ def register_new(name, jit_c_definition, x_type, y_type, theta_type, ret_type):
         ``"void my_idxbin (double *z, double *x, GrB_Index ix, GrB_Index jx, "``
         ``"double *y, GrB_Index iy, GrB_Index jy, double *theta) "``
         ``"{ (*z) = (*x) + (*y) + (*theta) ; }"``
+        A UDT made from a numpy dtype is named in C by its ``jit_c_name`` (usually ``gbudt_``
+        and its name), not its Python name.
     x_type : dtype
         The dtype of the first operand (x).
     y_type : dtype

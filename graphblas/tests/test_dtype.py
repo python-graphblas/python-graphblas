@@ -565,13 +565,13 @@ def test_udt_jit_c_info_pinned_at_first_register():
     # stable.
     record_dtype = np.dtype([("pin_a", np.int64), ("pin_b", np.int64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "_PinUDT_first")
-    assert udt.jit_c_name == "_PinUDT_first"
+    assert udt.jit_c_name == "gbudt__PinUDT_first"
 
     udt2 = dtypes.register_anonymous(record_dtype, "_PinUDT_renamed")
     assert udt2 is udt
     assert udt.name == "_PinUDT_renamed"
     # SS-side name is frozen at first register; introspection must reflect that.
-    assert udt.jit_c_name == "_PinUDT_first"
+    assert udt.jit_c_name == "gbudt__PinUDT_first"
     assert "_PinUDT_first" in udt.jit_c_definition
 
 
@@ -587,12 +587,14 @@ def test_udt_layouts_under_one_name_get_their_own_jit_c_names():
     """
     small = dtypes.register_anonymous(np.dtype((np.int16, (1, 3, 1))), "_SameJitName")
     big = dtypes.register_anonymous(np.dtype((np.int16, (2, 1, 7))), "_SameJitName")
-    assert small.jit_c_name == "_SameJitName"
+    assert small.jit_c_name == "gbudt__SameJitName"
     assert big.jit_c_name != small.jit_c_name
     assert big.jit_c_name in big.jit_c_definition
     # Nor may a typedef registered in C take a name a UDT already has.
     with pytest.raises(ValueError, match="unavailable"):
-        dtypes.ss.register_new("_SameJitName", "typedef struct { int8_t q ; } _SameJitName ;")
+        dtypes.ss.register_new(
+            small.jit_c_name, f"typedef struct {{ int8_t q ; }} {small.jit_c_name} ;"
+        )
     # The rest compiles kernels for both layouts, which needs a C compiler the JIT can use.
     # Asked under 'on': a 'run' the session set (GRAPHBLAS_JIT_C_CONTROL) would answer no.
     from graphblas.core.ss.jit_config import _enable_jit_for_udt

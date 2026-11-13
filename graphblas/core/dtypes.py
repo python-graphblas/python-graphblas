@@ -108,14 +108,14 @@ class DataType:
 def _get_udt_c_type_info(datatype):
     """Return ``(c_name, c_typedef)`` for a UDT, or ``None`` if not expressible in C.
 
-    The returned ``c_name`` may differ from ``datatype.name``: if the user
-    didn't supply a name, or supplied one that isn't a valid C identifier,
-    ``_udt_c_typedef`` synthesizes a fresh ``_gbudt_NNN`` name so the UDT
-    can still take the JIT path. Returns ``None`` only for the cases that
-    remain unrepresentable in C: an unsupported field type (object,
-    datetime, string), or a field name that collides with a C reserved
-    word or isn't an identifier. Supports record UDTs (including nested
-    records) and array UDTs (e.g., ``FP64[3]``).
+    The returned ``c_name`` is ``gbudt_`` and ``datatype.name``, or a fresh
+    ``_gbudt_NNN`` name when the user didn't supply a name, or supplied one
+    that isn't a valid C identifier or is too long for SuiteSparse
+    (``udt_codegen._pick_c_type_name``), so the UDT can still take the JIT
+    path. Returns ``None`` only for the cases that remain unrepresentable in
+    C: an unsupported field type (object, datetime, string), or a field name
+    that collides with a C reserved word or isn't an identifier. Supports
+    record UDTs (including nested records) and array UDTs (e.g., ``FP64[3]``).
     """
     from .operator.udt_codegen import _udt_c_typedef
 
@@ -159,7 +159,8 @@ def _set_udt_jit_c_definition(datatype):
     # A name already given to another layout (two UDTs registered under one
     # name) gets a fresh one: SuiteSparse would share their JIT kernels.
     while _jit_c_type_defs.setdefault(c_name, typedef) != typedef:
-        info = _udt_c_typedef(f"_gbudt_{next(_synthetic_udt_counter)}", datatype.np_type)
+        c_name = f"_gbudt_{next(_synthetic_udt_counter)}"
+        info = _udt_c_typedef(c_name, datatype.np_type, is_c_name=True)
         c_name, typedef = info
     lib.GrB_Type_set_String(datatype._carg, ffi.new("char[]", c_name.encode()), lib.GxB_JIT_C_NAME)
     lib.GrB_Type_set_String(
@@ -276,9 +277,9 @@ def register_anonymous(dtype, name=None):
         string, and nested-UDT fields are not.
     name : str, optional
         A human-readable name for this UDT. Used in error messages and
-        ``repr``. Must be a valid C identifier (and not a C reserved word)
-        to be usable on the SuiteSparse JIT path; otherwise JIT is skipped
-        silently and ops fall back to the Numba cfunc path.
+        ``repr``. Any name takes the SuiteSparse JIT path: its C name is
+        ``gbudt_`` and the name, or a synthetic one when that is not a C
+        identifier or is too long.
 
     Returns
     -------
