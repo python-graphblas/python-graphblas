@@ -3,7 +3,7 @@ import itertools
 import numpy as np
 
 from .. import backend, binary, monoid, select, semiring, unary
-from ..dtypes import _INDEX, FP64, INT64, lookup_dtype, unify
+from ..dtypes import _INDEX, FP64, INT64, UINT64, lookup_dtype, unify
 from ..exceptions import DimensionMismatch, NoValue, check_status
 from . import _supports_udfs, automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, call
@@ -110,8 +110,13 @@ def _select_mask(updater, obj, mask):
         updater << obj.dup(mask=mask)
 
 
+def _abs_type(dtype):
+    return dtype if dtype.np_type.kind == "c" else FP64
+
+
 def _isclose_recipe(self, other, rel_tol, abs_tol, **opts):
-    #  x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
+    #  x == y or abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol), except that
+    #  an infinity is close only to itself
     isequal = self.ewise_mult(other, binary.eq).new(bool, name="isclose", **opts)
     if isequal._nvals != self._nvals:
         return False
@@ -124,23 +129,38 @@ def _isclose_recipe(self, other, rel_tol, abs_tol, **opts):
     # So we can use structural mask below
     isequal(**opts) << select.value(isequal == True)  # noqa: E712
 
-    # abs(x)
-    x = self.apply(unary.abs).new(FP64, mask=~isequal.S, **opts)
-    # abs(y)
-    y = other.apply(unary.abs).new(FP64, mask=~isequal.S, **opts)
+    # abs(x) and abs(y), in the type x - y is in below, or in FP64 for a real type:
+    # abs wraps at an integer type's minimum
+    abs_type = _abs_type(unify(self.dtype, other.dtype))
+    x = self.apply(unary.abs[abs_type]).new(FP64, mask=~isequal.S, **opts)
+    y = other.apply(unary.abs[abs_type]).new(FP64, mask=~isequal.S, **opts)
     # max(abs(x), abs(y))
     x(**opts) << x.ewise_mult(y, binary.max)
     max_x_y = x
+    # As in math.isclose, an infinity is close only to itself, and those are equal
+    if max_x_y.ndim == 1:
+        biggest = max_x_y.reduce(monoid.max, allow_empty=False).new(**opts).value
+    else:
+        biggest = max_x_y.reduce_scalar(monoid.max, allow_empty=False).new(**opts).value
+    if biggest == np.inf:
+        return False
     # rel_tol * max(abs(x), abs(y))
     max_x_y(**opts) << max_x_y.apply(binary.times, rel_tol)
     # max(rel_tol * max(abs(x), abs(y)), abs_tol)
     max_x_y(**opts) << max_x_y.apply(binary.max, abs_tol)
 
-    # x - y
-    y(~isequal.S, replace=True, **opts) << self.ewise_mult(other, binary.minus)
-    abs_x_y = y
     # abs(x - y)
-    abs_x_y(**opts) << abs_x_y.apply(unary.abs)
+    if unify(self.dtype, other.dtype).np_type.kind in "iu":
+        # x - y wraps in an integer type, and the difference may not fit it. It fits
+        # UINT64, where max(x, y) and min(x, y) convert modulo 2**64.
+        hi = self.ewise_mult(other, binary.max).new(UINT64, mask=~isequal.S, **opts)
+        lo = self.ewise_mult(other, binary.min).new(UINT64, mask=~isequal.S, **opts)
+        y(~isequal.S, replace=True, **opts) << hi.ewise_mult(lo, binary.minus)
+    else:
+        # abs before storing in y, whose FP64 would keep only a complex number's real part
+        diff = self.ewise_mult(other, binary.minus).new(mask=~isequal.S, **opts)
+        y(~isequal.S, replace=True, **opts) << diff.apply(unary.abs)
+    abs_x_y = y
 
     # abs(x - y) <= max(rel_tol * max(abs(x), abs(y)), abs_tol)
     isequal(**opts) << abs_x_y.ewise_mult(max_x_y, binary.le)
@@ -398,7 +418,8 @@ class Vector(BaseType):
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False, **opts):
         """Check for approximate equality (including same size and same structure).
 
-        Equivalent to: ``abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)``.
+        Equivalent to: ``abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)``,
+        except that, as in ``math.isclose``, an infinity is close only to itself.
 
         Parameters
         ----------

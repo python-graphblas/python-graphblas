@@ -1,5 +1,6 @@
 import inspect
 import itertools
+import math
 import pickle
 import sys
 import types
@@ -21,6 +22,7 @@ from graphblas.exceptions import (
     InvalidObject,
     InvalidValue,
     NotImplementedException,
+    NullPointer,
     OutputNotEmpty,
 )
 
@@ -249,6 +251,34 @@ def test_ncols(A):
 
 def test_nvals(A):
     assert A.nvals == 12
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_ss_export_failing_after_graphblas_frees_the_object(monkeypatch):
+    # GraphBLAS frees the object as it hands its arrays over. An error after that,
+    # here in claiming the values, left the handle pointing at the freed object, so a
+    # later call read freed memory and the object was freed again when collected.
+    import gc
+
+    import graphblas.core.ss.matrix as ss_matrix
+    import graphblas.core.ss.vector as ss_vector
+
+    def fail(*args):
+        raise RuntimeError("claim failed")
+
+    monkeypatch.setattr(ss_matrix, "claim_buffer_2d", fail)
+    monkeypatch.setattr(ss_vector, "claim_buffer", fail)
+    A = Matrix.from_dense([[1.5, 2.5], [3.5, 4.5]])
+    v = Vector.from_dense([1.5, 2.5])
+    for obj, format, nvals in [(A, "fullr", 4), (v, "full", 2)]:
+        with pytest.raises(RuntimeError, match="claim failed"):
+            obj.ss.export(format)  # exports a copy
+        gc.collect()  # frees the copy
+        assert obj.nvals == nvals
+        with pytest.raises(RuntimeError, match="claim failed"):
+            obj.ss.export(format, give_ownership=True)
+        with pytest.raises(NullPointer):
+            obj._nvals
 
 
 def test_build(A):
@@ -1269,6 +1299,24 @@ def test_apply_indexunary(A):
     assert pickle.loads(pickle.dumps(indexunary.tril[int])) is indexunary.tril[int]
 
 
+@autocompute
+def test_select_by_a_transposed_comparison():
+    """``A.select(A.T == x)`` keeps the entries where ``A.T == x``, as a computed mask does.
+
+    Rewriting it to ``select.valueeq(A, x)`` would drop the transpose and, for a matrix
+    that is not square, the DimensionMismatch.
+    """
+    S = Matrix.from_coo([0, 1], [1, 0], [1, 5], nrows=2, ncols=2)
+    expected = Matrix.from_coo([1], [0], [5], nrows=2, ncols=2)
+    assert S.select(S.T == 1).new().isequal(expected)
+    assert S.select((S.T == 1).new()).new().isequal(expected)
+    # The rewrite still serves the comparison of the object itself
+    assert S.select(S == 1).new().isequal(Matrix.from_coo([0], [1], [1], nrows=2, ncols=2))
+    B = Matrix.from_coo([0, 1], [1, 2], [1, 1], nrows=2, ncols=3)
+    with pytest.raises(DimensionMismatch):
+        B.select(B.T == 1).new()
+
+
 def test_select(A):
     A3 = Matrix.from_coo([0, 3, 3, 6], [3, 0, 2, 4], [3, 3, 3, 3], nrows=7, ncols=7)
     w1 = A.select(select.valueeq, 3).new()
@@ -1933,6 +1981,38 @@ def test_isclose(A, v):
         [3.0, 2.000001, 3.0, 1.0, 5.0, 3.0, 7.0, 7.9999999, 3.0, 1.0, 7.0, 4.0],
     )
     assert C6.isclose(A, rel_tol=1e-3)
+
+
+def test_isclose_infinity():
+    # As in math.isclose, an infinity is close only to itself. It was close to every
+    # number (abs(inf - y) is inf, and so is rel_tol * inf), with Numba and without.
+    from graphblas.core.vector import _isclose_recipe
+
+    values = [math.inf, -math.inf, 1.0, 0.0, math.nan]
+    for x, y in itertools.product(values, repeat=2):
+        left = Matrix.from_coo([0, 1], [1, 0], [x, 5.0])
+        right = Matrix.from_coo([0, 1], [1, 0], [y, 5.0])
+        for abs_tol in [0.0, math.inf]:
+            expected = math.isclose(x, y, rel_tol=1e-7, abs_tol=abs_tol)
+            if supports_udfs:
+                assert left.isclose(right, abs_tol=abs_tol) is expected, (x, y)
+            assert _isclose_recipe(left, right, 1e-7, abs_tol) is expected, (x, y)
+
+
+def test_isclose_integers_do_not_wrap():
+    # x - y or abs(x) wrapped in an integer type; see test_vector.ISCLOSE_WRAPPING_CASES
+    from graphblas.core.vector import _isclose_recipe
+
+    from .test_vector import ISCLOSE_WRAPPING_CASES
+
+    for xtype, ytype, x, y, rel_tol in ISCLOSE_WRAPPING_CASES:
+        expected = math.isclose(x, y, rel_tol=rel_tol)
+        for (lt, lv), (rt, rv) in [((xtype, x), (ytype, y)), ((ytype, y), (xtype, x))]:
+            left = Matrix.from_coo([0, 1], [1, 0], [lv, 5], dtype=lt)
+            right = Matrix.from_coo([1, 0], [0, 1], [rv, 5], dtype=rt).T
+            if supports_udfs:
+                assert left.isclose(right, rel_tol=rel_tol) is expected, (lt, lv, rt, rv)
+            assert _isclose_recipe(left, right, rel_tol, 0.0) is expected, (lt, lv, rt, rv)
 
 
 @pytest.mark.slow
@@ -4544,6 +4624,44 @@ def test_subarray_dtype_values_shape():
     # The lengths compared are the number of elements, not of numbers (it said 6)
     with pytest.raises(ValueError, match="lengths must match: 2, 2, 3$"):
         Matrix.from_coo([0, 1], [0, 1], np.ones((3, 2)), "FP64[2]")
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_ss_import_coo_with_empty_rows_and_columns():
+    # indptr was set only at the rows that appear, so every empty row after the first
+    # left a 0 in it: an empty row in the middle moved entries to another row (and
+    # isequal still said True), and an empty last row lost every entry
+    def entries(M):
+        return sorted(zip(*(x.tolist() for x in M.to_coo()), strict=True))
+
+    cases = [
+        ([0, 2], [1, 0], 3, 2),  # row 1, in the middle
+        ([0, 0], [0, 1], 3, 2),  # rows 1 and 2, at the end
+        ([2, 2], [0, 1], 3, 2),  # rows 0 and 1, at the start (this one worked)
+        ([1, 3], [2, 2], 5, 4),  # rows and columns empty at the start, middle and end
+        ([], [], 3, 2),  # no entries
+    ]
+    for rows, cols, nrows, ncols in cases:
+        A = Matrix.from_coo(rows, cols, np.arange(1.0, len(rows) + 1), nrows=nrows, ncols=ncols)
+        for M in [A, A.T.new()]:
+            for info in [M.ss.export("coor"), M.ss.export("cooc"), M.ss.export("coo", sort=True)]:
+                B = Matrix.ss.import_any(**info)
+                assert B.shape == M.shape
+                assert entries(B) == entries(M), (rows, cols, info["format"])
+    # Lists work, and an index beyond the shape is refused before indptr is written
+    B = Matrix.ss.import_coor(rows=[0, 2], cols=[1, 0], values=[1.0, 2.0], nrows=3, ncols=2)
+    assert B.to_coo()[0].tolist() == [0, 2]
+    with pytest.raises(IndexOutOfBound, match="rows must be less than nrows, 3; got 3"):
+        Matrix.ss.import_coor(rows=[0, 3], cols=[0, 0], values=[1.0, 2.0], nrows=3, ncols=1)
+    with pytest.raises(IndexOutOfBound, match="cols must be less than ncols, 2; got 5"):
+        Matrix.ss.import_cooc(rows=[0, 0], cols=[1, 5], values=[1.0, 2.0], nrows=1, ncols=2)
+    # 2-D indices are a flat buffer, as in from_coo; they read past the end (or crashed)
+    rows = np.array([[0, 1], [1, 2]], np.uint64)
+    B = Matrix.ss.import_coor(rows=rows, cols=[0, 0, 1, 1], values=[1, 2, 3, 4], nrows=3, ncols=2)
+    assert entries(B) == entries(Matrix.from_coo(rows.ravel(), [0, 0, 1, 1], [1, 2, 3, 4]))
+    cols = np.array([[0], [0], [1]], np.uint64)
+    B = Matrix.ss.import_cooc(rows=[0, 2, 1], cols=cols, values=[1, 2, 3], nrows=3, ncols=2)
+    assert entries(B) == entries(Matrix.from_coo([0, 2, 1], cols.ravel(), [1, 2, 3]))
 
 
 @pytest.mark.skipif("not suitesparse")

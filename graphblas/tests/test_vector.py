@@ -1,5 +1,7 @@
+import cmath
 import inspect
 import itertools
+import math
 import pickle
 import sys
 import types
@@ -1135,6 +1137,77 @@ def test_isclose(v):
     assert u7.isclose(u7, rel_tol=1e-8)
     u4b = Vector.from_coo([1, 3, 4, 5], [1.0, 1.0, 2.0, 0.0], size=u4.size)
     assert not u4.isclose(u4b)
+
+
+def test_isclose_infinity():
+    # As in math.isclose, an infinity is close only to itself. It was close to every
+    # number (abs(inf - y) is inf, and so is rel_tol * inf), with Numba and without.
+    from graphblas.core.vector import _isclose_recipe
+
+    values = [math.inf, -math.inf, 1.0, 0.0, math.nan]
+    for x, y in itertools.product(values, repeat=2):
+        left = Vector.from_coo([0, 2], [x, 5.0], size=3)
+        right = Vector.from_coo([0, 2], [y, 5.0], size=3)
+        for abs_tol in [0.0, math.inf]:
+            expected = math.isclose(x, y, rel_tol=1e-7, abs_tol=abs_tol)
+            if supports_udfs:
+                assert left.isclose(right, abs_tol=abs_tol) is expected, (x, y)
+            assert _isclose_recipe(left, right, 1e-7, abs_tol) is expected, (x, y)
+
+
+# (x's dtype, y's dtype, x, y, rel_tol): each was wrong in at least one of isclose's
+# paths, because x - y or abs(x) wrapped in an integer type. The values are far enough
+# apart (or exactly on the tolerance) that FP64 gives math.isclose's answer too.
+ISCLOSE_WRAPPING_CASES = [
+    ("UINT64", "UINT64", 0, 2**64 - 1, 1e-7),
+    ("UINT64", "UINT64", 2**63, 2**64 - 1, 1e-7),
+    ("UINT32", "UINT32", 5, 6, 0.5),
+    ("UINT8", "UINT8", 5, 6, 0.5),
+    ("UINT8", "UINT64", 0, 2**64 - 1, 1e-7),
+    ("INT64", "INT64", -(2**63), 2**63 - 1, 1e-7),
+    ("INT64", "INT64", -(2**63), 0, 1.0),
+    ("INT8", "INT8", -128, 127, 0.5),
+    ("INT8", "INT8", -128, 0, 1.0),
+    ("INT8", "INT64", 0, -(2**63), 1e-7),
+    ("INT8", "UINT64", -1, 2**64 - 1, 1e-7),
+]
+
+
+def test_isclose_integers_do_not_wrap():
+    from graphblas.core.vector import _isclose_recipe
+
+    for xtype, ytype, x, y, rel_tol in ISCLOSE_WRAPPING_CASES:
+        expected = math.isclose(x, y, rel_tol=rel_tol)
+        for (lt, lv), (rt, rv) in [((xtype, x), (ytype, y)), ((ytype, y), (xtype, x))]:
+            left = Vector.from_coo([0, 2], [lv, 5], dtype=lt, size=3)
+            right = Vector.from_coo([0, 2], [rv, 5], dtype=rt, size=3)
+            if supports_udfs:
+                assert left.isclose(right, rel_tol=rel_tol) is expected, (lt, lv, rt, rv)
+            assert _isclose_recipe(left, right, rel_tol, 0.0) is expected, (lt, lv, rt, rv)
+
+
+@pytest.mark.skipif("not dtypes._supports_complex")
+def test_isclose_complex():
+    # Without Numba, isclose kept only the real part of x - y, so 0 was close to 1j
+    from graphblas.core.vector import _isclose_recipe
+
+    values = [0j, 1j, -1j, 1 + 1j, 3 + 4j, 3 + 4.000001j]
+    for x, y in itertools.product(values, repeat=2):
+        expected = cmath.isclose(x, y, rel_tol=1e-6)
+        left = Vector.from_coo([0, 2], [x, 5], dtype="FC64", size=3)
+        right = Vector.from_coo([0, 2], [y, 5], dtype="FC64", size=3)
+        if supports_udfs:
+            assert left.isclose(right, rel_tol=1e-6) is expected, (x, y)
+        assert _isclose_recipe(left, right, 1e-6, 0.0) is expected, (x, y)
+    # abs(x) and abs(y) are in the type x - y is in, here FC64; abs(1 + 1j) in FC32 is
+    # smaller than in FC64, so the case exactly on the tolerance was not close
+    left = Vector.from_coo([0], [0.0])
+    right = Vector.from_coo([0], [1 + 1j], dtype="FC32")
+    expected = cmath.isclose(0.0, complex(np.complex64(1 + 1j)), rel_tol=1.0)
+    assert expected
+    if supports_udfs:
+        assert left.isclose(right, rel_tol=1.0) is expected
+    assert _isclose_recipe(left, right, 1.0, 0.0) is expected
 
 
 def test_binary_op(v):

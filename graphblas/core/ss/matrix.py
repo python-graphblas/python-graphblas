@@ -7,7 +7,13 @@ import graphblas as gb
 
 from ... import binary, monoid
 from ...dtypes import _INDEX, BOOL, INT64, UINT64, lookup_dtype
-from ...exceptions import InvalidValue, _error_code_lookup, check_status, check_status_carg
+from ...exceptions import (
+    IndexOutOfBound,
+    InvalidValue,
+    _error_code_lookup,
+    check_status,
+    check_status_carg,
+)
 from .. import NULL, _has_numba, ffi, lib
 from ..base import call
 from ..operator import get_typed_op
@@ -863,7 +869,9 @@ class ss:
             return rv
 
         if method == "export":
-            mhandle = ffi_new("GrB_Matrix*", parent._carg)
+            # GraphBLAS frees the Matrix as it hands the arrays over, and sets this
+            # handle to NULL, so an error after that cannot leave it dangling
+            mhandle = parent.gb_obj
             type_ = ffi_new("GrB_Type*")
             nrows_ = ffi_new("GrB_Index*")
             ncols_ = ffi_new("GrB_Index*")
@@ -1170,8 +1178,6 @@ class ss:
         rv["is_iso"] = is_iso
         rv["format"] = format
         rv["values"] = values
-        if method == "export":
-            parent.gb_obj[0] = NULL
         if parent.dtype._is_udt:
             rv["dtype"] = parent.dtype
         return rv
@@ -3171,7 +3177,7 @@ class ss:
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'coor'.")
         if not sorted_rows:
             raise ValueError("sorted_rows must be True when importing 'coor' format")
-        indptr = indices_to_indptr(rows, nrows + 1)
+        indptr = _coo_indptr(rows, nrows, "rows", "nrows")
         return cls._import_csr(
             nrows=nrows,
             ncols=ncols,
@@ -3344,7 +3350,7 @@ class ss:
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'cooc'.")
         if not sorted_cols:
             raise ValueError("sorted_cols must be True when importing 'cooc' format")
-        indptr = indices_to_indptr(cols, ncols + 1)
+        indptr = _coo_indptr(cols, ncols, "cols", "ncols")
         return cls._import_csc(
             nrows=nrows,
             ncols=ncols,
@@ -4558,16 +4564,36 @@ def issorted(arr):  # pragma: no cover (numba)
 
 @njit
 def indices_to_indptr(indices, size):  # pragma: no cover (numba)
-    """Calculate the indptr for e.g. CSR from sorted COO rows."""
+    """Calculate the indptr, e.g. for CSR, from uint64 COO rows, each below ``size - 1``.
+
+    Each row's count goes at ``indptr[row + 1]``, then a running sum makes the offsets,
+    so every empty row, wherever it is, gets an empty range.
+    """
     indptr = np.zeros(size, dtype=indices.dtype)
-    index = np.uint64(0)
     one = np.uint64(1)
     for i in range(indices.size):
-        row = indices[i]
-        if row != index:
-            indptr[index + one] = i
-            index = row
-    indptr[index + one] = indices.size
+        indptr[indices[i] + one] += one
+    for i in range(1, size):
+        indptr[i] += indptr[i - 1]
+    return indptr
+
+
+def _coo_indptr(indices, size, name, size_name):
+    """Return the CSR (or CSC) indptr, of length ``size + 1``, for sorted COO rows (or columns)."""
+    # Read 2-D indices as a flat buffer, as other imports do. The kernel would index
+    # a 2-D array by its rows, past the end of its first axis.
+    indices = ints_to_numpy_buffer(indices, np.uint64, name=name).ravel()
+    # indices_to_indptr writes at each index + 1, with no bounds check under Numba
+    if indices.size > 0 and (biggest := indices.max()) >= size:
+        raise IndexOutOfBound(f"{name} must be less than {size_name}, {size}; got {biggest}")
+    if _has_numba:
+        return indices_to_indptr(indices, size + 1)
+    # Without Numba the kernel's loops run in Python, once per entry and once per row.
+    # Every index is below size, so it reads the same as int64; counts are never negative.
+    indptr = np.empty(size + 1, np.uint64)
+    indptr[0] = 0
+    counts = np.bincount(indices.view(np.int64), minlength=size)
+    np.cumsum(counts.view(np.uint64), out=indptr[1:])
     return indptr
 
 

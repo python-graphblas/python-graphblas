@@ -1,4 +1,6 @@
 import inspect
+import itertools
+import math
 import pickle
 import random
 import sys
@@ -197,6 +199,44 @@ def test_isclose():
     assert not s.isclose(Scalar.from_value(5), check_dtype=True)
     assert not s.isclose(Scalar.from_value(None, dtype=s.dtype))
     assert Scalar.from_value(None, dtype="FP64").isclose(Scalar.from_value(None, dtype="FP32"))
+
+
+def test_isclose_infinity():
+    # As in math.isclose, an infinity is close only to itself. It was close to every
+    # number (abs(inf - y) is inf, and so is rel_tol * inf), in both of isclose's paths.
+    values = [math.inf, -math.inf, 1.0, 0.0, math.nan]
+    for x, y in itertools.product(values, repeat=2):
+        for abs_tol in [0.0, math.inf]:
+            expected = math.isclose(x, y, rel_tol=1e-7, abs_tol=abs_tol)
+            assert Scalar.from_value(x).isclose(y, abs_tol=abs_tol) is expected, (x, y)
+            other = Scalar.from_value(y)
+            assert Scalar.from_value(x).isclose(other, abs_tol=abs_tol) is expected, (x, y)
+
+
+def test_isclose_integers_do_not_wrap():
+    # x - y or abs(x) wrapped in an integer type, and a UINT64 value above INT64's
+    # maximum raised OverflowError with Numba; see test_vector.ISCLOSE_WRAPPING_CASES
+    from .test_vector import ISCLOSE_WRAPPING_CASES
+
+    for xtype, ytype, x, y, rel_tol in ISCLOSE_WRAPPING_CASES:
+        expected = math.isclose(x, y, rel_tol=rel_tol)
+        for (lt, lv), (rt, rv) in [((xtype, x), (ytype, y)), ((ytype, y), (xtype, x))]:
+            left = Scalar.from_value(lv, dtype=lt)
+            right = Scalar.from_value(rv, dtype=rt)
+            assert left.isclose(right, rel_tol=rel_tol) is expected, (lt, lv, rt, rv)
+
+
+def test_isclose_in_the_type_the_dtypes_unify_to():
+    # INT64 and UINT64 unify to FP64, where 2**62 + 1 rounds to 2**62, so they are close
+    # even with no tolerance, as in Vector.isclose; with Numba and without
+    x = Scalar.from_value(2**62 + 1, dtype="INT64")
+    y = Scalar.from_value(2**62, dtype="UINT64")
+    assert x.isclose(y, rel_tol=0)
+    assert y.isclose(x, rel_tol=0)
+    v = Vector.from_coo([0], [2**62 + 1])
+    assert v.isclose(Vector.from_coo([0], [2**62], "UINT64"), rel_tol=0)
+    # Two INT64 values are compared exactly
+    assert not x.isclose(Scalar.from_value(2**62, dtype="INT64"), rel_tol=0)
 
 
 def test_isclose_udt_raises():

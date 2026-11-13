@@ -17,6 +17,7 @@ from .literals import (
     _literal_type,
 )
 from .operator import get_typed_op
+from .operator.binary import _isclose
 from .udt import (
     _element_bytes,
     _element_shapes_differ,
@@ -34,7 +35,7 @@ from .utils import _Pointer, output_type, wrapdoc
 if _supports_udfs:
     from ..binary import isclose
 else:
-    from .operator.binary import _isclose as isclose
+    isclose = _isclose
 
 ffi_new = ffi.new
 
@@ -271,7 +272,8 @@ class Scalar(BaseType):
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
         """Check for approximate equality (including whether the value is missing).
 
-        Equivalent to: ``abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)``.
+        Equivalent to: ``abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)``,
+        except that, as in ``math.isclose``, an infinity is close only to itself.
 
         Parameters
         ----------
@@ -318,8 +320,9 @@ class Scalar(BaseType):
         # We can't yet call a UDF on a scalar as part of the spec, so let's do it ourselves
         isclose_func = isclose(rel_tol, abs_tol)
         if not _has_numba:
-            # Check if types are compatible
-            get_typed_op(
+            # Check if types are compatible, and compare in the type they unify to, as
+            # with Numba (INT64 with UINT64 is in FP64). Python ints do not wrap in x - y.
+            eq = get_typed_op(
                 binary.eq,
                 self.dtype,
                 other.dtype,
@@ -327,7 +330,9 @@ class Scalar(BaseType):
                 is_right_scalar=True,
                 kind="binary",
             )
-            return isclose_func(self.value, other.value)
+            x = eq.type.np_type.type(self.value).item()
+            y = eq.type2.np_type.type(other.value).item()
+            return isclose_func(x, y)
         isclose_func = get_typed_op(
             isclose_func,
             self.dtype,
@@ -336,7 +341,11 @@ class Scalar(BaseType):
             is_right_scalar=True,
             kind="binary",
         )
-        return isclose_func._numba_func(self.value, other.value)
+        # Pass the values in the op's input types, as ewise_mult does; Numba types a
+        # Python int as int64, which a UINT64 value need not fit
+        x = isclose_func.type.np_type.type(self.value)
+        y = isclose_func.type2.np_type.type(other.value)
+        return isclose_func._numba_func(x, y)
 
     def clear(self):
         """In-place operation which clears the value in the Scalar.
