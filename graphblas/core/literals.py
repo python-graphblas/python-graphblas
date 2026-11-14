@@ -126,10 +126,10 @@ def _literal_operand(dtype, value, op, *, left=False):
                 parts = _as_record_parts(np_type, value)
                 # First: making an int beyond its leaf infinity reshapes the part.
                 _refuse_misfit_fields(dtype, np_type, parts)
-                if _int_beyond_leaf(np_type, parts) is not None:
+                if (infinite := _beyond_as_infinity(np_type, parts)) is not None:
                     # As infinity in its leaf, it still equals no element, and it
                     # stays out of an array numpy makes of numpy values beside it.
-                    value = _beyond_as_infinity(np_type, parts)
+                    value = infinite
             literal_type = _literal_type(dtype, value, exact=exact)
             if literal_type is not None:
                 return value, literal_type
@@ -828,56 +828,45 @@ def _refuse_misfit_fields(dtype, np_type, value):
             )
 
 
-def _int_beyond_leaf(np_type, value):
-    """Return a Python int in literal ``value`` beyond its integer leaf's range, or ``None``.
-
-    ``value`` is laid out like an element of ``np_type``, as
-    :func:`_weak_literal_udt` reads it (a record's dict already a tuple). No
-    element equals a literal with such an int, whatever its other leaves.
-    """
-    if np_type.names is not None:
-        parts = value if isinstance(value, (tuple, list)) else [value] * len(np_type.names)
-        if len(parts) != len(np_type.names):
-            return None  # not laid out like an element; typing it reports that
-        for name, part in zip(np_type.names, parts, strict=True):
-            found = _int_beyond_leaf(np_type.fields[name][0], part)
-            if found is not None:
-                return found
-        return None
-    base, shape = np_type.subdtype or (np_type, ())
-    if base.kind in "iu":
-        lo, hi = _int_bounds(base)
-        for x in _literal_leaf_values(value, shape, numpy_scalars=True) or ():
-            if type(x) is int and not lo <= x <= hi:
-                return x
-    return None
-
-
 def _beyond_as_infinity(np_type, value):
     """Return literal ``value`` with each int beyond its integer leaf's range as infinity.
 
-    ``value`` is laid out as :func:`_int_beyond_leaf` reads it. Infinity of the
-    int's sign equals no element, as the int does; every other value is kept,
-    so a text leaf still pairs with its field.
+    ``value`` is laid out like an element of ``np_type``, as
+    :func:`_weak_literal_udt` reads it (a record's dict already a tuple). No
+    element equals a literal with such an int, whatever its other leaves, and
+    infinity of the int's sign equals no element either. Every other value is
+    kept, so a text leaf still pairs with its field. Return ``None`` if
+    ``value`` holds no such int.
     """
-    if np_type.names is not None:
-        parts = value if isinstance(value, (tuple, list)) else [value] * len(np_type.names)
-        if len(parts) != len(np_type.names):
-            return value
-        return tuple(
-            _beyond_as_infinity(np_type.fields[name][0], part)
-            for name, part in zip(np_type.names, parts, strict=True)
+    found = False
+
+    def walk(np_type, value):
+        nonlocal found
+        if np_type.names is not None:
+            parts = value if isinstance(value, (tuple, list)) else [value] * len(np_type.names)
+            if len(parts) != len(np_type.names):
+                return value  # not laid out like an element; typing it reports that
+            return tuple(
+                walk(np_type.fields[name][0], part)
+                for name, part in zip(np_type.names, parts, strict=True)
+            )
+        base, shape = np_type.subdtype or (np_type, ())
+        values = (
+            _literal_leaf_values(value, shape, numpy_scalars=True) if base.kind in "iu" else None
         )
-    base, shape = np_type.subdtype or (np_type, ())
-    values = _literal_leaf_values(value, shape, numpy_scalars=True) if base.kind in "iu" else None
-    if values is None:
-        return value
-    lo, hi = _int_bounds(base)
-    values = [
-        (math.inf if x > 0 else -math.inf) if type(x) is int and not lo <= x <= hi else x
-        for x in values
-    ]
-    return np.array(values, dtype=object).reshape(shape).tolist() if shape else values[0]
+        if values is None:
+            return value
+        lo, hi = _int_bounds(base)
+        beyond = [type(x) is int and not lo <= x <= hi for x in values]
+        found = found or any(beyond)
+        values = [
+            (math.inf if x > 0 else -math.inf) if is_beyond else x
+            for x, is_beyond in zip(values, beyond, strict=True)
+        ]
+        return np.array(values, dtype=object).reshape(shape).tolist() if shape else values[0]
+
+    value = walk(np_type, value)
+    return value if found else None
 
 
 def _array_literal_udt(dtype, value):

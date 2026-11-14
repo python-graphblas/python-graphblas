@@ -333,25 +333,11 @@ class Scalar(BaseType):
         if not _has_numba:
             # Check if types are compatible, and compare in the type they unify to, as
             # with Numba (INT64 with UINT64 is in FP64). Python ints do not wrap in x - y.
-            eq = get_typed_op(
-                binary.eq,
-                self.dtype,
-                other.dtype,
-                is_left_scalar=True,
-                is_right_scalar=True,
-                kind="binary",
-            )
+            eq = get_typed_op(binary.eq, self.dtype, other.dtype, kind="binary")
             x = eq.type.np_type.type(self.value).item()
             y = eq.type2.np_type.type(other.value).item()
             return isclose_func(x, y)
-        isclose_func = get_typed_op(
-            isclose_func,
-            self.dtype,
-            other.dtype,
-            is_left_scalar=True,
-            is_right_scalar=True,
-            kind="binary",
-        )
+        isclose_func = get_typed_op(isclose_func, self.dtype, other.dtype, kind="binary")
         # Pass the values in the op's input types, as ewise_mult does; Numba types a
         # Python int as int64, which a UINT64 value need not fit
         x = isclose_func.type.np_type.type(self.value)
@@ -867,8 +853,8 @@ class Scalar(BaseType):
         op1 = get_typed_op(op, self.dtype, right.dtype, kind="binary")
         op2 = get_typed_op(op, left.dtype, other.dtype, kind="binary")
         if op1 is not op2:
-            left_dtype = unify(op1.type, op2.type, is_right_scalar=True)
-            right_dtype = unify(op1.type2, op2.type2, is_left_scalar=True)
+            left_dtype = unify(op1.type, op2.type)
+            right_dtype = unify(op1.type2, op2.type2)
             op = get_typed_op(op, left_dtype, right_dtype, kind="binary")
         else:
             op = op1
