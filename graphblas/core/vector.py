@@ -2,7 +2,7 @@ import itertools
 
 import numpy as np
 
-from .. import backend, binary, monoid, select, semiring, unary
+from .. import backend, binary, indexunary, monoid, select, semiring, unary
 from ..dtypes import _INDEX, FP64, INT64, UINT64, lookup_dtype, unify
 from ..exceptions import DimensionMismatch, GrB_NO_VALUE, NoValue, check_status, check_status_carg
 from . import _supports_udfs, automethods, ffi, lib, utils
@@ -114,6 +114,23 @@ def _select_mask(updater, obj, mask):
     else:
         # Can we do any better depending on accum, replace, and type of masks?
         updater << obj.dup(mask=mask)
+
+
+def _udt_select_comparison(op, dtype):
+    """``binary.eq`` or ``ne`` for select op ``valueeq`` or ``valuene`` on UDT ``dtype``, else None.
+
+    No select op lifts to UDTs, while ``==`` and ``!=`` do, so such a select keeps
+    the values they find equal or unequal to the thunk (:func:`_select_by_comparison`).
+    """
+    if dtype._is_udt:
+        for name, comparison in [("valueeq", binary.eq), ("valuene", binary.ne)]:
+            if op is getattr(select, name) or op is getattr(indexunary, name):
+                return comparison
+    return None
+
+
+def _select_by_comparison(updater, obj, mask_expr):
+    _select_mask(updater, obj, mask_expr.new(name="M_temp").V)
 
 
 def _abs_type(dtype):
@@ -1743,9 +1760,10 @@ class Vector(BaseType):
         if thunk is None:
             thunk = False  # most basic form of 0 when unifying dtypes
         given = thunk
+        comparison = _udt_select_comparison(op, self.dtype)
         if type(thunk) is not Scalar:
             # A thunk beside a UDT becomes an element of it, so it must fit, as in apply.
-            thunk, dtype = _literal_operand(self.dtype, thunk, op)
+            thunk, dtype = _literal_operand(self.dtype, thunk, comparison or op)
             try:
                 thunk = Scalar.from_value(thunk, dtype, is_cscalar=None, name="")
             except TypeError:
@@ -1757,6 +1775,16 @@ class Vector(BaseType):
                     extra_message="Literal scalars also accepted.",
                     op=op,
                 )
+        if comparison is not None:
+            mask_expr = self.apply(comparison, right=thunk)  # typed now, so errors raise now
+            return VectorExpression(
+                method_name,
+                None,
+                [self, thunk, _select_by_comparison, (self, mask_expr)],
+                expr_repr=f"{{0.name}}.select({op}, thunk={{1._expr_name}})",
+                size=self._size,
+                dtype=self.dtype,
+            )
         op = get_typed_op(op, self.dtype, thunk.dtype, is_right_scalar=True, kind="select")
         op, thunk = _value_select_in_own_type(op, self.dtype, thunk, given)
         self._expect_op(op, ("SelectOp", "IndexUnaryOp"), within=method_name, argname="op")

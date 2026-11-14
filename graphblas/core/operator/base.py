@@ -429,6 +429,10 @@ class OpBase:
         if type(type_) is tuple:
             from .utils import get_typed_op
 
+            if len(type_) != 2:
+                raise TypeError(
+                    f"{self!r}[...] takes a dtype or a pair of dtypes, not a tuple of {len(type_)}"
+                )
             dtype1, dtype2 = type_
             dtype1 = lookup_dtype(dtype1)
             dtype2 = lookup_dtype(dtype2)

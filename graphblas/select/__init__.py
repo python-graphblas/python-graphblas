@@ -45,18 +45,25 @@ def _match_expr(parent, expr):
 
     The argument must match the parent, so this _won't_ be rewritten: ``A.select(B < 5)``
     """
+    from ..core.utils import _Pointer
+
     args = expr.args
     op = expr.op
     if (
         expr.method_name == "apply"
         and len(args) == 2
         and op.parent in _binary_to_select
-        and args[1]._is_scalar
         and args[0] is parent
-        and op.type in _binary_to_select[op.parent]
     ):
-        selectop = _binary_to_select[op.parent][op.type]
-        return selectop(parent, args[1])
+        thunk = args[1]
+        if op.type._is_udt and op.parent.name in {"eq", "ne"}:
+            # ``select`` keeps what ``==`` or ``!=`` finds on a UDT, whose Scalar may
+            # be behind a pointer.
+            thunk = thunk.val if isinstance(thunk, _Pointer) else thunk
+            return _binary_to_select[op.parent](parent, thunk)
+        if thunk._is_scalar and op.type in _binary_to_select[op.parent]:
+            selectop = _binary_to_select[op.parent][op.type]
+            return selectop(parent, thunk)
 
 
 def value(expr):

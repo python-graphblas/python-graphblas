@@ -22,6 +22,7 @@ from ..utils import (
     _CArray,
     _distinct_buffers,
     _MatrixArray,
+    _ownable_copy,
     _Pointer,
     check_values_size,
     get_order,
@@ -50,6 +51,69 @@ def _iterator_value_getter(dtype):
         return _element_value(dtype, buf)
 
     return get_udt
+
+
+def _claim_values_2d(cdata, cdata_size, nrows, ncols, dtype, is_c_order):
+    """Like ``claim_buffer_2d``, for values, but keep each array-UDT element contiguous.
+
+    GraphBLAS stores an array UDT's element as one contiguous block. Given a subarray
+    dtype in column order, ``claim_buffer_2d`` made the element's own axes the
+    slowest, so ``values[i, j]`` was not the entry at ``(i, j)``. Given more than
+    ``nrows * ncols`` elements, it raised ValueError for any subarray dtype. GraphBLAS
+    may hand over more: SuiteSparse 7's memory pool rounds an allocation up to a
+    power of two, and a full matrix resized smaller keeps its buffer. Row order with
+    an exactly sized buffer still goes to it: its array owns the buffer, so packing
+    the values back can take them without a copy.
+    """
+    if not dtype.shape or (is_c_order and cdata_size == nrows * ncols):
+        return claim_buffer_2d(ffi, cdata, cdata_size, nrows, ncols, dtype, is_c_order)
+    values = claim_buffer(ffi, cdata, cdata_size, dtype)[: nrows * ncols]
+    if is_c_order:
+        return values.reshape(nrows, ncols, *dtype.shape)
+    return values.reshape(ncols, nrows, *dtype.shape).swapaxes(0, 1)
+
+
+def _values_in_column_order(values, dtype, copy):
+    """Return ``(values, dtype, owner, c_contiguous)`` for a fullc or bitmapc import.
+
+    GraphBLAS takes ``owner``'s memory, which holds the elements in column order: as
+    ``owner`` if ``c_contiguous``, else as ``owner.T``. An array UDT keeps each
+    element contiguous. Given one element per entry (``values[i, j]``), the two entry
+    axes are swapped into a copy; given a list of elements already in column order,
+    as ``raw=True`` exports them, numbers flat in that order, or one element (for an
+    iso value), they are taken as they are. Fortran order of the whole array, as for
+    other types, put the element's own axes slowest, and GraphBLAS read each element
+    from scattered numbers.
+    """
+    # Converted once, to see the shape (and infer an array UDT from it). An array UDT's
+    # layout is decided below; other values go straight to Fortran order.
+    given = values
+    if isinstance(given, np.ndarray):
+        array_udt = given.ndim > 2 if dtype is None else bool(lookup_dtype(dtype).np_type.shape)
+    else:
+        array_udt = False
+    values, dtype = values_to_numpy_buffer(
+        values, dtype, order="K" if array_udt else "F", subarray_after=2
+    )
+    # A conversion that made a new array (from a list, or to another dtype or order)
+    # needs no second copy to be safe to hand over
+    if copy and not (isinstance(given, np.ndarray) and np.may_share_memory(values, given)):
+        copy = False
+    sub = dtype.np_type.shape
+    if sub and values.ndim == 2 + len(sub) and values.shape[2:] == sub:
+        return values, dtype, _ownable_copy(values.swapaxes(0, 1), "C"), True
+    if sub and values.ndim > 1 and values.shape[1:] != sub and values.shape != sub:
+        dims = ", ".join(map(str, sub))
+        raise ValueError(
+            f"values of {dtype} in column order must have shape (nrows, ncols, {dims}), "
+            f"an element per entry, or (n, {dims}) or (n,), listed in column order, or "
+            f"({dims}), one element; "
+            f"got {values.shape}"
+        )
+    values, dtype = values_to_numpy_buffer(
+        values, dtype, copy=copy, ownable=True, order="C" if sub else "F", subarray_after=2
+    )
+    return values, dtype, values, bool(sub)
 
 
 def head(matrix, n=10, dtype=None, *, sort=False):
@@ -609,6 +673,9 @@ class ss:
 
         Return values
             - Note: for ``raw=True``, arrays may be larger than specified.
+            - Note: for an array UDT, ``values`` has the element's own axes after those
+              shown, so with ``raw=False`` ``values[i, j]`` is the element at ``(i, j)``.
+              In "bitmapc" and "fullc" it is then not Fortran-ordered.
             - "csr" format
                 - indptr : ndarray(dtype=uint64, ndim=1, size=nrows + 1)
                 - col_indices : ndarray(dtype=uint64, ndim=1, size=nvals)
@@ -803,18 +870,23 @@ class ss:
                     columns = _CArray(size=nvals, name="&columns_array")
                     scalar = _scalar_index("s_nvals")
                     scalar.value = nvals
+                    dtype_name = "UDT" if parent.dtype._is_udt else parent.dtype.name
                     call(
-                        f"GrB_Matrix_extractTuples_{parent.dtype.name}",
+                        f"GrB_Matrix_extractTuples_{dtype_name}",
                         [rows, columns, None, _Pointer(scalar), parent],
                     )
-                    value = parent.reduce_scalar(monoid.any, allow_empty=False).new().value
+                    # One value, of shape (1, *element) for an array UDT. It is read with
+                    # an iterator, which needs no Numba for a UDT, as reduce did.
+                    values = np.zeros(1, dtype)  # an iso Matrix with no entries has no value
+                    if nvals:
+                        values[0] = self.iso_value.value
                     rv = {
                         "format": "coo",
                         "nrows": nrows,
                         "ncols": ncols,
                         "rows": rows.array,
                         "cols": columns.array,
-                        "values": np.array([value], dtype=dtype),
+                        "values": values,
                         "is_iso": True,
                     }
                 else:
@@ -1129,14 +1201,8 @@ class ss:
                     if values.size > 1:  # pragma: no cover (suitesparse)
                         values = values[:1]
                 else:
-                    values = claim_buffer_2d(
-                        ffi,
-                        Ax[0],
-                        Ax_size[0] // dtype.itemsize,
-                        nrows,
-                        ncols,
-                        dtype,
-                        is_c_order,
+                    values = _claim_values_2d(
+                        Ax[0], Ax_size[0] // dtype.itemsize, nrows, ncols, dtype, is_c_order
                     )
             rv = {"bitmap": bitmap, "nvals": nvals_[0]}
             if raw:
@@ -1175,8 +1241,8 @@ class ss:
                 rv = {"nrows": nrows, "ncols": ncols}
             else:
                 is_c_order = format == "fullr"
-                values = claim_buffer_2d(
-                    ffi, Ax[0], Ax_size[0] // dtype.itemsize, nrows, ncols, dtype, is_c_order
+                values = _claim_values_2d(
+                    Ax[0], Ax_size[0] // dtype.itemsize, nrows, ncols, dtype, is_c_order
                 )
                 rv = {}
         else:
@@ -2332,7 +2398,9 @@ class ss:
             If True, perform a zero-copy data transfer from input numpy arrays
             to GraphBLAS if possible.  To give ownership of the underlying
             memory buffers to GraphBLAS, the arrays must:
-                - be FORTRAN contiguous
+                - be FORTRAN contiguous, or for an array UDT, be a C-contiguous list
+                  of elements in column order, as ``raw=True`` exports them (values
+                  of shape ``(nrows, ncols, *element)`` are always copied)
                 - have the correct dtype (bool for bitmap)
                 - own its own data, allocated by GraphBLAS (arrays from ``export``,
                   ``unpack`` and ``suitesparse_graphblas.utils.empty``) or by NumPy's
@@ -2451,16 +2519,14 @@ class ss:
         )
         if method == "pack":
             dtype = matrix.dtype
-        values, dtype = values_to_numpy_buffer(
-            values, dtype, copy=copy, ownable=True, order="F", subarray_after=2
-        )
-        bitmap, values = _distinct_buffers(bitmap, values)
+        values, dtype, owner, c_contiguous = _values_in_column_order(values, dtype, copy)
+        bitmap, owner = _distinct_buffers(bitmap, owner)
         if method == "import":
             nrows, ncols = get_shape(nrows, ncols, dtype, bitmap=bitmap, values=values)
         else:
             nrows, ncols = matrix.shape
         Ab = ffi_new("int8_t**", ffi.from_buffer("int8_t*", bitmap.T))
-        Ax = ffi_new("void**", ffi.from_buffer("void*", values.T))
+        Ax = ffi_new("void**", ffi.from_buffer("void*", owner if c_contiguous else owner.T))
         if nvals is None:
             if bitmap.size == nrows * ncols:
                 nvals = np.count_nonzero(bitmap)
@@ -2480,12 +2546,12 @@ class ss:
             Ab,
             Ax,
             bitmap.nbytes,
-            values.nbytes,
+            owner.nbytes,
             is_iso,
             nvals,
             NULL if desc is None else desc._carg,
         )
-        _unclaim_taken((bitmap, Ab), (values, Ax))
+        _unclaim_taken((bitmap, Ab), (owner, Ax))
         if method == "import":
             check_status_carg(
                 status,
@@ -2707,7 +2773,9 @@ class ss:
             If True, perform a zero-copy data transfer from input numpy arrays
             to GraphBLAS if possible.  To give ownership of the underlying
             memory buffers to GraphBLAS, the arrays must:
-                - be FORTRAN contiguous
+                - be FORTRAN contiguous, or for an array UDT, be a C-contiguous list
+                  of elements in column order, as ``raw=True`` exports them (values
+                  of shape ``(nrows, ncols, *element)`` are always copied)
                 - have the correct dtype
                 - own its own data, allocated by GraphBLAS (arrays from ``export``,
                   ``unpack`` and ``suitesparse_graphblas.utils.empty``) or by NumPy's
@@ -2813,14 +2881,12 @@ class ss:
         copy = not take_ownership or secure_import
         if method == "pack":
             dtype = matrix.dtype
-        values, dtype = values_to_numpy_buffer(
-            values, dtype, copy=copy, order="F", ownable=True, subarray_after=2
-        )
+        values, dtype, owner, c_contiguous = _values_in_column_order(values, dtype, copy)
         if method == "import":
             nrows, ncols = get_shape(nrows, ncols, dtype, values=values)
         else:
             nrows, ncols = matrix.shape
-        Ax = ffi_new("void**", ffi.from_buffer("void*", values.T))
+        Ax = ffi_new("void**", ffi.from_buffer("void*", owner if c_contiguous else owner.T))
         if method == "import":
             mhandle = ffi_new("GrB_Matrix*")
             args = (dtype._carg, nrows, ncols)
@@ -2830,9 +2896,9 @@ class ss:
         check_values_size(values, dtype, nrows * ncols, is_iso)
         desc = get_descriptor(secure_import=secure_import, **opts)
         status = getattr(lib, f"GxB_Matrix_{method}_FullC")(
-            mhandle, *args, Ax, values.nbytes, is_iso, NULL if desc is None else desc._carg
+            mhandle, *args, Ax, owner.nbytes, is_iso, NULL if desc is None else desc._carg
         )
-        _unclaim_taken((values, Ax))
+        _unclaim_taken((owner, Ax))
         if method == "import":
             check_status_carg(
                 status,

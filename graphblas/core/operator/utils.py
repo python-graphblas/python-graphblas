@@ -18,6 +18,7 @@ from ... import (
 from ...dtypes import UINT64, lookup_dtype, unify
 from ..expr import InfixExprBase
 from ..udt import _monoid_pair_type
+from ..utils import _Pointer
 from .base import (
     _SS_OPERATORS,
     OpBase,
@@ -364,6 +365,8 @@ def _resolve_index_expr(ns, modname, expr, callname, opname):
     _check_index_expr(modname, expr, callname, opname)
     tensor = expr.args[0]
     thunk = expr.args[1]
+    if isinstance(thunk, _Pointer):  # A UDT Scalar
+        thunk = thunk.val
     if expr._is_scalar:
         # Handle ScalarExpressions that change their arguments to Vector, before the
         # bound below reads the thunk's value. A comparison (an ewise_mult) has both

@@ -117,10 +117,14 @@ def _get_udt_c_type_info(datatype):
     ``_gbudt_NNN`` name when the user didn't supply a name, or supplied one
     that isn't a valid C identifier or is too long for SuiteSparse
     (``udt_codegen._pick_c_type_name``), so the UDT can still take the JIT
-    path. Returns ``None`` only for the cases that remain unrepresentable in
-    C: an unsupported field type (object, datetime, string), or a field name
-    that collides with a C reserved word or isn't an identifier. Supports
-    record UDTs (including nested records) and array UDTs (e.g., ``FP64[3]``).
+    path. Returns ``None`` when the UDT has no C form here: a record laid out
+    other than as a C compiler lays out its struct (packed, as
+    ``np.dtype([...])`` is without ``align=True``), a field name that is not
+    a valid C identifier (a C reserved word, say), a field that is an array
+    (only an array UDT is flattened, to ``v[n]``), a field or element type
+    with no C type (object, datetime, text), or a UDT that is neither a
+    record nor an array. Supports record UDTs (including nested records) and
+    array UDTs (e.g., ``FP64[3]``).
     """
     from .operator.udt_codegen import _udt_c_typedef
 
@@ -217,6 +221,28 @@ def _numba_type(dtype):
             f"Numba, which python-graphblas uses for UDTs, cannot type an array of {element}, "
             f"as in {dtype}; use an array of {instead} instead"
         ) from exc
+    except numba.core.errors.NumbaError as exc:
+        # Numba's own error is "NumbaNotImplementedError: |V4", with terminal colors
+        raw = _raw_bytes_element(dtype)
+        if raw is None:  # pragma: no cover (safety)
+            raise
+        raise ValueError(
+            f"Numba, which python-graphblas uses for UDTs, cannot type raw bytes ({raw}), "
+            f"as in {dtype}; use an array of uint8 instead, np.dtype((np.uint8, "
+            f"{raw.itemsize}))"
+        ) from exc
+
+
+def _raw_bytes_element(dtype):
+    """The first void dtype with no fields (raw bytes) in dtype, or None."""
+    if dtype.subdtype is not None:
+        return _raw_bytes_element(dtype.subdtype[0])
+    if dtype.names is None:
+        return dtype if dtype.kind == "V" else None
+    for field_dtype, *_ in dtype.fields.values():
+        if (raw := _raw_bytes_element(field_dtype)) is not None:
+            return raw
+    return None
 
 
 def register_new(name, dtype=None):
@@ -612,13 +638,14 @@ def lookup_dtype(key, value=None):
     try:
         # Auto-register!
         return register_anonymous(key)
-    except Exception:
-        pass
+    except Exception as exc:
+        # Why it cannot be registered, such as an array of bool, which Numba cannot type.
+        reason = exc
     try:
         return lookup_dtype(key.literal_type)  # For numba dtype inference
     except Exception:
         pass
-    raise ValueError(f"Unknown dtype: {key} of type {type(key)}")
+    raise ValueError(f"Unknown dtype: {key} of type {type(key)}") from reason
 
 
 def _raise_dtype_or_arraylike(cls_name, dtype, exc):

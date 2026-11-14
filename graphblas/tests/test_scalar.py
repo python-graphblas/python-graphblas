@@ -183,6 +183,14 @@ def test_isequal(s):
     assert s.isequal(t)
     assert not s.isequal(t, check_dtype=True)
     assert Scalar.from_value(None, dtype="INT8").isequal(Scalar.from_value(None, dtype="INT16"))
+    # An int that INT64 cannot hold compares exactly, as with ``==``.
+    for big in [2**63, 2**64, -(2**63) - 1]:
+        assert not s.isequal(big)
+        assert not t.isequal(big)
+        assert not Scalar(dtypes.INT8).isequal(big)
+    assert Scalar.from_value(2**63, dtype="UINT64").isequal(2**63)
+    assert Scalar.from_value(2.0**64).isequal(2**64)
+    assert not Scalar.from_value(2.0**64).isequal(2**64 - 1)  # exactly, as isequal compares
 
 
 @pytest.mark.slow
@@ -199,6 +207,12 @@ def test_isclose():
     assert not s.isclose(Scalar.from_value(5), check_dtype=True)
     assert not s.isclose(Scalar.from_value(None, dtype=s.dtype))
     assert Scalar.from_value(None, dtype="FP64").isclose(Scalar.from_value(None, dtype="FP32"))
+    # An int that INT64 cannot hold compares in Python, as in isequal; it raised OverflowError
+    assert not Scalar.from_value(1, dtype="INT8").isclose(2**63)
+    assert Scalar.from_value(2.0**64).isclose(2**64 + 1)
+    assert Scalar.from_value(2**63, dtype="UINT64").isclose(2**63)
+    assert not Scalar.from_value(1.0).isclose(10**400)
+    assert not Scalar(dtype="INT8").isclose(2**63)
 
 
 def test_isclose_infinity():
@@ -211,6 +225,10 @@ def test_isclose_infinity():
             assert Scalar.from_value(x).isclose(y, abs_tol=abs_tol) is expected, (x, y)
             other = Scalar.from_value(y)
             assert Scalar.from_value(x).isclose(other, abs_tol=abs_tol) is expected, (x, y)
+    # An int that INT64 cannot hold compares in Python, with the same rule
+    assert not Scalar.from_value(math.inf).isclose(2**70)
+    assert not Scalar.from_value(-math.inf).isclose(-(2**70))
+    assert Scalar.from_value(2.0**70).isclose(2**70)
 
 
 def test_isclose_integers_do_not_wrap():
@@ -224,6 +242,7 @@ def test_isclose_integers_do_not_wrap():
             left = Scalar.from_value(lv, dtype=lt)
             right = Scalar.from_value(rv, dtype=rt)
             assert left.isclose(right, rel_tol=rel_tol) is expected, (lt, lv, rt, rv)
+    assert Scalar.from_value(2**64 - 1, dtype="UINT64").isclose(2**64 - 1)
 
 
 def test_isclose_in_the_type_the_dtypes_unify_to():

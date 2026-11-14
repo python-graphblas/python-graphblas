@@ -15,7 +15,6 @@ from numpy.testing import assert_array_equal
 import graphblas as gb
 from graphblas import agg, backend, binary, dtypes, indexunary, monoid, select, semiring, unary
 from graphblas.core import _supports_udfs as supports_udfs
-from graphblas.core import lib
 from graphblas.exceptions import (
     DimensionMismatch,
     DomainMismatch,
@@ -2772,12 +2771,9 @@ def test_udt():
         vv = Vector.ss.deserialize(v.ss.serialize(), dtype=long_udt)
         assert v.isequal(vv, check_dtype=True)
         # The dtype name is too long to embed in the blob; dtype= must be provided.
-        # Whichever error the caller sees comes from parsing the name that is in
-        # the blob. Builds with GxB_Serialized_get_String let that SyntaxError
-        # through; older ones have no second name to try, so they wrap it.
-        with pytest.raises(
-            SyntaxError if hasattr(lib, "GxB_Serialized_get_String") else ValueError
-        ):
+        # Every build says so (from SuiteSparse 9, the empty GrB_NAME raised a bare
+        # SyntaxError; before it, there is no second name to try).
+        with pytest.raises(ValueError, match="pass it as dtype="):
             Vector.ss.deserialize(v.ss.serialize())
     # May be able to look up non-anonymous dtypes by name if their names are too long
     named_long_dtype = np.dtype([("x", np.bool_), ("y" * 1000, np.float64)], align=False)
@@ -3221,6 +3217,28 @@ def test_subarray_dtypes_iso():
     expected = np.broadcast_to([0, 1, 2, 3], (3, 4))
     np.testing.assert_array_equal(v.to_dense(), expected)
     np.testing.assert_array_equal(v.to_coo()[1], expected)
+
+
+# Without SuiteSparse, building a UDT uses dup_op=binary.any, which needs Numba.
+@pytest.mark.skipif("not suitesparse and not supports_udfs")
+def test_subarray_dtype_values_in_another_array_dtype():
+    # Asked for another array dtype of the same shape, the values convert number by
+    # number. astype to the array dtype repeated each number into an element: shape
+    # (n, 4, 4), for an iso Vector too.
+    expected = np.arange(8, dtype=np.int64).reshape(2, 4)
+    v = Vector.from_coo([0, 1], expected)
+    iso = Vector("INT64[4]", size=2)
+    iso[:] = [0, 1, 2, 3]
+    iso_expected = np.broadcast_to([0, 1, 2, 3], (2, 4))
+    for w, values in [(v, expected), (iso, iso_expected)]:
+        for get in [w.to_dense, lambda w=w, **kw: w.to_coo(**kw)[1]]:
+            got = get(dtype="FP64[4]")
+            assert got.dtype == np.float64
+            np.testing.assert_array_equal(got, values)
+            # Leading axes of length 1 do not matter, as in a store
+            np.testing.assert_array_equal(get(dtype="FP32[1, 4]"), values[:, None, :])
+            with pytest.raises(DomainMismatch, match="must have the same shape"):
+                get(dtype="FP64[2]")
 
 
 @pytest.mark.skipif("not supports_udfs")

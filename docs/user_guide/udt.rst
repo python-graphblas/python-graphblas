@@ -128,12 +128,19 @@ The following operators auto-lift to any UDT on first use:
   ``second``, ``any``, and ``pair`` work too, since they don't touch field
   values.
 - UnaryOps: ``ainv``, ``abs``.
+- ``select`` with ``valueeq`` or ``valuene`` (``v.select("==", x)``), which
+  keeps the elements that ``==`` or ``!=`` finds.
 - Monoids: ``plus``, ``times``, ``min``, ``max``, ``any``.
 - Semirings combining a UDT-lifting monoid with a UDT-lifting BinaryOp
   (e.g., ``plus_times``, ``min_plus``, ``max_times``, ``any_first``).
 - Aggregators built on those monoids: ``sum``, ``prod``, ``min``, ``max``,
   ``any_value``, ``count``. The positional ``agg.ss.first`` and
   ``agg.ss.last`` work on any dtype, including UDTs.
+
+Except ``pair``, ``count``, ``agg.ss.first`` and ``agg.ss.last``, they need
+Numba. Without it, the others raise ``KeyError`` on a UDT, and so do ``==`` and
+``isequal`` on a Vector or Matrix of a UDT; a ``Scalar``'s ``==`` and ``isequal``
+compare in numpy.
 
 For example:
 
@@ -256,8 +263,9 @@ data.
    * - ...from an existing object: ``w << v``, ``v.dup(dtype=...)``, with a
        mask, an accumulator or ``replace``
      - One pass through a cast op.
-   * - ...from an element-wise lifted op: ``apply``, ``ewise_mult``,
-       ``ewise_union``, and infix operators that use them
+   * - ...from an element-wise lifted op, or ``identity``, ``first`` or
+       ``second``: ``apply``, ``ewise_mult``, ``ewise_union``, and infix
+       operators that use them
      - The op writes the object's type itself, in the same call:
        ``int_udt_vec += 0.5`` truncates, as it does for an ``INT8`` vector.
    * - ...from anything else: ``mxm``, ``reduce`` into a Vector, ``ewise_add``,
@@ -272,6 +280,13 @@ data.
        cast before it accumulates, as GraphBLAS converts a value of a built-in
        dtype, and so is a literal: an ``INT8[3]`` Scalar's ``s += 0.5`` adds 0,
        as an ``INT8`` Scalar's does.
+   * - A literal: ``v[0] = (1.5, 1)``, ``Scalar.from_value``,
+       ``Vector.from_scalar``
+     - Converted as numpy assigns it to an element, so, unlike a literal that
+       an op makes an element, it need not fit: ``1.5`` in an integer field
+       truncates, text too long for its field is cut, and a datetime in a date
+       field loses its time of day. An int out of an integer field's range
+       raises ``OverflowError``, where an ``INT8`` Vector wraps it.
    * - Between a UDT and a built-in dtype, or layouts that do not correspond
      - ``DomainMismatch``.
 

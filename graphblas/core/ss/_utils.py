@@ -4,9 +4,10 @@ import re
 
 from suitesparse_graphblas.utils import unclaim_buffer
 
+from ... import dtypes
 from ...exceptions import _error_code_lookup
 from .. import _has_numba, ffi, lib
-from ..dtypes import _string_to_dtype
+from ..dtypes import DataType, _string_to_dtype
 
 
 def _unclaim_taken(*arrays_and_pointers):
@@ -52,7 +53,8 @@ def _resolve_serialized_dtype(data_obj, data_nbytes, obj_kind):
     short name may not match any Python-side registration (e.g., when an
     anonymous UDT was registered by-shape on the producer side). Fall back
     to ``GrB_NAME`` (the numpy repr that ``serialize`` writes into the
-    object) when the short name fails to resolve.
+    object) when the short name fails to resolve, and then to a type
+    registered from C source under the short name.
 
     ``obj_kind`` is ``"Matrix"`` or ``"Vector"`` and only shows up in error
     messages.
@@ -68,7 +70,8 @@ def _resolve_serialized_dtype(data_obj, data_nbytes, obj_kind):
             return _string_to_dtype(dtype_name)
         except (ValueError, TypeError, SyntaxError) as exc:
             orig_error = exc
-    if hasattr(lib, "GxB_Serialized_get_String"):
+    has_grb_name = hasattr(lib, "GxB_Serialized_get_String")
+    if has_grb_name:
         dtype_size = ffi.new("size_t*")
         info = lib.GxB_Serialized_get_SIZE(data_obj, dtype_size, lib.GrB_NAME, data_nbytes)
         if info != lib.GrB_SUCCESS:
@@ -78,12 +81,21 @@ def _resolve_serialized_dtype(data_obj, data_nbytes, obj_kind):
         # This checks the blob as GxB_Serialized_get_SIZE just did, so it cannot fail now.
         if info != lib.GrB_SUCCESS:  # pragma: no cover (safety)
             raise _error_code_lookup[info](f"{obj_kind} deserialize failed to get the name")
-        return _string_to_dtype(ffi.string(dtype_char).decode())
-    # No GrB_NAME fallback available (older SS); surface the original
-    # resolution failure with the actual dtype name attached.
+        try:
+            return _string_to_dtype(ffi.string(dtype_char).decode())
+        except (ValueError, TypeError, SyntaxError) as exc:
+            orig_error = exc
+    # A type registered from C source (``dtypes.ss.register_new``) has its own name as its
+    # C name, and no numpy repr in GrB_NAME (literal_eval("") raised a bare SyntaxError).
+    # GraphBLAS checks that it fits the blob.
+    c_source_type = getattr(dtypes.ss, dtype_name, None) if dtype_name else None
+    if type(c_source_type) is DataType:
+        return c_source_type
+    # Such as a type from C source that this process has not registered, or a UDT whose
+    # numpy repr GrB_NAME could not keep (or, before SuiteSparse 9, has no GrB_NAME)
     raise ValueError(
-        f"{obj_kind} deserialize cannot resolve dtype {dtype_name!r} and "
-        f"GxB_Serialized_get_String is unavailable in this SuiteSparse build"
+        f"{obj_kind} deserialize cannot tell the dtype from the type name "
+        f"{dtype_name!r}; pass it as dtype="
     ) from orig_error
 
 
