@@ -4,9 +4,10 @@ import re
 
 from suitesparse_graphblas.utils import unclaim_buffer
 
+from ... import dtypes
 from ...exceptions import _error_code_lookup
 from .. import _has_numba, ffi, lib
-from ..dtypes import _string_to_dtype
+from ..dtypes import DataType, _string_to_dtype
 
 
 def _unclaim_taken(*arrays_and_pointers):
@@ -50,7 +51,8 @@ def _resolve_serialized_dtype(data_obj, data_nbytes, obj_kind):
     ``GxB_deserialize_type_name`` gives the type's C name: ``'int64_t'`` for a
     built-in type, the ``jit_c_name`` for a UDT. A UDT's C name usually names
     no dtype (``gbudt_Edge``), so this falls back to the object's ``GrB_NAME``,
-    where ``serialize`` stores the UDT's numpy dtype as a string.
+    where ``serialize`` stores the UDT's numpy dtype as a string, and then to a
+    type registered from C source (``dtypes.ss.register_new``) under the C name.
 
     ``obj_kind`` is ``"Matrix"`` or ``"Vector"``, for error messages.
     """
@@ -72,7 +74,21 @@ def _resolve_serialized_dtype(data_obj, data_nbytes, obj_kind):
     # This checks the blob as GxB_Serialized_get_SIZE just did, so it cannot fail now.
     if info != lib.GrB_SUCCESS:  # pragma: no cover (safety)
         raise _error_code_lookup[info](f"{obj_kind} deserialize failed to get the name")
-    return _string_to_dtype(ffi.string(dtype_char).decode())
+    try:
+        return _string_to_dtype(ffi.string(dtype_char).decode())
+    except (ValueError, TypeError, SyntaxError) as exc:
+        orig_error = exc
+    # A type registered from C source (``dtypes.ss.register_new``) has its own name as its
+    # C name, and no numpy repr in GrB_NAME (literal_eval("") raised a bare SyntaxError).
+    # GraphBLAS checks that it fits the blob.
+    c_source_type = getattr(dtypes.ss, dtype_name, None) if dtype_name else None
+    if type(c_source_type) is DataType:
+        return c_source_type
+    # Such as a type from C source that this process has not registered
+    raise ValueError(
+        f"{obj_kind} deserialize cannot tell the dtype from the type name "
+        f"{dtype_name!r}; pass it as dtype="
+    ) from orig_error
 
 
 def _jit_c_source(name, funcname, jit_c_definition, types=()):

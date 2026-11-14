@@ -3025,9 +3025,9 @@ def test_udt():
     if suitesparse:
         vv = Vector.ss.deserialize(v.ss.serialize(), dtype=long_udt)
         assert v.isequal(vv, check_dtype=True)
-        # The dtype's name is too long to store in the blob, so dtype= is needed. Parsing
-        # the name that is stored raises SyntaxError.
-        with pytest.raises(SyntaxError):
+        # The dtype's name is too long to store in the blob, so dtype= is needed, and the
+        # error says so (the empty GrB_NAME raised a bare SyntaxError).
+        with pytest.raises(ValueError, match="pass it as dtype="):
             Vector.ss.deserialize(v.ss.serialize())
     # May be able to look up non-anonymous dtypes by name if their names are too long
     named_long_dtype = np.dtype([("x", np.bool_), ("y" * 1000, np.float64)], align=False)
