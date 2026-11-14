@@ -1363,6 +1363,98 @@ def test_apply_indexunary(A):
     assert pickle.loads(pickle.dumps(indexunary.tril[int])) is indexunary.tril[int]
 
 
+def test_indexunary_helpers(A):
+    # indexunary.value/row/column mirror select's helpers (GH #239), but they
+    # produce apply expressions (BOOL) rather than select expressions.
+    assert indexunary.value(A > 3).new().isequal(A.apply(indexunary.valuegt, 3).new())
+    assert indexunary.value(A == 3).new().isequal(A.apply(indexunary.valueeq, 3).new())
+    # Only rowle/rowgt and colle/colgt exist, so `<` and `>=` are rewritten with
+    # a thunk shift, and `==`/`!=` have no counterpart (mirrors select's helpers).
+    assert indexunary.row(A <= 2).new().isequal(A.apply(indexunary.rowle, 2).new())
+    assert indexunary.row(A < 3).new().isequal(A.apply(indexunary.rowle, 2).new())
+    assert indexunary.row(A >= 3).new().isequal(A.apply(indexunary.rowgt, 2).new())
+    assert indexunary.row(A > 2).new().isequal(A.apply(indexunary.rowgt, 2).new())
+    assert indexunary.column(A < 3).new().isequal(A.apply(indexunary.colle, 2).new())
+    assert indexunary.column(A > 2).new().isequal(A.apply(indexunary.colgt, 2).new())
+    for expr in [indexunary.value(A > 3), indexunary.row(A <= 2), indexunary.column(A < 3)]:
+        assert expr.new().dtype == dtypes.BOOL
+    with pytest.raises(TypeError, match="indexunary.value"):
+        indexunary.value(A)
+    with pytest.raises(TypeError, match="indexunary.row"):
+        indexunary.row(A | A)
+    for helper, ns in [(indexunary.row, "indexunary"), (select.column, "select")]:
+        with pytest.raises(ValueError, match=f"{ns}.(row|column) compares indices with <, <="):
+            helper(A == 3)
+    # Anything but a comparison with a scalar on the right is refused by name. These
+    # raised IndexError, AttributeError, or the error of the op the helper picked.
+    for expr in [
+        abs(A),
+        A.mxm(A),
+        A.apply(binary.gt, left=3),
+        A.apply(binary.plus, right=3),
+        A.apply(binary.isgt, right=3),
+        A.ewise_mult(A, binary.gt),
+    ]:
+        for helper in [indexunary.value, select.value, indexunary.row]:
+            with pytest.raises(TypeError, match=r"takes a comparison .* with a scalar on its"):
+                helper(expr)
+    # An empty Scalar thunk raises as it does for the op; it raised from the shift.
+    with pytest.raises(EmptyObject):
+        indexunary.row(A < Scalar(float)).new()
+    # Indices are compared with the bound given, as a whole number, not with the thunk
+    # typed beside the values: beside INT8 or UINT8, 300 is infinity, and beside FP32,
+    # 2**24 + 1 rounds (as for select's helpers).
+    n = 400
+    for dtype in ["INT8", "UINT8"]:
+        B = Matrix.from_coo(np.arange(n), np.zeros(n, int), 1, dtype=dtype, nrows=n, ncols=1)
+        for expr, count in [(B < 300, 300), (B > 299, 100), (B <= 299, 300), (B >= 300, 100)]:
+            assert indexunary.row(expr).new().to_coo()[2].sum() == count
+        assert indexunary.column(B.T <= 299).new().to_coo()[2].sum() == 300
+    rows = [2**24 - 1, 2**24, 2**24 + 1]
+    F = Matrix.from_coo(rows, [0, 0, 0], [1.0, 2.0, 3.0], dtype="FP32", nrows=2**24 + 3, ncols=1)
+    assert indexunary.row(F < 2**24 + 1).new().to_coo()[2].tolist() == [True, True, False]
+    A5 = Matrix.from_coo(np.arange(5), np.zeros(5, int), 1.0, nrows=5, ncols=1)
+    for expr, expected in [
+        (A5 < A5.nrows / 2, [True, True, True, False, False]),
+        (A5 >= 2.5, [False, False, False, True, True]),
+        (A5 > -0.5, [True] * 5),
+        (A5 <= 2.5, [True, True, True, False, False]),
+        # A bound that is not a Python or numpy number: the thunk keeps its own type
+        (A5 < np.array(3), [True, True, True, False, False]),
+        (A5 >= np.array(3), [False, False, False, True, True]),
+    ]:
+        assert indexunary.row(expr).new().to_coo()[2].tolist() == expected
+    assert indexunary.column(A5.T < 2.5).new().to_coo()[2].tolist() == [True] * 3 + [False] * 2
+    # NaN compares False with every index; cast to the INT64 thunk it was 0, so < and <=
+    # gave True for row 0, and > and >= for every other row (select's helpers too)
+    nan = float("nan")
+    for expr in [A5 < nan, A5 <= nan, A5 > nan, A5 >= nan, A5 < Scalar.from_value(nan)]:
+        assert indexunary.row(expr).new().to_coo()[2].tolist() == [False] * 5, expr
+        assert select.row(expr).new().nvals == 0, expr
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_index_helpers_find_a_lazily_registered_op():
+    """A helper uses an op registered with ``lazy=True`` before anything touches it.
+
+    It looked only at the namespace's built ops, so ``row(A < 2.5)`` took the
+    ``<=`` shift until something touched ``indexunary.rowlt``, then the op. select
+    has a SelectOp for it only once the indexunary op is built, so ``select.row``
+    took the shift until ``indexunary.rowlt`` was touched.
+    """
+    A = Matrix.from_coo([0, 1, 2, 3], [0, 0, 0, 0], [1, 1, 1, 1])
+    try:
+        # It answers otherwise than the <= shift, so the result shows which ran.
+        indexunary.register_new("rowlt", lambda x, i, j, t: i == 0, lazy=True)
+        for _ in range(2):
+            assert select.row(A < 2.5).new().to_coo()[0].tolist() == [0]
+            assert indexunary.row(A < 2.5).new().to_coo()[2].tolist() == [True] + [False] * 3
+    finally:
+        for ns in [indexunary, select]:
+            ns._delayed.pop("rowlt", None)
+            vars(ns).pop("rowlt", None)
+
+
 @autocompute
 def test_select_by_a_transposed_comparison():
     """``A.select(A.T == x)`` keeps the entries where ``A.T == x``, as a computed mask does.
@@ -1458,9 +1550,10 @@ def test_select_row_and_column_compare_indices_with_the_bound_given():
     with gb.config.set(autocompute=True):
         assert select.row(A < w[0]).new().to_coo()[0].tolist() == [0, 1, 2]
         assert select.row(A >= w[0]).new().to_coo()[0].tolist() == [3, 4]
-    # A comparison with the scalar on the left gives the op's TypeError, as on main; it
-    # was AttributeError ('Matrix' object has no attribute 'value')
-    with pytest.raises(TypeError, match="Bad type for keyword argument `thunk=`"):
+    # A comparison with the scalar on the left is refused with a TypeError that names
+    # the helper (main gave the op's TypeError; it was briefly AttributeError: 'Matrix'
+    # object has no attribute 'value')
+    with pytest.raises(TypeError, match="select.row takes a comparison"):
         select.row(A.apply(binary.le, left=3))
     # NaN compares False with every index, so it keeps none; NaN cast to the INT64 thunk
     # was 0, so < and <= kept row 0, and > and >= every other row (main too)
