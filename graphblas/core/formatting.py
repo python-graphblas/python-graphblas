@@ -487,7 +487,18 @@ def _value_formatter(fmt_str, threshold):
         return base
 
     def formatter(v):
-        return base(v) if abs(v) > threshold else base(0.0)
+        try:
+            mag = abs(v)
+        except OverflowError:
+            # abs() of a python complex overflows for finite components near
+            # the float max, where numpy's abs returns inf. pandas computes the
+            # magnitude with numpy, so such a value is never chopped.
+            return base(v)
+        # Chop to the value's own type of zero. pandas chops at the array
+        # level, so a chopped complex renders " 0.000000+0.000000j"; a bare
+        # float zero here would put a j-less string into the complex column,
+        # which _trim_zeros_complex cannot parse.
+        return base(v) if mag > threshold else base(type(v)(0))
 
     return formatter
 
@@ -529,6 +540,7 @@ def _format_float_column(values, digits):
         # pandas does; e.g. a "%f"-style callable then casts complex the same way.
         return [na_rep if (v != v) else float_format(v) for v in arr]
     seq = arr.tolist()
+    # FC32 values come in as python complex, so a threshold > 3.4e38 can chop what pandas keeps.
     threshold = _display_option("chop_threshold")
 
     def format_with(fmt_str):
@@ -539,7 +551,11 @@ def _format_float_column(values, digits):
 
     result = format_with(f"{{value: .{digits:d}f}}")
     too_long = bool(result) and max(len(x) for x in result) > digits + 6
-    abs_vals = np.abs(arr)
+    # A complex value with components near the float max has magnitude inf,
+    # which is what the checks below want. numpy 1.24 on arm64 also raises the
+    # FP overflow flag computing it, and that warning would escape from repr.
+    with np.errstate(over="ignore"):
+        abs_vals = np.abs(arr)
     has_large = bool((abs_vals > 1e6).any())
     has_small = bool(((abs_vals < 10.0 ** (-digits)) & (abs_vals > 0)).any())
     if has_small or (too_long and has_large):
