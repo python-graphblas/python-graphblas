@@ -5,8 +5,11 @@ from ast import literal_eval
 import numpy as np
 from numpy import promote_types
 
-from .. import backend, dtypes
+from .. import backend
 from ..core import NULL, _has_numba, ffi, lib
+
+# graphblas.dtypes imports names from this module, so the functions here that use it
+# import it themselves: importing it at the top fails when this module is imported first.
 
 if _has_numba:
     import numba
@@ -75,6 +78,8 @@ class DataType:
 
     @property
     def _is_anonymous(self):
+        from .. import dtypes
+
         return getattr(dtypes, self.name, None) is not self
 
     @property
@@ -235,6 +240,8 @@ def register_new(name, dtype=None):
             )
     if not isinstance(name, str) or not name.isidentifier():
         raise ValueError(f"`name` argument must be a valid Python identifier; got: {name!r}")
+    from .. import dtypes
+
     if name in _registry or hasattr(dtypes, name):
         raise ValueError(f"{name!r} name for dtype is unavailable")
     rv = register_anonymous(dtype, name)
