@@ -1,5 +1,6 @@
 import itertools
 import os
+import pickle
 import subprocess
 import sys
 from pathlib import Path
@@ -3199,6 +3200,361 @@ def test_udt_udf_shape_check_runs_udf_only_for_built_arrays(monkeypatch):
     op = BinaryOp.register_anonymous(_no_ones, "_probe_when_raises", is_udt=True)
     assert op[udt].return_type is udt
     assert probed == ["_sum", "_no_ones"]
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
+def test_udf_raising_for_some_elements_gives_zeros_there():
+    """An element the UDF raises for holds 0, and a select does not keep it.
+
+    Numba prints and swallows an exception raised in a cfunc, so the wrapper
+    wrote nothing there. A select then read SuiteSparse's ``bool keep``, an
+    uninitialized local, which could keep the entry and add a stray byte to
+    the entry count (r612 saw nvals from 6 to 256 in a Vector of size 2). The
+    wrappers now write 0, or False, into a built-in output before they call
+    the UDF. What this checks held by chance before (the stray byte was 0);
+    test_udt_wrapper_zeros_a_builtin_output_before_the_udf checks the wrapper
+    itself.
+    """
+
+    def keep_above(x, i, j, t):  # pragma: no cover (numba)
+        if x < 0:
+            raise ValueError("negative")
+        return x > t
+
+    def times_ten(x):  # pragma: no cover (numba)
+        if x < 0:
+            raise ValueError("negative")
+        return x * 10
+
+    v = Vector.from_coo([0, 1, 2, 3, 4], [-1, 5, 2, -3, 7])
+    # -1 and -3 raise, so they are not kept; of the others, 5 and 7 are above 3
+    kept = v.select(SelectOp.register_anonymous(keep_above, "_raise_keep_above"), 3).new()
+    assert kept.nvals == 2
+    assert kept.to_coo()[0].tolist() == [1, 4]
+    assert kept.to_coo()[1].tolist() == [5, 7]
+    # -1 and -3 raise, so they hold 0
+    tens = v.apply(UnaryOp.register_anonymous(times_ten, "_raise_times_ten")).new()
+    assert tens.to_coo()[1].tolist() == [0, 50, 20, 0, 70]
+
+    rec = dtypes.register_anonymous(np.dtype([("rz_a", np.int64), ("rz_b", np.float64)]))
+
+    def keep_rec(x, i, j, t):  # pragma: no cover (numba)
+        if x.rz_a < 0:
+            raise ValueError("negative")
+        return x.rz_b > t
+
+    r = Vector(rec, size=4)
+    r[0] = (-1, 9.0)
+    r[1] = (1, 9.0)
+    r[2] = (1, 0.0)
+    r[3] = (-2, 9.0)
+    # Entries 0 and 3 raise; of the others, only 1 has rz_b above 1
+    sel = SelectOp.register_anonymous(keep_rec, "_raise_keep_rec", is_udt=True)
+    kept = r.select(sel, gb.Scalar.from_value(1.0)).new()
+    assert kept.nvals == 1
+    assert kept.to_coo()[0].tolist() == [1]
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
+def test_udt_wrapper_zeros_a_builtin_output_before_the_udf():
+    """A UDT op's wrapper sets a built-in output to 0 (False) before it calls the UDF.
+
+    Called on an output full of 0xAB with an input the UDF raises for, it
+    leaves 0: a select's bool, and an FP64. It left the 0xAB bytes, which a
+    select read as "keep". (A UDT output is not zeroed; see
+    ``udf._compose_wrapper_body``.)
+    """
+    import ctypes
+
+    import numba
+
+    from graphblas.core.operator.udf import _get_udt_wrapper
+
+    rec = dtypes.register_anonymous(
+        np.dtype([("zo_n", np.int8), ("zo_s", "S3"), ("zo_d", "M8[s]")], align=True)
+    )
+
+    def keep(x, i, j, t):  # pragma: no cover (numba)
+        if x.zo_n < 0:
+            raise ValueError("negative")
+        return True
+
+    def half(x):  # pragma: no cover (numba)
+        if x.zo_n < 0:
+            raise ValueError("negative")
+        return 0.5
+
+    x = np.zeros(1, dtype=rec.np_type)
+    x["zo_n"] = -1
+    thunk = np.zeros(1, np.float64)
+    index = np.zeros(1, np.uint64)
+    for func, out, kwargs in [
+        (keep, dtypes.BOOL, {"include_indexes": True, "dtype2": FP64}),
+        (half, FP64, {}),
+    ]:
+        numba_func = numba.njit(func)
+        arg_types = (rec.numba_type,)
+        if kwargs:
+            arg_types += (numba.types.uint64, numba.types.uint64, numba.types.float64)
+        numba_func.compile(arg_types)
+        ret = numba_func.overloads[arg_types].signature.return_type
+        wrapper, sig = _get_udt_wrapper(numba_func, out, rec, numba_ret_type=ret, **kwargs)
+        cfunc = numba.cfunc(sig, nopython=True)(wrapper)
+        z = np.full(
+            np.dtype(np.int8 if out is dtypes.BOOL else out.np_type).itemsize, 0xAB, np.uint8
+        )
+        args = [ctypes.cast(z.ctypes.data, cfunc.ctypes.argtypes[0])]
+        args.append(ctypes.cast(x.ctypes.data, cfunc.ctypes.argtypes[1]))
+        if kwargs:
+            args += [index[0], index[0], ctypes.cast(thunk.ctypes.data, cfunc.ctypes.argtypes[4])]
+        cfunc.ctypes(*args)
+        assert not z.any(), out
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_udf_raising_on_stand_ins_still_types():
+    """A UDF that raises on the probe's stand-in operands still types, and runs on real data.
+
+    Stand-ins of ones and twos are degenerate: a matrix of ones is singular,
+    and an interval check fails on equal fields. The index and thunk
+    stand-ins do not vary at all. So no UDF is refused for raising on them;
+    "Refuse a UDT UDF that raises for its operand types when the op is typed"
+    refused each of these. Only the literal rule reads that a UDF raised on
+    every stand-in: beside such an op a number is typed as itself.
+    """
+    m22 = dtypes.register_anonymous(np.dtype((np.float64, (2, 2))), "_StandIn22")
+    p2 = dtypes.register_anonymous(np.dtype((np.float64, (2,))), "_StandIn2")
+    p3 = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "_StandIn3")
+    p6 = dtypes.register_anonymous(np.dtype((np.float64, (6,))), "_StandIn6")
+
+    def inverse(x):  # pragma: no cover (numba)
+        return np.linalg.inv(x)
+
+    def widths(x):  # pragma: no cover (numba)
+        if x[0] >= x[1]:
+            raise ValueError("empty interval")
+        return x * 2.0
+
+    def rows(x, i, j, t):  # pragma: no cover (numba)
+        return x.reshape((int(t), -1)).sum(axis=0)
+
+    def need_t(x, i, j, t):  # pragma: no cover (numba)
+        if t < 1.0:
+            raise ValueError("t must be at least 1")
+        return x[:2] * t
+
+    m = Vector(m22, size=1)
+    m[0] = [[2.0, 1.0], [1.0, 3.0]]
+    result = m.apply(UnaryOp.register_anonymous(inverse, is_udt=True)).new()
+    np.testing.assert_allclose(result[0].new().value, [[0.6, -0.2], [-0.2, 0.4]])
+    p = Vector(p2, size=1)
+    p[0] = [1.0, 4.0]
+    result = p.apply(UnaryOp.register_anonymous(widths, is_udt=True)).new()
+    assert result[0].new().value.tolist() == [2.0, 8.0]
+    s = Vector(p6, size=1)
+    s[0] = np.arange(6.0)
+    by_rows = IndexUnaryOp.register_anonymous(rows, is_udt=True, ret_dtype=p3)
+    assert s.apply(by_rows, gb.Scalar.from_value(2.0)).new()[0].new().value.tolist() == [3, 5, 7]
+    checked = IndexUnaryOp.register_anonymous(need_t, is_udt=True, ret_dtype=p2)
+    for thunk in [gb.Scalar.from_value(3.0), 3.0]:
+        assert s.apply(checked, thunk).new()[0].new().value.tolist() == [0.0, 3.0]
+    # An op whose UDF raises for every element thunk types too, unchecked
+    iu = IndexUnaryOp.register_anonymous(lambda x, i, j, t: x[:2] * t, is_udt=True, ret_dtype=p2)
+    assert iu[p6, p6].return_type is p2
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
+def test_builtin_type_udf_wrappers_write_zero_before_the_udf(monkeypatch):
+    """Each wrapper a user's op gets for a built-in type writes 0 before it calls the UDF.
+
+    The wrappers are made while the op registers, so they are caught from
+    ``numba.cfunc`` then, and each is called with an output of 0xAB bytes and a
+    UDF that always raises: the output must be 0 (False). Without the zero
+    writes it kept the 0xAB bytes, which a select reads as "keep".
+    """
+    import ctypes
+
+    import numba
+
+    from graphblas.core.operator import IndexBinaryOp
+
+    caught = []
+    cfunc = numba.cfunc
+
+    def catching_cfunc(*args, **kwargs):
+        decorate = cfunc(*args, **kwargs)
+
+        def catch(func):
+            caught.append(decorate(func))
+            return caught[-1]
+
+        return catch
+
+    # Numba types a return only if the raise is conditional
+    def raises_unary(x):  # pragma: no cover (numba)
+        if x == x:
+            raise ValueError("raises")
+        return x
+
+    def raises_binary(x, y):  # pragma: no cover (numba)
+        if x == x:
+            raise ValueError("raises")
+        return x
+
+    def raises_indexunary(x, i, j, t):  # pragma: no cover (numba)
+        if x == x:
+            raise ValueError("raises")
+        return x
+
+    def raises_indexbinary(x, ix, jx, y, iy, jy, t):  # pragma: no cover (numba)
+        if x == x:
+            raise ValueError("raises")
+        return x
+
+    monkeypatch.setattr(numba, "cfunc", catching_cfunc)
+    counts = {}
+    for cls, func in [
+        (UnaryOp, raises_unary),
+        (BinaryOp, raises_binary),
+        (IndexUnaryOp, raises_indexunary),
+        (IndexBinaryOp, raises_indexbinary),
+    ]:
+        if cls is IndexBinaryOp and lib.__dict__.get("GxB_IndexBinaryOp_new") is None:
+            continue  # pragma: no cover (SuiteSparse < 9.4)
+        start = len(caught)
+        cls.register_anonymous(func)
+        counts[cls.__name__] = len(caught) - start
+    monkeypatch.undo()
+    assert all(counts.values()), counts  # one wrapper per built-in type the UDF compiles for
+    for wrapper in caught:
+        args = []
+        out = None
+        for argtype, ctype in zip(wrapper._sig.args, wrapper.ctypes.argtypes, strict=True):
+            if not isinstance(argtype, numba.types.CPointer):
+                args.append(1)  # an index
+                continue
+            np_type = numba.np.numpy_support.as_dtype(argtype.dtype)
+            buf = np.full(np_type.itemsize, 0xAB, np.uint8) if out is None else np.ones(1, np_type)
+            out = buf if out is None else out
+            args.append(ctypes.cast(buf.ctypes.data, ctype))
+        wrapper.ctypes(*args)
+        assert not out.any(), wrapper._sig
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_op_whose_udf_raised_on_stand_ins_can_be_collected():
+    """An op the probe records as raising on every stand-in is freed once dropped.
+
+    The record kept the exception, whose traceback holds the frames that hold the
+    typed op, so the op, its parent and their GraphBLAS handles were never freed
+    (r612: 5 of 5 alive). It keeps the exception as text now.
+    """
+    import gc
+    import weakref
+
+    from graphblas.core.operator.udf import _RAISES_ON_SAMPLES
+
+    r6 = dtypes.register_anonymous(np.dtype((np.float64, (6,))), "_FreedStandIn6")
+    r2 = dtypes.register_anonymous(np.dtype((np.float64, (2,))), "_FreedStandIn2")
+    v = Vector(r6, size=1)
+    v[0] = np.arange(6.0)
+    refs = []
+    for _ in range(3):
+        iu = IndexUnaryOp.register_anonymous(
+            lambda x, i, j, t: x[:2] * t, is_udt=True, ret_dtype=r2
+        )
+        assert v.apply(iu, 3.0).new()[0].new().value.tolist() == [0.0, 3.0]
+        typed = iu[r6, r6]
+        assert typed in _RAISES_ON_SAMPLES
+        refs += [weakref.ref(iu), weakref.ref(typed)]
+        del iu, typed
+    gc.collect()
+    assert [ref() for ref in refs] == [None] * len(refs)
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
+def test_udt_select_takes_a_number_as_itself_when_it_cannot_take_an_element():
+    """A literal thunk for a user's select that cannot take an element is typed as itself.
+
+    ``x[0] > t`` with ``t`` an INT8[3] element returns three bools for the one
+    the select needs, so the wrapper raised for every entry and nothing was
+    kept (or, before the select's bool was written first, a stray byte decided).
+    The select's UDF is now run on stand-ins when it returns an array, and a
+    number beside it is typed as itself, as a Scalar of it is.
+    """
+    i3 = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_SelOwnI3")
+    first_above = SelectOp.register_anonymous(
+        lambda x, i, j, t: x[0] > t, "_sel_own_first", is_udt=True
+    )
+    v = Vector(i3, size=2)
+    v[0] = [1, 2, 3]
+    v[1] = [-4, 5, 6]
+    for thunk in [0, np.int8(0), 0.5, gb.Scalar.from_value(0)]:
+        kept = v.select(first_above, thunk).new()
+        assert kept.to_coo()[0].tolist() == [0]
+    # A select that takes an element still gets one
+    same = SelectOp.register_anonymous(
+        lambda x, i, j, t: (x == t).all(), "_sel_own_same", is_udt=True
+    )
+    v[1] = [1, 1, 1]
+    assert v.select(same, 1).new().to_coo()[0].tolist() == [1]
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_user_op_takes_a_number_as_itself_when_it_cannot_take_an_element():
+    """A number beside a user's op is typed as itself when the op cannot take it as an element.
+
+    A literal beside a user's ``is_udt`` op becomes an element of the operand's
+    UDT, so ``x[:2] * t`` met a 6-element ``t``: its cfunc raised for every
+    element and the result held zeros, where a Scalar thunk worked. When the op
+    cannot be typed with an element, a Python or numpy number now takes its own
+    type, as a Scalar of it would.
+    """
+    r6 = dtypes.register_anonymous(np.dtype((np.float64, (6,))), "_OwnNum6")
+    r2 = dtypes.register_anonymous(np.dtype((np.float64, (2,))), "_OwnNum2")
+    iu = IndexUnaryOp.register_anonymous(
+        lambda x, i, j, t: x[:2] * t, "_own_num_iu", is_udt=True, ret_dtype=r2
+    )
+    bop = BinaryOp.register_anonymous(
+        lambda x, y: x[:2] * y, "_own_num_b", is_udt=True, ret_dtype=r2
+    )
+    left = BinaryOp.register_anonymous(
+        lambda x, y: y[:2] * x, "_own_num_left", is_udt=True, ret_dtype=r2
+    )
+    v = Vector(r6, size=2)
+    v[0] = np.arange(6.0)
+    v[1] = np.arange(6.0) + 10
+    expected = [[0.0, 3.0], [30.0, 33.0]]
+    for literal, own in [(3.0, FP64), (np.float64(3.0), FP64), (3, INT64), (np.float32(3), FP32)]:
+        for expr in [
+            v.apply(iu, literal),
+            v.apply(bop, right=literal),
+            v.apply(left, left=literal),
+        ]:
+            assert own in {expr.op.type, expr.op._type2}
+            assert expr.new().to_coo()[1].tolist() == expected
+    # An op that can take an element still gets one, as udt.rst says
+    i3 = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_OwnNumI3")
+    add = IndexUnaryOp.register_anonymous(lambda x, i, j, t: x + t, "_own_num_add", is_udt=True)
+    w = Vector(i3, size=1)
+    w[0] = [1, 2, 3]
+    expr = w.apply(add, 1)
+    assert expr.op._type2 is i3
+    assert expr.new()[0].new().value.tolist() == [2, 3, 4]
+    with pytest.raises(ValueError, match="does not fit _OwnNumI3"):
+        w.apply(add, 0.5)
+    # A record op that adds a number to each field takes it as itself
+    rec = dtypes.register_anonymous(np.dtype([("on_a", np.int32), ("on_b", np.float64)]))
+    each = BinaryOp.register_anonymous(
+        lambda x, y: (x.on_a + y, x.on_b + y), "_own_num_each", is_udt=True
+    )
+    r = Vector(rec, size=1)
+    r[0] = (1, 2.0)
+    assert r.apply(each, right=2).new()[0].new().value.tolist() == (3, 4.0)
 
 
 @pytest.mark.skipif("not supports_udfs")
@@ -7277,3 +7633,508 @@ def test_deferred_commutes_to():
     assert lines.get("package") == str(repo_root / "graphblas" / "__init__.py"), report
     assert lines.get("floordiv_ok") == "True", report
     assert lines.get("absfirst_ok") == "True", report
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_ret_dtype_names_an_output_udt():
+    """``ret_dtype`` names an output UDT that is not one of the operands.
+
+    Without it the return type is inferred from what the UDF builds, and the
+    only names in scope are the input dtypes. That makes an op that shortens
+    its element, such as FP64[10] -> FP64[3], unreachable: the inferred type
+    is the input's, and the shape check then rejects the shorter array the
+    UDF returns.
+    """
+    # The input shape is unique to this test; see the note in
+    # test_udt_array_udf_shape_errors.
+    ten = dtypes.register_anonymous(np.dtype((np.float64, (10,))), "_RetD10")
+    three = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "_RetD3")
+
+    def _first_three(x):  # pragma: no cover (numba)
+        return x[:3]
+
+    without = UnaryOp.register_anonymous(_first_three, "_ret_dtype_without", is_udt=True)
+    with pytest.raises(UdfParseError, match=r"shape \(3,\) when run on sample values"):
+        without[ten]
+
+    op_ = UnaryOp.register_anonymous(_first_three, "_ret_dtype_with", is_udt=True, ret_dtype=three)
+    assert op_[ten].return_type is three
+
+    # lazy=True must hand ret_dtype to the registration it defers, or the op
+    # that fires on first attribute access is built without it.
+    UnaryOp.register_new("_ret_dtype_lazy", _first_three, is_udt=True, lazy=True, ret_dtype=three)
+    try:
+        assert unary._ret_dtype_lazy[ten].return_type is three
+    finally:
+        # Same cleanup as test_udt_lazy_registration: the op lands in ``unary``
+        # and ``op``, and both keep a ``_delayed`` entry until it fires.
+        for module in (unary, op):
+            vars(module).pop("_ret_dtype_lazy", None)
+            module._delayed.pop("_ret_dtype_lazy", None)
+
+    v = Vector(ten, size=2)
+    v[0] = np.arange(10.0)
+    w = op_(v).new()
+    assert w.dtype is three
+    np.testing.assert_array_equal(w[0].new().value, np.arange(3.0))
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_ret_dtype_binary_and_record():
+    """``ret_dtype`` on a binary op, including a type that is neither operand."""
+    a4 = dtypes.register_anonymous(np.dtype((np.float64, (4,))), "_RetDBinA4")
+    b6 = dtypes.register_anonymous(np.dtype((np.float64, (6,))), "_RetDBinB6")
+    out2 = dtypes.register_anonymous(np.dtype((np.float64, (2,))), "_RetDBinOut2")
+
+    def _head_two(x, y):  # pragma: no cover (numba)
+        return x[:2] + y[:2]
+
+    op_ = BinaryOp.register_anonymous(_head_two, "_ret_dtype_bin", is_udt=True, ret_dtype=out2)
+    assert op_[a4, b6].return_type is out2
+
+    # ret_dtype equal to an operand's dtype agrees with what inference picks.
+    def _plus(x, y):  # pragma: no cover (numba)
+        return x + y
+
+    same = BinaryOp.register_anonymous(_plus, "_ret_dtype_same", is_udt=True, ret_dtype=a4)
+    inferred = BinaryOp.register_anonymous(_plus, "_ret_dtype_inferred", is_udt=True)
+    assert same[a4, a4].return_type is inferred[a4, a4].return_type is a4
+
+    # A record UDT output that appears in no operand.
+    rec = dtypes.register_anonymous(
+        np.dtype([("lo", np.float64), ("hi", np.float64)], align=True), "_RetDRec"
+    )
+
+    def _bounds(x, y):  # pragma: no cover (numba)
+        return (min(x, y), max(x, y))
+
+    recop = BinaryOp.register_anonymous(_bounds, "_ret_dtype_rec", is_udt=True, ret_dtype=rec)
+    assert recop[FP64, FP64].return_type is rec
+
+    w = Vector(FP64, size=2)
+    w[0] = 3.0
+    u = Vector(FP64, size=2)
+    u[0] = 1.0
+    res = recop(w & u).new()
+    assert res.dtype is rec
+    assert tuple(res[0].new().value.tolist()) == (1.0, 3.0)
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_ret_dtype_errors():
+    """``ret_dtype`` is rejected outside the UDT path and for unrecognized dtypes."""
+    with pytest.raises(ValueError, match="not a recognized dtype"):
+        UnaryOp.register_anonymous(lambda x: x, "_ret_dtype_junk", is_udt=True, ret_dtype="NOPE")
+    with pytest.raises(ValueError, match="not a recognized dtype"):
+        UnaryOp.register_anonymous(lambda x: x, "_ret_dtype_junk2", is_udt=True, ret_dtype=object())
+
+    # The builtin path derives a return type per input dtype, so one fixed
+    # dtype cannot describe it.
+    with pytest.raises(ValueError, match="ret_dtype requires is_udt=True"):
+        UnaryOp.register_anonymous(lambda x: x, "_ret_dtype_builtin", ret_dtype=FP64)
+    with pytest.raises(ValueError, match="ret_dtype requires is_udt=True"):
+        BinaryOp.register_anonymous(lambda x, y: x + y, "_ret_dtype_builtin2", ret_dtype=FP64)
+
+    # lazy=True must not defer the validation: a bad combination fails at the
+    # registration site, not at first attribute touch of the delayed op.
+    with pytest.raises(ValueError, match="parameterized=True"):
+        UnaryOp.register_new(
+            "_ret_dtype_lazy_param",
+            lambda x: x,
+            parameterized=True,
+            is_udt=True,
+            lazy=True,
+            ret_dtype=FP64,
+        )
+
+    # A parameterized operator builds its function when called; ret_dtype
+    # belongs to the register call for that function.
+    with pytest.raises(ValueError, match="does not work with parameterized=True"):
+        UnaryOp.register_anonymous(
+            lambda t=1: (lambda x: x + t),
+            "_ret_dtype_param",
+            parameterized=True,
+            is_udt=True,
+            ret_dtype=FP64,
+        )
+
+    # SelectOp takes no ret_dtype: GraphBLAS fixes its return type to BOOL.
+    with pytest.raises(TypeError, match="ret_dtype"):
+        SelectOp.register_anonymous(
+            lambda x, i, j, t: x > t, "_ret_dtype_select", is_udt=True, ret_dtype=BOOL
+        )
+
+
+def _ret_dtype_class_cases():
+    """(class, namespace, UDF giving the first 3 of x, typed lookup) per class with ret_dtype."""
+    cases = [
+        (UnaryOp, "unary", lambda x: x[:3], lambda o, t: o[t]),
+        (BinaryOp, "binary", lambda x, y: x[:3] + y[:3], lambda o, t: o[t, t]),
+        (IndexUnaryOp, "indexunary", lambda x, i, j, th: x[:3] + i, lambda o, t: o[t, INT64]),
+    ]
+    if lib.__dict__.get("GxB_IndexBinaryOp_new") is not None:
+        from graphblas.core.operator import IndexBinaryOp
+
+        cases.append(
+            (
+                IndexBinaryOp,
+                "indexbinary",
+                lambda x, ix, jx, y, iy, jy, th: x[:3] + y[:3],
+                lambda o, t: o[t, t],
+            )
+        )
+    return cases
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_ret_dtype_lazy_and_parameterized_for_each_op_class():
+    """``lazy=True`` keeps ``ret_dtype``, and ``parameterized=True`` refuses it, for every class.
+
+    Only UnaryOp was tested, so dropping ``ret_dtype`` from BinaryOp's or
+    IndexUnaryOp's deferred registration, or BinaryOp's parameterized check,
+    left every test passing.
+    """
+    twelve = dtypes.register_anonymous(np.dtype((np.float64, (12,))), "_RetDCls12")
+    three = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "_RetDCls3")
+    for cls, modname, func, typed in _ret_dtype_class_cases():
+        module = getattr(gb, modname)
+        name = f"_ret_dtype_lazy_{modname}"
+        cls.register_new(name, func, is_udt=True, lazy=True, ret_dtype=three)
+        try:
+            assert typed(getattr(module, name), twelve).return_type is three
+        finally:
+            for ns in (module, op):
+                vars(ns).pop(name, None)
+                ns._delayed.pop(name, None)
+        with pytest.raises(ValueError, match="does not work with parameterized=True"):
+            cls.register_anonymous(
+                lambda t=1, func=func: func, is_udt=True, parameterized=True, ret_dtype=three
+            )
+        with pytest.raises(ValueError, match="parameterized=True"):
+            cls.register_new(
+                f"{name}_param",
+                lambda t=1, func=func: func,
+                is_udt=True,
+                parameterized=True,
+                lazy=True,
+                ret_dtype=three,
+            )
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_ret_dtype_index_ops():
+    """``ret_dtype`` reaches the IndexUnaryOp and IndexBinaryOp compile paths too."""
+    # Shape (11,) is used nowhere else: anonymous UDTs share one DataType per
+    # np.dtype, so a shape reused across tests would inherit whichever JIT C
+    # state was frozen first under random test ordering.
+    in11 = dtypes.register_anonymous(np.dtype((np.float64, (11,))), "_RetDIdx11")
+    out2 = dtypes.register_anonymous(np.dtype((np.float64, (2,))), "_RetDIdx2")
+
+    def _head_plus_row(x, i, j, t):  # pragma: no cover (numba)
+        return x[:2] + i
+
+    iu = IndexUnaryOp.register_anonymous(
+        _head_plus_row, "_ret_dtype_indexunary", is_udt=True, ret_dtype=out2
+    )
+    assert iu[in11, INT64].return_type is out2
+    v = Vector(in11, size=3)
+    v[1] = np.arange(11.0)
+    v[2] = np.arange(11.0) + 10
+    result = v.apply(iu, gb.Scalar.from_value(0)).new()
+    assert result.dtype is out2
+    assert result.to_coo()[1].tolist() == [[1.0, 2.0], [12.0, 13.0]]
+
+    if lib.__dict__.get("GxB_IndexBinaryOp_new") is not None:
+        from graphblas.core.operator import IndexBinaryOp
+
+        def _head_sum(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+            return x[:2] + y[:2]
+
+        ib = IndexBinaryOp.register_anonymous(
+            _head_sum, "_ret_dtype_indexbinary", is_udt=True, ret_dtype=out2
+        )
+        assert ib[in11, in11].return_type is out2
+        result = v.ewise_mult(v, ib(0.0)).new()
+        assert result.dtype is out2
+        assert result.to_coo()[1].tolist() == [[0.0, 2.0], [20.0, 22.0]]
+
+    # register_new also adds an IndexUnaryOp to ``select`` when it returns BOOL.
+    # A UDT op has no types until it is compiled, so a declared non-BOOL
+    # ret_dtype is what keeps this one out.
+    IndexUnaryOp.register_new("_ret_dtype_iu_named", _head_plus_row, is_udt=True, ret_dtype=out2)
+    try:
+        assert "_ret_dtype_iu_named" not in vars(select)
+    finally:
+        vars(indexunary).pop("_ret_dtype_iu_named", None)
+        vars(select).pop("_ret_dtype_iu_named", None)
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_udt_ret_dtype_still_shape_checked():
+    """The registration-time shape probe checks against the declared ``ret_dtype``.
+
+    Short-circuiting the return-type inference must not take the probe with
+    it. Declaring the output type makes the check worth more, not less: the
+    inferred case can only ever compare a UDF against a type derived from
+    what it returned, while a declared type is an independent claim the UDF
+    can contradict.
+    """
+    # Shape (14,) is used nowhere else: anonymous UDTs share one DataType per
+    # np.dtype, so a shape reused across tests would inherit whichever JIT C
+    # state was frozen first under random test ordering.
+    in14 = dtypes.register_anonymous(np.dtype((np.float64, (14,))), "_RetDPrb14")
+    out2 = dtypes.register_anonymous(np.dtype((np.float64, (2,))), "_RetDPrb2")
+
+    def _three(x):  # pragma: no cover (numba)
+        return x[:3]
+
+    # Three elements cannot fill a declared two-element output.
+    op_ = UnaryOp.register_anonymous(_three, "_ret_dtype_prb_bad", is_udt=True, ret_dtype=out2)
+    with pytest.raises(UdfParseError, match=r"shape \(3,\).*_RetDPrb2 elements are \(2,\)"):
+        op_[in14]
+
+    # The check is fit-by-broadcast, not equality: a one-element return
+    # legitimately fills every slot of the declared element.
+    def _one(x):  # pragma: no cover (numba)
+        return x[:1]
+
+    ok = UnaryOp.register_anonymous(_one, "_ret_dtype_prb_bcast", is_udt=True, ret_dtype=out2)
+    assert ok[in14].return_type is out2
+
+    # An operand returned as-is keeps its extents in its Numba type, so the
+    # declared shape is checked without running the UDF (no "sample values").
+    def _as_is(x):  # pragma: no cover (numba)
+        return x
+
+    as_is = UnaryOp.register_anonymous(_as_is, "_ret_dtype_prb_as_is", is_udt=True, ret_dtype=out2)
+    with pytest.raises(UdfParseError, match=r"shape \(14,\), but _RetDPrb2 elements are \(2,\)"):
+        as_is[in14]
+
+    # The record half of the probe checks the declared type's array leaves.
+    rec = dtypes.register_anonymous(
+        np.dtype([("v", np.float64, (4,)), ("n", np.int64)], align=True), "_RetDPrbRec"
+    )
+
+    def _short_leaf(x, y):  # pragma: no cover (numba)
+        return (x[:2], 1)
+
+    recop = BinaryOp.register_anonymous(
+        _short_leaf, "_ret_dtype_prb_rec", is_udt=True, ret_dtype=rec
+    )
+    with pytest.raises(UdfParseError, match=r"shape \(2,\) for field \['v'\] of _RetDPrbRec"):
+        recop[in14, in14]
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+# _RetDMisNested's numpy repr is 141 chars; see test_udt_eq_nested_record_with_nan_leaf.
+@pytest.mark.filterwarnings("ignore:UDT repr is too large")
+def test_udt_ret_dtype_rejects_a_return_it_cannot_hold():
+    """A declared ``ret_dtype`` is checked against what the UDF returns.
+
+    Inference only names a type the return can be written as, and a declared
+    type skips it. Unchecked, a mismatch reached the wrapper, which either
+    failed to compile with a raw Numba error or, worse, ran and gave a wrong
+    answer with no error: a longer tuple lost its extra values, an array
+    written to a scalar kept its first element, and a tuple written to an
+    array element left it uninitialized.
+    """
+    # Names and shapes unique to this test; see the note in
+    # test_udt_array_udf_shape_errors.
+    rec2 = dtypes.register_anonymous(
+        np.dtype([("rdm_lo", np.float64), ("rdm_hi", np.float64)], align=True), "_RetDMisRec2"
+    )
+    rec3 = dtypes.register_anonymous(
+        np.dtype([("rdm_a", np.int64), ("rdm_b", np.int64), ("rdm_c", np.int64)], align=True),
+        "_RetDMisRec3",
+    )
+    arr2 = dtypes.register_anonymous(np.dtype((np.float32, (2,))), "_RetDMisArr2")
+    arr3 = dtypes.register_anonymous(np.dtype((np.float32, (3,))), "_RetDMisArr3")
+
+    def binary_rejects(func, ret_dtype, match):
+        op_ = BinaryOp.register_anonymous(func, is_udt=True, ret_dtype=ret_dtype)
+        with pytest.raises(UdfParseError, match=match):
+            op_[FP64, FP64]
+
+    binary_rejects(
+        lambda x, y: (x, y, x + y), rec2, "tuple of length 3, but ret_dtype=_RetDMisRec2 has 2"
+    )
+    binary_rejects(lambda x, y: (x,), rec2, "tuple of length 1, but ret_dtype=_RetDMisRec2 has 2")
+    binary_rejects(
+        lambda x, y: x + y, rec2, "returned float64, which cannot be written as ret_dtype"
+    )
+
+    # A nested record takes a flat tuple, one value per leaf, and the count in
+    # the message says so when it differs from the number of top-level fields.
+    nested = dtypes.register_anonymous(
+        np.dtype(
+            [("rdm_in", [("rdm_p", np.float64), ("rdm_q", np.float64)]), ("rdm_r", np.float64)],
+            align=True,
+        ),
+        "_RetDMisNested",
+    )
+    binary_rejects(
+        lambda x, y: ((x, y), x + y),
+        nested,
+        "tuple of length 2, but ret_dtype=_RetDMisNested has 3 fields once nested records",
+    )
+    flat = BinaryOp.register_anonymous(lambda x, y: (x, y, x + y), is_udt=True, ret_dtype=nested)
+    assert flat[FP64, FP64].return_type is nested
+    binary_rejects(lambda x, y: (x, y, x + y), arr2, "tuple of length 3, which cannot be written")
+    binary_rejects(lambda x, y: (x, y), FP64, "tuple of length 2, which cannot be written")
+    # A complex return into real values; Numba's own message lost why. Into BOOL it is
+    # written as bool(...), so it works
+    for ret_dtype in [FP64, arr2]:
+        binary_rejects(lambda x, y: x * 1j + y, ret_dtype, "complex128, .* Return a real value")
+    nonzero = BinaryOp.register_anonymous(lambda x, y: x * 1j + y, is_udt=True, ret_dtype=BOOL)
+    one, zero = Vector.from_coo([0], [1.5]), Vector.from_coo([0], [0.0])
+    assert one.ewise_mult(zero, nonzero).new()[0].new().value is True
+    binary_rejects(
+        lambda x, y: x if x > y else None, FP64, "returned a value that can be None, which cannot"
+    )
+
+    def unary_rejects(func, ret_dtype, operand, match):
+        op_ = UnaryOp.register_anonymous(func, is_udt=True, ret_dtype=ret_dtype)
+        with pytest.raises(UdfParseError, match=match):
+            op_[operand]
+
+    unary_rejects(lambda x: x * 1.0, FP64, arr3, "returned an array, which cannot be written")
+    unary_rejects(lambda x: x, rec3, rec2, r"record with fields \['rdm_lo', 'rdm_hi'\]")
+    unary_rejects(lambda x: x, arr3, rec2, "record with fields")
+    unary_rejects(lambda x: x, rec2, arr3, "returned an array, which cannot be written")
+
+    # What a declared type can hold still works: one value per field, a value of
+    # the declared record type, a scalar that fills an array element, and a scalar
+    # cast to the declared type.
+    ok = BinaryOp.register_anonymous(lambda x, y: (x, y), is_udt=True, ret_dtype=rec2)
+    same = UnaryOp.register_anonymous(lambda x: x, is_udt=True, ret_dtype=rec2)
+    fill = BinaryOp.register_anonymous(lambda x, y: x + y, is_udt=True, ret_dtype=arr2)
+    cast = BinaryOp.register_anonymous(lambda x, y: x + y, is_udt=True, ret_dtype=INT64)
+    w = Vector(FP64, size=1)
+    w[0] = 3.0
+    u = Vector(FP64, size=1)
+    u[0] = 1.0
+    assert tuple(w.ewise_mult(u, ok).new()[0].new().value.tolist()) == (3.0, 1.0)
+    r = Vector(rec2, size=1)
+    r[0] = (1.0, 2.0)
+    assert tuple(r.apply(same).new()[0].new().value.tolist()) == (1.0, 2.0)
+    np.testing.assert_array_equal(w.ewise_mult(u, fill).new()[0].new().value, [4.0, 4.0])
+    assert w.ewise_mult(u, cast).new()[0].new().value == 4
+    # So does an operand of a date, duration or text UDT returned as its own type,
+    # which said "Return a scalar"
+    for np_type, value in [
+        ("M8[s]", np.datetime64(5, "s")),
+        ("m8[s]", np.timedelta64(5, "s")),
+        ("S5", b"abc"),
+    ]:
+        udt = dtypes.register_anonymous(np.dtype(np_type))
+        own = UnaryOp.register_anonymous(lambda x: x, is_udt=True, ret_dtype=udt)
+        assert own[udt].return_type is udt
+        v = Vector(udt, size=1)
+        v[0] = value
+        assert v.apply(own).new()[0].new().value == value
+
+
+def _ret_dtype_pickle_udf(x):  # pragma: no cover (numba)
+    return x[:5]
+
+
+_RET_DTYPE_PICKLE_WRITER = """
+import pickle
+import sys
+
+import numpy as np
+
+import graphblas as gb
+from graphblas.core.operator.unary import UnaryOp
+from graphblas.tests.test_op import _ret_dtype_pickle_udf
+
+print("package: " + gb.__file__)
+five = gb.dtypes.register_anonymous(np.dtype((np.float32, (5,))), "_RetPickle5")
+UnaryOp.register_new("_ret_dtype_pickled", _ret_dtype_pickle_udf, is_udt=True, ret_dtype=five)
+anon = UnaryOp.register_anonymous(
+    _ret_dtype_pickle_udf, "_ret_dtype_pickled_anon", is_udt=True, ret_dtype=five
+)
+with open(sys.argv[1], "wb") as f:
+    pickle.dump((gb.unary._ret_dtype_pickled, anon), f)
+print("wrote: ok")
+"""
+
+
+_RET_DTYPE_PICKLE_READER = """
+import pickle
+import sys
+
+import numpy as np
+
+import graphblas as gb
+
+print("package: " + gb.__file__)
+with open(sys.argv[1], "rb") as f:
+    named, anon = pickle.load(f)
+ten = gb.dtypes.register_anonymous(np.dtype((np.float32, (10,))), "_RetPickle10")
+print("named shape: " + str(named[ten].return_type.np_type.subdtype[1]))
+print("anon shape: " + str(anon[ten].return_type.np_type.subdtype[1]))
+"""
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_ret_dtype_survives_pickle(tmp_path):
+    # In-process unpickling takes the _find shortcut and returns the very
+    # same object, so only a cross-process round trip exercises what pickle
+    # exists for: the reduce tuple must carry ret_dtype, or the reconstructed
+    # op re-registers without it and fails its own shape probe. Both sides
+    # run in subprocesses so the named registration never lands in this
+    # process's operator namespace (test_operator_types enumerates it).
+    payload = tmp_path / "ops.pkl"
+    repo_root = Path(__file__).resolve().parents[2]
+    env = dict(os.environ, PYTHONPATH=str(repo_root))
+    for probe, checks in (
+        (_RET_DTYPE_PICKLE_WRITER, {"wrote": "ok"}),
+        (_RET_DTYPE_PICKLE_READER, {"named shape": "(5,)", "anon shape": "(5,)"}),
+    ):
+        result = subprocess.run(
+            [sys.executable, "-c", probe, str(payload)],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+        report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        assert result.returncode == 0, report
+        lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
+        assert lines.get("package") == str(repo_root / "graphblas" / "__init__.py"), report
+        for key, want in checks.items():
+            assert lines.get(key) == want, report
+
+    # An op without ret_dtype pickles as the 3-tuple it always did, which
+    # versions without ret_dtype can still read.
+    plain = UnaryOp.register_anonymous(_ret_dtype_pickle_udf, "_ret_dtype_plain", is_udt=True)
+    assert len(plain.__reduce__()[1]) == 3
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_ret_dtype_named_op_reregisters_on_unpickle():
+    # A named op unpickled where its name is not registered is registered again,
+    # with its ret_dtype. The name is removed when done, since test_operator_types
+    # enumerates the operator namespaces.
+    five = dtypes.register_anonymous(np.dtype((np.float32, (5,))), "_RetPickle5")
+    twelve = dtypes.register_anonymous(np.dtype((np.float32, (12,))), "_RetPickle12")
+    name = "_ret_dtype_reregistered"
+    try:
+        named = UnaryOp.register_new(name, _ret_dtype_pickle_udf, is_udt=True, ret_dtype=five)
+        payload = pickle.dumps(named)
+        assert pickle.loads(payload) is named
+        delattr(unary, name)
+        vars(op).pop(name)
+        new = pickle.loads(payload)
+        assert new is not named
+        assert getattr(unary, name) is new
+        assert new[twelve].return_type is five
+    finally:
+        vars(unary).pop(name, None)
+        vars(op).pop(name, None)
