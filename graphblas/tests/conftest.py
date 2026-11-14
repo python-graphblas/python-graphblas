@@ -261,6 +261,19 @@ def compute(x):
     return x
 
 
+def skip_without_jit(reason):
+    """Skip a test the SuiteSparse JIT cannot run here, or fail it where it must run.
+
+    CI's pytest_jit job sets GRAPHBLAS_REQUIRE_JIT, so a setup there that stops
+    compiling turns the job red instead of skipping the JIT tests and losing their
+    coverage.
+    """
+    __tracebackhide__ = True  # report the skip at the test's line, not this one
+    if os.environ.get("GRAPHBLAS_REQUIRE_JIT"):
+        pytest.fail(f"GRAPHBLAS_REQUIRE_JIT is set, but {reason}", pytrace=False)
+    pytest.skip(reason)
+
+
 def shouldhave(module, opname):
     """Whether an "operator" module should have the given operator."""
     return supports_udfs or hasattr(module, opname)
