@@ -4,13 +4,16 @@ from .infix import MatrixInfixExpr, ScalarInfixExpr, VectorInfixExpr
 from .matrix import Matrix, MatrixExpression, MatrixIndexExpr, TransposedMatrix
 from .scalar import Scalar, ScalarExpression, ScalarIndexExpr, _literal_scalar
 from .udt import _ewise_add_casts_udt, _plus_zero
-from .utils import output_type
+from .utils import _tensor_types, output_type
 from .vector import Vector, VectorExpression, VectorIndexExpr
 
 
 def call_op(self, other, op, *, outer=False, union=False):
     type1 = output_type(self)
     type2 = output_type(other)
+    if type1 in _tensor_types or type2 in _tensor_types:
+        # Tensor rules apply; Python then tries the Tensor's reflected operator
+        return NotImplemented
     types = {Matrix, TransposedMatrix, Vector}
     if type1 in types:
         if type2 in types:
@@ -71,6 +74,8 @@ def __neg__(self):
 
 def __xor__(self, other):
     expr = call_op(self, other, binary.lxor, outer=True)
+    if expr is NotImplemented:
+        return expr
     if expr.dtype != BOOL:
         raise TypeError(
             f"The __xor__ infix operator, `x ^ y`, is not supported for {expr.dtype.name} dtype."
@@ -81,6 +86,8 @@ def __xor__(self, other):
 
 def __rxor__(self, other):
     expr = call_op(other, self, binary.lxor, outer=True)
+    if expr is NotImplemented:
+        return expr
     if expr.dtype != BOOL:
         raise TypeError(
             f"The __xor__ infix operator, `x ^ y`, is not supported for {expr.dtype.name} dtype."
@@ -89,7 +96,18 @@ def __rxor__(self, other):
     return expr
 
 
+def _tensor_in_place(self, other, name):
+    # In-place ops must not return NotImplemented: Python would fall back to `A = A op T` and
+    # silently rebind A to a Tensor expression.
+    if output_type(other) in _tensor_types:
+        raise TypeError(
+            f"In-place `{name}` on a {type(self).__name__} with a Tensor operand is not "
+            "supported; compute into a Tensor instead (Tensor.from_matrix converts a Matrix)"
+        )
+
+
 def __ixor__(self, other):
+    _tensor_in_place(self, other, "^=")
     other_type = output_type(other)
     if (
         other_type is Vector
@@ -109,6 +127,7 @@ def __ixor__(self, other):
 
 
 def __ior__(self, other):
+    _tensor_in_place(self, other, "|=")
     other_type = output_type(other)
     if (
         other_type is Vector
@@ -134,6 +153,7 @@ def __ior__(self, other):
 
 
 def __iand__(self, other):
+    _tensor_in_place(self, other, "&=")
     expr = call_op(self, other, binary.land)
     if expr.dtype != BOOL:
         raise TypeError(
