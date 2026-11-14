@@ -137,8 +137,19 @@ def _contract(updater, a, b, op, a_axes, b_axes, a_batch=(), b_batch=()):
     if best is None:
         raise ValueError("the contracted or free axes do not fit in a Matrix dimension (2**60)")
     _, sa, sb, beta = best
-    A = _in_layout(a, Layout.from_state(sa), opt_nthreads)
-    B = _in_layout(b, Layout.from_state(sb), opt_nthreads)
+    A = B = None
+    if not nb and updater.kwargs.get("mask") is not None:
+        # Under a mask, an operand stored as the transpose of what the product needs goes in
+        # through the transpose descriptor, not a transposed copy: SuiteSparse can then take
+        # its masked dot product (C<M> = A*B' with both held by row: an SDDMM). Given the
+        # copy, it ran a masked saxpy over the whole product (n = 2e4, k = 64, a mask of 2e5
+        # entries: 2.0 s against 0.9 ms)
+        A = _transposed(a, sa)
+        B = _transposed(b, sb)
+    if A is None:
+        A = _in_layout(a, Layout.from_state(sa), opt_nthreads)
+    if B is None:
+        B = _in_layout(b, Layout.from_state(sb), opt_nthreads)
     out_batch = {x: a_batch.index(x) for x in a_batch}
     out_a = {x: nb + i for i, x in enumerate(free_a)}
     out_b = {y: nb + len(free_a) + i for i, y in enumerate(free_b)}
@@ -148,7 +159,8 @@ def _contract(updater, a, b, op, a_axes, b_axes, a_batch=(), b_batch=()):
     layout = Layout(rows, tuple(out_b[y] for y in sb[0][nb + k :]))
     if census.on:
         census.note("contract", "batched, block-diagonal" if nb else "one mxm",
-                    moved=[A is not a._M, B is not b._M], cost=best[0])  # fmt: skip
+                    moved=[getattr(A, "_matrix", A) is not a._M,
+                           getattr(B, "_matrix", B) is not b._M], cost=best[0])  # fmt: skip
     if not nb:
         return A.mxm(B, op), layout, shape
     nblocks = tl.prod(a._shape, a_batch)
@@ -170,6 +182,17 @@ def _contract(updater, a, b, op, a_axes, b_axes, a_batch=(), b_batch=()):
     # sparse saxpy's fine tasks (Higgs, 4 layers: x . A over the nodes, 88 -> 23 ms)
     A.ss.config["sparsity_control"] = ["hypersparse", "sparse", "bitmap", "full"]
     return A.mxm(B, op), layout, shape
+
+
+def _transposed(t, state):
+    """``t``'s Matrix transposed by descriptor (no copy) when that puts it in the layout
+    ``state``, else None.
+    """
+    rows, cols = t._layout
+    seq, p = state
+    if rows and cols and seq == cols + rows and p == len(cols):
+        return t._M.T
+    return None
 
 
 def _matmul_expr(self, other, op):
