@@ -6700,6 +6700,10 @@ def test_udt_op_pickle():
 def test_dir():
     for mod in [unary, binary, monoid, semiring, op]:
         assert not set(mod._delayed) - set(dir(mod))
+        assert hasattr(mod, "register_new") == ("register_new" in dir(mod))
+        if suitesparse:
+            assert not set(mod.ss._delayed) - set(dir(mod.ss))
+            assert hasattr(mod.ss, "register_new") == ("register_new" in dir(mod.ss))
 
 
 def test_semiring_commute_exists():
