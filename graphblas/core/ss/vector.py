@@ -43,7 +43,11 @@ def head(vector, n=10, dtype=None, *, sort=False):
     else:
         dtype = lookup_dtype(dtype)
     indices, vals = zip(*itertools.islice(vector.ss.iteritems(), n), strict=True)
-    return np.array(indices, np.uint64), np.array(vals, dtype.np_type)
+    # Filled from a list: numpy reads a tuple of records as one record, and an array
+    # UDT's dtype would add its shape to that of each value.
+    values = np.empty(len(vals), dtype.np_type)
+    values[...] = list(vals)
+    return np.array(indices, np.uint64), values
 
 
 class VectorConfig(BaseConfig):
@@ -367,7 +371,7 @@ class ss:
             return
         it = it_ptr[0]
         info = success = lib.GrB_SUCCESS
-        val_func = getattr(lib, f"GxB_Iterator_get_{self._parent.dtype.name}")
+        val_func = _iterator_value_getter(self._parent.dtype)
         next_func = lib.GxB_Vector_Iterator_next
         try:
             while info == success:
@@ -402,7 +406,7 @@ class ss:
         it = it_ptr[0]
         info = success = lib.GrB_SUCCESS
         key_func = lib.GxB_Vector_Iterator_getIndex
-        val_func = getattr(lib, f"GxB_Iterator_get_{self._parent.dtype.name}")
+        val_func = _iterator_value_getter(self._parent.dtype)
         next_func = lib.GxB_Vector_Iterator_next
         try:
             while info == success:
@@ -1855,5 +1859,5 @@ def random_choice(n, k):  # pragma: no cover (numba)
 # Imported last, so this module can be the first one imported: core.scalar imports
 # core.vector, which needs `ss` from here, and matrix.py leads to core.scalar too.
 from ..scalar import Scalar, _as_scalar  # noqa: E402 isort:skip
-from .matrix import _concat_mn  # noqa: E402 isort:skip
+from .matrix import _concat_mn, _iterator_value_getter  # noqa: E402 isort:skip
 from .prefix_scan import prefix_scan  # noqa: E402 isort:skip
