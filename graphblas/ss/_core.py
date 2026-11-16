@@ -145,15 +145,13 @@ class GlobalConfig(BaseConfig):
         "on" : full JIT: able to compile, load, and run
         Only available for SuiteSparse:GraphBLAS >=8.
         python-graphblas sets it at init from ``graphblas.config["jit_c_control"]``,
-        or to "run" when that is not set, and UDT work raises that default "run" to
-        "on" when it needs a kernel compiled. A "run" configured there is kept, and
-        so is one set here over another configured value; with nothing configured,
-        "run" set here is the default again, as None is in any case. The user
-        guide's initialization page covers the trade-offs, and when "on" is safe.
+        or to "run" when that is not set, and raises that default "run" to "on" when
+        C source needs compiling. Setting None restores the default. The rules are
+        in the Technical Notes, "The JIT control"; the user guide's initialization
+        page covers the trade-offs, and when "on" is safe.
     jit_use_cmake : bool
         Whether to use cmake to compile the JIT kernels.
-        Always True for SuiteSparse built with MSVC (on Windows), where
-        python-graphblas does not turn the JIT on yet.
+        Always True for SuiteSparse built with MSVC (on Windows).
         Only available for SuiteSparse:GraphBLAS >=8
     jit_c_compiler_name : str
         C compiler for JIT kernels.
@@ -269,11 +267,10 @@ class GlobalConfig(BaseConfig):
             return
         from ..core.ss import jit_config
 
-        # UDT work keeps a 'run' the user set. One written here counts when it
-        # changes the configured control (graphblas.config, read at init) or repeats
-        # a configured 'run'. With nothing configured it is the default 'run' again,
-        # which UDT work raises, so saving and restoring the default changes nothing.
-        # None is that default whatever is configured.
+        # A 'run' written here is the user's, which _enable_jit_for_udt keeps, when
+        # graphblas.config set a control at init. With nothing configured, it is the
+        # default 'run', which is raised for C source, so saving and restoring the
+        # default changes nothing. None is always the default.
         super().__setitem__(key, "run" if val is None else val)
         if isinstance(val, str):
             val = val.lower()
@@ -288,8 +285,9 @@ class About(Mapping):
         lib.GrB_BLOCKING: "blocking",
     }
     # GxB_NONBLOCKING_GPU and GxB_BLOCKING_GPU were modes of their own in SS:GraphBLAS <=10.5.1.
-    # In 10.5.2 they became aliases of GrB_NONBLOCKING and GrB_BLOCKING, which python-suitesparse-
-    # graphblas leaves out; `setdefault` keeps "nonblocking" and "blocking" if they are aliases.
+    # In 10.5.2 they are macros for GrB_NONBLOCKING and GrB_BLOCKING, which
+    # python-suitesparse-graphblas does not export. Should they be aliases, `setdefault`
+    # keeps the names "nonblocking" and "blocking".
     if hasattr(lib, "GxB_NONBLOCKING_GPU"):
         _modes.setdefault(lib.GxB_NONBLOCKING_GPU, "nonblocking_gpu")
         _modes.setdefault(lib.GxB_BLOCKING_GPU, "blocking_gpu")
@@ -348,8 +346,8 @@ class About(Mapping):
         raise _error_code_lookup[info](f"Failed to get info for {key}")  # pragma: no cover (safety)
 
     def __setattr__(self, key, value):
-        # About never sets instance attributes, so any attribute write is a
-        # mistake that would otherwise create a dead attribute shadowing reads.
+        # About never sets instance attributes, so an attribute write such as
+        # ``about.mode = ...`` is a mistake, which would otherwise pass silently.
         if key.lower() in self:
             raise AttributeError(f"About option {key.lower()!r} is read-only")
         raise AttributeError(f"Unknown About option {key!r}; known options are {sorted(self)}.")

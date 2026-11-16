@@ -20,7 +20,7 @@ InfixExprBase._expect_type = _expect_type
 
 
 def _typed_operands(self, op):
-    """Return the operands of ``self``, with a literal beside a Scalar typed as ``op``'s operand."""
+    """Return the operands of ``self``, with a literal typed for ``op`` and the other operand."""
     left, right = self.left, self.right
     if _is_literal(left):
         left = _literal_scalar(right, left, op, within=self.method_name, argname="left")
@@ -108,7 +108,7 @@ class ScalarInfixExpr(InfixExprBase):
     def _call_left(self, method_name, *args, **kwargs):
         if _is_literal(self.left):
             # A literal stays on the left: `binary.minus(1 & s)` is `1 - s`. Scalar's method
-            # types it beside `s` once the op is known, as it types a literal on the right.
+            # types it to go with `s` once the op is known, as it types a literal on the right.
             return getattr(Scalar, method_name)(self.left, self.right, *args, **kwargs)
         return super()._call_left(method_name, *args, **kwargs)
 
@@ -541,12 +541,12 @@ def _mismatched(left, right, method, op):
 
 
 def _check_literal(scalar, value, *, within, argname):
-    """Raise TypeError now if ``value`` cannot be a literal beside ``scalar``, as ``+`` does.
+    """Raise TypeError now if ``value`` cannot be a literal operand with ``scalar``, as ``+`` does.
 
     How a literal is typed depends on the op (``literals._literal_operand``), which
     comes later, so here it is typed as ``==`` types it, the op that takes the most
     literals, and dropped. A Python number is always a literal, so it is not checked.
-    Nor is a literal beside an infix expression, which has no dtype until an op is
+    Nor is a literal with an infix expression, which has no dtype until an op is
     applied: ``(s & t) & object()`` raises only then.
     """
     if type(value) in _LITERAL_KINDS or isinstance(scalar, ScalarInfixExpr):

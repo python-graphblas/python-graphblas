@@ -54,9 +54,16 @@ if backend == "suitesparse":
 
 ffi_new = ffi.new
 
-# Python scalar types that the `v[i] = x` and `A[i, j] = x` fast paths store with
-# GrB_*_setElement_<type>. Without complex support a complex value is a UDT, which the
-# full assign path refuses with DomainMismatch, so it must not take the fast path.
+# Single-element fast paths: `v[i] = x`, `i in v` and `v.get(i)`, and their Matrix
+# versions, call GrB_*_setElement or GrB_*_extractElement directly, without building an
+# expression, an Updater or a Scalar, which makes them more than ten times faster. They
+# take only int and np.integer indices, not bool, as parse_index does. A UDT (whose values
+# Scalar.value converts with numpy), an active Recorder (which must record the call), and
+# anything else (a slice, a 0-d array index, options) take the full path, with its errors.
+#
+# These are the Python number types the setElement fast paths store, whose dtype inference
+# and cffi conversion match _assign_element's. Without complex support a complex value is
+# a UDT, which the full assign path refuses with DomainMismatch.
 _SET_ELEMENT_TYPES = (int, float, bool, complex) if _supports_complex else (int, float, bool)
 
 
@@ -338,19 +345,9 @@ class Vector(BaseType):
             v[:] = 1
 
         """
-        # Fast path for `v[i] = scalar`: a plain integer index and an exact-fit
-        # Python scalar, with no mask/accum/opts, a non-UDT dtype, and no active
-        # Recorder. This mirrors what Updater -> _assign_element does for a
-        # single element, but skips building the resolver, Updater, and Scalar.
-        # Only int/float/bool/complex values (_SET_ELEMENT_TYPES) are taken here so the
-        # dtype inference and cffi coercion match _assign_element exactly, and only
-        # int and np.integer keys (bools excluded) so the accepted indices
-        # match parse_index; everything else (slices, fancy indexing, 0-d
-        # arrays and other __index__ objects, numpy or Scalar values,
-        # `v(mask)[i] << x`) falls back to the full assign path, leaving
-        # mask/accum, coercion, and index errors unchanged. So does an int
-        # beyond INT64, which that path types as the vector's dtype
-        # (``uint64_vec[i] = 2**63``; literals._literal_store_dtype).
+        # Fast path; see _SET_ELEMENT_TYPES. An int beyond INT64 takes the full path,
+        # which types it as the vector's dtype (``uint64_vec[i] = 2**63``; see
+        # literals._literal_store_dtype).
         if (
             not opts
             and type(expr) in _SET_ELEMENT_TYPES
@@ -387,14 +384,8 @@ class Vector(BaseType):
             15 in v
 
         """
-        # Fast path for a plain integer index: probe with
-        # GrB_Vector_extractElement directly instead of building an extract
-        # expression and Scalar. An out-of-range index falls through to the
-        # expression path so it raises the same IndexError as the slow path.
-        # Only int and np.integer take the fast lane (bools excluded), matching
-        # parse_index; other __index__ objects fall through to the expression
-        # path and its canonical errors. Fall back for a UDT dtype and an active
-        # Recorder (so the call is recorded), mirroring Vector.get.
+        # Fast path; see _SET_ELEMENT_TYPES. An index out of range takes the full
+        # path, which raises the IndexError.
         if (
             (type(index) is int or isinstance(index, np.integer))
             and not self.dtype._is_udt
@@ -452,8 +443,8 @@ class Vector(BaseType):
 
         Notes
         -----
-        Elements of array UDTs must have the same shape, apart from leading axes
-        of length 1, as in ``np.array_equal``; ``==`` broadcasts instead.
+        Elements of array UDTs must have the same shape, as in ``np.array_equal``,
+        except that leading axes of length 1 are ignored; ``==`` broadcasts instead.
 
         See Also
         --------
@@ -777,14 +768,7 @@ class Vector(BaseType):
         Python scalar
 
         """
-        # Fast path for a plain integer index: call GrB_Vector_extractElement
-        # directly instead of building an extract expression, which costs ~10x
-        # more than the C call for single-element access. Fall back when a
-        # Recorder is active (so the call is recorded) and for UDTs (whose
-        # values need numpy-based conversion in Scalar.value). Only int and
-        # np.integer take the fast lane (bools excluded), matching parse_index;
-        # other __index__ objects fall through to the expression path and its
-        # canonical errors.
+        # Fast path; see _SET_ELEMENT_TYPES.
         if (
             (type(index) is int or isinstance(index, np.integer))
             and not self.dtype._is_udt
@@ -1725,7 +1709,7 @@ class Vector(BaseType):
             thunk = False  # most basic form of 0 when unifying dtypes
         given = thunk
         if type(thunk) is not Scalar:
-            # A thunk beside a UDT becomes an element of it, so it must fit, as in apply.
+            # With a UDT, the thunk becomes an element of it, so it must fit, as in apply.
             thunk, dtype = _literal_operand(self.dtype, thunk, op)
             try:
                 thunk = Scalar.from_value(thunk, dtype, is_cscalar=None, name="")

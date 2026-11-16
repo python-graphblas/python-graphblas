@@ -211,11 +211,11 @@ def _check_mask(mask, output=None, strict_kind=False):
     if output is not None:
         if output.ndim == 1 and mask.parent.ndim != 1:
             raise TypeError(f"Mask object must be type Vector; got {type(mask.parent)}")
-        # A full-tensor op (ewise, mxm, apply, extract, ...) into a Matrix needs
-        # a Matrix mask. Assignment is exempt (`strict_kind` stays False for it):
-        # a Vector mask on a Matrix row/column assign is valid and is validated
-        # separately in Matrix.__setitem__. Without this, a Vector mask on a
-        # full-Matrix op leaked a raw cffi "struct GB_Matrix_opaque" error.
+        # A whole-object op (ewise, mxm, apply, extract, ...) into a Matrix needs a
+        # Matrix mask. Assignment is exempt (`strict_kind` is False for it): a Vector
+        # mask on a Matrix row or column assign is valid, and Matrix._prep_for_assign
+        # checks it. Without this check, cffi rejects a Vector mask on another op with
+        # a TypeError about "struct GB_Matrix_opaque *".
         if strict_kind and output.ndim == 2 and mask.parent.ndim != 2:
             raise TypeError(f"Mask object must be type Matrix; got {type(mask.parent)}")
     return mask

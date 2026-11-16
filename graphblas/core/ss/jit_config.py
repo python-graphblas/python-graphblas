@@ -1,31 +1,23 @@
-"""Helpers for repairing the SuiteSparse:GraphBLAS JIT compiler configuration.
+"""Set the SuiteSparse:GraphBLAS JIT control, and repair the JIT's C compiler setting.
 
-The C library is built by conda-build with the build host's compiler paths
-baked into ``GxB_JIT_C_COMPILER_NAME`` and ``GxB_JIT_C_COMPILER_FLAGS``.
-Those paths (e.g., ``/Users/runner/...``) don't exist in the user's
-environment. When SuiteSparse JIT tries to compile a UDT kernel the compile
-step fails silently: the ``.c`` source is written but no ``.dylib`` or
-``.so`` is produced, and SS falls back to the Numba function-pointer path.
-The caller sees a working op, but the JIT speedup is lost, and there is
-no error or warning to make the regression visible.
+A conda-built SuiteSparse:GraphBLAS has the build machine's compiler path and
+flags in ``GxB_JIT_C_COMPILER_NAME`` and ``GxB_JIT_C_COMPILER_FLAGS``, and those
+paths (such as ``/Users/runner/...``) do not exist on other machines. With them,
+SuiteSparse writes a kernel's C source but cannot compile it. It then lowers
+``jit_c_control`` to ``'load'`` and runs a generic kernel instead, which for a
+lifted UDT operator calls its Numba function. Before SuiteSparse 9.4 that is
+silent; from 9.4 on, the failed compile also raises ``JitError``, once.
 
-``fix_jit_config()`` replaces the baked-in compiler with one from
-``$CONDA_PREFIX/bin/`` and strips build-time-only flags (``-isysroot``,
-``-fdebug-prefix-map``). For non-conda installs (pure pip), ``sysconfig``
-may expose a usable compiler. ``fix_jit_config(use_sysconfig=True)`` will
-try that.
+``fix_jit_config`` and ``_auto_fix_jit_at_import`` replace the compiler with
+one from ``$CONDA_PREFIX/bin/`` (outside conda, from ``sysconfig``) and fix the
+flags that refer to the build machine. ``jit_compiler_is_usable`` checks that
+the configured compiler exists, without compiling anything.
 
-``jit_compiler_is_usable()`` is a non-invasive check that returns True iff
-the configured compiler exists on disk. Useful for emitting a one-time
-warning at import or at first JIT use.
-
-``jit_c_control`` itself is set when the ``suitesparse`` backend initializes,
-from ``graphblas.config["jit_c_control"]`` (``'run'`` unless configured
-otherwise; see :func:`_set_jit_c_control_at_init`). UDT work raises that
-default ``'run'`` to ``'on'`` when it needs C compiled, but keeps a ``'run'``
-the user set (:func:`_enable_jit_for_udt`).
-The trade-offs of the JIT, and what to do when it misbehaves, are in the user
-guide's initialization page (docs/user_guide/init.rst).
+The control is set when the backend initializes (``_set_jit_c_control_at_init``)
+and raised to ``'on'`` when C source needs compiling (``_enable_jit_for_udt``).
+The rules are in the Technical Notes, "The JIT control"
+(docs/technical_notes/jit.rst), and the trade-offs in the user guide's
+initialization page.
 """
 
 import contextlib
@@ -40,8 +32,8 @@ import subprocess
 # here initializes the backend when this module is imported first, and init
 # imports this module for ``_set_jit_c_control_at_init``.
 
-# Mapping from the values that show up in baked-in ``-arch`` flags to what
-# ``platform.machine()`` returns on the running host.
+# For each host architecture, as ``platform.machine().lower()`` names it, the
+# ``-arch`` values that build for it.
 _ARCH_ALIASES = {
     "x86_64": ("x86_64", "amd64"),
     "arm64": ("arm64", "aarch64"),
@@ -60,9 +52,10 @@ def _ss_config():
 
 
 def jit_compiler_is_usable():
-    """True iff the configured JIT compiler path exists on disk.
+    """Return whether the configured JIT C compiler exists on disk.
 
-    Cheap (no compile attempt); use before suggesting ``fix_jit_config()``.
+    This compiles nothing, so it does not show that the compiler works;
+    ``fix_jit_config()`` checks that.
     """
     return _compiler_exists(_ss_config())
 
@@ -75,34 +68,35 @@ def _compiler_exists(cfg):
 def fix_jit_config(*, use_sysconfig=True, probe=True):
     """Repair the SuiteSparse:GraphBLAS JIT compiler configuration.
 
-    Replaces the baked-in compiler path (which often points at a conda-build
-    host that doesn't exist in user environments) with one from
-    ``$CONDA_PREFIX/bin/``, strips build-time-only flags (``-isysroot``,
-    ``-fdebug-prefix-map``), and sets ``jit_c_control`` to ``'on'``.
+    If the configured compiler does not exist, as in a conda-built package on
+    another machine, take one from ``$CONDA_PREFIX/bin/`` (on Windows,
+    ``$CONDA_PREFIX/Library/bin/``). Fix the compiler flags that refer to the
+    build machine: point a ``-isysroot`` whose SDK is missing at this machine's
+    SDK (or drop it), and drop ``-arch`` for another architecture and
+    ``-fdebug-prefix-map``. Then set ``jit_c_control`` to ``'on'``.
 
     Parameters
     ----------
     use_sysconfig : bool, default True
-        When ``$CONDA_PREFIX`` isn't set (pure pip install), try the
-        compiler from ``sysconfig.get_config_var("CC")``. Set to ``False``
-        to restrict the repair to a conda environment only.
+        When ``$CONDA_PREFIX`` is not set (a pip install), take the compiler
+        and flags from ``sysconfig``. Set to ``False`` to repair only in a
+        conda environment.
     probe : bool, default True
-        After fixing the config, JIT-compile a trivial type to verify the
-        compiler actually works. A failed compile makes SuiteSparse lower
-        ``jit_c_control`` to ``'load'``, and from SuiteSparse 9.4 on it also
-        raises ``JitError`` that one time; the probe takes that failure, so
-        later operations use the generic kernels without raising.
+        After the repair, JIT-compile a tiny type to check that the compiler
+        works. A failed compile makes SuiteSparse lower ``jit_c_control`` to
+        ``'load'``, and from SuiteSparse 9.4 on it also raises ``JitError``
+        that one time. The probe gets that error, so later operations run
+        the generic kernels without raising.
 
     Returns
     -------
     True
-        Fix applied and (if ``probe``) verified working.
+        The repair is done and, with ``probe``, the compiler works.
     False
-        Fix attempted but the probe failed. ``jit_c_control`` is now
-        whatever SuiteSparse left it at.
+        The probe failed. ``jit_c_control`` is where SuiteSparse left it.
     None
-        No environment available to fix from. There's no ``$CONDA_PREFIX``,
-        and either ``use_sysconfig=False`` or no sysconfig compiler is set.
+        There was no compiler to repair from: none in ``$CONDA_PREFIX``, or,
+        outside conda, none from ``sysconfig`` (or ``use_sysconfig=False``).
     """
     cfg = _ss_config()
     rv = _repair_jit_compiler(cfg, use_sysconfig=use_sysconfig)
@@ -111,14 +105,10 @@ def fix_jit_config(*, use_sysconfig=True, probe=True):
     # Enabling compilation is what the caller asked for, whatever
     # ``graphblas.config["jit_c_control"]`` set at init.
     cfg["jit_c_control"] = "on"
-    # An explicit user-driven fix is a clean opportunity to re-arm
-    # ``NoJITWarning``: if the repair worked, the next UDT auto-lift that
-    # *still* falls back to cfunc (different cause: UDT layout, etc.)
-    # deserves a fresh notification rather than silent suppression.
+    # Start over after a repair: ``NoJITWarning`` may warn again, and a probe
+    # answer from before the repair is stale, so the next request to compile C
+    # source probes again.
     _warned_no_jit_for.clear()
-    # Re-arm the cached probe answer for the same reason: a pre-repair False
-    # is stale now, so let the next UDT op re-derive it against the fixed
-    # toolchain instead of trusting the old verdict.
     global _jit_enabled_for_udt
     _jit_enabled_for_udt = None
     if not probe:
@@ -127,11 +117,11 @@ def fix_jit_config(*, use_sysconfig=True, probe=True):
 
 
 def _repair_jit_compiler(cfg, *, use_sysconfig=True):
-    """Point the JIT compiler settings at something that exists on this host.
+    """Point the JIT compiler settings at a compiler that exists on this host.
 
-    Only rewrites the compiler name and flags; ``jit_c_control`` is left
-    alone, so on its own this changes nothing about what SuiteSparse will
-    do. Callers that want compilation enabled set the control themselves.
+    Changes only the compiler settings, not ``jit_c_control``; callers that
+    want compilation enabled set the control themselves. Returns True, or
+    None when there is no compiler to repair from.
     """
     if conda_prefix := os.environ.get("CONDA_PREFIX", ""):
         return _fix_from_conda(cfg, conda_prefix)
@@ -141,12 +131,14 @@ def _repair_jit_compiler(cfg, *, use_sysconfig=True):
 
 
 def _fix_from_conda(cfg, conda_prefix):
-    """Conda-aware fix; swap the compiler path with one from the environment's binaries:
-    ``$CONDA_PREFIX/bin/``, or ``$CONDA_PREFIX/Library/bin/`` with ``.exe`` names (Windows).
+    """Fix the compiler flags, and the compiler too if it does not exist.
+
+    The compiler comes from ``$CONDA_PREFIX/bin/``, or from
+    ``$CONDA_PREFIX/Library/bin/`` with ``.exe`` names (Windows).
     """
     jit_cc = cfg["jit_c_compiler_name"]
     if not pathlib.Path(jit_cc).exists():
-        # (a Windows path's basename, also when read on another system)
+        # Split on both separators, so a Windows path gives its basename on any OS
         cc_basename = re.split(r"[\\/]", jit_cc)[-1]
         prefix = pathlib.Path(conda_prefix)
         names = [cc_basename, "cc", "clang", "gcc"]
@@ -225,22 +217,24 @@ _TOOLCHAIN_KEYS = (
 
 
 def _probe_jit(cfg):
-    """Compile a trivial type with the JIT, or load it from the cache, to check the config works.
+    """Compile a tiny type with the JIT, or load it from the cache, and return whether that worked.
 
-    ``jit_c_control`` must be ``'on'``, and is left wherever SuiteSparse puts
-    it, which is not predictable from here. A library built without the JIT
-    clamps every write down to ``'run'`` (``GB_jitifyer_set_control``), so
-    ``'on'`` never takes on such a build no matter how good the compiler is;
-    separately, a compile failure drops it to ``'load'``, a load failure to
-    ``'run'``, and a failed hash insert to ``'pause'``. The contract here is
-    only "did this work?", so the caller gets a bool.
+    ``jit_c_control`` must be ``'on'``. Afterwards it is wherever SuiteSparse
+    left it: a library built without the JIT clamps every write to ``'run'``
+    (``GB_jitifyer_set_control``), a failed compile lowers it to ``'load'``, a
+    failed load to ``'run'``, and a failed hash insert to ``'pause'``.
 
-    It goes through the C API, so nothing is registered on the Python side,
-    and it can run while the backend initializes. Once a kernel is in the
-    cache, a later probe loads it (about 2 ms) instead of compiling (about
-    0.3 s). The type is named after the toolchain settings, so a compiler or
-    flags this cache has not seen compile a probe of their own, rather than
-    load one that another toolchain left in a shared cache.
+    The callers probe before raising the control to ``'on'`` for good. From
+    SuiteSparse 9.4 on, a failed compile raises ``JitError`` once, and without
+    the probe the first user operation that needs a new kernel would get it
+    (a slice, for example, which has no precompiled kernel).
+
+    The type is created through the C API, so nothing is registered in Python,
+    and this can run while the backend initializes. Its name is a hash of the
+    toolchain settings, so a compiler or flags this cache has not seen compile
+    a probe of their own, rather than load one that another toolchain left in
+    a shared cache. A cached probe loads in about 2 ms; a compile takes about
+    0.3 s.
     """
     from .. import ffi, lib
 
@@ -329,21 +323,16 @@ def _set_jit_c_control_at_init(control):
     """Set ``jit_c_control`` as the backend initializes, from ``graphblas.config``.
 
     ``control`` is ``graphblas.config["jit_c_control"]``, already checked, or
-    None when it is not set: then the control is the default ``'run'``, which
-    UDT work raises (:func:`_enable_jit_for_udt`). A ``'run'`` that is set is
-    the user's choice, and UDT work keeps it (``_user_set_run``).
+    None when it is not set, which means the default ``'run'``. That default
+    is raised later for C source (:func:`_enable_jit_for_udt`); a ``'run'``
+    that is set is kept (``_user_set_run``).
+
     Every value but ``'on'`` is set as given. ``'on'`` is set only where it
-    works, which :func:`_probe_jit` checks by compiling a trivial type (or
-    loading it from the cache, after the first time). Where it does not, the
-    control is set to ``'run'`` (where the conda-forge and PyPI builds of
-    SuiteSparse start it), with no error or warning: a library built without
-    the JIT, which clamps every write to ``'run'``; no compiler on disk, even
-    after :func:`_repair_jit_compiler`; a cache directory it cannot write to;
-    or a compiler that fails the probe.
-    The probe is load-bearing: from SuiteSparse 9.4 on a failed compile raises
-    ``JitError`` (once; SuiteSparse then drops the control to ``'load'``), and
-    without the probe that would be the first user operation that needs a new
-    kernel, such as a slice, which SuiteSparse precompiles no kernel for.
+    works: there is a compiler on disk (after :func:`_repair_jit_compiler`),
+    the cache directory is writable, and :func:`_probe_jit` passes. Elsewhere
+    the control is ``'run'``, where the conda-forge and PyPI builds of
+    SuiteSparse start it, with no error or warning. The rules are in the
+    Technical Notes, "The JIT control".
     """
     from . import _IS_SSGB7
 
@@ -369,20 +358,18 @@ def _set_jit_c_control_at_init(control):
 
 
 def _auto_fix_jit_at_import():
-    """Repair the JIT compiler path at ``gb.ss`` import; designed not to raise.
+    """Repair the JIT compiler setting when ``graphblas.ss`` is imported.
 
-    Called unguarded from ``graphblas/ss/__init__.py``, so any exception here
-    breaks ``import graphblas.ss``. The body sticks to dict ops and the
-    string rewriting in :func:`_repair_jit_compiler`.
+    ``graphblas/ss/__init__.py`` calls this unguarded, so an exception here
+    breaks ``import graphblas.ss``; it sticks to the config mapping and
+    :func:`_repair_jit_compiler`, which are written not to raise.
 
-    Deliberately leaves ``jit_c_control`` alone. An attribute access such as
-    ``gb.ss.about["library_version"]`` imports this submodule, and that must
-    not change what any later operation computes or which kernels SuiteSparse
-    is willing to load from its on-disk cache. The control is set when the
-    backend initializes (:func:`_set_jit_c_control_at_init`), which also
-    repairs the compiler when it sets ``'on'``. Otherwise compilation is
-    enabled later, by :func:`_enable_jit_for_udt`, when a UDT actually needs a
-    kernel built, or a type or op is registered from C source.
+    It leaves ``jit_c_control`` alone. An attribute access such as
+    ``gb.ss.about["library_version"]`` imports ``graphblas.ss``, and that must
+    not change what a later operation computes or which cached kernels
+    SuiteSparse loads. The control is set at init
+    (:func:`_set_jit_c_control_at_init`) and raised for C source
+    (:func:`_enable_jit_for_udt`).
     """
     cfg = _ss_config()
     if "jit_c_control" not in cfg:
@@ -391,10 +378,9 @@ def _auto_fix_jit_at_import():
         _repair_jit_compiler(cfg)
 
 
-# Tri-state: ``None`` until the compiler is probed (at init when that sets
-# ``'on'``, or at the first request to compile C source while the control
-# allows compiling), then the answer to "can this process JIT-compile?" until
-# ``fix_jit_config`` re-arms it.
+# Whether this process can JIT-compile: ``None`` until the compiler is probed,
+# at init when that sets ``'on'``, or at the first request to compile C source
+# that the control allows. ``fix_jit_config`` resets it to ``None``.
 _jit_enabled_for_udt = None
 
 # ``graphblas.config["jit_c_control"]`` as init found it, None when it was not set.
@@ -402,35 +388,29 @@ _configured_jit_c_control = None
 # Whether a ``'run'`` in effect is one the user set, which ``_enable_jit_for_udt``
 # keeps: a ``'run'`` configured before init, or one written to ``gb.ss.config``
 # (whose setter keeps this current) while something else is configured. With
-# nothing configured, a ``'run'`` written there is the default, as before it.
+# nothing configured, a ``'run'`` written there counts as the default.
 _user_set_run = False
 
 
 def _enable_jit_for_udt():
-    """Enable JIT compilation the first time C source needs compiling.
+    """Raise ``jit_c_control`` to ``'on'`` when C source needs compiling.
 
-    ``jit_c_control`` defaults to ``'run'`` (``graphblas.config``, set at
-    init), which runs kernels already loaded but neither compiles nor loads
-    any. UDT auto-lift wants ``'on'``; without it every UDT op falls back to
-    the Numba function-pointer path (typically 2-3x slower for elementwise
-    ops). An op or type registered from C source has no fallback: under
-    ``'run'`` its creation fails outright.
+    Returns whether C source given to SuiteSparse now will be compiled.
 
-    This is where that bump belongs, rather than at import: registering a
-    type or an op from C source, or arming an op with C source, is an act
-    that plainly involves compiling C, so enabling the compiler is not a
-    surprise. Reading ``gb.ss.about`` is not, so it leaves the setting alone.
+    The default control, ``'run'``, neither compiles nor loads kernels. Without
+    ``'on'``, a lifted UDT operator calls its Numba function for each element,
+    often several times slower, and a type or operator registered from C
+    source cannot be created at all. The control is raised here, when C source
+    is given to SuiteSparse, which plainly involves compiling; not at import,
+    so that reading ``gb.ss.about`` changes nothing.
 
-    Only the default ``'run'`` is raised. A ``'run'`` the user set (through
-    ``graphblas.config["jit_c_control"]``, or ``gb.ss.config``; see
-    ``_user_set_run``) is honored, often to keep processes that run at the
-    same time from compiling into one cache (GraphBLAS #449). So are
-    ``'off'``, ``'pause'``, and ``'load'``, and ``'load'`` is also where
-    SuiteSparse leaves the control after a compile fails, so raising it would
-    retry that compile at every later UDT op (raising ``JitError`` each time on
-    SuiteSparse 9.4 and later). Returns True iff a kernel armed now will be
-    compiled. Whether this process can compile at all is probed once and
-    cached.
+    Only the default ``'run'`` is raised. A ``'run'`` the user set (see
+    ``_user_set_run``) is kept, often to keep processes that run at the same
+    time from compiling into one cache (GraphBLAS #449). So are ``'off'``,
+    ``'pause'`` and ``'load'``. SuiteSparse sets ``'load'`` itself after a
+    compile fails, and raising it would retry that compile at every later UDT
+    operator, raising ``JitError`` each time from SuiteSparse 9.4 on. Whether
+    this process can compile at all is probed once (``_jit_enabled_for_udt``).
     """
     global _jit_enabled_for_udt
     cfg = _ss_config()
@@ -447,16 +427,13 @@ def _enable_jit_for_udt():
         # kernel would then fail to compile; see ``_cache_is_writable``.
         if _jit_enabled_for_udt := jit_compiler_is_usable() and _cache_is_writable(cfg):
             cfg["jit_c_control"] = "on"
-            # A library built without the JIT clamps that write back down to
-            # ``'run'``. Otherwise the probe is load-bearing: a failed compile
-            # drops the control to ``'load'`` and, from SuiteSparse 9.4 on,
-            # also raises ``JitError``, so without the probe that one error
-            # would reach the first user operation that needs a kernel.
+            # A library built without the JIT clamps that write back to ``'run'``.
+            # Otherwise probe first; see ``_probe_jit``.
             _jit_enabled_for_udt = cfg["jit_c_control"] == "on" and _probe_jit(cfg)
     elif _jit_enabled_for_udt and control == "run":
-        # The cache answers "can this process compile?", which is settled once.
-        # The control is separate state that anything may have lowered since,
-        # and a kernel armed now still needs it raised.
+        # Whether this process can compile is settled once, but the control is
+        # separate state that anything may have lowered since, and C source
+        # given now still needs it raised.
         cfg["jit_c_control"] = "on"
     return _jit_enabled_for_udt
 
@@ -531,24 +508,18 @@ def _compiling_c_source(name):
         raise type(exc)(f"Cannot create {name} from C source: {reason}") from exc
 
 
-# Keyed by ``(op_name, dtype_name)`` so each distinct pair warns once.
-# A user who registers several UDTs gets one warning per (op, dtype) pair
-# rather than a single global swallow.
+# The ``(op_name, dtype_name)`` pairs ``_maybe_warn_no_jit`` has warned about.
 _warned_no_jit_for = set()
 
 
 def _maybe_warn_no_jit(*, op_name="", dtype_name=""):
-    """Emit a ``NoJITWarning`` (once per ``(op_name, dtype_name)``) when UDT auto-lift falls back.
+    """Warn, once per operator and type, that a lifted UDT operator has no C definition.
 
-    The only caller is ``udt_codegen._maybe_warn_jit_skipped``, which fires
-    after C codegen returned nothing. Codegen reads the dtype and neither the
-    compiler path nor ``jit_c_control``, so the dtype is the cause here even
-    on a host that could not have compiled a kernel anyway. Do not re-derive
-    the cause from the live config; that is not the state codegen read.
-
-    The introspection properties (``DataType.jit_c_definition`` and
-    ``TypedUserBinaryOp.jit_c_source``) show what was generated, or ``None``
-    when codegen was skipped.
+    The caller is ``udt_codegen._maybe_warn_jit_skipped``, after C code
+    generation gave nothing. Code generation reads only the dtype, not the
+    compiler or ``jit_c_control``, so the warning names the dtype as the cause
+    even on a host that could not compile anyway. Do not derive the cause from
+    the live config, which is not what code generation read.
     """
     key = (op_name, dtype_name)
     if key in _warned_no_jit_for:
@@ -561,15 +532,14 @@ def _maybe_warn_no_jit(*, op_name="", dtype_name=""):
     loc = f" (op={op_name!r}, dtype={dtype_name!r})" if op_name else ""
     _warnings.warn(
         f"UDT operator running without JIT compilation: this UDT is not "
-        f"expressible as a C struct{loc} (a field name is a C reserved word or "
-        f"stdlib macro, a field type isn't in the numpy-to-C map, a field is "
-        f"array-typed, or the record has a packed layout). The op still works "
-        f"through the Numba function-pointer fallback; only the JIT speedup is "
-        f"lost (typically 2-3x slower for elementwise ops, since SuiteSparse "
-        f"can't inline the kernel into its eWise and reduce templates). This "
-        f"warning fires once per (op, dtype) per process; silence with "
-        f"``warnings.filterwarnings('ignore', "
-        f"category=gb.exceptions.NoJITWarning)`` or by message match.",
+        f"expressible as a C struct{loc}. A field name may be a C keyword or a "
+        f"name the C headers define, a field may have a type with no C "
+        f"equivalent (such as text or a date), or the record may have an array "
+        f"field or a packed layout. The operator still works, by calling its "
+        f"Numba function for each element, which is often several times slower. "
+        f"This warning appears once per operator and type; silence it with "
+        f"warnings.filterwarnings('ignore', "
+        f"category=graphblas.exceptions.NoJITWarning).",
         NoJITWarning,
         stacklevel=3,
     )

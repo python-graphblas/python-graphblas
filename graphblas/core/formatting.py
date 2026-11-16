@@ -752,7 +752,7 @@ def _computes_itself(expr):
     """Whether infix ``expr`` computes without an op, as ``x @ y`` and BOOL ``x & y`` do."""
     if expr.method_name not in {"ewise_add", "ewise_mult"}:
         return True
-    # A literal beside a Scalar, as in `s & True`, is BOOL beside BOOL if it is a bool
+    # A literal with a Scalar, as in `s & True`, counts as BOOL if it is a bool
     return all(
         type(x) in {bool, np.bool_} if _is_literal(x) else x.dtype == BOOL
         for x in (expr.left, expr.right)

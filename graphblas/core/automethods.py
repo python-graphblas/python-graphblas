@@ -10,13 +10,10 @@ $ python -m graphblas.core.automethods
 
 from .. import config
 
-# Scalar read-only attributes whose value is a plain read of the underlying C
-# scalar. For an index-extract expression (v[i], A[i, j]) these resolve with a
-# single extractElement straight into a cscalar via ScalarIndexExpr._extract_fast,
-# skipping the extra GrB_Scalar round-trip that `.new()` + Scalar.value performs.
-# Only ScalarIndexExpr defines the hook, and no Vector/Matrix expression routes
-# these attrs through _get_value, so their resolution short-circuits on the
-# membership test.
+# Scalar attributes that only read the value. For an index expression (``v[i]``,
+# ``A[i, j]``), _get_value computes them with ScalarIndexExpr._extract_fast: one
+# extractElement into a C scalar, without the GrB_Scalar that ``.new()`` makes.
+# Other expressions have no _extract_fast and use ``.new()``.
 _fast_scalar_attrs = frozenset(
     {
         "value",

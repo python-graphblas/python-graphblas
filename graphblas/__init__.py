@@ -252,9 +252,10 @@ _JIT_C_CONTROLS = ("on", "load", "run", "pause", "off")
 
 
 def _jit_c_control_config():
-    """``config["jit_c_control"]``, the SuiteSparse JIT control set at init (see graphblas.yaml).
+    """Return ``config["jit_c_control"]``, checked and lowercased, for init (see graphblas.yaml).
 
-    None when it is not set, which is the default: ``'run'``, raised by UDT work.
+    None when it is not set, which means the default ``'run'``. A bad value raises
+    ValueError.
     """
     val = config.get("jit_c_control")
     if val is None:

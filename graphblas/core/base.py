@@ -172,17 +172,12 @@ AmbiguousAssignOrExtract._expect_op = _expect_op
 AmbiguousAssignOrExtract._expect_type = _expect_type
 
 
-# Curated hints for common attribute-access mistakes on Vector/Matrix/Scalar.
-# Only consulted from __getattr__, which fires solely on a genuine attribute
-# miss, so the normal (slotted) attribute hot path is untouched.
+# Hints for common attribute mistakes on Vector, Matrix and Scalar; see BaseType.__getattr__.
 _INSTANCE_ATTR_HINTS = {
-    # `.new()` resolves expressions (e.g. `A.mxm(B).new()`); a concrete
-    # object is copied with `.dup()`.
     "new": (
         "`.new()` resolves an expression (e.g. `A.mxm(B).new()`); a concrete "
         "object has no `.new()`. Use `.dup()` to copy this object."
     ),
-    # transpose is the `.T` property, not a method.
     "transpose": "transpose is the `.T` property, e.g. `A.T` (not a method call).",
 }
 
@@ -193,15 +188,15 @@ class BaseType:
     # Flag for operations which depend on scalar vs vector/matrix
     _is_scalar = False
     # numpy's operators return NotImplemented for an operand of higher priority than theirs
-    # (ndarray's is 0, np.matrix's 10), so with a numpy scalar or array on the left Python calls
-    # our reflected method, and `np.int16(2) - s` is the expression `s - np.int16(2)` would be,
-    # not numpy's value of `s.__array__()`. Ufuncs such as `np.sin(s)` still use __array__.
-    # Expressions, TransposedMatrix and the index expressions set it too.
+    # (ndarray's is 0, np.matrix's 10). So with a numpy scalar or array on the left, Python
+    # calls our reflected method: `np.int16(2) - s` is an expression, as `s - np.int16(2)` is,
+    # not numpy's result from `s.__array__()`. Ufuncs such as `np.sin(s)` still use
+    # __array__. Expressions, TransposedMatrix and the index expressions set it too.
     __array_priority__ = 1000
 
     def __getattr__(self, name):
         # Python calls this only after normal lookup fails (slots and methods resolve
-        # first), so it is free on the hot path. It fails both for a missing name and
+        # first), so it is free on the hot path. Lookup fails both for a missing name and
         # for a property that raises AttributeError, such as ``v.ss`` on the vanilla
         # backend or ``__index__`` on a float Scalar. Add hints for common mistakes,
         # and otherwise look the name up again, so a property raises its own message.
@@ -480,10 +475,10 @@ class BaseType:
 
         if input_mask is not None:
             raise TypeError("`input_mask` argument may only be used for extract")
-        # With an accumulator too: it is typed on this object's dtype, so the
-        # result still has to be that type. Before the Aggregator branch, which
-        # hands GraphBLAS the output as it is: agg.first on another UDT read its
-        # bytes as this object's type.
+        # Cast a result of another type for the store, with an accumulator too, which
+        # is typed on this object's dtype. This comes before the Aggregator branch,
+        # which gives GraphBLAS the output as it is, so that agg.first on another UDT
+        # does not read its bytes as this object's type.
         if (cast_op := _store_cast_op(expr.dtype, self.dtype)) is not None:
             if self._is_scalar:
                 # One element: compute it in its own type, then cast it as it is
@@ -633,8 +628,9 @@ class BaseExpression:
             self.dtype = op.return_type
         else:
             self.dtype = dtype
-        # The right operand as the caller gave it, a literal a comparison typed
-        # beside the values; the select helpers compare indices with it instead.
+        # The literal right operand of a comparison, as the caller gave it, before it
+        # was typed to match the values. select._resolve_expr bounds indices with it,
+        # since the typed value can differ (see select._index_bound).
         self._right_literal = None
         self._value = None
 

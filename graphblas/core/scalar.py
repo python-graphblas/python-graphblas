@@ -152,12 +152,11 @@ class Scalar(BaseType):
     def __eq__(self, other):
         """Check equality.
 
-        Compares with ``binary.eq``, as ``==`` on a Vector or Matrix does, so the
-        elements of array UDTs broadcast (an ``INT8[3]`` Scalar of ``[1, 1, 1]``
-        equals ``1``), but returns a bool. Two empty Scalars are equal, and
-        ``s == None`` checks whether ``s`` is empty. :meth:`isequal` is stricter.
-        Without Numba, which ``binary.eq`` needs for UDTs, a UDT's values are
-        compared in numpy, which broadcasts them the same way.
+        Compares with ``binary.eq``, as ``==`` on a Vector or Matrix does, but
+        returns a bool. Elements of array UDTs broadcast: an ``INT8[3]`` Scalar of
+        ``[1, 1, 1]`` equals ``1``. Two empty Scalars are equal, and ``s == None``
+        checks whether ``s`` is empty. :meth:`isequal` is stricter. Without Numba,
+        UDT values are compared with numpy, with the same result.
         """
         return _scalar_eq(self, other, "__eq__")
 
@@ -223,8 +222,8 @@ class Scalar(BaseType):
 
         Notes
         -----
-        Elements of array UDTs must have the same shape, apart from leading axes
-        of length 1, as in ``np.array_equal``; ``==`` broadcasts instead.
+        Elements of array UDTs must have the same shape, as in ``np.array_equal``,
+        except that leading axes of length 1 are ignored; ``==`` broadcasts instead.
 
         See Also
         --------
@@ -780,7 +779,7 @@ class Scalar(BaseType):
             scalar_as_vector=True,
         )
         if output_type(given) is not Scalar:
-            expr._right_literal = given  # a literal, as Scalar comparisons give it
+            expr._right_literal = given  # for select; see BaseExpression.__init__
         return expr
 
     def ewise_union(self, other, op, left_default, right_default):
@@ -841,7 +840,7 @@ class Scalar(BaseType):
         if type(other) is not Scalar:
             other = _literal_scalar(self, other, op, within=method_name, keyword_name="other")
         else:
-            # A typed Scalar keeps its dtype beside a lifted op, as it does for
+            # A typed Scalar keeps its dtype with a lifted op, as it does for
             # Vector.ewise_union: ``s8 - sf`` is float, not ``sf`` cut to int8.
             if dtype is not None and other.dtype != dtype and _is_lifted_op(op):
                 dtype = None
@@ -1062,12 +1061,10 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
         if is_cscalar is None:
             is_cscalar = False
         parent = self.parent
-        # Fast path for the default `expr.new()`: extract a single element
-        # straight into a fresh GrB_Scalar via GrB_*_extractElement_Scalar,
-        # skipping the `call` wrapper's per-arg _carg marshalling. Falls back
-        # for a dtype cast, cscalar output, opts, UDTs, and an active Recorder
-        # (so the call is recorded). Result is a GrB_Scalar (is_cscalar=False),
-        # empty exactly when the element is missing, same as _extract_element.
+        # Fast path for the default ``expr.new()``: GrB_*_extractElement_Scalar into a
+        # new GrB_Scalar, called directly rather than through ``call``. Not for a dtype,
+        # a C scalar, opts, a UDT, or while a Recorder records the call. A missing
+        # element gives an empty Scalar, as in _extract_element.
         if (
             dtype is None
             and not is_cscalar
@@ -1106,12 +1103,10 @@ class ScalarIndexExpr(AmbiguousAssignOrExtract):
     def _extract_fast(self):
         """Resolve a value read (``.value``, ``float(...)``, ...) with one extract.
 
-        Those readers only need the raw element, so extract it straight into a
-        cscalar and skip the extra GrB_Scalar round-trip that ``.new()`` followed
-        by ``Scalar.value`` would perform. Defer to the full ``.new()`` for UDTs
-        (whose values need numpy conversion in ``Scalar.value``) and while a
-        Recorder is active (so it observes the same calls as the expression path).
-        ``automethods._get_value`` consults this hook for ``_fast_scalar_attrs``.
+        It extracts into a C scalar, without the GrB_Scalar that ``.new()`` makes.
+        A UDT, whose value ``Scalar.value`` converts with numpy, and an active
+        Recorder, which must see the same calls as ``.new()`` makes, take ``.new()``.
+        ``automethods._get_value`` calls this for ``_fast_scalar_attrs``.
         """
         parent = self.parent
         if parent.dtype._is_udt or _is_recording():
@@ -1187,7 +1182,7 @@ def _scalar_eq(scalar, other, within):
     if not scalar.dtype._is_udt:
         # For built-in dtypes, compare the two values in the type ``eq`` is typed
         # for, which is what it computes, without a GraphBLAS call: ``s == 0``
-        # takes about 2 us instead of 11.
+        # takes about a quarter of the time.
         if type(other) is Scalar:
             other_dtype, value = other.dtype, other.value
         else:
@@ -1197,7 +1192,7 @@ def _scalar_eq(scalar, other, within):
                 other_dtype = get_typed_op(binary.eq, scalar.dtype, other_dtype).type
             convert = other_dtype.np_type.type
             if other_dtype.np_type in _SINGLE_PRECISION:
-                # 1e300 beside FP32 is infinity, and _literal_operand has
+                # 1e300 as FP32 is infinity, and _literal_operand has
                 # warned at the caller's line, so numpy need not warn again.
                 with np.errstate(over="ignore"):
                     return (convert(scalar.value) == convert(value)).item()
@@ -1237,7 +1232,7 @@ def _as_scalar(scalar, dtype=None, *, is_cscalar):
 
 
 def _literal_scalar(scalar, value, op, *, within, argname=None, keyword_name=None):
-    """Return literal ``value``, ``op``'s operand beside ``scalar`` on either side, as a Scalar.
+    """Return literal ``value``, an operand of ``op`` with ``scalar`` on either side, as a Scalar.
 
     It is typed as any literal operand is (``literals._literal_operand``), as the
     left operand when ``argname`` is ``"left"``. A value that cannot be a Scalar

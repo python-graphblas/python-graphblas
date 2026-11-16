@@ -129,9 +129,10 @@ def _power(updater, A, n, op):
     opts = updater.opts
 
     def times(left, right):
-        # ``op`` is typed for A, and GraphBLAS casts a built-in operand of another
-        # type to it, but not a UDT: an int8 UDT squares to float64 under truediv.
-        # So a product of UDT operands of other types takes ``op`` typed for them.
+        # ``op`` is typed for A. A product can have another type (an INT8[3] UDT
+        # squares to FP64[3] under truediv), and GraphBLAS casts a built-in operand
+        # to ``op``'s type but not a UDT, so a product of UDTs of other types takes
+        # ``op`` typed for them.
         if A.dtype._is_udt and (left.dtype != op.type or right.dtype != op.type2):
             return get_typed_op(op.parent, left.dtype, right.dtype, kind="semiring")(left @ right)
         return op(left @ right)
@@ -271,17 +272,17 @@ class Matrix(BaseType):
         """Cast this Matrix with one column to a Vector.
 
         This is SuiteSparse-specific and may change in the future.
-        This does not copy the matrix, but converts it to be held by column if it
-        is held by row.
+        This does not copy the matrix, but converts it to be stored by column if it
+        is stored by row.
         """
         if self._ncols != 1:
             raise ValueError(
                 f"Matrix must have a single column (not {self._ncols}) to be cast to a Vector"
             )
         if backend == "suitesparse":
-            # SuiteSparse holds a GrB_Vector as a one-column matrix by column. Cast
-            # from a matrix held by row (a reshape of a by-row Matrix is one), the
-            # Vector has size 1 to SuiteSparse whatever its Python-side size.
+            # SuiteSparse stores a GrB_Vector as a one-column matrix by column. Cast
+            # from a matrix stored by row (a reshape of a by-row Matrix is one), the
+            # Vector would have size 1 to SuiteSparse whatever its Python-side size.
             if self.ss.config["format"] != "by_col":
                 self.ss.config["format"] = "by_col"
             return Vector._from_obj(
@@ -386,16 +387,9 @@ class Matrix(BaseType):
             M[0, 0:3] = 17
 
         """
-        # Fast path for `A[i, j] = scalar`: a plain (row, col) integer pair and
-        # an exact-fit Python scalar, with no mask/accum/opts, a non-UDT dtype,
-        # and no active Recorder. Mirrors Updater -> _assign_element for a single
-        # element while skipping the resolver, Updater, and Scalar objects. Only
-        # int/float/bool/complex (_SET_ELEMENT_TYPES) are taken here so dtype inference
-        # and cffi coercion match _assign_element exactly; everything else (slices, fancy
-        # indexing, numpy or Scalar values, `A(mask)[i, j] << x`) falls back to
-        # the full assign path, leaving mask/accum and coercion unchanged. So
-        # does an int beyond INT64, which that path types as the matrix's dtype
-        # (``uint64_mat[i, j] = 2**63``; literals._literal_store_dtype).
+        # Fast path; see vector._SET_ELEMENT_TYPES. An int beyond INT64 takes the full
+        # path, which types it as the matrix's dtype (``uint64_mat[i, j] = 2**63``; see
+        # literals._literal_store_dtype).
         if (
             not opts
             and type(keys) is tuple
@@ -406,9 +400,6 @@ class Matrix(BaseType):
             and not _is_recording()
         ):
             row, col = keys
-            # Only int and np.integer keys take the fast lane (bools excluded),
-            # matching parse_index; other __index__ objects fall through to the
-            # expression path and its canonical errors.
             if (type(row) is int or isinstance(row, np.integer)) and (
                 type(col) is int or isinstance(col, np.integer)
             ):
@@ -445,12 +436,8 @@ class Matrix(BaseType):
             (10, 15) in M
 
         """
-        # Fast path for a plain (row, col) integer pair: probe with
-        # GrB_Matrix_extractElement directly instead of building an extract
-        # expression and Scalar. An out-of-range index falls through to the
-        # expression path so it raises the same IndexError as the slow path.
-        # Fall back for a UDT dtype and an active Recorder (so the call is
-        # recorded), mirroring Matrix.get. TransposedMatrix reuses this method.
+        # Fast path; see vector._SET_ELEMENT_TYPES. An index out of range takes the
+        # full path, which raises the IndexError. TransposedMatrix reuses this method.
         if (
             type(index) is tuple
             and len(index) == 2
@@ -458,9 +445,6 @@ class Matrix(BaseType):
             and not _is_recording()
         ):
             row, col = index
-            # Only int and np.integer take the fast lane (bools excluded),
-            # matching parse_index; other __index__ objects fall through to the
-            # expression path and its canonical errors.
             if (type(row) is int or isinstance(row, np.integer)) and (
                 type(col) is int or isinstance(col, np.integer)
             ):
@@ -522,8 +506,8 @@ class Matrix(BaseType):
 
         Notes
         -----
-        Elements of array UDTs must have the same shape, apart from leading axes
-        of length 1, as in ``np.array_equal``; ``==`` broadcasts instead.
+        Elements of array UDTs must have the same shape, as in ``np.array_equal``,
+        except that leading axes of length 1 are ignored; ``==`` broadcasts instead.
 
         See Also
         --------
@@ -931,10 +915,9 @@ class Matrix(BaseType):
         Use wait to force completion of the Matrix.
 
         In `blocking mode <../user_guide/init.html#graphblas-modes>`__, computations are
-        already complete, but with SuiteSparse:GraphBLAS, "materialize" may still build the
-        hyper_hash of a hypersparse Matrix that lacks one, such as one from ``from_coo`` or
-        an import (on recent versions, only with more non-empty rows or columns than the
-        ``GxB_HYPER_HASH`` setting, 1024 by default); see ``Matrix.ss.unpack_hyperhash``.
+        already complete. With SuiteSparse:GraphBLAS, "materialize" may still build the
+        hyper_hash of a hypersparse Matrix with more than 1024 non-empty rows or columns,
+        such as one from ``from_coo`` or an import; see ``Matrix.ss.unpack_hyperhash``.
 
         """
         how = how.lower()
@@ -964,14 +947,7 @@ class Matrix(BaseType):
         Python scalar
 
         """
-        # Fast path for plain integer indices: call GrB_Matrix_extractElement
-        # directly instead of building an extract expression, which costs ~10x
-        # more than the C call for single-element access. Fall back when a
-        # Recorder is active (so the call is recorded) and for UDTs (whose
-        # values need numpy-based conversion in Scalar.value).
-        # Only int and np.integer take the fast lane (bools excluded), matching
-        # parse_index; other __index__ objects fall through to the expression
-        # path and its canonical errors.
+        # Fast path; see vector._SET_ELEMENT_TYPES.
         if (
             (type(row) is int or isinstance(row, np.integer))
             and (type(col) is int or isinstance(col, np.integer))
@@ -2797,7 +2773,7 @@ class Matrix(BaseType):
             thunk = False  # most basic form of 0 when unifying dtypes
         given = thunk
         if type(thunk) is not Scalar:
-            # A thunk beside a UDT becomes an element of it, so it must fit, as in apply.
+            # With a UDT, the thunk becomes an element of it, so it must fit, as in apply.
             thunk, dtype = _literal_operand(self.dtype, thunk, op)
             try:
                 thunk = Scalar.from_value(thunk, dtype, is_cscalar=None, name="")
@@ -3757,12 +3733,11 @@ class Matrix(BaseType):
 
 
 if backend == "suitesparse":
-    # `.ss` is built lazily per access rather than stored on the instance: a
-    # stored `ss(self)` holds `_parent` back to this Matrix (and so does its
-    # config), forming a reference cycle that keeps the object (and its C-side
-    # GrB buffer) alive until the cyclic gc runs instead of dying by refcount.
-    # See gh-559. Class-level `Matrix.ss` still resolves to the `ss` class so
-    # the `import_*` classmethods keep working.
+    # `.ss` is built at each access, not stored on the instance: a stored `ss(self)`
+    # (and its config) refers back to this Matrix through `_parent`, and that
+    # reference cycle keeps the Matrix and its GraphBLAS data alive until the cyclic
+    # garbage collector runs (gh-559). On the class, `Matrix.ss` is the `ss` class,
+    # for its `import_*` classmethods.
     def _ss(self):
         return ss(self)
 

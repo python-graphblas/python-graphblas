@@ -33,8 +33,7 @@ class Context(BaseConfig):
     }
 
     def __init__(self, engage=True, *, stack=True, nthreads=None, chunk=None, gpu_id=None):
-        # Instance attributes must exist before super().__init__() finishes,
-        # because BaseConfig.__setattr__ allows only the attributes set by then.
+        # Set before super().__init__(), which fixes the allowed attributes (see BaseConfig).
         self.gb_obj = ffi_new("GxB_Context*")
         check_status_carg(lib.GxB_Context_new(self.gb_obj), "Context", self.gb_obj[0])
         self._prev_context = None
