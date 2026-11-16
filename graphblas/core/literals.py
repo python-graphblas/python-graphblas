@@ -127,11 +127,8 @@ _SINGLE_PRECISION = {np.dtype(np.float32), np.dtype(np.complex64)}
 def _weak_builtin_literal_dtype(dtype, value, op=None):
     """Return the dtype of Python number ``value`` as an operand with built-in ``dtype``, or None.
 
-    A Python ``bool``, ``int``, ``float`` or ``complex`` is weak, as numpy 2
-    types it (NEP 50), by the rules UDT leaves use too
-    (:func:`_weak_literal_leaf`): ``int8_vec + 1`` is INT8,
-    ``fp32_vec * 0.5`` is FP32, ``int8_vec * 0.5`` is FP64, and
-    ``int8_vec + 300`` raises ``OverflowError``. python-graphblas applies the
+    A Python number is weak (see the module docstring), typed by the same rules
+    as a UDT leaf (:func:`_weak_literal_leaf`). python-graphblas applies the
     rules itself, so numpy 1 gives the same answers. ``None`` keeps the value's
     own dtype (strong): for anything but a Python number, for a typed op, which
     fixes the operand types itself, and for the thunk of an index op that does
@@ -490,11 +487,11 @@ def _int_bounds(elem):
 def _weak_literal_element(value, kind, elem):
     """Return the dtype a Python number of ``kind`` takes as an operand with an element of ``elem``.
 
-    It is ``elem`` when ``elem``'s kind can hold the number (``1`` with int8,
-    ``0.5`` with float32), else the number's default dtype (``0.5`` with int8
-    is float64), or for a complex number with a float, complex of the float's
-    precision. An int out of an integer ``elem``'s range raises
-    ``OverflowError``, as numpy 2 does, rather than wrapping.
+    It is ``elem`` when ``_WEAK_LITERAL_FITS`` says ``elem``'s kind holds the
+    number, else the number's default dtype. A complex number with a float
+    ``elem`` takes the complex type of the float's precision. An int out of an
+    integer ``elem``'s range raises ``OverflowError``, as numpy 2 does, rather
+    than wrapping.
     """
     if elem.kind in _WEAK_LITERAL_FITS[kind]:
         if kind == "i" and elem.kind in "iu":

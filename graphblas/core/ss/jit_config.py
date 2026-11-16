@@ -330,8 +330,8 @@ def _set_jit_c_control_at_init(control):
     Every value but ``'on'`` is set as given. ``'on'`` is set only where it
     works: there is a compiler on disk (after :func:`_repair_jit_compiler`),
     the cache directory is writable, and :func:`_probe_jit` passes. Elsewhere
-    the control is ``'run'``, where the conda-forge and PyPI builds of
-    SuiteSparse start it, with no error or warning. The rules are in the
+    the control is ``'run'``, the value the conda-forge and PyPI builds of
+    SuiteSparse start with, and nothing raises or warns. The rules are in the
     Technical Notes, "The JIT control".
     """
     from . import _IS_SSGB7
@@ -401,8 +401,7 @@ def _enable_jit_for_udt():
     ``'on'``, a lifted UDT operator calls its Numba function for each element,
     often several times slower, and a type or operator registered from C
     source cannot be created at all. The control is raised here, when C source
-    is given to SuiteSparse, which plainly involves compiling; not at import,
-    so that reading ``gb.ss.about`` changes nothing.
+    is given to SuiteSparse, and not at import (see :func:`_auto_fix_jit_at_import`).
 
     Only the default ``'run'`` is raised. A ``'run'`` the user set (see
     ``_user_set_run``) is kept, often to keep processes that run at the same
@@ -411,6 +410,7 @@ def _enable_jit_for_udt():
     compile fails, and raising it would retry that compile at every later UDT
     operator, raising ``JitError`` each time from SuiteSparse 9.4 on. Whether
     this process can compile at all is probed once (``_jit_enabled_for_udt``).
+    The rules for users are in the Technical Notes, "The JIT control".
     """
     global _jit_enabled_for_udt
     cfg = _ss_config()

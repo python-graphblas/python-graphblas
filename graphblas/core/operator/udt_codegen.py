@@ -130,13 +130,13 @@ def _is_signed_int(np_dtype):
 # ``hasattr`` would lie; gate on the backend too.
 _has_jit_set = backend == "suitesparse" and hasattr(lib, "GxB_JIT_C_NAME")
 
-# Names that can't be used as record field names in the JIT C source: C
+# Names that cannot be used as record field names in the JIT C source: C
 # keywords, and the macros of the JIT include chain (``GraphBLAS.h``
 # transitively pulls in ``<math.h>``, ``<complex.h>``, ``<stddef.h>``,
 # ``<stdio.h>``, ``<errno.h>``, ``<stdint.h>`` and more). The preprocessor
 # expands a macro inside any declarator or expression it appears in, so a field
-# declared ``double M_PI ;`` becomes ``double 3.14159... ;`` and won't compile;
-# the separate namespace for struct members doesn't help. A typedef name such
+# declared ``double M_PI ;`` becomes ``double 3.14159... ;`` and does not compile;
+# the separate namespace for struct members does not help. A typedef name such
 # as ``size_t`` is a valid field name; those listed are refused only to be safe.
 # (A UDT's own name never collides: its C name has a prefix,
 # ``_C_TYPE_NAME_PREFIX``.)
@@ -597,11 +597,10 @@ if _has_numba:
         ``GrB_MIN_FP64`` is C99 ``fmin``, so this builder and
         :func:`_c_minmax_expr` both reproduce it, for ``binary.min`` to mean
         the same on FP64 and on a UDT: a NaN operand is ignored unless both
-        are NaN. C99 leaves the tie between ``-0.0`` and ``0.0`` to the
-        C library, which differs by platform, so both builders fix it: it
-        resolves to ``-0.0`` for ``min``, ``0.0`` for ``max``, whichever side
-        each sits on (Apple's libm answers so; glibc's x86-64 ``fmin`` answers
-        by position).
+        are NaN. C99 leaves the tie between ``-0.0`` and ``0.0`` to the C
+        library, and libraries differ by platform. Both builders resolve it to
+        ``-0.0`` for ``min`` and ``0.0`` for ``max``, whichever side each is
+        on, as Apple's libm does. glibc's x86-64 ``fmin`` picks by position.
 
         Neither ``min`` nor ``np.fmin`` gets both rules right under Numba.
         Python's builtin returns its first argument whenever the comparison
@@ -1186,7 +1185,7 @@ def _c_expr_binary(py_op, lhs, rhs, field_dtype):
     Some ops need it because the obvious C spelling disagrees with what the
     Numba cfunc computes: ``//`` is not C ``/``, and ``min`` / ``max`` have to
     ignore NaN and break a signed-zero tie as :func:`_minmax_expr` does. It is
-    required rather than optional so a new caller can't silently get the
+    required rather than optional so a new caller cannot silently get the
     wrong kernel. :func:`_expr_binary` is the sibling for the Numba cfunc;
     SuiteSparse picks between the two on its own, so they must agree.
 

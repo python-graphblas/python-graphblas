@@ -92,14 +92,14 @@ def _compile_udf_for_udt(numba_func, sig, *, op_kind, op_name, dtypes):
 
     Catches the full ``NumbaError`` hierarchy (TypingError, LoweringError,
     UnsupportedError, ...) so any compilation failure produces a
-    single-line UDT diagnostic.
+    single-line UDT diagnostic. It also catches the bare ``KeyError`` that
+    Numba 0.59 and later raise for ``x.name`` on a record without that field;
+    earlier versions wrap it in a TypingError.
     """
     try:
         numba_func.compile(sig)
     except (NumbaError, KeyError) as exc:
         if isinstance(exc, KeyError):
-            # From Numba 0.59, ``x.name`` on a record without that field raises a bare
-            # KeyError (earlier versions wrap it in a TypingError, handled below).
             snippet = f"KeyError: {exc}"
         else:
             snippet = _summarize_numba_typing_error(exc)
@@ -307,7 +307,7 @@ def _input_operand(dtype, var):
             nt.CPointer(base_numba),
         )
     if dtype == BOOL:
-        # Numba can't compile bool pointers (numba/numba#5395; see _bool_to_int8),
+        # Numba cannot compile bool pointers (numba/numba#5395; see _bool_to_int8),
         # so read an int8 and convert it.
         # MAINT 2026-10-18: still hits on Numba 0.68; re-test periodically.
         return "", f"bool({var}_ptr[0])", nt.CPointer(INT8.numba_type)

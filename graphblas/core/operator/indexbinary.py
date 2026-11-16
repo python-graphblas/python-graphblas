@@ -29,7 +29,7 @@ ffi_new = ffi.new
 
 def _rebind_indexbinaryop(parent, type_, theta):
     # ``type_`` is the key from ``_ibo_types_key``, and ``theta`` the value that was
-    # bound. A value for a UDT thunk becomes a Scalar of that UDT here, but ``__call__``
+    # bound. A value for a UDT theta becomes a Scalar of that UDT here, but ``__call__``
     # does the same, so this is redundant.
     typed = parent[type_]
     thunk_type = typed.thunk_type
@@ -43,7 +43,7 @@ def _rebind_indexbinaryop(parent, type_, theta):
 def _theta_to_scalar(theta, dtype):
     """Return ``theta``, which is not a Scalar, as a GraphBLAS Scalar to bind.
 
-    ``dtype`` is the thunk type when it is known (a UDT thunk, or ``dtype=``). With
+    ``dtype`` is theta's type when it is known (a UDT ``thunk_type``, or ``dtype=``). With
     None, theta has the type of its value: a Python number its default type, a numpy
     scalar or ``np.void`` its dtype, and a numpy array its array UDT (``INT32[3]`` for
     an int32 array of shape ``(3,)``). A tuple, list or dict has no type of its own, and
@@ -91,7 +91,7 @@ class _BoundIndexBinaryOp(TypedOpBase):
     # Each bind allocates a new GrB_BinaryOp, and bound ops are not cached, so
     # ``__del__`` must free it
     _owns_gb_obj = True
-    # A Semiring made from this op reads these BinaryOp attributes, in its ``__init__``,
+    # In its ``__init__``, a Semiring made from this op reads these BinaryOp attributes:
     # ``is_positional``, ``_custom_dtype``, ``_is_udt`` and ``commutes_to``. A bound op
     # has one set of types, and is not positional or commutative.
     _is_udt = False
@@ -104,6 +104,7 @@ class _BoundIndexBinaryOp(TypedOpBase):
     is_positional = False
     _custom_dtype = None
 
+    # ``ewise_union`` reads ``type2`` for the type of its right default
     type2 = TypedBuiltinBinaryOp.type2
 
     def __reduce__(self):
@@ -213,7 +214,7 @@ class TypedBuiltinIndexBinaryOp(TypedOpBase):
             theta = False
         theta_value = theta.value if isinstance(theta, Scalar) else theta
         if not isinstance(theta, Scalar):
-            # A value for a UDT thunk becomes an element of that UDT; any other value
+            # A value for a UDT theta becomes an element of that UDT; any other value
             # has its own type
             tt = self.thunk_type
             theta = _theta_to_scalar(theta, tt if tt._is_udt else None)
@@ -561,8 +562,8 @@ class IndexBinaryOp(OpBase):
             compilable with ``numba.njit``. The function takes seven inputs
             ``(x, ix, jx, y, iy, jy, theta)``: ``x`` and ``y`` are element
             values, ``ix, jx`` and ``iy, jy`` are their row and column indices
-            (uint64, so ``ix - iy`` wraps when ``iy`` is larger), and ``theta`` is a
-            scalar parameter.
+            (uint64), and ``theta`` is a scalar parameter. A difference of two indices
+            wraps when it would be negative; see :ref:`unsigned indices <udf_indices>`.
         name : str, optional
             The name of the operator. This *does not* show up as ``gb.indexbinary.{name}``.
         parameterized : bool, default False
@@ -594,8 +595,8 @@ class IndexBinaryOp(OpBase):
             compilable with ``numba.njit``. The function takes seven inputs
             ``(x, ix, jx, y, iy, jy, theta)``: ``x`` and ``y`` are element
             values, ``ix, jx`` and ``iy, jy`` are their row and column indices
-            (uint64, so ``ix - iy`` wraps when ``iy`` is larger), and ``theta`` is a
-            scalar parameter.
+            (uint64), and ``theta`` is a scalar parameter. A difference of two indices
+            wraps when it would be negative; see :ref:`unsigned indices <udf_indices>`.
         parameterized : bool, default False
             When True, create a parameterized user-defined operator.
         is_udt : bool, default False

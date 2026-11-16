@@ -259,7 +259,7 @@ class UnaryOp(OpBase):
         from ..udt import _refuse_half
 
         _refuse_half(self, dtype)
-        # A built-in type a lifted op lacks raises the usual KeyError, as in
+        # A built-in type that a lifted op lacks raises the usual KeyError, as in
         # ``BinaryOp._compile_udt``
         if not dtype._is_udt and self._numba_func is None:
             raise KeyError(f"{self.name} does not work with {dtype}")

@@ -302,7 +302,8 @@ class SelectOp(OpBase):
             is the row index of the Matrix or the index of the Vector, the third
             argument (uint64) is the column index of the Matrix or 0 for a Vector,
             and the fourth argument (any dtype) is the value of the input Scalar.
-            The indices are unsigned, so ``i - j`` wraps when ``j`` is larger.
+            A difference of two indices wraps when it would be negative; see
+            :ref:`unsigned indices <udf_indices>`.
         name : str, optional
             The name of the operator. This *does not* show up as ``gb.select.{name}``.
         parameterized : bool, default False
@@ -354,7 +355,8 @@ class SelectOp(OpBase):
             is the row index of the Matrix or the index of the Vector, the third
             argument (uint64) is the column index of the Matrix or 0 for a Vector,
             and the fourth argument (any dtype) is the value of the input Scalar.
-            The indices are unsigned, so ``i - j`` wraps when ``j`` is larger.
+            A difference of two indices wraps when it would be negative; see
+            :ref:`unsigned indices <udf_indices>`.
         parameterized : bool, default False
             When True, create a parameterized user-defined operator, which means
             additional parameters can be "baked into" the operator when used.

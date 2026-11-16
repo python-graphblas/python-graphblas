@@ -55,6 +55,8 @@ Operator            Function signature                      Returns
 in a Vector, ``ix`` is the index and ``jx`` is 0. ``thunk`` and ``theta`` are a scalar
 given when the operator is used. IndexBinaryOps need SuiteSparse:GraphBLAS 9.4 or later.
 
+.. _udf_indices:
+
 The indices are unsigned 64-bit integers, so a difference such as ``ix - jx`` or
 ``iy - ix`` wraps around to a huge number when it would be negative. Compare the indices
 instead, or convert them first: ``np.int64(ix) - np.int64(jx)``. ``int(ix)`` does not
