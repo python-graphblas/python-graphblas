@@ -1166,9 +1166,8 @@ def test_jit_c_name_per_name_and_definition(v):
     """An op registered from C is compiled under a C name of its full name and definition.
 
     SuiteSparse finds a compiled kernel in memory by its op's name, and checks a definition
-    only when it loads a kernel from disk. Regression: when the C name was the op's last
-    name, an op defined again after ``delattr``, or one of the same last name in another
-    namespace, ran the kernel compiled first.
+    only when it loads a kernel from disk. Regression: an op defined again after ``delattr``,
+    or one with the same last name in another namespace, ran the kernel compiled first.
     """
     if _IS_SSGB7:
         return
@@ -2631,10 +2630,10 @@ def test_udt_named_like_an_identifier_in_the_kernel_takes_the_jit():
 def test_udt_long_name_gets_a_c_name_that_fits():
     """A UDT whose ``gbudt_`` C name would not leave room for its ops' names gets a synthetic one.
 
-    SuiteSparse refuses a name of 128 characters or more. Regression: a type with such a
-    name was kept with an empty one, so its first kernel, a transpose say, raised
-    ``JitError``; and with a C name of 119 to 127 characters, ``floordiv_`` or ``plus_`` and
-    it did not fit, so the op lost its JIT with a NoJITWarning that blamed the fields.
+    SuiteSparse refuses a name of 128 characters or more, and an op's C name adds a prefix
+    such as ``floordiv_`` to the type's, so a type's C name can have at most 118 characters.
+    Regression: a longer name was kept, so a kernel raised ``JitError``, or an op lost its
+    JIT with a NoJITWarning that blamed the fields.
     """
     from graphblas.core.operator.udt_codegen import _max_type_c_name_len
 
@@ -2675,9 +2674,9 @@ def test_udt_c_name_keeps_python_graphblas_own_names():
 def test_udt_from_c_source_lifts_ops_under_its_own_c_name():
     """An op lifted to a type registered from C source names the type as its C source does.
 
-    Regression: the ``gbudt_`` prefix that keeps a numpy UDT's C name clear of kernel
-    identifiers was also put on a C-source type's name, so ``binary.plus[t]`` was defined
-    on a type SuiteSparse does not know, raising ``JitError`` and leaving 'load'.
+    Regression: the ``gbudt_`` prefix of a numpy UDT's C name was also put on a C-source
+    type's, so ``binary.plus[t]`` named a type SuiteSparse does not know and raised
+    ``JitError``, leaving 'load'.
     """
     _require_jit_on()
     np_type = np.dtype([("cs_x", np.float64), ("cs_y", np.float64)], align=True)
