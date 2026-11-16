@@ -177,7 +177,7 @@ class UnaryOp(OpBase):
         if name is None:
             name = getattr(func, "__name__", "<anonymous_unary>")
         success = False
-        # Set on the Dispatcher, not just the cfunc wrapper; see the note in
+        # Set on the Dispatcher too, not only on the cfunc wrapper; see the note in
         # ``BinaryOp._build``.
         unary_udf = numba.njit(func, error_model="numpy")
         new_type_obj = cls(name, func, anonymous=anonymous, is_udt=is_udt, numba_func=unary_udf)
@@ -259,13 +259,12 @@ class UnaryOp(OpBase):
         from ..udt import _refuse_half
 
         _refuse_half(self, dtype)
-        # See the matching note in ``BinaryOp._compile_udt``: plain-scalar
-        # misses on UDT-dispatch-enabled ops get the legacy message.
+        # A built-in type a lifted op lacks raises the usual KeyError, as in
+        # ``BinaryOp._compile_udt``
         if not dtype._is_udt and self._numba_func is None:
             raise KeyError(f"{self.name} does not work with {dtype}")
         if self._numba_func is None and _has_numba and self.name in _BUILTIN_UDT_UNARY_OPS:
-            # Auto-generate an element-wise UDT function for the built-in
-            # unary ops (``ainv``, ``abs``).
+            # Lift ``ainv`` or ``abs`` to the UDT
             py_op = _BUILTIN_UDT_UNARY_OPS[self.name]
             unary_wrapper, wrapper_sig, ret_type = compile_udt_unary_wrapper(
                 self.name, py_op, dtype
@@ -273,9 +272,8 @@ class UnaryOp(OpBase):
             op = _finalize_udt_op(
                 self, dtype, None, ret_type, unary_wrapper, wrapper_sig, TypedUserUnaryOp
             )
-            # ``_has_jit_set`` gates access to ``lib.GrB_UnaryOp_set_String``,
-            # which is absent on SS < 9; the attribute lookup itself raises
-            # there, so it must not be evaluated as an argument first.
+            # Before SuiteSparse 9, looking up ``lib.GrB_UnaryOp_set_String`` raises, so
+            # it is looked up only when ``_has_jit_set``
             if _has_jit_set:
                 op._jit_c_info = set_jit_c_on_op(
                     op.gb_obj, self.name, py_op, dtype, lib.GrB_UnaryOp_set_String, arity=1
@@ -468,7 +466,7 @@ class UnaryOp(OpBase):
                 unop._numba_func = None
             unop._udt_types = {}
             unop._udt_ops = {}
-        # Enable element-wise unary ops on UDTs (``ainv``, ``abs``).
+        # Lift ``ainv`` and ``abs`` to UDTs
         if _has_numba:
             for op_name in _BUILTIN_UDT_UNARY_OPS:
                 unop = getattr(unary, op_name, None)
@@ -507,11 +505,10 @@ _udt_casts = {}
 
 
 def _udt_cast_op(dtype, to_dtype):
-    """Return the UnaryOp storing an element of UDT ``dtype`` as UDT ``to_dtype``.
+    """Return the typed UnaryOp that casts an element of UDT ``dtype`` to UDT ``to_dtype``.
 
-    ``udt._store_cast_op`` decides when to use it, after
-    ``udt._udt_cast_error`` has accepted the pair. It is compiled once
-    per pair and has no JIT kernel.
+    ``udt._store_cast_op`` decides when to use it, after ``udt._udt_cast_error`` has
+    accepted the pair. It is compiled once per pair and has no C definition.
     """
     parent = _udt_casts.get(to_dtype)
     if parent is None:

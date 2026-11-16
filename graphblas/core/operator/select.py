@@ -16,24 +16,31 @@ _VALUE_OPS = {"valueeq", "valuene", "valuelt", "valuele", "valuegt", "valuege"}
 def _value_select_in_own_type(op, dtype, thunk, given):
     """Return ``op`` and ``thunk`` for ``select`` on built-in ``dtype``, as a value op of ``dtype``.
 
-    SuiteSparse:GraphBLAS 8.0 to 10.5.1 runs ``select`` with a value
-    op typed for another type than the input's by reading the thunk's bytes as
-    the input's type, where the spec casts both to the op's type: on an INT8
-    vector, ``valueeq`` with ``1.0`` compared with 0, and ``valuelt`` with
-    ``300`` compared with 44. ``apply`` with the same op is right. So the
-    comparison is made in the input's own type, with a thunk that selects the
-    same elements: for integers, ``x < 2.5`` is ``x < 3``, and a thunk no
-    element can equal, or that every element passes, selects nothing or
-    everything; for floats, the thunk is rounded toward the side that keeps
-    the comparison exact; for complex numbers, which have no order, a thunk
-    that does not convert exactly equals no element. ``given`` is the thunk as
-    the caller gave it, whose value is exact where ``thunk`` may have rounded
-    it (an int beyond 64 bits is FP64). Other ops and types are returned
-    unchanged.
+    SuiteSparse:GraphBLAS before 10.5.2 (see the MAINT note below) runs ``select`` with
+    a value op of another type than the input's by reading the thunk's bytes as the
+    input's type. The spec casts both to the op's type instead. On an INT8 vector,
+    ``valueeq`` with ``1.0`` compares with 0, and ``valuelt`` with ``300`` compares
+    with 44. ``apply`` with the same op is right.
+
+    So the comparison is made in the input's own type, with a thunk that selects the
+    same elements:
+
+    - For integers, ``x < 2.5`` becomes ``x < 3``. A thunk that no element can equal,
+      or that every element or none passes, becomes a comparison that selects
+      everything or nothing.
+    - For floats, the thunk is rounded toward the side that keeps the comparison
+      exact. For ``valueeq`` and ``valuene``, a thunk that does not convert exactly
+      equals no element.
+    - Complex numbers have no order, so only ``valueeq`` and ``valuene`` apply. As for
+      floats, a thunk that does not convert exactly equals no element.
+
+    ``given`` is the thunk as the caller gave it. Its value is exact where ``thunk``
+    may have rounded it (an int beyond 64 bits is FP64). Other ops and types are
+    returned unchanged.
     """
     # MAINT 2026-10-28: works around the SuiteSparse:GraphBLAS bug above (seen in
     # 8.0.2 through 10.5.1; fixed in 10.5.2 by DrTimothyAldenDavis/GraphBLAS#463).
-    # The fix casts both to the op's type, which can round the thunk: beside FP32
+    # The fix casts both to the op's type, which can round the thunk: with FP32
     # values, an INT64 thunk of 2**53 + 1 is FP64 2**53 and equals 2**53. Once
     # every supported version has the fix, keep only what makes the comparison exact.
     if op.type is dtype or dtype._is_udt or op.parent.name not in _VALUE_OPS:
@@ -62,13 +69,13 @@ def _value_select_in_own_type(op, dtype, thunk, given):
         if value.imag != 0:
             if name not in {"valueeq", "valuene"}:  # pragma: no cover (no complex order)
                 return op, thunk
-            value = math.nan  # equal to nothing, as a complex number is to a real one
+            value = math.nan  # no real number equals it, and nothing equals NaN
         else:
             value = value.real
     if np_type.kind == "c":
-        # Only valueeq and valuene take complex values. The thunk is compared
-        # exactly, as for floats: one that does not convert exactly (2**53 + 1
-        # beside complex64, or a NaN part) equals no element, as NaN does.
+        # Only valueeq and valuene accept complex values. As for floats, a thunk that
+        # does not convert exactly (2**53 + 1 to complex64, or one with a NaN part)
+        # equals no element, as NaN does.
         with np.errstate(over="ignore", invalid="ignore"):
             near = np_type.type(value)
         real, imag = (value.real, value.imag) if isinstance(value, complex) else (value, 0)
@@ -156,10 +163,10 @@ class TypedBuiltinSelectOp(TypedOpBase):
 class TypedUserSelectOp(TypedOpBase):
     __slots__ = ()
     opclass = "SelectOp"
-    # The underlying object is a ``GrB_IndexUnaryOp``. Instances built by
-    # ``_from_indexunary`` borrow that handle and set ``_gb_obj_owner``, which
-    # suppresses the free here. Freeing from both sides is a use-after-free that
-    # no test catches: the freed handle usually still reads as valid.
+    # The handle is a GrB_IndexUnaryOp. One made by ``_from_indexunary`` borrows the
+    # IndexUnaryOp's handle and sets ``_gb_obj_owner``, so it is not freed here.
+    # Freeing it from both ops would be a use-after-free that tests do not catch,
+    # since a freed handle usually still reads as valid.
     _owns_gb_obj = True
 
     def __init__(self, parent, name, type_, return_type, gb_obj, dtype2=None):
@@ -232,12 +239,10 @@ class SelectOp(OpBase):
                     t.return_type,
                     t.gb_obj,
                 )
-                # Borrow the IndexUnaryOp's allocation instead of making a
-                # second one. Holding ``t`` keeps that handle alive for as long
-                # as this SelectOp can use it: ``iop`` is a temporary in
-                # ``register_anonymous``, so without this the handle is freed
-                # the moment it is collected and every call raises
-                # UninitializedObject.
+                # Borrow the IndexUnaryOp's handle. Holding ``t`` keeps it alive while
+                # this op can use it: in ``register_anonymous``, ``iop`` is a temporary,
+                # and once it is collected the handle would be freed, and every call
+                # would raise UninitializedObject.
                 op._gb_obj_owner = t
             else:
                 op = cls._typed_class(
@@ -291,11 +296,11 @@ class SelectOp(OpBase):
         func : FunctionType
             The function to compile. For all current backends, this must be able
             to be compiled with ``numba.njit``.
-            ``func`` takes four input parameters (any dtype, int64, int64,
+            ``func`` takes four input parameters (any dtype, uint64, uint64,
             any dtype) and returns boolean. The first argument (any dtype) is
-            the value of the input Matrix or Vector, the second argument (int64)
+            the value of the input Matrix or Vector, the second argument (uint64)
             is the row index of the Matrix or the index of the Vector, the third
-            argument (int64) is the column index of the Matrix or 0 for a Vector,
+            argument (uint64) is the column index of the Matrix or 0 for a Vector,
             and the fourth argument (any dtype) is the value of the input Scalar.
         name : str, optional
             The name of the operator. This *does not* show up as ``gb.select.{name}``.
@@ -342,11 +347,11 @@ class SelectOp(OpBase):
         func : FunctionType
             The function to compile. For all current backends, this must be able
             to be compiled with ``numba.njit``.
-            ``func`` takes four input parameters (any dtype, int64, int64,
+            ``func`` takes four input parameters (any dtype, uint64, uint64,
             any dtype) and returns boolean. The first argument (any dtype) is
-            the value of the input Matrix or Vector, the second argument (int64)
+            the value of the input Matrix or Vector, the second argument (uint64)
             is the row index of the Matrix or the index of the Vector, the third
-            argument (int64) is the column index of the Matrix or 0 for a Vector,
+            argument (uint64) is the column index of the Matrix or 0 for a Vector,
             and the fourth argument (any dtype) is the value of the input Scalar.
         parameterized : bool, default False
             When True, create a parameterized user-defined operator, which means

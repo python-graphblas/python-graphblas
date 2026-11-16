@@ -28,12 +28,9 @@ ffi_new = ffi.new
 
 
 def _rebind_indexbinaryop(parent, type_, theta):
-    # ``type_`` is one type, or ``(x, y, theta)`` types when they differ.
-    # ``theta`` was stored as a raw Python/numpy value. For UDT thunks,
-    # ``TypedBuiltinIndexBinaryOp.__call__`` would route a raw value through
-    # ``Scalar.from_value(theta)`` with no dtype, which then fails inside the
-    # multi-dim ndarray ``Scalar.value`` setter for array UDT values. Wrap
-    # as a typed Scalar here so the bind uses an explicit dtype.
+    # ``type_`` is the key from ``_ibo_types_key``, and ``theta`` the value that was
+    # bound. A value for a UDT thunk becomes a Scalar of that UDT, as it would in
+    # ``__call__`` too.
     typed = parent[type_]
     thunk_type = typed.thunk_type
     if thunk_type._is_udt and not isinstance(theta, (int, float, bool, complex)):
@@ -44,14 +41,13 @@ def _rebind_indexbinaryop(parent, type_, theta):
 
 
 def _theta_to_scalar(theta, dtype):
-    """Wrap a raw (non-Scalar) theta as a GrB Scalar for binding.
+    """Return ``theta``, which is not a Scalar, as a GraphBLAS Scalar to bind.
 
-    ``dtype`` is the thunk dtype when known (a UDT thunk or an explicit
-    ``dtype=``), else ``None`` to type theta by its own value: a Python
-    number by its default type, a numpy scalar or ``np.void`` by its dtype,
-    and a numpy array by its array layout (``INT32[3]`` for an int32 array
-    of shape ``(3,)``). A tuple, list or dict has no type of its own, so
-    raise a clear error that names the value and the working alternatives.
+    ``dtype`` is the thunk type when it is known (a UDT thunk, or ``dtype=``). With
+    None, theta has the type of its value: a Python number its default type, a numpy
+    scalar or ``np.void`` its dtype, and a numpy array its array UDT (``INT32[3]`` for
+    an int32 array of shape ``(3,)``). A tuple, list or dict has no type of its own, and
+    raises TypeError.
     """
     from ..scalar import Scalar
 
@@ -59,7 +55,7 @@ def _theta_to_scalar(theta, dtype):
         try:
             dtype = lookup_dtype(np.dtype((theta.dtype, theta.shape)))
         except (TypeError, ValueError):
-            pass  # a bool array, for one, is no UDT; ``from_value`` says so
+            pass  # not a valid UDT (a bool array, for one); ``from_value`` raises
     try:
         return Scalar.from_value(theta, dtype, is_cscalar=False, name="")  # pragma: is_grbscalar
     except TypeError as exc:
@@ -73,54 +69,38 @@ def _theta_to_scalar(theta, dtype):
 
 
 def _refuse_empty_theta(theta):
-    # SuiteSparse binds theta without checking that it holds a value: binding a new
-    # empty Scalar crashes, and a copy of one binds whatever its value array holds.
-    # ``apply`` with an IndexUnaryOp raises EmptyObject for an empty thunk.
+    # SuiteSparse binds theta without checking that it has a value: binding a new empty
+    # Scalar crashes, and binding a copy of one uses whatever its value array contains.
+    # Raise EmptyObject, as ``apply`` does for an empty IndexUnaryOp thunk.
     if theta._is_empty:
         raise EmptyObject("theta is an empty Scalar; bind a Scalar that holds a value")
 
 
 class _BoundIndexBinaryOp(TypedOpBase):
-    """A BinaryOp produced by binding a theta value to a typed IndexBinaryOp.
+    """A BinaryOp made by binding theta to a typed IndexBinaryOp.
 
-    ``ibo[dtype](theta)`` returns one, and so does ``ibo(theta)`` each time it
-    runs, for the type it runs in (:class:`_UntypedBoundIndexBinaryOp`).
-    Under the hood this is a single typed ``GrB_BinaryOp`` (constructed via
-    ``GxB_BinaryOp_new_IndexOp``), so SuiteSparse accepts it anywhere a
-    typed ``GrB_BinaryOp`` is expected: ``ewise_mult`` / ``ewise_add`` and,
-    via :func:`Semiring.register_anonymous`, as the multiplier of a
-    Semiring that then works in ``mxm`` / ``mxv`` / ``vxm``.
+    ``ibo[dtype](theta)`` returns one, and ``ibo(theta)`` makes one for each pair of
+    types it runs at (:class:`_UntypedBoundIndexBinaryOp`). It is one typed
+    ``GrB_BinaryOp`` (from ``GxB_BinaryOp_new_IndexOp``). SuiteSparse accepts it in
+    ``ewise_mult``, ``ewise_add``, ``ewise_union`` and ``kronecker``, and as the
+    multiplier of a Semiring, but not in ``apply`` or as an accumulator.
     """
 
     __slots__ = "_theta", "_theta_type"
     opclass = "BinaryOp"
-    # Each ``iop(theta)`` call allocates a fresh ``GrB_BinaryOp`` via
-    # ``GxB_BinaryOp_new_IndexOp`` and bound IBOs are never cached, so this
-    # is the per-call allocation that ``TypedOpBase.__del__`` must release.
-    # Without this, every ``iop(theta)`` (including each pickle round-trip)
-    # leaks one ``GrB_BinaryOp`` for the life of the process.
+    # Each bind allocates a new GrB_BinaryOp, and bound ops are not cached, so
+    # ``__del__`` must free it
     _owns_gb_obj = True
-    # A bound IBO is monomorphic in its operand types (one ``(x, y, z,
-    # theta)`` combination). Expose the polymorphism / commutativity
-    # markers that ``Semiring.__init__``, ``Semiring.is_positional``,
-    # ``Semiring._custom_dtype``, and ``TypedUserSemiring`` probe as
-    # class-level defaults, so they get sane answers (and no
-    # ``AttributeError``) when a bound IBO is passed in place of a
-    # ``BinaryOp`` parent.
+    # A Semiring made from this op reads these BinaryOp attributes, in its ``__init__``,
+    # ``is_positional``, ``_custom_dtype``, ``_is_udt`` and ``commutes_to``. A bound op
+    # has one set of types, and is not positional or commutative.
     _is_udt = False
     _udt_types = None
     _udt_ops = None
     _semiring_commutes_to = None
     commutes_to = None
     is_commutative = False
-    # No Monoid is made of it, so reduce refuses it as it refuses a BinaryOp
-    # that is not part of one.
-    monoid = None
-    # ``is_positional`` and ``_custom_dtype`` are BinaryOp-specific dispatch
-    # hints: when a polymorphic BinaryOp is queried for a type it doesn't
-    # support, the resolver in ``utils.get_typed_op`` falls back through
-    # them. A bound IBO is already type-monomorphic (one ``GrB_BinaryOp``
-    # for one (x, y, z, theta) combination), so neither fallback applies.
+    monoid = None  # so ``reduce`` refuses it, as it refuses a BinaryOp without a Monoid
     is_positional = False
     _custom_dtype = None
 
@@ -134,19 +114,11 @@ class _BoundIndexBinaryOp(TypedOpBase):
 
 
 class _UntypedBoundIndexBinaryOp(BinaryOp):
-    """A BinaryOp produced by binding a theta value to an IndexBinaryOp, typed when it runs.
+    """A BinaryOp made by binding theta to an IndexBinaryOp, typed each time it runs.
 
-    ``ibo(theta)`` returns one. As with any other BinaryOp, its inputs choose
-    its type each time it runs. Theta is typed when it is given, as an
-    IndexUnaryOp's thunk is typed by its value: a Python int is INT64, a float
-    FP64 and a bool BOOL; a numpy scalar, a numpy array (as an array UDT) or a
-    Scalar keeps its own type. The op runs at the type that holds both inputs
-    and theta, and the default theta, False, changes no type. An IndexBinaryOp
-    registered with ``is_udt=True`` instead runs as ``ibo[X, Y, T]`` for inputs
-    of types X and Y and theta of type T, compiled for those three types, so
-    theta is never converted.
-
-    It runs the typed op ``ibo[...](theta)``, built once per pair of input types.
+    ``ibo(theta)`` returns one. For each pair of input types it runs the typed op
+    ``ibo[...](theta)``, built once (``IndexBinaryOp._get_typed``). The typing rules are
+    in docs/technical_notes/udfs.rst ("IndexBinaryOp types and theta").
     """
 
     __slots__ = "_ibo", "_theta"
@@ -183,7 +155,7 @@ class _UntypedBoundIndexBinaryOp(BinaryOp):
 
 
 def _ibo_types_key(op):
-    """The type, or ``(x, y, theta)`` types when they differ, that index ``op``'s parent."""
+    """Return ``op``'s key in its parent: its type, or the (x, y, theta) types if they differ."""
     dtype2 = op.type if op._type2 is None else op._type2
     if op.type == dtype2 == op._theta_type:
         return op.type
@@ -191,7 +163,7 @@ def _ibo_types_key(op):
 
 
 class _TypedIndexBinaryOpMixin:
-    """The theta type, repr and pickle of a typed IndexBinaryOp, whose theta has its own type."""
+    """Theta type, repr and pickle for a typed IndexBinaryOp, whose theta type can differ."""
 
     __slots__ = ()
 
@@ -216,9 +188,9 @@ class TypedBuiltinIndexBinaryOp(TypedOpBase):
     def __call__(self, theta=None):
         """Bind a theta value, returning a BinaryOp.
 
-        The result is usable directly in ``ewise_mult`` and ``ewise_add``,
-        or as the multiplier of a Semiring (see
-        :meth:`Semiring.register_anonymous`) for ``mxm`` / ``mxv`` / ``vxm``.
+        The BinaryOp works in ``ewise_mult``, ``ewise_add``, ``ewise_union`` and
+        ``kronecker``. For ``mxm``, ``mxv`` or ``vxm``, make it the multiplier of a
+        Semiring with ``Semiring.register_anonymous``.
 
         Parameters
         ----------
@@ -238,13 +210,13 @@ class TypedBuiltinIndexBinaryOp(TypedOpBase):
             theta = False
         theta_value = theta.value if isinstance(theta, Scalar) else theta
         if not isinstance(theta, Scalar):
-            # A raw value for a UDT thunk carries the thunk dtype; otherwise the
-            # value is inferred (and a raw UDT value raises a clear error).
+            # A value for a UDT thunk becomes an element of that UDT; any other value
+            # has its own type
             tt = self.thunk_type
             theta = _theta_to_scalar(theta, tt if tt._is_udt else None)
         elif theta._is_cscalar:
             # fmt: off
-            # Pass dtype explicitly; an array-UDT value would otherwise infer wrong.
+            # Pass the dtype: ``from_value`` cannot infer it from an array UDT's value
             val, dt = theta.value, theta.dtype
             theta = Scalar.from_value(val, dt, is_cscalar=False, name="")  # pragma: is_grbscalar
             # fmt: on
@@ -312,23 +284,23 @@ class ParameterizedIndexBinaryOp(ParameterizedUdf):
 
 
 class IndexBinaryOp(OpBase):
-    """Takes two inputs with their indices plus a thunk, and returns one output.
+    """Takes two inputs with their indices and a scalar theta, and returns one output.
 
     The function has the signature ``f(x, ix, jx, y, iy, jy, theta) -> z``,
     where ``ix, jx`` are the row and column indices of ``x``, and ``iy, jy``
     are the row and column indices of ``y``.
 
-    Binding a theta value (``ibo(theta)``) produces a BinaryOp usable
-    directly in ``ewise_mult`` and ``ewise_add``. Its type is chosen when it
-    runs, from both inputs and theta; ``ibo[dtype](theta)`` binds to one type.
-    With ``is_udt=True``, x, y and theta each keep their own type, and
-    ``ibo[X, Y, T](theta)`` names all three.
-    To use it as a multiplier in ``mxm`` / ``mxv`` / ``vxm``, wrap it in a
-    Semiring via :meth:`Semiring.register_anonymous`; per SuiteSparse, the
-    additive monoid itself cannot be IndexBinaryOp-based.
+    Binding theta, ``ibo(theta)``, makes a BinaryOp for ``ewise_mult``, ``ewise_add``,
+    ``ewise_union`` and ``kronecker``. The BinaryOp is typed when it runs, from both
+    inputs and theta; ``ibo[dtype](theta)`` binds at one type. With ``is_udt=True``,
+    x, y and theta each keep their own type, and ``ibo[X, Y, T](theta)`` names all
+    three. To use it in ``mxm``, ``mxv`` or ``vxm``, make it the multiplier of a
+    Semiring with :meth:`Semiring.register_anonymous`. A Monoid cannot be made from
+    an IndexBinaryOp. See :ref:`udf_indexbinary`.
 
     IndexBinaryOps live in the ``graphblas.indexbinary`` namespace. There are
-    no built-ins; all IndexBinaryOps are user-defined.
+    no built-ins; all IndexBinaryOps are user-defined. They need
+    SuiteSparse:GraphBLAS 9.4 or later.
     """
 
     __slots__ = "orig_func", "_is_udt", "_numba_func"
@@ -338,11 +310,11 @@ class IndexBinaryOp(OpBase):
     # Read by ``OpBase.__getitem__`` for a type the op does not have; no
     # IndexBinaryOp is positional.
     is_positional = False
-    # Read by the error for a bound op where a Monoid is expected (reduce).
+    # Read (as ``op.parent.monoid``) by the TypeError ``reduce`` raises for a bound op
     monoid = None
     _typed_class = TypedBuiltinIndexBinaryOp
     _typed_user_class = TypedUserIndexBinaryOp
-    # No built-in IndexBinaryOps; no parse config needed
+    # No built-in IndexBinaryOps, so there is nothing to parse
     _parse_config = {
         "trim_from_front": 4,
         "num_underscores": 1,
@@ -361,7 +333,7 @@ class IndexBinaryOp(OpBase):
         if name is None:
             name = getattr(func, "__name__", "<anonymous_indexbinary>")
         success = False
-        # Set on the Dispatcher, not just the cfunc wrapper; see the note in
+        # Set on the Dispatcher too, not only on the cfunc wrapper; see the note in
         # ``BinaryOp._build``.
         indexbinary_udf = numba.njit(func, error_model="numpy")
         new_type_obj = cls(
@@ -478,8 +450,7 @@ class IndexBinaryOp(OpBase):
 
     def _compile_udt(self, dtype, dtype2, theta_type=None):
         if not _has_idxbinop:
-            # KeyError (not RuntimeError) so ``udt in op`` and the resolver
-            # chain in ``__contains__`` / ``[dtype]`` lookups return cleanly.
+            # KeyError, not RuntimeError, so ``dtype in op`` returns False
             raise KeyError(
                 "IndexBinaryOp requires SuiteSparse:GraphBLAS 9.4+ "
                 "(python-suitesparse-graphblas 9.3.1+)"
@@ -487,7 +458,7 @@ class IndexBinaryOp(OpBase):
         if dtype2 is None:
             dtype2 = dtype
         if theta_type is None:
-            # ``ibo[X, Y]`` and ``ibo[T]``: theta takes y's type, and casts to it
+            # With ``ibo[X, Y]`` or ``ibo[T]``, theta has y's type and is cast to it
             theta_type = dtype2
         dtypes = (dtype, dtype2, theta_type)
         if dtypes in self._udt_types:
@@ -549,10 +520,10 @@ class IndexBinaryOp(OpBase):
         return op
 
     def _get_typed(self, dtype, dtype2, theta_type):
-        """The typed op for x, y and theta of these types, as ``ibo(theta)`` runs it.
+        """Return the typed op that ``ibo(theta)`` runs for x, y and theta of these types.
 
-        With ``is_udt``, it is compiled for the three types as they are. Without
-        it, x, y and theta share one type, the one that holds all three.
+        With ``is_udt``, it is compiled for the three types as they are. Otherwise x,
+        y and theta share the one type ``unify`` gives for all three.
         """
         if self._is_udt:
             return self._compile_udt(dtype, dtype2, theta_type)
@@ -587,7 +558,8 @@ class IndexBinaryOp(OpBase):
             compilable with ``numba.njit``. The function takes seven inputs
             ``(x, ix, jx, y, iy, jy, theta)``: ``x`` and ``y`` are element
             values, ``ix, jx`` and ``iy, jy`` are their row and column indices
-            (int64), and ``theta`` is a scalar parameter.
+            (uint64, so ``ix - iy`` wraps when ``iy`` is larger), and ``theta`` is a
+            scalar parameter.
         name : str, optional
             The name of the operator. This *does not* show up as ``gb.indexbinary.{name}``.
         parameterized : bool, default False
@@ -619,17 +591,20 @@ class IndexBinaryOp(OpBase):
             compilable with ``numba.njit``. The function takes seven inputs
             ``(x, ix, jx, y, iy, jy, theta)``: ``x`` and ``y`` are element
             values, ``ix, jx`` and ``iy, jy`` are their row and column indices
-            (int64), and ``theta`` is a scalar parameter.
+            (uint64, so ``ix - iy`` wraps when ``iy`` is larger), and ``theta`` is a
+            scalar parameter.
         parameterized : bool, default False
             When True, create a parameterized user-defined operator.
         is_udt : bool, default False
             Whether the operator is intended to operate on user-defined types.
         lazy : bool, default False
-            When True, defer compilation until the operator is first used.
+            When True, register and compile the operator when its name is first accessed.
 
         Examples
         --------
-        >>> gb.indexbinary.register_new("index_dist", lambda x, ix, jx, y, iy, jy, t: abs(ix - iy))
+        >>> def index_dist(x, ix, jx, y, iy, jy, theta):
+        >>>     return max(ix, iy) - min(ix, iy)
+        >>> gb.indexbinary.register_new("index_dist", index_dist)
 
         """
         cls._check_supports_udf("register_new")
@@ -678,10 +653,9 @@ class IndexBinaryOp(OpBase):
             here, so changing a Scalar theta afterwards does not change the BinaryOp.
         dtype : dtype, optional
             The type of the BinaryOp, as in ``op[dtype](theta)``. Without it, the
-            BinaryOp's type is chosen each time it runs, from the types of both
-            inputs and theta, as other BinaryOps choose theirs. Theta has the type
-            of its value: a Python int is INT64 and a float FP64, and a numpy
-            scalar, a numpy array or a Scalar keeps its own type.
+            BinaryOp is typed each time it runs, from both inputs and theta, and theta
+            has the type of its value (a Python int is INT64). The Technical Notes give
+            the rules, in "IndexBinaryOp types and theta".
 
         Returns
         -------
@@ -706,7 +680,7 @@ class IndexBinaryOp(OpBase):
             return _UntypedBoundIndexBinaryOp(self, theta)
         dtype = _lookup_dtype(dtype)
         if not isinstance(theta, Scalar):
-            # The named dtype types the value, a UDT's included.
+            # theta becomes a value of ``dtype``, a UDT included
             theta = _theta_to_scalar(theta, dtype)
         return self[dtype](theta)
 
