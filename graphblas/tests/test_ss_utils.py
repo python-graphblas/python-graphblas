@@ -705,9 +705,8 @@ print("done")
 
 def test_take_ownership_of_one_array_twice():
     # GraphBLAS frees every buffer it takes, so an array given as two arguments
-    # has to be copied for one of them. Regression: only an index array given as
-    # the values was copied, so an index array given twice was freed twice,
-    # crashing the process.
+    # has to be copied for one of them. Regression: an index array given twice was
+    # freed twice, crashing the process.
     _run_probe(_ONE_ARRAY_TWICE_PROBE)
 
 

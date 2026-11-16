@@ -88,10 +88,8 @@ def test_untyped_call_is_typed_when_it_runs():
 
     Theta is typed as an IndexUnaryOp's thunk is: a Python int is INT64 and a
     float FP64, a numpy scalar or a Scalar keeps its type, and the default,
-    False, changes no type. Regression: the op had theta's type alone, so
-    ``op()`` was BOOL and turned ints into True, ``op(2)`` truncated floats to
-    INT64, and ``op(np.int8(2))`` computed in INT8, where 300.0 became 127 and
-    wrapped.
+    False, changes no type. Regression: the op took theta's type alone, so
+    ``op()`` turned ints into True and ``op(2)`` truncated floats.
     """
 
     def upper_from_x(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
@@ -611,8 +609,7 @@ def test_bad_type():
 def test_type_the_op_does_not_take():
     """``R in op`` is False and ``op[R]`` raises KeyError, as for an IndexUnaryOp.
 
-    Regression: both raised AttributeError, since ``op[R]`` reads
-    ``is_positional`` for a type the op does not have, and IndexBinaryOp had none.
+    Regression: both raised AttributeError.
     """
 
     def add_vals(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
@@ -661,8 +658,7 @@ def test_with_accumulator():
 def test_reduce_refuses_a_bound_op():
     """A bound IndexBinaryOp gets the TypeError reduce gives a BinaryOp that is in no Monoid.
 
-    Regression: it raised AttributeError, since reduce and its error message
-    read ``monoid``, which neither the bound op nor its IndexBinaryOp had.
+    Regression: it raised AttributeError.
     """
 
     def add_vals(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
@@ -897,8 +893,8 @@ def _ibo_decay(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
 def test_semiring_from_untyped_bound_ibo():
     """A Semiring from ``ibo(theta)`` is typed when it runs, by the inputs and theta.
 
-    Regression: ``ibo(0.5)`` was an FP64 op, so its Semiring refused INT64
-    matrices with KeyError, and ``ibo(1)`` was INT64 and refused FP64 ones.
+    Regression: the Semiring was typed by theta alone, and refused matrices of
+    another type with KeyError.
     """
     from graphblas import monoid as monoid_module
     from graphblas import semiring as semiring_module

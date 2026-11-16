@@ -3,7 +3,7 @@
 Several scalar-access operations have fast paths that bypass the general
 expression machinery: ``Vector.get`` / ``Matrix.get``, ``index in obj``
 (``__contains__``), integer-key ``obj[i] = value`` (``__setitem__``),
-``obj[i].new()`` on a scalar index expression, and the plain-int lane in
+``obj[i].new()`` on a scalar index expression, and the plain-int fast path in
 ``parse_index``. Each fast path is only correct if it produces exactly what the
 slower general path would. These tests pin that equivalence: for every case we
 run the fast path and a reference built from the general path, then require the
@@ -12,7 +12,7 @@ results (values, dtypes, and raised exceptions with their messages) to match.
 Each reference is a copy of the code its fast path stands in for, kept in this
 file so that a refactor of the production code cannot change both sides of a
 comparison at once. The ``get`` and ``in`` references still go through
-``parse_index`` and ``ScalarIndexExpr.new()``, whose own fast lanes are tested
+``parse_index`` and ``ScalarIndexExpr.new()``, whose own fast paths are tested
 against the general path below.
 """
 
@@ -67,9 +67,9 @@ def _capture(fn):
 
 
 class _IndexLike:
-    """Implements ``__index__`` without being an int; must not take any fast lane.
+    """Implements ``__index__`` without being an int; must not take any fast path.
 
-    ``parse_index`` rejects it, so a fast lane that duck-types ``__index__``
+    ``parse_index`` rejects it, so a fast path that duck-types ``__index__``
     would diverge from the expression path.
     """
 
@@ -303,7 +303,7 @@ def test_contains_index_types():
 
 @pytest.mark.parametrize("idx", [10, -11, 1000, -1000])
 def test_contains_out_of_range(idx):
-    """Out-of-range raises the identical IndexError through either lane."""
+    """Out-of-range raises the identical IndexError through either path."""
     v = Vector.from_coo([0, 5, 9], [1.5, 2.5, 3.5], size=10)
     fast = _capture(lambda: idx in v)
     slow = _capture(lambda: _contains_vector_slow(v, idx))
@@ -937,8 +937,8 @@ def test_scalarvalue_then_another_attribute():
     """After a value read, the other attributes see the kind of Scalar the expression reports.
 
     A value read caches the C scalar it extracts into. Regression: ``gb_obj`` then
-    returned that ``int8_t *`` instead of a ``GrB_Scalar *``, which a C call taking a
-    GrB_Scalar refused with TypeError, while ``is_cscalar`` said False.
+    returned that C scalar instead of a ``GrB_Scalar *``, so C calls taking a
+    GrB_Scalar raised TypeError.
     """
     from graphblas.core import ffi
 
@@ -967,7 +967,7 @@ def test_scalarvalue_index_integral_only():
 
 
 # ---------------------------------------------------------------------------
-# parse_index plain-int lane
+# parse_index plain-int fast path
 # ---------------------------------------------------------------------------
 def _resolved_fingerprint(expr):
     """A comparable fingerprint of a resolved scalar index expression."""
@@ -985,7 +985,7 @@ def _index_probe_matrix(A, r, c):
 
 @pytest.mark.parametrize("i", [0, 2, 4, 9, -1, -10, -6])
 def test_indexparse_vector_valid(i):
-    """The plain-int fast lane matches the numpy-int lane for valid indices."""
+    """The plain-int fast path matches the numpy-int path for valid indices."""
     v = Vector.from_coo([0, 2, 4, 9], [10.0, 20.0, 30.0, 90.0], size=10)
     fast = _index_probe_vector(v, i)
     slow = _index_probe_vector(v, np.int64(i))
@@ -994,7 +994,7 @@ def test_indexparse_vector_valid(i):
 
 @pytest.mark.parametrize("i", [10, 11, 1000, -11, -100])
 def test_indexparse_vector_out_of_range(i):
-    """Both lanes raise the identical IndexError for out-of-range indices."""
+    """Both paths raise the identical IndexError for out-of-range indices."""
     v = Vector.from_coo([0, 2, 4, 9], [10.0, 20.0, 30.0, 90.0], size=10)
     fast = _capture(lambda: v[i])
     slow = _capture(lambda: v[np.int64(i)])
@@ -1003,7 +1003,7 @@ def test_indexparse_vector_out_of_range(i):
 
 @pytest.mark.parametrize("b", [True, False])
 def test_indexparse_vector_bool(b):
-    """A bool index raises TypeError; it must not take the plain-int lane."""
+    """A bool index raises TypeError; it must not take the plain-int fast path."""
     v = Vector.from_coo([0, 2, 4, 9], [10.0, 20.0, 30.0, 90.0], size=10)
     r = _capture(lambda: v[b])
     assert r[0] == "exc", r
@@ -1063,7 +1063,7 @@ def test_indexparse_matrix_bool(probe):
 
 
 def test_indexparse_fancy_unaffected():
-    """List / ndarray fancy indexing is untouched by the plain-int lane."""
+    """List / ndarray fancy indexing is untouched by the plain-int fast path."""
     v = Vector.from_coo([0, 2, 4, 9], [10.0, 20.0, 30.0, 90.0], size=10)
     fast = _capture(lambda: v[[1, 3, 5]].new().to_coo())
     slow = _capture(lambda: v[np.array([1, 3, 5])].new().to_coo())

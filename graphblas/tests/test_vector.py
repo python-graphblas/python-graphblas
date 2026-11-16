@@ -1608,9 +1608,8 @@ def test_python_number_is_weak_beside_builtin_dtypes():
     """A Python number takes a built-in collection's dtype when that kind holds it (NEP 50).
 
     python-graphblas applies numpy 2's rule itself, so the result does not depend on
-    the installed numpy. numpy scalars and Scalars keep their dtype. Regression: with
-    numpy 2 a Python int was INT64 and a float FP64 whatever the collection's dtype,
-    and with numpy 1 the collection's dtype won by value, so ``int8_vec + 300`` wrapped and
+    the installed numpy. numpy scalars and Scalars keep their dtype. Regression: the
+    result depended on numpy's version, so ``int8_vec + 300`` wrapped and
     ``int8_vec < 300`` compared with 44.
     """
     i8 = Vector.from_coo([0, 1], [100, -100], dtype=dtypes.INT8)
@@ -1718,8 +1717,8 @@ def test_python_number_is_weak_beside_builtin_dtypes():
         with pytest.raises(OverflowError, match="out of bounds"):
             i8.apply(plus, right=300)
         # An op whose result has another type, as truediv's and a comparison's do, accepts
-        # an int out of range exactly, as numpy does: a parameterized op, a user's, and the
-        # instances a parameterized op makes. Regression: these raised OverflowError.
+        # an int out of range exactly, as numpy does: a parameterized op, a user's op, and
+        # the instances a parameterized op makes. Regression: these raised OverflowError.
         gt = binary.register_anonymous(lambda x, y: x > y)
         for op, values in [
             (binary.isclose, [False, False]),
@@ -1829,11 +1828,9 @@ def test_select_value_thunk_of_another_type():
     """Select with a value op compares exactly when the thunk's type differs from the values'.
 
     python-graphblas compares in the values' own type, with a thunk that keeps the
-    same elements. SuiteSparse:GraphBLAS's select before 10.5.2 reads such a thunk's
-    bytes as the values' type: on an INT8 vector, ``valueeq`` with 1.0 compares with
-    0 and keeps nothing, ``valuelt`` with 300 compares with 44, and ``valueeq`` with
-    356 keeps 100. 10.5.2 casts both to the op's type, which would round the
-    ``2**53 + 1`` thunks below to ``2**53`` and keep that element.
+    same elements; ``select._value_select_in_own_type`` says why. Casting both to the
+    op's type, as SuiteSparse:GraphBLAS 10.5.2 does, would round the ``2**53 + 1``
+    thunks below to ``2**53`` and keep that element.
     """
     i8 = Vector.from_coo([0, 1, 2, 3], [-5, 1, 2, 100], dtype=dtypes.INT8)
     u8 = Vector.from_coo([0, 1], [0, 255], dtype=dtypes.UINT8)

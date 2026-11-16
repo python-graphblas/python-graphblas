@@ -1561,10 +1561,8 @@ def test_udt_mixed_record_dtypes_use_each_operands_own_dtype(udt_op_path):
     """Two records sharing field names but not field types promote to the wider one.
 
     ``_check_udt_pair`` matches record operands on field names only, so their
-    leaf dtypes can differ. Regression: the result type came from the left
-    operand alone, so an int record over a float record gave the int record
-    (``7 / 2.0`` stored as 3, ``6 / 0.0`` as INT64_MAX), and swapping the
-    operands changed the answer.
+    leaf dtypes can differ. Regression: the result took the left operand's
+    type, so an int record over a float record truncated (``7 / 2.0`` gave 3).
     """
     int_udt = dtypes.register_anonymous(np.dtype([("mxd_a", np.int64)], align=True), "_MixedRecInt")
     float_udt = dtypes.register_anonymous(
@@ -1664,9 +1662,8 @@ def test_udt_truediv_divides_in_floating_point(udt_op_path):
     """``binary.truediv`` on integer fields divides in float64 and keeps the quotient.
 
     The result fields are float64, as ``truediv`` on two INT64 vectors is
-    FP64. Regression: the C kernel used C's integer ``/``, so ``10**18 / 3``
-    was 333333333333333333 under the C JIT and 333333333333333312 (float64,
-    like numpy) through the cfunc.
+    FP64. Regression: the C JIT kernel divided as integers, so ``10**18 / 3``
+    differed from the Numba function's answer.
     """
     udt = dtypes.register_anonymous(
         np.dtype([("tdv_i", np.int64), ("tdv_j", np.int64)], align=True), "_TrueDivIntUDT"
@@ -1991,8 +1988,8 @@ def test_udt_tuple_return_monoid(record_udt):
 def test_udt_monoid_op_must_return_its_input_type(record_udt):
     """A UDT monoid whose op returns another type fails up front, with a message.
 
-    Regression: such a monoid reached ``GrB_Monoid_new_UDT``, which raised
-    DomainMismatch with an empty message, even from ``udt in monoid``.
+    Regression: it raised DomainMismatch with an empty message, even from
+    ``udt in monoid``.
     """
 
     def _sum_a(x, y):
@@ -2507,9 +2504,7 @@ def test_udt_auto_monoid_time_fields():
     """Monoid min and max generate no identity for a datetime64 or timedelta64 field.
 
     numpy files timedelta64 under ``np.integer``. Regression: a timedelta64
-    field reached ``np.iinfo`` and raised ``ValueError: Invalid integer data
-    type 'm'``, from ``udt in agg.min`` too, where a datetime64 field got a
-    KeyError.
+    field raised ValueError from ``np.iinfo``, even in ``udt in agg.min``.
     """
     for code in ["M8[s]", "m8[s]"]:
         udt = dtypes.register_anonymous(np.dtype([("tf_n", np.int64), ("tf_t", code)]))
@@ -2526,11 +2521,9 @@ def test_udt_auto_monoid_time_fields():
 def test_udt_monoid_named_like_builtin_gets_no_identity():
     """Only the built-in monoids generate a UDT identity, not a user monoid of the same name.
 
-    Regression: a user monoid named plus, times, min or max (after its op's
-    function, or by ``name=``) got that built-in's generated identity. The op
-    here takes the field-wise max, so the ``min`` identity, INT64_MAX in every
-    field, would absorb every value and the reduce below would give it instead
-    of (5, 2).
+    Regression: a user monoid named like a built-in (after its op's function,
+    or by ``name=``) got that built-in's identity, such as ``min``'s INT64_MAX
+    in every field, which absorbs every value of this field-wise max.
     """
     udt = dtypes.register_anonymous(np.dtype([("ni_a", np.int64), ("ni_b", np.int64)]))
     v = Vector(udt, size=2)
@@ -2558,14 +2551,9 @@ def test_udt_monoid_named_like_builtin_gets_no_identity():
 def test_udt_array_wrapper_stays_within_element(shape):
     """The array-UDT cfunc wrapper writes one element's bytes and nothing more.
 
-    Regression: the wrapper loaded and stored each operand as a
-    ``NestedArray`` *value*, which Numba models as its full array descriptor
-    (meminfo, parent, nitems, itemsize, data, shape, strides): 56 bytes on
-    64-bit for a 1-D element and 72 for a 2-D one, whatever the payload size.
-    That overran each element here by 24 bytes. SuiteSparse's generic reduce
-    keeps a UDT accumulator in a stack array sized to the element, so
-    ``monoid.any`` overflowed it on every fold; depending on the build, that
-    clobbered a spilled pointer (segfault or SIGBUS) or gave a wrong answer.
+    Regression: the wrapper copied Numba's array descriptor instead of the
+    element, which overran the stack accumulator in reduce (a segfault or a
+    wrong answer); see ``udf._array_udt_view``.
 
     ``binary.any`` compiles through the generic ``_numba_func`` branch of
     ``BinaryOp._compile_udt``, the branch a user's ``is_udt=True`` op takes,
@@ -3113,10 +3101,9 @@ def test_udt_array_udf_returning_operand_keeps_its_type():
 
     A layered ``FP64[5][2]`` and the flat ``FP64[2, 5]`` share the Numba type
     ``nestedarray(float64, (2, 5))``. They register as one UDT, and a Numba
-    type resolves through its numpy dtype. Regression: ``lookup_dtype`` keyed
-    UDTs on the Numba type, so ``return y`` named whichever of the two had
-    registered last, and SuiteSparse rejected the other as a domain mismatch
-    in a monoid or on assignment into the operand's vector.
+    type resolves through its numpy dtype. Regression: ``return y`` could
+    resolve to another UDT with the same Numba type, which GraphBLAS then
+    rejected as a domain mismatch.
     """
     flat = dtypes.register_anonymous(np.dtype((np.float64, (2, 5))), "_RetOperandFlat")
     assert dtypes.register_anonymous(np.dtype((np.dtype((np.float64, (5,))), (2,)))) is flat
@@ -3230,10 +3217,8 @@ def test_udt_declared_with_nested_subarrays_gets_builtin_ops():
 
     numpy reports such a dtype's ``subdtype`` as ``(inner array dtype, outer
     shape)``. Registration flattens these dtypes, so they take the ordinary
-    path. Regression: the lifting code took the subdtype for ``(scalar,
-    shape)``, so ``plus``, ``eq`` and ``ainv`` failed in Numba lowering,
-    ``monoid.plus`` and ``agg.sum`` could not build an identity, and a UDF
-    returning a record operand could come back as its flat-field twin.
+    path. Regression: the lifted ops failed on such a UDT, and a UDF
+    returning a record operand could come back as its flat twin.
     """
     udt = dtypes.register_anonymous(np.dtype((np.dtype((np.int64, (3,))), (4,))), "_NestedDeclArr")
     assert udt.np_type == np.dtype((np.int64, (4, 3)))
@@ -3450,8 +3435,8 @@ def test_udt_eq_ne_nan_simple_record():
     """Records with a NaN field compare unequal under eq, as FP64 NaNs do.
 
     ``eq`` and ``ne`` compare leaf by leaf with scalar ``==`` and ``!=``, as
-    ``binary.eq[FP64](nan, nan)`` is False. Regression: records were compared
-    byte by byte, so two records with NaN in the same field compared equal.
+    ``binary.eq[FP64](nan, nan)`` is False. Regression: two records with NaN
+    in the same field compared equal.
     """
     spec = np.dtype([("eq_a", np.float64), ("eq_b", np.float64)], align=True)
     udt = dtypes.register_anonymous(spec, "_NaNEqSimple")
@@ -3643,8 +3628,7 @@ def test_udt_matrix_scalar_broadcast(broadcast_record_udt):
 
 # eq and ne between a UDT and a built-in type compare the built-in value with
 # every leaf, so ``eq`` is True only when all leaves equal it. Regression:
-# ``binary.eq(udt_vec & int_vec)`` read the int element as a UDT, past its end,
-# and gave plausible-looking but meaningless answers.
+# ``binary.eq(udt_vec & int_vec)`` read past the end of the int element.
 
 
 @pytest.mark.skipif("not supports_udfs")
@@ -3695,7 +3679,7 @@ def test_udt_eq_ne_scalar_broadcast_nan_propagates():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_eq_ne_type_a_literal_as_builtin_comparisons_do():
-    """``eq`` and ``ne`` with a UDT type a Python number as a built-in comparison does.
+    """With a UDT, ``eq`` and ``ne`` type a Python number as a built-in comparison does.
 
     The number is weak, leaf by leaf, so ``fp32_udt == 0.1`` compares in
     float32 and is True, as ``fp32_vec == 0.1`` and numpy are. A comparison
@@ -3827,9 +3811,8 @@ def test_udt_eq_ne_scalar_broadcast_record_with_array_subfield():
 def test_udt_eq_ne_rejects_incompatible_pairs():
     """``eq`` and ``ne`` reject two UDTs of mismatched structure rather than compare bytes.
 
-    Regression: the leaves came from the left dtype alone, so records with
-    different field names but the same byte layout compared equal, and a
-    record compared with an array by reading one as the other.
+    Regression: such pairs compared their bytes, so records with different
+    field names could compare equal.
     """
     uv = dtypes.register_anonymous(
         np.dtype([("u", np.float64), ("v", np.float64)], align=True),
@@ -3864,14 +3847,9 @@ def test_udt_eq_ne_rejects_incompatible_pairs():
 def test_udt_record_nesting_mismatch_is_a_keyerror(case, op):
     """Records sharing top-level field names but nesting differently are a KeyError.
 
-    The generated code reads both operands at the left one's leaf paths.
-    Regression: ``_check_udt_pair`` matched top-level names only, so a field
-    that is a sub-record on one side and a scalar on the other, or sub-records
-    with different names, reached Numba and failed there, as a
-    ``UdfParseError`` for ``plus`` and a raw ``TypingError`` for ``eq``, where
-    the other layout checks raise KeyError. Sub-record fields in a different
-    order are rejected as top-level ones are, so that leaf ``i`` of one
-    operand is leaf ``i`` of the other.
+    ``udt._check_udt_pair`` says why names and nesting must match at every
+    level, in order. Regression: such pairs reached Numba and failed there, as
+    ``UdfParseError`` or a raw ``TypingError``.
     """
     f8 = np.float64
     sub = [("nst_n1", f8), ("nst_n2", f8)]
@@ -3908,12 +3886,8 @@ def test_udt_record_field_shape_mismatch_is_a_keyerror(left, right, op):
     """Record fields whose shapes differ are a KeyError, whichever operand is on the left.
 
     numpy will not promote or compare two record dtypes whose fields differ in
-    shape either. Regression: the generated code combined array fields as
-    numpy arrays, so a ``(3,)`` field with a ``(4,)`` one raised inside the
-    cfunc, where the caller never saw the error, and the result element kept
-    whatever was in the buffer (``eq`` read those bytes as its bool). Shapes that
-    broadcast worked only one way round, since ``plus`` writes into a field
-    shaped like the left operand's.
+    shape either. Regression: such a pair failed unseen inside the Numba
+    function and left the result element unwritten.
     """
     X = _record_with_field_shape(left, "_FshLeft")
     Y = _record_with_field_shape(right, "_FshRight")
@@ -3929,9 +3903,8 @@ def test_udt_record_fields_of_equal_shape_combine():
     """Two record UDTs with the same field shapes combine, though a field's dtype differs.
 
     ``eq`` and ``ne`` compile the pair, as the arithmetic ops do. Regression:
-    ``get_typed_op`` unified the two records to one of them, since numpy
-    promotes their field dtypes, so GraphBLAS raised GrB_DOMAIN_MISMATCH on
-    the operand of the other type.
+    the op was typed for one of the records, and GraphBLAS raised
+    GrB_DOMAIN_MISMATCH on the other.
     """
     X = _record_with_field_shape((2, 3), "_FshLeft")
     v = Vector(X, size=2)
@@ -3956,9 +3929,8 @@ def test_udt_record_fields_of_equal_shape_combine():
 def test_udt_positional_ops_take_two_different_udts():
     """``first``, ``second``, ``any`` and ``pair`` take any two UDTs; they never read a field.
 
-    Regression: ``any`` had no ``_custom_dtype``, so ``get_typed_op`` unified
-    two records of the same layout to one of them, and GraphBLAS raised
-    GrB_DOMAIN_MISMATCH on the other operand.
+    Regression: ``any`` was typed for one of two records of the same layout,
+    and GraphBLAS raised GrB_DOMAIN_MISMATCH on the other.
     """
     # Own field names: the helper's scalar-field record is ``_FshRight``'s dtype,
     # and ``register_anonymous`` returns one cached DataType per dtype.
@@ -3988,9 +3960,8 @@ def test_udt_record_pair_promotes_each_field():
     Each record also has an array field, which no Numba return type can be
     matched against, so the result type cannot come from what the generated
     function returns. Regression: the result was always the left record, so
-    ``x + y`` truncated an int64 field that ``y + x`` kept as float64, and a
-    complex field on the right of ``min`` slipped past the check that rejects
-    complex ``min`` and failed in Numba.
+    ``x + y`` could truncate a field that ``y + x`` kept, and a complex field
+    on the right of ``min`` escaped its KeyError.
     """
 
     def record(a_dtype, b_dtype, name):
@@ -4045,8 +4016,7 @@ def test_udt_record_pair_promotes_to_a_third_record():
 
     Each field is promoted as the built-in op promotes two Vectors, so int16
     with float32 is float32, and the result keeps the operands' names, nesting
-    and alignment. Regression: this pair was a KeyError, since the result had
-    to be one of the two operands.
+    and alignment. Regression: this pair was a KeyError.
     """
     i2, i8, f4, f8 = np.int16, np.int64, np.float32, np.float64
     X = dtypes.register_anonymous(
@@ -4070,8 +4040,7 @@ def test_udt_record_pair_promotes_to_a_third_record():
 def test_udt_record_scalar_promotes_each_field():
     """A Python number with a record UDT promotes each field as it would a Vector's.
 
-    Regression: the number was cast to the record first, so
-    ``int_record + 0.5`` added 0 to each field.
+    Regression: ``int_record + 0.5`` added 0 to each field.
     """
     ints = dtypes.register_anonymous(
         np.dtype([("rsp_x", np.int64), ("rsp_y", np.int64)]), "_RspInts"
@@ -4128,8 +4097,8 @@ def test_udt_array_pair_shape_mismatch_is_a_keyerror(left, right, op):
     """Array UDTs whose shapes do not broadcast are a KeyError, as numpy refuses them.
 
     The base dtypes differ, which is allowed, so only the shapes are at fault.
-    Regression: two of these with the same size combined over their flat
-    buffers, so ``(2, 3)`` plus ``(3, 2)`` added elements numpy never pairs.
+    Regression: ``(2, 3)`` plus ``(3, 2)`` added the elements of their flat
+    buffers.
     """
     # int16 and int32: other tests register float64 arrays of these shapes, and
     # ``register_anonymous`` returns one cached DataType per dtype.
@@ -4224,8 +4193,7 @@ def test_udt_array_broadcast_semiring_and_reduce():
 def test_udt_record_2d_field_compares_with_a_number():
     """``eq`` and ``ne`` of a record with a 2-D array field and a number compare every element.
 
-    Regression: the generated code indexed the field at flat positions, which
-    in a 2-D field are rows, so it failed to compile.
+    Regression: the generated code failed to compile for a 2-D field.
     """
     T = dtypes.register_anonymous(
         np.dtype([("cf_grid", np.float64, (2, 3)), ("cf_n", np.int64)], align=True), "_CmpField2D"
@@ -4331,9 +4299,7 @@ def test_udt_array_scalar_promotes_like_builtin():
 
     Each element has the dtype the op gives on the built-in dtypes, and the
     result is the operand's UDT only when that dtype is its element type.
-    Regression: ``apply`` (and so ``v + 0.5``) cast a Python number to the UDT
-    first, and the result kept the UDT's element type, so ``int_udt + 0.5``
-    added 0 and ``int_udt / 4`` gave integers.
+    Regression: ``int_udt + 0.5`` added 0 and ``int_udt / 4`` gave integers.
     """
     ints = dtypes.register_anonymous(np.dtype((np.int64, (2, 4))), "_UpcI24")
     int8s = dtypes.register_anonymous(np.dtype((np.int8, (2, 4))), "_UpcB24")
@@ -4409,9 +4375,8 @@ def test_udt_uint64_with_signed_ints_computes_like_builtin():
     """UINT64 elements with signed ones are computed in FP64, as the built-in ops compute them.
 
     Numba computes uint64 with int64 in int64, so each operand is first cast
-    to the type the built-in op computes in. Regression: the generated code
-    left the arithmetic to Numba, so ``2**63 + 1`` came out as ``-9.22e18``
-    and ``2**63 * 2`` as 0.
+    to the type the built-in op computes in. Regression: ``2**63 + 1`` came
+    out as ``-9.22e18`` and ``2**63 * 2`` as 0.
     """
     big = 2**63
     uints = dtypes.register_anonymous(np.dtype((np.uint64, (2, 2))), "_MixU22")
@@ -4464,9 +4429,8 @@ def test_udt_user_op_named_like_a_lifted_op():
 
     A literal with a UDT is cast to the UDT for a UDF, since nothing says how
     a UDF combines a number with an element, but only when its type fits.
-    Regression: ``_compile_udt`` matched built-in ops by name only, so a UDF
-    registered as ``"plus"`` or ``"max"`` was compiled as the built-in, its
-    function ignored, and on a built-in dtype it raised KeyError.
+    Regression: a UDF registered as ``"plus"`` or ``"max"`` ran the built-in
+    instead of its function.
     """
     udt = dtypes.register_anonymous(np.dtype((np.int64, (2, 3))), "_NamedLikeLifted")
 
@@ -4987,10 +4951,9 @@ def test_udt_record_array_field_refuses_literal_of_another_shape():
     An array UDT's element takes the shape a literal broadcasts it to, as numpy
     does: ``INT8[3]`` plus ``np.array([[1, 300, 3]])`` is ``INT64[1, 3]``. A
     record's field keeps its shape, so the record refuses such a literal and
-    names both shapes. A store still casts as numpy assigns. Regression: the
-    literal was cast into the field as numpy assigns it, dropping the leading
-    axis and wrapping 300 to 44, through ``+`` and a user's op alike, and a
-    nested list raised numpy's ValueError.
+    names both shapes. A store still casts as numpy assigns. Regression: such
+    a literal was cast into the field, dropping the leading axis and wrapping
+    300 to 44.
     """
     arr = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_ShapeArrI8")
     rec = dtypes.register_anonymous(
@@ -5053,8 +5016,7 @@ def test_udt_array_literal_broadcasts_with_an_array_udt():
 
     The result has the shape numpy's would: ``INT8[3]`` and a 2-by-3 array
     give ``[2, 3]``, as ``INT8[3]`` and an ``INT64[2, 3]`` UDT do. Regression:
-    an array paired only when it broadcast to the UDT's shape; any other was
-    cast to the UDT and raised numpy's "could not broadcast" error.
+    the 2-by-3 array raised numpy's "could not broadcast" error.
     """
     i8x3 = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_BcastI8x3")
     i8x1 = dtypes.register_anonymous(np.dtype((np.int8, (1,))), "_BcastI8x1")
@@ -5084,11 +5046,11 @@ def test_udt_record_date_literals_compare_as_numpy():
     """A date, duration or date text in a record literal keeps numpy's type unless it round-trips.
 
     A Python date or duration, or a date as text, takes its field's type only
-    when it casts into the field and back unchanged, as a numpy date does;
-    otherwise it keeps numpy's type for it (a ``datetime`` is in
-    microseconds), so ``==`` compares it whole: noon is not the day, and 5 s
-    and 1 us is not 5 s. Regression: such a literal always took the field's
-    type, so it was cut to the field's unit and compared equal.
+    when it casts into the field and back unchanged, as a numpy date does.
+    Otherwise it keeps numpy's type for it (a ``datetime`` is in microseconds),
+    so ``==`` compares it whole: noon is not the day, and 5 s and 1 us is not
+    5 s. Regression: such a literal was cut to the field's unit and compared
+    equal.
     """
     import datetime
 
@@ -5284,15 +5246,11 @@ def test_udt_ewise_union_defaults_are_typed_not_converted():
 def test_udt_store_casts_each_element_as_builtin_types_do():
     """A UDT result stored in an object of another UDT type is cast element by element.
 
-    GraphBLAS cannot cast a UDT, so each array element or record leaf is cast
-    as GraphBLAS casts built-in types on store (compared below), without a
-    temporary copy: an object stores through the cast op (``<<``, a mask, an
-    accumulator, ``replace``, ``dup``), an element-wise expression of a
-    lifted op casts as it computes, and a Scalar or one element is cast
-    directly. Anything that would need a converted copy of a whole object
-    raises, as do layouts that do not correspond and a built-in type on
-    either side. Regression: setting one element from a Scalar of another UDT
-    type read its bytes as the object's type.
+    Each array element or record leaf is cast as GraphBLAS casts built-in types
+    on store (compared below). The test covers each kind of store that casts and
+    each that raises; ``udt._store_cast_op`` decides which is which. Regression:
+    setting one element from a Scalar of another UDT type read its bytes as the
+    object's type.
     """
     # One record casts every pair of leaf dtypes, so it compiles once.
     pairs = [
@@ -5574,10 +5532,9 @@ def test_udt_record_array_fields_compute_element_by_element():
     So a field agrees with numpy's ``fmin``, ``fmax``, ``floor_divide`` and
     ``true_divide`` element for element, with a record or a number on the
     other side. ``INT64_MIN // -1`` is the one integer quotient Numba gets
-    wrong by itself (0, where numpy wraps). Regression: as a whole-array
-    expression the field ran through Numba's ufuncs, where ``min`` and ``max``
-    did not compile, a zero complex divisor raised inside the cfunc and left
-    the element unwritten, and ``int8 / int8`` ran in float32.
+    wrong by itself (0, where numpy wraps). Regression: the field was computed
+    as one array through Numba's ufuncs, where ``min`` and ``max`` did not
+    compile and ``int8 / int8`` ran in float32.
     """
     nan, inf = float("nan"), float("inf")
     rec = dtypes.register_anonymous(
@@ -5747,9 +5704,8 @@ def test_udt_records_differing_only_in_layout_combine():
     """A packed and an aligned record with the same leaves combine, either way round.
 
     The result is the left operand's type, since it can store every leaf.
-    Regression: casting the other operand to the left one's type for a
-    Scalar's ``ewise_add`` subtracted a zero, which came back as the other
-    operand's own type, so the cast recursed until RecursionError.
+    Regression: a Scalar's ``ewise_add`` of the two recursed until
+    RecursionError.
     """
     fields = [("lay_f", np.float64), ("lay_i", np.int16), ("lay_n", [("lay_k", np.int32)])]
     packed = dtypes.register_anonymous(np.dtype(fields), "_LayPacked")
@@ -5782,9 +5738,8 @@ def test_udt_records_differing_only_in_layout_combine():
 def test_udt_record_array_field_truediv_is_float64():
     """``truediv`` on a small integer array field divides in float64, as a scalar field does.
 
-    Regression: Numba ran an array field through a ufunc whose loop it picks
-    itself, float32 for int8 or int16, so ``1 / 46`` came back as
-    0.021739130839705467 in an FP64 field.
+    Regression: Numba divided an int8 or int16 array field in float32, so
+    ``1 / 46`` lost precision.
     """
     for np_type in [np.int8, np.uint8, np.int16, np.uint16]:
         name = f"_TdArr{np.dtype(np_type).name}"
@@ -5804,9 +5759,8 @@ def test_udt_record_array_field_truediv_is_float64():
 def test_udt_typed_scalar_operands_and_defaults():
     """Typed Scalars keep their values with a UDT, as literals do.
 
-    Regression: ``Scalar.ewise_union`` cast its other operand to the left UDT
-    (``s8 - sf`` was int8), and an ``ewise_union`` default given as a typed
-    Scalar was cast to the operand's UDT however much that changed it.
+    Regression: a typed Scalar operand or default was cast to the other
+    operand's UDT, so ``s8 - sf`` was int8.
     """
     i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_TsI8")
     f8s = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "_TsF8")
@@ -5843,9 +5797,8 @@ def test_udt_typed_scalar_operands_and_defaults():
 def test_udt_errors_name_the_real_problem():
     """A size mismatch, or an op that does not take UDTs, is reported as such.
 
-    Regression: infix on two UDTs of different sizes said ``ewise_add cannot
-    use binary.first`` (the op infix uses to provoke the size error), and an op
-    that does not take UDTs at all reported the literal check's ValueError.
+    Regression: both raised an unrelated error, about ``binary.first`` or the
+    literal check.
     """
     i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_ErrI8")
     f8s = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "_ErrF8")
@@ -5938,10 +5891,8 @@ def test_udt_literal_rules_edge_cases():
 def test_udt_store_casts_reach_every_store_path():
     """Each way of storing into a UDT object casts as ``<<`` does, or says why it cannot.
 
-    Regression: ``agg.first`` into a Scalar of another UDT handed GraphBLAS
-    the output as it was, which read the int8 bytes as float64 (24 bytes from
-    a 3-byte element); indexed assignment of an expression skipped the cast;
-    and ``dup`` failed for a dtype given as a numpy dtype or a string.
+    Regression: ``agg.first`` into a Scalar and indexed assignment of an
+    expression skipped the cast, and ``dup`` refused a numpy dtype or string.
     """
     i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_PathI8")
     f8s = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "_PathF8")
@@ -5993,7 +5944,7 @@ def test_udt_scalar_accumulates_its_value_converted_to_its_type():
     The accumulator is typed on the Scalar's dtype, and GraphBLAS converts the
     value to that type first: an INT8 Scalar of -1 ``+= 0.5`` stays -1, and so
     does a Vector's ``v(accum=binary.plus) << 0.5``. Regression: a UDT Scalar
-    used the untyped op, so it computed -1 + 0.5 and truncated the sum to 0.
+    computed -1 + 0.5 and truncated the sum to 0.
     """
     i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_AccumI8")
     f8s = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "_AccumF8")
@@ -6128,10 +6079,8 @@ def test_udt_exact_literal_of_another_type_is_deprecated():
 def test_udt_isequal_is_array_equal_and_eq_broadcasts():
     """``isequal`` compares array elements as np.array_equal; ``==`` broadcasts, on Scalars too.
 
-    Regression: ``isequal`` used eq, which broadcasts as numpy's ``==`` does,
-    so an FP64[3] of [1, 1, 1] was isequal to an FP64[1] of [1]. A Scalar's
-    ``==`` was ``isequal``, and a literal was cast to the UDT first, so an
-    INT8[3] of [0, 0, 0] equaled 0.5 (truncated to 0) by either spelling.
+    Regression: an FP64[3] of [1, 1, 1] was isequal to an FP64[1] of [1], and
+    an INT8[3] Scalar of [0, 0, 0] equaled 0.5.
     """
     f3 = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "_IeqF3")
     f1 = dtypes.register_anonymous(np.dtype((np.float64, (1,))), "_IeqF1")
@@ -6190,9 +6139,8 @@ def test_udt_isequal_is_array_equal_and_eq_broadcasts():
 def test_udt_monoid_literal_is_typed_as_its_binaryop():
     """A literal with a Monoid is typed as with its BinaryOp, everywhere.
 
-    Regression: a Scalar's ``ewise_add`` and ``ewise_mult`` with a Monoid cast
-    the literal to the UDT (so ``0.5`` had to fit), where the same call with
-    ``binary.plus`` promoted.
+    Regression: with a Monoid, a Scalar's ``ewise_add`` and ``ewise_mult``
+    cast the literal to the UDT, as ``binary.plus`` does not.
     """
     i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_MonoLitI8")
     s = gb.Scalar.from_value([1, 2, 3], dtype=i8s)
@@ -6212,9 +6160,8 @@ def test_udt_monoid_literal_is_typed_as_its_binaryop():
 def test_udt_outer_on_mixed_types():
     """``outer`` builds its semiring from the op, typed on both input types.
 
-    Regression: ``get_semiring`` typed the semiring by the op's first input
-    type only, so ``outer`` on two different UDTs, or a UDT and a built-in
-    dtype, was a bare GrB_DOMAIN_MISMATCH.
+    Regression: ``outer`` on two different UDTs, or a UDT and a built-in type,
+    raised a bare GrB_DOMAIN_MISMATCH.
     """
     i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_OuterI8")
     f4s = dtypes.register_anonymous(np.dtype((np.float32, (3,))), "_OuterF4")
@@ -6461,11 +6408,8 @@ def test_udt_pair_is_never_unified():
     A Monoid takes one type, so on a mixed pair it runs as its BinaryOp, and
     indexed with the pair it takes the type the pair promotes to, as
     ``monoid.plus["INT8", "INT16"]`` is ``monoid.plus["INT16"]``. Regression:
-    numpy promotes two records of the same layout to one of them or to a
-    third, which ``unify`` registered as a new type; an op that does not lift
-    to UDTs then named that third type in its KeyError, and ``ewise_add`` with
-    a monoid passed GraphBLAS two operands it rejected with
-    GrB_DOMAIN_MISMATCH.
+    the pair was unified to a new type, which a KeyError then named, and
+    ``ewise_add`` with a monoid raised GrB_DOMAIN_MISMATCH.
     """
     X = dtypes.register_anonymous(np.dtype([("uni_a", np.float32), ("uni_b", np.int64)]), "_UniX")
     Y = dtypes.register_anonymous(np.dtype([("uni_a", np.int64), ("uni_b", np.float32)]), "_UniY")
@@ -6555,9 +6499,8 @@ def test_udt_aggregators():
 def test_udt_lazy_registration():
     """``lazy=True`` keeps ``is_udt``, so the delayed registration succeeds.
 
-    Regression: the kwargs saved in ``module._delayed`` left out ``is_udt``,
-    so the delayed registration compiled the function for built-in types only
-    and raised UdfParseError.
+    Regression: the delayed registration dropped ``is_udt`` and raised
+    UdfParseError.
     """
     from graphblas.core.operator import BinaryOp, IndexUnaryOp, UnaryOp
 
@@ -6841,9 +6784,8 @@ def _parameterized_is_udt_factory(scale):  # pragma: no cover (called by Numba i
 def test_parameterized_is_udt_pickle_roundtrip(module_name):
     """A parameterized op with ``is_udt=True`` keeps the flag through pickling.
 
-    Regression: the parameterized ops' ``__reduce__`` left out ``is_udt``, so
-    an op unpickled in another process took the non-UDT compile path and
-    failed at first use.
+    Regression: an op unpickled in another process lost ``is_udt`` and failed
+    at first use.
     """
     import pickle
 

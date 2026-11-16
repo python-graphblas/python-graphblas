@@ -202,9 +202,8 @@ def test_isclose():
 
 
 def test_isclose_infinity():
-    # As in math.isclose, an infinity is close only to itself. Regression: it was close
-    # to every number (abs(inf - y) is inf, and so is rel_tol * inf), in both of
-    # isclose's paths.
+    # As in math.isclose, an infinity is close only to itself, in both of isclose's
+    # paths; see test_vector.test_isclose_infinity
     values = [math.inf, -math.inf, 1.0, 0.0, math.nan]
     for x, y in itertools.product(values, repeat=2):
         for abs_tol in [0.0, math.inf]:
@@ -299,9 +298,8 @@ def test_udt_scalar_nested_array_roundtrip():
 
     numpy keeps subarray dtypes layered, so a 6-long array of 5-long FP64
     arrays reports ``subdtype`` as a 40-byte inner dtype with shape ``(6,)``.
-    Registration flattens it to ``FP64[6, 5]``. Regression: viewing all 240
-    bytes as that inner dtype raised ValueError ("Changing the dtype to a
-    subarray type is only supported if the total itemsize is unchanged").
+    Registration flattens it to ``FP64[6, 5]``. Regression: reading it back
+    raised numpy's ValueError about a subarray dtype.
     """
     inner = np.dtype((np.float64, (5,)))
     udt = dtypes.register_anonymous(np.dtype((inner, (6,))), "_NestedArrayUdt")
@@ -380,8 +378,8 @@ def test_nvals(s):
 def test_nvals_raises_the_graphblas_error():
     # nvals of a Scalar with no GraphBLAS object raises the NullPointer that _nvals raises.
     # No call leaves a Scalar in that state, as ss.export(give_ownership=True) leaves a
-    # Matrix or Vector, so the test sets the handle to NULL itself. Regression: the count
-    # goes into a C scalar, and the error was an EmptyObject about that scalar.
+    # Matrix or Vector, so the test sets the handle to NULL itself. Regression: the error
+    # was an EmptyObject about an internal C scalar.
     s = Scalar.from_value(1.5, is_cscalar=False)  # pragma: is_grbscalar
     gb_obj = s.gb_obj[0]
     s.gb_obj[0] = gb.core.NULL

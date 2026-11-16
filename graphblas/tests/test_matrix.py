@@ -258,8 +258,8 @@ def test_nvals(A):
 def test_nvals_and_shape_raise_the_graphblas_error():
     # export(give_ownership=True) leaves no GraphBLAS object, so these calls fail with
     # the error that checking the object itself gives (``_nvals``). A.T reports against
-    # A, since there is no error function for a TransposedMatrix. Regression: each count
-    # goes into a C scalar, and the error was an EmptyObject about that scalar.
+    # A, since there is no error function for a TransposedMatrix. Regression: the error
+    # was an EmptyObject about an internal C scalar.
     A = Matrix.from_coo([0], [1], [1.5], nrows=2, ncols=3)
     v = Vector.from_coo([0], [1.5], size=3)
     A.ss.export(give_ownership=True)
@@ -282,8 +282,7 @@ def test_nvals_and_shape_raise_the_graphblas_error():
 def test_ss_export_failing_after_graphblas_frees_the_object(monkeypatch):
     # GraphBLAS frees the object as it hands its arrays over, so an error after that
     # (here in claiming the values) must leave the Python object with a NULL handle.
-    # Regression: the handle pointed at the freed object, so a later call read freed
-    # memory, and the object was freed again when collected.
+    # Regression: a later call read freed memory, and collection freed the object again.
     import gc
 
     import graphblas.core.ss.matrix as ss_matrix
@@ -1442,11 +1441,11 @@ def test_select_row_and_column_compare_indices_with_the_bound_given():
         assert select.row(A < w[0]).new().to_coo()[0].tolist() == [0, 1, 2]
         assert select.row(A >= w[0]).new().to_coo()[0].tolist() == [3, 4]
     # A comparison with the scalar on the left raises the op's TypeError. Regression: it
-    # raised AttributeError ('Matrix' object has no attribute 'value').
+    # raised AttributeError.
     with pytest.raises(TypeError, match="Bad type for keyword argument `thunk=`"):
         select.row(A.apply(binary.le, left=3))
-    # NaN compares False with every index, so it keeps none. Regression: NaN cast to the
-    # INT64 thunk was 0, so < and <= kept row 0, and > and >= every other row.
+    # NaN compares False with every index, so it keeps none. Regression: NaN became 0, so
+    # < and <= kept row 0, and > and >= the rest.
     nan = float("nan")
     for expr in [A < nan, A <= nan, A > nan, A >= nan, A < Scalar.from_value(nan)]:
         assert select.row(expr).new().nvals == 0, expr
@@ -2031,8 +2030,8 @@ def test_isclose(A, v):
 
 
 def test_isclose_infinity():
-    # As in math.isclose, an infinity is close only to itself. Regression: it was close to
-    # every number (abs(inf - y) is inf, and so is rel_tol * inf), with Numba and without.
+    # As in math.isclose, an infinity is close only to itself; see
+    # test_vector.test_isclose_infinity
     from graphblas.core.vector import _isclose_recipe
 
     values = [math.inf, -math.inf, 1.0, 0.0, math.nan]
@@ -3287,10 +3286,8 @@ def test_dup_expr(A):
 )
 @pytest.mark.parametrize("order", ["rowwise", "columnwise"])
 def test_ss_flatten_size(fmt, order):
-    # SuiteSparse holds a Vector by column. Regression: a reshape of a Matrix held by
-    # row was cast to a Vector as it stood, and SuiteSparse then saw a Vector of size 1:
-    # .size was 1 and every index past 0 raised InvalidIndex, though isequal and
-    # to_coo, which read the Python-side size, looked right.
+    # SuiteSparse holds a Vector by column. Regression: flattening a Matrix held by row
+    # gave a Vector whose .size was 1, though isequal and to_coo looked right.
     A = Matrix.from_coo([0, 0, 0, 1, 1, 1], [0, 1, 2, 0, 1, 2], [1, 2, 3, 4, 5, 6])
     B = Matrix.ss.import_any(**A.ss.export(format=fmt))
     v = B.ss.flatten(order=order)
@@ -4735,8 +4732,8 @@ def test_subarray_dtype_ss_export_spare_values():
     # A dense export of an array UDT whose buffer has more values than entries keeps the
     # first nrows * ncols. Regression: it raised ValueError, and unpack left the Matrix
     # empty. SuiteSparse:GraphBLAS 7.4.0's memory pool rounds each allocation of 512 KiB
-    # or less up to a power of two; here a full Matrix resized smaller keeps its larger
-    # buffer, in either layout.
+    # or less up to a power of two, so here a full Matrix resized smaller keeps its
+    # larger buffer, in either layout.
     big = np.arange(3 * 3 * 4, dtype=np.int64).reshape(3, 3, 4)
     for layout, nrows, ncols in [("by_row", 2, 3), ("by_col", 3, 2)]:
         expected = big[:nrows, :ncols]
@@ -4875,9 +4872,8 @@ def test_subarray_dtype_values_shape():
 
 @pytest.mark.skipif("not suitesparse")
 def test_ss_import_coo_with_empty_rows_and_columns():
-    # Regression: indptr was set only at the rows that appear, so every empty row after
-    # the first left a 0 in it: an empty row in the middle moved entries to another row
-    # (and isequal still said True), and an empty last row lost every entry.
+    # Regression: an empty row in the middle moved entries to another row, and an empty
+    # last row lost every entry.
     def entries(M):
         return sorted(zip(*(x.tolist() for x in M.to_coo()), strict=True))
 
@@ -4951,7 +4947,7 @@ def test_ss_import_values_size():
     match = r"values of \S+ in column order must have shape \(nrows, ncols, 2\) for an element"
     with pytest.raises(ValueError, match=match):
         Matrix.ss.import_fullc(values=np.ones((2, 2, 1)), dtype="FP64[2]")
-    # A scalar is not a whole element of an array UDT (the message said "not 0")
+    # A scalar is not a whole element of an array UDT
     with pytest.raises(ValueError, match=r"a scalar does not fill one element of dtype \S+, of"):
         Matrix.ss.import_fullr(values=1.5, nrows=2, ncols=2, dtype="FP64[2]", is_iso=True)
     # A scalar that is one whole element, where more are needed, is too few values

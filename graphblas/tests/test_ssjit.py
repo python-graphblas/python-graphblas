@@ -79,8 +79,8 @@ def _setup_jit():
     prev = gb.ss.config["jit_c_control"]
 
     result = _fix_jit_config()
-    # On False, don't try sysconfig: if the conda compiler can't build GraphBLAS
-    # JIT kernels, Python's sysconfig compiler won't either.
+    # On False, do not try sysconfig: if the conda compiler cannot build GraphBLAS
+    # JIT kernels, Python's sysconfig compiler will not either.
     if result is None:
         # No conda env, and fix_jit_config found no sysconfig compiler either.
         cc = sysconfig.get_config_var("CC")
@@ -296,10 +296,9 @@ print("second: " + str(gb.ss.fix_jit_config()))
 def test_fix_jit_config_first_call_agrees_with_the_second():
     """``fix_jit_config()`` gives the same answer on its first call as on later ones.
 
-    The probe goes through the C API and registers nothing. Regression: it
-    registered a UDT, which asked to enable the JIT and started a second probe
-    inside the first; the outer probe then failed redeclaring the probe type,
-    so a working environment answered ``False`` the first time only.
+    The probe goes through the C API and registers nothing. Regression: the
+    probe started a second probe inside itself, so a working environment
+    answered ``False`` on the first call.
     """
     lines, report = _run_in_fresh_process(_FIX_JIT_TWICE_PROBE)
     assert lines["first"] == lines["second"], report
@@ -1142,7 +1141,8 @@ def test_jit_indexbinary(v):
     assert repr(add_theta["FP64", "FP64", "FP32"]) == "indexbinary.add_theta[FP64, FP64, FP32]"
     # An FP32 theta picks it, and its own kernel runs. SuiteSparse finds a compiled kernel by
     # its op's name, and its encoding has no theta type, so each theta type needs its own C
-    # name; with one, the FP64 theta's kernel would read the float as a double: [2, 2, 4, 0].
+    # name; with one shared C name, the FP64 theta's kernel would read the float as a double:
+    # [2, 2, 4, 0].
     assert add_theta["FP64", "FP64", "FP32"].jit_c_name.startswith(
         "add_theta_4_FP64_4_FP64_4_FP32_"
     )
@@ -1381,9 +1381,8 @@ def test_op_jit_signature_uses_pinned_type_name():
 def test_jit_compiles_auto_udt_ops():
     """The JIT compiles a kernel for a lifted op on a UDT, and ``jit_c_control`` stays ``'on'``.
 
-    Regression: without ``GxB_JIT_C_NAME`` on the UDT, SuiteSparse's ewise
-    template failed to compile (``use of undeclared identifier 'Bx'``), and the
-    failed compile lowered the control to ``'load'`` for the rest of the session.
+    Regression: the kernel failed to compile (``use of undeclared identifier
+    'Bx'``), which lowered the control to ``'load'``.
     """
     if _IS_SSGB7:
         pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
@@ -1413,10 +1412,10 @@ def test_jit_compiles_auto_udt_ops():
 def test_floordiv_udt_jit_matches_python_semantics():
     """``binary.floordiv`` on a UDT rounds toward minus infinity in the JIT kernel.
 
-    Python's ``//``, and so the Numba cfunc, is floor division. Regression: the
-    C codegen used C's ``/``, which truncates integers toward zero and does not
-    round floats down, so negative operands and floats disagreed with the cfunc.
-    The vectors have 50 elements that are not iso, so the kernel runs.
+    Python's ``//``, and so the Numba function, is floor division. Regression:
+    the C kernel used C's ``/``, so negative operands and floats disagreed with
+    the Numba function. The vectors have 50 elements that are not iso, so the
+    kernel runs.
     """
     if _IS_SSGB7:
         pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
@@ -1930,9 +1929,8 @@ def test_packed_nested_record_layout_skips_jit():
     """A packed record nested in a packed record skips the JIT path too.
 
     numpy's ``align=True`` keeps a packed inner record packed (alignment 1),
-    where a C compiler aligns it to 8 bytes. Regression:
-    ``_is_c_compatible_layout`` compared the layout with an ``align=True``
-    rebuild, which matched the packed one, and the kernel read the wrong offsets.
+    where a C compiler aligns it to 8 bytes. Regression: the kernel read the
+    wrong offsets.
     """
     if _IS_SSGB7:
         pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
@@ -2577,9 +2575,8 @@ def test_udt_jit_c_name_too_long_keeps_the_cfunc():
 def test_udt_field_named_like_a_standard_macro_skips_the_jit():
     """A field named like a macro of the C standard headers the JIT includes skips the JIT.
 
-    The preprocessor would expand it inside the struct. Regression: the kernel did not
-    compile, so SuiteSparse raised ``JitError`` (with no message) for that op and set
-    ``jit_c_control`` to 'load' for the rest of the process. The test checks the C name
+    The preprocessor would expand it inside the struct. Regression: the kernel failed to
+    compile, raising an empty ``JitError`` and leaving 'load'. The test checks the C name
     and the warning, so nothing compiles here.
     """
     from graphblas.exceptions import NoJITWarning
@@ -2603,9 +2600,8 @@ def test_udt_named_like_an_identifier_in_the_kernel_takes_the_jit():
     """A UDT named like an identifier in a JIT kernel compiles, under its ``gbudt_`` C name.
 
     SuiteSparse's kernels use the type's name in the same scope as their own identifiers.
-    Regression: a UDT named like a parameter of our op definitions (``z``), a local of its
-    templates (``A``, ``p``, ``i``, ``result``) or something its headers declare (``div``)
-    failed to compile, with an empty ``JitError`` and 'load' for the rest of the process.
+    Regression: a UDT named like one of them, such as ``z``, ``A`` or ``div``, failed to
+    compile, raising an empty ``JitError`` and leaving 'load'.
     """
     _require_jit_on()
     for name in ["z", "A", "p", "i", "div", "result"]:
@@ -2674,9 +2670,8 @@ def test_udt_c_name_keeps_python_graphblas_own_names():
 def test_udt_from_c_source_lifts_ops_under_its_own_c_name():
     """An op lifted to a type registered from C source names the type as its C source does.
 
-    Regression: the ``gbudt_`` prefix of a numpy UDT's C name was also put on a C-source
-    type's, so ``binary.plus[t]`` named a type SuiteSparse does not know and raised
-    ``JitError``, leaving 'load'.
+    Regression: ``binary.plus[t]`` named the type with the ``gbudt_`` prefix, which
+    SuiteSparse did not know, and raised ``JitError``.
     """
     _require_jit_on()
     np_type = np.dtype([("cs_x", np.float64), ("cs_y", np.float64)], align=True)

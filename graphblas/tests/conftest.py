@@ -41,6 +41,8 @@ if (
 # it reads from ``COLUMNS`` and not from ``display.width``. Tests that compare
 # reprs expect 80 columns, the width pandas falls back to when ``COLUMNS`` is
 # unset and pytest captures output, so drop a wide terminal's ``COLUMNS``.
+# test_formatting.py also sets 80 itself; this covers any other test that
+# renders a repr.
 os.environ.pop("COLUMNS", None)
 
 

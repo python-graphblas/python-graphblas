@@ -313,9 +313,8 @@ def test_nested_subarray_record_values_load_intact():
 def test_lookup_numba_type_goes_through_numpy_dtype():
     """A UDT's Numba type resolves through its numpy dtype, not a registry key.
 
-    Regression: keyed by Numba type, a layered and a flat array dtype, which
-    share a Numba type, resolved to whichever registered last, and a layout
-    nobody had registered yet did not resolve at all.
+    Regression: two dtypes sharing a Numba type resolved to whichever
+    registered last, and an unregistered layout did not resolve.
     """
     import numba
 
@@ -581,9 +580,8 @@ def test_udt_layouts_under_one_name_get_their_own_jit_c_names():
     """Two UDT layouts registered under one name get distinct C names.
 
     SuiteSparse's JIT knows a type by its C name alone. Regression: the second
-    layout ran kernels compiled for the first, so making an iso Vector non-iso
-    expanded 28-byte elements with a kernel for 6-byte ones (wrong values), or
-    6-byte elements with one for 28-byte ones (heap corruption).
+    layout ran kernels compiled for the first, giving wrong values or heap
+    corruption.
     """
     small = dtypes.register_anonymous(np.dtype((np.int16, (1, 3, 1))), "_SameJitName")
     big = dtypes.register_anonymous(np.dtype((np.int16, (2, 1, 7))), "_SameJitName")
