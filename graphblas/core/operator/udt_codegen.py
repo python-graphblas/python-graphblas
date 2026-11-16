@@ -1,6 +1,6 @@
 """Code generation for the operators that compute on UDTs.
 
-``core/udt.py`` decides which operand pairs an op takes and what type its
+``core/udt.py`` decides which operand types an op accepts and what type its
 result has; this module writes the code that computes it, for record UDTs
 (C structs) and array UDTs (such as ``FP64[3]``):
 
@@ -44,40 +44,24 @@ _codegen_counter = itertools.count(1)
 
 
 def _compile_codegen(src, *, func_name, source_label, extra_ns=None):
-    """Compile a generated Python source string and return the named function.
+    """Compile generated Python source ``src`` and return its function ``func_name``.
 
-    Centralizes the small amount of ``exec``-based code generation that the
-    UDT operator wrappers need (Numba has to see a literal function body,
-    not a closure, to type-check shape-specialized arithmetic). Three things
-    this helper does that a bare ``exec`` doesn't:
-
-    1. ``ast.parse`` runs first so a codegen typo raises a clear
-       ``RuntimeError`` with the offending source attached, at the call
-       site, rather than as a cryptic ``SyntaxError`` from ``exec`` or a
-       confusing ``TypingError`` from Numba's first compile.
-    2. ``compile(..., filename, "exec")`` uses a human-readable synthetic
-       filename like ``"<gb-udt plus record nleaves=2> #7"``, and the
-       generated source is registered with ``linecache`` so any later
-       traceback shows real lines instead of ``<string>:??``.
-    3. The execution namespace is constructed here, so the names visible
-       to the generated code are auditable in one place. Extra entries
-       (e.g., the user's compiled ``numba_func`` for wrapper bodies) come
-       in via ``extra_ns``.
-
-    Returns ``namespace[func_name]``.
+    Unlike a bare ``exec``, it raises ``RuntimeError`` with the source attached
+    when the source does not parse, and it registers the source with
+    ``linecache`` under a readable name (``source_label`` and a counter), so
+    tracebacks show the generated lines. The generated code sees only the
+    names set here and those in ``extra_ns``, such as the user's
+    ``numba_func``.
     """
     try:
         ast.parse(src)
     except SyntaxError as exc:
-        # Codegen bug, not user input; surface the source so a future
-        # maintainer can see exactly what was generated.
+        # A bug in the code generator, not in user input.
         raise RuntimeError(
             f"Generated code for {source_label!r} is not valid Python "
             f"(parse error: {exc}). Source:\n{src}"
         ) from exc
-    # Counter suffix so two codegens with the same label still get distinct
-    # cache keys (e.g., the same op compiled for two different UDTs that
-    # happen to print the same shape summary).
+    # The counter keeps two sources with the same label apart in linecache.
     filename = f"{source_label} #{next(_codegen_counter)}"
     linecache.cache[filename] = (
         len(src),
@@ -86,10 +70,7 @@ def _compile_codegen(src, *, func_name, source_label, extra_ns=None):
         filename,
     )
     code = compile(src, filename, "exec")
-    # Generated code never calls Python's ``min`` / ``max`` (still reachable as
-    # builtins): they order a NaN by argument position, where SuiteSparse's
-    # ``fmin`` ignores it, so :func:`_minmax_expr` spells the comparison out,
-    # with ``signbit`` for the signed-zero tie. Complex ``*`` and ``/`` call
+    # ``signbit`` is for :func:`_minmax_expr`. Complex ``*`` and ``/`` call
     # :func:`_complex_times` and :func:`_complex_truediv` (see _expr_binary).
     namespace = {"abs": abs, "np": np, "signbit": np.signbit}
     if _has_numba:
@@ -118,13 +99,9 @@ NP_TO_C_TYPES = {
     np.dtype(np.uint64): "uint64_t",
     np.dtype(np.float32): "float",
     np.dtype(np.float64): "double",
-    # Complex types are layout-compatible with numpy's; SS's GraphBLAS.h
-    # typedefs ``GxB_FC32_t`` / ``GxB_FC64_t`` to C99 ``float _Complex`` /
-    # ``double _Complex`` (or MSVC's ``_Fcomplex`` / ``_Dcomplex``). The
-    # JIT include chain pulls in GraphBLAS.h, so these names are in scope.
-    # Plus, minus, times, truediv, ainv compile natively on _Complex; abs
-    # uses cabs / cabsf (see _c_expr_unary). min, max, floordiv don't make
-    # sense on complex; ``udt._element_types`` rejects them before any codegen.
+    # GraphBLAS.h, which every JIT kernel includes, typedefs these to C99
+    # ``float _Complex`` and ``double _Complex`` (MSVC: ``_Fcomplex`` and
+    # ``_Dcomplex``), which have numpy's layout.
     np.dtype(np.complex64): "GxB_FC32_t",
     np.dtype(np.complex128): "GxB_FC64_t",
 }
@@ -153,14 +130,16 @@ _has_jit_set = backend == "suitesparse" and hasattr(lib, "GxB_JIT_C_NAME")
 # ``<stdio.h>``, ``<errno.h>``, ``<stdint.h>`` and more). The preprocessor
 # expands a macro inside any declarator or expression it appears in, so a field
 # declared ``double M_PI ;`` becomes ``double 3.14159... ;`` and won't compile;
-# the separate namespace for struct members doesn't help. (A UDT's own name
-# never collides: its C name has a prefix, ``_C_TYPE_NAME_PREFIX``. The typedef
-# names listed here mattered when the type's C name was its Python name.)
+# the separate namespace for struct members doesn't help. A typedef name such
+# as ``size_t`` is a valid field name; those listed are refused only to be safe.
+# (A UDT's own name never collides: its C name has a prefix,
+# ``_C_TYPE_NAME_PREFIX``.)
 #
-# Either way the JIT compile fails. SuiteSparse 9.4 and later then raise
-# JitError for that call and set ``jit_c_control`` to 'load', so the process
-# compiles no more kernels. Block these eagerly: the op runs through the
-# slower Numba cfunc path, and the user sees the "without JIT" warning.
+# A field name that fails to compile makes SuiteSparse 9.4 and later raise
+# JitError for that call and set ``jit_c_control`` to 'load', after which the
+# process compiles no more kernels. These names are refused up front instead:
+# the op runs through the slower Numba cfunc, and the user sees the "without
+# JIT" warning.
 _C_RESERVED = frozenset(
     {
         # C keywords
@@ -227,7 +206,7 @@ _C_RESERVED = frozenset(
         "stdout",
         "stderr",
         "FILE",
-        # <stddef.h> / <stdint.h>: typedefs at risk in the outer position
+        # <stddef.h> / <stdint.h> typedefs
         "size_t",
         "ptrdiff_t",
         "wchar_t",
@@ -346,13 +325,12 @@ def _is_valid_c_identifier(name):
     )
 
 
-# Process-global counter for synthesizing C names when the user-supplied
-# Python name doesn't make a valid C identifier of 127 characters or fewer (or
-# the UDT was registered without ``name=`` at all). The Python-side ``DataType.name``
-# is left alone; this only affects ``GxB_JIT_C_NAME``. ``itertools.count`` is
-# atomic enough for our purposes; collisions across processes are harmless
-# because the SS JIT cache files are keyed by ``(c_name, content_hash)`` per
-# process state.
+# The counter for the C names made here (``_gbudt_NNN``, ``_gbnest_NNN``): for
+# a UDT whose name makes no usable C name (``_pick_c_type_name``), a nested
+# record, or a name another layout already has. The Python ``DataType.name`` is
+# left alone. One name with other layouts in other processes is harmless: when
+# SuiteSparse loads a kernel from its cache on disk, it checks the kernel's type
+# definitions against the ones it has.
 _synthetic_udt_counter = itertools.count(1)
 
 # The C typedef given to SuiteSparse under each ``GxB_JIT_C_NAME`` in this
@@ -362,9 +340,9 @@ _synthetic_udt_counter = itertools.count(1)
 _jit_c_type_defs = {}
 
 
-# The C name of a UDT is its name after this prefix. SuiteSparse's JIT puts the type's name in
-# a kernel beside its own identifiers, so a UDT named like one of them did not compile: a
-# local of its templates (``A``, ``C``, ``p``, ``i``, ``result``), a parameter of the op
+# The C name of a UDT is its name after this prefix. SuiteSparse's JIT uses the type's name
+# in a kernel among its own identifiers, so a UDT named like one of them would not compile:
+# a local of its templates (``A``, ``C``, ``p``, ``i``, ``result``), a parameter of the op
 # definitions made here (``z``, ``x``), or anything the C headers declare (``div``,
 # ``index``, ``GB_void``). No identifier there starts with the prefix.
 _C_TYPE_NAME_PREFIX = "gbudt_"
@@ -388,15 +366,15 @@ def _max_type_c_name_len():
 def _pick_c_type_name(python_name):
     """Return a valid C identifier for use as ``GxB_JIT_C_NAME`` on a UDT named ``python_name``.
 
-    ``gbudt_`` and the name (see ``_C_TYPE_NAME_PREFIX``), which stays readable in
+    It is ``gbudt_`` and the name (see ``_C_TYPE_NAME_PREFIX``), which stays readable in
     introspection and JIT cache file names. A name starting with ``_gb``, which
-    python-graphblas keeps for the types it makes itself (a synthetic ``_gbudt_NNN`` or
-    ``_gbnest_NNN``, the tensor engine's ``_gbtensor_...``), and which no kernel identifier
-    starts with, is kept as it is. When the result is not a C identifier (a name with dots,
-    or none given), or is too long for each op built from it to fit SuiteSparse's
-    ``GxB_MAX_NAME_LEN`` (``_max_type_c_name_len``), mint a fresh ``_gbudt_NNN`` name
-    instead, so the UDT and its ops still take the JIT path. A name SuiteSparse already has
-    for a type goes to ``_udt_c_typedef`` with ``is_c_name`` instead.
+    python-graphblas keeps for the types it makes itself (``_gbudt_NNN``, ``_gbnest_NNN``),
+    and which no kernel identifier starts with, is kept as it is. When the result is not a
+    C identifier (a name with dots, or none given), or is too long for each op built from
+    it to fit SuiteSparse's ``GxB_MAX_NAME_LEN`` (``_max_type_c_name_len``), it is a fresh
+    ``_gbudt_NNN`` instead, so the UDT and its ops still get C definitions. A name
+    SuiteSparse already has for a type goes to ``_udt_c_typedef`` with ``is_c_name``
+    instead.
     """
     if not isinstance(python_name, str):
         c_name = ""
@@ -413,48 +391,44 @@ def _udt_c_typedef(python_name, np_type, *, is_c_name=False):
     """Build the JIT C typedef for a record or array UDT, or return ``None``.
 
     Returns ``(type_name, typedef)`` on success, where ``type_name`` is the
-    C identifier we register with SuiteSparse (``gbudt_`` and ``python_name``, or
-    a synthetic name; see ``_pick_c_type_name``). With ``is_c_name``,
-    ``python_name`` is already that C name: one SuiteSparse has for the type, or a
-    synthetic one made here. Returns ``None`` when the UDT still can't be
-    expressed in C after synthesizing the top-level name (a field name
-    collides with a C reserved word, or a leaf field type isn't in
-    ``NP_TO_C_TYPES``, e.g. object or datetime).
+    C name given to SuiteSparse (``gbudt_`` and ``python_name``, or a
+    synthetic name; see ``_pick_c_type_name``). With ``is_c_name``,
+    ``python_name`` is already that C name: one SuiteSparse has for the type,
+    or a synthetic one made here.
 
-    Nested record UDTs (structured field whose dtype is itself a record)
-    are supported: each inner struct is emitted with a synthesized
-    ``_gbnest_NNN`` C name before the outer typedef in the same
-    ``GxB_JIT_C_DEFINITION`` string, so SuiteSparse's JIT C file ends up
-    with the full chain of typedefs in scope. Array UDTs are flattened to
-    a single-dimension C array so that the generated per-element operator
-    code can use flat indices like ``x->v[i]``, matching the
-    (row-major contiguous) numpy memory layout.
+    A nested record becomes a struct of its own, named ``_gbnest_NNN``, whose
+    typedef comes first in the same string, so SuiteSparse compiles the whole
+    chain. An array UDT becomes a struct of one flat C array, ``v``, in
+    numpy's row-major order, so the generated code indexes it ``x->v[i]``.
+
+    ``None`` means the UDT has no C definition, so ops on it run as Numba
+    functions:
+
+    - a record whose numpy layout is not the one a C compiler gives its struct
+      (:func:`_is_c_compatible_layout`), such as a packed record of mixed
+      widths;
+    - a field name that is not a C identifier, or is reserved
+      (:func:`_is_valid_c_identifier`);
+    - a field or element type with no entry in ``NP_TO_C_TYPES``: text, a
+      date, a duration, float16, or an array field of a record;
+    - a UDT that is neither a record nor an array.
     """
-    # If the numpy layout disagrees with what a C compiler would produce,
-    # the JIT kernel would read fields at the wrong offsets. Skip rather
-    # than register a broken typedef; the cfunc path is still correct.
+    # The JIT kernel would read fields at C's offsets, not numpy's.
     if np_type.names is not None and not _is_c_compatible_layout(np_type):
         return None
     type_name = python_name if is_c_name else _pick_c_type_name(python_name)
     if np_type.names is not None:
-        # Inner typedefs (for nested structured fields) are prepended to the
-        # final definition string so the outer struct's field types are in
-        # scope when SuiteSparse compiles the kernel.
         inner_typedefs = []
         fields = []
         for field_name in np_type.names:
-            # Field names still have to be valid C; synthesizing per-field
-            # names would mean tracking a name map for the codegen and would
-            # break the human-readable JIT source (``z->_f0 = ...``). Not
-            # worth it for the corner case where a user named a field
-            # ``"class"``; fall back to cfunc there.
+            # Renaming a field would need a name map in the code generator, and
+            # would make the C source harder to read, so a field named like
+            # ``class`` keeps the Numba function instead.
             if not _is_valid_c_identifier(field_name):
                 return None
             field_dtype = np_type.fields[field_name][0]
             if field_dtype.names is not None:
-                # Nested struct field. Recurse to build the inner typedef.
-                # The inner C name is synthesized to avoid collisions with
-                # user-supplied type names elsewhere in the process.
+                # A nested record, under a fresh name no other type has.
                 inner_name = f"_gbnest_{next(_synthetic_udt_counter)}"
                 inner_info = _udt_c_typedef(inner_name, field_dtype, is_c_name=True)
                 if inner_info is None:
@@ -485,16 +459,12 @@ def _udt_c_typedef(python_name, np_type, *, is_c_name=False):
 
 
 def _c_aligned_version(np_type):
-    """Return an ``align=True`` version of ``np_type`` with every nested
-    record also aligned recursively.
+    """Return ``np_type`` rebuilt with ``align=True``, and every nested record too.
 
-    ``np.dtype([..., (name, inner_struct)], align=True)`` respects the
-    *inner_struct*'s own declared alignment, so a packed inner struct stays
-    packed at its natural-1-byte alignment and the outer's ``coord`` field
-    lands at the outer's next-after-flag offset (4 for ``int32``), not at
-    the 8-byte boundary a C compiler would pick. To compare against what C
-    would emit, we need to rebuild the inner as ``align=True`` first, then
-    use that rebuilt type as the outer's field type.
+    ``np.dtype(fields, align=True)`` keeps a packed inner record packed, with
+    an alignment of 1, so the outer record puts it right after the field
+    before it, not at the boundary a C compiler would pick. Rebuilding each
+    inner record aligned first gives the layout C gives the struct.
     """
     fields = []
     for name in np_type.names:
@@ -506,19 +476,14 @@ def _c_aligned_version(np_type):
 
 
 def _is_c_compatible_layout(np_type):
-    """Return True iff ``np_type``'s layout matches what a C compiler will
-    pick for the corresponding ``typedef struct``.
+    """Whether ``np_type``'s layout is the one a C compiler gives its ``typedef struct``.
 
-    A user-supplied ``np.dtype([(name, dtype), ...])`` is *packed* by default
-    (no padding between fields). A C struct *aligns* fields to their natural
-    boundary. For ``[(int32, float64)]`` numpy uses offsets ``0, 4`` and
-    itemsize 12; C uses offsets ``0, 8`` and itemsize 16. The JIT-compiled
-    kernel reads fields at C offsets but the numpy buffer holds them at the
-    packed offsets, so the JIT would read garbage. Detect and refuse JIT in
-    that case; the user can either re-register with ``align=True``, use the
-    dict / dataclass form (which already does), or accept the cfunc path.
-
-    Array UDTs are always C-compatible (single contiguous run of one type).
+    ``np.dtype([(name, dtype), ...])`` is packed by default, while C aligns
+    each field to its natural boundary: for ``[(int32, float64)]``, numpy's
+    offsets are 0 and 4 (itemsize 12) and C's are 0 and 8 (itemsize 16). A JIT
+    kernel would read such a record at C's offsets, so it gets no C
+    definition. ``align=True``, a dict or a dataclass gives an aligned record.
+    An array UDT is always compatible.
     """
     if np_type.names is None:
         return True
@@ -545,21 +510,18 @@ if _has_numba:
         first. These ops consult them:
 
         - ``min`` / ``max`` follow SuiteSparse's own ``GrB_MIN_FP64``, which
-          is C99 ``fmin`` and ignores a NaN operand rather than ordering or
-          propagating it; see :func:`_minmax_expr`. Only floating-point
+          is C99 ``fmin``; see :func:`_minmax_expr`. Only floating-point
           operands carry the NaN and signed-zero rules, so the dtype decides
           which of the two forms is emitted.
-        - ``//`` on two signed integers. Numba deliberately returns 0 for
-          ``INT64_MIN // -1`` to dodge the SIGFPE that x86 raises on the
+        - ``//`` on two signed integers. Numba returns 0 for
+          ``INT64_MIN // -1``, to avoid the SIGFPE x86 raises on the
           unrepresentable quotient, while numpy wraps to ``INT64_MIN``. Since
           ``a // -1`` is exactly ``-a``, routing that divisor through
           negation (which wraps) reaches numpy's answer without the trap.
         - ``*`` and ``/`` where either side is complex go through
           :func:`_complex_times` and :func:`_complex_truediv`, the formulas
-          the C kernel spells out. Numba's own operators are CPython's, so
-          its ``/`` raises ``ZeroDivisionError`` on a zero divisor, and from
-          Python 3.14 (Numba 0.68) both recover infinities that numpy and the
-          C kernel leave as ``nan``.
+          the C kernel spells out, since Numba's own operators differ from
+          numpy's (see those functions).
 
         ``/`` on two integers needs nothing: the built-in typing makes its
         result float64, as ``truediv`` on two INT64 vectors is FP64, so
@@ -627,9 +589,9 @@ if _has_numba:
         """Return a Python expression for ``min`` / ``max`` matching C ``fmin``.
 
         ``GrB_MIN_FP64`` is C99 ``fmin``, so this builder and
-        :func:`_c_minmax_expr` both reproduce it or ``binary.min`` means one
-        thing on FP64 and another on a UDT: a NaN operand is ignored unless
-        both are NaN. C99 leaves the tie between ``-0.0`` and ``0.0`` to the
+        :func:`_c_minmax_expr` both reproduce it, for ``binary.min`` to mean
+        the same on FP64 and on a UDT: a NaN operand is ignored unless both
+        are NaN. C99 leaves the tie between ``-0.0`` and ``0.0`` to the
         C library, which differs by platform, so both builders fix it: it
         resolves to ``-0.0`` for ``min``, ``0.0`` for ``max``, whichever side
         each sits on (Apple's libm answers so; glibc's x86-64 ``fmin`` answers
@@ -683,11 +645,8 @@ if _has_numba:
 
         ``leaf_paths`` is a sequence of Python access strings ``"['a']"`` or,
         for nested records, ``"['outer']['inner_a']"``. The generated function
-        always returns a *flat* tuple of leaf values regardless of nesting
-        depth; the wrapper (``udf._compose_wrapper_body``) walks the same leaf paths when
-        writing the result back, so nested-record outputs land at the
-        correct depth without nested tuple construction (which Numba can't
-        ``setitem``-assign to a record field).
+        returns a flat tuple of leaf values, which the wrapper writes back
+        leaf by leaf (``udf._compose_wrapper_body``).
 
         When ``x_is_scalar`` or ``y_is_scalar`` is True, that argument is a
         plain scalar (not a record), so it is used directly for all leaves.
@@ -699,10 +658,10 @@ if _has_numba:
 
         An array-valued leaf is computed element by element, with the same
         scalar expression as a scalar leaf or an array UDT element, into an
-        array of the result leaf's dtype. As a whole-array expression it ran
+        array of the result leaf's dtype. A whole-array expression would run
         through Numba's ufuncs, which pick their own loop (``int8 / int8`` in
-        float32), raise on a complex zero divisor, and take none of the scalar
-        forms of ``min``, ``max`` and ``//``.
+        float32), raise on a complex zero divisor, and skip the scalar forms
+        of ``min``, ``max`` and ``//``.
         """
         ns = {}
         lines = []
@@ -806,7 +765,7 @@ if _has_numba:
 
         size = reduce(mul, shape)
         # A loop, not one statement per element: Numba's typing time grows
-        # faster than linearly with the number of statements, so unrolling took
+        # faster than linearly with the number of statements, so unrolling takes
         # seconds for a 32 by 32 array and minutes for a 64 by 64 one.
         arrays = f"    z = numba.carray(z_ptr, {size})\n"
         if arity == 2:
@@ -864,9 +823,7 @@ if _has_numba:
         into that type instead, cast as a store casts (:func:`fused_store_op`).
 
         Returns ``(wrapper_func, wrapper_sig, ret_type)``. Raises ``KeyError``
-        when the dtype combination is not supported, with a clear message for
-        common mistakes like passing two record UDTs with different field
-        names.
+        when the two types do not pair (``udt._check_udt_pair``).
         """
         from .udf import _get_udt_wrapper
 
@@ -881,23 +838,18 @@ if _has_numba:
         _check_udt_pair(op_name, dtype, dtype2, info_x, info_y)
         ret_type, input_types = _udt_op_types(op_name, dtype, dtype2)
 
-        x_is_scalar = info_x is None  # left side is a plain scalar type
-        y_is_scalar = info_y is None  # right side is a plain scalar type
+        x_is_scalar = info_x is None
+        y_is_scalar = info_y is None
         udt_dtype = dtype2 if x_is_scalar else dtype
 
-        # Numba promotes mixed operands its own way (uint64 with int64 is
-        # int64, where GraphBLAS uses float64) and only then stores the value
-        # into the result's type, so each operand is converted first to the
-        # type the built-in op computes in. Same-type operands are left alone.
+        # Convert each operand to the type the built-in op computes in, since
+        # Numba promotes differently (see ``udt._element_types``).
         def cast(in_dtype, elem):
             return None if in_dtype == elem.base else in_dtype
 
         if udt_dtype.np_type.names is not None:
             from .udf import _compile_udf_for_udt
 
-            # Use leaf paths so the same codegen handles nested-record UDTs
-            # uniformly. A non-nested record's leaves are its top-level
-            # fields, with paths like ``"['a']"``.
             leaves = list(_iter_record_leaves(udt_dtype.np_type))
             leaves_x = None if x_is_scalar else list(_iter_record_leaves(dtype.np_type))
             leaves_y = None if y_is_scalar else list(_iter_record_leaves(dtype2.np_type))
@@ -1224,14 +1176,13 @@ def _c_expr_binary(py_op, lhs, rhs, field_dtype):
     """Return a C expression for a binary op: e.g., ``(x->a) + (y->a)``.
 
     ``field_dtype`` is the numpy dtype of the operands and of the element
-    being written: a C kernel exists only for an op whose result has the
-    operands' type. Two of the ops need it because the C spelling that looks
-    obvious disagrees with what the Numba cfunc computes: ``//`` is not C
-    ``/``, and ``min`` / ``max`` have to ignore NaN and break a signed-zero tie
-    as :func:`_minmax_expr` does. It is required rather than optional so a new
-    caller can't silently get the wrong kernel. :func:`_expr_binary` is the
-    sibling for the Numba cfunc; SuiteSparse picks between the two on its
-    own, so they must agree.
+    being written: the C code computes each element in its result's type.
+    Some ops need it because the obvious C spelling disagrees with what the
+    Numba cfunc computes: ``//`` is not C ``/``, and ``min`` / ``max`` have to
+    ignore NaN and break a signed-zero tie as :func:`_minmax_expr` does. It is
+    required rather than optional so a new caller can't silently get the
+    wrong kernel. :func:`_expr_binary` is the sibling for the Numba cfunc;
+    SuiteSparse picks between the two on its own, so they must agree.
 
     Floating-point ``//`` and complex ``/`` and ``*`` have no single-expression
     form; go through :func:`_c_assign_binary`.
@@ -1250,19 +1201,15 @@ def _c_expr_binary(py_op, lhs, rhs, field_dtype):
 def _c_minmax_expr(py_op, lhs, rhs, field_dtype):
     """Return a C expression for ``min`` / ``max`` on a field, as the Numba cfunc computes it.
 
-    ``GrB_MIN_FP64`` is C99 ``fmin``: it ignores a NaN operand rather than
-    ordering it, and a UDT field does the same. C99 leaves the tie between
-    ``-0.0`` and ``0.0`` to the implementation, though: Apple's libm returns
-    ``-0.0`` for ``fmin``, while glibc's x86-64 ``fmin`` (one ``minsd``)
-    returns an operand by position. So the comparison is spelled out, the same
-    as :func:`_minmax_expr` spells it for the cfunc: a NaN on the right loses,
-    and a tie resolves to ``-0.0`` for ``min`` and ``0.0`` for ``max``,
-    whichever side each sits on. The C kernel and the cfunc then agree on
-    every platform; only SuiteSparse's built-in FP64 ``min`` may break that
-    tie the other way, where the C library does. ``signbit`` comes from
-    ``<math.h>``, which reaches the C JIT kernel through ``GraphBLAS.h``, the
-    same route :func:`_c_float_floordiv_stmt` relies on for ``floor`` and
-    ``fmod``.
+    The comparison is spelled out as :func:`_minmax_expr` spells it for the
+    cfunc (see there for why): a NaN on the right loses, and a tie between
+    ``-0.0`` and ``0.0`` resolves to ``-0.0`` for ``min`` and ``0.0`` for
+    ``max``, whichever side each is on. The C kernel and the cfunc then agree
+    on every platform; only SuiteSparse's built-in FP64 ``min`` may break that
+    tie the other way, where the C library does (glibc's x86-64 ``fmin``
+    answers by position). ``signbit`` comes from ``<math.h>``, which reaches
+    the C JIT kernel through ``GraphBLAS.h``, as ``floor`` and ``fmod`` do for
+    :func:`_c_float_floordiv_stmt`.
 
     Integers have neither NaN nor a signed zero, so a plain comparison is
     exact for them.
@@ -1280,10 +1227,10 @@ def _c_minmax_expr(py_op, lhs, rhs, field_dtype):
 def _c_truediv_expr(lhs, rhs, field_dtype):
     """Return a C expression for true division on a float field.
 
-    Only float and complex fields reach a C kernel. True division of integers
-    or bools gives float64, as on built-in vectors, so its result never has
-    the operands' type, which a C kernel needs (``BinaryOp._compile_udt``).
-    Complex division is a statement (:func:`_c_complex_truediv_stmt`).
+    Only float fields get here. True division of integers or bools gives
+    float64, as on built-in vectors, so it is not computed in the result's
+    type, which a C kernel needs (``BinaryOp._compile_udt``), and complex
+    division is a statement (:func:`_c_complex_truediv_stmt`).
     """
     if not _is_float(field_dtype):
         raise ValueError(f"no C expression divides {field_dtype}")  # pragma: no cover (safety)
@@ -1295,9 +1242,9 @@ def _c_complex_truediv_stmt(target, lhs, rhs, field_dtype):
 
     C's own ``/`` on ``_Complex`` cannot be used. SuiteSparse's C JIT compiles
     with ``-fcx-limited-range`` under GCC, which replaces C99 Annex G division
-    with the naive formula: it squares the divisor's parts, so ``1e20 / 1e20``
-    in complex64 gave ``nan`` and ``(1+1j) / (1e160+1e160j)`` gave ``0`` on
-    Linux. This block is the cfunc's :func:`_complex_truediv`, statement for
+    with the naive formula: it squares the divisor's parts, so on Linux
+    ``1e20 / 1e20`` in complex64 is ``nan`` and ``(1+1j) / (1e160+1e160j)``
+    is ``0``. This block is the cfunc's :func:`_complex_truediv`, statement for
     statement: CPython's ``_Py_c_quot`` before Python 3.14 (Smith's method:
     scale by the larger part of the divisor), computed in the field's own
     precision with real arithmetic only, so no flag changes it. Each product
@@ -1338,8 +1285,8 @@ def _c_complex_times_stmt(target, lhs, rhs, field_dtype):
     adds a recovery step that turns some of its ``nan`` results into
     infinities, and whether C's ``*`` on ``_Complex`` takes it depends on the
     compiler: GCC under SuiteSparse's ``-fcx-limited-range`` does not, clang
-    does. So ``1j * (inf+infj)`` was ``nan+nanj`` on Linux and the cfunc but
-    ``-inf+infj`` from a C kernel on macOS. CPython takes it too from 3.14,
+    does. So C's ``*`` gives ``1j * (inf+infj)`` as ``nan+nanj`` on Linux but
+    ``-inf+infj`` on macOS. CPython takes it too from 3.14,
     and Numba follows CPython, so the cfunc does not use Numba's ``*``
     either: this block is :func:`_complex_times`, the textbook formula in
     real arithmetic, one product per statement so clang cannot contract it
@@ -1459,13 +1406,8 @@ def _make_jit_c_definition(op_name, py_op, dtype, arity):
     gets here: ``udt._element_types`` rejects it when the op is typed.
     """
     np_type = dtype.np_type
-    # Prefer the C name SuiteSparse already has for this type. ``GxB_JIT_C_NAME``
-    # on a ``GrB_Type`` is one-shot, so a later ``dtype.name`` rename does not
-    # propagate to SS. If the op's signature referenced ``dtype.name`` it would
-    # use an undefined struct name, and SS would silently fall back to the
-    # Numba cfunc instead of JIT-compiling. ``jit_c_name`` is also where the
-    # ``gbudt_`` or synthetic ``_gbudt_NNN`` name (see ``_pick_c_type_name``) is
-    # recorded; using it keeps op codegen consistent.
+    # The op must name the type by the C name SuiteSparse has for it, not by
+    # ``dtype.name``, which a rename changes and SuiteSparse does not know.
     typedef_info = _dtype_c_typedef(dtype)
     if typedef_info is None:
         return None
@@ -1478,13 +1420,8 @@ def _make_jit_c_definition(op_name, py_op, dtype, arity):
         params = f"{type_name} *z, const {type_name} *x"
 
     if np_type.names is not None:
-        # Use leaf C paths so nested records emit ``z->outer.inner_a = ...``
-        # alongside the inner+outer typedefs. Non-nested records degenerate
-        # to plain ``z->name``.
         leaves = list(_iter_record_leaves(np_type))
         if arity == 2:
-            # Pass the leaf dtype to the binary statement builder so
-            # type-sensitive ops (min, max, and the divisions) emit correct C.
             assigns = " ".join(
                 _c_assign_binary(py_op, f"z->{c}", f"x->{c}", f"y->{c}", leaf_dtype)
                 for _py, c, leaf_dtype in leaves
@@ -1497,11 +1434,9 @@ def _make_jit_c_definition(op_name, py_op, dtype, arity):
     else:  # array UDT, flattened to v[size]
         base_dtype, shape = np_type.subdtype
         size = reduce(mul, shape)
-        # A loop, as in the Numba wrapper: one statement per element made the
-        # C compiler take seconds on a 64 by 64 array, once per JIT cache.
+        # A loop, as in the Numba wrapper: one statement per element takes the
+        # C compiler seconds on a 64 by 64 array, once per JIT cache.
         if arity == 2:
-            # A statement, not an expression: floating-point ``//`` needs a
-            # block with temporaries (see ``_c_assign_binary``).
             assign = _c_assign_binary(py_op, "z->v[i]", "x->v[i]", "y->v[i]", base_dtype)
         else:
             assign = f"z->v[i] = {_c_expr_unary(py_op, 'x->v[i]', base_dtype)} ;"
@@ -1510,7 +1445,7 @@ def _make_jit_c_definition(op_name, py_op, dtype, arity):
 
 
 def _c_type_name(dtype):
-    """The C name SuiteSparse knows ``dtype`` by: a UDT's pinned JIT name, or the C type of
+    """The C name SuiteSparse knows ``dtype`` by: a UDT's ``jit_c_name``, or the C type of
     a built-in scalar dtype. ``None`` when it has none.
     """
     if dtype.np_type.names is None and dtype.np_type.subdtype is None:
@@ -1522,9 +1457,9 @@ def _c_type_name(dtype):
 def _dtype_c_typedef(dtype):
     """``_udt_c_typedef`` for UDT ``dtype`` under the C name SuiteSparse has for it.
 
-    That is its ``jit_c_name``: pinned when a UDT from numpy registers, or the name of a
-    type registered from C source. A UDT with none (not expressible in C) gets the name
-    ``_pick_c_type_name`` would give it.
+    That is its ``jit_c_name``: set when a UDT from numpy is first registered, which a
+    later rename does not change, or the name of a type registered from C source. A UDT
+    with none (no C definition) gets the name ``_pick_c_type_name`` would give it.
     """
     if (c_name := dtype.jit_c_name) is not None:
         return _udt_c_typedef(c_name, dtype.np_type, is_c_name=True)
@@ -1628,23 +1563,15 @@ def _make_jit_c_comparison_definition(op_name, dtype, *, is_eq):
     are chained with ``&&`` (eq) or ``||`` (ne). Top-level array UDTs loop
     over their elements.
 
-    Array-valued sub-fields inside a record (e.g.
-    ``[("weights", (float64, 3))]``) aren't supported: ``_udt_c_typedef``
-    rejects records with array sub-fields (``NP_TO_C_TYPES`` has no entry
-    for sub-array dtypes), so this function returns ``None`` before
-    iterating leaves in that case. Adding support would mean extending
-    ``_udt_c_typedef`` to emit ``double name[N]`` and ``_make_jit_c_definition``
-    to unroll array sub-fields in arithmetic codegen too; both legs need
-    to land together or the eq/ne path is alone in supporting it.
+    A record with an array field has no C typedef (``_udt_c_typedef``), so it
+    gets ``None`` here. Supporting one would mean emitting ``double name[N]``
+    in ``_udt_c_typedef`` and looping over such fields here and in
+    ``_make_jit_c_definition``, all together.
 
-    IEEE NaN propagation comes for free: C ``a == b`` is false when either
-    side is NaN, so two records both carrying NaN compare unequal under
-    ``eq`` (and equal under ``ne``), matching the cfunc path's leaf-wise
-    semantic comparison.
+    C's ``a == b`` is false when either side is NaN, so for two records with a
+    NaN in the same field ``eq`` is False and ``ne`` True, as in the cfunc.
     """
     np_type = dtype.np_type
-    # ``_udt_c_typedef`` returns None when the numpy layout doesn't match a
-    # C compiler's layout for the same struct.
     typedef_info = _dtype_c_typedef(dtype)
     if typedef_info is None:
         return None
@@ -1670,11 +1597,11 @@ def _make_jit_c_comparison_definition(op_name, dtype, *, is_eq):
 
 
 def _maybe_warn_jit_skipped(jit_info, op_name, dtype_name):
-    """Emit a ``NoJITWarning`` when JIT setup was skipped despite SS supporting JIT.
+    """Emit a ``NoJITWarning`` when an op got no C definition though SuiteSparse has a JIT.
 
     Called by op-class ``_compile_udt`` paths after ``set_jit_c_*_on_op``
-    returns ``None``. The ``_has_jit_set`` gate keeps the warning silent on
-    SS < 8 where JIT is fundamentally absent.
+    returns ``None``. ``_has_jit_set`` keeps the warning silent where no op
+    gets a C definition: before SuiteSparse 9, and on the vanilla backend.
     """
     if jit_info is None and _has_jit_set:
         from ..ss.jit_config import _maybe_warn_no_jit
@@ -1683,15 +1610,15 @@ def _maybe_warn_jit_skipped(jit_info, op_name, dtype_name):
 
 
 def _set_jit_c_strings(gb_obj, c_name, c_defn, set_string_func):
-    """Pin ``GxB_JIT_C_NAME`` + ``GxB_JIT_C_DEFINITION`` on a fresh op handle.
+    """Set ``GxB_JIT_C_NAME`` and ``GxB_JIT_C_DEFINITION`` on a new op; return whether it took them.
 
-    Both strings are one-shot on SuiteSparse: a second set returns
-    ``GrB_ALREADY_SET`` silently. The return is not checked here because
-    callers always pass a freshly-allocated handle.
+    SuiteSparse takes each string only once (a second set returns
+    ``GrB_ALREADY_SET``), so callers always pass a new op. When SuiteSparse
+    refuses the name, no definition is set, and this returns ``False``.
 
-    Arming an op with C source is the point at which this process has
-    committed to wanting a JIT compiler, so it is also where SuiteSparse's
-    non-compiling default gets raised.
+    Giving an op C source means this process wants a JIT compiler, so this is
+    also where SuiteSparse's default control, which compiles nothing, is
+    raised (``_enable_jit_for_udt``).
     """
     from ..ss.jit_config import _enable_jit_for_udt
 

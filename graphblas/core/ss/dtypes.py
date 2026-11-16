@@ -48,8 +48,8 @@ def register_new(name, jit_c_definition, *, np_type=None):
     if "struct" not in jit_c_definition:
         raise ValueError("Only struct typedefs are currently allowed for JIT dtypes")
 
-    # Registering a type by its C typedef is a request to compile C, so it is
-    # a fair place to raise SuiteSparse's non-compiling default.
+    # Registering a type by its C typedef is a request to compile C, so this
+    # raises SuiteSparse's default control, which compiles nothing.
     from .jit_config import _compiling_c_source
 
     gb_obj = ffi.new("GrB_Type*")
@@ -104,6 +104,6 @@ def register_new(name, jit_c_definition, *, np_type=None):
     # array of bool, say) leaves the name free to register again. The type it
     # made is never used, so no JIT kernel knows its name.
     _jit_c_type_defs[name] = jit_c_definition
-    # Its C name and definition are the user's, which ops lifted to it name it by.
+    # Its C name and definition are the user's; lifted ops on it use that name.
     rv._jit_c_info = (name, jit_c_definition)
     return rv
