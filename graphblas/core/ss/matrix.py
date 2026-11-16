@@ -84,11 +84,12 @@ def _values_in_column_order(values, dtype, copy):
     values, dtype = values_to_numpy_buffer(
         values, dtype, order="K" if array_udt else "F", subarray_after=2
     )
-    # Converting an ndarray to another dtype or order made a new array, which needs no
-    # second copy to be safe to hand over. Any other input is copied again if asked:
-    # an object's ``__array__`` may return an array the object keeps. So is an empty
-    # array, at no cost: ``np.may_share_memory`` is False for one even against itself,
-    # so the check cannot tell the caller's array from a new one.
+    # When converting an ndarray to another dtype or order makes a new array, that array
+    # needs no second copy to be safe to hand over. Any other input is copied again when
+    # ``copy`` is set, since an object's ``__array__`` may return an array the object
+    # keeps. An empty array is copied too, which costs nothing: ``np.may_share_memory``
+    # is False for an empty array even against itself, so it cannot tell the caller's
+    # array from a new one.
     if (
         copy
         and isinstance(given, np.ndarray)

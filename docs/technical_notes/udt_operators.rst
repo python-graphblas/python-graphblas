@@ -98,10 +98,10 @@ Comparisons
 the type the two promote to, and array elements broadcast, as numpy's ``==`` does.
 ``==`` on a ``Scalar`` of a UDT gives a Python ``bool``.
 
-``isequal`` compares as ``numpy.array_equal``: the elements must have the same shape,
-apart from leading axes of length 1, and equal values. So a ``Scalar`` ``s`` of an
-``INT8[3]`` UDT holding ``[1, 1, 1]`` has ``s == 1`` true but ``s.isequal(1)`` false, while
-an ``INT8[1]`` Scalar holding ``[1]`` is ``isequal`` to ``1``.
+``isequal`` compares as ``numpy.array_equal`` does, except that leading axes of length 1
+are ignored: the elements must have the same shape apart from those, and equal values.
+So a ``Scalar`` ``s`` of an ``INT8[3]`` UDT holding ``[1, 1, 1]`` has ``s == 1`` true but
+``s.isequal(1)`` false, while an ``INT8[1]`` Scalar holding ``[1]`` is ``isequal`` to ``1``.
 
 A literal with an ``int`` out of a field's range equals no element, instead of raising
 (:ref:`tn_python_numbers_udt`).

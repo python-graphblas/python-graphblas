@@ -670,10 +670,10 @@ def _element_shapes_differ(dtype1, dtype2):
     """Whether elements of ``dtype1`` and ``dtype2`` differ in shape, for ``isequal``.
 
     ``==`` on array UDTs broadcasts, as numpy's does, but ``isequal`` asks
-    whether two values are the same array, as ``np.array_equal`` does: the
-    shapes must match, apart from leading axes of length 1 (the rule a store
-    uses), and an element of a built-in dtype has shape ``()``. Records pair
-    field by field instead (:func:`_check_udt_pair`).
+    whether two values are the same array, as ``np.array_equal`` does, except
+    that leading axes of length 1 are ignored (the rule a store uses). An
+    element of a built-in dtype has shape ``()``. Records pair field by field
+    instead (:func:`_check_udt_pair`).
     """
     if dtype1 is dtype2 or not (dtype1._is_udt or dtype2._is_udt):
         return False
@@ -689,8 +689,9 @@ def _literal_shape_differs(dtype, value):
     """Whether literal ``value`` differs in shape from an element of array UDT ``dtype``.
 
     As :func:`_element_shapes_differ`, for ``Scalar.isequal`` with a literal: a
-    number has shape ``()``, so it equals an ``FP64[1]`` element but not an
-    ``FP64[3]`` one, as in ``np.array_equal``. ``False`` for a record UDT.
+    number has shape ``()``, so it can equal an ``FP64[1]`` element (whose leading
+    axis of length 1 is ignored) but not an ``FP64[3]`` one. ``False`` for a record
+    UDT.
     """
     np_type = dtype.np_type
     if np_type.subdtype is None or isinstance(value, dict):
