@@ -190,6 +190,9 @@ Operators you write with Numba (:doc:`../user_guide/udf`) have no C definition e
 and always run as Numba functions. An unusable compiler, or a control that does not
 compile, also leaves lifted operators on their Numba functions, without a warning.
 
+With SuiteSparse:GraphBLAS 7 or 8, or with the ``suitesparse-vanilla`` backend, no UDT or
+lifted operator gets a C definition, and nothing warns.
+
 .. _tn_jit_introspection:
 
 Introspection

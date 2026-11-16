@@ -55,6 +55,11 @@ Operator            Function signature                      Returns
 in a Vector, ``ix`` is the index and ``jx`` is 0. ``thunk`` and ``theta`` are a scalar
 given when the operator is used. IndexBinaryOps need SuiteSparse:GraphBLAS 9.4 or later.
 
+The indices are unsigned 64-bit integers, so ``ix - jx`` wraps around to a huge number
+when ``jx`` is greater. Compare the indices instead, or convert them first:
+``np.int64(ix) - np.int64(jx)``. ``int(ix)`` does not help, because Numba keeps it
+unsigned.
+
 A user-defined Monoid is built from a user-defined BinaryOp and its identity, and a
 Semiring from a Monoid and a BinaryOp, built-in or user-defined:
 
