@@ -307,7 +307,9 @@ def register_anonymous(dtype, name=None):
         dtype = np.dtype([(f.name, lookup_dtype(f.type).np_type) for f in fields], align=True)
     try:
         dtype = np.dtype(dtype)
-    except TypeError:
+    except (TypeError, ValueError):
+        # numpy's own dict form maps each name to a tuple, so a dict whose first value is a
+        # string (``{"pos": "FP64[3]", ...}``) raises ValueError there, not TypeError
         if isinstance(dtype, dict):
             # Allow dtypes such as `{'x': int, 'y': float}` for convenience
             dtype = np.dtype(

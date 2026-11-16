@@ -334,6 +334,18 @@ def test_record_dtype_from_dict():
     assert dtype.name == "{'x': INT64, 'y': FP64}"
 
 
+def test_record_dtype_from_dict_of_strings():
+    """A dict whose first value is a string registers as a record, as one starting with a type."""
+    dtype = dtypes.register_anonymous({"dict_s_pos": "FP64[3]", "dict_s_id": int})
+    assert dtype.np_type == np.dtype(
+        [("dict_s_pos", np.float64, (3,)), ("dict_s_id", np.int64)], align=True
+    )
+    dtype = dtypes.register_anonymous({"dict_s_a": "INT8", "dict_s_b": "f4"})
+    assert dtype.np_type == np.dtype([("dict_s_a", np.int8), ("dict_s_b", np.float32)], align=True)
+    with pytest.raises(ValueError, match="Unknown dtype"):
+        dtypes.register_anonymous({"dict_s_c": "not a dtype"})
+
+
 def test_register_anonymous_from_dataclass():
     """A ``@dataclass`` (class or instance) registers as a record UDT, fields and all."""
     from dataclasses import dataclass
