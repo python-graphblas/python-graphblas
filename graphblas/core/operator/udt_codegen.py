@@ -33,6 +33,7 @@ from ..udt import (
     _check_udt_pair,
     _get_udt_info,
     _iter_record_leaves,
+    _records_in_array_message,
     _udt_op_types,
 )
 
@@ -1120,6 +1121,10 @@ if _has_numba:
                 f"Element-wise UDT ops require a record dtype (named fields) "
                 f"or an array dtype (e.g., FP64[3])."
             )
+        np_type = dtype.np_type
+        leaves = [d for *_, d in _iter_record_leaves(np_type)] if np_type.names else [np_type]
+        if any(leaf.base.names is not None for leaf in leaves):
+            raise KeyError(_records_in_array_message(f"unary.{op_name}", dtype))
 
         kind, _detail = info
         if kind == "record":
@@ -1160,20 +1165,27 @@ if _has_numba:
         and casts each element or leaf into ``out_type`` as it writes it, as a
         store casts (``udt._store_cast_op``). So a result goes into an object
         of another UDT type in the one GraphBLAS call that computes it, with no
-        temporary. Only the built-in ops that lift to UDTs have such a form;
-        ``udt._store_cast_op`` has already accepted the pair of types.
+        temporary. Only the built-in ops that lift to UDTs have such a form,
+        and ``identity``, ``first`` and ``second``, which store an operand as
+        it is; ``udt._store_cast_op`` has already accepted the pair of types.
         """
         from .udf import _finalize_udt_op
 
         parent = getattr(typed_op, "parent", None)
         if parent is None or parent._anonymous:
             return None
-        if typed_op.opclass == "BinaryOp" and parent.name in BUILTIN_UDT_BINARY_OPS:
+        if typed_op.opclass == "UnaryOp" and parent.name == "identity":
+            from .unary import _udt_cast_op
+
+            return _udt_cast_op(typed_op.type, out_type)
+        if typed_op.opclass == "BinaryOp" and (
+            parent.name in BUILTIN_UDT_BINARY_OPS or parent.name in {"first", "second"}
+        ):
             from .binary import BinaryOp, TypedUserBinaryOp
 
             cls, typed_cls = BinaryOp, TypedUserBinaryOp
             dtype2 = typed_op.type2
-            py_op = BUILTIN_UDT_BINARY_OPS[parent.name]
+            py_op = BUILTIN_UDT_BINARY_OPS.get(parent.name)
         elif typed_op.opclass == "UnaryOp" and parent.name in BUILTIN_UDT_UNARY_OPS:
             from .unary import TypedUserUnaryOp, UnaryOp
 
@@ -1191,13 +1203,35 @@ if _has_numba:
         dtype = typed_op.type
         if (types := dtype if dtype2 is None else (dtype, dtype2)) in fused._udt_ops:
             return fused._udt_ops[types]
-        if dtype2 is None:
+        if py_op is None:
+            wrapper, sig = _pick_cast_wrapper(parent.name, dtype, dtype2, out_type)
+        elif dtype2 is None:
             wrapper, sig, _ = compile_udt_unary_wrapper(parent.name, py_op, dtype, out=out_type)
         else:
             wrapper, sig, _ = compile_udt_binary_wrapper(
                 parent.name, py_op, dtype, dtype2, out=out_type
             )
         return _finalize_udt_op(fused, dtype, dtype2, out_type, wrapper, sig, typed_cls)
+
+    def _pick_cast_wrapper(op_name, dtype, dtype2, out_type):
+        """Compile ``first`` or ``second`` storing the operand it picks as UDT ``out_type``.
+
+        The operand is cast as a store casts it (:func:`compile_udt_cast_wrapper`);
+        the other is not read, whatever its type. Returns (wrapper_func, wrapper_sig).
+        """
+        nt = numba.types
+        picked = "x_ptr" if op_name == "first" else "y_ptr"
+        cast, cast_sig = compile_udt_cast_wrapper(dtype if picked == "x_ptr" else dtype2, out_type)
+        wrapper = _compile_codegen(
+            f"def _pick(z_ptr, x_ptr, y_ptr):\n    cast(z_ptr, {picked})\n",
+            func_name="_pick",
+            source_label=f"<gb-udt {op_name} as {out_type}>",
+            extra_ns={"cast": numba.njit(cast)},
+        )
+        z_type, picked_type = cast_sig.args
+        if picked == "x_ptr":
+            return wrapper, nt.void(z_type, picked_type, nt.voidptr)
+        return wrapper, nt.void(z_type, nt.voidptr, picked_type)
 
 
 # JIT C code generators below.
@@ -1450,13 +1484,15 @@ def _c_expr_unary(py_op, operand, field_dtype):
     raise ValueError(f"Unknown unary C op: {py_op}")  # pragma: no cover (safety)
 
 
-def _make_jit_c_definition(op_name, py_op, dtype, arity):
+def _make_jit_c_definition(op_name, py_op, dtype, arity, out=None):
     """Generate a JIT C function definition for a UDT operator.
 
     Returns ``(c_name, c_defn)``, or ``None`` if the dtype can't be expressed
     in C (unsupported field types, or names that collide with C reserved words).
     An op not defined on the field types (``min`` on a complex field) never
-    gets here: ``udt._element_types`` rejects it when the op is typed.
+    gets here: ``udt._element_types`` rejects it when the op is typed. ``out``
+    is the result type when it is not ``dtype`` (``abs`` of complex leaves),
+    which SuiteSparse must already know by its C name.
     """
     np_type = dtype.np_type
     # Prefer the C name SuiteSparse already has for this type. ``GxB_JIT_C_NAME``
@@ -1471,11 +1507,14 @@ def _make_jit_c_definition(op_name, py_op, dtype, arity):
         return None
     type_name, _typedef = typedef_info
     c_name = f"{op_name}_{type_name}"
+    z_type_name = type_name if out is None else out.jit_c_name
+    if z_type_name is None:
+        return None
 
     if arity == 2:
-        params = f"{type_name} *z, const {type_name} *x, const {type_name} *y"
+        params = f"{z_type_name} *z, const {type_name} *x, const {type_name} *y"
     else:
-        params = f"{type_name} *z, const {type_name} *x"
+        params = f"{z_type_name} *z, const {type_name} *x"
 
     if np_type.names is not None:
         # Use leaf C paths so nested records emit ``z->outer.inner_a = ...``
@@ -1740,7 +1779,7 @@ def set_jit_c_mixed_on_op(gb_obj, op_name, py_op, dtype, dtype2, ret_type, input
     return result
 
 
-def set_jit_c_on_op(gb_obj, op_name, py_op, dtype, set_string_func, arity=2):
+def set_jit_c_on_op(gb_obj, op_name, py_op, dtype, set_string_func, arity=2, out=None):
     """Generate and set JIT C name+definition on a GrB operator, if possible.
 
     Returns ``(c_name, c_defn)`` when the dtype is expressible in C, ``None``
@@ -1749,7 +1788,7 @@ def set_jit_c_on_op(gb_obj, op_name, py_op, dtype, set_string_func, arity=2):
     Callers check ``_has_jit_set`` first: without it, SuiteSparse has no
     ``set_string_func`` to pass.
     """
-    result = _make_jit_c_definition(op_name, py_op, dtype, arity)
+    result = _make_jit_c_definition(op_name, py_op, dtype, arity, out)
     if result is None:
         return None
     if not _set_jit_c_strings(gb_obj, *result, set_string_func):

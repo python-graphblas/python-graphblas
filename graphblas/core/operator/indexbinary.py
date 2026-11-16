@@ -71,6 +71,17 @@ def _theta_to_scalar(theta, dtype):
                 "(op[dtype](theta), or op(theta, dtype=...))."
             ) from exc
         raise
+    except OverflowError as exc:
+        # cffi's message, "int too big to convert", names neither the int nor the type.
+        if type(theta) is not int or dtype is not None and dtype._is_udt:
+            raise
+        if dtype is None:
+            raise OverflowError(
+                f"Python integer {theta} out of bounds for int64, the type of a Python int "
+                "theta; give theta as a Scalar of a type that holds it, or name the op's "
+                "type (op[dtype](theta), or op(theta, dtype=...))."
+            ) from exc
+        raise OverflowError(f"Python integer {theta} out of bounds for {dtype.np_type}") from exc
 
 
 def _refuse_empty_theta(theta):
@@ -578,6 +589,11 @@ class IndexBinaryOp(OpBase):
     def __getitem__(self, type_):
         if type(type_) is tuple and len(type_) == 3:
             return self._get_typed(*(lookup_dtype(dtype) for dtype in type_))
+        if type(type_) is tuple and len(type_) != 2:
+            raise TypeError(
+                f"{self!r}[...] takes a dtype, or a tuple of two (x and y) or three (x, y and "
+                f"theta), not a tuple of {len(type_)}"
+            )
         return super().__getitem__(type_)
 
     def _add(self, op, *, is_jit=False):

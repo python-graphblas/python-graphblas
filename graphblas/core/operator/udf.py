@@ -58,17 +58,21 @@ def _numba_compile(numba_func, sig):
     also warn NumbaPendingDeprecationWarning that code may depend on this, and
     ``-W error`` (as in our tests) raises that warning instead of the error.
     The callers here handle both styles, so the warning only gets in the way.
+    Its text need not start with what the filter looks for: it may begin with
+    terminal colors or with "Failed in nopython mode pipeline", and a filter
+    matches from the start, hence the ``(?s).*``.
     """
     # MAINT 2026-10-28: once Numba 0.61 is the minimum (0.60 made "new_style" the
-    # default; 0.61 removed "old_style"), drop this warning filter and the
-    # LoweringError branch in _compile_for_dtype.
+    # default; 0.61 removed "old_style"), drop this warning filter, the
+    # LoweringError branch in _compile_for_dtype, _OLD_STYLE_MISSING_FIELD_RE, and
+    # the unquoting in _summarize_numba_typing_error.
     if getattr(numba.core.config, "CAPTURED_ERRORS", None) != "old_style":
         numba_func.compile(sig)
         return
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",
-            "Code using Numba extension API maybe depending on 'old_style'",
+            r"(?s).*Code using Numba extension API maybe depending on 'old_style'",
             NumbaPendingDeprecationWarning,
         )
         numba_func.compile(sig)
@@ -144,16 +148,42 @@ def _compile_udf_for_udt(numba_func, sig, *, op_kind, op_name, dtypes):
     UnsupportedError, ...) so any compilation failure produces a
     single-line UDT diagnostic. Also catches the bare NotImplementedError
     Numba raises for an op it types but cannot lower, such as ``>`` (so
-    ``max``) on complex values.
+    ``max``) on complex values, and the bare KeyError for a missing field.
     """
+    dtypes_str = ", ".join(str(d) for d in dtypes)
     try:
         _numba_compile(numba_func, sig)
-    except (NumbaError, NotImplementedError) as exc:
-        dtypes_str = ", ".join(str(d) for d in dtypes)
-        snippet = _summarize_numba_typing_error(exc)
+    except (NumbaError, NotImplementedError, KeyError) as exc:
+        if (field := _missing_field(exc)) is not None:
+            snippet = f"Field {field!r} was not found in the record"
+        else:
+            snippet = _summarize_numba_typing_error(exc)
         raise UdfParseError(
             f"{op_kind}.{op_name} does not work with ({dtypes_str}): {snippet}"
         ) from exc
+
+
+# Before 0.60, Numba captures that KeyError "old_style": the TypingError it raises
+# gives the KeyError (the quoted name) on the line after this one.
+_OLD_STYLE_MISSING_FIELD_RE = re.compile(
+    r'Internal error at resolving type of attribute "(?P<name>[^"]+)" of "[^"]*"\.'
+    r"\s*'(?P=name)'"
+)
+
+
+def _missing_field(exc):
+    """Return the field that ``x.name`` reads and the record lacks, if that is why ``exc``.
+
+    Numba types ``x.name`` for a missing field with a bare KeyError of the name.
+    Before 0.60 a TypingError holds that KeyError instead. ``x["name"]`` gets
+    Numba's own "Field ... was not found" sentence: in a TypingError, or, in
+    0.60, as a bare KeyError of it, which is not a name.
+    """
+    if isinstance(exc, KeyError):
+        name = exc.args[0] if exc.args else None
+        return name if isinstance(name, str) and name.isidentifier() else None
+    match = _OLD_STYLE_MISSING_FIELD_RE.search(_ANSI_RE.sub("", str(exc)))
+    return None if match is None else match["name"]
 
 
 # Numba prefixes its actionable diagnostic line with one of these.
@@ -182,6 +212,10 @@ def _summarize_numba_typing_error(exc):
     """
     lines = [_ANSI_RE.sub("", line).strip() for line in str(exc).splitlines()]
     for i, line in enumerate(lines):
+        # A KeyError, such as "Field ... was not found" for ``x["name"]``, prints as
+        # its quoted repr: bare in Numba 0.60, and inside the TypingError before it
+        if len(line) > 1 and line[0] == line[-1] == '"':
+            line = line[1:-1]
         if line.startswith(_NUMBA_DIAG_PREFIXES):
             if line.endswith(":"):
                 for follow in lines[i + 1 :]:
