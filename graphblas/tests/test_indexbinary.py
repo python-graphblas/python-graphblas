@@ -538,36 +538,42 @@ def test_bound_ibo_memory_bounded():
     Regression: ``iop(theta)`` leaked one ``GrB_BinaryOp`` per call.
     """
     import gc
+    import os
+    import subprocess
     import sys
+    from pathlib import Path
 
-    pytest.importorskip("resource")
-    import resource
+    if sys.platform != "darwin" and not sys.platform.startswith("linux"):
+        pytest.skip("reads the resident set size only on Linux and macOS")
+
+    def rss_mb():
+        # The resident set size now. Not ``ru_maxrss``: that is the peak, which an
+        # earlier test that freed its memory leaves above the current size, hiding growth.
+        if sys.platform.startswith("linux"):
+            pages = int(Path("/proc/self/statm").read_text().split()[1])
+            return pages * os.sysconf("SC_PAGE_SIZE") / 2**20
+        pid = str(os.getpid())
+        ps = subprocess.run(["ps", "-o", "rss=", "-p", pid], capture_output=True, check=True)
+        return int(ps.stdout) / 1024  # macOS ps gives KiB
 
     if hasattr(indexbinary, "leak_test_bound_ibo_op"):
         delattr(indexbinary, "leak_test_bound_ibo_op")
     indexbinary.register_new("leak_test_bound_ibo_op", _ibo_add_theta)
     op = indexbinary.leak_test_bound_ibo_op
     try:
-        # ``ru_maxrss`` is bytes on macOS, KB on Linux.
-        scale = 1024 if sys.platform.startswith("linux") else 1024 * 1024
-
-        def rss_mb():
-            return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / scale
-
         # Warm up the typed-op cache; the first call also compiles with Numba.
         for _ in range(100):
             _ = op[int](0)
         gc.collect()
         before = rss_mb()
-        for i in range(50_000):
+        for i in range(100_000):
             _ = op[int](i)
         gc.collect()
-        after = rss_mb()
-        # Leaking all 50,000 bound ops grows the peak RSS by about 14 MB (macOS,
-        # SuiteSparse 10.5); freeing them keeps the growth near 0.
-        assert (
-            after - before
-        ) < 25.0, f"bound-IBO leak: RSS grew {after - before:.1f} MB over 50k binds"
+        growth = rss_mb() - before
+        # A leaked bound op keeps about 290 bytes, so leaking every one grows RSS by
+        # about 28 MB (macOS, SuiteSparse 10.5); freeing them keeps the growth near 0.
+        # The limit fails a leak of more than about 100 bytes per bind.
+        assert growth < 10, f"bound-IBO leak: RSS grew {growth:.1f} MB over 100,000 binds"
     finally:
         delattr(indexbinary, "leak_test_bound_ibo_op")
 
