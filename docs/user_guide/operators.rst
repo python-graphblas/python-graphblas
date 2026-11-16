@@ -264,15 +264,15 @@ IndexBinary Operators
 ---------------------
 
 IndexBinary operators are the two-input analogue of IndexUnary operators. The function
-receives both values, the indices of *each* value, and a thunk parameter:
-``f(x, ix, jx, y, iy, jy, theta) -> z``, where ``ix, jx`` are the row/column indices of
-``x`` and ``iy, jy`` are those of ``y``.
+receives both values, the indices of *each* value, and a parameter, ``theta``:
+``f(x, ix, jx, y, iy, jy, theta) -> z``, where ``ix, jx`` are the row and column of ``x``
+and ``iy, jy`` are those of ``y``.
 
 There are no built-in IndexBinary operators; all are user-defined (see
-:doc:`udf`). Binding a ``theta`` value to an IndexBinaryOp produces a
-regular BinaryOp usable directly in ``ewise_mult`` / ``ewise_add``, or as
-the multiplier of a Semiring for ``mxm`` / ``mxv`` / ``vxm``. Like other
-BinaryOps, its type is chosen when it runs, from both inputs and ``theta``.
+:ref:`udf_indexbinary`). Binding a ``theta`` value to an IndexBinaryOp produces a
+BinaryOp, usable in ``ewise_mult``, ``ewise_add`` and ``ewise_union``, or as the
+multiplier of a Semiring for ``mxm``, ``mxv`` and ``vxm``. Like other BinaryOps, its type
+is chosen when it runs, from both inputs and ``theta``.
 
 Example usage:
 

@@ -2,517 +2,377 @@
 User-defined Types (UDTs)
 =========================
 
-python-graphblas supports user-defined types (record-style structs and
-fixed-shape arrays) as the value type of any ``Scalar``, ``Vector``, or
-``Matrix``. Built-in arithmetic operators automatically lift to UDTs
-field-by-field, and SuiteSparse:GraphBLAS JIT-compiles dedicated C kernels
-for them when possible.
+A user-defined type (UDT) lets each element of a Vector, Matrix or Scalar hold more than
+one number. A *record* UDT has named fields, like a C struct, and an *array* UDT holds a
+fixed-shape array. Use one when each node or edge carries values that belong together: a
+distance and the node it was reached from, a weight and a hop count, or a feature vector.
 
-What is a UDT
--------------
+The built-in arithmetic operators work on UDTs field by field, and so do the monoids,
+semirings and aggregators built from them. Your own operators on UDTs are Python
+functions, compiled by Numba (see :doc:`udf`). Computing on UDTs needs Numba, which
+python-graphblas installs on the Python versions Numba supports.
 
-A UDT is any ``numpy.dtype`` you register with python-graphblas. There are three shapes.
-
-**Record UDTs** have heterogeneous fields, like a C struct:
-
-.. code-block:: python
-
-    import numpy as np
-    from graphblas import dtypes
-
-    edge_dtype = dtypes.register_anonymous(
-        np.dtype([("weight", np.float64), ("hops", np.int32)], align=True),
-        "Edge",
-    )
-
-**Array UDTs** are fixed-shape, homogeneous values, like an inline C array:
-
-.. code-block:: python
-
-    point3 = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "Point3")
-
-Multi-dimensional shapes work too (``np.dtype((np.float64, (2, 4)))``); the
-layout is flattened row-major in C. An array of arrays has the same layout, so
-it registers as the same UDT: ``np.dtype((point3.np_type, (2,)))`` is
-``FP64[2, 3]``. Record fields that nest arrays are flattened the same way.
-
-**Dataclass UDTs** are record UDTs derived from a ``@dataclass``:
+A first example
+---------------
 
 .. code-block:: python
 
     from dataclasses import dataclass
 
+    from graphblas import Matrix, agg, dtypes
+
+
     @dataclass
-    class Edge:
-        weight: float
-        hops: int
+    class Trip:
+        miles: float
+        minutes: float
+        tolls: int
 
-    edge_dtype = dtypes.register_anonymous(Edge)
 
-Field annotations may be real types (``int``, ``float``) or string forms
-(``"int"``, e.g. under ``from __future__ import annotations``). Compound
-annotations like ``Optional[int]`` raise from ``lookup_dtype``.
+    trip = dtypes.register_new("Trip", Trip)
 
-Registration
-------------
+    # Three trips between three places
+    A = Matrix.from_coo(
+        [0, 0, 1], [1, 2, 2], [(3.5, 9, 0), (12.0, 15, 2), (8.0, 11, 1)], dtype=trip
+    )
+    totals = A.reduce_rowwise(agg.sum).new()
+    cost = A.apply(lambda t: t["minutes"] + 2 * t["tolls"]).new()
 
-Two forms:
+.. csv-table:: totals
+    :class: inline matrix
+    :header: 0,1
+
+    "(15.5, 24.0, 2)","(8.0, 11.0, 1)"
+
+.. csv-table:: cost
+    :class: inline matrix
+    :header: ,0,1,2
+    :stub-columns: 1
+
+    **0**,,9.0,19.0
+    **1**,,,13.0
+
+``agg.sum`` adds each field, so ``totals`` holds the miles, minutes and tolls of each
+row's trips. The lambda reads fields by name and returns a number, so ``cost`` is an
+ordinary FP64 Matrix.
+
+Registering a UDT
+-----------------
+
+Declare a record with a dict, a dataclass (as above) or a numpy dtype, and an array UDT
+with a numpy dtype or a string such as ``"FP64[3]"``:
 
 .. code-block:: python
 
-    # register_anonymous returns the DataType but does not add it to gb.dtypes.
-    udt = dtypes.register_anonymous(numpy_dtype_or_dataclass, "MyUdt")
+    import numpy as np
 
-    # register_new is the same, but also assigns to gb.dtypes.MyUdt.
-    udt = dtypes.register_new("MyUdt", numpy_dtype_or_dataclass)
+    from graphblas import dtypes
 
-Field type rules:
+    # A record, from a dict
+    Count = dtypes.register_new("Count", {"total": float, "n": int})
 
-- Numeric scalar types (``int``, ``float``, ``bool``, ``complex``, the
-  corresponding numpy scalar types) are supported.
-- Fixed-shape arrays (``("pos", np.float64, (3,))``) and records (a nested
-  struct) are supported as fields, and built-in operators lift through them.
-  In the dict and dataclass forms, write an array field as ``"FP64[3]"``; the
-  dict form also takes an existing UDT, such as ``{"id": int, "pos": point3}``.
-- Numba cannot type an array of ``bool``, ``datetime64``, ``timedelta64``,
-  ``str`` or ``bytes``, so with Numba installed, registering a UDT that holds
-  one raises ``ValueError``. Use an array of ``uint8`` for ``bool`` and
-  ``bytes`` (one per byte), of ``uint32`` for ``str`` (one per character), and
-  of ``int64`` for the others.
-- Text (``str`` or ``bytes``, such as ``np.dtype("S5")``), ``datetime64`` and
-  ``timedelta64`` may be fields, or a whole UDT that is neither record nor
-  array. Such a UDT can be stored and extracted. With Numba, it can also be
-  compared (``==``, ``!=`` and ``isequal``), and ``first``, ``second``, ``pair``
-  and ``any`` work on it, but arithmetic operators do not lift to it: ``plus``
-  and ``min`` raise ``KeyError``. Without Numba, only a ``Scalar``'s ``==``,
-  ``!=`` and ``isequal``, and ``pair``, work on it.
-- Python objects (``np.dtype(object)``) are not supported.
-- Dataclass annotation strings (e.g., ``"int"``) resolve through
-  ``lookup_dtype``.
+    # A record with an array field
+    Body = dtypes.register_new("Body", {"mass": float, "pos": "FP64[3]"})
 
-Anonymous UDTs share one ``DataType`` per ``numpy.dtype``. Re-registering the
-same dtype under a different name updates the Python-side ``name`` but does
-*not* change the SuiteSparse-side ``GxB_JIT_C_NAME``, which is frozen at first
-registration. See :ref:`udt_jit_introspection` below.
+    # A record, from a numpy dtype; pass align=True
+    Edge = dtypes.register_new(
+        "Edge", np.dtype([("weight", np.float64), ("hops", np.int32)], align=True)
+    )
 
-Working with UDT values
------------------------
+    # An array UDT, such as a color
+    Color = dtypes.register_new("Color", "UINT8[3]")  # or np.dtype((np.uint8, 3))
 
-Construct, get, set, and iterate as usual; values are numpy structured scalars
-or arrays, depending on the UDT shape:
+``dtypes.register_new`` also puts the UDT on ``gb.dtypes``, as ``gb.dtypes.Count``.
+``dtypes.register_anonymous(dtype, name)`` only returns it; the name is optional, and
+shows in reprs and error messages.
+
+A field can be a number type, a fixed-shape array of one (``"FP64[3]"`` in a dict), or
+another record. A dict or a dataclass lays out its fields as a C compiler does. A numpy
+dtype packs them unless you pass ``align=True``. A packed record works, but when its
+fields differ in size, its operators cannot use the JIT (see `Performance and the JIT`_).
+Registering the same numpy dtype again returns the same UDT. Text, dates and float16
+work only in part, and Python objects not at all: see :ref:`tn_udt_field_types`.
+
+Creating and reading values
+---------------------------
+
+Give a record element as a tuple of its fields in order, or as a dict by field name. Give
+an array element as a sequence or a numpy array. ``from_coo`` takes a list of elements,
+or a numpy array with one row per element, as ``np.eye(3, 4)`` below. Reading an element
+gives a numpy record (``numpy.void``) or a numpy array:
 
 .. code-block:: python
 
     from graphblas import Vector
 
-    v = Vector(edge_dtype, size=3)
-    v[0] = (1.5, 4)              # tuple matches the record fields
-    v[1] = (2.5, 7)
-    print(v[0].new().value)      # numpy.void; access fields by name (e.g., ['weight'])
+    v = Vector(Edge, size=3)
+    v[0] = (1.5, 4)  # fields in order
+    v[1] = {"weight": 2.5, "hops": 7}  # or by name
+    x = v.get(0)  # a numpy record: (1.5, 4)
+    w = x["weight"]  # 1.5
+    indices, values = v.to_coo()  # values is a numpy structured array
 
-For array UDTs, pass a sequence or numpy array:
-
-.. code-block:: python
-
-    p = Vector(point3, size=2)
-    p[0] = (1.0, 2.0, 3.0)
-    p[1] = np.array([4.0, 5.0, 6.0])
+    P = Vector.from_coo([0, 1], [[255, 0, 0], [0, 128, 255]], dtype=Color)
+    p = P.get(1)  # a numpy array: [0, 128, 255]
 
 Built-in operators on UDTs
 --------------------------
 
-The following operators auto-lift to any UDT on first use:
+These built-in operators *lift* to any record or array UDT: they apply to each field, or
+each element of an array, as they would to that field's built-in type.
 
-- BinaryOps: ``plus``, ``minus``, ``times``, ``truediv``, ``floordiv``,
-  ``min``, ``max``, ``eq``, ``ne``. The positional selectors ``first``,
-  ``second``, ``any``, and ``pair`` work too, since they don't touch field
-  values.
-- UnaryOps: ``ainv``, ``abs``.
-- Monoids: ``plus``, ``times``, ``min``, ``max``, ``any``.
-- Semirings combining a UDT-lifting monoid with a UDT-lifting BinaryOp
-  (e.g., ``plus_times``, ``min_plus``, ``max_times``, ``any_first``).
-- Aggregators built on those monoids: ``sum``, ``prod``, ``min``, ``max``,
-  ``any_value``, ``count``. The positional ``agg.ss.first`` and
-  ``agg.ss.last`` work on any dtype, including UDTs.
+- BinaryOps ``plus``, ``minus``, ``times``, ``truediv``, ``floordiv``, ``min`` and
+  ``max``; ``eq`` and ``ne``, which compare whole elements and give BOOL; and ``first``,
+  ``second``, ``any`` and ``pair``.
+- UnaryOps ``ainv`` and ``abs``.
+- Monoids ``plus``, ``times``, ``min``, ``max`` and ``any``, and the semirings made from
+  them and the BinaryOps above, such as ``plus_times`` and ``min_plus``.
+- Aggregators ``sum``, ``prod``, ``min``, ``max``, ``any_value`` and ``count``, and
+  ``ss.first`` and ``ss.last``.
 
-For example:
+Other built-in operators and aggregators, such as ``pow``, ``lt`` or ``mean``, raise
+``KeyError`` on a UDT; write your own operator for them. ``min``, ``max`` and
+``floordiv`` also raise on a UDT with complex values.
+
+An operand can be of a built-in type. Here an FP64 Matrix multiplies a Vector of
+4-element arrays, so each weight multiplies every element of an array:
 
 .. code-block:: python
 
-    from graphblas import binary, monoid, semiring, agg
+    import numpy as np
 
-    plus_edge   = binary.plus[edge_dtype]            # field-wise add
-    sum_edges   = monoid.plus[edge_dtype]            # field-wise additive monoid
-    plus_times  = semiring.plus_times[edge_dtype]    # field-wise multiply-add semiring
-    total       = v.reduce(agg.sum[edge_dtype]).new()  # field-wise reduce
+    from graphblas import Matrix, Vector, binary, dtypes, semiring
+
+    Feat = dtypes.register_new("Feat", np.dtype((np.float64, 4)))
+
+    # A weighted graph, and one-hot features on its 3 nodes
+    A = Matrix.from_coo([0, 0, 1, 2], [1, 2, 2, 0], [0.5, -0.5, 1.0, 1.0])
+    X = Vector.from_coo([0, 1, 2], np.eye(3, 4), dtype=Feat)
+
+    H = A.mxv(X, semiring.plus_times).new()  # H[i] is the sum of A[i, j] * X[j]
+    H = binary.max(H, 0).new()  # ReLU: the larger of each element and 0
+
+.. csv-table:: H
+    :class: matrix
+    :header: 0,1,2
+
+    "[0.0, 0.5, 0.0, 0.0]","[0.0, 0.0, 1.0, 0.0]","[1.0, 0.0, 0.0, 0.0]"
 
 How results are typed
 ~~~~~~~~~~~~~~~~~~~~~
 
-A lifted op types each field or element as it types a Vector of that built-in
-dtype, so it never narrows. Below, ``v`` is a Vector of an ``INT8[3]`` UDT.
-
-.. list-table::
-   :header-rows: 1
-   :widths: 25 45 30
-
-   * - Operands
-     - Rule
-     - Example
-   * - One UDT
-     - Each field or element as on its built-in dtype.
-     - ``v / v`` is ``FP64[3]``
-   * - Two UDTs
-     - Records pair when they have the same field names, in the same order, at
-       every level, and the same shape for each field. Array UDTs pair when
-       their shapes broadcast as numpy's do. Any other pair raises
-       ``KeyError``.
-     - ``INT8[3]`` with ``INT64[2, 3]`` gives ``INT64[2, 3]``
-   * - Result type
-     - An operand's type when it holds the result; else the promoted layout,
-       which is the UDT registered with that layout if there is one, else an
-       anonymous UDT.
-     - ``{x: INT64, y: FP64}`` with ``{x: FP64, y: INT64}`` gives
-       ``{x: FP64, y: FP64}``
-   * - A built-in Vector, ``Scalar``, numpy scalar or numpy array
-     - Strong: keeps its dtype. A scalar combines with every field or element;
-       an array pairs as an array UDT of its own shape. A record's array field
-       keeps its shape, so a literal for it must broadcast to that shape, or
-       ``ValueError`` names both: ``np.array([[1, 2, 3]])`` does not fit an
-       ``INT8[3]`` field, though beside an ``INT8[3]`` UDT it gives
-       ``INT64[1, 3]``.
-     - ``v + np.int64(1)`` is ``INT64[3]``
-   * - A Python number, or a tuple, list or dict of them laid out like an
-       element
-     - Weak, field by field: a field's dtype when its kind holds the number,
-       else INT64, FP64 or FC64 (numpy 2's NEP 50 rule, on numpy 1 too, and
-       extended to sequences). An int out of an integer field's range raises
-       ``OverflowError``, except for ``truediv``, whose fields are floats
-       whatever the int (``v / 300`` is ``FP64[3]``).
-     - ``v + 1`` is ``INT8[3]``, ``v * 2.5`` and ``v + (0.5, 1, 2)`` are
-       ``FP64[3]``, ``v + 300`` raises
-   * - ``eq`` and ``ne``
-     - Type a literal as above, as built-in comparisons do, except that a
-       literal with an int out of a field's range equals no element, rather
-       than raise. Return ``BOOL``. Array elements broadcast, as numpy's ``==``
-       does, and so does ``==`` on a Scalar, which returns a bool. ``isequal``
-       compares as ``np.array_equal``: elements must have the same shape,
-       apart from leading axes of length 1.
-     - ``v == 300`` is ``False``; an ``FP32[3]`` UDT ``== 0.1`` compares in
-       FP32; a Scalar ``s`` of ``[1, 1, 1]`` has ``s == 1`` but not
-       ``s.isequal(1)``
-   * - A literal that must become an element: beside a user-defined op, an
-       ``IndexUnaryOp`` thunk, an ``ewise_union`` default
-     - Its type by the rules above must fit the UDT: the UDT itself, or a
-       numpy value or ``Scalar`` that casts to it safely. A weak int does not
-       fit a bool field: write ``True`` or ``False``. A value that does not fit
-       but converts exactly, such as ``0`` for a bool field or ``2.0`` for an
-       int field, still converts with a ``DeprecationWarning`` and will raise
-       in a future version; any other raises ``ValueError``, and a float too
-       large for a float field raises ``OverflowError``.
-     - ``v.ewise_union(w, binary.plus, 0.5, 0)`` raises
-
-A Monoid used element-wise (``apply``, ``ewise_mult``, ``ewise_union``) uses
-its BinaryOp, for literals and for two different UDTs. ``min``, ``max`` and ``floordiv`` reject UDTs
-with a complex field; use a custom op for those.
-
-Each element, including each element of an array field, is computed as the
-built-in op computes it, and the Numba cfunc and a C JIT kernel give the same
-bits: ``min`` and ``max`` ignore NaN (C's ``fmin`` and ``fmax``) and resolve a
-tie between ``-0.0`` and ``0.0`` to ``-0.0`` for ``min`` and ``0.0`` for
-``max``, ``floordiv`` is numpy's, with 0 for an integer divided by zero, and
-``truediv`` is numpy's, with numpy's infinities for a zero divisor. A complex
-quotient takes Smith's method, as numpy's does, but divides where numpy
-multiplies by a reciprocal, so it can differ from numpy's in the last bit (and
-stays finite where numpy's overflows). A few edge cases can differ from built-in
-vectors, where the UDT gives numpy's answer: ``INT64_MIN // -1`` is
-``INT64_MIN`` (an ``INT64`` vector gives 0), a complex product or quotient with
-an infinite or NaN part, a complex quotient with a ``-0.0`` divisor, and the
-signed-zero tie, which SuiteSparse's built-in ``min`` leaves to the C library.
-
-Storing results
-~~~~~~~~~~~~~~~
-
-GraphBLAS casts built-in dtypes when it stores a result, but it cannot cast a
-UDT, so python-graphblas does it, without ever making a temporary copy of the
-data.
-
-.. list-table::
-   :header-rows: 1
-   :widths: 40 60
-
-   * - Store
-     - What happens
-   * - Into an object of another UDT type of the same layout: records that
-       pair as operands do, or arrays of the same shape apart from leading
-       axes of length 1
-     - Each field or element is cast as GraphBLAS casts that pair of built-in
-       dtypes: integers wrap; a float stored as an integer truncates toward
-       zero, saturates at the bounds, and is 0 if NaN; a complex number loses
-       its imaginary part; anything nonzero is ``True``.
-   * - ...from an existing object: ``w << v``, ``v.dup(dtype=...)``, with a
-       mask, an accumulator or ``replace``
-     - One pass through a cast op.
-   * - ...from an element-wise lifted op: ``apply``, ``ewise_mult``,
-       ``ewise_union``, and infix operators that use them
-     - The op writes the object's type itself, in the same call:
-       ``int_udt_vec += 0.5`` truncates, as it does for an ``INT8`` vector.
-   * - ...from anything else: ``mxm``, ``reduce`` into a Vector, ``ewise_add``,
-       a user-defined op, or a whole Vector or Matrix assigned into part of an
-       object
-     - ``DomainMismatch``: this would need a converted copy of the whole
-       result. Make it explicitly: compute the result, then store it
-       (``w << expr.new()``); to assign, convert the value with
-       ``.dup(dtype=...)`` first.
-   * - ...from a ``Scalar`` or one element
-     - Computed in its own type, then cast. With an accumulator, the value is
-       cast before it accumulates, as GraphBLAS converts a value of a built-in
-       dtype, and so is a literal: an ``INT8[3]`` Scalar's ``s += 0.5`` adds 0,
-       as an ``INT8`` Scalar's does.
-   * - Between a UDT and a built-in dtype, or layouts that do not correspond
-     - ``DomainMismatch``.
-
-For the same reason, ``ewise_add`` on Vectors and Matrices raises
-``DomainMismatch`` when an operand's type differs from the result's, as for two
-different UDTs or ``truediv`` on an integer UDT: it would copy a value that has
-no partner into the result type. ``ewise_union`` and ``ewise_mult`` work. Infix
-``+`` on two such operands takes the union instead, with each operand's zero for
-a missing value, as ``-`` takes 0. That zero is ``-0.0`` in a float field, so an
-entry of one operand alone keeps its value, as ``ewise_add`` would copy it;
-only a ``-0.0`` beside an integer field of the other operand becomes ``0.0``. A
-Scalar is one element, so ``ewise_add`` converts its operands to the result type
-instead.
+Each field of a result is typed as the built-in operator types it, so a result never
+narrows. Two records pair as operands when they have the same field names in the same
+order; two array UDTs pair when their shapes broadcast, as in numpy. A Python number is
+typed in each field by the same rule as with a built-in type (:ref:`python_numbers`): it
+takes the field's type when that type can hold its kind of number.
 
 .. code-block:: python
 
-    v = Vector(int8x3, size=2)          # an INT8[3] UDT
-    f = Vector(fp32x3, size=2)          # an FP32[3] UDT
-    (v * 2.5).new()                     # FP64[3]: the literal is weak, 2.5 needs FP64
-    (v * f).new()                       # FP32[3], as INT8 times FP32
-    v += 1                              # stays INT8[3]
-    v << v * 2.5                        # computes in FP64, stores as INT8 (truncates)
-    (v + f).new()                       # FP32[3], by ewise_union; v.ewise_add(f) raises
+    from graphblas import Vector, dtypes
 
-Composite aggregators (``agg.hypot``, ``agg.L1norm``, ``agg.Linfnorm``,
-``agg.sum_of_squares``, ``agg.sum_of_inverses``) do *not* auto-lift to UDTs;
-they reference scalar-only binary ops that don't generalize trivially.
-Use a custom monoid plus reduction if you need this on UDT-valued data.
+    I8x2 = dtypes.register_new("I8x2", "INT8[2]")
+    F32x2 = dtypes.register_new("F32x2", "FP32[2]")
+    v = Vector.from_coo([0, 1], [[1, 2], [3, 4]], dtype=I8x2)
+    f = Vector.from_coo([0, 1], [[0.5, 0.5], [1.5, 1.5]], dtype=F32x2)
 
-Custom UDFs over UDTs
----------------------
+    (v + 1).new()  # I8x2: 1 takes each element's type, INT8
+    (v * 2.5).new()  # FP64[2], as INT8 times 2.5 is FP64
+    (v / v).new()  # FP64[2], as INT8 divided by INT8 is FP64
+    (v * f).new()  # F32x2, as INT8 times FP32 is FP32
+    # (v + 300).new()  raises OverflowError: 300 is out of range for INT8
 
-Write a function with explicit field access, register it with ``is_udt=True``:
+When the result's fields have the same types as an operand's, the result has that
+operand's type. Otherwise it is a UDT for the promoted fields: one registered with that
+numpy dtype, or a new anonymous one, such as ``FP64[2]`` above. The full rules are in :ref:`tn_udt_operators`.
 
-.. code-block:: python
+Storing results in another type
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    from graphblas import binary
-
-    def merge_edges(x, y):
-        # Returns a new Edge with the lower weight and summed hops.
-        return (min(x["weight"], y["weight"]), x["hops"] + y["hops"])
-
-    op = binary.register_new("merge_edges", merge_edges, is_udt=True)
-
-    a = Vector(edge_dtype, size=2)
-    a[0] = (1.5, 2)
-    a[1] = (3.0, 4)
-    b = Vector(edge_dtype, size=2)
-    b[0] = (1.0, 3)
-    b[1] = (2.5, 1)
-
-    c = a.ewise_mult(b, op[edge_dtype]).new()
-    # c[0] = (1.0, 5);  c[1] = (2.5, 5)
-
-UDT UDFs can return a tuple matching the field layout, an existing record
-value, or a numpy array (for array UDTs).
-
-For nested record UDTs the tuple is *flat over the leaves*. Given
-``[("id", int32), ("pt", [("x", float64), ("y", float64)])]``, the UDF should
-return ``(id, x, y)``, not ``(id, (x, y))``. Returning an existing record value
-(e.g., one of the inputs) is also fine and preserves the nested shape.
-
-Every field needs a value on every path through the UDF. A record cannot hold
-``None``, so a UDF that can return ``None`` for a field
-(``v if cond else None``) is rejected when the op is typed. So is an array,
-tuple, or list returned for a scalar field.
-
-For array UDTs each operand arrives as a numpy view of that element's values, in
-the UDT's declared shape: a ``np.dtype((np.float64, (2, 4)))`` UDT hands the UDF
-a 2-by-4 array, indexable as ``x[i, j]``. Array expressions work as written, and
-the UDF may return one of its operands or build a new array that fills the
-element, either at the element's own shape or at one that broadcasts to it (a
-``(1,)`` return fills every slot of a ``(6,)`` element):
+GraphBLAS cannot cast a UDT, so python-graphblas does: storing a result in an object of
+another UDT with the same field names, or array shape, casts each field as GraphBLAS
+casts built-in types. It never makes a temporary copy of the data to do this. That works
+when you store an existing object, and for the element-wise operations ``apply``,
+``ewise_mult`` and ``ewise_union`` (and the infix operators that use them), which write
+the object's type as they compute. Anything else, such as ``mxm`` or a reduction, raises
+``DomainMismatch``; compute the result with ``.new()``, then store it. Continuing the
+example above:
 
 .. code-block:: python
 
-    def midpoint(x, y):
-        return (x + y) / 2
+    from graphblas import Matrix, semiring
 
-    op = binary.register_new("midpoint", midpoint, is_udt=True)
+    A = Matrix.from_coo([0, 1], [1, 0], [2.0, 2.0])
 
-    a = Vector(point3, size=1)
-    a[0] = [0.0, 2.0, 4.0]
-    b = Vector(point3, size=1)
-    b[0] = [10.0, 20.0, 30.0]
+    v << v * 2.5  # computed as FP64[2], stored as INT8: [[2, 5], [7, 10]]
+    g = v.dup(dtype=F32x2)  # a copy cast to FP32[2]
 
-    c = a.ewise_mult(b, op[point3]).new()
-    # c[0] = [5.0, 11.0, 17.0]
+    # v << A.mxv(f, semiring.plus_times)  raises DomainMismatch
+    v << A.mxv(f, semiring.plus_times).new()  # works: compute, then store
 
-A return that cannot fill the element, such as ``x[:2]`` from a 3-element UDT,
-is rejected with a ``UdfParseError`` when the op is typed for the UDT
-(``op[point3]``, or the first operation that uses it). The same goes for an
-array returned into an array-typed field of a record UDT. A tuple or list also
-fills such a field, but only a one-dimensional one and only at its exact
-length; unlike an array, it does not broadcast. Numba does not know the shape
-of an array the UDF builds, or the length of a list, so the check runs the UDF
-once on sample values; a UDF that raises on those values is not checked.
+``ewise_add`` raises ``DomainMismatch`` when an operand's type differs from the
+result's, as with ``v`` and ``f``: it would copy an element with no partner into the
+result without casting it. Use ``ewise_union``, or the infix ``+``, which uses
+``ewise_union`` with zero defaults. The rules for storing are in
+:ref:`tn_udt_storing`.
 
-If your UDF references a field that doesn't exist, or returns the wrong arity,
-you'll get a ``UdfParseError`` with the actionable diagnostic line surfaced
-from Numba's typing pass instead of a 200-line traceback.
+Writing operators for UDTs
+--------------------------
 
-.. _udt_jit_introspection:
+Register a function with ``is_udt=True`` to use it on UDTs. The function receives a record
+operand as a record, whose fields it reads by name (``x["dist"]``), and an array operand
+as a numpy array in the element's shape. It returns a number for a result of a built-in
+type, or one of these for a UDT result:
 
-JIT and introspection
----------------------
-
-When all field names are valid C identifiers (not C reserved words), and the
-field types map to C primitives, SuiteSparse JIT-compiles a dedicated C kernel
-for each ``op[udt]`` lookup. A lifted op on a UDT and a built-in type, or on two
-UDT types that pair, compiles too, under a name such as
-``plus_7_int64_t_gbudt_Edge``. The kernel is cached on disk
-and reused across processes (keyed by content hash, so renaming a UDT doesn't
-invalidate). JIT lets SuiteSparse inline the kernel into its eWise and reduce
-templates, eliminating the per-element function-call overhead the Numba
-function-pointer fallback incurs. Elementwise operations on UDTs are
-typically **2-3x** faster.
-
-Inspect what SuiteSparse is JIT-ing from Python:
+- a tuple with a value for each field of a record operand, in field order;
+- a record, such as one of its operands;
+- an array with the element type of an array operand, in the element's shape. On an
+  ``INT8[3]`` UDT, ``x * 2`` is an int64 array, which raises: return
+  ``(x * 2).astype(np.int8)``.
 
 .. code-block:: python
 
-    udt.jit_c_name              # 'gbudt_Edge', or None if not JIT-able
-    udt.jit_c_definition        # 'typedef struct { ... } gbudt_Edge ;'
+    import numpy as np
 
-    op = binary.plus[udt]
-    op.jit_c_name               # 'plus_gbudt_Edge'
-    op.jit_c_source             # full C source SS will compile
+    from graphblas import Vector, dtypes, unary
 
-    monoid.plus[udt].jit_c_source                # same kernel
-    semiring.plus_times[udt].jit_c_source        # the multiplier
-    semiring.plus_times[udt].monoid.jit_c_source # the additive monoid
-    agg.sum[udt].jit_c_source                    # walks to monoid.plus
-    agg.count[udt].jit_c_source                  # None (composite agg)
+    Point = dtypes.register_new("Point", np.dtype((np.float64, 3)))
 
-JIT is skipped when:
 
-- A field name is a C reserved word (``class``, ``return``, ...), a macro or
-  typedef of the C headers the kernels include (``NULL``, ``FILE``, ``M_PI``,
-  ``complex``, ``INT_MAX``, ``SIZE_MAX``, ``BUFSIZ``, ``SIGINT``, ...), or
-  starts with ``GB_``, ``GrB_`` or ``GxB_``, which GraphBLAS keeps for its own
-  names. The op falls through to the Numba cfunc path.
-- A field type isn't in the numpy-to-C map (rare; the standard numeric
-  scalar types all map).
-- A record has an array-valued field. Built-in operators still lift to it
-  through the Numba cfunc.
-- The numpy layout doesn't match what a C compiler would produce. The most
-  common case is a packed record with mixed-width fields (e.g.,
-  ``np.dtype([("a", int32), ("b", float64)])`` without ``align=True``).
-  Pass ``align=True`` to ``np.dtype``, or use the dict / dataclass form,
-  which auto-aligns.
-- The JIT compiler isn't usable after auto-fix (see below).
-- An op on a UDT and another type is an array UDT that broadcasts to another
-  shape, a record with an array-valued field, or ``eq`` or ``ne``; or an op on
-  one UDT gives another type (``v / v`` on ``INT8[3]`` is ``FP64[3]``). These
-  keep the Numba cfunc without a warning.
+    def unit(x):  # x is a numpy array of shape (3,)
+        return x / np.sqrt(np.sum(x * x))
 
-SuiteSparse knows a UDT by ``gbudt_`` and its name, which cannot collide with
-an identifier in the C code of a kernel, whatever the name. A name starting
-with ``_gb``, which python-graphblas keeps for the types it makes itself, is
-the exception: it is the C name as it is. A UDT without a name, or whose name
-is not a C identifier or would make that C name too long to leave room for its
-ops' names (over 118 characters), gets a synthetic ``_gbudt_NNN`` C name and
-still takes the JIT path. Pass ``name=`` only for
-readable JIT cache filenames and introspection. To name such a UDT in C source
-of your own, as for ``gb.binary.ss.register_new``, use its ``jit_c_name``, not
-its Python name, which SuiteSparse does not know. A type registered from C
-source (``gb.dtypes.ss.register_new``) keeps the name you give it, so give it
-118 characters or fewer: the built-in operators lifted to it are named with
-that name after them (``floordiv_``, ``plus_``, ...), and a longer one leaves
-them names SuiteSparse refuses, so they run without the JIT.
 
-When the cause is the UDT itself (the first four cases above), the first time
-auto-lift produces a non-JIT'd op for a given ``(op, dtype)`` pair in a
-process, a ``graphblas.exceptions.NoJITWarning`` (a subclass of
-``UserWarning``) names the cause. An unusable compiler does not warn;
-``gb.ss.fix_jit_config()`` returns ``False`` when it cannot compile, and
-``gb.ss.jit_compiler_is_usable()`` is the cheap check. Silence the warning by
-category or by message::
+    unary.register_new("unit", unit, is_udt=True)
 
-    import warnings
-    from graphblas.exceptions import NoJITWarning
-    warnings.filterwarnings("ignore", category=NoJITWarning)
-    # or, equivalently, match the message text:
-    warnings.filterwarnings("ignore", message="UDT operator running without JIT")
+    P = Vector.from_coo([0, 2], [[3.0, 0.0, 4.0], [0.0, 2.0, 0.0]], dtype=Point, size=4)
+    U = P.apply(unary.unit).new()  # [0.6, 0.0, 0.8] and [0.0, 1.0, 0.0]
 
-In every skipped case the operation still works correctly via the Numba
-function-pointer path; you only lose the JIT speedup. A field named like a
-macro that only some platform's C headers define (beyond the C standard's)
-is not skipped, and its kernel fails to compile; rename the field.
+A function passed directly in place of an operator, such as the lambda in the first
+example, is compiled the same way.
 
-JIT compiler auto-fix
-~~~~~~~~~~~~~~~~~~~~~
+A user-defined BinaryOp works in a Semiring with a lifted Monoid. Here each element is a
+dense 2x2 block, so ``mxm`` multiplies block-sparse matrices (``@`` in a Numba function
+needs scipy):
 
-A conda-installed ``python-suitesparse-graphblas`` bakes in the build host's
-compiler path (e.g., ``/Users/runner/...``), which doesn't exist on user
-machines. With the bogus default, SuiteSparse emits the JIT ``.c`` source
-but never compiles a ``.dylib`` or ``.so``, and silently falls back to the
-cfunc path. The 2-3x JIT speedup is silently lost.
+.. code-block:: python
 
-python-graphblas repairs the compiler path when ``graphblas.ss`` is
-imported, which the first access to ``gb.ss`` does (and at init, when the JIT
-control is configured to ``'on'``). If ``jit_c_compiler_name`` doesn't exist on
-disk, it is replaced with one from ``$CONDA_PREFIX/bin/`` (or from
-``sysconfig`` for pure-pip installs). The
-import changes nothing else, so reading ``gb.ss.about`` does not change what
-later operations compute.
+    import numpy as np
 
-``jit_c_control`` starts at ``graphblas.config["jit_c_control"]``, ``'run'`` by
-default (run cached kernels only; no compile, no load from disk); see
-:ref:`suitesparse_jit`. That default ``'run'`` is raised to ``'on'`` (compile,
-load, and run) by each of these, since each asks SuiteSparse to compile C source.
-It stays ``'on'`` for the rest of the process, for every operation, built-in ones
-included:
+    from graphblas import Matrix, binary, dtypes, monoid, semiring
 
-- a UDT operator that gets C source, such as the first ``binary.plus[udt]`` or
-  ``binary.plus[udt, "INT64"]``;
-- ``gb.dtypes.ss.register_new``, which registers a type from a C typedef;
-- ``gb.binary.ss.register_new`` and its ``unary``, ``indexunary``, ``select``,
-  and ``indexbinary`` siblings, which register an operator from a C definition.
+    # Each element is a dense 2x2 block
+    Block = dtypes.register_new("Block", np.dtype((np.float64, (2, 2))))
 
-A control you set is kept: ``'off'``, ``'pause'``, ``'load'`` (load and run
-cached kernels, never compile), and ``'run'`` too when it was set before init
-(``GRAPHBLAS_JIT_C_CONTROL``, ``gb.config.set``, or a YAML config file). With
-nothing configured, a ``'run'`` set later in ``gb.ss.config`` is the default
-again. Under a ``'run'`` you set, UDT operators use their Numba functions, and
-the registrations above fail with an error saying how to opt in:
-``gb.ss.config["jit_c_control"] = "on"``, or ``None`` for the default.
-SuiteSparse itself sets ``'load'`` after a compile fails, so keeping it means a
-failing compile is tried once, not again at every later request.
+    # x and y arrive as 2x2 numpy arrays
+    binary.register_new("matmul", lambda x, y: x @ y, is_udt=True)
+    semiring.register_new("plus_matmul", monoid.plus, binary.matmul)
 
-Call the helper manually to re-fix or verify::
+    blocks = [[[1, 2], [3, 4]], [[0, 1], [1, 0]], [[2, 0], [0, 2]]]
+    A = Matrix.from_coo([0, 0, 1], [0, 1, 1], blocks, dtype=Block)
+    C = A.mxm(A, semiring.plus_matmul).new()
+    C.get(0, 1)  # array([[2., 3.], [6., 3.]])
 
-    gb.ss.fix_jit_config()           # repair compiler path, set 'on', probe
-    gb.ss.jit_compiler_is_usable()   # cheap check: True iff path exists
+The function is compiled for a UDT the first time the operator is used on it, or when you
+index the operator with it (``unary.unit[Point]``). If it does not compile, or returns
+something that cannot fill the result's element, that raises ``UdfParseError``. The full
+rules are in :ref:`tn_udt_udf_returns`.
 
-Pickle and serialize
---------------------
+Example: shortest paths with parents
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-UDT-typed Matrices and Vectors pickle round-trip in the same process. For
-cross-process work (``multiprocessing.spawn``, ``dask``, etc.) the receiving
-process must also have the UDT registered under the same name. UDTs registered
-via ``register_new`` re-register automatically on unpickle.
+A record, a monoid of your own and an IndexBinaryOp (:ref:`udf_indexbinary`) together
+find the shortest paths from a node, with the node before each one on its path. Each
+element of ``d`` holds a distance and that parent. ``relax`` is an IndexBinaryOp, so it
+receives the index of the node the path comes from. IndexBinaryOps need
+SuiteSparse:GraphBLAS 9.4 or later.
 
-``ss.serialize`` and ``ss.deserialize`` work too: the dtype name is stored
-in the blob and re-resolved on load, falling back to ``GrB_NAME`` for UDTs
-whose C identifier differs from the Python name.
+.. code-block:: python
+
+    import numpy as np
+
+    from graphblas import Matrix, Vector, binary, dtypes, indexbinary, monoid, semiring
+
+    # Each element holds a distance and the node before it on the path
+    Hop = dtypes.register_new("Hop", {"dist": float, "parent": int})
+
+
+    def closer(x, y):
+        return x if x["dist"] <= y["dist"] else y
+
+
+    def relax(x, ix, jx, w, iy, jy, theta):  # x is d[u], w is A[u, v]
+        return (x["dist"] + w, iy)  # iy is u, the parent of v on this path
+
+
+    binary.register_new("closer", closer, is_udt=True)
+    monoid.register_new("closer", binary.closer, (np.inf, -1))
+    indexbinary.register_new("relax", relax, is_udt=True)
+    semiring.register_new("closer_relax", monoid.closer, indexbinary.relax())
+
+    # Edges 0->1 (4), 0->2 (1), 1->2 (2), 1->3 (10) and 2->3 (5)
+    A = Matrix.from_coo([0, 0, 1, 1, 2], [1, 2, 2, 3, 3], [4.0, 1, 2, 10, 5], nrows=4, ncols=4)
+
+    d = Vector.from_coo([0], [(0.0, 0)], dtype=Hop, size=4)  # start at node 0
+    for _ in range(A.nrows - 1):
+        d(binary.closer) << d.vxm(A, semiring.closer_relax)
+
+.. csv-table:: d
+    :class: matrix
+    :header: 0,1,2,3
+
+    "(0.0, 0)","(4.0, 0)","(1.0, 0)","(6.0, 2)"
+
+``monoid.closer`` keeps the closer of two paths, with ``(inf, -1)`` as its identity.
+``indexbinary.relax()`` binds its ``theta``, unused here, and gives a BinaryOp. The
+accumulator ``binary.closer`` keeps a node's old path when the new one is not closer.
+Node 3 is reached through node 2, at distance 6.
+
+Performance and the JIT
+-----------------------
+
+For a lifted operator, python-graphblas gives SuiteSparse:GraphBLAS a C definition of the
+UDT and of the operator. SuiteSparse's JIT then compiles one kernel for the whole
+operation, which is often several times faster than calling the operator's Numba
+function for each element. The first use of each kernel compiles it, typically in under a
+second, and kernels are cached on disk for later runs.
+
+By default, the JIT compiles nothing (``jit_c_control`` is ``"run"``). The first lifted
+operator that needs a kernel turns it on, for the rest of the process and for every
+operation. :ref:`suitesparse_jit` explains the setting, how to keep the JIT off, and why
+processes running at the same time need separate caches.
+
+Operators you write run as Numba functions, called for each element; the JIT does not
+compile them.
+
+A lifted operator also runs as a Numba function when its UDT has no C definition. Then a
+``NoJITWarning`` gives the possible causes, the first time. The common ones:
+
+- a packed record: one from a numpy dtype without ``align=True``, with fields of
+  different sizes;
+- a field named like a C keyword or macro, such as ``class`` or ``INT_MAX``;
+- a record with an array field.
+
+The full list is in :ref:`tn_jit_skipped`. To see what SuiteSparse compiles:
+
+.. code-block:: python
+
+    Edge.jit_c_name  # 'gbudt_Edge'
+    Edge.jit_c_definition  # 'typedef struct { double weight ; int32_t hops ; } gbudt_Edge ;'
+    binary.plus[Edge].jit_c_source  # 'void plus_gbudt_Edge (gbudt_Edge *z, ...'
+
+Saving and loading
+------------------
+
+A Vector or Matrix of a UDT pickles. The pickle carries the UDT, so it loads in another
+process too, and a UDT registered with ``register_new`` is back on ``gb.dtypes``:
+
+.. code-block:: python
+
+    import pickle
+
+    data = pickle.dumps(v)
+    w = pickle.loads(data)  # in this process or another
+
+To ``ss.deserialize`` the output of ``v.ss.serialize()`` in another process, register
+the UDT there first, under the same name.
