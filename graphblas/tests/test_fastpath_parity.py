@@ -1,6 +1,6 @@
 """Parity tests for the scalar-access fast paths.
 
-Several hot scalar-access operations grew fast paths that bypass the general
+Several scalar-access operations have fast paths that bypass the general
 expression machinery: ``Vector.get`` / ``Matrix.get``, ``index in obj``
 (``__contains__``), integer-key ``obj[i] = value`` (``__setitem__``),
 ``obj[i].new()`` on a scalar index expression, and the plain-int lane in
@@ -29,8 +29,7 @@ from graphblas.core.scalar import Scalar
 
 suitesparse = gb.backend == "suitesparse"
 
-# Builtin dtypes to sweep. Complex is SuiteSparse-only, so gate it the same way
-# the dtype tests do; on the vanilla backend the parametrization simply omits it.
+# Builtin dtypes to sweep, with complex only where the backend supports it.
 BUILTIN_DTYPES = [
     dtypes.BOOL,
     dtypes.INT8,
@@ -51,7 +50,7 @@ DTYPE_IDS = [dt.name for dt in BUILTIN_DTYPES]
 
 
 def _hit_value(dt):
-    """A value that fits every builtin dtype."""
+    """A nonzero value that ``dt`` stores exactly."""
     if "FC" in dt.name:
         return 3 + 4j
     if dt == dtypes.BOOL:
@@ -324,7 +323,7 @@ def test_contains_bool_index(b):
     "bad", [1.5, "x", None, [1, 2], slice(None), 2.0, (1, 2), np.array(3), _IndexLike(3)]
 )
 def test_contains_non_integer_index(bad):
-    """Non-integer indices raise the same exception type AND message."""
+    """Non-integer indices raise the same exception type and message."""
     v = Vector.from_coo([0, 5, 9], [1.5, 2.5, 3.5], size=10)
     fast = _capture(lambda: bad in v)
     slow = _capture(lambda: _contains_vector_slow(v, bad))
@@ -452,7 +451,7 @@ def _assert_setitem_vector(dt, key, val, size=10):
     ea = _capture(lambda: a.__setitem__(key, val))
     eb = _capture(lambda: _set_vector_slow(b, key, val))
     # On success both capture ("val", None); on error both capture the full
-    # ("exc", type, message), so equality pins exception type AND message.
+    # ("exc", type, message), so equality checks the exception type and message.
     assert ea == eb, f"exc fast={ea} slow={eb}"
     if ea[0] == "val":
         assert a.isequal(b, check_dtype=True), f"value fast={a.to_coo()} slow={b.to_coo()}"
@@ -478,9 +477,9 @@ def _setitem_natural_value(dt):
     return 3
 
 
-# Cross-type coercion: the value's Python type differs from the container dtype.
-# The point is that whatever SuiteSparse does on the cast, the fast path does it
-# too. Complex-target cases are gated on complex support.
+# The value's Python type differs from the container's dtype, so it is cast when
+# stored. Whatever the cast gives, the fast path must give the same. Complex
+# targets only where the backend supports complex.
 CROSS_COERCION = [
     (dtypes.FP64, 3),  # int -> FP64
     (dtypes.FP32, 3),  # int -> FP32
@@ -584,7 +583,7 @@ def test_setitem_matrix_bad_key(key):
 
 
 def test_setitem_bool_key():
-    # bool is treated as an int index by parse_index; the fast path falls back.
+    # parse_index rejects a bool index, so the fast path must not take it as an int.
     _assert_setitem_vector(dtypes.FP64, True, 1.0)
     _assert_setitem_vector(dtypes.FP64, False, 1.0)
     _assert_setitem_matrix(dtypes.FP64, (True, 0), 1.0)
@@ -602,8 +601,8 @@ def test_setitem_value_fallbacks():
 
 
 # Both halves compare UDT vectors with ``isequal``, which needs ``binary.eq``
-# compiled for the UDT. The sibling UDT tests here never call ``isequal``, so
-# they keep running on builds without numba.
+# compiled for the UDT. The other UDT tests here do not call ``isequal``, so
+# they run without Numba.
 @pytest.mark.skipif("not supports_udfs")
 def test_setitem_udt_fallback():
     udt = gb.dtypes.register_anonymous(
@@ -913,7 +912,7 @@ def test_scalarvalue_recorder_fallback():
 
 
 def test_scalarvalue_pending_value():
-    """A value written in non-blocking mode is read back correctly (iso/pending)."""
+    """A value set in non-blocking mode reads back before an explicit wait."""
     v = Vector(dtypes.FP64, 100)
     v[3] = 2.25
     with gb.config.set(autocompute=True):
@@ -937,9 +936,9 @@ def test_scalarvalue_graphblas_error():
 def test_scalarvalue_then_another_attribute():
     """After a value read, the other attributes see the kind of Scalar the expression reports.
 
-    The value read caches the C scalar it extracts into, and ``gb_obj`` handed that out: an
-    ``int8_t *`` where a ``GrB_Scalar *`` was, which a C call taking a GrB_Scalar refused
-    with TypeError, while ``is_cscalar`` said False.
+    A value read caches the C scalar it extracts into. Regression: ``gb_obj`` then
+    returned that ``int8_t *`` instead of a ``GrB_Scalar *``, which a C call taking a
+    GrB_Scalar refused with TypeError, while ``is_cscalar`` said False.
     """
     from graphblas.core import ffi
 
@@ -953,7 +952,7 @@ def test_scalarvalue_then_another_attribute():
             assert ffi.typeof(e.gb_obj) is ffi.typeof(fresh.gb_obj)
             assert e.is_cscalar is fresh.is_cscalar
             assert e.nvals == fresh.nvals
-            assert e.value == value  # still the value read, as on main
+            assert e.value == value
             assert (e + 1).new().isequal((fresh + 1).new(), check_dtype=True)
 
 
@@ -1004,7 +1003,7 @@ def test_indexparse_vector_out_of_range(i):
 
 @pytest.mark.parametrize("b", [True, False])
 def test_indexparse_vector_bool(b):
-    """A bool must not take the int lane; it keeps the pre-existing TypeError."""
+    """A bool index raises TypeError; it must not take the plain-int lane."""
     v = Vector.from_coo([0, 2, 4, 9], [10.0, 20.0, 30.0, 90.0], size=10)
     r = _capture(lambda: v[b])
     assert r[0] == "exc", r

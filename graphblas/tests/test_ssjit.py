@@ -43,21 +43,18 @@ if backend != "suitesparse":
     pytest.skip("not suitesparse backend", allow_module_level=True)
 
 
-# The fix-conda-build-paths logic lives in ``gb.ss.fix_jit_config`` so users
-# can call it themselves. Tests use it through the public surface.
+# SuiteSparse 7 has no JIT, and ``gb.ss`` has no ``fix_jit_config`` there.
 _fix_jit_config = gb.ss.fix_jit_config if not _IS_SSGB7 else (lambda: None)
 
 
 def _jit_works_here():
-    """Whether this environment can JIT-compile at all, whatever control the session has.
+    """Whether this environment can compile JIT kernels at all, whatever the session's control.
 
-    The backend's init set ``jit_c_control`` from ``gb.config`` (``'run'`` by
-    default) and, under ``'on'``, probed the compiler. ``_enable_jit_for_udt``
-    raises the default ``'run'`` and probes, but answers no under ``'off'``,
-    ``'pause'``, ``'load'`` or a ``'run'`` the user set without probing, so ask
-    it under ``'on'``, and put the control back. It caches the answer for the
-    rest of the process. Asked once here, before the autouse ``_setup_jit``
-    fixture mutates the live config.
+    ``_enable_jit_for_udt`` probes the compiler, but answers no without probing
+    under ``'off'``, ``'pause'``, ``'load'`` or a ``'run'`` the user set, so ask
+    it under ``'on'`` and put the control back. It caches the answer for the
+    process. This runs once, at import, before the autouse ``_setup_jit``
+    fixture changes the config.
     """
     if _IS_SSGB7 or backend != "suitesparse":
         return False
@@ -69,13 +66,10 @@ def _jit_works_here():
 def _setup_jit():
     """Set up the SuiteSparse:GraphBLAS JIT.
 
-    Strategy:
-    1. _fix_jit_config(): fix conda-baked compiler paths and probe.
-       - Returns True: JIT works, proceed.
-       - Returns False: probe failed. Whatever ``jit_c_control``
-         SuiteSparse was left at is left untouched.
-       - Returns None: no conda env, try sysconfig instead.
-    2. Sysconfig fallback: for non-conda installs (pure pip).
+    ``fix_jit_config`` points the JIT at the conda compiler, or else at the one
+    in ``sysconfig``, and probes it. It returns True if the JIT works, False if
+    the probe failed (``jit_c_control`` is left where SuiteSparse put it), and
+    None if it found no compiler.
     """
     if _IS_SSGB7:
         # SuiteSparse JIT was added in SSGB 8
@@ -85,11 +79,10 @@ def _setup_jit():
     prev = gb.ss.config["jit_c_control"]
 
     result = _fix_jit_config()
-    # ``True``: conda JIT configured and verified. ``False``: probe failed;
-    # don't try sysconfig, since if the conda compiler can't build GraphBLAS
-    # JIT kernels, Python's sysconfig compiler won't either. Both done.
+    # On False, don't try sysconfig: if the conda compiler can't build GraphBLAS
+    # JIT kernels, Python's sysconfig compiler won't either.
     if result is None:
-        # No conda env. Try sysconfig for non-conda installs.
+        # No conda env, and fix_jit_config found no sysconfig compiler either.
         cc = sysconfig.get_config_var("CC")
         cflags = sysconfig.get_config_var("CFLAGS")
         include = sysconfig.get_path("include")
@@ -128,7 +121,7 @@ _JIT_WORKS_AT_IMPORT = _jit_works_here()
 
 
 def _run_in_fresh_process(script, jit_c_control=None, **extra_env):
-    """Run ``script`` in a new interpreter on this tree; return its ``key: value`` lines.
+    """Run ``script`` in a new interpreter on this tree; return its ``key: value`` lines and output.
 
     The script must print ``package: <gb.__file__>`` so the child can be shown
     to have imported this tree before anything it reports is trusted. The
@@ -180,16 +173,15 @@ print("after: " + str(control()))
 @pytest.mark.skipif("_IS_SSGB7")
 @pytest.mark.parametrize("jit_c_control", [None, "run", "on", "pause"])
 def test_ss_import_leaves_jit_c_control_alone(jit_c_control):
-    """Reading from ``gb.ss`` must not change the numerical machinery.
+    """Reading from ``gb.ss`` does not change ``jit_c_control``.
 
-    ``gb.ss`` is reached by attribute access, so importing it has to be inert.
-    It used to raise ``jit_c_control`` to ``'on'``, which decides whether
-    SuiteSparse loads kernels from its on-disk cache, so a line as harmless as
-    ``print(gb.ss.about["library_version"])`` changed how every later
-    operation in the process was computed. The control is set by the
+    ``gb.ss`` is imported on attribute access, so the import has to be inert.
+    ``jit_c_control`` decides whether SuiteSparse loads kernels from its on-disk
+    cache, and a line as harmless as ``print(gb.ss.about["library_version"])``
+    must not change how later operations compute. The control is set by the
     backend's init, from ``gb.config`` (here ``GRAPHBLAS_JIT_C_CONTROL``),
     and ``'on'`` becomes ``'run'`` where the JIT cannot compile. Not set, it
-    is ``'run'``.
+    is ``'run'``. Regression: importing ``gb.ss`` raised the control to ``'on'``.
     """
     lines, report = _run_in_fresh_process(_SS_IMPORT_PROBE, jit_c_control)
     assert lines["after"] == lines["before"], report
@@ -199,7 +191,7 @@ def test_ss_import_leaves_jit_c_control_alone(jit_c_control):
     elif _JIT_WORKS_AT_IMPORT:
         assert lines["before"] == str(gb.core.lib.GxB_JIT_ON), report
     else:
-        # psg's wheels (built without the JIT), or no working C compiler
+        # python-suitesparse-graphblas wheels (built without the JIT), or no working C compiler
         assert lines["before"] == str(gb.core.lib.GxB_JIT_RUN), report
 
 
@@ -302,13 +294,12 @@ print("second: " + str(gb.ss.fix_jit_config()))
 
 @pytest.mark.skipif("_IS_SSGB7")
 def test_fix_jit_config_first_call_agrees_with_the_second():
-    """``fix_jit_config()`` must report on the environment, not on itself.
+    """``fix_jit_config()`` gives the same answer on its first call as on later ones.
 
-    Its probe once registered a UDT, and registering a UDT asks to enable the
-    JIT, which started a second probe inside the first. The inner probe
-    registered the probe type and the outer one then died redeclaring it, so a
-    working environment answered ``False`` the first time and ``True`` every
-    time after. The probe now goes through the C API and registers nothing.
+    The probe goes through the C API and registers nothing. Regression: it
+    registered a UDT, which asked to enable the JIT and started a second probe
+    inside the first; the outer probe then failed redeclaring the probe type,
+    so a working environment answered ``False`` the first time only.
     """
     lines, report = _run_in_fresh_process(_FIX_JIT_TWICE_PROBE)
     assert lines["first"] == lines["second"], report
@@ -371,9 +362,8 @@ def test_ss_register_new_enables_the_jit():
 
     SuiteSparse compiles the C definition, or loads it from its cache, when the
     op is created. ``'run'`` does neither, so without the raise the
-    registration fails. Each registrar has to ask for the JIT itself: since
-    ``gb.ss`` stopped raising the control at import, nothing else does it
-    first.
+    registration fails. Each registrar has to ask for the JIT itself, since
+    nothing else raises the control first (importing ``gb.ss`` does not).
     """
     if not _JIT_WORKS_AT_IMPORT:
         pytest.skip("JIT not compiled in or not working here; nothing can compile")
@@ -536,8 +526,7 @@ def test_udt_work_raises_only_the_default_run(form, env_control, kept, tmp_path)
     or a YAML config file) keeps processes from compiling, at the cost of UDT
     ops running their Numba functions and C source failing to register. One
     written to ``gb.ss.config`` later counts only when it changes the configured
-    control. ``'off'``, ``'pause'`` and ``'load'`` were kept before the default
-    was told apart.
+    control. ``'off'``, ``'pause'`` and ``'load'`` are always kept.
     """
     if not kept and not _JIT_WORKS_AT_IMPORT:
         pytest.skip("JIT not compiled in or not working here; nothing raises to 'on'")
@@ -591,11 +580,11 @@ def test_auto_fix_jit_at_import_left_compiler_usable():
     if not gb.ss.jit_compiler_is_usable():
         pytest.skip("sandboxed env without a usable compiler; auto-fix had nothing to repair")
     if not _JIT_WORKS_AT_IMPORT:
-        # Compiler file exists but the probe failed (e.g., the baked-in flags
-        # target a different arch than the host). After a compile failure
-        # SuiteSparse drops ``jit_c_control`` to a non-compiling mode so
-        # downstream ops punt to generic cleanly; the probe absorbs that first
-        # failure. Which mode it lands in varies by SuiteSparse version.
+        # The compiler exists but the probe failed (the baked-in flags may
+        # target another architecture). The probe takes the failed compile,
+        # after which SuiteSparse leaves ``jit_c_control`` at a mode that does
+        # not compile, so later ops use the generic kernels; which mode depends
+        # on the SuiteSparse version.
         assert gb.ss.config["jit_c_control"] in {"load", "run"}
         pytest.skip("compiler present but JIT probe failed in this env")
     assert _JIT_WORKS_AT_IMPORT
@@ -614,8 +603,8 @@ def test_enable_jit_for_udt_re_raises_a_lowered_control(monkeypatch):
 
     Driven through a stand-in config, so the assertion holds on every host: a
     library built without the JIT clamps writes down to ``'run'``, and would
-    never read back the ``'on'`` this is about. The live round trip is pinned
-    separately below, where the clamp is not in the way.
+    never read back the ``'on'`` this is about. The live round trip is in
+    ``test_enable_jit_for_udt_re_raises_the_live_control``.
     """
     from graphblas.core.ss import jit_config
 
@@ -783,15 +772,14 @@ def test_public_fix_jit_config_repairs_a_broken_compiler():
     if not os.environ.get("CONDA_PREFIX"):
         pytest.skip("test requires a CONDA_PREFIX to repair from")
     try:
-        # Force a broken path; the auto-fix must put back something usable.
+        # Force a broken path; fix_jit_config must put back something usable.
         gb.ss.config["jit_c_compiler_name"] = "/nonexistent/path/to/cc"
         assert not gb.ss.jit_compiler_is_usable()
         result = gb.ss.fix_jit_config()
         assert result is True
         assert gb.ss.jit_compiler_is_usable()
-        # Calling fix_jit_config a second time must not disable JIT. The probe
-        # used to register a one-shot ``_jit_probe`` UDT, and took the
-        # duplicate-name error as a probe failure.
+        # A second call must not disable the JIT; the probe registers nothing
+        # whose name could collide the second time.
         gb.ss.config["jit_c_compiler_name"] = "/nonexistent/path/to/cc"
         result2 = gb.ss.fix_jit_config()
         assert result2 is True
@@ -804,7 +792,7 @@ def test_public_fix_jit_config_repairs_a_broken_compiler():
 
 @pytest.mark.skipif("_IS_SSGB7")
 def test_public_fix_jit_config_returns_none_without_env():
-    """With no ``CONDA_PREFIX`` and ``use_sysconfig=False``, the helper signals no-environment."""
+    """With no ``CONDA_PREFIX`` and ``use_sysconfig=False``, ``fix_jit_config`` returns None."""
     if os.environ.get("CONDA_PREFIX"):
         # Drop the env for this call only.
         prev_env = os.environ.pop("CONDA_PREFIX")
@@ -923,7 +911,7 @@ def test_jit_unary(v):
     assert unary.ss.square is square
     assert square.name == "ss.square"
     assert square.types == {dtypes.FP32: dtypes.FP32}
-    # JIT ops don't coerce: wrong dtype raises KeyError, not a silent cast.
+    # An op from C source does not cast its inputs: another type raises KeyError.
     with pytest.raises(KeyError, match="square does not work with INT64"):
         v << square(v)
     v = v.dup("FP32")
@@ -969,7 +957,6 @@ def test_jit_binary(v):
     assert absdiff.types == {(dtypes.FP64, dtypes.FP64): dtypes.FP64}  # different than normal
     assert "FP64" in absdiff
     assert absdiff["FP64"].return_type == dtypes.FP64
-    # JIT ops don't coerce: wrong dtype raises KeyError, not a silent cast.
     with pytest.raises(KeyError, match="absdiff does not work with .INT64, INT64. types"):
         v << absdiff(v & v)
     w = (v - 1).new("FP64")
@@ -1033,7 +1020,6 @@ def test_jit_indexunary(v):
     assert diffy.types == {(dtypes.FP64, dtypes.FP64): dtypes.FP64}
     assert "FP64" in diffy
     assert diffy["FP64"].return_type == dtypes.FP64
-    # JIT ops don't coerce: wrong dtype raises KeyError, not a silent cast.
     with pytest.raises(KeyError, match="diffy does not work with .INT64, INT64. types"):
         v << diffy(v, 1)
     v = v.dup("FP64")
@@ -1154,9 +1140,9 @@ def test_jit_indexbinary(v):
     assert ("FP64", "FP64", "FP32") in add_theta
     assert ("FP64", "FP32") not in add_theta  # theta of y's type, FP32
     assert repr(add_theta["FP64", "FP64", "FP32"]) == "indexbinary.add_theta[FP64, FP64, FP32]"
-    # An FP32 theta picks it, and its kernel runs. SuiteSparse finds a compiled kernel by its
-    # op's name, and its encoding has no theta type, so with one C name for both theta types
-    # this ran the FP64 theta's kernel, which read the float as a double: [2, 2, 4, 0].
+    # An FP32 theta picks it, and its own kernel runs. SuiteSparse finds a compiled kernel by
+    # its op's name, and its encoding has no theta type, so each theta type needs its own C
+    # name; with one, the FP64 theta's kernel would read the float as a double: [2, 2, 4, 0].
     assert add_theta["FP64", "FP64", "FP32"].jit_c_name.startswith(
         "add_theta_4_FP64_4_FP64_4_FP32_"
     )
@@ -1180,9 +1166,9 @@ def test_jit_c_name_per_name_and_definition(v):
     """An op registered from C is compiled under a C name of its full name and definition.
 
     SuiteSparse finds a compiled kernel in memory by its op's name, and checks a definition
-    only when it loads a kernel from disk. When the C name was the op's last name, an op
-    defined again after ``delattr``, or one of the same last name in another namespace, ran
-    the kernel compiled first.
+    only when it loads a kernel from disk. Regression: when the C name was the op's last
+    name, an op defined again after ``delattr``, or one of the same last name in another
+    namespace, ran the kernel compiled first.
     """
     if _IS_SSGB7:
         return
@@ -1258,7 +1244,6 @@ def test_jit_select(v):
     assert woot.types == {(dtypes.INT32, dtypes.INT32): dtypes.BOOL}
     assert "INT32" in woot
     assert woot["INT32"].return_type == dtypes.BOOL
-    # JIT ops don't coerce: wrong dtype raises KeyError, not a silent cast.
     with pytest.raises(KeyError, match="woot does not work with .INT64, INT64. types"):
         v << woot(v, 1)
     v = v.dup("INT32")
@@ -1312,16 +1297,13 @@ def test_jit_select(v):
 # SS 9, so every jit_c_* property is None on 7.x and 8.x alike.
 @pytest.mark.skipif("not _has_jit_set")
 def test_udt_jit_c_source_introspection():
-    """``jit_c_source`` and ``jit_c_name`` should expose what SS sees.
+    """``jit_c_source`` and ``jit_c_name`` show the C that SuiteSparse compiles.
 
-    Covers record UDTs, array UDTs, and ops where no JIT definition was set
-    (built-in scalar ops, mixed UDT+scalar binary ops). Also verifies the
-    matching ``jit_c_definition`` / ``jit_c_name`` properties on the dtype.
-
-    Uses field names unique to this test to avoid colliding with other
-    test UDTs. ``register_anonymous`` shares one DataType per ``np.dtype``,
-    so two tests with the same dtype share state (including cached JIT C
-    info) and would race when run in the same session.
+    Covers a record UDT and its ``jit_c_definition``, lifted ops on record and
+    array UDTs, built-in types and ops (no C definition), and Monoid, Semiring
+    and Aggregator. Field names and shapes are unique to this test:
+    ``register_anonymous`` shares one DataType per ``np.dtype``, C name
+    included, so a test sharing a dtype would depend on test order.
     """
     record_dtype = np.dtype([("introsp_a", np.int64), ("introsp_b", np.float64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "_IntrospectUDT")
@@ -1332,11 +1314,11 @@ def test_udt_jit_c_source_introspection():
     assert "int64_t introsp_a" in udt.jit_c_definition
     assert "double introsp_b" in udt.jit_c_definition
 
-    # Builtin scalar dtype: no JIT C definition
+    # Built-in type: no C definition
     assert dtypes.INT64.jit_c_name is None
     assert dtypes.INT64.jit_c_definition is None
 
-    # Auto-lifted record UDT binary op
+    # Lifted BinaryOp on a record UDT
     plus_udt = binary.plus[udt]
     assert plus_udt.jit_c_name == "plus_gbudt__IntrospectUDT"
     src = plus_udt.jit_c_source
@@ -1344,35 +1326,31 @@ def test_udt_jit_c_source_introspection():
     assert "z->introsp_a = (x->introsp_a) + (y->introsp_a)" in src
     assert "z->introsp_b = (x->introsp_b) + (y->introsp_b)" in src
 
-    # Auto-lifted record UDT unary op
+    # Lifted UnaryOp on a record UDT
     ainv_udt = unary.ainv[udt]
     assert ainv_udt.jit_c_name == "ainv_gbudt__IntrospectUDT"
     assert "z->introsp_a = -(x->introsp_a)" in ainv_udt.jit_c_source
 
-    # Array UDT auto-lifted op. Use a shape no other test uses: ``np.dtype``
-    # identity is shared across the session, so once SS sets
-    # ``GxB_JIT_C_NAME`` we can't rename. A distinctive shape keeps the
-    # C-side name stable for this test.
+    # Lifted op on an array UDT
     arr_udt = dtypes.register_anonymous(np.dtype("(11,)float64"), "_IntrospectArr")
     times_arr = binary.times[arr_udt]
     src_arr = times_arr.jit_c_source
     assert src_arr is not None
     assert "for (int64_t i = 0 ; i < 11 ; i++) { z->v[i] = (x->v[i]) * (y->v[i]) ; }" in src_arr
 
-    # Builtin scalar op: no JIT source
+    # Built-in op on a built-in type: no C source
     assert binary.plus[int].jit_c_source is None
     assert binary.plus[int].jit_c_name is None
     assert unary.abs[float].jit_c_source is None
 
-    # Monoid / Semiring / Aggregator walk-down: introspection should follow the
-    # underlying binary op so users can chase the JIT'd source from any layer.
+    # A Monoid, Semiring or Aggregator reports the source of the BinaryOp it uses.
     plus_binop_src = binary.plus[udt].jit_c_source
     assert gb.monoid.plus[udt].jit_c_source == plus_binop_src
-    # Semiring delegates to the multiplier; .monoid still works on its own.
+    # A Semiring reports its multiplier's source, and its Monoid its BinaryOp's.
     semi = gb.semiring.plus_times[udt]
     assert semi.jit_c_source == binary.times[udt].jit_c_source
     assert semi.monoid.jit_c_source == plus_binop_src
-    # Monoid-based aggregator walks to its monoid; composite agg has no kernel.
+    # agg.sum reports its Monoid's; agg.count is not built on one and has none.
     assert gb.agg.sum[udt].jit_c_source == plus_binop_src
     assert gb.agg.count[udt].jit_c_source is None
 
@@ -1381,11 +1359,11 @@ def test_udt_jit_c_source_introspection():
 # jit_c_name is only ever set on SS 9+; see test_udt_jit_c_source_introspection.
 @pytest.mark.skipif("not _has_jit_set")
 def test_op_jit_signature_uses_pinned_type_name():
-    """After a UDT is renamed, auto-lifted ops must still reference the
-    pinned (first-registration) C name in their signature. SS's
-    ``GxB_JIT_C_NAME`` on a ``GrB_Type`` is one-shot, so a mismatched op
-    signature would reference an undefined struct and SS would silently
-    fall back to the Numba cfunc.
+    """After a UDT is renamed, lifted ops use the C name from its first registration.
+
+    The type's C name cannot change (see ``test_udt_jit_c_info_pinned_at_first_register``
+    in ``test_dtype.py``), so an op naming the new one would refer to an undefined struct,
+    and SuiteSparse would fall back to the Numba cfunc without saying so.
     """
     record_dtype = np.dtype([("pinned_a", np.int64), ("pinned_b", np.int64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "_PinnedOrig")
@@ -1395,7 +1373,6 @@ def test_op_jit_signature_uses_pinned_type_name():
     assert udt.jit_c_name == "gbudt__PinnedOrig"
 
     op = binary.plus[udt]
-    # Op signature must reference the pinned struct name, not the renamed one.
     assert op.jit_c_name == "plus_gbudt__PinnedOrig"
     assert "gbudt__PinnedOrig *" in op.jit_c_source
     assert "_PinnedRenamed" not in op.jit_c_source
@@ -1403,14 +1380,11 @@ def test_op_jit_signature_uses_pinned_type_name():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_jit_compiles_auto_udt_ops():
-    """JIT must actually compile a kernel for an auto-generated UDT op.
+    """The JIT compiles a kernel for a lifted op on a UDT, and ``jit_c_control`` stays ``'on'``.
 
-    Regression for the bug where ``GxB_JIT_C_NAME`` wasn't being set on
-    UDT types, so SuiteSparse's eWise JIT template (which depends on the
-    type having a JIT name) failed to expand with errors like
-    ``use of undeclared identifier 'Bx'``, disabling JIT for the rest of
-    the session. Verifies both that (a) the op runs without JIT erroring
-    out, and (b) ``jit_c_control`` stays ``"on"`` after the op.
+    Regression: without ``GxB_JIT_C_NAME`` on the UDT, SuiteSparse's ewise
+    template failed to compile (``use of undeclared identifier 'Bx'``), and the
+    failed compile lowered the control to ``'load'`` for the rest of the session.
     """
     if _IS_SSGB7:
         pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
@@ -1425,14 +1399,12 @@ def test_jit_compiles_auto_udt_ops():
     v[2] = (5, 6.0)
     w = v.dup()
 
-    # Force JIT on and probe. If our typedef + JIT_C_NAME wiring is correct,
-    # SuiteSparse should compile and load the kernel without errors.
     with _jit_mode("on"):
         with burble():
             result = binary.plus(v & w).new()
         assert result[0].new() == (2, 4.0)
         assert result[2].new() == (10, 12.0)
-        # JIT must remain in compile-on mode; a failed compile flips it to 'load'.
+        # A failed compile would lower the control to 'load'.
         assert (
             gb.ss.config["jit_c_control"] == "on"
         ), "JIT compilation got disabled (flipped from 'on' to 'load') after a built-in UDT op"
@@ -1440,15 +1412,12 @@ def test_jit_compiles_auto_udt_ops():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_floordiv_udt_jit_matches_python_semantics():
-    """``binary.floordiv`` on a UDT must round toward minus infinity on the JIT path.
+    """``binary.floordiv`` on a UDT rounds toward minus infinity in the JIT kernel.
 
-    Regression: the JIT codegen used to lower ``//`` to plain C ``/``, which
-    is trunc-toward-zero for ints and true division for floats. For positive
-    integer operands the two agreed; for negative operands or any float they
-    silently disagreed with the Numba cfunc path (Python ``//`` is floor).
-
-    Use N=50 non-iso vectors with mixed-sign operands to bypass any
-    iso/short-vector shortcuts and exercise the actual JIT kernel.
+    Python's ``//``, and so the Numba cfunc, is floor division. Regression: the
+    C codegen used C's ``/``, which truncates integers toward zero and does not
+    round floats down, so negative operands and floats disagreed with the cfunc.
+    The vectors have 50 elements that are not iso, so the kernel runs.
     """
     if _IS_SSGB7:
         pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
@@ -1456,10 +1425,9 @@ def test_floordiv_udt_jit_matches_python_semantics():
 
     N = 50
 
-    # float64 record: was returning 3.5 / -3.5 (true division) before the fix.
-    # Use field names unique to this test so the anonymous-UDT cache (keyed
-    # on np.dtype) doesn't share a DataType with another test, which would
-    # also share the SS-side ``jit_c_name``.
+    # float64 record; C's ``/`` would give -3.5 and 3.5. Field names unique to this
+    # test, so no other test shares its DataType and C name (``register_anonymous``
+    # caches one DataType per ``np.dtype``).
     udt = dtypes.register_anonymous(
         np.dtype([("fd_a", np.float64), ("fd_b", np.float64)]), "_FdJitF64"
     )
@@ -1474,7 +1442,7 @@ def test_floordiv_udt_jit_matches_python_semantics():
     # -8.0 // 2.0 == -4.0, 8.0 // 2.0 == 4.0
     assert w[1].new() == (-4.0, 4.0)
 
-    # int64 record: was returning -3 (trunc-to-zero) for -7//2 before the fix.
+    # int64 record; C's ``/`` would give -3 for -7 / 2.
     udt_i = dtypes.register_anonymous(np.dtype([("a", np.int64), ("b", np.int64)]), "_FdJitI64")
     v = gb.Vector(udt_i, N)
     u = gb.Vector(udt_i, N)
@@ -1489,7 +1457,7 @@ def test_floordiv_udt_jit_matches_python_semantics():
     # -11 // 2 == -6, 11 // 3 == 3
     assert w[2].new() == (-6, 3)
 
-    # Array UDT: same hazard on the flattened ``v[i]`` path.
+    # Array UDT, whose C codegen works on ``v[i]``
     udt_arr = dtypes.register_anonymous(np.dtype((np.float32, (4,))), "_FdJitArrF32")
     v = gb.Vector(udt_arr, N)
     u = gb.Vector(udt_arr, N)
@@ -1505,24 +1473,19 @@ def test_floordiv_udt_jit_matches_python_semantics():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_min_max_udt_jit_ignores_nan_and_breaks_zero_ties():
-    """The C JIT kernel for ``binary.min`` on a float UDT answers as the cfunc does.
+    """The JIT kernel for ``binary.min`` and ``max`` on a float UDT answers as the cfunc does.
 
-    ``GrB_MIN_FP64`` is C99 ``fmin``, which ignores a NaN operand from either
-    side, and so does ``binary.min`` on a UDT field. C99 leaves the tie
-    between ``-0.0`` and ``0.0`` to the C library (glibc's x86-64 ``fmin``
-    returns an operand by position), so the kernel spells the comparison out,
-    as the cfunc does, rather than calling ``fmin``: a tie gives ``-0.0`` for
-    ``min`` and ``0.0`` for ``max`` on every platform. Earlier spellings
-    decided NaN by position, in opposite directions: ``(a < b ? a : b)``
-    dropped a NaN on the right, and ``(b < a ? b : a)`` one on the left.
-
-    Integer fields keep the plain comparison: they have no NaN or signed zero.
+    Both ignore a NaN operand on either side, as C99 ``fmin`` (``GrB_MIN_FP64``)
+    does, and on a tie between ``-0.0`` and ``0.0`` give ``-0.0`` for ``min``
+    and ``0.0`` for ``max`` on every platform; see ``_minmax_expr``. The test
+    puts NaN on each side, since a plain ``(a < b ? a : b)`` drops a NaN on one
+    side only. Integer fields keep the plain comparison.
     """
     if not _has_jit_set:
         pytest.skip("jit_c_source introspection requires SuiteSparse:GraphBLAS >= 9")
     _require_jit_on()
 
-    # Field names unique to this test; see floordiv test for the cache rationale.
+    # Field names unique to this test; see test_floordiv_udt_jit_matches_python_semantics.
     udt = dtypes.register_anonymous(
         np.dtype([("nan_a", np.float64), ("nan_b", np.float32), ("nan_c", np.int32)]), "_NanJitMM"
     )
@@ -1582,15 +1545,13 @@ def test_min_max_udt_jit_ignores_nan_and_breaks_zero_ties():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_complex_truediv_udt_jit_matches_cfunc_at_extremes():
-    """Complex division in the C JIT kernel is the cfunc's, bit for bit, at any magnitude.
+    """Complex division in the JIT kernel is the cfunc's, bit for bit, at any magnitude.
 
-    SuiteSparse compiles C JIT kernels with ``-fcx-limited-range`` under GCC,
-    which turns C's ``_Complex`` division into the naive formula: complex64
-    ``1e20 / 1e20`` came out ``nan`` and ``(1+1j) / (1e160+1e160j)`` came out
-    ``0`` on Linux. The kernel divides with real arithmetic instead, by
-    CPython's algorithm before 3.14, so no flag changes it; the cfunc spells
-    out the same steps, since from Python 3.14 Numba's own ``/`` recovers
-    infinities as CPython's does (``(inf+nanj) / (1+1j)`` is ``inf-infj``).
+    SuiteSparse compiles JIT kernels with ``-fcx-limited-range`` under GCC,
+    which makes C's ``_Complex`` division the naive formula: complex64
+    ``1e20 / 1e20`` gives ``nan`` and ``(1+1j) / (1e160+1e160j)`` gives ``0``.
+    Both paths spell out the division in real arithmetic instead, so no flag
+    or Python version changes it; see ``_complex_truediv``.
     """
     if not _has_jit_set:
         pytest.skip("jit_c_source introspection requires SuiteSparse:GraphBLAS >= 9")
@@ -1602,8 +1563,8 @@ def test_complex_truediv_udt_jit_matches_cfunc_at_extremes():
     csrc = binary.truediv[udt].jit_c_source
     assert "crealf" in csrc, csrc
     assert "(x->cxd_d) / (y->cxd_d)" not in csrc, csrc
-    # (complex64 pair, complex128 pair); the first four are finite and the C
-    # library's division got them wrong under the limited-range flag.
+    # (complex64 pair, complex128 pair); the first four are finite, and the C
+    # library's division gets them wrong under the limited-range flag.
     pairs = [
         ((1e20, 1e20), (1e200, 1e200)),
         ((1e-25 + 1e-25j, 1e-25), (1e200 + 1e200j, 1e200 + 1e200j)),
@@ -1634,15 +1595,13 @@ def test_complex_truediv_udt_jit_matches_cfunc_at_extremes():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_complex_times_udt_jit_matches_cfunc_with_infinities():
-    """Complex multiplication in the C JIT kernel is the cfunc's, bit for bit.
+    """Complex multiplication in the JIT kernel is the cfunc's, bit for bit.
 
-    numpy multiplies by the textbook formula; clang's ``_Complex`` multiply
-    adds C99 Annex G's recovery, so ``1j * (inf+infj)`` came out
-    ``-inf+infj`` from a C kernel on macOS and ``nan+nanj`` from the cfunc
-    (GCC's ``-fcx-limited-range`` drops the recovery, so Linux agreed). The
-    kernel multiplies with real arithmetic instead, for record fields and
-    array elements alike. CPython adds the recovery from 3.14 and Numba 0.68
-    follows it, so the cfunc spells the formula out too.
+    numpy multiplies by the textbook formula. clang's ``_Complex`` multiply adds
+    C99 Annex G's recovery of infinities, which would make ``1j * (inf+infj)``
+    ``-inf+infj`` on macOS, where numpy gives ``nan+nanj``. So both paths spell
+    out the formula in real arithmetic, for record fields and array elements
+    alike; see ``_complex_times``.
     """
     if not _has_jit_set:
         pytest.skip("jit_c_source introspection requires SuiteSparse:GraphBLAS >= 9")
@@ -1683,15 +1642,11 @@ def test_complex_times_udt_jit_matches_cfunc_with_infinities():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_abs_udt_jit_matches_python_negative_zero():
-    """``unary.abs`` on a float UDT must clear the sign bit of ``-0.0``.
+    """``unary.abs`` on a float UDT clears the sign bit of ``-0.0`` in the JIT kernel.
 
-    Regression: the JIT codegen used to emit ``(x < 0 ? -x : x)``. For
-    ``x == -0.0`` the comparison ``-0.0 < 0`` is false (negative zero is
-    not less than zero in IEEE-754), so the ternary returned ``-0.0``
-    with the sign bit intact. Python ``abs(-0.0) == 0.0`` (sign bit
-    cleared), and the cfunc path uses Python's ``abs``, so the two paths
-    silently disagreed on the sign of zero. The fix routes float fields
-    through ``fabs`` / ``fabsf``.
+    Python's ``abs``, and so the cfunc, gives ``0.0``. Regression: the C codegen
+    emitted ``(x < 0 ? -x : x)``, which returns ``-0.0`` unchanged because
+    ``-0.0 < 0`` is false.
     """
     if _IS_SSGB7:
         pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
@@ -1702,7 +1657,7 @@ def test_abs_udt_jit_matches_python_negative_zero():
     def sign_bit(f):
         return struct.pack("<d", f)[7] & 0x80
 
-    # Field names unique to this test; see floordiv test for the cache rationale.
+    # Field names unique to this test; see test_floordiv_udt_jit_matches_python_semantics.
     udt = dtypes.register_anonymous(
         np.dtype([("abs_a", np.float64), ("abs_b", np.float64)]), "_AbsNegZeroJit"
     )
@@ -1715,7 +1670,6 @@ def test_abs_udt_jit_matches_python_negative_zero():
     w = unary.abs(v).new()
     val = w[0].new().value
     assert val[0] == 0.0
-    # Sign-bit must be cleared (the bug returned -0.0, sign bit 0x80).
     assert (
         sign_bit(val[0]) == 0
     ), f"abs(-0.0) preserved the sign bit: bits={val[0].view('<u8'):016x}"
@@ -1726,7 +1680,7 @@ def test_abs_udt_jit_matches_python_negative_zero():
 #
 # Per-variant unique field names: anonymous UDTs are keyed on ``np.dtype``, so
 # same-shape dtypes across variants would share a single ``DataType`` (and its
-# pinned JIT C name from the first registration), causing test-order coupling.
+# C name from the first registration), making the tests depend on their order.
 
 
 def _parity_record_i64(i):
@@ -1805,12 +1759,12 @@ _PARITY_VARIANTS = {
 @pytest.mark.slow
 @pytest.mark.parametrize("udt_kind", list(_PARITY_VARIANTS))
 def test_udt_op_jit_cfunc_parity(udt_kind):
-    """JIT and cfunc paths produce the same result on every auto-lifted op.
+    """The JIT kernel and the cfunc give the same bytes for each lifted op listed below.
 
-    The two paths are independent code generators (string-templated C vs Numba
-    njit). N=64 sidesteps SS's iso/short-vector shortcuts so the kernel actually
-    runs. The variants cover signed-int floor formula, float floor/NaN/inf,
-    unsigned trunc-div, mixed-width with C alignment, and both array shapes.
+    The two come from separate code generators (C templates and Numba). N=64
+    non-iso elements make SuiteSparse run the kernel. The variants cover
+    signed-integer floor division, float floor with NaN and inf, unsigned
+    division, mixed widths with C alignment, and two array shapes.
     """
     if _IS_SSGB7:
         pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
@@ -1841,11 +1795,8 @@ def test_udt_op_jit_cfunc_parity(udt_kind):
         cf_unary = {op: getattr(unary, op)(v).new() for op in unary_ops}
 
     def values_equal(j, c):
-        # Compare raw bytes via ``to_dense`` rather than ``isequal``. With the
-        # IEEE-aware ``binary.eq[udt]`` fix, two NaN-bearing records compare
-        # unequal under ``isequal``, so ``isequal`` can't distinguish "JIT and
-        # cfunc agree on a NaN bit-pattern" from "they disagree". Byte-equality
-        # of the dense numpy view captures the parity question correctly.
+        # Compare bytes, not ``isequal``: ``binary.eq`` on a UDT follows IEEE, so
+        # records with a NaN never compare equal, whether or not the paths agree.
         if j.dtype != c.dtype or j.nvals != c.nvals:
             return False
         return j.to_dense().tobytes() == c.to_dense().tobytes()
@@ -1862,14 +1813,12 @@ def test_udt_op_jit_cfunc_parity(udt_kind):
 
 @pytest.mark.skipif("not supports_udfs")
 def test_anonymous_udt_with_no_name_still_jits():
-    """A UDT registered without ``name=`` should still take the JIT path.
+    """A UDT registered without ``name=`` gets a C name, so its lifted ops have JIT kernels.
 
-    ``register_anonymous(np.dtype)`` gives the DataType a Python-side name
-    like ``"{'a': FP64, 'b': INT64}"`` that isn't a valid C identifier, so
-    SS can't use it as the JIT type name. ``_pick_c_type_name`` synthesizes
-    a ``_gbudt_NNN`` name for SuiteSparse instead, leaving ``udt.name``
-    alone for Python-side display. If that fallback regresses, the op runs
-    through the slower Numba cfunc path and ``jit_c_source`` is ``None``.
+    Its Python name, such as ``"{'a': FP64, 'b': INT64}"``, is not a C
+    identifier, so ``_pick_c_type_name`` makes a ``_gbudt_NNN`` name for
+    SuiteSparse and leaves ``udt.name`` alone. Without a C name, the ops run
+    their Numba cfuncs and ``jit_c_source`` is None.
     """
     if not _has_jit_set:
         pytest.skip("jit_c_* introspection requires SuiteSparse:GraphBLAS >= 9")
@@ -1884,13 +1833,11 @@ def test_anonymous_udt_with_no_name_still_jits():
     assert udt.jit_c_name.startswith("_gbudt_")
     assert udt.jit_c_definition is not None
 
-    # The synthetic name flows through to op codegen so the JIT path actually
-    # fires and matches the cfunc path.
+    # Lifted ops use that C name.
     plus_op = binary.plus[udt]
     assert plus_op.jit_c_source is not None
     assert plus_op.jit_c_name.startswith("plus__gbudt_")
 
-    # Run the kernel to confirm the JIT path produces correct results.
     v = gb.Vector(udt, 2)
     v[0] = (1.0, 10)
     v[1] = (2.0, 20)
@@ -1905,14 +1852,13 @@ def test_anonymous_udt_with_no_name_still_jits():
 @pytest.mark.slow
 @pytest.mark.skipif("not supports_udfs")
 def test_complex_field_udt_jits_arithmetic():
-    """Complex fields take the JIT path for ``plus``/``minus``/``times``/
-    ``truediv``/``abs``/``ainv``. ``min``/``max``/``floordiv`` are rejected
-    early with a clear error rather than a numba LLVM crash.
+    """A record with a complex field gets JIT kernels that match the cfunc.
 
-    The C99 ``_Complex`` types arrive via SS's GraphBLAS.h (typedef'd to
-    ``GxB_FC32_t`` / ``GxB_FC64_t``), so the generated kernel compiles
-    without extra includes. ``abs`` uses ``cabs`` / ``cabsf`` which match
-    Numba's ``abs(complex)`` behavior (real magnitude in the real part).
+    ``min``, ``max`` and ``floordiv`` raise KeyError when typed, rather than
+    crashing in Numba. The C99 ``_Complex`` types come from SuiteSparse's
+    GraphBLAS.h (as ``GxB_FC32_t`` and ``GxB_FC64_t``), so the kernel needs no
+    extra includes. ``abs`` uses ``cabs`` or ``cabsf``, which match Numba's
+    ``abs`` of a complex (the magnitude, in the real part).
     """
     if not _has_jit_set:
         pytest.skip("jit_c_definition introspection requires SuiteSparse:GraphBLAS >= 9")
@@ -1929,11 +1875,7 @@ def test_complex_field_udt_jits_arithmetic():
         v[i] = (complex(1.0 + i, 2.0), 3.0 + i)
         u[i] = (complex(0.5, 0.25 + i), 0.1)
 
-    # JIT must agree with cfunc bit-exactly on ops that lower to single C
-    # operators. ``truediv`` is intentionally excluded: C99 ``_Complex``
-    # division and Numba's complex division differ in their last-bit
-    # rounding / overflow handling, so they're equivalent within ulps but
-    # not bit-identical.
+    # truediv has its own test, test_complex_truediv_udt_jit_matches_cfunc_at_extremes.
     for op_name in ("plus", "minus", "times"):
         op = getattr(binary, op_name)
         with _jit_mode("on"):
@@ -1952,7 +1894,6 @@ def test_complex_field_udt_jits_arithmetic():
     # abs source must use cabs (not the ternary, which doesn't compile on _Complex).
     assert "cabs(" in unary.abs[udt].jit_c_source
 
-    # min/max/floordiv reject early with a clear KeyError citing complex.
     for op_name in ("min", "max", "floordiv"):
         with pytest.raises(KeyError, match="complex fields"):
             getattr(binary, op_name)[udt]
@@ -1975,10 +1916,9 @@ def test_packed_record_layout_skips_jit():
     # C struct would put float64 at offset 8 (itemsize 16).
     packed = np.dtype([("p_flag", np.int32), ("p_val", np.float64)])  # no align=True
     udt = dtypes.register_anonymous(packed, "_PackedUdt1")
-    assert udt.jit_c_name is None  # JIT skipped
+    assert udt.jit_c_name is None
     assert udt.jit_c_definition is None
 
-    # cfunc still works (the existing fallback path).
     v = gb.Vector(udt, 4)
     v[0] = (1, 1.5)
     v[1] = (2, 2.5)
@@ -1988,15 +1928,12 @@ def test_packed_record_layout_skips_jit():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_packed_nested_record_layout_skips_jit():
-    """Packed-inside-packed must skip the JIT path too.
+    """A packed record nested in a packed record skips the JIT path too.
 
-    Regression: ``_is_c_compatible_layout`` originally rebuilt the
-    comparison dtype with ``np.dtype([(name, inner_dtype), ...], align=True)``,
-    but numpy's ``align=True`` respects the *inner* dtype's own alignment.
-    When the inner is itself packed (the default), it stays packed with
-    alignment 1, and the outer aligned reconstruction happens to match
-    the original packed layout. The JIT then produced garbage because a
-    C compiler aligns the inner to its natural 8-byte boundary.
+    numpy's ``align=True`` keeps a packed inner record packed (alignment 1),
+    where a C compiler aligns it to 8 bytes. Regression:
+    ``_is_c_compatible_layout`` compared the layout with an ``align=True``
+    rebuild, which matched the packed one, and the kernel read the wrong offsets.
     """
     if _IS_SSGB7:
         pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
@@ -2010,7 +1947,7 @@ def test_packed_nested_record_layout_skips_jit():
     # numpy itemsize 20 (flag@0, coord@4); C would pick 24 (flag@0, pad, coord@8).
     assert spec.itemsize == 20
     udt = dtypes.register_anonymous(spec, "_PackedNestedUdt")
-    assert udt.jit_c_name is None  # JIT must be skipped
+    assert udt.jit_c_name is None
     assert udt.jit_c_definition is None
 
 
@@ -2068,11 +2005,8 @@ def test_nested_record_udt_jits():
         pytest.skip("jit_c_definition introspection requires SuiteSparse:GraphBLAS >= 9")
     _require_jit_on()
 
-    # ``align=True`` is required for mixed-width fields so numpy's offsets
-    # match what a C compiler would produce. Without it, the JIT kernel
-    # would read fields at the wrong offsets and produce garbage; the
-    # codegen now refuses JIT in that case but the test wants the JIT path
-    # exercised.
+    # ``align=True``, so numpy's offsets match a C compiler's: a packed record
+    # gets no C definition (test_packed_nested_record_layout_skips_jit).
     spec = np.dtype(
         [
             ("nest_flag", np.int32),
@@ -2118,18 +2052,14 @@ def test_nested_record_udt_jits():
 
 @pytest.mark.slow
 @pytest.mark.skipif("not supports_udfs")
-# SS < 9 has no GrB_NAME setter, so registration falls back to storing the
-# numpy repr in the type name and warns when it does not fit in 128 chars.
-# This dtype's repr is 141; how it serializes is not what the test is about.
+# 141-char numpy repr; see test_udt_eq_nested_record_with_nan_leaf in test_op.py.
 @pytest.mark.filterwarnings("ignore:UDT repr is too large")
 def test_nested_record_monoid_semiring_agg():
-    r"""Built-in monoid/semiring/agg auto-lift on nested record UDTs.
+    r"""Built-in Monoids, Semirings and Aggregators lift to a nested record UDT.
 
-    Regression: ``_udt_identity`` flattened nested-record fields by calling
-    ``_scalar_identity`` directly on each field, but for a record-valued
-    field that returned ``numpy.void(b'\x00')`` (uninitialized bytes), and
-    ``Scalar.value =`` then choked. Recurse into nested records so the
-    identity tuple matches the dtype's nested shape.
+    The identity has the record's nested shape. Regression: ``_udt_identity``
+    gave a record field the identity ``numpy.void(b'\x00')``, which
+    ``Scalar.value`` rejected.
     """
     spec = np.dtype(
         [
@@ -2277,7 +2207,6 @@ def test_eq_ne_udt_jit_matches_cfunc(shape):
         v1[i] = a
         v2[i] = b
 
-    # The C kernel must actually be set, not None (i.e. JIT path is engaged).
     assert binary.eq[udt].jit_c_source is not None
     assert binary.ne[udt].jit_c_source is not None
 
@@ -2306,10 +2235,10 @@ def test_eq_ne_udt_jit_matches_cfunc(shape):
 def test_eq_ne_udt_cfunc_works_for_unrepresentable_dtypes():
     """``binary.eq`` cfunc path produces correct results on UDTs that can't take JIT.
 
-    The udt-level skip is pinned by ``test_packed_record_layout_skips_jit``
-    and ``test_udt_with_c_reserved_field_name_falls_back_to_cfunc``; this
-    test pins that the eq codegen (separate from plus codegen) still
-    handles those UDTs end-to-end.
+    ``test_packed_record_layout_skips_jit`` and, in ``test_dtype.py``,
+    ``test_udt_with_c_reserved_field_name_falls_back_to_cfunc`` check that such
+    UDTs get no C definition; this checks that ``eq``, whose codegen is separate
+    from that of ``plus``, still computes on them.
     """
     if _IS_SSGB7:
         pytest.skip("JIT requires SuiteSparse:GraphBLAS >= 8")
@@ -2333,8 +2262,7 @@ def test_udt_scalar_broadcast_jit_routing():
     """Mixed UDT and scalar arithmetic gets a C definition with a type for each of z, x
     and y; eq/ne on a mixed pair, and ops that have no C form, keep the cfunc.
 
-    This test pins that routing so a future change doesn't accidentally regress it (either
-    direction is fine, but it should be a conscious decision).
+    Changing this routing, in either direction, should be a deliberate decision.
     """
     if not _has_jit_set:
         # Without the SS 9 string setters, jit_c_source is None for every op,
@@ -2398,8 +2326,8 @@ def test_udt_mixed_jit_c_source():
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_mixed_jit_c_name_is_its_own():
     """A mixed op's C name is not a one-type op's on a UDT named like the pair, nor another
-    pair's. SuiteSparse finds a compiled kernel by its op's name, so the second op ran the
-    first's kernel: wrong values, or writes past the end of a smaller element.
+    pair's. SuiteSparse finds a compiled kernel by its op's name. Regression: the second op
+    ran the first's kernel, giving wrong values or writing past the end of a smaller element.
     """
     if not _has_jit_set:
         pytest.skip("requires SuiteSparse:GraphBLAS >= 9")
@@ -2650,15 +2578,15 @@ def test_udt_jit_c_name_too_long_keeps_the_cfunc():
 def test_udt_field_named_like_a_standard_macro_skips_the_jit():
     """A field named like a macro of the C standard headers the JIT includes skips the JIT.
 
-    The preprocessor expands it inside the struct, so the kernel did not compile:
-    SuiteSparse raised ``JitError`` (with no message) for that op and set
-    ``jit_c_control`` to 'load' for the rest of the process. Asked of the C name
-    only, so nothing compiles here.
+    The preprocessor would expand it inside the struct. Regression: the kernel did not
+    compile, so SuiteSparse raised ``JitError`` (with no message) for that op and set
+    ``jit_c_control`` to 'load' for the rest of the process. The test checks the C name
+    and the warning, so nothing compiles here.
     """
     from graphblas.exceptions import NoJITWarning
 
     fields = ["INT_MAX", "UINT8_MAX", "SIZE_MAX", "BUFSIZ", "EXIT_FAILURE", "PRId64", "EDOM"]
-    # <signal.h> and GraphBLAS's own macros, as GrB_INDEX_MAX, failed the same way
+    # Macros from <signal.h>, and GraphBLAS's own, such as GrB_INDEX_MAX
     fields += ["SIGINT", "SIG_DFL", "GrB_INDEX_MAX", "GxB_IMPLEMENTATION_MAJOR", "GB_ANY"]
     for i, field in enumerate(fields):
         record = np.dtype([(field, np.float64), (f"macro_other_{i}", np.float64)], align=True)
@@ -2675,10 +2603,10 @@ def test_udt_field_named_like_a_standard_macro_skips_the_jit():
 def test_udt_named_like_an_identifier_in_the_kernel_takes_the_jit():
     """A UDT named like an identifier in a JIT kernel compiles, under its ``gbudt_`` C name.
 
-    SuiteSparse's kernels name the type beside their own identifiers. A UDT named like a
-    parameter of our op definitions (``z``), a local of its templates (``A``, ``p``, ``i``,
-    ``result``) or something its headers declare (``div``) failed to compile: an empty
-    ``JitError``, and 'load' for the rest of the process.
+    SuiteSparse's kernels use the type's name in the same scope as their own identifiers.
+    Regression: a UDT named like a parameter of our op definitions (``z``), a local of its
+    templates (``A``, ``p``, ``i``, ``result``) or something its headers declare (``div``)
+    failed to compile, with an empty ``JitError`` and 'load' for the rest of the process.
     """
     _require_jit_on()
     for name in ["z", "A", "p", "i", "div", "result"]:
@@ -2703,10 +2631,10 @@ def test_udt_named_like_an_identifier_in_the_kernel_takes_the_jit():
 def test_udt_long_name_gets_a_c_name_that_fits():
     """A UDT whose ``gbudt_`` C name would not leave room for its ops' names gets a synthetic one.
 
-    SuiteSparse refuses a name of 128 characters or more. A type with such a name was kept
-    with an empty one, so its first kernel, a transpose say, raised ``JitError``; and with a
-    C name of 119 to 127 characters, ``floordiv_`` or ``plus_`` and it did not fit, so the
-    op lost its JIT with a NoJITWarning that blamed the fields.
+    SuiteSparse refuses a name of 128 characters or more. Regression: a type with such a
+    name was kept with an empty one, so its first kernel, a transpose say, raised
+    ``JitError``; and with a C name of 119 to 127 characters, ``floordiv_`` or ``plus_`` and
+    it did not fit, so the op lost its JIT with a NoJITWarning that blamed the fields.
     """
     from graphblas.core.operator.udt_codegen import _max_type_c_name_len
 
@@ -2747,9 +2675,9 @@ def test_udt_c_name_keeps_python_graphblas_own_names():
 def test_udt_from_c_source_lifts_ops_under_its_own_c_name():
     """An op lifted to a type registered from C source names the type as its C source does.
 
-    The prefix that keeps a numpy UDT's C name clear of kernel identifiers was also put on
-    a C-source type's name, so ``binary.plus[t]`` defined ``plus_gbudt_cpt_t`` on a type
-    ``gbudt_cpt_t`` that SuiteSparse does not know: ``JitError``, then 'load'.
+    Regression: the ``gbudt_`` prefix that keeps a numpy UDT's C name clear of kernel
+    identifiers was also put on a C-source type's name, so ``binary.plus[t]`` was defined
+    on a type SuiteSparse does not know, raising ``JitError`` and leaving 'load'.
     """
     _require_jit_on()
     np_type = np.dtype([("cs_x", np.float64), ("cs_y", np.float64)], align=True)
