@@ -319,9 +319,10 @@ def test_thread3_edge_cases():
         xp.tensordot(i32, i8, axes=1), np.tensordot(i32.todense(), i8.todense(), axes=1)
     )
     inf = make(np.array([[np.inf, 1.0], [2.0, np.inf]]), np.inf)
-    assert_array_equal(
-        xp.tensordot(inf, i32, axes=1), np.tensordot(inf.todense(), i32.todense(), axes=1)
-    )
+    # (no 0 * inf term here, but OpenBLAS on x86-64 Linux raises the invalid flag for it)
+    with np.errstate(invalid="ignore"):
+        expected = np.tensordot(inf.todense(), i32.todense(), axes=1)
+    assert_array_equal(xp.tensordot(inf, i32, axes=1), expected)
     # both operands broadcast: an outer product of the entries, under the limit
     u, v = make(np.ones((3, 1, 4)), 0.0), make(np.ones((5, 4)), 0.0)
     assert_array_equal(xp.vecdot(u, v), np.vecdot(u.todense(), v.todense()))
