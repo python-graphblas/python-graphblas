@@ -91,9 +91,9 @@ path, SuiteSparse writes a kernel's C source but cannot compile it.
 
 Importing ``graphblas.ss``, which the first access of ``gb.ss`` does, repairs the setting
 when the path does not exist. It takes a compiler from ``$CONDA_PREFIX/bin`` (on Windows,
-``$CONDA_PREFIX/Library/bin``), and fixes the compiler flags that refer to the build
-machine: a ``-isysroot`` whose SDK is missing is pointed at this machine's SDK, or dropped
-if there is none, and ``-arch`` for another architecture and ``-fdebug-prefix-map`` are
+``$CONDA_PREFIX/Library/bin``) and fixes the compiler flags that refer to the build
+machine. A ``-isysroot`` whose SDK is missing is pointed at this machine's SDK, or dropped
+if there is none. ``-arch`` for another architecture and ``-fdebug-prefix-map`` are
 dropped. Outside conda, it takes the compiler and flags ``sysconfig`` names. The import
 changes nothing else; in particular it leaves ``jit_c_control`` alone.
 
