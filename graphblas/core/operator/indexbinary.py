@@ -29,8 +29,8 @@ ffi_new = ffi.new
 
 def _rebind_indexbinaryop(parent, type_, theta):
     # ``type_`` is the key from ``_ibo_types_key``, and ``theta`` the value that was
-    # bound. A value for a UDT thunk becomes a Scalar of that UDT, as it would in
-    # ``__call__`` too.
+    # bound. A value for a UDT thunk becomes a Scalar of that UDT here, but ``__call__``
+    # does the same, so this is redundant.
     typed = parent[type_]
     thunk_type = typed.thunk_type
     if thunk_type._is_udt and not isinstance(theta, (int, float, bool, complex)):
@@ -163,7 +163,10 @@ def _ibo_types_key(op):
 
 
 class _TypedIndexBinaryOpMixin:
-    """Theta type, repr and pickle for a typed IndexBinaryOp, whose theta type can differ."""
+    """Theta type, repr and pickle for a typed IndexBinaryOp.
+
+    Its theta type can differ from its input types.
+    """
 
     __slots__ = ()
 
@@ -603,7 +606,7 @@ class IndexBinaryOp(OpBase):
         Examples
         --------
         >>> def index_dist(x, ix, jx, y, iy, jy, theta):
-        >>>     return max(ix, iy) - min(ix, iy)
+        ...     return max(ix, iy) - min(ix, iy)
         >>> gb.indexbinary.register_new("index_dist", index_dist)
 
         """

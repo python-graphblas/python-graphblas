@@ -244,6 +244,7 @@ class IndexUnaryOp(OpBase):
             is the row index of the Matrix or the index of the Vector, the third
             argument (uint64) is the column index of the Matrix or 0 for a Vector,
             and the fourth argument (any dtype) is the value of the input Scalar.
+            The indices are unsigned, so ``i - j`` wraps when ``j`` is larger.
         name : str, optional
             The name of the operator. This *does not* show up as ``gb.indexunary.{name}``.
         parameterized : bool, default False
@@ -294,6 +295,7 @@ class IndexUnaryOp(OpBase):
             is the row index of the Matrix or the index of the Vector, the third
             argument (uint64) is the column index of the Matrix or 0 for a Vector,
             and the fourth argument (any dtype) is the value of the input Scalar.
+            The indices are unsigned, so ``i - j`` wraps when ``j`` is larger.
         parameterized : bool, default False
             When True, create a parameterized user-defined operator, which means
             additional parameters can be "baked into" the operator when used.

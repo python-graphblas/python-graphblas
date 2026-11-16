@@ -70,7 +70,7 @@ def _resolve_expr(expr, callname, opname):
 
 
 def _index_bound(literal, thunk, name):
-    """Return the thunk and op name that select the indices comparing ``name`` with a bound.
+    """Return the thunk and op name that select the indices ``i`` for which ``i <name> bound``.
 
     ``name`` is lt, le, gt or ge. The bound is the number the caller gave (``literal``),
     or else the value of the thunk Scalar. The number is used because the comparison
@@ -92,7 +92,8 @@ def _index_bound(literal, thunk, name):
     if shift:
         name = "le" if name == "lt" else "gt"
     # A Scalar expression (``w[0]``), a 0-d array or ``np.True_`` is not a
-    # ``numbers.Real``. The thunk kept its type for one, so the thunk's value is the bound.
+    # ``numbers.Real``. For any of these, the thunk kept its own type, so its value is the
+    # bound.
     if isinstance(literal, numbers.Real):
         bound = literal
     elif getattr(thunk, "_is_scalar", False):

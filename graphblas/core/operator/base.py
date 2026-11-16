@@ -281,8 +281,10 @@ class ParameterizedUdf:
     __slots__ = "name", "__call__", "_anonymous", "__weakref__"
     is_positional = False
     _custom_dtype = None
-    # The OpBase subclass this parameterizes, such as UnaryOp for ParameterizedUnaryOp.
-    # Each module sets it after defining that class, which comes later in the module.
+    # The OpBase subclass this parameterizes, for ``__reduce__`` and ``_deserialize``:
+    # UnaryOp for ParameterizedUnaryOp, and so on. unary.py, binary.py, indexunary.py,
+    # select.py and indexbinary.py set it after defining that class. ParameterizedMonoid
+    # and ParameterizedSemiring pickle on their own and leave it None.
     _op_class = None
 
     def __init__(self, name, anonymous):

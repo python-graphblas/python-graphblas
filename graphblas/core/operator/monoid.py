@@ -82,8 +82,8 @@ def _udt_identity_np(monoid_name, np_type, top_dtype):
     if np_type.subdtype is not None:
         base_dtype, shape = np_type.subdtype
         val = _scalar_identity(monoid_name, base_dtype)
-        # Unreachable: the binary op compiles first, and min and max refuse arrays of
-        # other than real numbers
+        # Unreachable: the binary op compiles first, and min and max refuse arrays whose
+        # elements are not real numbers
         if val is None:  # pragma: no cover (safety)
             raise KeyError(
                 f"monoid.{monoid_name} does not work with {top_dtype}: "
@@ -160,8 +160,10 @@ class TypedUserMonoid(_BinaryopJitDelegate, TypedOpBase):
     __slots__ = "binaryop", "identity"
     opclass = "Monoid"
     is_commutative = True
-    # Not ``_owns_gb_obj``, so the GrB_Monoid is never freed. The leak is bounded: a
-    # Monoid caches its typed ops (``_typed_ops``, ``_udt_ops``).
+    # Not ``_owns_gb_obj``, so the GrB_Monoid is never freed, though ``GrB_Monoid_free``
+    # does not read the BinaryOp and no reason to keep it is known. Each Monoid made and
+    # dropped (an anonymous one, or a parameterized one past its cache) leaks one handle
+    # per type.
 
     def __init__(self, parent, name, type_, return_type, gb_obj, binaryop, identity):
         super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}")

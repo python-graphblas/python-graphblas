@@ -94,7 +94,8 @@ class TypedUserSemiring(_BinaryopJitDelegate, TypedOpBase):
     # ``semi.monoid``
     __slots__ = "monoid", "binaryop"
     opclass = "Semiring"
-    # Not ``_owns_gb_obj``, as for ``TypedUserMonoid``
+    # Not ``_owns_gb_obj``, as for ``TypedUserMonoid``; ``GrB_Semiring_free`` does not
+    # read the monoid or BinaryOp either
 
     def __init__(self, parent, name, type_, return_type, gb_obj, monoid, binaryop, dtype2=None):
         super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}", dtype2=dtype2)
