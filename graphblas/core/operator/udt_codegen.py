@@ -46,6 +46,12 @@ _codegen_counter = itertools.count(1)
 def _compile_codegen(src, *, func_name, source_label, extra_ns=None):
     """Compile generated Python source ``src`` and return its function ``func_name``.
 
+    The operators are generated as source because Numba types a record field
+    access only by a constant name: a loop over the field names does not type.
+    Each leaf's expression also depends on its types (its casts, and the forms
+    of ``min``, ``max`` and ``//``), so each layout and op gets a function body
+    of its own.
+
     Unlike a bare ``exec``, it raises ``RuntimeError`` with the source attached
     when the source does not parse, and it registers the source with
     ``linecache`` under a readable name (``source_label`` and a counter), so

@@ -651,9 +651,9 @@ def _converted_to(operand, dtype, **new_kwargs):
 
     It adds ``dtype``'s zero (:func:`_plus_zero`) on the left with the lifted
     ``plus``. With the zero on the left, the result is ``dtype`` itself even
-    when the operand has the same element types in another layout (a packed
-    and an aligned record), because the left operand's type is the result type
-    when it has the result's element types (:func:`_udt_op_types`).
+    when the operand has the same element types with other field offsets (a
+    packed and an aligned record), because the left operand's type is the
+    result type when it has the result's element types (:func:`_udt_op_types`).
     """
     from .. import binary
 
