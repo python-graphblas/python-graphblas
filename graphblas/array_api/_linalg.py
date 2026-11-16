@@ -252,7 +252,11 @@ def _dense(func, shape, *arrays):
     for x in arrays:
         _utils.check_dense(x.size, what)
     _utils.check_dense(math.prod(shape), what)
-    out = np.asarray(func(*[x.todense() for x in arrays]))
+    # No floating-point warnings, as on the namespace's other numpy paths: the GraphBLAS paths
+    # never warn, so whether a contraction warned would depend on the fills. (A 0 * inf term
+    # here is NaN as in numpy, and some BLAS kernels raise the invalid flag without one.)
+    with np.errstate(all="ignore"):
+        out = np.asarray(func(*[x.todense() for x in arrays]))
     return _from_numpy(out)
 
 
