@@ -2131,7 +2131,8 @@ def test_udt_return_type_errors():
 def test_udt_udf_missing_field():
     """Reading a field the record does not have raises UdfParseError, by name or attribute.
 
-    Numba raises a bare KeyError for the attribute form.
+    For the attribute form Numba raises a bare KeyError, wrapped in a TypingError before
+    Numba 0.59; either way the error names the field.
     """
     udt = dtypes.register_anonymous({"mf_a": FP64, "mf_pt": {"mf_x": FP64}}, "_MissingFieldUDT")
     funcs = [
