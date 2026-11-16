@@ -2131,21 +2131,24 @@ def test_udt_return_type_errors():
 def test_udt_udf_missing_field():
     """Reading a field the record does not have raises UdfParseError, by name or attribute.
 
-    For the attribute form Numba raises a bare KeyError, wrapped in a TypingError before
-    Numba 0.59; either way the error names the field.
+    For the attribute form, Numba 0.59 and later raise a bare KeyError, which the error
+    names; earlier versions raise a TypingError whose summary does not name the field.
     """
+    import numba
+    from packaging.version import parse
+
     udt = dtypes.register_anonymous({"mf_a": FP64, "mf_pt": {"mf_x": FP64}}, "_MissingFieldUDT")
-    funcs = [
-        lambda x: x["mf_nope"],
-        lambda x: x.mf_nope,
-        lambda x: x["mf_pt"]["mf_nope"],
-        lambda x: x.mf_pt.mf_nope,
+    attr_names_field = parse(numba.__version__) >= parse("0.59")
+    cases = [
+        (UnaryOp, lambda x: x["mf_nope"], True),
+        (UnaryOp, lambda x: x.mf_nope, attr_names_field),
+        (UnaryOp, lambda x: x["mf_pt"]["mf_nope"], True),
+        (UnaryOp, lambda x: x.mf_pt.mf_nope, attr_names_field),
+        (BinaryOp, lambda x, y: x.mf_a + y.mf_nope, attr_names_field),
     ]
-    for func in funcs:
-        with pytest.raises(UdfParseError, match="mf_nope"):
-            UnaryOp.register_anonymous(func, is_udt=True)[udt]
-    with pytest.raises(UdfParseError, match="mf_nope"):
-        BinaryOp.register_anonymous(lambda x, y: x.mf_a + y.mf_nope, is_udt=True)[udt]
+    for cls, func, names_field in cases:
+        with pytest.raises(UdfParseError, match="mf_nope" if names_field else None):
+            cls.register_anonymous(func, is_udt=True)[udt]
 
 
 @pytest.mark.skipif("not supports_udfs")

@@ -95,9 +95,9 @@ class UdfParseError(GraphblasException):
 
     Registering a function for built-in types raises it when Numba can compile the
     function for none of them. With ``is_udt=True``, it is raised when the operator is
-    compiled for the operand types, with a message that names the problem, such
-    as a field the record does not have, or a return value that does not fit the
-    result type. See :ref:`tn_udf_compile` and :ref:`tn_udt_udf_returns`.
+    compiled for the operand types, for example for a field the record does not have,
+    or for a return value that does not fit the result type. See :ref:`tn_udf_compile`
+    and :ref:`tn_udt_udf_returns`.
     """
 
 

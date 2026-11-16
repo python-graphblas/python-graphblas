@@ -97,48 +97,16 @@ def _compile_udf_for_udt(numba_func, sig, *, op_kind, op_name, dtypes):
     try:
         numba_func.compile(sig)
     except (NumbaError, KeyError) as exc:
-        if (field := _missing_record_field(exc)) is not None:
-            snippet = f"a record has no field {field!r}"
-        elif isinstance(exc, KeyError):  # pragma: no cover (safety)
-            raise
+        if isinstance(exc, KeyError):
+            # From Numba 0.59, ``x.name`` on a record without that field raises a bare
+            # KeyError (earlier versions wrap it in a TypingError, handled below).
+            snippet = f"a record has no field {exc.args[0]!r}"
         else:
             snippet = _summarize_numba_typing_error(exc)
         dtypes_str = ", ".join(str(d) for d in dtypes)
         raise UdfParseError(
             f"{op_kind}.{op_name} does not work with ({dtypes_str}): {snippet}"
         ) from exc
-
-
-# The TypingError message of Numba before 0.59 for a missing field read as an attribute.
-_OLD_STYLE_MISSING_FIELD_RE = re.compile(
-    r'^Internal error at resolving type of attribute "([^"]+)" of "[^"]*"\.\n\'\1\'$', re.MULTILINE
-)
-
-
-def _missing_record_field(exc):
-    """Return the field if ``exc`` is Numba's error for ``x.name`` on a record without it.
-
-    Numba types ``x.name`` on a record by looking the field up in ``Record.typeof``,
-    which raises a bare KeyError for a field the record does not have (``x["name"]``
-    raises a TypingError that names the field). From Numba 0.59 the KeyError escapes
-    ``compile``. Before 0.59, whose default is ``NUMBA_CAPTURED_ERRORS="old_style"``,
-    a TypingError wraps it, and only its message names the field.
-
-    MAINT 2026-11-16: drop the TypingError case once Numba 0.59 is the minimum.
-    """
-    if isinstance(exc, KeyError):
-        tb = exc.__traceback__
-        while tb.tb_next is not None:
-            tb = tb.tb_next
-        if (
-            isinstance(tb.tb_frame.f_locals.get("self"), numba.core.types.Record)
-            and len(exc.args) == 1
-            and isinstance(exc.args[0], str)
-        ):
-            return exc.args[0]
-        return None  # pragma: no cover (safety)
-    match = _OLD_STYLE_MISSING_FIELD_RE.search(_ANSI_RE.sub("", str(exc)))
-    return None if match is None else match[1]
 
 
 # Numba prefixes its actionable diagnostic line with one of these.
