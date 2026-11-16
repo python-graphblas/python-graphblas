@@ -10,7 +10,7 @@ from ...exceptions import EmptyObject, UdfParseError, check_status_carg
 from .. import _has_numba, ffi, lib
 from ..dtypes import _sample_values, unify
 from .base import OpBase, ParameterizedUdf, TypedOpBase
-from .binary import BinaryOp
+from .binary import BinaryOp, TypedBuiltinBinaryOp
 
 _has_idxbinop = hasattr(lib, "GxB_IndexBinaryOp_new")
 
@@ -124,9 +124,7 @@ class _BoundIndexBinaryOp(TypedOpBase):
     is_positional = False
     _custom_dtype = None
 
-    @property
-    def type2(self):
-        return self.type if self._type2 is None else self._type2
+    type2 = TypedBuiltinBinaryOp.type2
 
     def __reduce__(self):
         return (
