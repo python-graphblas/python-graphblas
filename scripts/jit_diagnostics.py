@@ -53,7 +53,6 @@ def main():
         conda_exists = conda_path.exists() if conda_path else False
         print(f"  {name}: which={which}, conda={'yes' if conda_exists else 'no'}")
 
-    # Import graphblas
     try:
         import graphblas as gb
 
@@ -83,7 +82,6 @@ def main():
             val = val[:120] + "..."
         print(f"  {key}: {val}")
 
-    # Check if default compiler exists
     jit_cc = gb.ss.config["jit_c_compiler_name"]
     print("\n--- Compiler path analysis ---")
     print(f"  Default compiler: {jit_cc}")
@@ -97,7 +95,7 @@ def main():
         print(f"  Fallback (cc): {fallback_cc}")
         print(f"  Exists? {fallback_cc.exists()}")
 
-    # Check for problematic flags
+    # Flags that name paths on the build machine
     flags = gb.ss.config["jit_c_compiler_flags"]
     import re
 
@@ -109,11 +107,10 @@ def main():
     for d in fdebug:
         print(f"  -fdebug-prefix-map: {d}")
 
-    # Try the fix
     print("\n--- Attempting gb.ss.fix_jit_config ---")
     result = gb.ss.fix_jit_config()
-    # True=JIT working, False=probe failed, None=no conda env
-    desc = "working" if result is True else "probe failed" if result is False else "no conda"
+    # None: no compiler to repair from (no conda environment, and no sysconfig CC)
+    desc = "working" if result is True else "probe failed" if result is False else "no compiler"
     print(f"  Result: {result} ({desc})")
     if result is True:
         print(f"  Compiler: {gb.ss.config['jit_c_compiler_name']}")
@@ -122,7 +119,6 @@ def main():
             flags_after = flags_after[:120] + "..."
         print(f"  Flags: {flags_after}")
 
-    # Try JIT compilation
     print("\n--- JIT compilation test ---")
     if gb.ss.config["jit_c_control"] == "off":
         print("  SKIPPED (JIT is off)")
@@ -147,7 +143,6 @@ def main():
             except Exception:
                 pass
 
-    # Print final JIT state
     print("\n--- Final JIT state ---")
     print(f"  jit_c_control: {gb.ss.config['jit_c_control']}")
     print(f"  jit_c_compiler_name: {gb.ss.config['jit_c_compiler_name']}")

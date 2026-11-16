@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 """Import every module of graphblas, each as the first import of a fresh Python process.
 
-Importing all of them in one process is not enough. Once one module has loaded, so has
-everything it imports, and an import cycle that breaks only when a module is the first
-one imported goes unnoticed: ``import graphblas.core.dtypes`` failed that way. So each
-module, and each statement in ``STATEMENTS``, runs in its own process, several at a time.
+Importing all of them in one process is not enough: once one module has loaded, so has
+everything it imports, and an import cycle that breaks only when a module is imported
+first goes unnoticed. So each module, and each statement in ``STATEMENTS``, runs in its
+own process, several at a time.
 
 Run it from the root of the repository, as ``python scripts/test_imports.py``: like
 ``python -c``, it imports graphblas from the current directory when it is there.

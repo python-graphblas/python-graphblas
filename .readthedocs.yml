@@ -6,8 +6,8 @@ sphinx:
   configuration: docs/conf.py
   fail_on_warning: True
 
-# Read the Docs dropped the ubuntu-20.04 image, and mambaforge is superseded by
-# miniforge3 (whose conda solves with libmamba anyway). Valid values are listed at:
+# miniforge3 replaces the deprecated mambaforge; its conda solves with libmamba.
+# Valid values are listed at:
 # https://docs.readthedocs.io/en/stable/config-file/v2.html#build-tools-python
 build:
   os: "ubuntu-24.04"

@@ -4,7 +4,7 @@
 `ci_pick_versions.py --validate` proves the picker agrees with the constraints it
 documents. It cannot notice when a constraint has drifted from reality: a pin that
 never had a build for a Python we test, or a ceiling table that a new release moved.
-This script checks the pools and tables against what the packages actually declare.
+This script checks the pools and tables against what the packages declare.
 
 The picker's rules are written for conda-forge, which is what CI installs from, so
 treat PyPI as a fast proxy and `audit_conda_versions.py` as the authority. Anything
@@ -121,7 +121,7 @@ def supports_python(dep, version, pyver):
     """Whether `version` of `dep` can be installed on `pyver`.
 
     Projects that ship compiled wheels are judged by their CPython tags, which is the
-    only signal that catches a release whose requires-python is wide but that simply
+    only signal that catches a release whose requires-python is wide but that was
     never built for this interpreter. Pure-Python projects are judged by requires-python.
     """
     info = releases(dep)[version]
@@ -193,7 +193,7 @@ def note_pypi_python_gaps():
 
 
 def check_ceiling_tables():
-    """A ceiling row must never sit above the cap the release actually declares.
+    """A ceiling row must never sit above the cap the release declares.
 
     A row above the real cap lets through a pairing that breaks; a row below it is
     conservative, which is often deliberate, so that is reported as a note instead.
@@ -293,8 +293,8 @@ def check_python_floor_tables():
 def check_sampled_picks(samples):
     """Run the picker and check what it emits against each release's own metadata.
 
-    Only two pins can truly conflict: conda backs an unpinned package off to something
-    compatible, so an unpinned dep beside a pinned numpy is not a finding.
+    Only two pins can conflict: conda backs an unpinned package off to a compatible
+    version, so an unpinned dependency with a pinned numpy is not a finding.
     """
     problems = set()
     for pyver in picker.NUMPY_VERSIONS:

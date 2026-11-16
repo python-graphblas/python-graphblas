@@ -1,7 +1,8 @@
 name: Security
 
 # Run the security hooks of .pre-commit-config.yaml, with its versions and arguments, where
-# pre-commit.ci cannot: with network access, and weekly, for advisories published since.
+# pre-commit.ci cannot: with network access. The weekly run catches advisories published
+# after the last change.
 on:
   pull_request:
     paths:
