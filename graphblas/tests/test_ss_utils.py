@@ -24,12 +24,11 @@ except ImportError:  # pragma: no cover (import)
     can_unclaim_buffer = empty = None
 
 
-# ``from_coo`` with all-equal values used to come back iso, because SuiteSparse
-# checked after a build whether every value was the same. 10.5.0 dropped that
-# check ("GrB_Matrix_build and GrB_Vector_build: no longer do a post-iso
-# check"), so the iso arm of these tests has to ask for iso outright.
-# ``ss.build_scalar`` does, and produces the same storage formats on every
-# version, which is what the tests below are really selecting for.
+# SuiteSparse:GraphBLAS 10.5.0 and later do not check after a build whether
+# every value is the same (its changelog: "GrB_Matrix_build and GrB_Vector_build:
+# no longer do a post-iso check"), so ``from_coo`` with equal values is not iso
+# there, as it is on earlier versions. ``ss.build_scalar`` builds iso on every
+# version, in the same storage formats that the tests below select.
 def _iso_vector(indices, value, size):
     v = Vector(int, size)
     v.ss.build_scalar(indices, value)
@@ -237,7 +236,8 @@ def test_about():
     with pytest.raises(KeyError):
         about["badkey"]
     assert "SuiteSparse" in about["library_name"]
-    # SS:GraphBLAS 10.5.2 made the GPU modes aliases of these; neither may read as a GPU mode
+    # Not a GPU mode, which SuiteSparse:GraphBLAS 10.5.2 makes an alias of these
+    # (see ``About._modes``)
     assert about["mode"] == ("blocking" if gb._init_params["blocking"] else "nonblocking")
     with pytest.raises(TypeError):
         del about["library_name"]  # pylint: disable=unsupported-delete-operation
@@ -245,12 +245,9 @@ def test_about():
 
 
 def test_openmp_enabled():
-    # A SuiteSparse:GraphBLAS built without OpenMP is single-threaded, which is
-    # a large and entirely silent performance loss: nothing else about the
-    # library reports it, and the conda package still depends on an OpenMP
-    # runtime whether or not the build actually found one. Keep this assertion
-    # hard; it is how the conda-forge osx-arm64 regression in graphblas 10.5.0
-    # was noticed.
+    # A SuiteSparse:GraphBLAS built without OpenMP runs single-threaded, and
+    # nothing else reports it. Keep this a hard failure: it caught the conda-forge
+    # osx-arm64 build of graphblas 10.5.0 that lacked OpenMP.
     assert gb.ss.about["openmp"], (
         "libgraphblas was built without OpenMP and will run single-threaded. "
         "This is a defect in the installed build, not in python-graphblas. "
@@ -266,7 +263,7 @@ def test_global_config(monkeypatch):
     if "jit_c_control" in config:  # SuiteSparse:GraphBLAS 8+
         from graphblas.core.ss import jit_config
 
-        # Writing jit_c_control also sets whether UDT work keeps a "run"; undo that after
+        # Writing jit_c_control also sets ``_user_set_run``; restore it afterwards
         monkeypatch.setattr(jit_config, "_user_set_run", jit_config._user_set_run)
     for k in config:
         d[k] = config[k]
@@ -291,8 +288,8 @@ def test_global_config(monkeypatch):
         if k in config._defaults:
             config[k] = None
         elif k == "jit_c_control":
-            # None is the default "run" whatever graphblas.config has, and not a "run"
-            # the user chose, so UDT work may still raise it to "on"
+            # None sets the default "run", whatever graphblas.config has, so compiling a
+            # C definition may still raise it to "on"
             config[k] = None
             assert config[k] == "run"
             assert jit_config._user_set_run is False
@@ -307,13 +304,13 @@ def test_global_config(monkeypatch):
 
 def test_global_config_key_completions():
     # IPython offers these for `config[<tab>]`, so they must be the keys that
-    # actually resolve, not the attributes of the mapping object.
+    # resolve, not the attributes of the mapping object.
     config = gb.ss.config
     completions = config._ipython_key_completions_()
     assert set(completions) == set(config._options)
     for key in completions:
         config[key]
-    # About aliases the same hook onto its own __iter__ (gb.ss.about[<tab>])
+    # About uses the same hook, for gb.ss.about[<tab>]
     about = gb.ss.about
     completions = about._ipython_key_completions_()
     assert set(completions) == set(about)
@@ -322,8 +319,8 @@ def test_global_config_key_completions():
 
 
 def test_global_config_attribute_assignment_raises():
-    # Attribute assignment used to create a dead instance attribute and leave
-    # the real config unchanged; now it raises and points at item assignment.
+    # Attribute assignment raises and points to item assignment, rather than
+    # creating an instance attribute that leaves the option alone.
     config = gb.ss.config
     before = config["nthreads"]
     with pytest.raises(AttributeError, match="item assignment"):
@@ -332,7 +329,7 @@ def test_global_config_attribute_assignment_raises():
     assert "nthreads" not in config.__dict__
     with pytest.raises(AttributeError, match="Unknown config option 'nthread'"):
         config.nthread = before + 1
-    # Item assignment is the supported write and still works
+    # Item assignment works
     config["nthreads"] = before + 1
     assert config["nthreads"] == before + 1
     config["nthreads"] = before
@@ -353,7 +350,7 @@ def test_object_config_attribute_assignment_raises():
     with pytest.raises(AttributeError, match="item assignment"):
         A.ss.config.format = "by_col"
     assert A.ss.config["format"] == "by_row"
-    # Item assignment is the supported write and still works
+    # Item assignment works
     v.ss.config["sparsity_control"] = "bitmap"
     assert v.ss.config["sparsity_control"] == {"bitmap"}
     v.ss.config["sparsity_control"] = "auto"
@@ -470,8 +467,8 @@ def _libc_arena():
 @pytest.mark.skipif("sys.platform == 'win32'")  # no ``ctypes.CDLL(None)``
 def test_take_ownership_of_foreign_memory():
     # These arrays own their data, but GraphBLAS would free it with NumPy's
-    # allocator, so it must copy them. It used to take them, and then the
-    # process aborted when GraphBLAS freed one (NumPy >=2.5, PYTHONMALLOC=debug).
+    # allocator, so it must copy them. Regression: GraphBLAS took them, and the
+    # process aborted when it freed one (NumPy >= 2.5, PYTHONMALLOC=debug).
     k = _libc_arena()
 
     def foreign(values, dtype):
@@ -508,8 +505,8 @@ def test_take_ownership_of_foreign_memory():
 
 
 def test_take_ownership_asks_suitesparse_graphblas(monkeypatch):
-    # Whether GraphBLAS may own an array is up to ``can_unclaim_buffer``
-    # (``owndata`` alone can't tell), even on a suitesparse-graphblas without it
+    # Whether GraphBLAS may take an array is up to ``can_unclaim_buffer``, since
+    # ``owndata`` alone cannot tell
     monkeypatch.setattr(gb.core.utils, "can_unclaim_buffer", lambda array: False)
     v = Vector.from_coo([1, 3], [10, 20], size=5)
     d = v.ss.export("sparse")
@@ -542,7 +539,7 @@ def test_take_ownership_without_can_unclaim_buffer(monkeypatch):
 
 
 def test_distinct_buffers():
-    # (Importing an array given twice is tested in a subprocess, below.)
+    # test_take_ownership_of_one_array_twice imports an array given twice
     a = np.arange(3, dtype=np.uint64)
     b = np.asfortranarray(np.ones((2, 3), np.bool_))
     rv = _distinct_buffers(a, b, a, b)
@@ -557,7 +554,8 @@ def test_distinct_buffers():
 
 def test_ownable_copy_of_nested_subarray_values_is_made_once():
     # Values whose record dtype nests subarrays are viewed with the flattened
-    # dtype. A view of the copy would not own its data, so it was copied again.
+    # dtype before the copy (see ``values_to_numpy_buffer``). Regression: the
+    # view was taken after, and did not own its data, so it was copied again.
     point = np.dtype((np.float64, (3,)))
     layered = np.dtype([("oc_k", np.int64), ("oc_pts", point, (2,))], align=True)
     vals = np.zeros(2**16, layered)
@@ -707,14 +705,15 @@ print("done")
 
 def test_take_ownership_of_one_array_twice():
     # GraphBLAS frees every buffer it takes, so an array given as two arguments
-    # has to be copied for one of them. Only an index array given as the values
-    # was, and an index array given twice was freed twice, crashing the process.
+    # has to be copied for one of them. Regression: only an index array given as
+    # the values was copied, so an index array given twice was freed twice,
+    # crashing the process.
     _run_probe(_ONE_ARRAY_TWICE_PROBE)
 
 
 # Run in a subprocess: a regression frees memory twice, which aborts the process
-# at the second free or later. Arrays over 1 KiB: NumPy caches smaller blocks
-# instead of freeing them, so a double free of those is silent.
+# at the second free or later. The arrays are over 1 KiB because NumPy caches
+# smaller blocks instead of freeing them, so a double free of those is silent.
 _FAILED_SECURE_IMPORT_PROBE = """
 import numpy as np
 
@@ -783,7 +782,7 @@ for take_ownership in [False, True]:
             assert all(owndata), (method, format, owndata)
             fresh = [val for val in make().values() if isinstance(val, np.ndarray)]
             assert all(np.array_equal(a, b) for a, b in zip(arrays, fresh)), (method, format)
-            # A pack leaves the object as it was. GraphBLAS freed it.
+            # A failed pack leaves the object as it was.
             assert obj.isequal(v if format in {"sparse", "bitmap"} else A), (method, format)
             del data, arrays, obj, func
 for _ in range(100):  # use the heap, so a corrupted one aborts here
@@ -794,11 +793,10 @@ print("done")
 
 def test_failed_secure_import_frees_once():
     # GraphBLAS moves the arrays into the object before a secure check, and
-    # frees them with the object when the check fails. The arrays, or the copies
-    # made of them, were unclaimed only after a successful call, so NumPy freed
-    # them a second time, and the process aborted. A secure pack also freed the
-    # packed object itself (a SuiteSparse bug), whose handle Python then used and
-    # freed again; it now checks the data with a secure import into a new object.
+    # frees them with the object when the check fails, so they must be unclaimed
+    # after a failed call too. A secure pack must leave the object alone (see
+    # ``_pack_securely``). Regression: NumPy freed the arrays a second time, and
+    # the process aborted.
     _run_probe(_FAILED_SECURE_IMPORT_PROBE)
 
 

@@ -83,11 +83,10 @@ def html_printer(x, name="", indent=4):
 
 @pytest.fixture(autouse=True)
 def _stable_repr_width(monkeypatch):
-    """Pin terminal width so pandas-rendered reprs are deterministic.
+    """Set the terminal width to the 80 columns that the expected reprs assume.
 
-    Matrix/Vector reprs let pandas truncate columns to the terminal width, and
-    the expected strings assume 80. Under ``pytest -n`` workers inherit the
-    launching terminal's width, so a wide terminal would show extra columns.
+    pandas fits Matrix and Vector reprs to the terminal width; see the ``COLUMNS``
+    comment in conftest.py.
     """
     monkeypatch.setenv("COLUMNS", "80")
 
@@ -5090,10 +5089,9 @@ def test_empty():
 
 @pytest.mark.skipif("not pd")
 def test_vector_as_matrix():
-    # Built iso outright: the repr asserted below names the format, and
-    # SuiteSparse 10.5.0 no longer infers iso from a build whose values happen
-    # to be equal, so ``from_coo`` would render "bitmapc" on 10.5.0 and
-    # "bitmapc (iso)" on everything older.
+    # Built iso with build_scalar, since the repr below names the format and
+    # from_coo with equal values is not iso on SuiteSparse 10.5 (see
+    # ``_iso_vector`` in test_ss_utils.py)
     v = Vector(int, 2, name="v_A")
     v.ss.build_scalar([1], 2)
     A = v._as_matrix()

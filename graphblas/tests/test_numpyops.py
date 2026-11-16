@@ -54,38 +54,29 @@ def test_bool_doesnt_get_too_large():
 
 
 @pytest.mark.skipif("not supports_udfs")
-# On a broken numba x numpy combo (numba #8478, still within our supported floor)
-# the module sets _fmin_is_float=True and does not populate the integer fmax/fmin
-# identities, so skip rather than KeyError on that config.
+# With numba and numpy versions that have numba issue #8478, _fmin_is_float is
+# True and fmax and fmin have no integer identities.
 @pytest.mark.skipif("npmonoid._fmin_is_float")
 @pytest.mark.parametrize("dtype", ["INT16", "INT32", "INT64"])
 def test_numpy_fmax_fmin_identity_outside_int8(dtype):
-    # Regression: the fmax identity for INT16/INT32/INT64 was set to int8's min
-    # (-128) instead of the dtype's own min, so a fmax-reduce over values all
-    # below -128 wrongly returned -128 rather than the true maximum. fmin always
-    # used the correct per-dtype max; it is checked here as a control. Only the
-    # mapnumpy=False path (UDF monoids) reads these identities; mapnumpy=True
-    # resolves fmax/fmin to the builtin max/min, which were already correct.
+    # The fmax identity of an integer type is its minimum, and fmin's is its
+    # maximum. Regression: fmax used int8's minimum (-128) for INT16 to INT64, so
+    # reducing values all below -128 gave -128. Only the UDF monoids, built when
+    # mapnumpy is False, read these identities.
     np_dtype = getattr(np, dtype.lower())
     lo = int(np.iinfo(np_dtype).min)
     hi = int(np.iinfo(np_dtype).max)
-    # Pin the identity table directly (deterministic, independent of config).
     assert npmonoid._monoid_identities["fmax"][dtype] == lo
     assert npmonoid._monoid_identities["fmin"][dtype] == hi
 
-    # Exercise the UDF monoids end-to-end. Force a fresh mapnumpy=False build so
-    # this hits the affected path regardless of the session's random mapnumpy
-    # (the resolved monoid is cached on the module after first access).
+    # Build the UDF monoids anew with mapnumpy=False, whatever the session's
+    # mapnumpy; each module caches an operator on first access. The monoid is
+    # built from the BinaryOp cached on binary.numpy, which under mapnumpy=True
+    # is the built-in binary.max or binary.min; its typed ops have no ``_monoid``
+    # slot, so building a Monoid from it raises AttributeError. Building the UDF
+    # BinaryOp also caches it on op.numpy. Restore all three caches afterwards,
+    # removing an entry that was absent before.
     orig = config["mapnumpy"]
-    # The monoid is built from whatever binary.numpy has cached (monoid/numpy.py
-    # does getattr(_binary.numpy, name)), so the binary cache must be cleared too:
-    # under mapnumpy=True it holds the *builtin* binary.max/min, whose typed ops
-    # are TypedBuiltinBinaryOp, which has no `_monoid` slot for Monoid to write
-    # its back-reference to. Leaving it cached makes this test raise AttributeError
-    # whenever an earlier test in the session already resolved binary.numpy.fmax.
-    # op.numpy is cleared as well because registering the UDF binary op populates
-    # it as a side effect. Save every entry first so the exact prior state, cached
-    # or absent, is restored for later tests.
     names = ("fmax", "fmin")
     modules = (npmonoid, npbinary, npop)
     saved = [(module, name, module.__dict__.get(name)) for module in modules for name in names]
@@ -111,15 +102,13 @@ def test_numpy_fmax_fmin_identity_outside_int8(dtype):
 
 
 def test_numpy_monoid_identity_matches_builtin():
-    # Invariant: mapnumpy must not change a numpy monoid's identity. For every op
-    # in the numpy->builtin mapping, the numpy identity (read straight from
-    # _monoid_identities, which register_new uses verbatim on the mapnumpy=False
-    # path) must equal the builtin monoid's identity for every shared dtype,
-    # compared cast-to-dtype so benign encodings agree (bitwise_and's -1 and
-    # band's 255 are both all-ones); only a genuinely wrong value (e.g. logical_or
-    # True vs lor False) is flagged. This guards the whole table and caught both
-    # fmax/fmin and logical_or. Reading the table directly keeps it deterministic
-    # and mutates no operator caches, so it cannot desync monoid/binary/op.numpy.
+    # mapnumpy must not change a numpy monoid's identity. For each numpy monoid
+    # that maps to a built-in one, its identity in _monoid_identities, which the
+    # mapnumpy=False build uses, equals the built-in identity for every dtype they
+    # share. Identities are compared after a cast to the dtype, so bitwise_and's
+    # -1 and band's 255 agree for UINT8. Regression: the fmax identities (see
+    # test_numpy_fmax_fmin_identity_outside_int8) and logical_or's, which was True.
+    # Reading the table builds no operators, so no caches change.
     identities = npmonoid._monoid_identities
     mismatches = []
     for np_name, gb_name in npmonoid._numpy_to_graphblas.items():
@@ -141,23 +130,17 @@ def test_numpy_monoid_identity_matches_builtin():
 
 
 def test_numpy_monoid_unmapped_identity_consistency():
-    # The six numpy monoids with no builtin counterpart (gcd, hypot, logaddexp,
-    # logaddexp2, maximum, minimum) are absent from _numpy_to_graphblas, so the
-    # sibling test above never reads their identities. Guard the two that have a
-    # byte-identical builtin-backed twin: numpy's maximum/minimum share fmax's/
-    # fmin's identity table exactly (nan vs. non-nan changes only propagation of
-    # a present value, not the neutral element). fmax/fmin are themselves pinned
-    # against builtin max/min by the sibling test, so asserting maximum == fmax
-    # and minimum == fmin transitively validates maximum/minimum. Read the table
-    # directly and compare cast-to-dtype, matching the sibling test: no config
-    # toggle, no operator-cache mutation, no monoid resolution.
+    # test_numpy_monoid_identity_matches_builtin skips the numpy monoids with no
+    # built-in counterpart: gcd, hypot, logaddexp, logaddexp2, maximum and
+    # minimum. maximum and minimum differ from fmax and fmin only in how they
+    # treat NaN, so their identities must equal fmax's and fmin's, which that test
+    # checks against the built-in max and min.
     identities = npmonoid._monoid_identities
     mismatches = []
     for np_name, twin in (("maximum", "fmax"), ("minimum", "fmin")):
         table = identities[np_name]
         twin_table = identities[twin]
-        # fmax/fmin drop their integer keys on a broken numba/numpy combo
-        # (_fmin_is_float), so intersect rather than assume every dtype is present.
+        # fmax and fmin have no integer identities when _fmin_is_float
         shared = table.keys() & twin_table.keys()
         assert shared, f"{np_name}/{twin} share no dtypes"
         for name in sorted(shared):
@@ -170,12 +153,9 @@ def test_numpy_monoid_unmapped_identity_consistency():
                 )
     assert not mismatches, mismatches
 
-    # Light self-check for the log-add monoids: their neutral element is -inf
-    # (logaddexp(-inf, x) == x). gcd and hypot are deliberately left out of any
-    # functional identity check: their conventional identity is 0, but numpy's
-    # gcd/hypot are not sign-preserving (gcd(0, -5) == 5 != -5), so
-    # f(identity, x) == x is not a valid invariant for them even though 0 is the
-    # correct identity. So only their presence, not a value, is asserted here.
+    # The identity of logaddexp and logaddexp2 is -inf. Only the presence of gcd's
+    # and hypot's identities is checked: their identity, 0, is neutral only for
+    # nonnegative x, since they return absolute values (gcd(0, -5) == 5).
     for np_name in ("logaddexp", "logaddexp2"):
         table = identities[np_name]
         assert table, f"{np_name} identity table is empty"
