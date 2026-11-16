@@ -1,0 +1,23 @@
+# Toolchain for building SPLATT and TACO from source (conda-forge only):
+#
+#   conda env create -f scripts/tensor_bench/compiled/environment-build.yml
+#   conda activate graphblas-tensor-build
+#   bash scripts/tensor_bench/compiled/build_splatt.sh
+#   bash scripts/tensor_bench/compiled/build_taco.sh
+#
+# The build scripts use this environment's compilers and libraries ($CONDA_PREFIX), and clear
+# the compiler variables that another activated environment may have left behind.
+name: graphblas-tensor-build
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - cmake>=3.28,<4 # SPLATT and TACO declare minimum versions that CMake 4 refuses
+  - make
+  - git
+  - c-compiler
+  - cxx-compiler
+  - llvm-openmp # OpenMP for clang (macOS); harmless with gcc
+  - argp-standalone # SPLATT needs argp; glibc has it, macOS does not
+  - libblas=*=*openblas
+  - liblapack=*=*openblas

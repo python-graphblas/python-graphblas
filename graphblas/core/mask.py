@@ -94,6 +94,7 @@ class Mask:
         and aims to be memory efficient when operating on complemented masks.
         """
         other = _check_mask(other)
+        self, other = _as_tensor_masks(self, other)
         complement = self.complement or other.complement
         d = _COMPLEMENT_MASKS if complement else _COMBINE_MASKS
         func = d[type(self), type(other)]
@@ -118,6 +119,7 @@ class Mask:
         and aims to be memory efficient when operating on complemented masks.
         """
         other = _check_mask(other)
+        self, other = _as_tensor_masks(self, other)
         func = _MASK_OR[type(self), type(other)]
         return func(self, other, opts)
 
@@ -209,6 +211,14 @@ def _check_mask(mask, output=None, strict_kind=False):
         else:
             raise TypeError(f"Invalid mask: {type(mask)}")
     if output is not None:
+        if (
+            utils.output_type(mask.parent) in utils._tensor_types
+            and utils.output_type(output) not in utils._tensor_types
+        ):
+            raise TypeError(
+                f"A Tensor mask cannot be used with a {type(output).__name__} output; "
+                "use `T.to_matrix()` or `T.to_vector()` to make a mask of the right type"
+            )
         if output.ndim == 1 and mask.parent.ndim != 1:
             raise TypeError(f"Mask object must be type Vector; got {type(mask.parent)}")
         # A full-tensor op (ewise, mxm, apply, extract, ...) into a Matrix needs
@@ -219,6 +229,22 @@ def _check_mask(mask, output=None, strict_kind=False):
         if strict_kind and output.ndim == 2 and mask.parent.ndim != 2:
             raise TypeError(f"Mask object must be type Matrix; got {type(mask.parent)}")
     return mask
+
+
+def _as_tensor_masks(m1, m2):
+    """A Tensor mask with a Matrix or Vector one: the other becomes the same mask of it as a
+    Tensor, as Tensor operations treat Matrix and Vector operands (the combination recipes
+    then make Tensors only; a Matrix result cannot take a Tensor mask).
+    """
+    t1 = utils.output_type(m1.parent) in utils._tensor_types
+    t2 = utils.output_type(m2.parent) in utils._tensor_types
+    if t1 == t2:
+        return m1, m2
+    from .tensor import _as_tensor
+
+    if t1:
+        return m1, type(m2)(_as_tensor(m2.parent, "mask"))
+    return type(m1)(_as_tensor(m1.parent, "mask")), m2
 
 
 # Recipes to combine two masks.

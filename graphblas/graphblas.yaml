@@ -6,3 +6,5 @@ mapnumpy: True
 # through this key is kept.
 # See "The SuiteSparse:GraphBLAS JIT" in the user guide's initialization page.
 jit_c_control: null
+# Tensor: largest number of entries an implicit broadcast may replicate (ewise_add / union)
+tensor_max_expansion: 1000000000
