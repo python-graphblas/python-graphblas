@@ -1,5 +1,8 @@
 """graphblas.array_api: deferred contractions and their two push-down consumers (DESIGN D9)."""
 
+import os
+import zlib
+
 import numpy as np
 import pytest
 
@@ -12,7 +15,21 @@ from .test_array_api_elementwise import assert_array_equal, check_invariants, ma
 rng = np.random.default_rng(9)
 
 
-def _rand(shape, fill=0.0, dtype=np.float64, density=0.5):
+@pytest.fixture(autouse=True)
+def _own_rng(request):
+    """Each test draws from a stream of its own, from the session's seed and the test's name,
+    so that its data does not depend on which tests ran before it (CI shuffles the order).
+    """
+    global rng
+    seed = int(os.environ.get("GRAPHBLAS_TEST_SEED") or 0)
+    rng = np.random.default_rng([seed, zlib.crc32(request.node.name.encode())])
+
+
+def _rand(shape, fill=0.0, dtype=np.float64, density=0.5, *, every_line=False):
+    """Random values, each stored with probability ``density``; ``every_line``: every row and
+    column of each matrix in it holds a value (a slice of an operand that stores nothing is
+    an empty result at once, not a pending one).
+    """
     dtype = np.dtype(dtype)
     if dtype.kind == "b":
         a = rng.random(shape) < 0.5
@@ -20,7 +37,15 @@ def _rand(shape, fill=0.0, dtype=np.float64, density=0.5):
         a = rng.integers(1, 9, shape)
     else:
         a = np.round(rng.normal(size=shape) * 4, 1)
-    return np.where(rng.random(shape) < density, a, fill).astype(dtype)
+        # (no value rounds to 0: make() would store a -0.0, which a model's ``a != 0``
+        # misses, and density=1.0 promises no zeros)
+        a[a == 0] = 0.1
+    out = np.where(rng.random(shape) < density, a, fill).astype(dtype)
+    if every_line:
+        m, n = shape[-2:]
+        k = np.arange(max(m, n))
+        out[..., k % m, k % n] = 1.5
+    return out
 
 
 def assert_close(x, expected):
@@ -144,7 +169,7 @@ def test_snapshots(masks):
 
 
 def test_pending_operands_and_consumers():
-    a, b, c = _rand((4, 5)), _rand((5, 3)), _rand((3, 2))
+    a, b, c = (_rand(shape, every_line=True) for shape in [(4, 5), (5, 3), (3, 2)])
     x1, x2, x3 = make(a, 0.0), make(b, 0.0), make(c, 0.0)
     # A pending operand is computed (one level of deferral)
     P = x1 @ x2
@@ -369,7 +394,7 @@ SLICES = [
 
 @pytest.mark.parametrize("key", SLICES, ids=str)
 def test_getitem_slices_the_operands(key, masks):
-    a, b = _rand((4, 5)), _rand((5, 3))
+    a, b = _rand((4, 5), every_line=True), _rand((5, 3), every_line=True)
     x1, x2 = make(a, 0.0), make(b, 0.0)
     expected = (a @ b)[key]
     for P in [x1 @ x2, xp.tensordot(x1, x2, axes=1), xp.einsum("ij,jk->ik", x1, x2)]:
@@ -384,7 +409,7 @@ def test_getitem_slices_the_operands(key, masks):
 
 
 def test_getitem_cases(masks):
-    a, b = _rand((2, 4, 5)), _rand((2, 5, 3))
+    a, b = _rand((2, 4, 5), every_line=True), _rand((2, 5, 3), every_line=True)
     x1, x2 = make(a, 0.0), make(b, 0.0)
     # Batched (equal batch axes), 1-d operands, three operands
     for P, expected in [
@@ -426,7 +451,7 @@ def test_getitem_cases(masks):
     # Slices of empty extent, and slicing then the SDDMM
     P = make(a[0], 0.0) @ make(b[0], 0.0)
     assert_close(P[2:2], (a[0] @ b[0])[2:2])
-    s = _rand((2, 3), 0.0, density=0.5)
+    s = _rand((2, 3), 0.0, density=0.5, every_line=True)
     masks.clear()
     R = xp.multiply(make(s, 0.0), P[1:3])
     assert_close(R, s * (a[0] @ b[0])[1:3])
@@ -530,7 +555,9 @@ def test_product_times_itself_computes_once(masks):
     P = make(a, 0.0) @ make(a, 0.0)
     assert_close(P * P, (a @ a) * (a @ a))
     assert masks == [None]
-    # (without the result's shape, one batch is assumed)
+    # (without the result's shape, one batch is assumed; a full operand, since with 8
+    # entries or fewer of 25 the saxpy is cheap enough to get no hint)
+    a = _rand((5, 5), density=1.0)
     P = make(a, 0.0) @ make(a, 0.0)
     assert _lazy._dot_hint(P._pending, 1) == {"axb_method": "dot"}
 
