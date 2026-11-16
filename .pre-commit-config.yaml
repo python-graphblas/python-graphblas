@@ -217,8 +217,8 @@ repos:
             | scripts/find_aiisms\.sh
             | \.pre-commit-config\.yaml
           )$
-      # Checks 200,000 random picks of the CI dependency picker against its rules, in
-      # about 3 seconds. It runs only when the picker changes.
+      # Checks random picks of the CI dependency picker against its rules, in about
+      # 3 seconds. It runs only when the picker changes.
       - id: ci-pick-versions
         name: Validate CI dependency version picker
         entry: python scripts/ci_pick_versions.py --validate

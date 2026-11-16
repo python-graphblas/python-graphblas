@@ -148,12 +148,12 @@ jobs:
           conda-remove-defaults: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'false' || 'true' }}
           channel-priority: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'flexible' || 'strict' }}
           activate-environment: graphblas
-          # The name setup-miniconda uses in place of the deprecated auto-activate-base
+          # auto-activate replaces the deprecated auto-activate-base.
           auto-activate: false
       - name: Update env
         id: update_env
         env:
-          # Step outputs reach the script through the environment, not ``${{ }}``, so
+          # Step outputs reach the script through the environment, not `${{ }}`, so
           # bash never parses them as code (zizmor's template-injection audit).
           PYVER: ${{ steps.pyver.outputs.selected }}
           SOURCETYPE: ${{ steps.sourcetype.outputs.selected }}
@@ -171,7 +171,8 @@ jobs:
           fi
           eval "$picks"
 
-          # Set up psg conda package variable (conda-forge installs via conda, others via pip).
+          # Set up the python-suitesparse-graphblas (psg) conda package variable
+          # (conda-forge installs via conda, others via pip).
           # For conda-forge, psg must always be installed; an empty psgver means "latest".
           psg=""
           if [[ $SOURCETYPE == "conda-forge" ]] ; then
@@ -284,8 +285,8 @@ jobs:
           SOURCETYPE: ${{ steps.sourcetype.outputs.selected }}
           PSGVER: ${{ steps.update_env.outputs.psgver }}
         run: |
-          # ``python -m pip`` ensures the conda env's interpreter drives the
-          # install, not a system ``pip`` on PATH.
+          # `python -m pip` ensures the conda env's interpreter drives the
+          # install, not a system `pip` on PATH.
           if [[ $SOURCETYPE == "wheel" ]]; then
               # Add --pre if installing a pre-release
               python -m pip install --no-deps --only-binary ":all:" "suitesparse-graphblas${PSGVER}"
