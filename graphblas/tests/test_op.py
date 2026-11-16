@@ -2128,6 +2128,26 @@ def test_udt_return_type_errors():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udt_udf_missing_field():
+    """Reading a field the record does not have raises UdfParseError, by name or attribute.
+
+    Numba raises a bare KeyError for the attribute form.
+    """
+    udt = dtypes.register_anonymous({"mf_a": FP64, "mf_pt": {"mf_x": FP64}}, "_MissingFieldUDT")
+    funcs = [
+        lambda x: x["mf_nope"],
+        lambda x: x.mf_nope,
+        lambda x: x["mf_pt"]["mf_nope"],
+        lambda x: x.mf_pt.mf_nope,
+    ]
+    for func in funcs:
+        with pytest.raises(UdfParseError, match="mf_nope"):
+            UnaryOp.register_anonymous(func, is_udt=True)[udt]
+    with pytest.raises(UdfParseError, match="mf_nope"):
+        BinaryOp.register_anonymous(lambda x, y: x.mf_a + y.mf_nope, is_udt=True)[udt]
+
+
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_return_type_errors_array_udt():
     """Tuple return against an array UDT input should suggest a numpy array,

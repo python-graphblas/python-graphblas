@@ -94,13 +94,23 @@ def _compile_udf_for_udt(numba_func, sig, *, op_kind, op_name, dtypes):
     UnsupportedError, ...) so any compilation failure produces a
     single-line UDT diagnostic.
     """
+    dtypes_str = ", ".join(str(d) for d in dtypes)
     try:
         numba_func.compile(sig)
     except NumbaError as exc:
-        dtypes_str = ", ".join(str(d) for d in dtypes)
         snippet = _summarize_numba_typing_error(exc)
         raise UdfParseError(
             f"{op_kind}.{op_name} does not work with ({dtypes_str}): {snippet}"
+        ) from exc
+    except KeyError as exc:
+        # Numba types ``x.name`` on a record by looking the field up, and raises a bare
+        # KeyError for a field the record does not have (``x["name"]`` raises a
+        # TypingError). Any other KeyError is not ours to explain.
+        if len(exc.args) != 1 or not isinstance(exc.args[0], str):  # pragma: no cover (safety)
+            raise
+        raise UdfParseError(
+            f"{op_kind}.{op_name} does not work with ({dtypes_str}): "
+            f"a record has no field {exc.args[0]!r}"
         ) from exc
 
 
