@@ -3,6 +3,7 @@ import itertools
 import math
 import pickle
 import sys
+import tracemalloc
 import types
 import weakref
 
@@ -4787,6 +4788,46 @@ def test_ss_import_copies_array_likes():
         assert values.flags.owndata
         values[:] = -1  # must not change A
         np.testing.assert_array_equal(A.to_dense(), expected)
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_ss_import_column_order_copies_once():
+    # Without take_ownership=True, fullc and bitmapc imports copy the values once and
+    # never hand over the caller's array. Values converted to Fortran order or to
+    # another dtype are already a new array, so GraphBLAS takes that one. An empty
+    # array is copied too, not taken (taking it left the caller's array read-only).
+    expected = np.arange(512 * 512, dtype=np.float64).reshape(512, 512)
+    for fmt in ["fullc", "bitmapc"]:
+        import_ = getattr(Matrix.ss, f"import_{fmt}")
+        bitmap = {"bitmap": np.ones(expected.shape, dtype=bool)} if fmt == "bitmapc" else {}
+        import_(values=expected, **bitmap)  # warm up outside the measurement
+        for values, dtype in [
+            (expected.copy(), None),  # C order, converted to Fortran order
+            (np.asfortranarray(expected, dtype=np.int64), "FP64"),  # converted to FP64
+            (np.asfortranarray(expected), None),  # copied as it is
+        ]:
+            started = not tracemalloc.is_tracing()
+            if started:  # pragma: no branch (safety)
+                tracemalloc.start()
+            try:
+                tracemalloc.reset_peak()
+                before = tracemalloc.get_traced_memory()[0]
+                A = import_(values=values, dtype=dtype, **bitmap)
+                peak = tracemalloc.get_traced_memory()[1] - before
+            finally:
+                if started:  # pragma: no branch (safety)
+                    tracemalloc.stop()
+            # One copy of the values, plus one of the bitmap (an eighth of their size)
+            assert peak < 1.5 * expected.nbytes
+            assert values.flags.owndata
+            values[...] = -1  # must not change A
+            assert_array_equal(A.to_dense(), expected)
+        for shape in [(0, 3), (3, 0)]:
+            values = np.empty(shape)
+            bitmap = {"bitmap": np.zeros(shape, dtype=bool)} if fmt == "bitmapc" else {}
+            assert import_(values=values, **bitmap).shape == shape
+            assert values.flags.owndata
+            assert values.flags.writeable
 
 
 # Without SuiteSparse, building a UDT uses dup_op=binary.any, which needs Numba.

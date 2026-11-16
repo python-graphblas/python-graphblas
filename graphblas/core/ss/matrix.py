@@ -84,8 +84,15 @@ def _values_in_column_order(values, dtype, copy):
     )
     # Converting an ndarray to another dtype or order made a new array, which needs no
     # second copy to be safe to hand over. Any other input is copied again if asked:
-    # an object's ``__array__`` may return an array the object keeps.
-    if copy and isinstance(given, np.ndarray) and not np.may_share_memory(values, given):
+    # an object's ``__array__`` may return an array the object keeps. So is an empty
+    # array, at no cost: ``np.may_share_memory`` is False for one even against itself,
+    # so the check cannot tell the caller's array from a new one.
+    if (
+        copy
+        and isinstance(given, np.ndarray)
+        and given.size > 0
+        and not np.may_share_memory(values, given)
+    ):
         copy = False
     sub = dtype.np_type.shape
     if sub and values.ndim == 2 + len(sub) and values.shape[2:] == sub:
