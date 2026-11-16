@@ -356,6 +356,12 @@ def test_pydata_gcxs_row_pointer_follows_the_entries():
     shape = (2**13, 2**13, 5)
     coords = np.array([[0, 1, 2**13 - 1], [5, 6, 3], [3, 4, 0]])
     T = Tensor.from_coo(coords, [1.0, 2.0, 3.0], shape=shape, layout=((0, 1), (2,)))
+    # pydata/sparse 0.19.3 and later check a GCXS's arrays with a Numba function, compiled at
+    # its first call for each dtype of the values and indices: 2.3-2.4 MB that tracemalloc
+    # counts, and more as the process's first Numba compile. So the test failed whenever no
+    # earlier test had exported FP64 to GCXS. A small export of the same dtype compiles it
+    # here, and leaves T and any cache sized by its shape cold.
+    Tensor.from_coo([[0, 1], [0, 1], [0, 1]], [1.0, 2.0], shape=(2, 2, 2)).to_pydata_sparse("gcxs")
     tracemalloc.start()
     try:
         out = T.to_pydata_sparse("gcxs")
