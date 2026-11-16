@@ -29,7 +29,7 @@ import numpy as np
 
 from .. import binary, monoid, select, semiring, unary
 from ..core.tensor import Tensor
-from ..dtypes import FC64, FP64, lookup_dtype
+from ..dtypes import FP64, lookup_dtype
 from . import _utils
 from ._array import Array
 from ._utils import gb_dtype, np_dtype
@@ -91,7 +91,9 @@ def _max_abs(T):
     if T.nvals == 0:
         return 0.0
     if np_dtype(T.dtype).kind == "c":
-        A = T.apply(unary.abs[FC64]).new()
+        # (FC64 exists only on the suitesparse backend: looked up here, so that this module
+        # imports on any backend, as the Tensor does)
+        A = T.apply(unary.abs[lookup_dtype("FC64")]).new()
         return float(A.reduce_scalar(monoid.max[FP64]).new().value)
     # (two reductions in place: a copy of |values| cost 40 ms of 155 at n = 1e6, k = 64)
     hi = T.reduce_scalar(monoid.max[FP64]).new().value
