@@ -81,7 +81,10 @@ def test_reductions(name, func, shape, axes, keepdims):
                 exact = exact and name not in {"mean", "var", "std"}
                 try:
                     if exact:
-                        assert_array_equal(out, np.asarray(expected))
+                        # (the Array API leaves the order of -0.0 and 0.0 in min and max to the
+                        # library, and numpy's answer differs between x86 and arm64)
+                        zero_signs = name not in {"min", "max"}
+                        assert_array_equal(out, np.asarray(expected), zero_signs=zero_signs)
                     elif name == "prod" and not np.isfinite(dense).all():
                         # (a product of infinities and zeros: NaN or not depends on the order)
                         pass
