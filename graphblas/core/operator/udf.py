@@ -19,6 +19,7 @@ Importing this module needs Numba.
 
 import re
 import warnings
+import weakref
 
 import numba
 import numpy as np
@@ -100,6 +101,7 @@ def _finalize_udt_op(parent_op, dtype, dtype2, ret_type, wrapper, wrapper_sig, t
     from ``typed_user_cls.opclass``. ``dtype2`` is ``None`` for unary
     ops; the rest pass both. Returns the cached ``TypedUser*Op``.
     """
+    raises_on_samples = getattr(wrapper, "_raises_on_samples", None)
     try:
         wrapper = numba.cfunc(wrapper_sig, nopython=True, error_model="numpy")(wrapper)
     except NumbaError as exc:
@@ -130,6 +132,8 @@ def _finalize_udt_op(parent_op, dtype, dtype2, ret_type, wrapper, wrapper_sig, t
         key = (dtype, dtype2)
     parent_op._udt_types[key] = ret_type
     parent_op._udt_ops[key] = op
+    if raises_on_samples is not None:
+        _RAISES_ON_SAMPLES[op] = raises_on_samples
     return op
 
 
@@ -188,6 +192,92 @@ def _summarize_numba_typing_error(exc):
         if line:
             return line
     return "Numba could not compile the function for these input types"
+
+
+def _udt_ret_type(parent_op, numba_ret_type, *dtypes):
+    """Return the operator's declared ``ret_dtype``, else infer one from the UDF.
+
+    Inference names a built-in dtype or an operand's type, so an output UDT
+    that appears nowhere in the inputs is unreachable without this. A
+    declared type is checked against the UDF's return first.
+    """
+    if (ret_dtype := parent_op._ret_dtype) is not None:
+        _check_declared_ret_type(ret_dtype, numba_ret_type)
+        return ret_dtype
+    return _resolve_udt_return_type(numba_ret_type, *dtypes)
+
+
+def _check_declared_ret_type(ret_dtype, numba_ret_type):
+    """Reject a UDF whose return cannot be written as the declared ``ret_dtype``.
+
+    Inference only names a type the return can be written as; a declared
+    type skips it. Left to the wrapper, a mismatch is a raw Numba error when
+    the wrapper compiles, or a silent wrong answer when it runs: a longer
+    tuple loses its extra values, an array written to a scalar keeps its
+    first element, and a tuple written to an array element leaves it
+    uninitialized. Shapes, and record leaves that can be ``None``, are
+    checked afterwards by :func:`_check_udf_fills_output`.
+    """
+    nt = numba.core.types
+    np_type = ret_dtype.np_type
+    if ret_dtype._is_udt and np_type.names is not None:
+        nleaves = len(list(_iter_record_leaves(np_type)))
+        if isinstance(numba_ret_type, nt.BaseTuple):
+            if len(numba_ret_type.types) == nleaves:
+                return
+            # The tuple is flat over the leaves, so a nested record counts
+            # the fields of its inner records, not the inner records.
+            nested = "" if nleaves == len(np_type.names) else " once nested records are flattened"
+            raise UdfParseError(
+                f"UDT UDF returned a tuple of length {len(numba_ret_type.types)}, but "
+                f"ret_dtype={ret_dtype} has {nleaves} fields{nested}. "
+                f"Return one value per field."
+            )
+        if numba_ret_type == ret_dtype.numba_type:
+            return  # a ``ret_dtype`` value, such as an operand of that type
+        wanted = f"a tuple of its {nleaves} fields, or a {ret_dtype} value"
+    elif ret_dtype._is_udt and np_type.subdtype is not None:
+        _refuse_complex_into_real(ret_dtype, np_type.subdtype[0], numba_ret_type)
+        if isinstance(numba_ret_type, (nt.Array, nt.Number, nt.Boolean)):
+            return  # a scalar fills every slot; the shape is checked later
+        wanted = "an array, or a scalar to fill every slot"
+    else:
+        _refuse_complex_into_real(ret_dtype, np_type, numba_ret_type)
+        if isinstance(numba_ret_type, (nt.Number, nt.Boolean)):
+            return
+        if ret_dtype._is_udt and numba_ret_type == ret_dtype.numba_type:
+            return  # a value of a date, duration or text UDT, such as an operand returned as is
+        wanted = "a scalar"
+    if isinstance(numba_ret_type, nt.BaseTuple):
+        returned = f"a tuple of length {len(numba_ret_type.types)}"
+    elif isinstance(numba_ret_type, nt.Array):
+        returned = "an array"
+    elif isinstance(numba_ret_type, nt.Record):
+        returned = f"a record with fields {list(numba_ret_type.fields)}"
+    elif isinstance(numba_ret_type, (nt.Optional, nt.NoneType)):
+        returned = "a value that can be None"
+    else:
+        returned = f"{numba_ret_type}"
+    raise UdfParseError(
+        f"UDT UDF returned {returned}, which cannot be written as "
+        f"ret_dtype={ret_dtype}. Return {wanted}."
+    )
+
+
+def _refuse_complex_into_real(ret_dtype, element, numba_ret_type):
+    """Raise unless a complex return goes into complex, or bool, ``element``s of ``ret_dtype``.
+
+    Numba has no cast from complex to real, so the wrapper fails to compile,
+    with a message that loses why (``Failed in nopython mode pipeline``). A
+    bool output is written as ``bool(...)``, which takes a complex value.
+    """
+    nt = numba.core.types
+    returned = numba_ret_type.dtype if isinstance(numba_ret_type, nt.Array) else numba_ret_type
+    if isinstance(returned, nt.Complex) and element.kind not in "cb":
+        raise UdfParseError(
+            f"UDT UDF returned {numba_ret_type}, which cannot be written as "
+            f"ret_dtype={ret_dtype}. Return a real value, or declare a complex ret_dtype."
+        )
 
 
 def _resolve_udt_return_type(numba_ret_type, *dtypes):
@@ -353,12 +443,15 @@ def _input_operand(dtype, var):
             var,
             nt.CPointer(base_numba),
         )
+    # A built-in operand is read before the wrapper zeros a built-in output, which
+    # GraphBLAS can pass as an operand too (z = f(z, y) in a reduce).
+    setup = f"    {var}0 = {var}_ptr[0]\n"
     if dtype == BOOL:
         # Numba can't compile bool ptrs (numba/numba#5395); expose them
         # as int8 and cast on deref.
         # MAINT 2026-10-18: still hits on Numba 0.68; re-test periodically.
-        return "", f"bool({var}_ptr[0])", nt.CPointer(INT8.numba_type)
-    return "", f"{var}_ptr[0]", nt.CPointer(dtype.numba_type)
+        return setup, f"bool({var}0)", nt.CPointer(INT8.numba_type)
+    return setup, f"{var}0", nt.CPointer(dtype.numba_type)
 
 
 def _output_handler(return_type, numba_ret_type):
@@ -421,13 +514,22 @@ def _compose_wrapper_body(zkind, zinfo, signature_line, body_setup, call_expr):
     compile a nested-tuple assignment to an outer record field. Array
     returns and array-typed record leaves slice-assign into the caller's
     buffer, so a wrong-shape return cannot overrun it. The error does not reach
-    the caller either: the resulting ``ValueError`` is raised inside a
-    cfunc, which Numba prints and swallows, so the write stops there and
-    every leaf from that point on keeps whatever SuiteSparse had in the
-    buffer. :func:`_check_udf_fills_output` rejects such a return when the
-    op is typed, but it cannot always learn the shape, so this stays the
-    backstop.
+    the caller either: the resulting ``ValueError``, like any exception the
+    UDF raises, is raised inside a cfunc, which Numba prints and swallows,
+    and GraphBLAS takes the output as the wrapper left it. So a built-in
+    output (a select's bool, say) is set to 0 before the UDF is called: an
+    element the UDF raises for holds 0, or False, which a select reads as
+    "do not keep". A select's output is an uninitialized bool in SuiteSparse,
+    so it could keep the entry and corrupt the entry count. A UDT output is
+    not zeroed: it can be an operand too (z = f(z, y) in a reduce), and
+    copying a UDT operand first would cost a copy of every element. Numba
+    cannot re-raise, so catching the exception would silence it.
+    :func:`_check_udf_fills_output` rejects a return that cannot fill the
+    output when the op is typed, but it cannot always learn the shape, so
+    this stays the backstop.
     """
+    if zkind == "direct" and zinfo[2] == "z_ptr[0]":
+        body_setup = f"{body_setup}    z_ptr[0] = 0\n"
     if zkind == "array_elements":
         return (
             f"{signature_line}\n"
@@ -473,8 +575,8 @@ def _fits_by_broadcast(shape, expected):
         return False
 
 
-def _udf_probe_value(dtype):
-    """Build a stand-in operand of ``dtype`` for :func:`_run_udf_probe`.
+def _udf_probe_value(dtype, fill=1):
+    """Build a stand-in operand of ``dtype`` for :func:`_run_udf_probe`, ``fill`` in every leaf.
 
     Only the shape of the UDF's result is read, so any values it accepts
     will do.
@@ -482,20 +584,25 @@ def _udf_probe_value(dtype):
     if dtype._is_udt:
         np_type = dtype.np_type
         if np_type.subdtype is None:
-            return np.ones(1, dtype=np_type)[0]
+            return np.full(1, fill, dtype=np_type)[0]
         base_np_type, shape = np_type.subdtype
-        return np.ones(shape, dtype=base_np_type)
+        return np.full(shape, fill, dtype=base_np_type)
     return _sample_values[dtype]
 
 
 def _run_udf_probe(numba_func, arg_dtypes):
-    """Call the UDF on stand-in operands. Returns ``(result,)``, or ``None`` if it raised.
+    """Call the UDF on stand-in operands. Returns ``(ran, error)``.
 
-    A UDF that raises on the stand-in values is not checked, so one that
-    also returns a shape that does not fit is left to the wrapper, which
-    fails without telling the caller (see :func:`_compose_wrapper_body`).
-    Only the call is guarded, so a mistake in building the operands still
-    surfaces.
+    ``ran`` is ``(result,)``, or ``None`` if the UDF raised on the stand-ins
+    of ones: then its result is not checked, and if it also returns a shape
+    that does not fit, that is left to the wrapper, whose output then keeps
+    its zeros (see :func:`_compose_wrapper_body`). Such a UDF may raise only
+    for some values, so it still types (``np.linalg.inv`` raises on a matrix
+    of ones). ``error`` names the exception (as text) when it raised on twos
+    as well, and it was no ``ArithmeticError``; only the literal rule reads it
+    (see :data:`_RAISES_ON_SAMPLES`). The exception itself is not kept: its
+    traceback holds the frames that hold the op. Only the call is guarded, so
+    a mistake in building the operands still surfaces.
 
     This is where typing an op for a UDT runs the user's function rather
     than only compiling it, and ``OpBase.__contains__`` is a typed lookup,
@@ -504,14 +611,28 @@ def _run_udf_probe(numba_func, arg_dtypes):
     array, a record, a scalar), so the call compiles the specialization the
     wrapper needs anyway.
     """
-    args = [_udf_probe_value(d) for d in arg_dtypes]
-    try:
-        return (numba_func(*args),)
-    except NumbaError as exc:  # pragma: no cover (safety)
-        # The wrapper's operands have these types, so it would fail to compile too.
-        raise UdfParseError(_summarize_numba_typing_error(exc)) from exc
-    except Exception:
-        return None
+    error = None
+    for fill in (1, 2):
+        args = [_udf_probe_value(d, fill) for d in arg_dtypes]
+        try:
+            result = numba_func(*args)
+        except NumbaError as exc:  # pragma: no cover (safety)
+            # The wrapper's operands have these types, so it would fail to compile too.
+            raise UdfParseError(_summarize_numba_typing_error(exc)) from exc
+        except ArithmeticError:
+            return None, None
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"
+            continue
+        return ((result,) if fill == 1 else None), None
+    return None, error
+
+
+# The UDT ops whose UDF raised, other than an ArithmeticError, on both sets of stand-in
+# operands, with the exception as text. Such an op still types, since the UDF may raise only
+# for some values, but beside it a number is typed as itself rather than as an element
+# (``literals._own_scalar_type_for_user_op``), as a Scalar of it would be.
+_RAISES_ON_SAMPLES = weakref.WeakKeyDictionary()
 
 
 def _raise_unless_fits(shape, expected, return_type, path, *, probed):
@@ -589,6 +710,8 @@ def _check_udf_fills_output(numba_func, numba_ret_type, return_type, zkind, arg_
     length exactly (:func:`_raise_unless_sequence_fits`); a tuple's length
     is in its type, and a list's is learned the same way as a built
     array's. A UDF that returns no built array or list is never run.
+    Returns what the UDF raised on every stand-in, as text (see
+    :func:`_run_udf_probe`), or None.
     """
     if zkind == "array_elements":
         # (record field path, Numba type, slot shape, index into the tuple)
@@ -604,8 +727,16 @@ def _check_udf_fills_output(numba_func, numba_ret_type, return_type, zkind, arg_
             (path, numba_ret_type.types[i], leaf.shape, i)
             for i, (path, _c, leaf) in enumerate(leaves)
         ]
+    elif isinstance(numba_ret_type, numba.core.types.Array):
+        # An array returned for a scalar (a select's bool, say) fills it only with one
+        # value, which running the UDF shows; one that cannot is recorded, not refused,
+        # since its shape may depend on the values (``x[x > 0]``).
+        ran, error = _run_udf_probe(numba_func, arg_dtypes)
+        if ran is not None and np.size(ran[0]) != 1:
+            error = f"returned an array of shape {np.shape(ran[0])} for a scalar"
+        return error
     else:
-        return
+        return None
     unknown = []
     for path, nb_type, expected, i in slots:
         if isinstance(nb_type, (numba.core.types.Optional, numba.core.types.NoneType)):
@@ -634,7 +765,10 @@ def _check_udf_fills_output(numba_func, numba_ret_type, return_type, zkind, arg_
             )
         elif isinstance(nb_type, numba.core.types.List):
             unknown.append((path, expected, i))  # a list's length is not in its type
-    if unknown and (ran := _run_udf_probe(numba_func, arg_dtypes)) is not None:
+    if not unknown:
+        return None
+    ran, error = _run_udf_probe(numba_func, arg_dtypes)
+    if ran is not None:
         for path, expected, i in unknown:
             value = ran[0] if i is None else ran[0][i]
             if isinstance(value, list):
@@ -643,6 +777,7 @@ def _check_udf_fills_output(numba_func, numba_ret_type, return_type, zkind, arg_
                 )
             else:
                 _raise_unless_fits(np.shape(value), expected, return_type, path, probed=True)
+    return error
 
 
 def _get_udt_wrapper(
@@ -672,7 +807,7 @@ def _get_udt_wrapper(
         yarg = ", y_ptr"
         yderef_expr = f", {yderef}"
     wrapper_sig = nt.void(*wrapper_args)
-    _check_udf_fills_output(numba_func, numba_ret_type, return_type, zkind, arg_dtypes)
+    error = _check_udf_fills_output(numba_func, numba_ret_type, return_type, zkind, arg_dtypes)
 
     rcidx = ", row, col" if include_indexes else ""
     signature_line = f"def wrapper(z_ptr, x_ptr{rcidx}{yarg}):"
@@ -687,6 +822,7 @@ def _get_udt_wrapper(
         source_label=f"<gb-udt-wrapper {kind} dtype={dtype} ret={return_type}>",
         extra_ns={"numba_func": numba_func},
     )
+    wrapper._raises_on_samples = error  # for _finalize_udt_op
     return wrapper, wrapper_sig
 
 

@@ -127,8 +127,50 @@ def _literal_operand(dtype, value, op, *, left=False):
             literal_type = _literal_type(dtype, value, exact=exact)
             if literal_type is not None:
                 return value, literal_type
+    if (own := _own_scalar_type_for_user_op(dtype, value, op, left)) is not None:
+        return value, own
     _check_literal_fits(dtype, value)
     return value, dtype
+
+
+def _own_scalar_type_for_user_op(dtype, value, op, left):
+    """Return a number's own type, for a user's op that cannot take it as an element, or None.
+
+    Beside a user's ``is_udt`` op (an untyped BinaryOp, IndexUnaryOp or
+    SelectOp), a literal becomes an element of the UDT. A Python or numpy
+    number for an op whose function cannot be typed with that element (it
+    fails to compile, or raises on every set of sample values: ``x[:2] * t``
+    with a 6-element ``t``) is typed as itself instead, as a ``Scalar`` of it
+    would be, when the op can be typed so. Otherwise it stays an element,
+    and the op reports why it cannot take it.
+    """
+    from ..exceptions import UdfParseError
+
+    if (
+        not getattr(op, "_is_udt", False)
+        or isinstance(op, (TypedOpBase, Monoid))
+        or not (
+            type(value) in {bool, int, float, complex} or isinstance(value, (np.number, np.bool_))
+        )
+        or (type(value) is int and not -(2**63) <= value < 2**63)  # no INT64 holds it
+        or (own := lookup_dtype(type(value), value))._is_udt
+    ):
+        return None
+
+    from .operator.udf import _RAISES_ON_SAMPLES
+
+    def types(dtype2):
+        try:
+            return op[(dtype2, dtype) if left else (dtype, dtype2)]
+        except UdfParseError:
+            return None
+
+    # A UDF that raised on every stand-in element types, but cannot take an element.
+    # The number's own type need only type: its stand-in is a fixed sample, not the number.
+    element = types(dtype)
+    if element is not None and element not in _RAISES_ON_SAMPLES or types(own) is None:
+        return None
+    return own
 
 
 # Built-in ops that compare their operands, and so keep no result type.
