@@ -426,35 +426,34 @@ def test_monoid_parameterized():
 
 
 def test_monoid_rejects_builtin_binaryop():
-    """A built-in binaryop cannot back a user monoid.
+    """A built-in BinaryOp cannot back a user Monoid.
 
-    Built-ins already own their monoid association (binary.max resolves to
-    monoid.max), and SuiteSparse silently ignores the identity passed to
-    GrB_Monoid_new for them, so accepting one would produce a monoid whose
-    Python-side identity disagrees with what GraphBLAS computes with.
+    A built-in op already has its monoid (binary.max resolves to monoid.max),
+    and SuiteSparse ignores the identity given to GrB_Monoid_new for a built-in
+    op that has a built-in monoid, so the new Monoid's identity would disagree
+    with what GraphBLAS computes with.
     """
     with pytest.raises(TypeError, match="must be a user-defined BinaryOp"):
         Monoid.register_new("_bad_builtin_monoid", binary.max, 0)
     with pytest.raises(TypeError, match="must be a user-defined BinaryOp"):
         Monoid.register_anonymous(binary.plus, 1)
-    # The rejection happens before any object is created, so the built-in's
-    # own monoid association is untouched.
+    # Refused before any object is made, so the built-in keeps its monoid.
     assert binary.max.monoid is monoid.max
     assert not hasattr(gb.monoid, "_bad_builtin_monoid")
 
 
 def test_monoid_rejects_builtin_binaryop_with_udt_fallback():
-    """binary.any, first, pair, and second are built-ins that carry a Python
-    func as their UDT fallback, so a func-based probe alone misses them. They
-    must be rejected like the other built-ins: their typed ops have no _monoid
-    slot, and a failed registration used to leave binary.<name>._monoid
-    pointing at the half-built monoid.
+    """binary.any, first, pair and second are refused like the other built-ins.
+
+    They have Python functions for UDTs, so a check on the function alone
+    would take them for UDFs. Their typed ops have no ``_monoid`` slot.
+    Regression: a failed registration left ``binary.<name>._monoid`` pointing
+    at the half-built monoid.
     """
     for binop in [binary.any, binary.first, binary.pair, binary.second]:
         with pytest.raises(TypeError, match="must be a user-defined BinaryOp"):
             Monoid.register_anonymous(binop, 0)
-    # State is untouched: any's built-in monoid association survives, and the
-    # ops without a built-in monoid still have none.
+    # binary.any keeps its built-in monoid, and the others still have none.
     assert binary.any.monoid is monoid.any
     assert binary.first.monoid is None
     assert binary.pair.monoid is None
@@ -1415,12 +1414,10 @@ def test_udf_division_by_zero_follows_numpy():
     """Dividing by zero in a UDF returns numpy's answer instead of losing the element.
 
     Under Numba's default error model the division raises ZeroDivisionError
-    inside the cfunc, where Numba prints the traceback and returns, so
-    GraphBLAS keeps whatever was in the output element (in practice the
-    previous element's value). ``error_model="numpy"`` fixes that, but only if
-    it is set on the ``njit`` Dispatcher: a Dispatcher holds one compilation
-    per signature, and ``_build`` calls ``.compile(sig)`` before the wrapper
-    exists, so setting it on the ``cfunc`` alone comes too late to matter.
+    inside the cfunc, and GraphBLAS keeps whatever was in the output element
+    (in practice the previous element's value). The numpy error model has to
+    be set on the ``njit`` Dispatcher, not only on the cfunc; see the comment
+    in ``BinaryOp._build``.
     """
 
     def _idiv(x, y):  # pragma: no cover (numba)
@@ -1481,19 +1478,18 @@ _jit_can_compile_cache = []
 
 
 def _jit_can_compile():
-    """True when SuiteSparse has a C compiler it can actually use.
+    """True when SuiteSparse has a C compiler it can use.
 
-    Without one it falls back to the Numba cfunc and says nothing, so the
-    ``jit`` parameter would run the cfunc and report a pass.
+    Without one SuiteSparse falls back to the Numba cfunc and says nothing, so
+    the ``jit`` parameter would run the cfunc and report a pass.
 
     ``jit_compiler_is_usable`` alone is not enough: it only checks that the
-    configured compiler path exists on disk, and a runner can have the file
-    yet fail every compile (broken toolchain, missing headers).
-    ``_enable_jit_for_udt`` is the same call the UDT auto-lift path makes,
-    and it does a real compile once per process, so its answer is the
-    honest one here; ``test_ssjit`` keys its skips on the same signal. The
-    fixture calls this before it mutates the control, and the cache keeps
-    later per-test mutations from flipping it.
+    configured compiler path exists, and a runner can have the file yet fail
+    every compile (broken toolchain, missing headers). ``_enable_jit_for_udt``
+    is the call the UDT lifting code makes, and it does a real compile once
+    per process; ``test_ssjit`` skips on the same signal. The fixture calls
+    this before it changes the control, and the cache keeps later per-test
+    changes from flipping the answer.
     """
     if not _jit_can_compile_cache:
         from graphblas.core.ss.jit_config import _enable_jit_for_udt
@@ -1504,12 +1500,12 @@ def _jit_can_compile():
 
 @pytest.fixture(params=["jit", "cfunc"])
 def udt_op_path(request):
-    """Pin SuiteSparse to one execution path for built-in UDT operators.
+    """Pin SuiteSparse to one execution path for lifted UDT operators.
 
-    Each auto-lifted UDT op carries both a C JIT definition and a Numba
-    cfunc, and SuiteSparse chooses between them per call depending on
-    whether a C compiler is available. A machine with one and a machine
-    without therefore run different code, so results have to hold on both.
+    Each lifted UDT op carries both a C definition and a Numba cfunc, and
+    SuiteSparse chooses between them per call depending on whether a C
+    compiler is available. A machine with one and a machine without run
+    different code, so results have to hold on both.
     """
     path = request.param
     if backend != "suitesparse" or "jit_c_control" not in gb.ss.config:
@@ -1565,10 +1561,10 @@ def test_udt_mixed_record_dtypes_use_each_operands_own_dtype(udt_op_path):
     """Two records sharing field names but not field types promote to the wider one.
 
     ``_check_udt_pair`` matches record operands on field names only, so their
-    leaf dtypes can differ. Offering the return-type resolver just the left
-    operand left it no choice but that record, so an int record over a float
-    record came back as the int record: ``7 / 2.0`` landed as 3 and ``6 / 0.0``
-    as INT64_MAX. Swapping the operands changed the answer for the same pair.
+    leaf dtypes can differ. Regression: the result type came from the left
+    operand alone, so an int record over a float record gave the int record
+    (``7 / 2.0`` stored as 3, ``6 / 0.0`` as INT64_MAX), and swapping the
+    operands changed the answer.
     """
     int_udt = dtypes.register_anonymous(np.dtype([("mxd_a", np.int64)], align=True), "_MixedRecInt")
     float_udt = dtypes.register_anonymous(
@@ -1586,8 +1582,6 @@ def test_udt_mixed_record_dtypes_use_each_operands_own_dtype(udt_op_path):
     assert result[0].new().value["mxd_a"] == float("inf")
     assert result[1].new().value["mxd_a"] == 3.5
 
-    # The same pair the other way round must agree, which it did not when the
-    # resolver only ever saw the left operand.
     swapped = w.ewise_mult(v, binary.truediv).new()
     assert swapped.dtype == float_udt
     assert swapped[1].new().value["mxd_a"] == 2.0 / 7.0
@@ -1609,29 +1603,23 @@ def _bitwise_eq(got, want):
 @pytest.mark.slow
 @pytest.mark.parametrize("np_dtype", [np.float64, np.float32])
 def test_udt_min_max_answer_what_the_builtin_dtype_answers(udt_op_path, np_dtype):
-    """``binary.min[udt]`` must give what ``binary.min[FP64]`` gives, bit for bit.
+    """``binary.min[udt]`` gives what ``binary.min[FP64]`` gives, bit for bit.
 
-    An operator that means one thing on FP64 and another on a record of
-    FP64 is not one operator. SuiteSparse's ``GrB_MIN_FP64`` is C99 ``fmin``,
-    so that is what the UDT kernels have to be, and this compares them
-    directly against the built-in rather than against a convention chosen on
-    the Python side. The grid is every ordered pair drawn from NaN, both
-    infinities, both zeros and two ordinary values, so it covers a NaN on
-    either side, two NaNs, and a signed-zero tie either way round.
+    SuiteSparse's ``GrB_MIN_FP64`` is C99 ``fmin``, so the UDT kernels must be
+    too, and this compares them directly against the built-in. The grid is
+    every ordered pair drawn from NaN, both infinities, both zeros and two
+    ordinary values: a NaN on either side, two NaNs, and a signed-zero tie
+    either way round.
 
-    The signed-zero tie itself is compared by value only. C99 leaves
+    The signed-zero tie is compared by value only. C99 leaves
     ``fmin(-0.0, 0.0)`` unspecified and the built-in answers differently per
     platform (left operand on macOS x86, right operand on Linux x86, IEEE
-    minNum on arm64 and Windows), so bit-for-bit agreement on that one pair
-    is not something any implementation can promise. Everything else,
-    including which zero a mixed zero/nonzero pair keeps, stays bit-exact.
+    minNum on arm64 and Windows), so no implementation can promise
+    bit-for-bit agreement on that pair. Everything else, including which zero
+    a mixed zero/nonzero pair keeps, is bit-exact.
 
-    What this catches, in the two spellings it replaces: Python's builtin
-    ``min``, which the generated code reached through the exec namespace,
-    ordered NaN by position, and ``np.fmin`` under Numba gets the NaN rule
-    right but keeps the left operand on a signed-zero tie, so it drifts from
-    the C JIT kernel on ``min(0.0, -0.0)``. Both execution paths are checked
-    because SuiteSparse picks between them without telling anyone.
+    Python's builtin ``min``, for one, orders NaN by position, which the NaN
+    cells catch.
     """
     nan, inf = float("nan"), float("inf")
     values = [nan, inf, -inf, -0.0, 0.0, 1.5, -2.5]
@@ -1666,9 +1654,7 @@ def test_udt_min_max_answer_what_the_builtin_dtype_answers(udt_op_path, np_dtype
                 f"got {got!r}, built-in {np.dtype(np_dtype).name} gives {expected[i]!r}"
             )
 
-    # A NaN anywhere in the input must not change where a reduce lands. Under
-    # the Python-builtin semantics this same multiset reduced to 1.0 or to nan
-    # depending on which index the NaN sat at.
+    # Where the NaN sits in the input must not change the result of a reduce.
     for data in ([1.0, 2.0, 3.0, nan], [nan, 1.0, 2.0, 3.0], [1.0, nan, 3.0, 2.0]):
         (u,) = _udt_vectors(udt, data)
         assert u.reduce(monoid.min[udt]).new().value[0] == 1.0, f"{udt_op_path} {data}"
@@ -1679,12 +1665,10 @@ def test_udt_min_max_answer_what_the_builtin_dtype_answers(udt_op_path, np_dtype
 def test_udt_truediv_divides_in_floating_point(udt_op_path):
     """``binary.truediv`` on integer fields divides in float64 and keeps the quotient.
 
-    Regression: the C JIT kernel emitted C ``/``, which is integer division.
-    ``10**18 / 3`` came out as 333333333333333333 under the C JIT and
-    333333333333333312 (float64, like numpy) through the cfunc, so the same
-    program gave different answers depending on whether a C compiler was
-    installed. The result fields are now float64, as ``truediv`` on two INT64
-    vectors is FP64, so the quotient is not truncated either.
+    The result fields are float64, as ``truediv`` on two INT64 vectors is
+    FP64. Regression: the C kernel used C's integer ``/``, so ``10**18 / 3``
+    was 333333333333333333 under the C JIT and 333333333333333312 (float64,
+    like numpy) through the cfunc.
     """
     udt = dtypes.register_anonymous(
         np.dtype([("tdv_i", np.int64), ("tdv_j", np.int64)], align=True), "_TrueDivIntUDT"
@@ -1701,13 +1685,11 @@ def test_udt_truediv_divides_in_floating_point(udt_op_path):
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_floordiv_matches_numpy_on_floats(udt_op_path):
-    """``binary.floordiv`` on float fields is not ``floor(a / b)``.
+    """``binary.floordiv`` on float fields matches numpy, which is not ``floor(a / b)``.
 
-    Regression: the C JIT kernel computed ``floor(a / b)``, which rounds
-    differently from the remainder-based algorithm numpy and CPython use and
-    treats infinities as ordinary values. ``1.0 // 0.1`` came out as 10.0
-    instead of 9.0, and ``inf // 2.0`` as ``inf`` instead of NaN, while the
-    cfunc agreed with numpy all along.
+    numpy and CPython use a remainder-based algorithm, which rounds
+    differently from ``floor(a / b)`` and does not treat infinities as
+    ordinary values. Regression: the C kernel computed ``floor(a / b)``.
     """
     nan = float("nan")
     inf = float("inf")
@@ -1727,8 +1709,8 @@ def test_udt_floordiv_matches_numpy_on_floats(udt_op_path):
         got = np.array([result[i].new().value[0] for i in range(len(xs))], np_dtype)
         np.testing.assert_array_equal(got, expected, err_msg=f"{udt_op_path} {np_dtype.__name__}")
         # ``assert_array_equal`` reads -0.0 and 0.0 as equal, so the sign of a
-        # zero quotient needs its own assertion. It is the whole job of the
-        # ``copysign`` branch the C JIT kernel emits for an exact-zero result.
+        # zero quotient needs its own assertion. It checks the ``copysign``
+        # branch the C kernel emits for an exact-zero result.
         np.testing.assert_array_equal(
             np.signbit(got),
             np.signbit(expected),
@@ -1738,18 +1720,18 @@ def test_udt_floordiv_matches_numpy_on_floats(udt_op_path):
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_integer_division_by_zero_is_defined(udt_op_path):
-    """Integer division by zero must return a value rather than trap.
+    """Integer division by zero returns a value rather than trapping.
 
-    The C JIT kernel divided in integers, where a zero divisor is undefined
-    behaviour: on x86-64 ``idiv`` raises #DE, which is SIGFPE and process
-    death rather than an exception. AArch64's ``sdiv`` returns 0 and does not
-    trap, so this cannot be exhibited on an arm64 machine. The same trap
-    fires on ``INT_MIN / -1``, whose quotient is not representable.
+    In C, integer division by zero is undefined behavior: on x86-64 ``idiv``
+    raises #DE, which is SIGFPE and process death rather than an exception.
+    AArch64's ``sdiv`` returns 0 and does not trap, so an arm64 machine
+    cannot show the trap. ``INT_MIN / -1``, whose quotient is not
+    representable, traps the same way.
 
-    ``truediv`` now gives float64 fields, as on built-in integer vectors, so a
-    zero divisor gives an infinity there. ``floordiv`` stays in integers, where
-    the values are a choice: a zero divisor gives 0, as ``np.floor_divide``
-    does, and ``INT_MIN // -1`` wraps to ``INT_MIN``, as numpy does.
+    ``truediv`` gives float64 fields, as on built-in integer vectors, so a
+    zero divisor gives an infinity. ``floordiv`` stays in integers and
+    follows numpy: a zero divisor gives 0, and ``INT_MIN // -1`` wraps to
+    ``INT_MIN``.
     """
     signed = dtypes.register_anonymous(
         np.dtype([("dvz_a", np.int32), ("dvz_b", np.int8)], align=True), "_DivZeroSignedUDT"
@@ -1787,13 +1769,12 @@ def test_udt_integer_division_by_zero_is_defined(udt_op_path):
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.skipif("not dtypes._supports_complex")
 def test_udt_complex_truediv_by_zero(udt_op_path):
-    """``binary.truediv`` on a complex field survives a zero divisor.
+    """``binary.truediv`` on a complex field gives numpy's infinities for a zero divisor.
 
-    Numba's complex division raises ``ZeroDivisionError`` unconditionally,
-    outside the error model's control, so the cfunc left the element unwritten
-    while the C JIT kernel returned numpy's infinities. Reading back the
-    abandoned element gave uninitialized memory, or the previous element's
-    answer, either of which looks like a plausible value.
+    Numba's complex division raises ``ZeroDivisionError`` whatever the error
+    model, which in a cfunc leaves the element unwritten: it reads back as
+    uninitialized memory or the previous element's answer, either of which
+    looks plausible.
     """
     udt = dtypes.register_anonymous(
         np.dtype([("cxz_a", np.complex128)], align=True), "_ComplexDivZeroUDT"
@@ -1813,11 +1794,13 @@ def test_udt_complex_truediv_by_zero(udt_op_path):
 def test_udt_complex_times_truediv_with_infinities_as_numpy(udt_op_path):
     """Complex ``*`` and ``/`` on a UDT field answer as numpy does at infinities.
 
-    From Python 3.14, CPython recovers infinities that the textbook formulas
-    leave as ``nan`` (C99 Annex G), so ``1j * (inf+infj)`` is ``-inf+infj``
-    there and ``nan+nanj`` in numpy. Numba 0.68 follows CPython, so a cfunc
-    built on Numba's operators answered as Python and the C JIT kernel as
-    numpy. Both now spell numpy's formulas out, on any Python and Numba.
+    From Python 3.14, CPython (and Numba 0.68, which follows it) recovers
+    infinities that the textbook formulas leave as ``nan`` (C99 Annex G), so
+    ``1j * (inf+infj)`` is ``-inf+infj`` there and ``nan+nanj`` in numpy. The
+    cfunc and the C kernel both spell out the formulas instead of using
+    Numba's or C's operators, so the answer does not depend on the Python or
+    Numba version; see ``_complex_times`` and ``_complex_truediv`` in
+    ``udt_codegen``.
     """
     inf, nan = np.inf, np.nan
     # The last pair is finite, with an exact product and quotient: numpy
@@ -1842,7 +1825,7 @@ def test_udt_complex_times_truediv_with_infinities_as_numpy(udt_op_path):
 
 
 @pytest.mark.skipif("not supports_udfs")
-# 136-byte UDT, which SS < 9 rejects; see test_udt_large_array.
+# A 136-byte UDT; see test_udt_large_array.
 @pytest.mark.skipif(
     "ss_version_major < 9",
     reason="SuiteSparse < 9 rejects a 136-byte UDT on builds without VLA support",
@@ -1850,10 +1833,10 @@ def test_udt_complex_times_truediv_with_infinities_as_numpy(udt_op_path):
 def test_udt_float_truediv_by_zero_is_infinite(udt_op_path):
     """A zero divisor on a float field gives numpy's infinity, not a lost element.
 
-    Unlike the integer case, nothing here is guarded: the generated code
-    divides and lets IEEE produce the infinity. That only holds because the
-    generated wrapper is compiled under Numba's numpy error model, which
-    nothing else in the suite pins down.
+    Unlike the integer case, the generated code does not guard the divisor:
+    it divides and lets IEEE produce the infinity. On the cfunc path that
+    holds only because the generated wrapper is compiled under Numba's numpy
+    error model.
     """
     udt = dtypes.register_anonymous(np.dtype((np.float64, (17,))), "_FloatDivZeroArr17")
     xs = [1.0, -1.0, 0.0, 6.0]
@@ -1869,10 +1852,10 @@ def test_udt_float_truediv_by_zero_is_infinite(udt_op_path):
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_array_ops_match_record_ops(udt_op_path):
-    """The array-UDT codegen carries the same division and NaN fixes as records.
+    """Array UDTs get the same division and NaN behavior as records.
 
     Records and flat arrays go through separate branches in both the Numba
-    and the C JIT generators, so each fix has to land in both.
+    and the C code generators, so each rule has to hold in both.
     """
     nan = float("nan")
     inf = float("inf")
@@ -1917,9 +1900,9 @@ def test_udt_array_ops_match_record_ops(udt_op_path):
 def test_udt_multidim_array_ops_match_numpy(udt_op_path):
     """Built-in ops on a multi-dimensional array UDT agree with numpy on both paths.
 
-    The C JIT typedef flattens any rank to ``double v [N]`` and the Numba
-    wrapper walks the same flat run, so a 2-D UDT covers codegen that the 1-D
-    cases reach only by accident of both being contiguous.
+    The C typedef flattens any rank to ``double v [N]`` and the Numba wrapper
+    walks the same flat buffer. A 2-D UDT checks that flattening, which the
+    1-D cases do not exercise.
     """
     udt = dtypes.register_anonymous(np.dtype((np.float64, (3, 2))), "_ArrOps2D")
     xs = [1.0, -7.0, float("inf"), 2.0]
@@ -1992,7 +1975,7 @@ def test_udt_tuple_return_unaryop_matrix(record_udt):
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_tuple_return_monoid(record_udt):
-    """A Monoid built from a tuple-returning BinaryOp reduces field-by-field via ewise_add."""
+    """A Monoid built from a tuple-returning BinaryOp works in ewise_add."""
     v, w = _record_pair(record_udt)
 
     def _add_udt(x, y):
@@ -2010,8 +1993,8 @@ def test_udt_tuple_return_monoid(record_udt):
 def test_udt_monoid_op_must_return_its_input_type(record_udt):
     """A UDT monoid whose op returns another type fails up front, with a message.
 
-    It used to reach ``GrB_Monoid_new_UDT``, which raised DomainMismatch with an
-    empty message, also from ``udt in monoid``.
+    Regression: it reached ``GrB_Monoid_new_UDT``, which raised DomainMismatch
+    with an empty message, even from ``udt in monoid``.
     """
 
     def _sum_a(x, y):
@@ -2019,8 +2002,8 @@ def test_udt_monoid_op_must_return_its_input_type(record_udt):
 
     sum_a = BinaryOp.register_anonymous(_sum_a, "test_sum_a_mon", is_udt=True)
     sum_a_monoid = Monoid.register_anonymous(sum_a, 0)
-    # Not "_BuiltinOpsRec": registering this record dtype again under another name, as
-    # test_udt_op_pickle does, renames the one DataType
+    # Not "_BuiltinOpsRec": registering this record dtype again under another name,
+    # as test_udt_op_pickle does, renames the one DataType.
     with pytest.raises(TypeError, match=f"must return its input type, {record_udt}, not INT64"):
         sum_a_monoid[record_udt]
     assert record_udt not in sum_a_monoid
@@ -2029,7 +2012,7 @@ def test_udt_monoid_op_must_return_its_input_type(record_udt):
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_tuple_return_semiring(record_udt):
-    """A Semiring built from tuple-returning ops drives mxm correctly."""
+    """A Semiring built from tuple-returning ops computes an inner product."""
     v, _ = _record_pair(record_udt)
 
     def _add_udt(x, y):
@@ -2103,7 +2086,7 @@ def test_udt_input_with_scalar_return(record_udt):
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_return_type_errors():
-    """Friendly error when a UDT UDF returns a shape that doesn't match the input."""
+    """A UDT UDF returning too many fields, or an unusable value, raises UdfParseError."""
     record_dtype = np.dtype([("a", np.int64), ("b", np.int64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "_RetErrUDT")
 
@@ -2154,9 +2137,7 @@ def test_udt_udf_missing_field():
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_return_type_errors_array_udt():
-    """Tuple return against an array UDT input should suggest a numpy array,
-    not "record UDT's fields" (which would be misleading).
-    """
+    """A tuple returned for an array UDT input gets an error suggesting a numpy array."""
     arr_dtype = np.dtype((np.float64, (4,)))
     audt = dtypes.register_anonymous(arr_dtype, "_RetErrArrUDT")
 
@@ -2395,7 +2376,7 @@ def test_udt_jit_typedef():
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_jit_op_definitions():
-    """Auto-compiled UDT ops carry the JIT C name and source."""
+    """Lifted UDT ops carry a C name and C definition."""
     from graphblas.core import ffi, lib
     from graphblas.core.operator.udt_codegen import _has_jit_set
 
@@ -2442,7 +2423,7 @@ def test_udt_jit_op_definitions():
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_auto_monoid():
-    """Built-in monoids auto-lift to UDTs with the right identity per field."""
+    """Built-in monoids lift to UDTs with the right identity per field."""
     record_dtype = np.dtype([("p", np.int64), ("q", np.float64)], align=True)
     udt = dtypes.register_anonymous(record_dtype)
 
@@ -2507,11 +2488,9 @@ def test_udt_auto_monoid():
     result = a.reduce(monoid.max).new()
     np.testing.assert_array_equal(result.value, [9.0, 10.0, 11.0, 12.0])
 
-    # monoid.any on UDTs must return an actual input value, never the identity.
-    # Regression: previously ``binary.any._numba_func`` used ``_first`` semantics,
-    # so the UDT-reduce fold ``acc = first(acc, v_i) = acc`` always left the
-    # accumulator at the (zero) identity. Now ``_second`` semantics, so the fold
-    # captures an actual value.
+    # monoid.any on UDTs returns an input value, never the identity. For UDTs
+    # ``binary.any`` takes its second operand: taking the first, the reduce's
+    # fold ``acc = any(acc, v_i)`` would keep the identity it starts from.
     arr_any = a.reduce(monoid.any).new()
     np.testing.assert_array_equal(arr_any.value, [9.0, 10.0, 11.0, 12.0])
 
@@ -2519,9 +2498,8 @@ def test_udt_auto_monoid():
     rec_any[0] = (7, 8.0)
     rec_any[1] = (11, 12.0)
     any_res = rec_any.reduce(monoid.any).new()
-    # Result must be one of the input tuples; reject the (0, 0.0) identity.
-    # Compare via Scalar.__eq__ over a tuple of candidates (a set would require
-    # Scalar to be hashable, which it isn't).
+    # One of the input tuples, not the (0, 0.0) identity. A tuple of candidates,
+    # not a set, since Scalar is not hashable.
     assert any_res in ((7, 8.0), (11, 12.0))
 
 
@@ -2530,9 +2508,10 @@ def test_udt_auto_monoid():
 def test_udt_auto_monoid_time_fields():
     """Monoid min and max generate no identity for a datetime64 or timedelta64 field.
 
-    numpy files timedelta64 under ``np.integer``, so a timedelta64 field used to
-    reach ``np.iinfo`` and raise ``ValueError: Invalid integer data type 'm'``,
-    from ``udt in agg.min`` too, where a datetime64 field gets a KeyError.
+    numpy files timedelta64 under ``np.integer``. Regression: a timedelta64
+    field reached ``np.iinfo`` and raised ``ValueError: Invalid integer data
+    type 'm'``, from ``udt in agg.min`` too, where a datetime64 field got a
+    KeyError.
     """
     for code in ["M8[s]", "m8[s]"]:
         udt = dtypes.register_anonymous(np.dtype([("tf_n", np.int64), ("tf_t", code)]))
@@ -2549,10 +2528,11 @@ def test_udt_auto_monoid_time_fields():
 def test_udt_monoid_named_like_builtin_gets_no_identity():
     """Only the built-in monoids generate a UDT identity, not a user monoid of the same name.
 
-    A user monoid named plus, times, min or max (after its op's function, or by
-    ``name=``) used to get that built-in's generated identity. The op here takes
-    the field-wise max, so the generated ``min`` identity, INT64_MAX in every
-    field, absorbed every value: the reduce below gave that instead of (5, 2).
+    Regression: a user monoid named plus, times, min or max (after its op's
+    function, or by ``name=``) got that built-in's generated identity. The op
+    here takes the field-wise max, so the ``min`` identity, INT64_MAX in every
+    field, would absorb every value and the reduce below would give it instead
+    of (5, 2).
     """
     udt = dtypes.register_anonymous(np.dtype([("ni_a", np.int64), ("ni_b", np.int64)]))
     v = Vector(udt, size=2)
@@ -2580,23 +2560,22 @@ def test_udt_monoid_named_like_builtin_gets_no_identity():
 def test_udt_array_wrapper_stays_within_element(shape):
     """The array-UDT cfunc wrapper writes one element's bytes and nothing more.
 
-    The wrapper used to load and store each operand as a ``NestedArray``
-    *value*, which Numba models as its full array descriptor (meminfo, parent,
-    nitems, itemsize, data, shape, strides): 56 bytes on 64-bit for a 1-D
-    element and 72 for a 2-D one, whatever the payload size. Both elements here
-    are smaller, and the old wrapper overran each by 24 bytes. SuiteSparse's
-    generic reduce keeps a UDT accumulator in a stack array sized to the
-    element, so ``monoid.any`` overflowed it on every fold; depending on the
-    build that clobbered a spilled pointer (segfault or SIGBUS) or silently
-    produced a wrong answer.
+    Regression: the wrapper loaded and stored each operand as a
+    ``NestedArray`` *value*, which Numba models as its full array descriptor
+    (meminfo, parent, nitems, itemsize, data, shape, strides): 56 bytes on
+    64-bit for a 1-D element and 72 for a 2-D one, whatever the payload size.
+    That overran each element here by 24 bytes. SuiteSparse's generic reduce
+    keeps a UDT accumulator in a stack array sized to the element, so
+    ``monoid.any`` overflowed it on every fold; depending on the build, that
+    clobbered a spilled pointer (segfault or SIGBUS) or gave a wrong answer.
 
     ``binary.any`` compiles through the generic ``_numba_func`` branch of
-    ``BinaryOp._compile_udt``, the same one a user's ``is_udt=True`` op takes,
-    so its wrapper stands in for both. Driving it over heap buffers with slack
-    makes a regression trip an assert instead of corrupting a stack frame. The
-    two sentinels must differ: the old load/store copied the source element
-    plus its trailing bytes, so if ``y``'s slack held ``z``'s guard value, the
-    overrun rewrote the guard with identical bytes and went unseen.
+    ``BinaryOp._compile_udt``, the branch a user's ``is_udt=True`` op takes,
+    so its wrapper stands in for both. The test calls it on heap buffers with
+    slack, so an overrun fails an assert instead of corrupting a stack frame.
+    The two sentinels differ because an overrun copies the source element's
+    trailing bytes: if ``y``'s slack held ``z``'s guard value, the overrun
+    would rewrite the guard with identical bytes and go unseen.
     """
     import ctypes
 
@@ -2618,7 +2597,7 @@ def test_udt_array_wrapper_stays_within_element(shape):
     call = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)(cfunc.address)
 
     itemsize = udt.np_type.itemsize
-    slack = 128  # the old wrapper overran by 24 bytes; leave generous headroom
+    slack = 128  # well past the 24-byte overrun described above
     z = np.full(itemsize + slack, 0xAB, dtype=np.uint8)
     x = np.full(itemsize + slack, 0xCD, dtype=np.uint8)
     y = np.full(itemsize + slack, 0xCD, dtype=np.uint8)
@@ -2633,9 +2612,9 @@ def test_udt_array_wrapper_stays_within_element(shape):
     overrun = np.flatnonzero(z[itemsize:] != 0xAB)
     assert overrun.size == 0, f"wrote {overrun.size} bytes past the element at offsets {overrun}"
 
-    # Public-path smoke: the reduce whose stack accumulator the old wrapper
-    # overflowed. Kept after the byte-level checks so a regression fails the
-    # assert above instead of reaching code that may crash the process.
+    # The reduce from the docstring, through the public API. It runs after the
+    # byte-level checks so that a regression fails an assert above before it
+    # reaches code that may crash the process.
     v = Vector(udt, size=3)
     rows = [xvals, yvals, xvals + yvals]
     for i, row in enumerate(rows):
@@ -2707,9 +2686,9 @@ def test_udt_array_udf_shape_errors():
     """An array-UDT UDF whose result can't fill the element is rejected when typed.
 
     Numba's ``Array`` type records ``ndim`` but not extents, so this is not a
-    type error. It used to reach the cfunc, where the shape mismatch raises in
-    a context that swallows the exception, handing the caller an uninitialized
-    element and no error.
+    type error. Unchecked, it would reach the cfunc, where the shape mismatch
+    raises in a context that swallows the exception, handing the caller an
+    uninitialized element and no error.
     """
     # Shapes unique to this test: ``register_anonymous`` caches by dtype and
     # freezes the JIT C name at first registration, so sharing a shape with
@@ -2817,8 +2796,8 @@ def test_udt_array_udf_broadcast_return():
     """A return that broadcasts to the element fills it, and is not rejected.
 
     The wrapper slice-assigns and numpy broadcasts on assignment, so a ``(1,)``
-    return legitimately fills every slot of a ``(6,)`` element. Requiring an
-    exact shape would refuse this, which works.
+    return fills every slot of a ``(6,)`` element. An exact-shape check would
+    wrongly refuse it.
     """
     udt6 = dtypes.register_anonymous(np.dtype((np.float64, (6,))), "_BCast6")
 
@@ -2860,10 +2839,10 @@ def test_udt_array_udf_broadcast_return():
 def test_udt_record_leaf_broadcast_return():
     """A broadcastable array leaf fills its field, and later leaves still land.
 
-    Same boundary as the array case, and
-    ``test_udt_record_array_leaf_shape_errors`` holds the rejecting side. The
-    scalar leaf is worth asserting because a leaf that raises in the cfunc
-    abandons the write, leaving every leaf after it as SuiteSparse had it.
+    The same boundary as the array case; ``test_udt_record_array_leaf_shape_errors``
+    covers the rejecting side. The scalar leaf is asserted too because a leaf
+    that raises in the cfunc abandons the write, leaving every leaf after it
+    as SuiteSparse had it.
     """
     spec = np.dtype([("bc_vec", np.float64, (11,)), ("bc_tag", np.int64)], align=True)
     udt = dtypes.register_anonymous(spec, "_RecLeafBCast")
@@ -2974,10 +2953,10 @@ def test_udt_broadcast_matches_numba_slice_assign():
 
     The check turns a silent cfunc failure into a registration error, so a
     shape it rejects that Numba would have assigned is a false rejection, and
-    one it accepts that Numba raises on is the failure it exists to catch. Pin
-    both directions against Numba itself, including the two ranks where
+    one it accepts that Numba raises on is the failure it exists to catch.
+    Both directions are checked against Numba itself, including shapes where
     broadcasting alone gives the wrong answer: ``(1, 6)`` fills a ``(6,)``
-    destination because assignment drops leading ones, ``(6, 1)`` does not.
+    destination because assignment drops leading ones, and ``(6, 1)`` does not.
     """
     import numba
 
@@ -3110,7 +3089,7 @@ def test_udt_record_array_field_roundtrip():
     """A record UDT with an array field writes exactly that field's extent.
 
     Numba's record-field setitem copies the *destination* extent whatever the
-    source's length, so a short return used to read past the end of the source
+    source's length, so a short return would read past the end of the source
     array. The wrapper slice-assigns array leaves to make that a shape error.
     """
     spec = np.dtype([("count", np.int64), ("vec", np.float64, (3,))], align=True)
@@ -3135,11 +3114,11 @@ def test_udt_array_udf_returning_operand_keeps_its_type():
     """A UDF that returns an array-UDT operand as-is produces that operand's UDT.
 
     A layered ``FP64[5][2]`` and the flat ``FP64[2, 5]`` share the Numba type
-    ``nestedarray(float64, (2, 5))``, and ``lookup_dtype`` used to key UDTs on
-    it, so ``return y`` named whichever of the two had registered last.
-    SuiteSparse rejects the other one as a domain mismatch in a monoid or on
-    assignment into the operand's vector. The two now register as one UDT, and
-    a Numba type resolves through its numpy dtype, not registration order.
+    ``nestedarray(float64, (2, 5))``. They register as one UDT, and a Numba
+    type resolves through its numpy dtype. Regression: ``lookup_dtype`` keyed
+    UDTs on the Numba type, so ``return y`` named whichever of the two had
+    registered last, and SuiteSparse rejected the other as a domain mismatch
+    in a monoid or on assignment into the operand's vector.
     """
     flat = dtypes.register_anonymous(np.dtype((np.float64, (2, 5))), "_RetOperandFlat")
     assert dtypes.register_anonymous(np.dtype((np.dtype((np.float64, (5,))), (2,)))) is flat
@@ -3252,11 +3231,11 @@ def test_udt_declared_with_nested_subarrays_gets_builtin_ops():
     """Built-in ops work on UDTs declared with nested subarray dtypes.
 
     numpy reports such a dtype's ``subdtype`` as ``(inner array dtype, outer
-    shape)``, which the auto-lift codegen took for ``(scalar, shape)``:
-    ``plus``, ``eq``, and ``ainv`` failed in Numba lowering, ``monoid.plus`` and
-    ``agg.sum`` could not build an identity, and a UDF returning a record
-    operand could come back as its flat-field twin. Registration flattens these
-    dtypes now, so they take the ordinary path.
+    shape)``. Registration flattens these dtypes, so they take the ordinary
+    path. Regression: the lifting code took the subdtype for ``(scalar,
+    shape)``, so ``plus``, ``eq`` and ``ainv`` failed in Numba lowering,
+    ``monoid.plus`` and ``agg.sum`` could not build an identity, and a UDF
+    returning a record operand could come back as its flat-field twin.
     """
     udt = dtypes.register_anonymous(np.dtype((np.dtype((np.int64, (3,))), (4,))), "_NestedDeclArr")
     assert udt.np_type == np.dtype((np.int64, (4, 3)))
@@ -3293,7 +3272,7 @@ def test_udt_declared_with_nested_subarrays_gets_builtin_ops():
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_auto_semiring():
-    """Built-in semirings auto-lift to UDTs and drive ``mxm``/``mxv``/``vxm``."""
+    """Built-in semirings lift to UDTs for ``mxm``, ``mxv`` and ``vxm``."""
     record_dtype = np.dtype([("r", np.float64), ("s", np.float64)], align=True)
     udt = dtypes.register_anonymous(record_dtype)
 
@@ -3449,10 +3428,8 @@ def test_udt_int_array():
 def test_udt_expr_repr_does_not_crash():
     """``repr`` of UDT expressions returns a non-empty string mentioning the UDT.
 
-    Regression pin: the expression types used to lack ``_expr_name`` for UDT
-    pointer return types, so ``repr`` raised. Pin both that the call returns
-    a non-empty string and that the UDT's dtype name appears in it, so a
-    future regression returning ``""`` or a generic placeholder still fails.
+    Regression: ``repr`` raised for UDT expressions. Checking for the UDT's
+    name also catches a ``repr`` that returns ``""`` or a generic placeholder.
     """
     record_dtype2 = np.dtype([("rx", np.float64), ("ry", np.float64)], align=True)
     repr_udt = dtypes.register_anonymous(record_dtype2, "_ReprPinUdt")
@@ -3472,12 +3449,11 @@ def test_udt_expr_repr_does_not_crash():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_eq_ne_nan_simple_record():
-    """Simple float-field record: NaN-bearing entries compare unequal under eq.
+    """Records with a NaN field compare unequal under eq, as FP64 NaNs do.
 
-    Regression: the original implementation byte-compared records (with a
-    padding-byte mask) so two records whose float fields both held NaN
-    compared *equal*. The cfunc now reads each leaf and applies scalar
-    ``==`` / ``!=``, matching ``binary.eq[FP64](nan, nan) == False``.
+    ``eq`` and ``ne`` compare leaf by leaf with scalar ``==`` and ``!=``, as
+    ``binary.eq[FP64](nan, nan)`` is False. Regression: records were compared
+    byte by byte, so two records with NaN in the same field compared equal.
     """
     spec = np.dtype([("eq_a", np.float64), ("eq_b", np.float64)], align=True)
     udt = dtypes.register_anonymous(spec, "_NaNEqSimple")
@@ -3497,7 +3473,7 @@ def test_udt_eq_ne_nan_simple_record():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_eq_packed_mixed_width():
-    """Packed (non-aligned) records compare by leaf, so padding bytes don't matter."""
+    """A packed record, whose float64 field is not 8-byte aligned, compares leaf by leaf."""
     spec_packed = np.dtype([("pk_a", np.int32), ("pk_b", np.float64)])
     assert spec_packed.itemsize == 12  # packed: int32 + float64, no padding
     udt_pk = dtypes.register_anonymous(spec_packed, "_NaNEqPacked")
@@ -3510,8 +3486,8 @@ def test_udt_eq_packed_mixed_width():
 
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
-# SS < 9 has no GrB_NAME setter, so registration falls back to storing the
-# numpy repr in the type name and warns when it does not fit in 128 chars.
+# SuiteSparse < 9 has no GrB_NAME setter, so registration falls back to storing
+# the numpy repr in the type name and warns when it does not fit in 128 chars.
 # This dtype's repr is 133; how it serializes is not what the test is about.
 @pytest.mark.filterwarnings("ignore:UDT repr is too large")
 def test_udt_eq_nested_record_with_nan_leaf():
@@ -3534,7 +3510,7 @@ def test_udt_eq_nested_record_with_nan_leaf():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_eq_ne_array_with_nan_element():
-    """Array UDT with a NaN element compares unequal under eq, equal under ne."""
+    """An array UDT element holding a NaN gives False under eq and True under ne."""
     arr = np.dtype((np.float64, (3,)))
     udt_a = dtypes.register_anonymous(arr, "_NaNEqArr")
     va1 = Vector(udt_a, size=2)
@@ -3667,13 +3643,10 @@ def test_udt_matrix_scalar_broadcast(broadcast_record_udt):
     assert result[1, 1].new() == (41.0, 42.0)
 
 
-# eq/ne broadcasting between a UDT and a scalar type.
-#
-# Before this fix, ``binary.eq(udt_vec & int_vec)`` silently reinterpreted
-# the int cell as a UDT struct (reading past the cell) and produced
-# byte-comparison nonsense that happened to look like plausible False/True.
-# Now the scalar broadcasts to every leaf, so ``eq`` is true only when all
-# leaves equal the scalar.
+# eq and ne between a UDT and a built-in type compare the built-in value with
+# every leaf, so ``eq`` is True only when all leaves equal it. Regression:
+# ``binary.eq(udt_vec & int_vec)`` read the int element as a UDT, past its end,
+# and gave plausible-looking but meaningless answers.
 
 
 @pytest.mark.skipif("not supports_udfs")
@@ -3706,9 +3679,9 @@ def test_udt_eq_ne_scalar_broadcast_record():
 @pytest.mark.slow
 def test_udt_eq_ne_scalar_broadcast_nan_propagates():
     """A NaN leaf never equals anything, even another NaN."""
-    # Distinct field names from the sibling record test: ``register_anonymous``
-    # keys on ``np.dtype``, so reusing ``("u", "v")`` would alias the cached
-    # DataType across tests (see CLAUDE.md).
+    # Field names differ from test_udt_eq_ne_scalar_broadcast_record's:
+    # ``register_anonymous`` keys on the numpy dtype, so reusing ``("u", "v")``
+    # would share one DataType across tests.
     record = dtypes.register_anonymous(
         np.dtype([("nan_u", np.float64), ("nan_v", np.float64)], align=True),
         name="_EqBcastUVNan",
@@ -3724,15 +3697,14 @@ def test_udt_eq_ne_scalar_broadcast_nan_propagates():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_eq_ne_type_a_literal_as_builtin_comparisons_do():
-    """``eq`` and ``ne`` beside a UDT type a Python number as a built-in comparison does.
+    """``eq`` and ``ne`` with a UDT type a Python number as a built-in comparison does.
 
     The number is weak, leaf by leaf, so ``fp32_udt == 0.1`` compares in
-    float32 and is True, as ``fp32_vec == 0.1`` and numpy are; it was strong,
-    and compared float32 0.1 with float64 0.1. A comparison keeps no result
-    type, so a literal with an int out of a leaf's range equals no element,
-    even past int64, where it raised. Beside an int64 leaf, it is not rounded
-    to equal one (in float64, the int64 ``2**63 - 1`` and ``2**63`` are equal).
-    numpy scalars stay strong.
+    float32 and is True, as ``fp32_vec == 0.1`` and numpy are. A comparison
+    has no result type to fit, so an int out of a leaf's range, even past
+    int64, equals no element and does not raise. Against an int64 leaf it is
+    not rounded to equal one (in float64, ``2**63 - 1`` and ``2**63`` are
+    equal). numpy scalars stay strong.
     """
     f32 = dtypes.register_anonymous(np.dtype((np.float32, (7,))), "_EqWeakF32")
     i8 = dtypes.register_anonymous(np.dtype((np.int8, (7,))), "_EqWeakI8")
@@ -3773,8 +3745,9 @@ def test_udt_eq_ne_type_a_literal_as_builtin_comparisons_do():
 def test_udt_float32_overflow_warns_at_the_callers_line():
     """A float too large for a float32 leaf is infinity, with a warning at the caller's line.
 
-    numpy warned from inside python-graphblas, so the default filter showed it
-    once per process; a built-in FP32 warns at the caller's line, as numpy does.
+    A built-in FP32 warns at the caller's line, as numpy does. A warning from
+    inside python-graphblas would show only once per process under the
+    default filter.
     """
     f32 = dtypes.register_anonymous(np.dtype((np.float32, (2,))), "_OverflowF32")
     v = Vector(f32, size=1)
@@ -3854,13 +3827,11 @@ def test_udt_eq_ne_scalar_broadcast_record_with_array_subfield():
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_eq_ne_rejects_incompatible_pairs():
-    """eq/ne between two UDTs must reject mismatched structure rather than
-    silently byte-compare.
+    """``eq`` and ``ne`` reject two UDTs of mismatched structure rather than compare bytes.
 
-    The old code only consulted the first dtype when generating the leaf
-    chain, so two records with different field names (but identical
-    byte layout) compared as equal, and a record-vs-array pair compared
-    by reinterpreting one side as the other.
+    Regression: the leaves came from the left dtype alone, so records with
+    different field names but the same byte layout compared equal, and a
+    record compared with an array by reading one as the other.
     """
     uv = dtypes.register_anonymous(
         np.dtype([("u", np.float64), ("v", np.float64)], align=True),
@@ -3888,24 +3859,21 @@ def test_udt_eq_ne_rejects_incompatible_pairs():
 
 
 @pytest.mark.skipif("not supports_udfs")
-# SS < 9 has no GrB_NAME setter, so registration falls back to storing the
-# numpy repr in the type name and warns when it does not fit in 128 chars.
-# Each nested record's repr here is 141 or 142; how they serialize is not what
-# the test is about.
+# Nested-record reprs of 141 or 142 chars; see test_udt_eq_nested_record_with_nan_leaf.
 @pytest.mark.filterwarnings("ignore:UDT repr is too large")
 @pytest.mark.parametrize("op", ["plus", "eq"])
 @pytest.mark.parametrize("case", ["leaf_count", "nesting", "inner_names", "inner_order"])
 def test_udt_record_nesting_mismatch_is_a_keyerror(case, op):
     """Records sharing top-level field names but nesting differently are a KeyError.
 
-    ``_check_udt_pair`` matched on top-level names only, but the codegen reads
-    both operands at the left one's leaf paths. A field that is a sub-record on
-    one side and a scalar on the other, or sub-records with different names,
-    reached Numba, whose typing failure was a ``UdfParseError`` for ``plus``
-    and a raw ``TypingError`` for ``eq``: compile errors for what is really the
-    shape disagreement its sibling checks raise ``KeyError`` for. Sub-record
-    fields in a different order are rejected as top-level ones are, so that
-    leaf ``i`` of one operand is leaf ``i`` of the other.
+    The generated code reads both operands at the left one's leaf paths.
+    Regression: ``_check_udt_pair`` matched top-level names only, so a field
+    that is a sub-record on one side and a scalar on the other, or sub-records
+    with different names, reached Numba and failed there, as a
+    ``UdfParseError`` for ``plus`` and a raw ``TypingError`` for ``eq``, where
+    the other layout checks raise KeyError. Sub-record fields in a different
+    order are rejected as top-level ones are, so that leaf ``i`` of one
+    operand is leaf ``i`` of the other.
     """
     f8 = np.float64
     sub = [("nst_n1", f8), ("nst_n2", f8)]
@@ -3941,14 +3909,13 @@ def _record_with_field_shape(shape, name, b_dtype=np.float64):
 def test_udt_record_field_shape_mismatch_is_a_keyerror(left, right, op):
     """Record fields whose shapes differ are a KeyError, whichever operand is on the left.
 
-    The codegen combines array fields as numpy arrays, so a ``(3,)`` field with
-    a ``(4,)`` one raised inside the cfunc, where the caller never saw it, and
-    the result element kept whatever was in the buffer (``eq`` read it as its
-    bool). Shapes that broadcast worked only one way round: ``plus`` writes
-    into a field shaped like the left operand's, so a ``(3,)`` field took a
-    ``(1,)`` one on its right but failed with it on its left, and a scalar
-    field on the left of an array one never compiled. numpy will not promote
-    or compare two record dtypes whose fields differ in shape either.
+    numpy will not promote or compare two record dtypes whose fields differ in
+    shape either. Regression: the generated code combined array fields as
+    numpy arrays, so a ``(3,)`` field with a ``(4,)`` one raised inside the
+    cfunc, where the caller never saw it, and the result element kept
+    whatever was in the buffer (``eq`` read it as its bool). Shapes that
+    broadcast worked only one way round, since ``plus`` writes into a field
+    shaped like the left operand's.
     """
     X = _record_with_field_shape(left, "_FshLeft")
     Y = _record_with_field_shape(right, "_FshRight")
@@ -3963,10 +3930,10 @@ def test_udt_record_field_shape_mismatch_is_a_keyerror(left, right, op):
 def test_udt_record_fields_of_equal_shape_combine():
     """Two record UDTs with the same field shapes combine, though a field's dtype differs.
 
-    ``eq`` and ``ne`` used to fail on this pair with GrB_DOMAIN_MISMATCH:
+    ``eq`` and ``ne`` compile the pair, as the arithmetic ops do. Regression:
     ``get_typed_op`` unified the two records to one of them, since numpy
-    promotes their field dtypes, so GraphBLAS saw an operand of the other
-    type. They now compile the pair, as the arithmetic ops do.
+    promotes their field dtypes, so GraphBLAS raised GrB_DOMAIN_MISMATCH on
+    the operand of the other type.
     """
     X = _record_with_field_shape((2, 3), "_FshLeft")
     v = Vector(X, size=2)
@@ -3991,10 +3958,9 @@ def test_udt_record_fields_of_equal_shape_combine():
 def test_udt_positional_ops_take_two_different_udts():
     """``first``, ``second``, ``any`` and ``pair`` take any two UDTs; they never read a field.
 
-    ``any`` was the odd one out: it had no ``_custom_dtype``, so ``get_typed_op``
-    unified two records of the same layout to one of them and GraphBLAS raised
-    GrB_DOMAIN_MISMATCH on the other operand. ``get_typed_op`` now never unifies
-    two different UDTs.
+    Regression: ``any`` had no ``_custom_dtype``, so ``get_typed_op`` unified
+    two records of the same layout to one of them, and GraphBLAS raised
+    GrB_DOMAIN_MISMATCH on the other operand.
     """
     # Own field names: the helper's scalar-field record is ``_FshRight``'s dtype,
     # and ``register_anonymous`` returns one cached DataType per dtype.
@@ -4018,15 +3984,15 @@ def test_udt_positional_ops_take_two_different_udts():
 def test_udt_record_pair_promotes_each_field():
     """Two records whose field dtypes differ give each field the dtype the built-in op gives.
 
-    The result was always the left record, so ``x + y`` truncated an int64 field
-    that ``y + x`` kept as float64, and a complex field on the right of ``min``
-    slipped past the check that rejects complex ``min`` and failed in Numba.
-    When one operand's record holds every promoted field, the result is that
-    record, on either side; otherwise it is the record with the promoted
-    fields, which is the UDT registered with that layout if there is one. Each
-    record also has an array field, which no Numba return type can be matched
-    against, so the result type cannot be recovered from what the generated
-    function returns.
+    When one operand's record can store every promoted field, the result is
+    that record, on either side; otherwise it is the record with the promoted
+    fields, which is the UDT registered with that layout if there is one.
+    Each record also has an array field, which no Numba return type can be
+    matched against, so the result type cannot come from what the generated
+    function returns. Regression: the result was always the left record, so
+    ``x + y`` truncated an int64 field that ``y + x`` kept as float64, and a
+    complex field on the right of ``min`` slipped past the check that rejects
+    complex ``min`` and failed in Numba.
     """
 
     def record(a_dtype, b_dtype, name):
@@ -4048,8 +4014,8 @@ def test_udt_record_pair_promotes_each_field():
         value = result[0].new().value
         assert (value["wid_a"], value["wid_b"]) == (1.5, 2.25)
         np.testing.assert_array_equal(value["wid_v"], [11.0, 22.0])
-    # Each of ``narrow`` and ``crossed`` is wider in one field, so neither holds
-    # both. The promoted record has ``wide``'s layout, so it is ``wide``.
+    # Each of ``narrow`` and ``crossed`` is wider in one field, so neither can
+    # store both. The promoted record has ``wide``'s layout, so it is ``wide``.
     x = Vector(crossed, size=1)
     x[0] = (1.0, 2, [1.0, 2.0])
     for a, b in [(v, x), (x, v)]:
@@ -4074,16 +4040,15 @@ def test_udt_record_pair_promotes_each_field():
 
 
 @pytest.mark.skipif("not supports_udfs")
-# SS < 9 names a UDT by its numpy repr and warns when that is over 128 chars,
-# as these nested records' reprs are.
+# Nested-record reprs over 128 chars; see test_udt_eq_nested_record_with_nan_leaf.
 @pytest.mark.filterwarnings("ignore:UDT repr is too large")
 def test_udt_record_pair_promotes_to_a_third_record():
     """Records that are each wider in some field give a third record, as numpy would.
 
     Each field is promoted as the built-in op promotes two Vectors, so int16
     with float32 is float32, and the result keeps the operands' names, nesting
-    and alignment. This pair used to be a KeyError, since the result had to be
-    one of the two operands.
+    and alignment. Regression: this pair was a KeyError, since the result had
+    to be one of the two operands.
     """
     i2, i8, f4, f8 = np.int16, np.int64, np.float32, np.float64
     X = dtypes.register_anonymous(
@@ -4105,10 +4070,10 @@ def test_udt_record_pair_promotes_to_a_third_record():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_record_scalar_promotes_each_field():
-    """A number beside a record UDT keeps its dtype, and each field promotes as a Vector's would.
+    """A Python number with a record UDT promotes each field as it would a Vector's.
 
-    The number used to be converted to the record first, so ``int_record + 0.5``
-    added 0 to each field.
+    Regression: the number was cast to the record first, so
+    ``int_record + 0.5`` added 0 to each field.
     """
     ints = dtypes.register_anonymous(
         np.dtype([("rsp_x", np.int64), ("rsp_y", np.int64)]), "_RspInts"
@@ -4139,9 +4104,9 @@ def test_udt_record_scalar_promotes_each_field():
 def test_udt_packed_record_with_aligned_takes_an_operand_type():
     """A packed and an aligned record with the same leaves give the left operand's type.
 
-    Their fields are the same dtypes at different offsets, so neither holds the
-    other's layout, but each holds every result field. Taking the left one lets
-    ``x << x + y`` update ``x`` in place, whichever of the two ``x`` is.
+    Their fields are the same dtypes at different offsets, so neither has the
+    other's layout, but each can store every result field. Taking the left one
+    lets ``x << x + y`` update ``x`` in place, whichever of the two ``x`` is.
     """
     fields = [("pak_a", np.int8), ("pak_b", np.float64)]
     aligned = dtypes.register_anonymous(np.dtype(fields, align=True), "_PakAligned")
@@ -4164,9 +4129,9 @@ def test_udt_packed_record_with_aligned_takes_an_operand_type():
 def test_udt_array_pair_shape_mismatch_is_a_keyerror(left, right, op):
     """Array UDTs whose shapes do not broadcast are a KeyError, as numpy refuses them.
 
-    Two of these with the same size used to combine over their flat buffers,
-    so ``(2, 3)`` plus ``(3, 2)`` added elements numpy never pairs. The base
-    dtypes differ, which is allowed, so only the shapes are at fault.
+    The base dtypes differ, which is allowed, so only the shapes are at fault.
+    Regression: two of these with the same size combined over their flat
+    buffers, so ``(2, 3)`` plus ``(3, 2)`` added elements numpy never pairs.
     """
     # int16 and int32: other tests register float64 arrays of these shapes, and
     # ``register_anonymous`` returns one cached DataType per dtype.
@@ -4261,9 +4226,8 @@ def test_udt_array_broadcast_semiring_and_reduce():
 def test_udt_record_2d_field_compares_with_a_number():
     """``eq`` and ``ne`` of a record with a 2-D array field and a number compare every element.
 
-    The generated code read the field at flat positions, which in a 2-D field
-    are rows, so it failed to compile once a number was compared as it is
-    rather than converted into the record first.
+    Regression: the generated code indexed the field at flat positions, which
+    in a 2-D field are rows, so it failed to compile.
     """
     T = dtypes.register_anonymous(
         np.dtype([("cf_grid", np.float64, (2, 3)), ("cf_n", np.int64)], align=True), "_CmpField2D"
@@ -4331,11 +4295,11 @@ def test_udt_array_pair_leading_ones():
 def test_udt_array_pair_promotes_the_base():
     """Array UDTs with different base dtypes combine, each element promoted as the built-in op does.
 
-    The pair used to be a KeyError. The result is the operand whose type holds
-    the promoted elements, on either side, so ``int64`` with ``float64`` gives
-    the ``float64`` one. ``eq`` and ``ne`` must read each operand as its own
-    dtype: reading both as the left one's compares the bits of a float64 as an
-    int64.
+    The result is the operand whose type can store the promoted elements, on
+    either side, so ``int64`` with ``float64`` gives the ``float64`` one.
+    ``eq`` and ``ne`` read each operand as its own dtype: reading both as the
+    left one's would compare the bits of a float64 as an int64. Regression:
+    the pair was a KeyError.
     """
     ints = dtypes.register_anonymous(np.dtype((np.int64, (2, 2, 2))), "_PromI222")
     floats = dtypes.register_anonymous(np.dtype((np.float64, (2, 2, 2))), "_PromF222")
@@ -4365,13 +4329,13 @@ def test_udt_array_pair_promotes_the_base():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_array_scalar_promotes_like_builtin():
-    """A number beside an array UDT keeps its dtype, and each element promotes as the op does.
+    """A number with an array UDT promotes each element as the built-in op does.
 
-    ``apply`` converted a Python number to the UDT first (``v + 0.5`` is an
-    ``apply``), and the result took the UDT's base whatever the other operand
-    was, so ``int_udt + 0.5`` added 0 and ``int_udt / 4`` gave integers. Each
-    element now has the dtype the op gives on the built-in dtypes, and the
-    result is the operand's UDT only when that holds it.
+    Each element has the dtype the op gives on the built-in dtypes, and the
+    result is the operand's UDT only when that dtype is its element type.
+    Regression: ``apply`` (and so ``v + 0.5``) cast a Python number to the UDT
+    first, and the result kept the UDT's element type, so ``int_udt + 0.5``
+    added 0 and ``int_udt / 4`` gave integers.
     """
     ints = dtypes.register_anonymous(np.dtype((np.int64, (2, 4))), "_UpcI24")
     int8s = dtypes.register_anonymous(np.dtype((np.int8, (2, 4))), "_UpcB24")
@@ -4434,7 +4398,7 @@ def test_udt_array_scalar_promotes_like_builtin():
         for expr in [lambda: binary.min(x, 1j), lambda: binary.min(1j, x)]:
             with pytest.raises(KeyError, match="not defined on complex fields"):
                 expr()
-    # eq and ne compare with the number itself; converted to the UDT, 0.5 was 0.
+    # eq and ne compare with the number itself, so 0.5 does not equal 0.
     zeros = Vector(ints, size=1)
     zeros[0] = np.zeros((2, 4))
     assert not (zeros == 0.5).new()[0].new().value
@@ -4446,10 +4410,10 @@ def test_udt_array_scalar_promotes_like_builtin():
 def test_udt_uint64_with_signed_ints_computes_like_builtin():
     """UINT64 elements with signed ones are computed in FP64, as the built-in ops compute them.
 
-    The result type was right, but the generated code let Numba do the
-    arithmetic, and Numba computes uint64 with int64 in int64: ``2**63 + 1``
-    came out as ``-9.22e18`` and ``2**63 * 2`` as 0. Each operand is now
-    converted to the type the built-in op computes in first.
+    Numba computes uint64 with int64 in int64, so each operand is first cast
+    to the type the built-in op computes in. Regression: the generated code
+    left the arithmetic to Numba, so ``2**63 + 1`` came out as ``-9.22e18``
+    and ``2**63 * 2`` as 0.
     """
     big = 2**63
     uints = dtypes.register_anonymous(np.dtype((np.uint64, (2, 2))), "_MixU22")
@@ -4500,12 +4464,11 @@ def test_udt_uint64_with_signed_ints_computes_like_builtin():
 def test_udt_user_op_named_like_a_lifted_op():
     """A UDF registered under a lifted op's name runs its own function, and literals become UDTs.
 
-    ``_compile_udt`` matched built-in ops by name only, so a UDF registered as
-    ``"plus"`` or ``"max"`` was compiled as the built-in, its function ignored,
-    and on a built-in dtype it raised KeyError. A literal beside a UDT is
-    converted to the UDT for it, since nothing says how a UDF combines a scalar
-    with an element, but only when its type fits: ``0.5`` became an element of
-    zeros.
+    A literal with a UDT is cast to the UDT for a UDF, since nothing says how
+    a UDF combines a number with an element, but only when its type fits.
+    Regression: ``_compile_udt`` matched built-in ops by name only, so a UDF
+    registered as ``"plus"`` or ``"max"`` was compiled as the built-in, its
+    function ignored, and on a built-in dtype it raised KeyError.
     """
     udt = dtypes.register_anonymous(np.dtype((np.int64, (2, 3))), "_NamedLikeLifted")
 
@@ -4539,14 +4502,14 @@ def test_udt_user_op_named_like_a_lifted_op():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_python_number_is_weak_per_leaf():
-    """A Python number beside a UDT is typed leaf by leaf, as numpy 2 types it.
+    """A Python number with a UDT is typed leaf by leaf, as numpy 2 types it.
 
-    Each leaf keeps its dtype when its kind holds the number (an int beside
-    int8, a float beside float32) and takes the number's default dtype when it
-    does not (a float beside int8 is float64). So an in-place update with a
-    number of the leaf's kind keeps the UDT, where typing every Python int as
-    INT64 and every float as FP64 made ``int8_udt += 1`` and ``f32_udt *= 2``
-    unstorable. numpy scalars are strong, and so are typed Scalars.
+    Each leaf keeps its dtype when its kind holds the number (an int with
+    int8, a float with float32) and takes the number's default dtype when it
+    does not (a float with int8 gives float64). So an in-place update with a
+    number of the leaf's kind, such as ``int8_udt += 1`` or ``f32_udt *= 2``,
+    keeps the UDT and can be stored. numpy scalars are strong, and so are
+    typed Scalars.
     """
 
     # Aligned, so the same-type ops get a JIT kernel and warn nothing.
@@ -4647,8 +4610,8 @@ def test_udt_ewise_add_needs_operands_of_the_result_type():
     result = (A + Vector.from_coo([1], [[0.5, 0.5, 0.5]], dtype=fp32s, size=2)).new()
     assert result.to_coo()[2].tolist() == [[1, 2, 3], [0.5, 0.5, 0.5]]
     # That zero is -0.0 in a float field, so an entry of one operand alone keeps
-    # its value, as ewise_add would copy it; beside an int field, 0 turns -0.0
-    # into 0.0.
+    # its value, as ewise_add would copy it. For an int operand the zero is 0,
+    # which turns -0.0 into 0.0.
     zeros = Vector(fp32s, size=3)
     zeros[2] = [-0.0, 0.0, -1.5]
     for left, right in [(zeros, Vector(f64s, size=3)), (Vector(f64s, size=3), zeros)]:
@@ -4689,12 +4652,12 @@ def test_udt_ewise_add_needs_operands_of_the_result_type():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_literal_converts_only_when_exact():
-    """A literal that has to become an element of a UDT must be of that type.
+    """A literal that has to become an element of a UDT must fit it.
 
-    A literal beside a user-defined op, an IndexUnaryOp thunk and an
-    ``ewise_union`` default are converted into the UDT, which numpy does
-    silently: ``(0.5, 1.5, 2.5)`` added ``(0, 1, 2)`` to an int8 array UDT, and
-    a default of ``0.5`` stood in as ``0``. The literal's type decides, as
+    A literal with a user-defined op, an IndexUnaryOp thunk and an
+    ``ewise_union`` default are cast to the UDT. numpy would cast silently:
+    ``(0.5, 1.5, 2.5)`` would add ``(0, 1, 2)`` to an int8 array UDT, and a
+    default of ``0.5`` would stand in as ``0``. The literal's type decides, as
     numpy's same_kind rule decides ``ints += x``: a Python number or sequence
     is weak, so ``1`` and ``(1, 2, 3)`` are int8 and ``0.5`` and ``2.0`` are
     float64; a numpy value is strong and must cast safely. A Monoid in
@@ -4767,8 +4730,8 @@ def test_udt_literal_converts_only_when_exact():
         (lambda: r.apply(second, right=(np.float64(1.5), 1)), "_ExactRec"),
         (lambda: r.apply(second, right={"ex_i": np.float64(1.5), "ex_f": 1}), "_ExactRec"),
         (lambda: n.apply(second, right=((np.float64(1.5), 2), 3)), "_ExactNested"),
-        # Text or a date in a record is typed too, so the number beside it is checked,
-        # and text longer than its field does not fit.
+        # Text or a date in a record is typed too, so the number next to it is
+        # checked, and text longer than its field does not fit.
         (lambda: t.apply(second, right=(b"ab", 1.5)), "_ExactText"),
         (lambda: t.apply(second, right=(b"ab", np.float64(1.5))), "_ExactText"),
         (lambda: t.apply(second, right=(b"abcdef", 1)), "_ExactText"),
@@ -4794,17 +4757,17 @@ def test_udt_literal_converts_only_when_exact():
         (lambda: t.apply(second, right=(1.5, 1)), "_ExactText"),
         (lambda: b.apply(same, right=0.5), "_ExactBareText: it is typed as FP64,"),
         (lambda: b.apply(same, right=np.True_), "_ExactBareText: it is typed as BOOL,"),
-        (lambda: b.apply(same, right=b"0.5000"), "_ExactBareText"),  # was cut to b"0.5"
+        (lambda: b.apply(same, right=b"0.5000"), "_ExactBareText"),  # S3 would cut it to b"0.5"
         (lambda: t.apply(second, right=cut_text), "_ExactText"),
-        # NaT as b"N"
+        # NaT would become b"N"
         (lambda: c.apply(second, right=(np.datetime64("NaT", "s"), 1)), "_ExactChar"),
         (lambda: d.apply(same, right=np.timedelta64(5, "ms")), "_ExactBareSeconds"),
     ]:
         with pytest.raises(ValueError, match=re.escape(f"does not fit {typed_as}")):
             expr()
-    # One that does not fit by type but converts exactly still converts, as it
-    # did on main, with a DeprecationWarning. A field that is not a number, such
-    # as bytes, is converted as it is.
+    # One that does not fit by type but casts exactly still casts, with a
+    # DeprecationWarning. A field that is not a number, such as bytes, is cast
+    # as it is.
     text_literal = np.array((b"cd", 2), dtype=[("ex_s", "S4"), ("ex_n", np.int64)])[()]
     for expr, typed_as in [
         (lambda: v.apply(udf, right=[2.0, 2.0, 2.0]), "_ExactArr"),
@@ -4858,18 +4821,17 @@ def test_udt_literal_converts_only_when_exact():
     assert v.apply(monoid.max, right=2).new().dtype == arr
 
 
-# _SeqNest's numpy repr is over 128 chars on numpy 1; see test_udt_eq_nested_record_with_nan_leaf.
+# _SeqNest's numpy repr is over 128 chars; see test_udt_eq_nested_record_with_nan_leaf.
 @pytest.mark.filterwarnings("ignore:UDT repr is too large")
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_sequence_and_array_literals_type_like_numbers():
-    """A tuple, list or array beside a UDT under a lifted op is typed, not converted into the UDT.
+    """A tuple, list or array with a UDT under a lifted op is typed, not cast to the UDT.
 
     A tuple or list of Python numbers is weak leaf by leaf, as a Python number
-    is: ``int8_udt + (1, 2, 3)`` stays int8 and ``+ (0.5, 1.5, 2.5)`` is
-    float64, where converting it raised (and before that added ``(0, 1, 2)``).
-    A numpy array is strong, as its own array type. ``eq`` and ``ne`` compare
-    the values. A literal beside a user-defined op is still converted
-    (``test_udt_literal_converts_only_when_exact``).
+    is: ``int8_udt + (1, 2, 3)`` stays int8 and ``int8_udt + (0.5, 1.5, 2.5)``
+    is float64. A numpy array is strong, typed as its own array type. ``eq``
+    and ``ne`` compare the values. A literal with a user-defined op is still
+    cast to the UDT (``test_udt_literal_converts_only_when_exact``).
     """
     int8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_SeqI8")
     fp32s = dtypes.register_anonymous(np.dtype((np.float32, (3,))), "_SeqF32")
@@ -4907,7 +4869,7 @@ def test_udt_sequence_and_array_literals_type_like_numbers():
     # The float64 result is cast as it is stored, as a built-in int8 vector's would be.
     v += (0.5, 1, 1)
     np.testing.assert_array_equal(v[0].new().value, [2, 4, 5])
-    # A float list beside float32 stays float32, as 0.5 does.
+    # A float list with float32 elements stays float32, as 0.5 does.
     x = Vector(fp32s, size=1)
     x[0] = [1, 2, 3]
     assert binary.plus(x, [0.5, 0.5, 0.5]).new().dtype == fp32s
@@ -5005,7 +4967,7 @@ def test_udt_sequence_and_array_literals_type_like_numbers():
     m = Vector(first, size=1)
     m[0] = ((2, 3.5), 1)
     assert binary.plus(m, ((0.5, 1), 1)).new()[0].new().value.tolist() == ((2.5, 4.5), 2)
-    # eq and ne take the literal as it is, like numpy, instead of raising.
+    # eq and ne compare the literal as it is, as numpy does.
     assert (v == (0.5, 4, 5)).new().isequal(Vector.from_coo([0, 1], [False, False]))
     assert (v == (2, 4, 5)).new().isequal(Vector.from_coo([0, 1], [True, False]))
     assert (v != (2, 4, 500)).new().isequal(Vector.from_coo([0, 1], [True, True]))
@@ -5027,10 +4989,10 @@ def test_udt_record_array_field_refuses_literal_of_another_shape():
     An array UDT's element takes the shape a literal broadcasts it to, as numpy
     does: ``INT8[3]`` plus ``np.array([[1, 300, 3]])`` is ``INT64[1, 3]``. A
     record's field keeps its shape, so the record refuses such a literal and
-    names both shapes. Before, its typing gave up and the literal was converted
-    into the field as numpy assigns it, dropping the leading axis and wrapping
-    300 to 44, through ``+`` and through a user's op alike; a nested list
-    raised numpy's ValueError. A store still converts as numpy assigns.
+    names both shapes. A store still casts as numpy assigns. Regression: the
+    literal was cast into the field as numpy assigns it, dropping the leading
+    axis and wrapping 300 to 44, through ``+`` and a user's op alike, and a
+    nested list raised numpy's ValueError.
     """
     arr = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_ShapeArrI8")
     rec = dtypes.register_anonymous(
@@ -5071,17 +5033,17 @@ def test_udt_record_array_field_refuses_literal_of_another_shape():
             with pytest.raises(ValueError, match="of shape \\(3,\\): a literal for an array") as e:
                 expr(literal)
             assert reason in str(e.value)
-    # A store converts as numpy assigns, on both sides
+    # A store casts as numpy assigns, for the array UDT and the record alike.
     v[0] = np.array([[1, 300, 3]])
     r[0] = (np.array([[1, 300, 3]]), 0)
     assert v[0].new().value.tolist() == [1, 44, 3]
     assert r[0].new().value["shp_a"].tolist() == [1, 44, 3]
     if supports_udfs:
-        # The array UDT keeps numpy's arithmetic shape
+        # The array UDT takes numpy's arithmetic shape,
         result = (v + np.array([[1, 300, 3]])).new()
         assert result.dtype.np_type == np.dtype((np.array([1]).dtype, (1, 3)))
         assert result[0].new().value.tolist() == [[2, 344, 6]]
-        # and a literal that broadcasts to the field is typed as before
+        # and a literal that broadcasts to the record's field is accepted.
         value = binary.plus(r, (np.array([5]), 1)).new()[0].new().value
         assert value["shp_a"].tolist() == [6, 49, 8]
         assert value["shp_b"] == 1
@@ -5092,9 +5054,9 @@ def test_udt_array_literal_broadcasts_with_an_array_udt():
     """An array literal pairs with an array UDT when their shapes broadcast, as a UDT operand does.
 
     The result has the shape numpy's would: ``INT8[3]`` and a 2-by-3 array
-    give ``[2, 3]``, as ``INT8[3]`` and an ``INT64[2, 3]`` UDT do. Before, an
-    array paired only when it broadcast to the UDT's shape; any other was
-    converted into the UDT and raised numpy's "could not broadcast" error.
+    give ``[2, 3]``, as ``INT8[3]`` and an ``INT64[2, 3]`` UDT do. Regression:
+    an array paired only when it broadcast to the UDT's shape; any other was
+    cast to the UDT and raised numpy's "could not broadcast" error.
     """
     i8x3 = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_BcastI8x3")
     i8x1 = dtypes.register_anonymous(np.dtype((np.int8, (1,))), "_BcastI8x1")
@@ -5126,8 +5088,8 @@ def test_udt_record_date_literals_compare_as_numpy():
     It takes its field's type only when it converts into the field and back
     unchanged, as a numpy date does; otherwise it keeps numpy's type for it (a
     ``datetime`` is in microseconds), so ``==`` compares it whole: noon is not
-    the day, and 5 s and 1 us is not 5 s. Before, it always took the field's
-    type, so it was cut to the field's unit and compared equal.
+    the day, and 5 s and 1 us is not 5 s. Regression: it always took the
+    field's type, so it was cut to the field's unit and compared equal.
     """
     import datetime
 
@@ -5146,7 +5108,7 @@ def test_udt_record_date_literals_compare_as_numpy():
         ((datetime.date(2020, 1, 1), datetime.timedelta(seconds=5)), True),
         ((midnight, secs), True),
         (("2020-01-01", secs), True),
-        # Text in a duration field takes the field's type, as before.
+        # Text in a duration field takes the field's type.
         ((day, "5"), True),
     ]:
         assert (s == literal) is equal
@@ -5183,12 +5145,12 @@ def test_udt_record_date_literals_compare_as_numpy():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_typed_op_takes_a_literal_in_its_own_input_type():
-    """A literal beside a typed op is typed by the op's input type on its side, not by the UDT's.
+    """A literal for a typed op is typed by the op's input type on its side, not by the UDT's.
 
     ``op[A, INT64]`` takes its second input or thunk as INT64, so a literal
-    ``2`` there is an INT64, as a Scalar would be, and ``2.5`` is converted to
-    it by GraphBLAS, as for a typed op on built-in types. Before, the literal
-    became an element of A, whose bytes the op read as an int64.
+    ``2`` there is an INT64, as a Scalar would be, and GraphBLAS casts ``2.5``
+    to it, as for a typed op on built-in types. Regression: the literal became
+    an element of A, whose bytes the op read as an int64.
     """
     A = dtypes.register_anonymous(np.dtype([("tl_a", "f8"), ("tl_b", "f8")]), "_TypedLitA")
     B = dtypes.register_anonymous(np.dtype([("tl_a", "i8"), ("tl_b", "i8")]), "_TypedLitB")
@@ -5224,14 +5186,14 @@ def test_udt_typed_op_takes_a_literal_in_its_own_input_type():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_ewise_union_defaults_are_typed_not_converted():
-    """An ``ewise_union`` default beside a UDT is typed as a literal and must fit the operand.
+    """An ``ewise_union`` default for a UDT operand is typed as a literal and must fit it.
 
     GraphBLAS casts a default to the op's input type, which for a UDT operand
-    is its own type, and converting the operands instead would copy them. So
-    a default is typed by the literal rules and accepted only when that type
-    fits: ``1`` and ``(1, 1, 1)`` fit an int8 UDT, ``0.5``, ``np.int64(1)`` and
+    is its own type, and casting the operands instead would copy them. So a
+    default is typed by the literal rules and accepted only when that type
+    fits: ``1`` and ``(1, 1, 1)`` fit an int8 UDT; ``0.5``, ``np.int64(1)`` and
     a float64 Scalar do not. A Scalar (one element) of a type that casts
-    safely is converted.
+    safely is cast.
     """
     import re
 
@@ -5277,8 +5239,7 @@ def test_udt_ewise_union_defaults_are_typed_not_converted():
         for expr in union_forms(default):
             with pytest.raises(ValueError, match=re.escape(message)):
                 expr()
-    # Exact values of another type still convert, as on main, with a
-    # DeprecationWarning.
+    # Exact values of another type still cast, with a DeprecationWarning.
     for default, message in [
         (2.0, "2.0 does not fit _UnionI8"),
         (np.int64(1), "does not fit _UnionI8: it is typed as INT64,"),
@@ -5290,8 +5251,8 @@ def test_udt_ewise_union_defaults_are_typed_not_converted():
                 expr()
     with pytest.raises(OverflowError, match="300 out of bounds for int8"):
         v.ewise_union(w, plus, 300, 0)
-    # Each side is typed beside its own operand, so a mixed pair takes a
-    # default of each type, and an int8 Scalar casts safely into float32.
+    # Each default is typed for its own operand, so a mixed pair takes a
+    # default of each type, and an int8 Scalar casts safely to float32.
     x = Vector(fp32s, size=3)
     x[2] = [0.5, 0.5, 0.5]
     result = v.ewise_union(x, plus, 0, 0.5).new()
@@ -5319,21 +5280,20 @@ def test_udt_ewise_union_defaults_are_typed_not_converted():
 
 
 @pytest.mark.skipif("not supports_udfs")
-# SS < 9 names a UDT by its numpy repr and warns when that is over 128 chars,
-# as the records with a field per dtype pair are.
+# Record reprs over 128 chars; see test_udt_eq_nested_record_with_nan_leaf.
 @pytest.mark.filterwarnings("ignore:UDT repr is too large")
 def test_udt_store_casts_each_element_as_builtin_types_do():
     """A UDT result stored in an object of another UDT type is cast element by element.
 
-    GraphBLAS cannot cast a UDT, so storing across UDT types raised, and
-    setting one element from a Scalar of another UDT type read its bytes as the
-    object's type. Each array element or record leaf is now cast as GraphBLAS
-    casts built-in types on store (compared below), without a temporary copy:
-    an object stores through the cast op (``<<``, a mask, an accumulator,
-    ``replace``, ``dup``), an element-wise expression of a lifted op casts as
-    it computes, and a Scalar or one element is converted. Anything that would
-    need a converted copy of a whole object raises, as do layouts that do not
-    correspond and a built-in type on either side.
+    GraphBLAS cannot cast a UDT, so each array element or record leaf is cast
+    as GraphBLAS casts built-in types on store (compared below), without a
+    temporary copy: an object stores through the cast op (``<<``, a mask, an
+    accumulator, ``replace``, ``dup``), an element-wise expression of a
+    lifted op casts as it computes, and a Scalar or one element is cast
+    directly. Anything that would need a converted copy of a whole object
+    raises, as do layouts that do not correspond and a built-in type on
+    either side. Regression: setting one element from a Scalar of another UDT
+    type read its bytes as the object's type.
     """
     # One record casts every pair of leaf dtypes, so it compiles once.
     pairs = [
@@ -5405,7 +5365,7 @@ def test_udt_store_casts_each_element_as_builtin_types_do():
         assert v[0].new(is_cscalar=is_cscalar).dup(i8s).value.tolist() == first
     assert v.dup(i8s).isequal((v * 1).new(dtype=i8s))
     w = Vector(i8s, size=3)
-    w[1] = v[0].new()  # read as int8 bytes before
+    w[1] = v[0].new()  # cast, not read as int8 bytes
     w[[0, 2]] = v[2].new()
     assert w.to_coo()[1].tolist() == [nines, first, nines]
     A = Matrix.from_coo([0], [1], [v[0].new().value], dtype=f64s, nrows=2, ncols=2)
@@ -5500,8 +5460,8 @@ def test_udt_extracted_element_of_another_type_is_cast():
     """One element extracted into another UDT type is cast, not copied as raw bytes.
 
     GraphBLAS's extractElement for a UDT copies the bytes of the object's type
-    into the destination, so ``s << v[0]`` with ``s`` of another UDT read
-    garbage, and wrote past the end of a smaller element (also on main).
+    into the destination, so without a cast ``s << v[0]`` with ``s`` of another
+    UDT would read garbage, and write past the end of a smaller element.
     """
     f64s = dtypes.register_anonymous(np.dtype((np.float64, (2,))), "_ExtractF64")
     i16s = dtypes.register_anonymous(np.dtype((np.int16, (2,))), "_ExtractI16")
@@ -5612,14 +5572,13 @@ def _assert_same_floats(got, expected, msg):
 def test_udt_record_array_fields_compute_element_by_element():
     """An array-valued record field computes each element as a scalar field does.
 
-    As a whole-array expression it ran through Numba's ufuncs: ``min`` and
-    ``max`` did not compile (and the scalar NaN rule, applied to an array, left
-    garbage), a zero complex divisor raised inside the cfunc and left the
-    element unwritten, and ``int8 / int8`` ran in float32. Each element now
-    takes the scalar expression, so a field agrees with numpy's ``fmin``,
-    ``fmax``, ``floor_divide`` and ``true_divide`` element for element, with a
-    record or a number on the other side. ``INT64_MIN // -1`` is the one
-    integer quotient Numba gets wrong by itself (0, where numpy wraps).
+    So a field agrees with numpy's ``fmin``, ``fmax``, ``floor_divide`` and
+    ``true_divide`` element for element, with a record or a number on the
+    other side. ``INT64_MIN // -1`` is the one integer quotient Numba gets
+    wrong by itself (0, where numpy wraps). Regression: as a whole-array
+    expression the field ran through Numba's ufuncs, where ``min`` and ``max``
+    did not compile, a zero complex divisor raised inside the cfunc and left
+    the element unwritten, and ``int8 / int8`` ran in float32.
     """
     nan, inf = float("nan"), float("inf")
     rec = dtypes.register_anonymous(
@@ -5788,11 +5747,10 @@ def test_udt_fused_store_keeps_min_max_and_division_semantics(udt_op_path):
 def test_udt_records_differing_only_in_layout_combine():
     """A packed and an aligned record with the same leaves combine, either way round.
 
-    The result is the left operand's type, since it holds every leaf. Converting
-    the other operand to it for a Scalar's ``ewise_add`` subtracted a zero,
-    which came back as the other operand's own type, so the conversion recursed
-    forever; Vectors raised RecursionError the same way before ``ewise_add``
-    refused operands of another type than the result's.
+    The result is the left operand's type, since it can store every leaf.
+    Regression: casting the other operand to it for a Scalar's ``ewise_add``
+    subtracted a zero, which came back as the other operand's own type, so
+    the cast recursed until RecursionError.
     """
     fields = [("lay_f", np.float64), ("lay_i", np.int16), ("lay_n", [("lay_k", np.int32)])]
     packed = dtypes.register_anonymous(np.dtype(fields), "_LayPacked")
@@ -5813,7 +5771,7 @@ def test_udt_records_differing_only_in_layout_combine():
     s = gb.Scalar.from_value((1.5, 2, (3,)), dtype=packed)
     t = gb.Scalar.from_value((1.0, 1, (1,)), dtype=aligned)
     assert (s + t).new().value.tolist() == (2.5, 3, (4,))
-    # Converting keeps a negative zero where there is no partner.
+    # Casting keeps a negative zero where there is no partner.
     z = gb.Scalar.from_value((-0.0, 0, (0,)), dtype=aligned)
     assert np.signbit((gb.Scalar(packed) + z).new().value["lay_f"])
     # Either layout stores into the other through the cast op.
@@ -5825,8 +5783,8 @@ def test_udt_records_differing_only_in_layout_combine():
 def test_udt_record_array_field_truediv_is_float64():
     """``truediv`` on a small integer array field divides in float64, as a scalar field does.
 
-    Numba runs an array field through a ufunc whose loop it picks itself, and
-    for int8 or int16 it picked float32, so ``1 / 46`` came back as
+    Regression: Numba ran an array field through a ufunc whose loop it picks
+    itself, float32 for int8 or int16, so ``1 / 46`` came back as
     0.021739130839705467 in an FP64 field.
     """
     for np_type in [np.int8, np.uint8, np.int16, np.uint16]:
@@ -5845,11 +5803,11 @@ def test_udt_record_array_field_truediv_is_float64():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_typed_scalar_operands_and_defaults():
-    """Typed Scalars keep their values beside a UDT, as literals do.
+    """Typed Scalars keep their values with a UDT, as literals do.
 
-    ``Scalar.ewise_union`` converted its other operand into the left UDT
+    Regression: ``Scalar.ewise_union`` cast its other operand to the left UDT
     (``s8 - sf`` was int8), and an ``ewise_union`` default given as a typed
-    Scalar was converted into the operand's UDT however much that changed it.
+    Scalar was cast to the operand's UDT however much that changed it.
     """
     i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_TsI8")
     f8s = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "_TsF8")
@@ -5884,11 +5842,11 @@ def test_udt_typed_scalar_operands_and_defaults():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_errors_name_the_real_problem():
-    """Errors that the UDT rules had made misleading.
+    """A size mismatch, or an op that does not take UDTs, is reported as such.
 
-    Infix on two UDTs of different sizes said ``ewise_add cannot use
-    binary.first``, the op it uses to provoke the size error, and an op that
-    does not take UDTs at all reported the literal check's ValueError.
+    Regression: infix on two UDTs of different sizes said ``ewise_add cannot
+    use binary.first`` (the op it uses to provoke the size error), and an op
+    that does not take UDTs at all reported the literal check's ValueError.
     """
     i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_ErrI8")
     f8s = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "_ErrF8")
@@ -5903,12 +5861,12 @@ def test_udt_errors_name_the_real_problem():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_literal_rules_edge_cases():
-    """Edges of the weak rule, each pinned on its own.
+    """Edges of the weak rule.
 
-    numpy 2 raises OverflowError itself when ``300`` is converted to int8, which
-    hid that the weak rule's own range check matters on numpy 1, where the
-    conversion wraps. A ``Fraction`` or ``Decimal`` is typed as the int or
-    float it is worth; numpy would have truncated either into an int field.
+    ``_weak_literal_udt`` checks ``300`` against int8 itself: numpy 2 raises
+    OverflowError when casting it, but numpy 1 wraps. A ``Fraction`` or
+    ``Decimal`` is typed as the int or float it is worth; numpy would
+    truncate either into an int field.
     """
     from decimal import Decimal
     from fractions import Fraction
@@ -5981,10 +5939,10 @@ def test_udt_literal_rules_edge_cases():
 def test_udt_store_casts_reach_every_store_path():
     """Each way of storing into a UDT object casts as ``<<`` does, or says why it cannot.
 
-    ``agg.first`` into a Scalar of another UDT handed GraphBLAS the output as it
-    was, which read the int8 bytes as float64 (24 bytes from a 3-byte
-    element). Indexed assignment of an expression skipped the cast, and
-    ``dup`` failed for a dtype given as a numpy dtype or a string.
+    Regression: ``agg.first`` into a Scalar of another UDT handed GraphBLAS
+    the output as it was, which read the int8 bytes as float64 (24 bytes from
+    a 3-byte element); indexed assignment of an expression skipped the cast;
+    and ``dup`` failed for a dtype given as a numpy dtype or a string.
     """
     i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_PathI8")
     f8s = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "_PathF8")
@@ -6035,8 +5993,8 @@ def test_udt_scalar_accumulates_its_value_converted_to_its_type():
 
     The accumulator is typed on the Scalar's dtype, and GraphBLAS converts the
     value to that type first: an INT8 Scalar of -1 ``+= 0.5`` stays -1, and so
-    does a Vector's ``v(accum=binary.plus) << 0.5``. A UDT Scalar used the
-    untyped op instead, so it computed -1 + 0.5 and truncated the sum to 0.
+    does a Vector's ``v(accum=binary.plus) << 0.5``. Regression: a UDT Scalar
+    used the untyped op, so it computed -1 + 0.5 and truncated the sum to 0.
     """
     i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_AccumI8")
     f8s = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "_AccumF8")
@@ -6068,8 +6026,8 @@ def test_udt_scalar_accumulates_its_value_converted_to_its_type():
     s.clear()
     s(accum=binary.plus) << 0.5
     assert s.value.tolist() == [0, 0, 0]
-    # A built-in Scalar casts only into a built-in type, as for a store. The error
-    # calls it a value, not a result (it said "a result of type FP64").
+    # A built-in Scalar casts only to a built-in type, as for a store. The error
+    # calls it a value, not a result.
     with pytest.raises(DomainMismatch, match="value of type FP64 .*casts only to another UDT.$"):
         added(gb.Scalar.from_value(0.5))
     # A Vector is not a value to accumulate, into a UDT Scalar or a built-in one.
@@ -6080,12 +6038,13 @@ def test_udt_scalar_accumulates_its_value_converted_to_its_type():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_literal_fits_in_select_bool_arrays_and_overflow():
-    """Three edges of the literal rules found by review.
+    """Three edges of the literal rules.
 
-    A user IndexUnaryOp's thunk in ``select`` skipped the must-fit check (1.5
-    became 1), a bool numpy array beside an array UDT failed to look up a
-    ``BOOL[3]`` type (main converted it), and a float literal too large for a
-    float32 field became infinity where it must become an element.
+    A user IndexUnaryOp's thunk in ``select`` must fit (1.5 does not become
+    1). A bool numpy array with an array UDT is cast to it, since a
+    ``BOOL[3]`` UDT cannot be registered. A float literal too large for a
+    float32 field raises where it must become an element, instead of
+    becoming infinity.
     """
     i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_EdgeSelI8")
     f4s = dtypes.register_anonymous(np.dtype((np.float32, (3,))), "_EdgeSelF4")
@@ -6105,8 +6064,8 @@ def test_udt_literal_fits_in_select_bool_arrays_and_overflow():
     A[0, 0] = [1, 2, 3]
     with pytest.raises(ValueError, match="does not fit _EdgeSelI8"):
         A.select(ge, 1.5)
-    # A bool array converts into any numeric element, as it did, and bools in a
-    # sequence compare as 0 and 1 (a BOOL[3] UDT cannot be registered).
+    # A bool array casts to any numeric element, and bools in a sequence
+    # compare as 0 and 1.
     result = v.apply(binary.plus, right=np.array([True, False, True])).new()
     assert result.dtype == i8s
     assert result[0].new().value.tolist() == [2, 2, 4]
@@ -6125,12 +6084,12 @@ def test_udt_literal_fits_in_select_bool_arrays_and_overflow():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_exact_literal_of_another_type_is_deprecated():
-    """A must-fit value that fits only by value converts, with a DeprecationWarning.
+    """A must-fit value that fits only by value is cast, with a DeprecationWarning.
 
-    On main any literal, thunk or default was converted into the UDT, and what
-    did not fit was lost. Now it must fit by type; one whose values convert
-    exactly, such as 0 for a bool field, still converts for the deprecation
-    period, and the warning points at the caller's line.
+    A literal, thunk or default that becomes a UDT element must fit by type.
+    One whose values cast exactly, such as 0 for a bool field, is still cast
+    during the deprecation period, and the warning points at the caller's
+    line.
     """
     rec = dtypes.register_anonymous(
         np.dtype([("dp_b", np.bool_), ("dp_f", np.float64), ("dp_i", np.int8)]), "_DeprecRec"
@@ -6168,11 +6127,11 @@ def test_udt_exact_literal_of_another_type_is_deprecated():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_isequal_is_array_equal_and_eq_broadcasts():
-    """Isequal compares array elements as np.array_equal; == broadcasts, on Scalars too.
+    """``isequal`` compares array elements as np.array_equal; ``==`` broadcasts, on Scalars too.
 
-    eq on array UDTs broadcasts, as numpy's == does, and isequal used it, so an
-    FP64[3] of [1, 1, 1] was isequal to an FP64[1] of [1]. A Scalar's == was
-    isequal itself, and a literal was converted into the UDT first, so an
+    Regression: ``isequal`` used eq, which broadcasts as numpy's ``==`` does,
+    so an FP64[3] of [1, 1, 1] was isequal to an FP64[1] of [1]. A Scalar's
+    ``==`` was ``isequal``, and a literal was cast to the UDT first, so an
     INT8[3] of [0, 0, 0] equaled 0.5 (truncated to 0) by either spelling.
     """
     f3 = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "_IeqF3")
@@ -6212,12 +6171,12 @@ def test_udt_isequal_is_array_equal_and_eq_broadcasts():
     with pytest.raises(ValueError, match="with a sequence"):  # ragged: it has no shape
         u.isequal([1, [1, 1]])
     assert gb.Scalar.from_value([5], f1).isequal(5)
-    # A literal is compared as given, not converted into the UDT first.
+    # A literal is compared as given, not cast to the UDT first.
     assert zeros != 0.5
     assert not zeros.isequal(0.5)
     assert not zeros.isequal((0, 0, 0.5))
     r = gb.Scalar.from_value((0, 0.1), rec)
-    assert r == (0, 0.1)  # 0.1 beside a float32 field is float32, as == types it
+    assert r == (0, 0.1)  # 0.1 for a float32 field is float32, as == types it
     assert r.isequal((0, 0.1))
     assert r != (0.5, 0.1)
     assert not r.isequal((0.5, 0.1))
@@ -6230,11 +6189,11 @@ def test_udt_isequal_is_array_equal_and_eq_broadcasts():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_monoid_literal_is_typed_as_its_binaryop():
-    """A literal beside a Monoid is typed as beside its BinaryOp, everywhere.
+    """A literal with a Monoid is typed as with its BinaryOp, everywhere.
 
-    ``apply`` already used the BinaryOp, but a Scalar's ``ewise_add`` and
-    ``ewise_mult`` with a Monoid converted the literal into the UDT (so ``0.5``
-    had to fit), where the same call with ``binary.plus`` promoted.
+    Regression: a Scalar's ``ewise_add`` and ``ewise_mult`` with a Monoid cast
+    the literal to the UDT (so ``0.5`` had to fit), where the same call with
+    ``binary.plus`` promoted.
     """
     i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_MonoLitI8")
     s = gb.Scalar.from_value([1, 2, 3], dtype=i8s)
@@ -6254,9 +6213,9 @@ def test_udt_monoid_literal_is_typed_as_its_binaryop():
 def test_udt_outer_on_mixed_types():
     """``outer`` builds its semiring from the op, typed on both input types.
 
-    ``get_semiring`` typed the semiring by the op's first input type only, so
-    ``outer`` on two different UDTs, or a UDT and a built-in dtype, was a bare
-    GrB_DOMAIN_MISMATCH.
+    Regression: ``get_semiring`` typed the semiring by the op's first input
+    type only, so ``outer`` on two different UDTs, or a UDT and a built-in
+    dtype, was a bare GrB_DOMAIN_MISMATCH.
     """
     i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_OuterI8")
     f4s = dtypes.register_anonymous(np.dtype((np.float32, (3,))), "_OuterF4")
@@ -6320,7 +6279,7 @@ def test_udt_eq_on_leaves_of_other_kinds_is_a_keyerror():
     w[0] = (1.0, 1.0)
     with pytest.raises(KeyError, match=r"elements of \|S4 and float64 have no common type"):
         binary.plus(v & w).new()
-    # A number beside the bytes field is an int64 there, which pairs no better.
+    # A number for the bytes field is an int64 there, which pairs no better.
     with pytest.raises(KeyError, match=r"elements of \|S4 and int64 have no common type"):
         v + 1
     nested = dtypes.register_anonymous(
@@ -6500,13 +6459,14 @@ def test_udt_numba_error_summary_is_never_empty():
 def test_udt_pair_is_never_unified():
     """Two different UDTs reach the op as they are, never unified to one type.
 
-    numpy promotes two records of the same layout to one of them or to a third,
-    which ``unify`` registered as a new type. An op that does not lift to UDTs
-    then named that third type in its KeyError, and ``ewise_add`` with a monoid
-    passed GraphBLAS two operands it rejected with GrB_DOMAIN_MISMATCH. A
-    Monoid takes one type, so on a mixed pair it runs as its BinaryOp, and
+    A Monoid takes one type, so on a mixed pair it runs as its BinaryOp, and
     indexed with the pair it takes the type the pair promotes to, as
-    ``monoid.plus["INT8", "INT16"]`` is ``monoid.plus["INT16"]``.
+    ``monoid.plus["INT8", "INT16"]`` is ``monoid.plus["INT16"]``. Regression:
+    numpy promotes two records of the same layout to one of them or to a
+    third, which ``unify`` registered as a new type; an op that does not lift
+    to UDTs then named that third type in its KeyError, and ``ewise_add`` with
+    a monoid passed GraphBLAS two operands it rejected with
+    GrB_DOMAIN_MISMATCH.
     """
     X = dtypes.register_anonymous(np.dtype([("uni_a", np.float32), ("uni_b", np.int64)]), "_UniX")
     Y = dtypes.register_anonymous(np.dtype([("uni_a", np.int64), ("uni_b", np.float32)]), "_UniY")
@@ -6525,8 +6485,7 @@ def test_udt_pair_is_never_unified():
     for expr in [lambda: v.ewise_add(w), lambda: monoid.plus(v | w)]:
         with pytest.raises(DomainMismatch, match="ewise_add cannot use binary.plus"):
             expr()
-    # Indexed with the pair: TypeError (a Monoid takes one type) before; main and
-    # built-in types promote.
+    # Indexed with the pair, a Monoid takes the type the pair promotes to.
     XY = binary.plus[X, Y].return_type
     assert monoid.plus[X, Y] is monoid.plus[Y, X] is monoid.plus[XY]
     assert monoid.max[X, Y] is monoid.max[XY]
@@ -6534,8 +6493,8 @@ def test_udt_pair_is_never_unified():
     R16 = dtypes.register_anonymous(np.dtype([("uni_c", np.int16)]), "_UniR16")
     assert monoid.plus[R8, R16] is monoid.plus[R16]
     assert monoid.plus[R8, "INT16"] is monoid.plus[R16]
-    # binary.any gives the second operand's type, but monoid.any promotes the pair in
-    # either order, as main did
+    # binary.any gives the second operand's type, but monoid.any promotes the pair
+    # in either order.
     for pair in [(R8, R16), (R16, R8), (R8, "INT16"), ("INT16", R8)]:
         assert monoid.any[pair] is monoid.any[R16], pair
     assert monoid.any[X, Y] is monoid.any[Y, X] is monoid.any[XY]
@@ -6546,11 +6505,10 @@ def test_udt_pair_is_never_unified():
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_aggregators():
-    """Monoid-based aggregators must auto-extend to UDTs the underlying monoid supports.
+    """Monoid-based aggregators lift to the UDTs their monoid lifts to.
 
-    Before: ``v.reduce(agg.sum)`` on a UDT vector failed with
-    ``KeyError: 'sum does not work with <udt>'``. Now ``Aggregator.__getitem__``
-    triggers UDT compilation of the underlying monoid for monoid-based aggs.
+    Regression: ``v.reduce(agg.sum)`` on a UDT vector raised
+    ``KeyError: 'sum does not work with <udt>'``.
     """
     record = np.dtype([("a", np.int64), ("b", np.float64)], align=True)
     udt = dtypes.register_anonymous(record, "_AggUdt")
@@ -6573,7 +6531,7 @@ def test_udt_aggregators():
     assert udt in agg.prod
     assert udt in agg.min
     assert udt in agg.max
-    # Composite/semiring-based aggregators aren't auto-lifted
+    # Aggregators not made of a monoid alone do not lift
     assert udt not in agg.hypot
 
     if suitesparse:
@@ -6596,11 +6554,11 @@ def test_udt_aggregators():
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_lazy_registration():
-    """``lazy=True`` must preserve ``is_udt`` so registration succeeds when fired.
+    """``lazy=True`` keeps ``is_udt``, so the delayed registration succeeds.
 
-    Regression: the ``module._delayed[funcname]`` kwargs dict didn't include
-    ``is_udt``, so the delayed callback compiled the function for standard
-    types only and failed with ``UdfParseError``.
+    Regression: the kwargs saved in ``module._delayed`` left out ``is_udt``,
+    so the delayed registration compiled the function for built-in types only
+    and raised UdfParseError.
     """
     from graphblas.core.operator import BinaryOp, IndexUnaryOp, UnaryOp
 
@@ -6611,8 +6569,7 @@ def test_udt_lazy_registration():
     UnaryOp.register_new("_lazy_udt_neg", _pkl_udt_neg, is_udt=True, lazy=True)
     IndexUnaryOp.register_new("_lazy_udt_iu", _pkl_udt_get_a, is_udt=True, lazy=True)
     try:
-        # Trigger the delayed registration by attribute access; the failure
-        # mode was UdfParseError raised inside the delayed callback.
+        # Attribute access runs the delayed registration.
         add_op = binary._lazy_udt_add
         neg_op = unary._lazy_udt_neg
         iu_op = indexunary._lazy_udt_iu
@@ -6626,12 +6583,11 @@ def test_udt_lazy_registration():
         assert add_op(v & v).new()[0].new() == (2, 4.0)
         assert v.apply(neg_op).new()[0].new() == (-1, -2.0)
     finally:
-        # Remove these UDT-only ops from every namespace they leaked into,
-        # including the combined ``op`` (binary and unary register there too).
-        # ``test_dir`` enumerates module names, and test_op_namespace iterates
-        # ``op._delayed`` and would fail to resolve an op whose per-type entry
-        # is gone. Pop ``__dict__`` and ``_delayed`` directly to avoid
-        # re-triggering ``__getattr__``.
+        # Remove these UDT-only ops from every namespace they were added to,
+        # including ``op`` (binary and unary register there too): test_dir
+        # enumerates module names, and test_op_namespace resolves every name in
+        # ``op._delayed``. Pop ``__dict__`` and ``_delayed`` directly so that
+        # ``__getattr__`` does not run the registration again.
         for module, name in [
             (binary, "_lazy_udt_add"),
             (unary, "_lazy_udt_neg"),
@@ -6662,12 +6618,11 @@ def _pkl_udt_big_a(x, ix, jx, t):  # pragma: no cover (numba)
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_op_pickle():
-    """Pickle round-trip for typed and untyped UDT operators.
+    """Typed and untyped UDT operators survive a pickle round trip.
 
-    Catches regressions like:
-    - TypedUserMonoid / TypedUserSemiring being built with the cffi ``GrB_*``
-      pointer as ``parent`` instead of the Monoid / Semiring Python object.
-    - Anonymous reduce paths losing ``is_udt`` when re-registering.
+    It guards against a typed UDT Monoid or Semiring built with the cffi
+    ``GrB_*`` pointer as ``parent`` instead of the Python object, and against
+    an anonymous op losing ``is_udt`` in ``__reduce__``.
     """
     import pickle
 
@@ -6705,15 +6660,14 @@ def test_udt_op_pickle():
             typed2.parent, type(anon_op)
         ), f"{anon_op.name} typed parent had wrong type: {type(typed2.parent).__name__}"
 
-    # Typed UDT instances on built-in monoid or semiring used to fail with
-    # ``cannot pickle '_cffi_backend.__CDataOwn'`` because the parent slot
-    # held the raw GrB pointer instead of the Python Monoid object.
+    # Typed UDT instances of a built-in Monoid or Semiring. A raw GrB pointer
+    # as the parent fails with ``cannot pickle '_cffi_backend.__CDataOwn'``.
     pickle.loads(pickle.dumps(monoid.plus[udt]))
     pickle.loads(pickle.dumps(monoid.times[udt]))
     pickle.loads(pickle.dumps(semiring.plus_times[udt]))
     pickle.loads(pickle.dumps(semiring.min_plus[udt]))
 
-    # Vector round-trip with UDT (was already working; this is a sanity check).
+    # A Vector of a UDT round-trips too.
     v = Vector(udt, 2)
     v[0] = (1, 2.0)
     v[1] = (3, 4.0)
@@ -6853,12 +6807,10 @@ def _isidem_pick_first(x, y):  # pragma: no cover (called by Numba)
 
 @pytest.mark.skipif("not supports_udfs")
 def test_monoid_pickle_preserves_is_idempotent():
-    """Regression: anonymous ``Monoid`` and ``ParameterizedMonoid`` both
-    dropped ``is_idempotent`` from the pickle round-trip, silently turning
-    a known-idempotent op into a non-idempotent one. Both
-    ``Monoid.__reduce__`` and ``ParameterizedMonoid.__reduce__`` now carry
-    the flag explicitly so ``_deserialize`` can pass it to
-    ``register_anonymous`` / ``register_new``.
+    """Pickling an anonymous Monoid or ParameterizedMonoid keeps ``is_idempotent``.
+
+    Regression: both dropped the flag in the round trip, so an idempotent
+    monoid came back as non-idempotent.
     """
     import pickle
 
@@ -6888,13 +6840,11 @@ def _parameterized_is_udt_factory(scale):  # pragma: no cover (called by Numba i
     ["unary", "binary", "indexunary", "select", "indexbinary"],
 )
 def test_parameterized_is_udt_pickle_roundtrip(module_name):
-    """Parameterized + ``is_udt=True`` propagates through ``__reduce__``.
+    """A parameterized op with ``is_udt=True`` keeps the flag through pickling.
 
-    Regression: ``Parameterized{Unary,Binary,IndexUnary,Select,IndexBinary}Op.__reduce__``
-    used to emit ``(name, func, anonymous)``, so ``_deserialize`` invoked
-    ``register_*(..., parameterized=True)`` without ``is_udt``. Cross-process
-    re-register lost the flag, then dispatch took the non-UDT compile path
-    and failed at first use.
+    Regression: the parameterized ops' ``__reduce__`` left out ``is_udt``, so
+    an op unpickled in another process took the non-UDT compile path and
+    failed at first use.
     """
     import pickle
 
@@ -6917,14 +6867,12 @@ def test_ops_have_ss():
 
 
 def test_compile_codegen_helper():
-    """The ``_compile_codegen`` helper validates source and surfaces typos clearly.
+    """``_compile_codegen`` reports invalid generated source with the source attached.
 
-    Codegen bugs used to surface as a cryptic ``SyntaxError`` from ``exec``
-    or, worse, as a Numba ``TypingError`` at first use of the generated
-    function. The helper catches them at the call site with the offending
-    source attached, and registers each generated function with
-    ``linecache`` so any later traceback shows real lines instead of
-    ``<string>``.
+    A syntax error in generated code raises RuntimeError at the call site,
+    not a bare SyntaxError from ``exec`` or a Numba TypingError at first use.
+    Each generated function is registered with ``linecache``, so a later
+    traceback shows its lines instead of ``<string>``.
     """
     import linecache
 
@@ -7010,8 +6958,7 @@ print("still lazy: " + " ".join(n for n in lazy_udfs if n in gb.binary._delayed)
 @pytest.mark.skipif("not supports_udfs")
 def test_anonymous_op_named_like_a_builtin_is_not_lifted_to_udts():
     # Only the built-in ops lift field by field to UDTs. An anonymous op that
-    # shares a built-in's name is a user's op, as before ops were seeded in
-    # BinaryOp.__init__.
+    # shares a built-in's name is a user's op.
     def plus_like(x, y):  # pragma: no cover (numba)
         return x + y
 
