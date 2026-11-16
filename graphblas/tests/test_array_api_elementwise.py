@@ -593,18 +593,18 @@ def test_values_mapped_on_every_storage_format():
             a = np.round(rng.normal(size=shape), 2)
             a[rng.random(shape) >= density] = 0.0
             x = make(a, 0.0)
-            assert_array_equal(xp.sin(x), np.sin(a))
+            assert_libm_close(xp.sin(x), np.sin(a))
             assert_array_equal(xp.pow(x, x), np_call(np.power, a, a))
             for fmt in ["bitmap", "sparse", "hypersparse", "full"]:
                 M = x._T()._M
                 if fmt == "full" and M.nvals != M.nrows * M.ncols:
                     continue
                 M.ss.config["sparsity_control"] = fmt
-                assert_array_equal(xp.exp(x), np.exp(a))
+                assert_libm_close(xp.exp(x), np.exp(a))
                 assert_array_equal(xp.floor_divide(x, 0.3), np_call(np.floor_divide, a, 0.3))
     iso = xp.from_coo(([0, 3, 5],), 2.5, (8,), fill_value=0.0)
     assert iso._T().ss.is_iso
-    assert_array_equal(xp.log(iso), np_call(np.log, iso.todense()))
+    assert_libm_close(xp.log(iso), np_call(np.log, iso.todense()))
     other = make(np.arange(8.0), 0.0)
     assert_array_equal(xp.atan2(iso, other), np.arctan2(iso.todense(), other.todense()))
     assert_array_equal(xp.atan2(other, iso), np.arctan2(other.todense(), iso.todense()))
@@ -833,7 +833,8 @@ def test_one_sided_stores_a_small_broadcast_operand():
     assert Y.fill_value == 1.0
     out = A * Y[:, None]
     assert out.nnz == A.nnz
-    assert_array_equal(out, a * np.exp(y)[:, None])
+    # (Y's own values: libm's exp may differ from numpy's in the last place)
+    assert_array_equal(out, a * Y.todense()[:, None])
 
 
 def test_partly_stored_bool_results_with_mostly_false_take_fill_false():
@@ -959,7 +960,8 @@ def test_operands_storing_every_position_keep_products_sparse():
     assert (i * full).nnz == i.nnz
     assert_array_equal(i * full, i.todense() * full.todense())
     assert (A / xp.exp(d)).nnz == A.nnz
-    assert_array_equal(A / xp.exp(d), A.todense() / np.exp(d.todense()))
+    # (exp's own values: libm's exp may differ from numpy's in the last place)
+    assert_array_equal(A / xp.exp(d), A.todense() / xp.exp(d).todense())
     signed = xp.asarray(rng.normal(size=40))
     assert (A / signed).nnz == A.nnz
     assert_array_equal(A / signed, A.todense() / signed.todense())
