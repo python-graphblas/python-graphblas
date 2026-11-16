@@ -1,4 +1,5 @@
 import contextlib
+import warnings
 
 import numpy as np
 import pytest
@@ -6760,3 +6761,65 @@ def test_vector_as_matrix():
         "</table>\n"
         "</div></details></div>"
     )
+
+
+@pytest.mark.skipif("not pd")
+@pytest.mark.skipif("not dtypes._supports_complex")
+@pytest.mark.parametrize(
+    ("dtype", "big_str", "small_str"),
+    [
+        ("FC32", "3.402823e+38+3.402823e+38j", "1.000000e-07+0.000000e+00j"),
+        ("FC64", "1.797693e+308+1.797693e+308j", "1.000000e-07+ 0.000000e+00j"),
+    ],
+)
+def test_chop_threshold_complex(dtype, big_str, small_str):
+    # The COO (long) form formats complex columns through the float column
+    # formatter, where display.chop_threshold compares each value's magnitude.
+    big = float(np.finfo(dtypes.lookup_dtype(dtype).np_type).max)
+    v = Vector.from_coo(
+        [10_000, 500_000], [complex(big, big), complex(1e-7, 0)], size=10**6, dtype=dtype
+    )
+    with pd.option_context("display.chop_threshold", 1e-8):
+        # abs() of a python complex overflows for FC64 components near the
+        # float max; numpy's abs is inf, so nothing chops and this must render.
+        # Byte-identical to the pandas renderer, verified against 6f1eb02.
+        r = repr(v)
+        assert big_str in r
+        assert small_str in r
+        v._repr_html_()
+        # A value below the threshold chops to complex zero. pandas 3.0.3
+        # itself crashes on this input (its own _trim_zeros_complex cannot
+        # parse the float zero its chop substitutes into a complex column),
+        # so rendering at all is deliberately better than byte-identity.
+        w = Vector.from_coo(
+            [10_000, 500_000], [complex(1.0, 1.0), complex(5e-9, 0)], size=10**6, dtype=dtype
+        )
+        r = repr(w)
+        assert "1.000000e+00+1.000000e+00j" in r
+        assert "0.000000e+00+0.000000e+00j" in r
+        w._repr_html_()
+
+
+@pytest.mark.skipif("not dtypes._supports_complex")
+def test_complex_repr_magnitude_overflow_warns_nothing(monkeypatch):
+    # The float formatter takes np.abs of a complex column, which is inf for FC64
+    # components near the float max. numpy 1.24 on arm64 also raises the FP
+    # overflow flag there (newer numpy does not), and that RuntimeWarning must not
+    # escape from repr. Stand in for that numpy with an abs whose own arithmetic
+    # overflows, so the test can fail on any numpy. (FC32 values reach the formatter
+    # widened to double, so their magnitudes never overflow.)
+    real_abs = np.abs
+
+    def overflowing_abs(x):
+        x = np.asarray(x)
+        if np.iscomplexobj(x):
+            return np.sqrt(x.real * x.real + x.imag * x.imag)
+        return real_abs(x)
+
+    big = float(np.finfo(np.float64).max)
+    v = Vector.from_coo([10_000, 500_000], [complex(big, big), 1j], size=10**6, dtype="FC64")
+    monkeypatch.setattr(formatting.np, "abs", overflowing_abs)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        assert "1.797693e+308+1.797693e+308j" in repr(v)
+        v._repr_html_()
