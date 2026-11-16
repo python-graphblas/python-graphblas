@@ -1609,7 +1609,8 @@ def test_udt_min_max_answer_what_the_builtin_dtype_answers(udt_op_path, np_dtype
     too, and this compares them directly against the built-in. The grid is
     every ordered pair drawn from NaN, both infinities, both zeros and two
     ordinary values: a NaN on either side, two NaNs, and a signed-zero tie
-    either way round.
+    either way round. The NaN cells catch an implementation that orders NaN
+    by position, as Python's builtin ``min`` does.
 
     The signed-zero tie is compared by value only. C99 leaves
     ``fmin(-0.0, 0.0)`` unspecified and the built-in answers differently per
@@ -1617,9 +1618,6 @@ def test_udt_min_max_answer_what_the_builtin_dtype_answers(udt_op_path, np_dtype
     minNum on arm64 and Windows), so no implementation can promise
     bit-for-bit agreement on that pair. Everything else, including which zero
     a mixed zero/nonzero pair keeps, is bit-exact.
-
-    Python's builtin ``min``, for one, orders NaN by position, which the NaN
-    cells catch.
     """
     nan, inf = float("nan"), float("inf")
     values = [nan, inf, -inf, -0.0, 0.0, 1.5, -2.5]
@@ -1993,8 +1991,8 @@ def test_udt_tuple_return_monoid(record_udt):
 def test_udt_monoid_op_must_return_its_input_type(record_udt):
     """A UDT monoid whose op returns another type fails up front, with a message.
 
-    Regression: it reached ``GrB_Monoid_new_UDT``, which raised DomainMismatch
-    with an empty message, even from ``udt in monoid``.
+    Regression: such a monoid reached ``GrB_Monoid_new_UDT``, which raised
+    DomainMismatch with an empty message, even from ``udt in monoid``.
     """
 
     def _sum_a(x, y):
@@ -3912,8 +3910,8 @@ def test_udt_record_field_shape_mismatch_is_a_keyerror(left, right, op):
     numpy will not promote or compare two record dtypes whose fields differ in
     shape either. Regression: the generated code combined array fields as
     numpy arrays, so a ``(3,)`` field with a ``(4,)`` one raised inside the
-    cfunc, where the caller never saw it, and the result element kept
-    whatever was in the buffer (``eq`` read it as its bool). Shapes that
+    cfunc, where the caller never saw the error, and the result element kept
+    whatever was in the buffer (``eq`` read those bytes as its bool). Shapes that
     broadcast worked only one way round, since ``plus`` writes into a field
     shaped like the left operand's.
     """
@@ -5083,13 +5081,14 @@ def test_udt_array_literal_broadcasts_with_an_array_udt():
 
 
 def test_udt_record_date_literals_compare_as_numpy():
-    """A Python date or duration, or a date as text, in a record literal is typed as numpy types it.
+    """A date, duration or date text in a record literal keeps numpy's type unless it round-trips.
 
-    It takes its field's type only when it converts into the field and back
-    unchanged, as a numpy date does; otherwise it keeps numpy's type for it (a
-    ``datetime`` is in microseconds), so ``==`` compares it whole: noon is not
-    the day, and 5 s and 1 us is not 5 s. Regression: it always took the
-    field's type, so it was cut to the field's unit and compared equal.
+    A Python date or duration, or a date as text, takes its field's type only
+    when it casts into the field and back unchanged, as a numpy date does;
+    otherwise it keeps numpy's type for it (a ``datetime`` is in
+    microseconds), so ``==`` compares it whole: noon is not the day, and 5 s
+    and 1 us is not 5 s. Regression: such a literal always took the field's
+    type, so it was cut to the field's unit and compared equal.
     """
     import datetime
 
@@ -5748,9 +5747,9 @@ def test_udt_records_differing_only_in_layout_combine():
     """A packed and an aligned record with the same leaves combine, either way round.
 
     The result is the left operand's type, since it can store every leaf.
-    Regression: casting the other operand to it for a Scalar's ``ewise_add``
-    subtracted a zero, which came back as the other operand's own type, so
-    the cast recursed until RecursionError.
+    Regression: casting the other operand to the left one's type for a
+    Scalar's ``ewise_add`` subtracted a zero, which came back as the other
+    operand's own type, so the cast recursed until RecursionError.
     """
     fields = [("lay_f", np.float64), ("lay_i", np.int16), ("lay_n", [("lay_k", np.int32)])]
     packed = dtypes.register_anonymous(np.dtype(fields), "_LayPacked")
@@ -5845,7 +5844,7 @@ def test_udt_errors_name_the_real_problem():
     """A size mismatch, or an op that does not take UDTs, is reported as such.
 
     Regression: infix on two UDTs of different sizes said ``ewise_add cannot
-    use binary.first`` (the op it uses to provoke the size error), and an op
+    use binary.first`` (the op infix uses to provoke the size error), and an op
     that does not take UDTs at all reported the literal check's ValueError.
     """
     i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_ErrI8")
