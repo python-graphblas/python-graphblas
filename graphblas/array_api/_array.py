@@ -9,6 +9,9 @@ from ._utils import np_dtype
 
 CPU_DEVICE = "cpu"
 API_VERSIONS = ("2021.12", "2022.12", "2023.12", "2024.12", "2025.12")
+# MAINT 2026-11-16: ndarray.__dlpack__ takes max_version and dl_device from NumPy 2.1 on;
+# drop this once that is the minimum
+_NP_DLPACK_KWARGS = np.lib.NumpyVersion(np.__version__) >= "2.1.0"
 
 
 def check_device(device):
@@ -215,9 +218,16 @@ class Array:
     def __dlpack__(self, *, stream=None, max_version=None, dl_device=None, copy=None):
         if copy is False:
             raise BufferError("exporting an Array through DLPack always copies")
-        kwargs = {} if max_version is None else {"max_version": max_version}
-        if dl_device is not None:
-            kwargs["dl_device"] = dl_device
+        kwargs = {}
+        if _NP_DLPACK_KWARGS:
+            if max_version is not None:
+                kwargs["max_version"] = max_version
+            if dl_device is not None:
+                kwargs["dl_device"] = dl_device
+        elif dl_device is not None and tuple(dl_device) != self.__dlpack_device__():
+            raise ValueError("unsupported device requested")  # (NumPy 2.1's error)
+        # (An older NumPy exports an unversioned capsule whatever max_version asks for, which
+        # the standard allows: a consumer checks the version it gets.)
         return self.todense().__dlpack__(stream=stream, **kwargs)
 
     def __dlpack_device__(self):

@@ -113,6 +113,8 @@ def test_object_protocol_errors():
     np.testing.assert_array_equal(np.from_dlpack(xp.from_dlpack(x)), [1.0, 0.0])
     capsule = x.__dlpack__(dl_device=x.__dlpack_device__(), max_version=(1, 0))
     assert capsule is not None
+    with pytest.raises(ValueError, match="unsupported device"):
+        x.__dlpack__(dl_device=(2, 0))  # (CUDA)
     with pytest.raises(TypeError, match="None"):
         xp.astype(x, None)
 
