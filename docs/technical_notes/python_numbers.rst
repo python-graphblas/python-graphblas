@@ -98,10 +98,11 @@ Typed operators, thunks and fill values
 With a user-defined type
 ------------------------
 
-With a lifted operator (see :ref:`tn_udt_lifted_ops`), a Python number is weak leaf by
-leaf: in each field of a record, or each element of an array, it takes that element's type
-by the table above. A tuple, list or dict of Python numbers laid out like an element is
-weak the same way, each number in its own leaf. With ``a`` a Vector of an ``INT8[3]`` UDT:
+With a lifted operator (see :ref:`tn_udt_lifted_ops`), a Python number is weak field by
+field: in each field of a record, or each element of an array, it takes that value's
+built-in type by the table above. A tuple, list or dict of Python numbers laid out like an
+element is weak the same way, each number in its own field or array element. With ``a`` a
+Vector of an ``INT8[3]`` UDT:
 
 - ``a + 1``, ``a + (1, 2, 3)`` and ``a + [1, 2, 3]`` are ``INT8[3]``.
 - ``a * 2.5`` and ``a + (0.5, 1, 2)`` are ``FP64[3]``.
@@ -115,8 +116,9 @@ array field of a record must broadcast to that field's shape, or ``ValueError`` 
 both: ``np.array([[1, 2, 3]])`` does not fit an ``INT8[3]`` field.
 
 ``eq`` and ``ne`` type a literal the same way, as numpy's ``==`` does, except that an
-``int`` out of a leaf's range makes the comparison False instead of raising: ``a == 300``
-is False for every element. An ``FP32[3]`` element ``== 0.1`` compares in FP32.
+``int`` out of range of the type it takes makes the comparison False instead of raising:
+``a == 300`` is False for every element. An ``FP32[3]`` element ``== 0.1`` compares in
+FP32.
 
 .. _tn_literal_element:
 
@@ -126,7 +128,7 @@ A literal that becomes an element
 Where no lifted operator types it, a literal becomes an element of the UDT: as an operand
 of a user-defined operator, as an IndexUnaryOp thunk, and as a default of ``ewise_union``.
 It must *fit* the UDT: its type, by the rules above, must be the UDT, or cast into it
-safely, leaf by leaf (``numpy.can_cast`` with ``"safe"``). For an ``INT8[3]`` UDT:
+safely, field by field (``numpy.can_cast`` with ``"safe"``). For an ``INT8[3]`` UDT:
 
 - ``1`` and ``(1, 2, 3)`` are typed ``INT8[3]``, and fit.
 - ``0.5`` is typed ``FP64[3]``, and does not fit: ``a.ewise_union(b, binary.plus, 0.5, 0)``

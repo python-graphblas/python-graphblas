@@ -67,10 +67,10 @@ SuiteSparse:GraphBLAS ships precompiled kernels for common operations. For the r
 can compile a kernel with a C compiler (its JIT), or else run a generic kernel that is
 often several times slower. The JIT control, ``gb.ss.config["jit_c_control"]``, is
 ``"run"`` by default: run only kernels already loaded in the process, and compile nothing.
-Operators on user-defined types, and types and operators registered from C source, raise
-this default to ``"on"`` the first time they need a kernel, for the rest of the process
-and for every operation (see :doc:`udt`). To opt in for everything, set the control to
-``"on"`` (compile, load and run):
+Built-in operators on user-defined types, and types and operators registered from C
+source, raise this default to ``"on"`` the first time they need a kernel, for the rest of
+the process and for every operation (see :doc:`udt`). To opt in for everything, set the
+control to ``"on"`` (compile, load and run):
 
 .. code-block:: bash
 
@@ -88,9 +88,9 @@ and for every operation (see :doc:`udt`). To opt in for everything, set the cont
 (run no JIT kernels) or ``"off"`` (run none, and unload them). Set it with the
 ``GRAPHBLAS_JIT_C_CONTROL`` environment variable, with ``gb.config.set`` before graphblas
 initializes, or in a YAML file in ``~/.config/graphblas/``. A value configured this way is
-kept, so to keep operators on user-defined types from compiling, configure ``"run"``. After
-initialization, ``"load"`` or ``"off"`` set in ``gb.ss.config`` does the same; a ``"run"``
-set there is not always kept.
+kept, so to keep built-in operators on user-defined types from compiling, configure
+``"run"``. After initialization, ``"load"`` or ``"off"`` set in ``gb.ss.config`` does the
+same; a ``"run"`` set there is not always kept.
 
 Where the JIT cannot work, a configured ``"on"`` becomes ``"run"``, with no error: for
 example, SuiteSparse built without the JIT (as in the PyPI wheels), or no working C
@@ -106,14 +106,14 @@ With the JIT on:
   compile the same new kernel, and calls fail with ``JitError``, leave their outputs
   invalid or cleared, return wrong values with no error, or hang
   (`GraphBLAS issue #449 <https://github.com/DrTimothyAldenDavis/GraphBLAS/issues/449>`_).
-  At the default, the first operator on a user-defined type that needs a kernel turns the
-  JIT on, so such processes race too. With multiprocessing, dask, pytest-xdist and the
-  like, set ``GRAPHBLAS_JIT_C_CONTROL=run`` in the environment the workers start in, so
-  that none of them compiles. That costs user-defined types their compiled kernels:
-  their operators call Numba functions instead, often several times slower, and
-  registering types or operators from C source fails. To keep the kernels, give each
-  process its own cache instead, by setting the ``GRAPHBLAS_CACHE_PATH`` environment
-  variable before graphblas initializes.
+  At the default, the first built-in operator on a user-defined type that needs a kernel
+  turns the JIT on, so such processes race too. With multiprocessing, dask, pytest-xdist
+  and the like, set ``GRAPHBLAS_JIT_C_CONTROL=run`` in the environment the workers start
+  in, so that none of them compiles. That costs user-defined types their compiled
+  kernels: their built-in operators call Numba functions instead, often several times
+  slower, and registering types or operators from C source fails. To keep the kernels,
+  give each process its own cache instead, by setting the ``GRAPHBLAS_CACHE_PATH``
+  environment variable before graphblas initializes.
 - The first use of each new kernel compiles it, typically in 0.2 to 1 second. Kernels are
   cached on disk, in ``gb.ss.config["jit_cache_path"]`` (by default under
   ``~/.SuiteSparse`` on Linux and macOS), so later runs load them instead.

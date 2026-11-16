@@ -5,7 +5,8 @@ The SuiteSparse:GraphBLAS JIT
 
 How python-graphblas sets the JIT control, repairs the C compiler setting, and gives
 SuiteSparse:GraphBLAS C definitions for user-defined types and lifted operators. The user
-guide covers the JIT in :ref:`suitesparse_jit` and :doc:`../user_guide/udt`.
+guide introduces the JIT in :ref:`suitesparse_jit`, which also has the rules for its kernel
+cache, and covers it for UDTs in :doc:`../user_guide/udt`.
 
 .. _tn_jit_control:
 

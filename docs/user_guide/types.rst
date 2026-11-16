@@ -38,8 +38,9 @@ Python numbers in operations
 A Python ``bool``, ``int``, ``float`` or ``complex`` used as an operand, such as the ``1``
 in ``v + 1``, is typed as in numpy 2 (NEP 50). It takes the data type of the other
 operand when that type can hold its kind of number: a ``bool`` takes any type, an ``int``
-an integer, float or complex type, and a ``float`` a float or complex type. Otherwise it is
-INT64, FP64 or FC64. With an INT8 Vector ``v``:
+an integer, float or complex type, a ``float`` a float or complex type, and a ``complex`` a
+complex type. Otherwise an ``int`` is INT64, a ``float`` FP64, and a ``complex`` FC64 (FC32
+with an FP32 operand). With an INT8 Vector ``v``:
 
 .. code-block:: python
 

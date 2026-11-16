@@ -88,8 +88,8 @@ shows in reprs and error messages.
 
 A field can be a number type, a fixed-shape array of one (``"FP64[3]"`` in a dict), or
 another record. A dict or a dataclass lays out its fields as a C compiler does. A numpy
-dtype packs them unless you pass ``align=True``. A packed record works, but when its
-fields differ in size, its operators cannot use the JIT (see `Performance and the JIT`_).
+dtype packs them unless you pass ``align=True``. A packed record works, but if a C
+compiler would pad it, its operators cannot use the JIT (see `Performance and the JIT`_).
 Registering the same numpy dtype again returns the same UDT. Text, dates and float16
 work only in part, and Python objects not at all: see :ref:`tn_udt_field_types`.
 
@@ -195,11 +195,12 @@ Storing results in another type
 GraphBLAS cannot cast a UDT, so python-graphblas does: storing in an object of another UDT
 with the same field names, or array shape, casts each field as GraphBLAS casts built-in
 types. It never makes a temporary copy of the data to do this, so only some stores can
-cast. Storing a whole Vector or Matrix casts it (``w << u``, ``u.dup(dtype=...)``). So do
-``apply``, ``ewise_mult`` and ``ewise_union`` with a built-in operator, which write the
-object's type as they compute. Anything else, such as ``mxm``, a reduction, your own
-operator, or assigning into part of an object, raises ``DomainMismatch``. For those,
-compute the result with ``.new()`` first, and store that. Continuing the example above:
+cast. Storing a whole Vector or Matrix casts it (``w << u``, ``u.dup(dtype=...)``), as
+does storing a Scalar or one element. So do ``apply``, ``ewise_mult`` and ``ewise_union``
+with a built-in operator, which write the object's type as they compute. Anything else,
+such as ``mxm``, a reduction into a Vector, your own operator, or assigning a Vector or
+Matrix into part of another, raises ``DomainMismatch``. For those, compute the result with
+``.new()`` first, and store that. Continuing the example above:
 
 .. code-block:: python
 
@@ -353,8 +354,8 @@ compile them.
 A lifted operator also runs as a Numba function when its UDT has no C definition. Then a
 ``NoJITWarning`` gives the possible causes, the first time. The common ones:
 
-- a packed record: one from a numpy dtype without ``align=True``, with fields of
-  different sizes;
+- a packed record (from a numpy dtype without ``align=True``) that a C compiler would
+  pad;
 - a field named like a C keyword or macro, such as ``class`` or ``INT_MAX``;
 - a record with an array field.
 
@@ -382,5 +383,5 @@ process too, and a UDT registered with ``register_new`` is back on ``gb.dtypes``
     data = pickle.dumps(v)
     w = pickle.loads(data)  # in this process or another
 
-To ``ss.deserialize`` the output of ``v.ss.serialize()`` in another process, register
-the UDT there first, under the same name.
+To load the output of ``v.ss.serialize()`` with ``Vector.ss.deserialize`` in another
+process, register the UDT there first, under the same name.

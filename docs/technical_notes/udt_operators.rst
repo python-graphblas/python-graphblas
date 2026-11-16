@@ -86,7 +86,7 @@ The result type is:
 
 So ``{x: INT64, y: FP64}`` with ``{x: FP64, y: INT64}`` is ``{x: FP64, y: FP64}``.
 
-A Python number, or a tuple, list or dict of them, is typed leaf by leaf by the NEP 50
+A Python number, or a tuple, list or dict of them, is typed field by field by the NEP 50
 rules: see :ref:`tn_python_numbers_udt`.
 
 .. _tn_udt_comparisons:
@@ -167,11 +167,11 @@ pair of built-in types:
    * - Anything else: ``mxm``, ``mxv``, a reduction into a Vector, ``ewise_add``, a
        user-defined operator, or a whole Vector or Matrix assigned into part of an object
      - ``DomainMismatch``, since this would need a converted copy of the whole result.
-       Compute the result, then store it (``w << expr.new()``); to assign, convert the
+       Compute the result, then store it (``w << expr.new()``); to assign, cast the
        value first with ``.dup(dtype=...)``.
    * - A ``Scalar`` or one element
      - Computed in its own type, then cast. With an accumulator, the value is cast before
-       it accumulates, as GraphBLAS converts a built-in value: an ``INT8[3]`` Scalar's
+       it accumulates, as GraphBLAS casts a built-in value: an ``INT8[3]`` Scalar's
        ``s += 0.5`` adds 0, as an INT8 Scalar's does.
    * - Between a UDT and a built-in type, or layouts that do not correspond
      - ``DomainMismatch``.
@@ -192,7 +192,7 @@ element of one operand alone keeps its value, as ``ewise_add`` would copy it. Th
 exception is a ``-0.0`` in a field that is an integer in the other operand: it becomes
 ``0.0``.
 
-A Scalar holds one element, so ``ewise_add`` on two Scalars converts its operands to the
+A Scalar holds one element, so ``ewise_add`` on two Scalars casts its operands to the
 result type instead of raising.
 
 .. _tn_udt_udf_returns:
@@ -212,7 +212,7 @@ The result type depends on what the function returns:
 - **A record**, such as one of the operands: that record's type.
 - **A tuple**: the type of a record operand with one field for each value, preferring one
   whose field types match the values' types. Each value is cast to its field's type. For a
-  nested record, the tuple is flat over the leaves: for
+  nested record, the tuple is flat over the innermost fields: for
   ``[("id", int32), ("pt", [("x", float64), ("y", float64)])]`` it is ``(id, x, y)``, not
   ``(id, (x, y))``.
 - **An array operand**: that operand's type.
