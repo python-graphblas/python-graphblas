@@ -276,13 +276,18 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
                 M = M.ss.reshape(tl.prod(shape, seq[:q]), tl.prod(shape, seq[q:]))
                 layout = Layout(seq[:q], seq[q:])
                 continue
+            # Into many outputs, a sum on 2 threads is as fast as on 1 or faster; on 4 and 8 it
+            # can be 2-4x slower (FROSTT Uber, 4392 x 1.96e6: 4.0 / 4.0 / 17 / 15 ms at 1 / 2 /
+            # 4 / 8 threads; 1e4 x 1e6 with 1e7 entries: 18 / 18 / 11 / 39 ms). MAX and MIN
+            # scale instead (5e6 x 5e6 with 1e7 entries: 122 / 120 / 51 / 50 ms; 1e7 x 1e7
+            # with 1e8: 0.66 / 0.66 / 0.32 / 0.28 s; no loss on the others), so they keep
+            # every thread. (SuiteSparse 10.5.1, arm64.)
+            capped = wide and getattr(op, "name", None) not in {"max", "min"}
             if census.on:
-                census.note("reduce", "row group: reduce_columnwise" + (", 2 threads" if wide
+                census.note("reduce", "row group: reduce_columnwise" + (", 2 threads" if capped
                             and nthreads > 2 else ""), nvals=nvals)  # fmt: skip
             v = Vector(dtype, M._ncols)
-            # Into many outputs, 2 threads scatter as fast as 1 or faster; 4 and 8 can be
-            # 3-4x slower (Uber 4.0 / 4.9 / 17 / 15 ms at 2 / 1 / 4 / 8 threads)
-            v(**(dict(opts, nthreads=min(2, nthreads)) if wide else opts)) << M.reduce_columnwise(
+            v(**(dict(opts, nthreads=min(2, nthreads)) if capped else opts)) << M.reduce_columnwise(
                 op
             )
             M = _vector_to_row(v)

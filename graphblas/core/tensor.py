@@ -28,6 +28,7 @@ Zipf is 100000^3 with 1e7 entries whose coordinates are Zipf-distributed (a = 1.
 (77M entries), Uber (3.3M), NIPS (3.1M) and Enron (54M) are FROSTT tensors (frostt.io).
 """
 
+import contextlib
 import itertools
 import math
 import operator
@@ -803,7 +804,10 @@ class Tensor(BaseType):
         if layout is not None:
             M, lay = tl.relayout(M, self._shape, lay, tl.as_layout(layout, self._shape))
         if dtype != self.dtype:
-            M = M.dup(dtype)
+            # (Matrix.dup would hold an n x 1 Matrix by column, as SuiteSparse holds a Vector)
+            D = tl.new_matrix(dtype, M._nrows, M._ncols)
+            D << M
+            M = D
         if M is self._M:
             T = Tensor._from_M(M, self._shape, lay, name=name, store=self._store)
         else:
@@ -1116,6 +1120,81 @@ class Tensor(BaseType):
             expr_repr="{0.name}.apply({op})",
         )
 
+    def _map_values(self, func, others=(), dtype=None):
+        """A Tensor with this Tensor's entries whose values are ``func(*value_arrays)``: the
+        stored values of this Tensor and of ``others`` (Tensors of the same shape and pattern),
+        as numpy arrays in one order, in the result's ``dtype`` (default: this Tensor's).
+
+        Private, for ``graphblas.array_api`` (numpy over the values of entries GraphBLAS has
+        no operator for). The pattern is copied in GraphBLAS and the values written into the
+        copy's own array through a GxB_Container, so the entries are never rebuilt from
+        coordinates; the inputs' arrays are views, not copies.
+        """
+        tensors = [self, *others]
+        gbdt = self.dtype if dtype is None else lookup_dtype(dtype)
+        shape, layout = self._shape, self._layout
+        Ms = [T._M for T in tensors]
+        if self._M._nvals == 0:
+            return Tensor._from_M(tl.new_matrix(gbdt, Ms[0]._nrows, Ms[0]._ncols), shape, layout)
+        if any(T._layout != layout for T in others):
+            Ms = [Ms[0]] + [tl.relayout(T._M, shape, T._layout, layout)[0] for T in others]
+        # An iso Matrix has one value; the template for the result is one that holds them all,
+        # if any does, so that its value array has the length of func's output.
+        isos = [M.ss.is_iso for M in Ms]
+        template = Ms[isos.index(False)] if False in isos else Ms[0]
+        W = tl.new_matrix(gbdt, template._nrows, template._ncols)
+        W << template
+        with contextlib.ExitStack() as stack:
+            # (tensors sharing one Matrix, copy-on-write, unload it once)
+            unique = {id(M): M for M in Ms}
+            conts = {key: stack.enter_context(tl._Unloaded(M)) for key, M in unique.items()}
+            wcont = stack.enter_context(tl._Unloaded(W))
+            formats = {c.format for c in conts.values()} | {wcont.format}
+            nvals = {c.nvals for c in conts.values()} | {wcont.nvals}
+            if len(formats) == 1 and len(nvals) == 1:
+                values = {
+                    key: _value_array(conts[key], M.dtype, stack) for key, M in unique.items()
+                }
+                arrays = [values[id(M)] for M in Ms]
+                out = _value_array(wcont, gbdt, stack)
+                with np.errstate(all="ignore"):
+                    result = np.asarray(func(*arrays))
+                if out is not None and result.shape == out.shape:
+                    out[...] = result
+                    return Tensor._from_M(W, shape, layout)
+        # (formats differ: a fallback through coordinates, which aligns the values by position)
+        return _map_values_coo(func, tensors, gbdt)  # pragma: no cover (safety)
+
+    @classmethod
+    def _concat(cls, tensors, axis):
+        """``tensors`` (of one dtype, and of one shape but along ``axis``) joined along
+        ``axis``, by one GxB_Matrix_concat of their stored Matrices: row blocks when ``axis``
+        leads the row group of the first one's layout, column blocks when it leads the column
+        group. Otherwise every part moves to a layout with ``axis`` leading the rows first.
+        The others take the first one's layout. Private, for ``graphblas.array_api``.
+        """
+        T0 = tensors[0]
+        shape = list(T0._shape)
+        shape[axis] = sum(T._shape[axis] for T in tensors)
+        shape = tuple(shape)
+        rows, cols = T0._layout
+        if rows[:1] == (axis,) or cols[:1] == (axis,):
+            layout = T0._layout
+        else:
+            layout = Layout(
+                (axis, *(a for a in rows if a != axis)), tuple(a for a in cols if a != axis)
+            )
+        by_rows = layout.rows[:1] == (axis,)
+        Ms = [
+            T._M if T._layout == layout else tl.relayout(T._M, T._shape, T._layout, layout)[0]
+            for T in tensors
+            if T._shape[axis]  # (a part of size 0 along the axis adds nothing)
+        ]
+        R = tl.new_matrix(T0.dtype, tl.prod(shape, layout.rows), tl.prod(shape, layout.cols))
+        if Ms:
+            R.ss.concat([[M] for M in Ms] if by_rows else [Ms])
+        return cls._from_M(R, shape, layout)
+
     # Reductions
     def reduce(self, op=monoid.plus, axis=None, *, keepdims=False):
         """Reduce over ``axis`` (None: all axes, giving a 0-d Tensor) with the monoid ``op``,
@@ -1249,6 +1328,26 @@ class Tensor(BaseType):
                 f"Assignment value must be a Tensor, TensorExpression or scalar, not "
                 f"{type(expr)}.{hint}"
             )
+
+
+def _value_array(cont, dtype, stack):
+    """The value array of an unloaded Container as a numpy view (None when it is empty)."""
+    return stack.enter_context(tl._VectorArray(cont.x, np.dtype(dtype.np_type))).array
+
+
+def _map_values_coo(func, tensors, dtype):
+    coords = None
+    arrays = []
+    for T in tensors:
+        idx, vals = T.to_coo()
+        if coords is None:
+            coords = idx
+        arrays.append(vals)
+    with np.errstate(all="ignore"):
+        result = np.asarray(func(*arrays), dtype=dtype.np_type)
+    if result.ndim == 0:
+        result = np.broadcast_to(result, coords[0].shape if coords else (1,))
+    return Tensor.from_coo(coords, result, dtype, shape=tensors[0]._shape)
 
 
 def _ewise_infix(left, right, op, kind):

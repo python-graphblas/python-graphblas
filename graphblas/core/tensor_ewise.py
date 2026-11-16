@@ -190,7 +190,10 @@ def _bcast_recipe(updater, method, a, b, op, untyped_op, extra, shape):
     # result, so "covers the result" must also mean "has its axes".
     a = _lift_rank(a, len(shape))
     b = _lift_rank(b, len(shape))
-    if method == "ewise_mult":
+    if method == "ewise_mult" and math.prod(shape) == 0:
+        # (no positions: the diagonal scaling below would multiply mismatched shapes)
+        _ewise_recipe(updater, method, _expand(a, shape), _expand(b, shape), op, extra)
+    elif method == "ewise_mult":
         _bcast_mult(updater, a, b, op, untyped_op, shape)
     else:
         if census.on:
