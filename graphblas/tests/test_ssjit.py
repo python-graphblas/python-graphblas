@@ -1,5 +1,6 @@
 import contextlib
 import os
+import shutil
 import subprocess
 import sys
 import sysconfig
@@ -127,6 +128,58 @@ def _jit_mode(mode):
 _JIT_WORKS_AT_IMPORT = _jit_works_here()
 
 
+def _compiles_only_through_cmake():
+    """Whether SuiteSparse is built with MSVC (Windows), which compiles only through cmake.
+
+    It keeps ``jit_use_cmake`` True whatever is set.
+    """
+    if _IS_SSGB7:
+        return False
+    cfg = gb.ss.config
+    prev_cmake = cfg["jit_use_cmake"]
+    cfg["jit_use_cmake"] = False
+    try:
+        return cfg["jit_use_cmake"]
+    finally:
+        cfg["jit_use_cmake"] = prev_cmake
+
+
+_CMAKE_ONLY = _compiles_only_through_cmake()
+# UDT work raises the default 'run' only where SuiteSparse compiles without cmake.
+_UDT_WORK_RAISES_RUN = _JIT_WORKS_AT_IMPORT and not _CMAKE_ONLY
+
+
+def _jit_through_cmake_here():
+    """Whether ``'on'`` set at init should compile through cmake here, as SuiteSparse does.
+
+    It must compile only through cmake, have the JIT (one built without it keeps
+    ``jit_c_control`` at ``'run'``), and find cmake on the PATH, which then finds
+    the Visual Studio compiler itself. Then it asks a real probe, as init does. A
+    SuiteSparse built with MinGW (psg's 8.0 wheels) passes gcc-style flags, which
+    cmake's Visual Studio generator hands to cl.exe, which refuses them: there the
+    probe fails, and ``'on'`` rightly becomes ``'run'``. A failed probe with flags
+    for cl.exe still counts, so the tests that need ``'on'`` report it.
+    """
+    from graphblas.core.ss import jit_config
+
+    if not _CMAKE_ONLY or shutil.which("cmake") is None:
+        return False
+    with _jit_mode("on"):
+        if gb.ss.config["jit_c_control"] != "on":
+            return False
+        if jit_config._probe_jit(gb.ss.config):
+            return True
+    flags = gb.ss.config["jit_c_compiler_flags"].split()
+    return not any(flag.startswith(("-W", "-std=", "-f")) for flag in flags)
+
+
+_JIT_THROUGH_CMAKE = _jit_through_cmake_here()
+_CMAKE_PROBE_FAILED = (
+    "cmake could not build the probe with Visual Studio's compiler; its error is in the "
+    "captured output"
+)
+
+
 def _run_in_fresh_process(script, jit_c_control=None, **extra_env):
     """Run ``script`` in a new interpreter on this tree; return its ``key: value`` lines.
 
@@ -209,8 +262,9 @@ def test_ss_import_leaves_jit_c_control_alone(jit_c_control):
     if jit_c_control != "on":
         expected = getattr(gb.core.lib, f"GxB_JIT_{(jit_c_control or 'run').upper()}")
         assert lines["before"] == str(expected), report
-    elif _JIT_WORKS_AT_IMPORT:
-        assert lines["before"] == str(gb.core.lib.GxB_JIT_ON), report
+    elif _JIT_WORKS_AT_IMPORT or _JIT_THROUGH_CMAKE:
+        hint = "" if _JIT_WORKS_AT_IMPORT else _CMAKE_PROBE_FAILED + "\n"
+        assert lines["before"] == str(gb.core.lib.GxB_JIT_ON), hint + report
     else:
         # psg's wheels (built without the JIT), or no working C compiler
         assert lines["before"] == str(gb.core.lib.GxB_JIT_RUN), report
@@ -288,11 +342,13 @@ def test_set_jit_c_control_at_init(monkeypatch):
             _set_jit_c_control_at_init("on")
             assert cfg["jit_c_control"] == "run"
             assert jit_config._jit_enabled_for_udt is False
-        # No compiler on disk and nothing to repair it from: no probe at all.
+        # No compiler on disk and nothing to repair it from (nor cmake, where
+        # SuiteSparse compiles with it): no probe at all.
         cfg["jit_c_compiler_name"] = "/nonexistent/path/to/cc"
         probes = []
         monkeypatch.setattr(jit_config, "_repair_jit_compiler", lambda cfg: None)
         monkeypatch.setattr(jit_config, "_probe_jit", probes.append)
+        monkeypatch.setattr(shutil, "which", lambda cmd: None)
         _set_jit_c_control_at_init("on")
         assert cfg["jit_c_control"] == "run"
         assert jit_config._jit_enabled_for_udt is False
@@ -300,6 +356,145 @@ def test_set_jit_c_control_at_init(monkeypatch):
     finally:
         cfg["jit_c_compiler_name"] = prev_cc
         cfg["jit_c_control"] = prev_control
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_set_jit_c_control_at_init_looks_for_cmake(monkeypatch):
+    """Where SuiteSparse compiles through cmake, an explicit ``'on'`` needs cmake, not the compiler.
+
+    SuiteSparse built with MSVC always does, and passes the configured compiler
+    to cmake, whose Visual Studio generator ignores it; conda-forge's Windows
+    builds name the build machine's ``cl.exe``. ``jit_use_cmake`` is set here so
+    that this runs on every build that lets it be set.
+    """
+    from graphblas.core.ss import jit_config
+    from graphblas.core.ss.jit_config import _set_jit_c_control_at_init
+
+    cfg = gb.ss.config
+    prev = {key: cfg[key] for key in ["jit_c_control", "jit_c_compiler_name", "jit_use_cmake"]}
+    for name in ["_jit_enabled_for_udt", "_configured_jit_c_control", "_user_set_run"]:
+        monkeypatch.setattr(jit_config, name, getattr(jit_config, name))
+    probes = []
+
+    def probe(cfg):
+        probes.append(cfg)
+        return True
+
+    monkeypatch.setattr(jit_config, "_repair_jit_compiler", lambda cfg: None)
+    monkeypatch.setattr(jit_config, "_cache_is_writable", lambda cfg: True)
+    monkeypatch.setattr(jit_config, "_probe_jit", probe)
+    try:
+        cfg["jit_c_control"] = "on"
+        has_jit = cfg["jit_c_control"] == "on"  # a library built without it keeps 'run'
+        cfg["jit_c_compiler_name"] = "/nonexistent/path/to/cc"
+        cfg["jit_use_cmake"] = False
+        if not cfg["jit_use_cmake"]:  # not on SuiteSparse built with MSVC
+            # A missing compiler is no probe, whether or not cmake is there.
+            monkeypatch.setattr(shutil, "which", {"cmake": "/path/to/cmake"}.get)
+            _set_jit_c_control_at_init("on")
+            assert cfg["jit_c_control"] == "run"
+            assert probes == []
+        cfg["jit_use_cmake"] = True
+        if not cfg["jit_use_cmake"]:
+            pytest.skip("SuiteSparse built with MinGW never compiles through cmake")
+        monkeypatch.setattr(shutil, "which", lambda cmd: None)
+        _set_jit_c_control_at_init("on")
+        assert cfg["jit_c_control"] == "run"
+        assert probes == []
+        monkeypatch.setattr(shutil, "which", {"cmake": "/path/to/cmake"}.get)
+        _set_jit_c_control_at_init("on")
+        assert len(probes) == int(has_jit)
+        assert cfg["jit_c_control"] == ("on" if has_jit else "run")
+        assert jit_config._jit_enabled_for_udt is has_jit
+    finally:
+        for key, val in prev.items():
+            cfg[key] = val
+
+
+@pytest.mark.skipif("_IS_SSGB7 or not shutil.which('cmake')")
+def test_set_jit_c_control_at_init_compiles_through_cmake(monkeypatch):
+    """An explicit ``'on'`` compiles the probe through cmake where SuiteSparse uses cmake.
+
+    The probe's type is named after ``jit_use_cmake`` too, so it compiles with
+    cmake here instead of loading the probe compiled directly. Where SuiteSparse
+    with the JIT is built with MSVC (Windows), which compiles only through cmake,
+    ``'on'`` must stick; elsewhere it only has to agree with ``_jit_enabled_for_udt``.
+    """
+    from graphblas.core.ss import jit_config
+    from graphblas.core.ss.jit_config import _set_jit_c_control_at_init
+
+    cfg = gb.ss.config
+    prev = {key: cfg[key] for key in ["jit_c_control", "jit_use_cmake"]}
+    for name in ["_jit_enabled_for_udt", "_configured_jit_c_control", "_user_set_run"]:
+        monkeypatch.setattr(jit_config, name, getattr(jit_config, name))
+    try:
+        cfg["jit_use_cmake"] = True
+        if not cfg["jit_use_cmake"]:
+            pytest.skip("SuiteSparse built with MinGW never compiles through cmake")
+        _set_jit_c_control_at_init("on")
+        assert cfg["jit_c_control"] == ("on" if jit_config._jit_enabled_for_udt else "run")
+        if _JIT_THROUGH_CMAKE:
+            assert cfg["jit_c_control"] == "on", _CMAKE_PROBE_FAILED
+    finally:
+        for key, val in prev.items():
+            cfg[key] = val
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_jit_through_cmake_here_asks_a_probe(monkeypatch):
+    """The cmake tests expect ``'on'`` only where a probe compiles, or should have.
+
+    With psg's 8.0 wheel on Windows (built with MinGW), cmake handed the wheel's gcc
+    flags to cl.exe, which refused them (D8021, ``/Wundef``), so init rightly kept
+    ``'run'``; but the check only set ``'on'``, which needs no compile, and the
+    tests asserted ``'on'``. Driven with a stand-in probe on any host.
+    """
+    from graphblas.core.ss import jit_config
+
+    cfg = gb.ss.config
+    with _jit_mode("on"):
+        if cfg["jit_c_control"] != "on":
+            pytest.skip("SuiteSparse built without the JIT")
+    prev = {key: cfg[key] for key in ["jit_c_control", "jit_c_compiler_flags"]}
+    monkeypatch.setitem(globals(), "_CMAKE_ONLY", True)
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    try:
+        for flags, compiles, expected in [
+            ("-Wundef -std=c11 -fexcess-precision=fast", False, False),  # MinGW: run is right
+            ("/O2 /DNDEBUG", False, True),  # cl.exe's flags: the failure is reported
+            ("-Wundef -std=c11", True, True),
+            ("/O2 /DNDEBUG", True, True),
+        ]:
+            cfg["jit_c_compiler_flags"] = flags
+            monkeypatch.setattr(jit_config, "_probe_jit", lambda cfg, ok=compiles: ok)
+            assert _jit_through_cmake_here() is expected, (flags, compiles)
+            assert cfg["jit_c_control"] == prev["jit_c_control"]
+        # Not only through cmake, or no cmake: nothing to expect
+        monkeypatch.setattr(jit_config, "_probe_jit", lambda cfg: True)
+        monkeypatch.setattr(shutil, "which", lambda name: None)
+        assert _jit_through_cmake_here() is False
+        monkeypatch.setitem(globals(), "_CMAKE_ONLY", False)
+        monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+        assert _jit_through_cmake_here() is False
+    finally:
+        for key, val in prev.items():
+            cfg[key] = val
+
+
+@pytest.mark.skipif("_IS_SSGB7")
+def test_probe_is_named_after_the_cmake_settings():
+    """A probe compiled one way does not answer for another, and init names it as later calls do."""
+    from graphblas.core.ss.jit_config import _TOOLCHAIN_KEYS, _CConfig, _probe_name
+
+    cfg = {key: gb.ss.config[key] for key in _TOOLCHAIN_KEYS}
+    names = {
+        _probe_name({**cfg, "jit_use_cmake": False}),
+        _probe_name({**cfg, "jit_use_cmake": True}),
+        _probe_name({**cfg, "jit_c_cmake_libs": cfg["jit_c_cmake_libs"] + ";m"}),
+    }
+    assert len(names) == 3
+    # Init reads the settings through the C API, before ``gb.ss`` can be imported.
+    assert _probe_name(_CConfig()) == _probe_name(gb.ss.config)
 
 
 # Run in a subprocess: this is about the very first call in a process, and by
@@ -388,8 +583,10 @@ def test_ss_register_new_enables_the_jit():
     ``gb.ss`` stopped raising the control at import, nothing else does it
     first.
     """
-    if not _JIT_WORKS_AT_IMPORT:
-        skip_without_jit("JIT not compiled in or not working here; nothing can compile")
+    if not _UDT_WORK_RAISES_RUN:
+        if not _JIT_WORKS_AT_IMPORT:
+            skip_without_jit("JIT not compiled in or not working here; nothing can compile")
+        pytest.skip("UDT work does not raise 'run' here: it compiles only through cmake")
     lines, report = _run_in_fresh_process(_SS_REGISTER_NEW_PROBE)
     kinds = ["unary", "binary", "indexunary", "select"]
     kinds += ["indexbinary"] if _has_idxbinop else []
@@ -415,6 +612,7 @@ def test_ss_register_new_says_why_the_jit_cannot_build_it(monkeypatch):
     type_name = f"why_t_{suffix}"
     tdef = f"typedef struct {{ int64_t why_a ; }} {type_name} ;"
     prev = gb.ss.config["jit_c_control"]
+    prev_cmake = gb.ss.config["jit_use_cmake"]
     try:
         for control, match in [
             ("off", "jit_c_control is 'off', so SuiteSparse will not compile it"),
@@ -433,9 +631,16 @@ def test_ss_register_new_says_why_the_jit_cannot_build_it(monkeypatch):
         gb.ss.config["jit_c_control"] = None
         with pytest.raises(NullPointer, match="jit_c_control is still 'run'"):
             unary.ss.register_new(op_name, cdef, "FP64", "FP64")
+        # So does one where SuiteSparse compiles through cmake, which can compile.
+        gb.ss.config["jit_use_cmake"] = True
+        if gb.ss.config["jit_use_cmake"]:  # not on SuiteSparse built with MinGW
+            monkeypatch.setattr(jit_config, "_jit_enabled_for_udt", True)
+            with pytest.raises(NullPointer, match="compiles through cmake here"):
+                unary.ss.register_new(op_name, cdef, "FP64", "FP64")
+        gb.ss.config["jit_use_cmake"] = prev_cmake
         # A probe that fails in this very call leaves 'load' before the op is created.
         gb.ss.config["jit_c_control"] = "on"
-        if gb.ss.config["jit_c_control"] == "on":
+        if gb.ss.config["jit_c_control"] == "on" and not gb.ss.config["jit_use_cmake"]:
 
             def failed_probe(cfg):
                 cfg["jit_c_control"] = "load"
@@ -448,6 +653,7 @@ def test_ss_register_new_says_why_the_jit_cannot_build_it(monkeypatch):
             with pytest.raises(NullPointer, match="the C compiler does not work here"):
                 unary.ss.register_new(op_name, cdef, "FP64", "FP64")
     finally:
+        gb.ss.config["jit_use_cmake"] = prev_cmake
         gb.ss.config["jit_c_control"] = prev
 
 
@@ -552,8 +758,10 @@ def test_udt_work_raises_only_the_default_run(form, env_control, kept, tmp_path)
     control. ``'off'``, ``'pause'`` and ``'load'`` were kept before the default
     was told apart.
     """
-    if not kept and not _JIT_WORKS_AT_IMPORT:
-        skip_without_jit("JIT not compiled in or not working here; nothing raises to 'on'")
+    if not kept and not _UDT_WORK_RAISES_RUN:
+        if not _JIT_WORKS_AT_IMPORT:
+            skip_without_jit("JIT not compiled in or not working here; nothing raises to 'on'")
+        pytest.skip("UDT work does not raise 'run' here: it compiles only through cmake")
     extra_env = {}
     if form == "YAML file":
         (tmp_path / "jit.yaml").write_text("jit_c_control: run\n")
@@ -650,6 +858,50 @@ def test_enable_jit_for_udt_re_raises_a_lowered_control(monkeypatch):
 
 
 @pytest.mark.skipif("_IS_SSGB7")
+def test_enable_jit_for_udt_leaves_run_alone_where_suitesparse_uses_cmake(monkeypatch):
+    """UDT work does not raise the default ``'run'`` where SuiteSparse compiles through cmake.
+
+    A kernel through cmake took about 10 s on Windows CI, so only an ``'on'`` the
+    user set compiles there. That holds even where the configured compiler
+    exists: the build machine's ``cl.exe`` on a host with that Visual Studio, or
+    conda's ``clang.exe``, which the repair finds. Driven through a stand-in
+    config, so it runs on every host, whether SuiteSparse was built with MSVC or not.
+    """
+    from graphblas.core.ss import jit_config
+
+    probes = []
+
+    def probe(cfg):
+        probes.append(cfg)
+        return True
+
+    fake = {"jit_use_cmake": True}
+    monkeypatch.setattr(jit_config, "_ss_config", lambda: fake)
+    monkeypatch.setattr(jit_config, "_user_set_run", False)
+    monkeypatch.setattr(jit_config, "jit_compiler_is_usable", lambda: True)
+    monkeypatch.setattr(jit_config, "_cache_is_writable", lambda cfg: True)
+    monkeypatch.setattr(jit_config, "_probe_jit", probe)
+    # Not probed yet, and probed by a configured 'on' that has gone back to 'run' since.
+    for enabled in [None, True]:
+        monkeypatch.setattr(jit_config, "_jit_enabled_for_udt", enabled)
+        fake["jit_c_control"] = "run"
+        assert _enable_jit_for_udt() is False
+        assert fake["jit_c_control"] == "run"
+        assert jit_config._jit_enabled_for_udt is enabled
+    assert probes == []
+    # An 'on' the user set compiles, as anywhere.
+    monkeypatch.setattr(jit_config, "_jit_enabled_for_udt", None)
+    fake["jit_c_control"] = "on"
+    assert _enable_jit_for_udt() is True
+    assert len(probes) == 1
+    # Where SuiteSparse compiles without cmake, the same default is raised.
+    monkeypatch.setattr(jit_config, "_jit_enabled_for_udt", None)
+    fake.update(jit_c_control="run", jit_use_cmake=False)
+    assert _enable_jit_for_udt() is True
+    assert fake["jit_c_control"] == "on"
+
+
+@pytest.mark.skipif("_IS_SSGB7")
 def test_enable_jit_for_udt_does_not_cache_an_opt_out(monkeypatch):
     """An ``'off'`` at the first UDT op must not decide the rest of the process.
 
@@ -696,8 +948,12 @@ def test_enable_jit_for_udt_re_raises_the_live_control(monkeypatch):
     nothing is configured; written over a configured ``'on'``, it is the user's,
     and kept. None is the default either way.
     """
-    if not _JIT_WORKS_AT_IMPORT:
-        skip_without_jit("JIT not compiled in or not working here; the control need not hold 'on'")
+    if not _UDT_WORK_RAISES_RUN:
+        if not _JIT_WORKS_AT_IMPORT:
+            skip_without_jit(
+                "JIT not compiled in or not working here; the control need not hold 'on'"
+            )
+        pytest.skip("UDT work does not raise 'run' here: it compiles only through cmake")
 
     from graphblas.core.ss import jit_config
 
@@ -741,8 +997,10 @@ def test_failed_compile_is_not_retried_at_the_next_arming():
     next kernel, and on SuiteSparse 9.4 and later raise ``JitError`` again,
     with ``'off'`` the only way out.
     """
-    if not _JIT_WORKS_AT_IMPORT:
-        skip_without_jit("JIT not compiled in or not working here; nothing compiles to fail")
+    if not _UDT_WORK_RAISES_RUN:
+        if not _JIT_WORKS_AT_IMPORT:
+            skip_without_jit("JIT not compiled in or not working here; nothing compiles to fail")
+        pytest.skip("UDT work does not raise 'run' here: it compiles only through cmake")
     from graphblas.core.ss import jit_config
     from graphblas.exceptions import JitError
 

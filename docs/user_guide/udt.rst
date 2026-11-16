@@ -536,6 +536,10 @@ included:
 - ``gb.binary.ss.register_new`` and its ``unary``, ``indexunary``, ``select``,
   and ``indexbinary`` siblings, which register an operator from a C definition.
 
+None of these raises it where SuiteSparse compiles through cmake, as it always does
+when built with MSVC on Windows: each kernel takes about 10 seconds there, so only an
+``'on'`` you set compiles (see :ref:`suitesparse_jit`).
+
 A control you set is kept: ``'off'``, ``'pause'``, ``'load'`` (load and run
 cached kernels, never compile), and ``'run'`` too when it was set before init
 (``GRAPHBLAS_JIT_C_CONTROL``, ``gb.config.set``, or a YAML config file). With
