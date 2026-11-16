@@ -4633,6 +4633,162 @@ def test_subarray_dtypes():
         assert Full1.isequal(Full2, check_dtype=True)
 
 
+def _udt_entries(M):
+    rows, cols, values = M.to_coo()
+    order = np.lexsort((cols, rows))
+    return rows[order], cols[order], values[order]
+
+
+def _assert_same_udt_entries(A, B):
+    # isequal needs Numba for a UDT, so compare the entries with numpy
+    assert B.dtype == A.dtype
+    assert B.shape == A.shape
+    for a, b in zip(_udt_entries(A), _udt_entries(B), strict=True):
+        np.testing.assert_array_equal(b, a)
+
+
+@pytest.mark.skipif("not suitesparse")
+@pytest.mark.parametrize("shape", [(4,), (2, 2)])
+def test_subarray_dtype_ss_column_order(shape):
+    # values[i, j] is the element at (i, j) in every dense format, exported and
+    # imported. Column order with the element's own axes slowest would scramble the
+    # numbers both ways, and an unpack then pack round trip alone would hide it, since
+    # the two scrambles cancel.
+    expected = np.arange(2 * 3 * 4, dtype=np.int64).reshape(2, 3, *shape)
+    A = Matrix.from_dense(expected)
+    assert A.dtype.np_type.shape == shape
+    bitmap = np.ones((2, 3), dtype=bool)
+    for fmt in ["fullr", "fullc", "bitmapr", "bitmapc"]:
+        info = A.ss.export(fmt)
+        np.testing.assert_array_equal(info["values"], expected)
+        _assert_same_udt_entries(A, Matrix.ss.import_any(**info))
+        kwargs = {"bitmap": bitmap} if fmt.startswith("bitmap") else {}
+        import_ = getattr(Matrix.ss, f"import_{fmt}")
+        for values in [expected, np.asfortranarray(expected), expected.tolist()]:
+            _assert_same_udt_entries(A, import_(values=values, **kwargs))
+            B = import_(values=values, dtype=A.dtype, **kwargs)
+            _assert_same_udt_entries(A, B)
+        values = expected.copy()
+        kwargs = {key: val.copy() for key, val in kwargs.items()}  # may be taken
+        B = import_(values=values, take_ownership=True, **kwargs)
+        _assert_same_udt_entries(A, B)
+        if fmt.endswith("c"):
+            # Never taken: the entries must be swapped into a copy
+            assert values.flags.owndata
+            assert values.flags.writeable
+        B = A.dup()
+        getattr(B.ss, f"pack_{fmt}")(**B.ss.unpack(fmt))
+        _assert_same_udt_entries(A, B)
+    # Numbers given flat, in column order, still import as they are
+    flat = expected.swapaxes(0, 1).ravel()
+    B = Matrix.ss.import_fullc(values=flat, nrows=2, ncols=3, dtype=A.dtype)
+    _assert_same_udt_entries(A, B)
+    raw = A.ss.export("fullc", raw=True)  # may have spare values after the six
+    np.testing.assert_array_equal(raw["values"][:6].ravel(), flat)
+    # A list of elements in column order, as ``raw=True`` exports them, imports as it is
+    for fmt in ["fullc", "bitmapc"]:
+        info = A.ss.export(fmt, raw=True)
+        assert info["values"].shape[1:] == shape
+        _assert_same_udt_entries(A, Matrix.ss.import_any(**info))
+        B = A.dup()
+        B.ss.pack_any(**B.ss.unpack(fmt, raw=True))
+        _assert_same_udt_entries(A, B)
+        kwargs = {"bitmap": np.ones(6, dtype=bool)} if fmt == "bitmapc" else {}
+        values = expected.swapaxes(0, 1).reshape(6, *shape)
+        B = getattr(Matrix.ss, f"import_{fmt}")(
+            values=values, nrows=2, ncols=3, dtype=A.dtype, take_ownership=True, **kwargs
+        )
+        _assert_same_udt_entries(A, B)
+        assert not values.flags.owndata  # taken, as it is
+        # Element axes that fit neither layout are refused, not read as a list of elements
+        # (as a list of INT64[2, 2], values of shape (2, 3, 4) put [8, 9, 10, 11] at (0, 1))
+        bad = expected.reshape(2, 3, 4) if len(shape) > 1 else expected.reshape(2, 12)
+        kwargs = {"bitmap": np.ones((2, 3), dtype=bool)} if fmt == "bitmapc" else {}
+        with pytest.raises(ValueError, match=r"in column order must have shape \(nrows, ncols"):
+            getattr(Matrix.ss, f"import_{fmt}")(
+                values=bad, nrows=2, ncols=3, dtype=A.dtype, **kwargs
+            )
+        # An iso value given as one element (in Fortran order, INT64[2, 2] reads transposed)
+        B = getattr(Matrix.ss, f"import_{fmt}")(
+            values=expected[0, 1], nrows=2, ncols=3, dtype=A.dtype, is_iso=True, **kwargs
+        )
+        np.testing.assert_array_equal(B.to_dense(), np.broadcast_to(expected[0, 1], (2, 3, *shape)))
+    # Elements missing from a bitmap are left out
+    del A[0, 1]
+    info = A.ss.export("bitmapc")
+    mask = info["bitmap"]
+    assert mask.sum() == A.nvals == 5
+    np.testing.assert_array_equal(info["values"][mask], expected[mask])
+    _assert_same_udt_entries(A, Matrix.ss.import_any(**info))
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_subarray_dtype_ss_export_spare_values():
+    # A dense export of an array UDT given more values than entries keeps the first
+    # nrows * ncols (it raised ValueError, and unpack left the Matrix empty).
+    # SuiteSparse:GraphBLAS 7.4.0's memory pool rounds each allocation of 512 KiB or less
+    # up to a power of two; here a full Matrix resized smaller keeps its larger buffer,
+    # in either layout.
+    big = np.arange(3 * 3 * 4, dtype=np.int64).reshape(3, 3, 4)
+    for layout, nrows, ncols in [("by_row", 2, 3), ("by_col", 3, 2)]:
+        expected = big[:nrows, :ncols]
+
+        def resized(layout=layout, nrows=nrows, ncols=ncols):
+            A = Matrix.from_dense(big)
+            A.ss.config["format"] = layout
+            A.resize(nrows, ncols)
+            return A
+
+        for fmt in ["fullr", "fullc", "bitmapr", "bitmapc"]:
+            A = resized()
+            np.testing.assert_array_equal(A.to_dense(), expected)
+            info = A.ss.unpack(fmt)
+            np.testing.assert_array_equal(info["values"], expected)
+            getattr(A.ss, f"pack_{fmt}")(**info)
+            np.testing.assert_array_equal(A.to_dense(), expected)
+            info = resized().ss.export(fmt, give_ownership=True)
+            np.testing.assert_array_equal(info["values"], expected)
+            np.testing.assert_array_equal(Matrix.ss.import_any(**info).to_dense(), expected)
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_subarray_dtype_ss_row_order_round_trip_takes_the_buffer():
+    # Unpacked in row order from a buffer of exactly its size (256 bytes, which
+    # SuiteSparse:GraphBLAS 7.4.0's pool does not round up), an array UDT's values own
+    # that buffer, so packing them back with take_ownership=True hands it over without a
+    # copy
+    expected = np.arange(2 * 4 * 4, dtype=np.int64).reshape(2, 4, 4)
+    for fmt in ["fullr", "bitmapr"]:
+        A = Matrix.from_dense(expected)
+        info = A.ss.unpack(fmt)
+        values = info["values"]
+        assert values.flags.owndata
+        getattr(A.ss, f"pack_{fmt}")(take_ownership=True, **info)
+        assert not values.flags.owndata
+        np.testing.assert_array_equal(A.to_dense(), expected)
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_ss_import_copies_array_likes():
+    # Without take_ownership=True, GraphBLAS gets a copy of the array that __array__
+    # returns, since the object may keep that array
+    class Holder:
+        def __init__(self, array):
+            self.array = array
+
+        def __array__(self, dtype=None, copy=None):
+            return self.array.copy() if copy else self.array
+
+    expected = np.arange(6.0).reshape(2, 3)
+    for fmt in ["fullr", "fullc", "bitmapr", "bitmapc"]:
+        values = expected.flatten() if fmt.endswith("r") else expected.T.flatten()
+        kwargs = {"bitmap": np.ones((2, 3), dtype=bool)} if fmt.startswith("bitmap") else {}
+        A = getattr(Matrix.ss, f"import_{fmt}")(values=Holder(values), nrows=2, ncols=3, **kwargs)
+        assert values.flags.owndata
+        values[:] = -1  # must not change A
+        np.testing.assert_array_equal(A.to_dense(), expected)
+
+
 # Without SuiteSparse, building a UDT uses dup_op=binary.any, which needs Numba.
 @pytest.mark.skipif("not suitesparse and not supports_udfs")
 def test_subarray_dtype_values_shape():
@@ -4740,7 +4896,10 @@ def test_ss_import_values_size():
         )
     with pytest.raises(ValueError, match=match):
         Matrix.from_dcsr([0, 1], [0, 1, 2], [0, 1], np.ones(2), "FP64[2]")
-    with pytest.raises(ValueError, match=r"have 4 or more elements of dtype \S+, not 2"):
+    with pytest.raises(ValueError, match=r"have 4 or more elements of dtype \S+, not 3"):
+        Matrix.ss.import_fullc(values=np.ones((3, 2)), nrows=2, ncols=2, dtype="FP64[2]")
+    match = r"values of \S+ in column order must have shape \(nrows, ncols, 2\) for an element"
+    with pytest.raises(ValueError, match=match):
         Matrix.ss.import_fullc(values=np.ones((2, 2, 1)), dtype="FP64[2]")
     # A scalar is not a whole element of a sub-array dtype (it said "not 0")
     with pytest.raises(ValueError, match=r"a scalar does not fill one element of dtype \S+, of"):
