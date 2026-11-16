@@ -590,6 +590,17 @@ def _put_specials(values):
         values[: sp.size] = sp
 
 
+def _quieted(value):
+    """A float or complex ``value`` with the quiet bit set in each NaN part, as IEEE arithmetic
+    returns a signaling NaN: same sign and payload.
+    """
+    parts = np.array([value])
+    real = parts.real.dtype
+    bits = parts.view(real).view(np.uint64 if real == np.float64 else np.uint32)
+    bits[np.isnan(parts.view(real))] |= 1 << (51 if real == np.float64 else 22)
+    return parts[0]
+
+
 def _check_bits(T, values, present):
     """``check`` with the values compared bit for bit."""
     assert T.shape == values.shape
@@ -2453,10 +2464,11 @@ def test_empty_region_of_iso_tensor():
 @pytest.mark.parametrize("dtype", [dtypes.FP64, dtypes.FP32, dtypes.FC64, dtypes.FC32])
 def test_reduce_by_selector_keeps_values_bit_exact(dtype, path, fmt):
     """Tensor.reduce over part of a group, by a selector product under the caller's monoid,
-    returns a fiber of one term bit for bit (see _put_specials), and keeps a fiber of NaNs NaN
-    and a fiber of -0.0 at -0.0. The rows of the product are full, where SuiteSparse's saxpy
-    starts a row from the monoid's identity (under min, a fiber of NaNs came back +inf, and
-    under plus a fiber of -0.0 came back +0.0).
+    returns a fiber of one term bit for bit (see _put_specials; a signaling NaN may come back
+    quiet under an arithmetic monoid), and keeps a fiber of NaNs NaN and a fiber of -0.0 at
+    -0.0. The rows of the product are full, where SuiteSparse's saxpy starts a row from the
+    monoid's identity (under min, a fiber of NaNs came back +inf, and under plus a fiber of
+    -0.0 came back +0.0).
     """
     from graphblas.core import tensor_census as census
     from graphblas.core.operator import BinaryOp, Monoid
@@ -2521,7 +2533,15 @@ def test_reduce_by_selector_keeps_values_bit_exact(dtype, path, fmt):
         for k, out in enumerate(outs):
             g = got[out]
             if k < 16:
-                assert np.array(g).tobytes() == np.array(sp[k]).tobytes(), (mon, k, g, sp[k])
+                want = [np.array(sp[k]).tobytes()]
+                if mon.name not in {"min", "max", "any"}:
+                    # Under an op that does arithmetic, a signaling NaN may come back quiet even
+                    # as a lone term: neither C nor LLVM promises to keep one. In the PyPI
+                    # wheels of python-suitesparse-graphblas 10.4.x for macOS arm64, the
+                    # compiled dot kernel computes "cij_exists ? cij + t : t" as
+                    # "(cij_exists ? cij : -0.0) + t", which is exact for every other value.
+                    want.append(np.array(_quieted(sp[k])).tobytes())
+                assert np.array(g).tobytes() in want, (mon, k, g, sp[k])
             elif k < 18:
                 assert np.isnan(g.real), (mon, k, g)
             elif not (complex_ and mon.name == "times"):
