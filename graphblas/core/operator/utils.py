@@ -90,7 +90,7 @@ def _register_aggregator_types(aggregator, typed_aggregator):
     _TypedAggregator = typed_aggregator
 
 
-def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scalar=False, kind=None):
+def get_typed_op(op, dtype, dtype2=None, *, kind=None):
     if isinstance(op, OpBase):
         # UDTs always get compiled
         if op._is_udt:
@@ -122,9 +122,7 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
             return op._compile_udt(dtype, dtype2)
         # Generic case: try to unify the two dtypes
         try:
-            return op[
-                unify(dtype, dtype2, is_left_scalar=is_left_scalar, is_right_scalar=is_right_scalar)
-            ]
+            return op[unify(dtype, dtype2)]
         # Two built-in types always unify, and a UDT beside any other type returned above.
         except (TypeError, AttributeError):  # pragma: no cover (safety)
             # Failure to unify implies a dtype is UDT; some builtin operators can handle UDTs
@@ -135,14 +133,7 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
             return op._compile_udt(dtype, dtype2)
     if isinstance(op, ParameterizedUdf):
         op = op()  # Use default parameters of parameterized UDFs
-        return get_typed_op(
-            op,
-            dtype,
-            dtype2,
-            is_left_scalar=is_left_scalar,
-            is_right_scalar=is_right_scalar,
-            kind=kind,
-        )
+        return get_typed_op(op, dtype, dtype2, kind=kind)
     if isinstance(op, TypedOpBase):
         return op
 
@@ -182,14 +173,7 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
                 '"unary", "binary", "monoid", "semiring", "indexunary", "select", '
                 'or "binary|aggregator".'
             )
-        return get_typed_op(
-            op,
-            dtype,
-            dtype2,
-            is_left_scalar=is_left_scalar,
-            is_right_scalar=is_right_scalar,
-            kind=kind,
-        )
+        return get_typed_op(op, dtype, dtype2, kind=kind)
     if isinstance(op, FunctionType):
         if op.__module__ in {"graphblas.indexunary", "graphblas.select"}:
             # Not a UDF: a helper such as ``indexunary.value`` or a module function
@@ -206,14 +190,7 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
             op = BinaryOp.register_anonymous(op, is_udt=True)
             return op._compile_udt(dtype, dtype2)
     if isinstance(op, BuiltinFunctionType) and op in _builtin_to_op:
-        return get_typed_op(
-            _builtin_to_op[op],
-            dtype,
-            dtype2,
-            is_left_scalar=is_left_scalar,
-            is_right_scalar=is_right_scalar,
-            kind=kind,
-        )
+        return get_typed_op(_builtin_to_op[op], dtype, dtype2, kind=kind)
     raise TypeError(f"Unable to get typed operator from object with type {type(op)}")
 
 
@@ -231,14 +208,7 @@ def _get_typed_op_from_exprs(op, left, right, *, kind=None):
         right_dtype = right_op.type2
     else:
         right_dtype = right.dtype
-    return get_typed_op(
-        op,
-        left_dtype,
-        right_dtype,
-        is_left_scalar=left._is_scalar,
-        is_right_scalar=right._is_scalar,
-        kind=kind,
-    )
+    return get_typed_op(op, left_dtype, right_dtype, kind=kind)
 
 
 def get_semiring(monoid, binaryop, name=None):
