@@ -69,8 +69,8 @@ often several times slower. The JIT control, ``gb.ss.config["jit_c_control"]``, 
 ``"run"`` by default: run only kernels already loaded in the process, and compile nothing.
 Operators on user-defined types, and types and operators registered from C source, raise
 this default to ``"on"`` the first time they need a kernel, for the rest of the process
-and for every operation (see :doc:`udt`). A control you set is kept. To opt in for
-everything, set the control to ``"on"`` (compile, load and run):
+and for every operation (see :doc:`udt`). To opt in for everything, set the control to
+``"on"`` (compile, load and run):
 
 .. code-block:: bash
 
@@ -87,18 +87,17 @@ everything, set the control to ``"on"`` (compile, load and run):
 ``"on"``, ``"load"`` (load and run cached kernels, never compile), ``"run"``, ``"pause"``
 (run no JIT kernels) or ``"off"`` (run none, and unload them). Set it with the
 ``GRAPHBLAS_JIT_C_CONTROL`` environment variable, with ``gb.config.set`` before graphblas
-initializes, or in a YAML file in ``~/.config/graphblas/``. To keep operators on
-user-defined types from compiling, set ``"run"`` in one of these ways, or set ``"load"``
-or ``"off"`` later in ``gb.ss.config``.
+initializes, or in a YAML file in ``~/.config/graphblas/``. A value configured this way is
+kept, so to keep operators on user-defined types from compiling, configure ``"run"``. After
+initialization, ``"load"`` or ``"off"`` set in ``gb.ss.config`` does the same; a ``"run"``
+set there is not always kept.
 
-A configured ``"on"`` is checked first: python-graphblas compiles a tiny type, and sets
-``"run"`` instead, with no error, where the JIT cannot work. That includes SuiteSparse
-built without the JIT (as in the PyPI wheels), no working C compiler (in an activated
-conda environment, ``conda install c-compiler`` provides one), and, for now, Windows. An
-``"on"`` set later in ``gb.ss.config`` is not checked: with a C compiler that does not
-work, the first operation that needs a new kernel raises ``JitError``.
+Where the JIT cannot work, a configured ``"on"`` becomes ``"run"``, with no error: for
+example, SuiteSparse built without the JIT (as in the PyPI wheels), or no working C
+compiler (in an activated conda environment, ``conda install c-compiler`` provides one).
 ``gb.ss.fix_jit_config()`` repairs the compiler setting where it can and checks it. The
-exact rules are in :ref:`tn_jit_control`.
+exact rules, for ``"run"`` and for an ``"on"`` set after initialization too, are in
+:ref:`tn_jit_control`.
 
 With the JIT on:
 

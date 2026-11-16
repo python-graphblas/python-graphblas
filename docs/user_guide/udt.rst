@@ -98,8 +98,8 @@ Creating and reading values
 
 Give a record element as a tuple of its fields in order, or as a dict by field name. Give
 an array element as a sequence or a numpy array. ``from_coo`` takes a list of elements,
-or a numpy array with one row per element, as ``np.eye(3, 4)`` below. Reading an element
-gives a numpy record (``numpy.void``) or a numpy array:
+or a numpy array with one row per element. Reading an element gives a numpy record
+(``numpy.void``) or a numpy array:
 
 .. code-block:: python
 
@@ -132,7 +132,8 @@ each element of an array, as they would to that field's built-in type.
 
 Other built-in operators and aggregators, such as ``pow``, ``lt`` or ``mean``, raise
 ``KeyError`` on a UDT; write your own operator for them. ``min``, ``max`` and
-``floordiv`` also raise on a UDT with complex values.
+``floordiv`` also raise on a UDT with complex values. The complete list is in
+:ref:`tn_udt_lifted_ops`.
 
 An operand can be of a built-in type. Here an FP64 Matrix multiplies a Vector of
 4-element arrays, so each weight multiplies every element of an array:
@@ -161,11 +162,12 @@ An operand can be of a built-in type. Here an FP64 Matrix multiplies a Vector of
 How results are typed
 ~~~~~~~~~~~~~~~~~~~~~
 
-Each field of a result is typed as the built-in operator types it, so a result never
-narrows. Two records pair as operands when they have the same field names in the same
-order; two array UDTs pair when their shapes broadcast, as in numpy. A Python number is
-typed in each field by the same rule as with a built-in type (:ref:`python_numbers`): it
-takes the field's type when that type can hold its kind of number.
+Each field of a result has the type the built-in operator gives for that field's types,
+so a result never narrows. Two records pair as operands when they have the same field
+names in the same order; two array UDTs pair when their shapes broadcast, as in numpy. A
+Python number is typed in each field by the same rule as with a built-in type
+(:ref:`python_numbers`): it takes the field's type when that type can hold its kind of
+number.
 
 .. code-block:: python
 
@@ -184,19 +186,20 @@ takes the field's type when that type can hold its kind of number.
 
 When the result's fields have the same types as an operand's, the result has that
 operand's type. Otherwise it is a UDT for the promoted fields: one registered with that
-numpy dtype, or a new anonymous one, such as ``FP64[2]`` above. The full rules are in :ref:`tn_udt_operators`.
+numpy dtype, or a new anonymous one, such as ``FP64[2]`` above. The full rules are in
+:ref:`tn_udt_operators`.
 
 Storing results in another type
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-GraphBLAS cannot cast a UDT, so python-graphblas does: storing a result in an object of
-another UDT with the same field names, or array shape, casts each field as GraphBLAS
-casts built-in types. It never makes a temporary copy of the data to do this. That works
-when you store an existing object, and for the element-wise operations ``apply``,
-``ewise_mult`` and ``ewise_union`` (and the infix operators that use them), which write
-the object's type as they compute. Anything else, such as ``mxm`` or a reduction, raises
-``DomainMismatch``; compute the result with ``.new()``, then store it. Continuing the
-example above:
+GraphBLAS cannot cast a UDT, so python-graphblas does: storing in an object of another UDT
+with the same field names, or array shape, casts each field as GraphBLAS casts built-in
+types. It never makes a temporary copy of the data to do this, so only some stores can
+cast. Storing a whole Vector or Matrix casts it (``w << u``, ``u.dup(dtype=...)``). So do
+``apply``, ``ewise_mult`` and ``ewise_union`` with a built-in operator, which write the
+object's type as they compute. Anything else, such as ``mxm``, a reduction, your own
+operator, or assigning into part of an object, raises ``DomainMismatch``. For those,
+compute the result with ``.new()`` first, and store that. Continuing the example above:
 
 .. code-block:: python
 
@@ -212,8 +215,8 @@ example above:
 
 ``ewise_add`` raises ``DomainMismatch`` when an operand's type differs from the
 result's, as with ``v`` and ``f``: it would copy an element with no partner into the
-result without casting it. Use ``ewise_union``, or the infix ``+``, which uses
-``ewise_union`` with zero defaults. The rules for storing are in
+result without casting it. Use ``ewise_union``, or the infix ``+``, which on such operands
+uses ``ewise_union`` with zero defaults. The rules for storing are in
 :ref:`tn_udt_storing`.
 
 Writing operators for UDTs
@@ -311,7 +314,9 @@ SuiteSparse:GraphBLAS 9.4 or later.
     semiring.register_new("closer_relax", monoid.closer, indexbinary.relax())
 
     # Edges 0->1 (4), 0->2 (1), 1->2 (2), 1->3 (10) and 2->3 (5)
-    A = Matrix.from_coo([0, 0, 1, 1, 2], [1, 2, 2, 3, 3], [4.0, 1, 2, 10, 5], nrows=4, ncols=4)
+    A = Matrix.from_coo(
+        [0, 0, 1, 1, 2], [1, 2, 2, 3, 3], [4.0, 1, 2, 10, 5], nrows=4, ncols=4
+    )
 
     d = Vector.from_coo([0], [(0.0, 0)], dtype=Hop, size=4)  # start at node 0
     for _ in range(A.nrows - 1):
@@ -357,6 +362,9 @@ The full list is in :ref:`tn_jit_skipped`. To see what SuiteSparse compiles:
 
 .. code-block:: python
 
+    from graphblas import binary
+
+    # Edge is from "Registering a UDT" above
     Edge.jit_c_name  # 'gbudt_Edge'
     Edge.jit_c_definition  # 'typedef struct { double weight ; int32_t hops ; } gbudt_Edge ;'
     binary.plus[Edge].jit_c_source  # 'void plus_gbudt_Edge (gbudt_Edge *z, ...'

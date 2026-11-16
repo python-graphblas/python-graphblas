@@ -60,19 +60,32 @@ Semiring from a Monoid and a BinaryOp, built-in or user-defined:
 
 .. code-block:: python
 
-    from graphblas import Matrix, Vector, binary, monoid, select, semiring
+    from graphblas import Matrix, Vector, binary, monoid, semiring
 
 
-    def absmax(x, y):
-        return max(abs(x), abs(y))
+    def maxabs(x, y):  # the value of greater magnitude; on a tie, the greater value
+        if abs(x) != abs(y):
+            return x if abs(x) > abs(y) else y
+        return x if x > y else y
 
 
-    binary.register_new("absmax", absmax)
-    monoid.register_new("absmax", binary.absmax, 0)
-    semiring.register_new("absmax_times", monoid.absmax, binary.times)
+    binary.register_new("maxabs", maxabs)
+    monoid.register_new("maxabs", binary.maxabs, 0)
+    semiring.register_new("maxabs_times", monoid.maxabs, binary.times)
 
     v = Vector.from_coo([0, 1, 2], [3, -7, 5])
-    largest = v.reduce(monoid.absmax).new()  # 7
+    largest = v.reduce(monoid.maxabs).new()  # -7
+
+    # The term A[i, j] * v[j] of greatest magnitude in each row
+    A = Matrix.from_coo([0, 0, 1, 2], [0, 1, 2, 1], [5, 1, 7, 9])
+    u = A.mxv(v, semiring.maxabs_times).new()  # [15, 35, -63]
+
+A SelectOp's function returns whether to keep each element. This one keeps the elements
+above the diagonal that are greater than the thunk:
+
+.. code-block:: python
+
+    from graphblas import select
 
 
     def upper_and_big(x, i, j, thunk):
@@ -81,7 +94,6 @@ Semiring from a Monoid and a BinaryOp, built-in or user-defined:
 
     select.register_new("upper_and_big", upper_and_big)
 
-    A = Matrix.from_coo([0, 0, 1, 2], [0, 1, 2, 1], [5, 1, 7, 9])
     B = select.upper_and_big(A, 2).new()  # keeps only A[1, 2], which is 7
 
 Auto-registration of Lambdas

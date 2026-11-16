@@ -3,8 +3,8 @@
 Python Numbers in Operations
 ============================
 
-A Python ``bool``, ``int``, ``float`` or ``complex`` used as an operand is typed as numpy 2
-types it (NEP 50): it is *weak*, and takes the type of the other operand where it can.
+A Python ``bool``, ``int``, ``float`` or ``complex`` used as an operand gets the type numpy 2
+gives it (NEP 50): it is *weak*, and takes the type of the other operand where it can.
 python-graphblas applies these rules itself, so numpy 1 gives the same results. The user
 guide's summary is :ref:`python_numbers`.
 

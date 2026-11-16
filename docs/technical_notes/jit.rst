@@ -49,9 +49,7 @@ cache. Where any step fails, the control is ``"run"``, with no error or warning:
   python-suitesparse-graphblas;
 - no C compiler, or one that fails the check (in a conda environment,
   ``conda install c-compiler`` provides one);
-- a cache directory it cannot write to;
-- Windows with SuiteSparse built with MSVC, as conda-forge builds it, which compiles JIT
-  kernels only through cmake; python-graphblas does not turn the JIT on there yet.
+- a cache directory it cannot write to.
 
 **Later.** ``gb.ss.config["jit_c_control"] = value`` sets the control for the rest of the
 process, without the check. With a C compiler that does not work, the first operation
