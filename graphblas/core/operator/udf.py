@@ -100,7 +100,7 @@ def _compile_udf_for_udt(numba_func, sig, *, op_kind, op_name, dtypes):
         if isinstance(exc, KeyError):
             # From Numba 0.59, ``x.name`` on a record without that field raises a bare
             # KeyError (earlier versions wrap it in a TypingError, handled below).
-            snippet = f"a record has no field {exc.args[0]!r}"
+            snippet = f"KeyError: {exc}"
         else:
             snippet = _summarize_numba_typing_error(exc)
         dtypes_str = ", ".join(str(d) for d in dtypes)
