@@ -197,6 +197,22 @@ def test_ewise_add():
     assert list(C.to_coo()[2]) == [18, 19]
 
 
+def test_ewise_union():
+    """A bound op, untyped or typed, works in ``ewise_union``, defaults and indices included."""
+
+    def place(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+        return x * 100 + y * 10 + ix + theta
+
+    op = indexbinary.register_anonymous(place)
+    v = Vector.from_coo([0, 2], [1, 2], size=3)
+    w = Vector.from_coo([1, 2], [3, 4], size=3)
+    # Index 0 has only v, so y is the right default 8; index 1 has only w, so x is 7.
+    expected = [1 * 100 + 8 * 10 + 0, 7 * 100 + 3 * 10 + 1, 2 * 100 + 4 * 10 + 2]
+    assert v.ewise_union(w, op(0), 7, 8).new().to_coo()[1].tolist() == expected
+    r = v.ewise_union(w, op["INT64"](1), 7, 8).new()
+    assert r.to_coo()[1].tolist() == [x + 1 for x in expected]
+
+
 def test_default_theta():
     """``theta=0`` is a valid bind value and does not get treated as missing."""
 

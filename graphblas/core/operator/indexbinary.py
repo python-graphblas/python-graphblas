@@ -124,6 +124,10 @@ class _BoundIndexBinaryOp(TypedOpBase):
     is_positional = False
     _custom_dtype = None
 
+    @property
+    def type2(self):
+        return self.type if self._type2 is None else self._type2
+
     def __reduce__(self):
         return (
             _rebind_indexbinaryop,
