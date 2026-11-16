@@ -15,6 +15,8 @@ from graphblas.core.operator.udt_codegen import _has_jit_set
 from graphblas.core.utils import _NP2, values_to_numpy_buffer
 from graphblas.dtypes import lookup_dtype
 
+from .conftest import skip_without_jit
+
 suitesparse = gb.backend == "suitesparse"
 is_win = sys.platform.startswith("win")
 
@@ -603,7 +605,7 @@ def test_udt_layouts_under_one_name_get_their_own_jit_c_names():
     gb.ss.config["jit_c_control"] = "on"
     try:
         if not _enable_jit_for_udt():
-            pytest.skip("the JIT cannot compile here (no usable C compiler)")
+            skip_without_jit("the JIT cannot compile here (no usable C compiler)")
         for udt in [small, big]:
             shape = udt.np_type.shape
             one = np.full(shape, 1, np.int16)
