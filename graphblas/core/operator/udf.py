@@ -64,7 +64,7 @@ def _numba_compile(numba_func, sig):
     if getattr(numba.core.config, "CAPTURED_ERRORS", None) != "old_style":
         numba_func.compile(sig)
         return
-    with warnings.catch_warnings():
+    with warnings.catch_warnings():  # FLAKY COVERAGE
         # Match anywhere: Numba re-emits a warning raised while compiling a callee
         # with "Failed in nopython mode pipeline ..." in front of it.
         warnings.filterwarnings(
