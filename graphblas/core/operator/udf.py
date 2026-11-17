@@ -53,7 +53,7 @@ def _numba_compile(numba_func, sig):
 
     Numba before 0.60 captures errors "old_style" by default: a bare exception
     from lowering, such as the NotImplementedError for an op Numba types but
-    cannot lower, comes out as a LoweringError raised from it. 0.58 and 0.59
+    cannot lower, comes out as a LoweringError raised while handling it. 0.58 and 0.59
     also warn NumbaPendingDeprecationWarning that code may depend on this, and
     ``-W error`` (as in our tests) raises that warning instead of the error.
     The callers here handle both styles, so the warning only gets in the way.
@@ -65,9 +65,11 @@ def _numba_compile(numba_func, sig):
         numba_func.compile(sig)
         return
     with warnings.catch_warnings():
+        # Match anywhere: Numba re-emits a warning raised while compiling a callee
+        # with "Failed in nopython mode pipeline ..." in front of it.
         warnings.filterwarnings(
             "ignore",
-            "Code using Numba extension API maybe depending on 'old_style'",
+            "(?s).*Code using Numba extension API maybe depending on 'old_style'",
             NumbaPendingDeprecationWarning,
         )
         numba_func.compile(sig)
@@ -138,10 +140,10 @@ def _compile_udf_for_udt(numba_func, sig, *, op_kind, op_name, dtypes):
 
     Catches the full ``NumbaError`` hierarchy (TypingError, LoweringError,
     UnsupportedError, ...) so any compilation failure produces a
-    single-line UDT diagnostic. It also catches the bare ``KeyError`` that
-    Numba 0.59 and later raise for ``x.name`` on a record without that field,
-    and the bare NotImplementedError that Numba 0.60 and later raise for an op
-    it types but cannot lower; earlier versions wrap them in a NumbaError.
+    single-line UDT diagnostic. On Numba 0.60 and later it also catches the
+    bare ``KeyError`` raised for ``x.name`` on a record without that field, and
+    the bare NotImplementedError raised for an op Numba types but cannot lower;
+    earlier versions wrap both in a NumbaError.
     """
     try:
         _numba_compile(numba_func, sig)

@@ -711,8 +711,9 @@ def test_udt_udf_on_a_dtype_numba_cannot_lower():
 def test_compile_for_dtype_raises_other_lowering_errors():
     """Only a missing lowering skips a dtype, in either of Numba's error styles.
 
-    Numba before 0.60 raises a LoweringError from whatever lowering raised, such
-    as the NotImplementedError for a missing lowering; later Numba raises that.
+    Numba before 0.60 raises a LoweringError while handling whatever lowering
+    raised, such as the NotImplementedError for a missing lowering; later Numba
+    raises that error itself.
     """
     from numba.core.errors import LoweringError
 
@@ -2200,22 +2201,22 @@ def test_udt_return_type_errors():
 def test_udt_udf_missing_field():
     """Reading a field the record does not have raises UdfParseError, by name or attribute.
 
-    For the attribute form, Numba 0.59 and later raise a bare KeyError, which the error
-    names; earlier versions raise a TypingError whose summary does not name the field.
+    The error names the field on Numba 0.60 and later. Earlier versions wrap Numba's
+    message in one whose summary line does not name it.
     """
     import numba
     from packaging.version import parse
 
     udt = dtypes.register_anonymous({"mf_a": FP64, "mf_pt": {"mf_x": FP64}}, "_MissingFieldUDT")
-    attr_names_field = parse(numba.__version__) >= parse("0.59")
+    names_field = parse(numba.__version__) >= parse("0.60")
     cases = [
-        (UnaryOp, lambda x: x["mf_nope"], True),
-        (UnaryOp, lambda x: x.mf_nope, attr_names_field),
-        (UnaryOp, lambda x: x["mf_pt"]["mf_nope"], True),
-        (UnaryOp, lambda x: x.mf_pt.mf_nope, attr_names_field),
-        (BinaryOp, lambda x, y: x.mf_a + y.mf_nope, attr_names_field),
+        (UnaryOp, lambda x: x["mf_nope"]),
+        (UnaryOp, lambda x: x.mf_nope),
+        (UnaryOp, lambda x: x["mf_pt"]["mf_nope"]),
+        (UnaryOp, lambda x: x.mf_pt.mf_nope),
+        (BinaryOp, lambda x, y: x.mf_a + y.mf_nope),
     ]
-    for cls, func, names_field in cases:
+    for cls, func in cases:
         with pytest.raises(UdfParseError, match="mf_nope" if names_field else None):
             cls.register_anonymous(func, is_udt=True)[udt]
 
