@@ -30,41 +30,29 @@ When a data type is needed in an API call, a string or numpy or numba dtype may 
 instead of the actual data type object. Additionally, the Python builtin
 ``bool``, ``int``, and ``float`` may be used. ``int`` indicates INT64 and ``float`` indicates FP64.
 
+.. _python_numbers:
+
 Python numbers in operations
 ----------------------------
 
-A Python ``bool``, ``int``, ``float`` or ``complex`` used as an operand, such as
-the ``1`` in ``v + 1`` or ``v.apply(binary.times, right=0.5)``, is *weak*, as in
-numpy 2 (NEP 50). It takes the other operand's data type when that type's kind
-can hold it, and its own default type (BOOL, INT64, FP64 or FC64) when not. So
-with an INT8 vector ``v``, ``v + 1`` is INT8 and ``v * 0.5`` is FP64, while
-``v + 300`` raises ``OverflowError`` rather than wrapping, and ``v * 2`` wraps
-in INT8 as it does in numpy. An FP32 vector times ``0.5`` is FP32, plus ``1j``
-is FC32, and plus ``1e300`` is infinity, with a ``RuntimeWarning`` as in numpy. numpy scalars, 0-d arrays and ``Scalar`` objects keep their own
-type: ``v + np.int64(1)`` is INT64, and so is ``np.int64(1) + v``, since numpy's
-operators leave an operation with a python-graphblas object to python-graphblas.
-python-graphblas applies this rule itself,
-so it does not depend on the installed version of numpy. User-defined types
-follow the same rule, field by field (see :doc:`udt`).
+A Python ``bool``, ``int``, ``float`` or ``complex`` used as an operand, such as the ``1``
+in ``v + 1``, is typed as in numpy 2 (NEP 50). It takes the data type of the other
+operand when that type can hold its kind of number: a ``bool`` takes any type, an ``int``
+an integer, float or complex type, a ``float`` a float or complex type, and a ``complex`` a
+complex type. Otherwise an ``int`` is INT64, a ``float`` FP64, and a ``complex`` FC64 (FC32
+with an FP32 operand). With an INT8 Vector ``v``:
 
-A comparison has no result type to keep, so an integer outside the operand's
-range compares exactly, as in numpy: ``v < 300`` is True for every element, as
-is ``w < 2**63`` for an INT64 vector ``w``.
-Nor does an operator whose result has another type raise: ``v / 300`` is FP64
-whatever the integer, and ``v.apply(binary.isclose, right=300)`` is False for
-every element. A user-defined operator whose result has another type gets the
-integer exactly where the operand's type and the integer's share an integer
-type (INT16 for ``300`` here), and raises ``OverflowError`` where they would
-share only a floating-point type, which can round the integer: beside an INT64
-vector, ``2**63`` would meet the elements in FP64, where ``2**63 - 1`` and
-``2**63`` are equal. An
-FP32 vector ``== 0.1`` compares in FP32, and ``== 1e300`` compares with
-infinity, with a ``RuntimeWarning`` as in numpy. The defaults of ``ewise_union``
-follow the rule, and so does the ``fill_value`` of ``to_dense``, except that a
-value that does not fit widens the result instead of raising. A literal given
-to a typed operator, such as ``binary.plus["INT64"]``, takes that operator's
-type, and a ``select`` or ``IndexUnaryOp`` thunk that is not compared with the
-values, such as a row index, keeps its own type.
+.. code-block:: python
+
+    (v + 1).new()  # INT8
+    (v * 0.5).new()  # FP64
+    (v * 2).new()  # INT8, so an element of 100 wraps to -56, as in numpy
+    # (v + 300).new()  raises OverflowError: 300 is out of range for INT8
+
+A numpy scalar or a ``Scalar`` keeps its own type: ``v + np.int64(1)`` is INT64. Use
+one to compute in a wider type. python-graphblas applies these rules itself, so they do
+not depend on the installed version of numpy. The full rules, for comparisons, typed
+operators, thunks and user-defined types too, are in :ref:`tn_python_numbers`.
 
 User-defined Types
 ------------------
@@ -79,3 +67,5 @@ First create a custom numpy dtype. Then register it in the ``graphblas.dtypes`` 
     Point = gb.dtypes.register_new("Point", NP_Point)
     # Create a 10-element sparse vector holding Points
     v = gb.Vector(Point, size=10)
+
+See :doc:`udt` for more.

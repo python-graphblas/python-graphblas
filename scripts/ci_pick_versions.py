@@ -1,17 +1,17 @@
 #!/usr/bin/env python
 """Pick random, compatible dependency versions for python-graphblas CI.
 
-Replaces the bash-based version selection that used to live in
-test_and_build.yml.
+Usage (as in test_and_build.yml, which checks the exit status before the eval):
+    picks=$(python scripts/ci_pick_versions.py --python 3.12 --source conda-forge)
+    eval "$picks"
 
-Usage (in GitHub Actions workflow):
-    eval "$(python scripts/ci_pick_versions.py --python 3.12 --source conda-forge)"
+Output: key=value lines that bash can eval, with the variable names the workflow uses:
+    npver='=2.2'      # a conda pin
+    pdver='<3.1'      # latest, below a cap (LATEST_CEILINGS)
+    numbaver=''       # latest (no pin)
+    sparsever='NA'    # do not install
 
-Output: bash-eval-safe key=value lines using the same variable names as the workflow:
-    npver='=2.2'     # conda pin
-    spver='=1.15'
-    npver=''          # empty = latest (no pin)
-    sparsever='NA'    # NA = skip this package
+``--validate`` checks 10,000 random picks for each Python and source against the rules.
 """
 
 import argparse
@@ -90,7 +90,8 @@ PANDAS_VERSIONS = {
 # MAINT: 2026-10-22 pandas 3.1.0 fits fewer columns in a repr's auto-width
 # (display.max_columns=0), and warns (Pandas4Warning) when the pandas-based repr renderer
 # appends its "..." row to a numeric column; both fail test_formatting.py. Remove the cap
-# once #605 (the repr renderer that does not use pandas) is on main.
+# once reprs render without pandas
+# (https://github.com/python-graphblas/python-graphblas/pull/605).
 LATEST_CEILINGS = {"pandas": "<3.1"}
 
 # The "2.x" pool starts at 2.6 because awkward <2.6 still uses numpy.AxisError,
@@ -284,10 +285,10 @@ def _pick_scipy(pyver, npver, pool, floor=(0,)):
 def _numpy_ver(v, pyver):
     """Version of numpy to compare against, resolving "" (latest) to what it installs.
 
-    An unpinned numpy is the newest release this Python can actually get, which is the
-    newest pin in its pool, not something infinitely new: numba 0.67 caps numpy at <2.6
-    and still qualifies today. Deriving it from the pool keeps it honest per Python
-    (py3.11 tops out at numpy 2.4) and leaves nothing extra to bump.
+    An unpinned numpy is taken to be the newest pin in this Python's pool (2.4 on py3.11,
+    2.5 on newer Pythons), not something infinitely new, so a numba that caps numpy just
+    above it (0.67, at <2.6) still qualifies. Deriving it from the pool gives each Python
+    its own answer and leaves nothing extra to bump.
     """
     if v["numpy"]:
         return _ver(v["numpy"])
@@ -315,7 +316,6 @@ def _min_for_python(table, pyver):
 def apply_constraints(v, pyver, scipy_pool, numba_pool):
     """Mutate version dict to satisfy all known compatibility constraints.
 
-    Each constraint comment documents the real-world requirement it encodes.
     Order matters: numpy/scipy constraints first, then pandas (which may bump scipy/numba),
     then Python-version constraints, then numba/numpy constraints. Within the awkward
     section, the numpy 2.x floor runs before the Python-availability picks (which may
@@ -524,8 +524,8 @@ def pick_versions(pyver, source_type):
         "sparse": random.choice(SPARSE_VERSIONS[pyver]),
     }
 
-    # Source builds have issues with some numpy/scipy/pandas versions;
-    # blank them before constraints so numba/etc constraints see the right numpy.
+    # Source builds have issues with some numpy/scipy/pandas versions, so they take the
+    # latest. Blank them before the constraints, so the numba rules see that numpy.
     if source_type == "source":
         v["numpy"] = ""
         v["scipy"] = ""

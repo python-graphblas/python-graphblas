@@ -177,13 +177,10 @@ class IndexerResolver:
         from .scalar import _as_scalar
 
         if typ is int:
-            # Fast lane for a plain Python int, the overwhelmingly common case.
-            # The two np.issubdtype checks below cost ~125ns each (measured), a
-            # meaningful slice of single-element index parsing. output_type maps
-            # only the exact `int` type to `int` (bool -> bool, numpy ints -> their
-            # own type), so bool and numpy scalars never enter here and keep their
-            # existing handling. A plain int is always signed, so the negative
-            # branch always applies, matching the signedinteger branch below.
+            # Fast path for a Python int, the common case: it skips the two
+            # np.issubdtype checks below, about 125 ns each. ``typ`` is ``int`` only
+            # for an exact int (output_type gives bool and numpy integers their own
+            # types), and an int is signed, so this matches the signedinteger branch.
             if index >= size:
                 raise IndexError(f"Index out of range: index={index}, size={size}")
             if index < 0:

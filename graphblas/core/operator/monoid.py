@@ -25,23 +25,17 @@ from ..utils import libget
 from .base import OpBase, ParameterizedUdf, TypedOpBase, _BinaryopJitDelegate, _hasop
 from .binary import BinaryOp, ParameterizedBinaryOp, TypedBuiltinBinaryOp
 
-# Monoid names for which we can auto-generate UDT identities.
+# The built-in monoids that lift to UDTs, with an identity made for each UDT
 _BUILTIN_UDT_MONOIDS = {"plus", "times", "min", "max"}
 
 
 def _is_builtin_binaryop(binaryop):
-    """True if ``binaryop`` wraps built-in GraphBLAS operators rather than a UDF.
+    """True if ``binaryop`` is made of built-in GraphBLAS operators rather than a UDF.
 
-    Most built-ins are constructed with neither a Python func nor a numba func.
-    That covers ``binary.numpy.float_power`` too, which is assembled out of
-    ``binary.pow``'s typed ops. A few built-ins (``any``, ``first``, ``pair``,
-    ``second``) carry a Python ``orig_func`` as their UDT fallback, so the func
-    test alone misses them; their typed ops are still ``TypedBuiltinBinaryOp``,
-    which is the authoritative signal. A UDF's typed ops are never
-    ``TypedBuiltinBinaryOp``. Under ``mapnumpy=True`` the mapped numpy binary
-    ops hold the built-in's typed ops and no funcs, so both tests agree they
-    are built-in; the numpy monoids themselves are mapped without passing
-    through ``Monoid._build``.
+    Most built-ins, and the ``binary.numpy`` ops made from them (such as
+    ``float_power``), have neither ``orig_func`` nor ``_numba_func``. A few (``any``,
+    ``first``, ``pair``, ``second``) have Python functions for UDTs, but their typed
+    ops are ``TypedBuiltinBinaryOp``, which a UDF's never are.
     """
     return (
         binaryop.orig_func is None
@@ -51,12 +45,10 @@ def _is_builtin_binaryop(binaryop):
 
 
 def _scalar_identity(monoid_name, scalar_dtype):
-    """Return the identity for a single numeric (or bool) numpy dtype, or ``None``.
+    """Return the identity of a built-in monoid for a numpy number or bool dtype, or ``None``.
 
-    ``None`` signals that we don't have an identity for this combination, so
-    the caller raises a clear error. Bool fields are treated as 0/1: ``min``
-    is logical AND (identity ``True``), ``max`` is logical OR (identity
-    ``False``).
+    For bool, ``min`` is logical and (identity ``True``) and ``max`` is logical or
+    (identity ``False``).
     """
     if monoid_name == "plus":
         return scalar_dtype.type(0)
@@ -77,12 +69,10 @@ def _scalar_identity(monoid_name, scalar_dtype):
 
 
 def _udt_identity(monoid_name, dtype):
-    """Generate an identity value for a built-in monoid on a UDT.
+    """Return the identity of a built-in monoid on a UDT, as a value for ``Scalar.value``.
 
-    Returns a value suitable for assignment to ``Scalar.value``: a numpy
-    array for array UDTs, or a tuple of per-field identities for record
-    UDTs. Nested records recurse, producing a nested tuple that matches the
-    dtype's structure (which is what ``Scalar.value =`` expects).
+    That is a numpy array for an array UDT, or a tuple of the fields' identities for
+    a record UDT, nested as the record is.
     """
     np_type = dtype.np_type if hasattr(dtype, "np_type") else dtype
     return _udt_identity_np(monoid_name, np_type, dtype)
@@ -92,7 +82,8 @@ def _udt_identity_np(monoid_name, np_type, top_dtype):
     if np_type.subdtype is not None:
         base_dtype, shape = np_type.subdtype
         val = _scalar_identity(monoid_name, base_dtype)
-        # The binary op compiled first, and min and max compile for arrays of real numbers only
+        # Unreachable: the binary op compiles first, and min and max refuse arrays whose
+        # elements are not real numbers
         if val is None:  # pragma: no cover (safety)
             raise KeyError(
                 f"monoid.{monoid_name} does not work with {top_dtype}: "
@@ -114,7 +105,8 @@ def _udt_identity_np(monoid_name, np_type, top_dtype):
                     )
             vals.append(val)
         return tuple(vals)
-    # The binary op compiled first, and lifted ops refuse a UDT neither a record nor an array
+    # Unreachable: the binary op compiles first, and a lifted op refuses a UDT that is
+    # neither a record nor an array
     raise KeyError(  # pragma: no cover (safety)
         f"monoid.{monoid_name} does not work with {top_dtype}"
     )
@@ -168,11 +160,10 @@ class TypedUserMonoid(_BinaryopJitDelegate, TypedOpBase):
     __slots__ = "binaryop", "identity"
     opclass = "Monoid"
     is_commutative = True
-    # Deliberately not ``_owns_gb_obj = True``: a ``GrB_Monoid`` holds a
-    # pointer into its underlying ``GrB_BinaryOp``, and Python's cyclic GC
-    # makes no guarantee about which side is finalized first. Freeing the
-    # monoid after its binary op is gone aborts SuiteSparse. The leak is
-    # bounded by the cache in ``Monoid.{_typed_ops,_udt_ops}``.
+    # Not ``_owns_gb_obj``, so the GrB_Monoid is never freed, though ``GrB_Monoid_free``
+    # does not read the BinaryOp and no reason to keep it is known. Each Monoid made and
+    # dropped (an anonymous one, or a parameterized one past its cache) leaks one handle
+    # per type.
 
     def __init__(self, parent, name, type_, return_type, gb_obj, binaryop, identity):
         super().__init__(parent, name, type_, return_type, gb_obj, f"{name}_{type_}")
@@ -286,15 +277,13 @@ class Monoid(OpBase):
         if type(binaryop) is not BinaryOp:
             raise TypeError(f"binaryop must be a BinaryOp, not {type(binaryop)}")
         if _is_builtin_binaryop(binaryop):
-            # Rejected up front, before any object is created: a built-in binaryop
-            # cannot back a user monoid. Its typed ops are ``TypedBuiltinBinaryOp``
-            # with no ``_monoid`` slot, so ``TypedUserMonoid`` would raise an opaque
-            # AttributeError partway through, having already repointed
-            # ``binary.<name>._monoid`` at the half-built monoid. Even if that were
-            # patched over, SuiteSparse ignores the identity handed to
-            # ``GrB_Monoid_new`` whenever the built-in op already has a built-in
-            # monoid (max, min, plus, times, any), so the result would silently
-            # disagree with ``monoid[dtype].identity``.
+            # Refused before any object is made. A built-in BinaryOp's typed ops have
+            # no ``_monoid`` slot, so ``TypedUserMonoid`` would raise AttributeError
+            # partway, after pointing ``binary.<name>._monoid`` at the half-built
+            # monoid. Also, SuiteSparse ignores the identity given to
+            # ``GrB_Monoid_new`` when the built-in op has a built-in monoid (max, min,
+            # plus, times, any), so the result would disagree with
+            # ``monoid[dtype].identity``.
             raise TypeError(
                 "binaryop must be a user-defined BinaryOp, not the built-in "
                 f"binary.{binaryop.name}. Built-in binary operators already own their "
@@ -354,17 +343,16 @@ class Monoid(OpBase):
 
         ret_type = binaryop.return_type
         if ret_type != dtype:
-            # Checked here because GrB_Monoid_new_UDT reports it as a DomainMismatch
-            # with no message.
+            # Checked here: GrB_Monoid_new_UDT reports it as a DomainMismatch with no message
             raise TypeError(
                 f"monoid.{self.name} does not work with {dtype}: a monoid's binary operator "
                 f"must return its input type, {dtype}, not {ret_type}"
             )
         identity_val = self._identity
         if identity_val is None and self._binaryop is None and self.name in _BUILTIN_UDT_MONOIDS:
-            # Auto-generate the identity for built-in monoids on UDTs. Only built-in
-            # monoids have no ``_binaryop``: a user monoid named like one (after its
-            # op's function, or by ``name=``) must not get that identity.
+            # A built-in monoid lifted to a UDT. Only built-in monoids have no
+            # ``_binaryop``: a user's monoid named like one (after its op's function, or
+            # by ``name=``) must not get that identity.
             identity_val = _udt_identity(self.name, ret_type)
         if identity_val is None:
             raise KeyError(
@@ -500,10 +488,8 @@ class Monoid(OpBase):
     def __reduce__(self):
         if not self._anonymous and (name := f"monoid.{self.name}") in _STANDARD_OPERATOR_NAMES:
             return name
-        # Carry ``is_idempotent`` through pickle: ``register_anonymous`` /
-        # ``register_new`` take it as keyword-only, and the inherited
-        # ``OpBase._deserialize`` can't pass keyword args, so route through a
-        # dedicated deserializer here.
+        # A deserializer of its own, because ``OpBase._deserialize`` cannot pass the
+        # keyword-only ``is_idempotent``
         return (
             Monoid._deserialize_named_monoid,
             (

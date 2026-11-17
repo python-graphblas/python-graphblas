@@ -116,7 +116,7 @@ class IndexUnaryOp(OpBase):
         if name is None:
             name = getattr(func, "__name__", "<anonymous_binary>")
         success = False
-        # Set on the Dispatcher, not just the cfunc wrapper; see the note in
+        # Set on the Dispatcher too, not only on the cfunc wrapper; see the note in
         # ``BinaryOp._build``.
         indexunary_udf = numba.njit(func, error_model="numpy")
         new_type_obj = cls(
@@ -238,12 +238,14 @@ class IndexUnaryOp(OpBase):
         func : FunctionType
             The function to compile. For all current backends, this must be able
             to be compiled with ``numba.njit``.
-            ``func`` takes four input parameters (any dtype, int64, int64,
+            ``func`` takes four input parameters (any dtype, uint64, uint64,
             any dtype) and returns any dtype. The first argument (any dtype) is
-            the value of the input Matrix or Vector, the second argument (int64)
+            the value of the input Matrix or Vector, the second argument (uint64)
             is the row index of the Matrix or the index of the Vector, the third
-            argument (int64) is the column index of the Matrix or 0 for a Vector,
+            argument (uint64) is the column index of the Matrix or 0 for a Vector,
             and the fourth argument (any dtype) is the value of the input Scalar.
+            A difference of two indices wraps when it would be negative; see
+            :ref:`unsigned indices <udf_indices>`.
         name : str, optional
             The name of the operator. This *does not* show up as ``gb.indexunary.{name}``.
         parameterized : bool, default False
@@ -288,12 +290,14 @@ class IndexUnaryOp(OpBase):
         func : FunctionType
             The function to compile. For all current backends, this must be able
             to be compiled with ``numba.njit``.
-            ``func`` takes four input parameters (any dtype, int64, int64,
+            ``func`` takes four input parameters (any dtype, uint64, uint64,
             any dtype) and returns any dtype. The first argument (any dtype) is
-            the value of the input Matrix or Vector, the second argument (int64)
+            the value of the input Matrix or Vector, the second argument (uint64)
             is the row index of the Matrix or the index of the Vector, the third
-            argument (int64) is the column index of the Matrix or 0 for a Vector,
+            argument (uint64) is the column index of the Matrix or 0 for a Vector,
             and the fourth argument (any dtype) is the value of the input Scalar.
+            A difference of two indices wraps when it would be negative; see
+            :ref:`unsigned indices <udf_indices>`.
         parameterized : bool, default False
             When True, create a parameterized user-defined operator, which means
             additional parameters can be "baked into" the operator when used.

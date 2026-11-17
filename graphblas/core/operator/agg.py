@@ -37,10 +37,11 @@ class Aggregator:
     position (``ss.argmin``, ``ss.argmax``, ``ss.first_index``).
 
     Built-in aggregators live in the ``graphblas.agg`` namespace, such as ``agg.sum``,
-    ``agg.mean``, and ``agg.count``. The position aggregators are SuiteSparse-specific and
-    live under ``agg.ss``; the bare ``agg.argmin`` spellings are deprecated. Unlike the
-    other operators, an Aggregator is not a single GraphBLAS object; many are built from a
-    monoid or semiring plus an optional finalize step, composed per dtype on first use.
+    ``agg.mean``, and ``agg.count``. Those that use positions (``argmin``, ``argmax``,
+    ``first``, ``last``, ``first_index``, ``last_index``) are SuiteSparse-specific and live
+    under ``agg.ss``; the bare ``agg.argmin`` spellings are deprecated. Unlike the other
+    operators, an Aggregator is not a single GraphBLAS object. Most are built from a monoid
+    or semiring, with an optional finalize step, for each dtype on first use.
 
     Examples
     --------
@@ -110,13 +111,9 @@ class Aggregator:
     def __getitem__(self, dtype):
         dtype = lookup_dtype(dtype)
         if not self._any_dtype and dtype not in self.types:
-            # When this is a monoid-based aggregator and ``dtype`` is a UDT,
-            # try to compile the underlying monoid for it. Built-in monoids
-            # like ``plus``, ``min``, and ``max`` auto-generate field-by-field
-            # UDT versions, which lets ``agg.sum[udt]``, ``agg.min[udt]``,
-            # and friends work transparently. Composite or semiring-based
-            # aggregators (e.g., ``hypot``) aren't handled here; their
-            # pipelines don't lift to UDTs cleanly.
+            # An aggregator made of a monoid alone works on a UDT when the monoid
+            # lifts to it (``agg.sum``, ``agg.min``). The others (``agg.hypot``,
+            # ``agg.mean``) do not lift.
             if (
                 dtype._is_udt
                 and self._monoid is not None
@@ -126,10 +123,8 @@ class Aggregator:
                 and self._finalize is None
                 and self._applybegin is None
             ):
-                # ``_compile_udt`` can raise ``KeyError`` (no field-wise
-                # identity for this op/dtype) or ``UdfParseError`` (wrapped
-                # Numba compile failure). Treat both as "does not work
-                # with" rather than leaking the underlying error.
+                # A monoid that does not lift to this UDT raises one of these;
+                # each becomes the KeyError below
                 try:
                     typed_monoid = self._monoid[dtype]
                 except (KeyError, TypeError, UdfParseError):
@@ -143,10 +138,7 @@ class Aggregator:
         return self._typed_ops[dtype]
 
     def __contains__(self, dtype):
-        # Routes through ``__getitem__`` (which can lift the underlying
-        # monoid for a UDT) so ``dtype in agg.sum`` reports True for any
-        # UDT the monoid can auto-compile. Catches the same exception set
-        # ``__getitem__`` raises.
+        # Through ``__getitem__``, which lifts the monoid to a UDT when it can
         try:
             self[dtype]
         except (KeyError, TypeError, UdfParseError):
@@ -213,10 +205,10 @@ class TypedAggregator:
 
     @property
     def jit_c_source(self):
-        """C source of the underlying monoid kernel for monoid-based aggs, else ``None``.
+        """The C definition of this aggregator's monoid on its type, or ``None``.
 
-        Composite and custom aggregators (``agg.hypot``, ``agg.ss.first``,
-        etc.) don't have a single underlying kernel, so they return ``None``.
+        Aggregators not made of a monoid alone (``agg.hypot``, ``agg.mean``,
+        ``agg.ss.first``) have none.
         """
         mon = getattr(self.parent, "_monoid", None)
         if mon is None or self.type not in mon:
@@ -225,7 +217,7 @@ class TypedAggregator:
 
     @property
     def jit_c_name(self):
-        """C name of the underlying monoid kernel for monoid-based aggs, else ``None``."""
+        """The C name of this aggregator's monoid on its type, or ``None``."""
         mon = getattr(self.parent, "_monoid", None)
         if mon is None or self.type not in mon:
             return None

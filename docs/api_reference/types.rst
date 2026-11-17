@@ -4,12 +4,11 @@ Types
 DataType
 ~~~~~~~~
 
-The object returned by :func:`~graphblas.dtypes.register_new` and
-:func:`~graphblas.dtypes.register_anonymous`, and carried by every collection's
-``.dtype``. The JIT introspection properties below report what SuiteSparse
-actually registered for a user-defined type; see :doc:`../user_guide/udt` for
-the operator-side counterparts on a typed operator (``op.jit_c_name``,
-``op.jit_c_source``).
+The type of every collection's ``.dtype``, and what
+:func:`~graphblas.dtypes.register_new` and :func:`~graphblas.dtypes.register_anonymous`
+return. For a user-defined type, ``jit_c_name`` and ``jit_c_definition`` show the C name
+and ``typedef`` SuiteSparse has for it. A typed operator has ``jit_c_name`` and
+``jit_c_source``; see :ref:`tn_jit_introspection`.
 
 .. autoclass:: graphblas.dtypes.DataType()
     :members: jit_c_name, jit_c_definition

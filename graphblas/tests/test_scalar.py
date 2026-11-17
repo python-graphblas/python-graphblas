@@ -202,8 +202,8 @@ def test_isclose():
 
 
 def test_isclose_infinity():
-    # As in math.isclose, an infinity is close only to itself. It was close to every
-    # number (abs(inf - y) is inf, and so is rel_tol * inf), in both of isclose's paths.
+    # As in math.isclose, an infinity is close only to itself, in both of isclose's
+    # paths; see test_vector.test_isclose_infinity
     values = [math.inf, -math.inf, 1.0, 0.0, math.nan]
     for x, y in itertools.product(values, repeat=2):
         for abs_tol in [0.0, math.inf]:
@@ -214,8 +214,8 @@ def test_isclose_infinity():
 
 
 def test_isclose_integers_do_not_wrap():
-    # x - y or abs(x) wrapped in an integer type, and a UINT64 value above INT64's
-    # maximum raised OverflowError with Numba; see test_vector.ISCLOSE_WRAPPING_CASES
+    # Regression: x - y or abs(x) wrapped in an integer type, and a UINT64 value above
+    # INT64's maximum raised OverflowError with Numba; see test_vector.ISCLOSE_WRAPPING_CASES
     from .test_vector import ISCLOSE_WRAPPING_CASES
 
     for xtype, ytype, x, y, rel_tol in ISCLOSE_WRAPPING_CASES:
@@ -228,7 +228,7 @@ def test_isclose_integers_do_not_wrap():
 
 def test_isclose_in_the_type_the_dtypes_unify_to():
     # INT64 and UINT64 unify to FP64, where 2**62 + 1 rounds to 2**62, so they are close
-    # even with no tolerance, as in Vector.isclose; with Numba and without
+    # even with no tolerance, as in Vector.isclose. This holds with Numba and without.
     x = Scalar.from_value(2**62 + 1, dtype="INT64")
     y = Scalar.from_value(2**62, dtype="UINT64")
     assert x.isclose(y, rel_tol=0)
@@ -240,29 +240,29 @@ def test_isclose_in_the_type_the_dtypes_unify_to():
 
 
 def test_isclose_udt_raises():
-    """Reject ``isclose`` on UDTs with a clear message that points to isequal."""
+    """``isclose`` on a UDT raises a TypeError that suggests isequal."""
     arr_udt = dtypes.register_anonymous(np.dtype((np.int64, (3,))), "_IscloseUdt3")
     s = gb.Scalar(arr_udt)
     s.value = np.array([1, 2, 3], dtype=np.int64)
     other = gb.Scalar(arr_udt)
     other.value = np.array([1, 2, 3], dtype=np.int64)
-    # A raw value and a typed UDT Scalar both get the same clear message.
+    # A raw value and a UDT Scalar get the same message
     for arg in (np.array([1, 2, 3], dtype=np.int64), other):
         with pytest.raises(TypeError, match="isclose is not defined for user-defined types"):
             s.isclose(arg)
-    # isequal (the suggested alternative) does work for UDTs.
+    # isequal works for UDTs
     assert s.isequal(other)
 
 
 def test_udt_scalar_padding_is_zeroed():
     """A record UDT's alignment padding is zeroed, not left as process memory.
 
-    The whole record is copied into the GrB_Scalar and read back out of
-    ``Scalar.value``, so anything that compares or hashes those raw bytes would
-    see an equal-valued scalar as unequal. numpy promises nothing about which
-    bytes an assignment writes: it may fill the fields and leave the padding
-    alone, or copy whole items out of a temporary it never initialized (numpy
-    2.5 switched ``arr[:] = record`` to the latter).
+    The whole record, padding included, is copied into the GrB_Scalar and read
+    back out of ``Scalar.value``, so anything that compares or hashes those bytes
+    would find two equal values unequal. numpy promises nothing about which bytes
+    an assignment writes: it may fill the fields and leave the padding alone, or
+    copy whole items out of an uninitialized temporary (as ``arr[:] = record``
+    does from numpy 2.5).
     """
     # int8 then float64 leaves 7 bytes of padding under C alignment rules.
     udt = dtypes.register_anonymous(
@@ -270,17 +270,16 @@ def test_udt_scalar_padding_is_zeroed():
     )
     assert udt.np_type.itemsize == 16  # 1 + 7 padding + 8
 
-    # numpy serves a small buffer from a cache of recently freed blocks, so
-    # dirtying one of the right size first is what makes an uninitialized
-    # allocation read back as junk rather than as incidentally-zero memory.
+    # numpy reuses recently freed small blocks, so freeing a block of the same
+    # size filled with 0xAA first makes an uninitialized allocation read back as
+    # junk, not as zeros by chance.
     junk = np.full(udt.np_type.itemsize, 0xAA, dtype=np.uint8)
     del junk
     raw = Scalar.from_value((3, 4.0), dtype=udt).value.tobytes()
     assert raw[1:8] == bytes(7), f"alignment padding leaked into the scalar: {raw!r}"
 
-    # Same guarantee without relying on what the allocator happened to hand
-    # back: a source array whose padding is deliberately 0xAA must not carry
-    # those bytes through, no matter how numpy chooses to copy it.
+    # The same, without relying on the allocator: a source array whose padding
+    # is 0xAA must not carry those bytes into the Scalar.
     dirty = np.frombuffer(bytearray(b"\xaa" * udt.np_type.itemsize), dtype=udt.np_type)
     dirty["pad_a"] = 3
     dirty["pad_b"] = 4.0
@@ -289,11 +288,7 @@ def test_udt_scalar_padding_is_zeroed():
     assert raw == Scalar.from_value((3, 4.0), dtype=udt).value.tobytes()
 
 
-# A SuiteSparse compiled without variable-length arrays (MSVC, so the Windows
-# builds) rejects a user-defined type larger than GB_VLA_MAXSIZE with
-# GrB_INVALID_VALUE. That ceiling was 128 bytes through SS 8.x and is 1024 as
-# of 9.0, so skipping on SS < 9 covers the affected builds and costs one test
-# on the rest.
+# For the GB_VLA_MAXSIZE limit, see the comment on test_udt_large_array in test_op.py
 @pytest.mark.skipif(
     "ss_version_major < 9",
     reason="SuiteSparse < 9 rejects a 240-byte UDT on builds without VLA support",
@@ -303,9 +298,8 @@ def test_udt_scalar_nested_array_roundtrip():
 
     numpy keeps subarray dtypes layered, so a 6-long array of 5-long FP64
     arrays reports ``subdtype`` as a 40-byte inner dtype with shape ``(6,)``.
-    Viewing all 240 bytes as that inner dtype raised ValueError: "Changing the
-    dtype to a subarray type is only supported if the total itemsize is
-    unchanged". Registration now flattens it to ``FP64[6, 5]``.
+    Registration flattens it to ``FP64[6, 5]``. Regression: reading it back
+    raised numpy's ValueError about a subarray dtype.
     """
     inner = np.dtype((np.float64, (5,)))
     udt = dtypes.register_anonymous(np.dtype((inner, (6,))), "_NestedArrayUdt")
@@ -313,8 +307,8 @@ def test_udt_scalar_nested_array_roundtrip():
 
     val = np.arange(30, dtype=np.float64).reshape(6, 5)
     got = Scalar.from_value(val, dtype=udt).value
-    # Assert the values, not just that it did not raise: a wrong collapse
-    # produces a correctly-shaped but transposed array.
+    # Check the values too: a wrong flattening can give the right shape with the
+    # values in transposed order.
     assert got.shape == (6, 5)
     np.testing.assert_array_equal(got, val)
 
@@ -323,8 +317,8 @@ def test_udt_nat_duration_in_another_unit_stays_nat():
     """A NaT duration stored into a duration of another unit is NaT, not a number.
 
     numpy before 2.3 converts a NaT ``timedelta64`` scalar into another unit as
-    the integer it is stored as: NaT ms became 9223372036854774 s, and NaT
-    minutes 0 s. A date or an array of durations was not affected.
+    the integer it is stored as: NaT ms becomes 9223372036854774 s, and NaT
+    minutes 0 s. An array of durations converts correctly.
     """
     seconds = dtypes.register_anonymous(np.dtype("m8[s]"), "_NatSeconds")
     rec = dtypes.register_anonymous(np.dtype([("nat_d", "m8[s]"), ("nat_n", np.int8)]), "_NatRec")
@@ -332,7 +326,7 @@ def test_udt_nat_duration_in_another_unit_stays_nat():
     nested = dtypes.register_anonymous(
         np.dtype([("nat_o", [("nat_d", "m8[s]")]), ("nat_n", np.int8)]), "_NatNested"
     )
-    # Numba cannot type an array of durations, so registering one needs it absent.
+    # Numba cannot type an array of durations, so one registers only without Numba.
     pair = pairs = None
     if not gb.core._has_numba:
         pair = dtypes.register_anonymous(np.dtype(("m8[s]", 2)))
@@ -382,9 +376,10 @@ def test_nvals(s):
 
 
 def test_nvals_raises_the_graphblas_error():
-    # No call leaves a Scalar without its GraphBLAS object, as ss.export(give_ownership=True)
-    # does a Matrix or Vector, so set it to NULL the way that does. The count lands in a C
-    # scalar, and the error was an EmptyObject about that scalar.
+    # nvals of a Scalar with no GraphBLAS object raises the NullPointer that _nvals raises.
+    # No call leaves a Scalar in that state, as ss.export(give_ownership=True) leaves a
+    # Matrix or Vector, so the test sets the handle to NULL itself. Regression: the error
+    # was an EmptyObject about an internal C scalar.
     s = Scalar.from_value(1.5, is_cscalar=False)  # pragma: is_grbscalar
     gb_obj = s.gb_obj[0]
     s.gb_obj[0] = gb.core.NULL
@@ -484,7 +479,7 @@ def test_scalar_to_numpy(s):
 def test_uint64_top_half_from_value():
     """An int from 2**63 to 2**64 - 1 goes into a UINT64 GrB_Scalar, Vector or Matrix.
 
-    A Python int was typed INT64 by itself, so it raised OverflowError.
+    Regression: a Python int was typed INT64 by itself, so it raised OverflowError.
     """
     for value in [2**63, 2**64 - 1]:
         for is_cscalar in [False, True]:
@@ -795,9 +790,10 @@ def test_ewise_union(s):
 
 
 def test_select_row_compares_its_index_with_the_bound_given(s):
-    # A Scalar's only index is 0. The bound is the number given, made a whole number
-    # (s > -0.5 dropped it, and s < 1 raised AttributeError), not the comparison's thunk
-    # typed beside the value (300 beside INT8 is infinity).
+    # A Scalar's only index is 0. The bound is the number given, made a whole number, and
+    # not the comparison's thunk, which is typed to match the value (300 as INT8 is
+    # infinity); see _index_bound. Regression: s > -0.5 dropped index 0, and s < 1 raised
+    # AttributeError.
     assert select.row(s > -0.5).new() == s
     assert select.row(s < 0.5).new() == s
     assert select.row(s < 1).new() == s
@@ -815,7 +811,7 @@ def test_ewise_mult_add(s):
         s.ewise_add(v)
     with pytest.raises(TypeError, match="Literal scalars also"):
         s.ewise_mult(v)
-    # A literal is typed beside a string op that names no BinaryOp, so the op reports it.
+    # A literal is typed by the op, so a string that names no BinaryOp raises the op's error.
     with pytest.raises(ValueError, match="Unknown binary string: 'plus_times'"):
         s.ewise_mult(1, "plus_times")
 
@@ -854,8 +850,8 @@ def test_record_from_dict():
 def test_udt_eq_without_numba_matches_binary_eq(monkeypatch):
     """Without Numba, ``==`` on a UDT Scalar compares in numpy, as ``binary.eq`` would.
 
-    ``binary.eq`` on a UDT needs Numba; ``==`` on a Scalar used to compare in
-    Python, so it works without Numba still. Here both ways must agree.
+    ``binary.eq`` on a UDT needs Numba, but ``==`` on a Scalar works without it.
+    The test compares each case with and without Numba.
     """
     rec = dtypes.register_anonymous(np.dtype([("x", np.int64), ("y", np.float64)], align=True))
     arr = dtypes.register_anonymous(np.dtype((np.int8, (3,))))
@@ -924,10 +920,10 @@ def test_get(s):
 
 @autocompute
 def test_index_expr_value_fast_path():
-    """v[i].value / float(v[i]) resolve with a single extract (see automethods).
+    """``v[i].value`` and ``float(v[i])`` read the element with one extract (see automethods).
 
-    The read must match get() / .new().value exactly and the UDT + Recorder
-    fallbacks must keep working; autocompute=False still raises (tested below).
+    The result matches ``get()`` and ``.new().value``. A UDT, or a running
+    Recorder, takes the full path.
     """
     v = Vector.from_coo([0, 2, 5], [1.5, 2.5, 3.5], size=10)
     assert v[2].value == 2.5
@@ -955,7 +951,7 @@ def test_index_expr_value_fast_path():
     assert u[1].value["sx"] == 7
     assert u[0].value is None
 
-    # A Recorder must still observe the extract (fall-back path)
+    # A running Recorder records the extract (the full path)
     from graphblas.core.recorder import Recorder
 
     v2 = Vector.from_coo([0], [1.5], size=4)
@@ -965,7 +961,7 @@ def test_index_expr_value_fast_path():
 
 
 def test_index_expr_value_autocompute_false():
-    """The value path stays gated on autocompute; .new() remains the escape hatch."""
+    """``v[i].value`` needs autocompute; ``.new()`` works without it."""
     v = Vector.from_coo([0, 2, 5], [1.5, 2.5, 3.5], size=10)
     with gb.config.set(autocompute=False):
         with pytest.raises(TypeError):

@@ -22,7 +22,7 @@ jobs:
       pyver: ${{ steps.pyver.outputs.selected }}
     steps:
       # Plain bash instead of a marketplace action; see the note on the rngs job in
-      # test_and_build.yml. To weight a choice, repeat it; to skip one, remove it.
+      # test_and_build.yml.
       - name: RNG for os
         id: os
         run: |

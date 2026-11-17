@@ -42,11 +42,12 @@ def test_bad_init():
 
 
 def test_jit_c_control_config():
-    """``config["jit_c_control"]``, which init sets SuiteSparse's JIT control to."""
+    """``_jit_c_control_config`` checks and lowercases ``config["jit_c_control"]`` for init."""
     import yaml
 
     path = pathlib.Path(gb.__file__).parent / "graphblas.yaml"
-    # Unset by default, which init takes as a 'run' that UDT work may raise
+    # Unset by default: init leaves the JIT control at "run" (see "The JIT control"
+    # in the Technical Notes)
     assert yaml.safe_load(path.read_text())["jit_c_control"] is None
     # YAML 1.1 reads an unquoted on/off in a user's config file as a bool
     cases = [("on", "on"), ("LOAD", "load"), ("run", "run"), ("pause", "pause"), ("off", "off")]
@@ -118,10 +119,9 @@ def test_index_max():
 
 
 def test_config_attribute_assignment_raises():
-    # Setting an option by plain attribute assignment used to silently no-op:
-    # donfig has no __setattr__ for options, so it created a dead instance
-    # attribute and left the real option alone. It should raise and name the
-    # canonical API instead.
+    # Assigning to an option as an attribute raises and names ``config.set``,
+    # rather than creating an instance attribute that leaves the option alone
+    # (see the ``Config`` class in graphblas/__init__.py).
     orig = gb.config["autocompute"]
     try:
         with pytest.raises(AttributeError, match=r"config\.set\(autocompute"):
@@ -131,7 +131,7 @@ def test_config_attribute_assignment_raises():
         with pytest.raises(AttributeError, match="not_a_real_option"):
             gb.config.not_a_real_option = 5
         assert "not_a_real_option" not in vars(gb.config)
-        # Canonical idioms still work: read by item, write by set()
+        # Reading by item and writing with set() work
         gb.config.set(autocompute=not orig)
         assert gb.config["autocompute"] == (not orig)
         with gb.config.set(autocompute=orig):
@@ -142,10 +142,9 @@ def test_config_attribute_assignment_raises():
 
 
 def test_config_donfig_attrs_are_derived(monkeypatch):
-    # The allowlist of writable attributes must come from what donfig's
-    # __init__ actually set, not a hardcoded list. Simulate a future donfig
-    # that grows a field: the derived allowlist absorbs it, where a
-    # hardcoded list would start rejecting donfig's own writes.
+    # The writable attributes are the ones donfig's __init__ set, not a fixed
+    # list, so a donfig release that adds a field can still write it. Simulate
+    # such a release.
     import donfig
 
     real_init = donfig.Config.__init__

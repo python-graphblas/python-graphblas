@@ -1,9 +1,9 @@
 """Parity tests for the scalar-access fast paths.
 
-Several hot scalar-access operations grew fast paths that bypass the general
+Several scalar-access operations have fast paths that bypass the general
 expression machinery: ``Vector.get`` / ``Matrix.get``, ``index in obj``
 (``__contains__``), integer-key ``obj[i] = value`` (``__setitem__``),
-``obj[i].new()`` on a scalar index expression, and the plain-int lane in
+``obj[i].new()`` on a scalar index expression, and the plain-int fast path in
 ``parse_index``. Each fast path is only correct if it produces exactly what the
 slower general path would. These tests pin that equivalence: for every case we
 run the fast path and a reference built from the general path, then require the
@@ -12,7 +12,7 @@ results (values, dtypes, and raised exceptions with their messages) to match.
 Each reference is a copy of the code its fast path stands in for, kept in this
 file so that a refactor of the production code cannot change both sides of a
 comparison at once. The ``get`` and ``in`` references still go through
-``parse_index`` and ``ScalarIndexExpr.new()``, whose own fast lanes are tested
+``parse_index`` and ``ScalarIndexExpr.new()``, whose own fast paths are tested
 against the general path below.
 """
 
@@ -29,8 +29,7 @@ from graphblas.core.scalar import Scalar
 
 suitesparse = gb.backend == "suitesparse"
 
-# Builtin dtypes to sweep. Complex is SuiteSparse-only, so gate it the same way
-# the dtype tests do; on the vanilla backend the parametrization simply omits it.
+# Builtin dtypes to sweep, with complex only where the backend supports it.
 BUILTIN_DTYPES = [
     dtypes.BOOL,
     dtypes.INT8,
@@ -51,7 +50,7 @@ DTYPE_IDS = [dt.name for dt in BUILTIN_DTYPES]
 
 
 def _hit_value(dt):
-    """A value that fits every builtin dtype."""
+    """A nonzero value that ``dt`` stores exactly."""
     if "FC" in dt.name:
         return 3 + 4j
     if dt == dtypes.BOOL:
@@ -68,9 +67,9 @@ def _capture(fn):
 
 
 class _IndexLike:
-    """Implements ``__index__`` without being an int; must not take any fast lane.
+    """Implements ``__index__`` without being an int; must not take any fast path.
 
-    ``parse_index`` rejects it, so a fast lane that duck-types ``__index__``
+    ``parse_index`` rejects it, so a fast path that duck-types ``__index__``
     would diverge from the expression path.
     """
 
@@ -304,7 +303,7 @@ def test_contains_index_types():
 
 @pytest.mark.parametrize("idx", [10, -11, 1000, -1000])
 def test_contains_out_of_range(idx):
-    """Out-of-range raises the identical IndexError through either lane."""
+    """Out-of-range raises the identical IndexError through either path."""
     v = Vector.from_coo([0, 5, 9], [1.5, 2.5, 3.5], size=10)
     fast = _capture(lambda: idx in v)
     slow = _capture(lambda: _contains_vector_slow(v, idx))
@@ -324,7 +323,7 @@ def test_contains_bool_index(b):
     "bad", [1.5, "x", None, [1, 2], slice(None), 2.0, (1, 2), np.array(3), _IndexLike(3)]
 )
 def test_contains_non_integer_index(bad):
-    """Non-integer indices raise the same exception type AND message."""
+    """Non-integer indices raise the same exception type and message."""
     v = Vector.from_coo([0, 5, 9], [1.5, 2.5, 3.5], size=10)
     fast = _capture(lambda: bad in v)
     slow = _capture(lambda: _contains_vector_slow(v, bad))
@@ -452,7 +451,7 @@ def _assert_setitem_vector(dt, key, val, size=10):
     ea = _capture(lambda: a.__setitem__(key, val))
     eb = _capture(lambda: _set_vector_slow(b, key, val))
     # On success both capture ("val", None); on error both capture the full
-    # ("exc", type, message), so equality pins exception type AND message.
+    # ("exc", type, message), so equality checks the exception type and message.
     assert ea == eb, f"exc fast={ea} slow={eb}"
     if ea[0] == "val":
         assert a.isequal(b, check_dtype=True), f"value fast={a.to_coo()} slow={b.to_coo()}"
@@ -478,9 +477,9 @@ def _setitem_natural_value(dt):
     return 3
 
 
-# Cross-type coercion: the value's Python type differs from the container dtype.
-# The point is that whatever SuiteSparse does on the cast, the fast path does it
-# too. Complex-target cases are gated on complex support.
+# The value's Python type differs from the container's dtype, so it is cast when
+# stored. Whatever the cast gives, the fast path must give the same. Complex
+# targets only where the backend supports complex.
 CROSS_COERCION = [
     (dtypes.FP64, 3),  # int -> FP64
     (dtypes.FP32, 3),  # int -> FP32
@@ -584,7 +583,7 @@ def test_setitem_matrix_bad_key(key):
 
 
 def test_setitem_bool_key():
-    # bool is treated as an int index by parse_index; the fast path falls back.
+    # parse_index rejects a bool index, so the fast path must not take it as an int.
     _assert_setitem_vector(dtypes.FP64, True, 1.0)
     _assert_setitem_vector(dtypes.FP64, False, 1.0)
     _assert_setitem_matrix(dtypes.FP64, (True, 0), 1.0)
@@ -602,8 +601,8 @@ def test_setitem_value_fallbacks():
 
 
 # Both halves compare UDT vectors with ``isequal``, which needs ``binary.eq``
-# compiled for the UDT. The sibling UDT tests here never call ``isequal``, so
-# they keep running on builds without numba.
+# compiled for the UDT. The other UDT tests here do not call ``isequal``, so
+# they run without Numba.
 @pytest.mark.skipif("not supports_udfs")
 def test_setitem_udt_fallback():
     udt = gb.dtypes.register_anonymous(
@@ -913,7 +912,7 @@ def test_scalarvalue_recorder_fallback():
 
 
 def test_scalarvalue_pending_value():
-    """A value written in non-blocking mode is read back correctly (iso/pending)."""
+    """A value set in non-blocking mode reads back before an explicit wait."""
     v = Vector(dtypes.FP64, 100)
     v[3] = 2.25
     with gb.config.set(autocompute=True):
@@ -937,9 +936,9 @@ def test_scalarvalue_graphblas_error():
 def test_scalarvalue_then_another_attribute():
     """After a value read, the other attributes see the kind of Scalar the expression reports.
 
-    The value read caches the C scalar it extracts into, and ``gb_obj`` handed that out: an
-    ``int8_t *`` where a ``GrB_Scalar *`` was, which a C call taking a GrB_Scalar refused
-    with TypeError, while ``is_cscalar`` said False.
+    A value read caches the C scalar it extracts into. Regression: ``gb_obj`` then
+    returned that C scalar instead of a ``GrB_Scalar *``, so C calls taking a
+    GrB_Scalar raised TypeError.
     """
     from graphblas.core import ffi
 
@@ -953,7 +952,7 @@ def test_scalarvalue_then_another_attribute():
             assert ffi.typeof(e.gb_obj) is ffi.typeof(fresh.gb_obj)
             assert e.is_cscalar is fresh.is_cscalar
             assert e.nvals == fresh.nvals
-            assert e.value == value  # still the value read, as on main
+            assert e.value == value
             assert (e + 1).new().isequal((fresh + 1).new(), check_dtype=True)
 
 
@@ -968,7 +967,7 @@ def test_scalarvalue_index_integral_only():
 
 
 # ---------------------------------------------------------------------------
-# parse_index plain-int lane
+# parse_index plain-int fast path
 # ---------------------------------------------------------------------------
 def _resolved_fingerprint(expr):
     """A comparable fingerprint of a resolved scalar index expression."""
@@ -986,7 +985,7 @@ def _index_probe_matrix(A, r, c):
 
 @pytest.mark.parametrize("i", [0, 2, 4, 9, -1, -10, -6])
 def test_indexparse_vector_valid(i):
-    """The plain-int fast lane matches the numpy-int lane for valid indices."""
+    """The plain-int fast path matches the numpy-int path for valid indices."""
     v = Vector.from_coo([0, 2, 4, 9], [10.0, 20.0, 30.0, 90.0], size=10)
     fast = _index_probe_vector(v, i)
     slow = _index_probe_vector(v, np.int64(i))
@@ -995,7 +994,7 @@ def test_indexparse_vector_valid(i):
 
 @pytest.mark.parametrize("i", [10, 11, 1000, -11, -100])
 def test_indexparse_vector_out_of_range(i):
-    """Both lanes raise the identical IndexError for out-of-range indices."""
+    """Both paths raise the identical IndexError for out-of-range indices."""
     v = Vector.from_coo([0, 2, 4, 9], [10.0, 20.0, 30.0, 90.0], size=10)
     fast = _capture(lambda: v[i])
     slow = _capture(lambda: v[np.int64(i)])
@@ -1004,7 +1003,7 @@ def test_indexparse_vector_out_of_range(i):
 
 @pytest.mark.parametrize("b", [True, False])
 def test_indexparse_vector_bool(b):
-    """A bool must not take the int lane; it keeps the pre-existing TypeError."""
+    """A bool index raises TypeError; it must not take the plain-int fast path."""
     v = Vector.from_coo([0, 2, 4, 9], [10.0, 20.0, 30.0, 90.0], size=10)
     r = _capture(lambda: v[b])
     assert r[0] == "exc", r
@@ -1064,7 +1063,7 @@ def test_indexparse_matrix_bool(probe):
 
 
 def test_indexparse_fancy_unaffected():
-    """List / ndarray fancy indexing is untouched by the plain-int lane."""
+    """List / ndarray fancy indexing is untouched by the plain-int fast path."""
     v = Vector.from_coo([0, 2, 4, 9], [10.0, 20.0, 30.0, 90.0], size=10)
     fast = _capture(lambda: v[[1, 3, 5]].new().to_coo())
     slow = _capture(lambda: v[np.array([1, 3, 5])].new().to_coo())

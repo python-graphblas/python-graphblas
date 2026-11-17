@@ -361,10 +361,10 @@ def test_mmread_mmwrite(engine):
 
 @pytest.mark.skipif("not ss")
 def test_mmread_asks_scipy_for_a_sparse_array(monkeypatch):
-    """We pass ``spmatrix=False`` so scipy's changing default never reaches us.
+    """``mmread`` passes ``spmatrix=False`` to scipy unless the caller passes it.
 
-    Deliberately does not use scipy's own example files: they are absent from
-    some conda-forge builds, which skips ``test_mmread_mmwrite`` entirely.
+    scipy's default for ``spmatrix`` is changing, so graphblas sets it. This test
+    uses no scipy example files, which some conda-forge builds lack.
     """
     import inspect
 
@@ -409,8 +409,9 @@ def test_from_scipy_sparse_duplicates():
 @pytest.mark.skipif("not ss")
 @pytest.mark.parametrize("format", ["csr", "csc"])
 def test_from_scipy_sparse_compressed_duplicates(format):
-    # Outside canonical format an index may repeat within a row (column); importing the
-    # arrays as they are made an invalid Matrix (nvals 4, two entries at one position).
+    # Outside canonical format, an index may repeat within a row (column). Regression:
+    # importing the arrays unchanged made an invalid Matrix (nvals 4, two entries at one
+    # position).
     cls, shape = (ss.csr_array, (2, 3)) if format == "csr" else (ss.csc_array, (3, 2))
     a = cls(([1, 2, 3, 4], [1, 1, 0, 2], [0, 3, 4]), shape=shape)
     assert not a.has_canonical_format
@@ -524,10 +525,8 @@ def test_awkward_roundtrip():
 @pytest.mark.skipif("not ak")
 @pytest.mark.xfail(np.__version__[:5] in {"1.25.", "1.26."}, reason="awkward bug with numpy >=1.25")
 def test_awkward_iso_roundtrip():
-    # Build iso outright rather than relying on all-equal values: SuiteSparse
-    # 10.5.0 no longer checks after a build whether every value is the same,
-    # so ``from_coo`` alone would leave these non-iso and the test would stop
-    # exercising the iso path it is named for.
+    # Built iso with build_scalar, as from_coo with equal values is not iso on
+    # SuiteSparse 10.5 (see ``_iso_vector`` in test_ss_utils.py)
     # Vector
     if suitesparse:
         v = gb.Vector(int, 22)
@@ -633,8 +632,8 @@ def test_matrix_to_from_pydata_sparse():
 @pytest.mark.parametrize("dtype", ["int64", "float64", "bool"])
 def test_from_pydata_sparse_gcxs_duplicates(axis, dtype):
     # pydata checks neither the order nor the distinctness of the indices in a GCXS row
-    # (column), and todense sums a repeat. Importing the arrays as they are made an invalid
-    # Matrix (nvals 4, two entries at one position).
+    # (column), and todense sums a repeat. Regression: importing the arrays unchanged made
+    # an invalid Matrix (nvals 4, two entries at one position).
     data = np.array([1, 2, 3, 4], dtype=dtype)
     indptr = np.array([0, 3, 4])
     shape = (2, 3) if axis == 0 else (3, 2)

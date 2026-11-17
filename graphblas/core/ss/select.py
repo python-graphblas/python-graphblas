@@ -40,10 +40,9 @@ def register_new(name, jit_c_definition, input_type, thunk_type):
     Only one type signature may be registered at a time, but repeated calls using
     the same name with different input types is allowed. The C function must have the
     operator's name (the last part of ``name``). It is compiled under a C name made from
-    the full name and the definition, which the op's ``jit_c_name`` and ``jit_c_source``
-    show, so another definition, or the same last name in another namespace, gets its own
-    kernel. Registering one name with one definition again (after ``delattr``) reuses its
-    C name, and the kernel already compiled for it.
+    the full name and the definition, which the typed op's ``jit_c_name`` shows. So a new
+    definition, or the same last name in another namespace, gets a kernel of its own, and
+    the same name and definition registered again (after ``delattr``) reuse theirs.
 
     This will also create an IndexUnary operator under ``gb.indexunary.ss``
 

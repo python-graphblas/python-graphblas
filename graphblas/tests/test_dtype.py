@@ -226,9 +226,9 @@ def test_nested_subarrays_register_flat():
     numpy keeps ``np.dtype((np.dtype((np.float32, (7,))), (3,)))`` layered and
     compares it unequal to ``np.dtype((np.float32, (3, 7)))``, but nothing else
     tells the two apart: same bytes, same expanded ``(..., 3, 7)`` array, same
-    Numba type. As two DataTypes they had separate GrB_Types, which SuiteSparse
-    refused to mix, and the layered one broke code that reads ``subdtype`` as
-    ``(scalar, shape)``.
+    Numba type. As two DataTypes they would have separate GrB_Types, which
+    SuiteSparse refuses to mix, and the layered one breaks code that reads
+    ``subdtype`` as ``(scalar, shape)``.
     """
     flat = np.dtype((np.float32, (3, 7)))
     layered = np.dtype((np.dtype((np.float32, (7,))), (3,)))
@@ -313,9 +313,8 @@ def test_nested_subarray_record_values_load_intact():
 def test_lookup_numba_type_goes_through_numpy_dtype():
     """A UDT's Numba type resolves through its numpy dtype, not a registry key.
 
-    Keyed directly, a layered and a flat array dtype, which share a Numba type,
-    resolved to whichever registered last, and a layout nobody had registered
-    yet did not resolve at all.
+    Regression: two dtypes sharing a Numba type resolved to whichever
+    registered last, and an unregistered layout did not resolve.
     """
     import numba
 
@@ -334,6 +333,18 @@ def test_record_dtype_from_dict():
     assert dtype.name == "{'x': INT64, 'y': FP64}"
 
 
+def test_record_dtype_from_dict_of_strings():
+    """A dict whose first value is a string registers as a record, as one starting with a type."""
+    dtype = dtypes.register_anonymous({"dict_s_pos": "FP64[3]", "dict_s_id": int})
+    assert dtype.np_type == np.dtype(
+        [("dict_s_pos", np.float64, (3,)), ("dict_s_id", np.int64)], align=True
+    )
+    dtype = dtypes.register_anonymous({"dict_s_a": "INT8", "dict_s_b": "f4"})
+    assert dtype.np_type == np.dtype([("dict_s_a", np.int8), ("dict_s_b", np.float32)], align=True)
+    with pytest.raises(ValueError, match="Unknown dtype"):
+        dtypes.register_anonymous({"dict_s_c": "not a dtype"})
+
+
 def test_register_anonymous_from_dataclass():
     """A ``@dataclass`` (class or instance) registers as a record UDT, fields and all."""
     from dataclasses import dataclass
@@ -343,19 +354,18 @@ def test_register_anonymous_from_dataclass():
         weight: float
         count: int
 
-    # Class form: defaults the UDT name to the class name.
+    # The class gives the UDT its name.
     udt = dtypes.register_anonymous(DcEdge)
     assert udt.name == "DcEdge"
     assert "weight" in udt.np_type.names
     assert "count" in udt.np_type.names
 
-    # Explicit name overrides the class name (reuses the same DataType object
-    # because the underlying np.dtype matches; rename behavior is intentional).
+    # The same np.dtype gives the same DataType, renamed to the name given.
     udt2 = dtypes.register_anonymous(DcEdge, "_DcEdgeAlias")
     assert udt2 is udt
     assert udt.name == "_DcEdgeAlias"
 
-    # Instance form also works.
+    # An instance works too.
     e = DcEdge(weight=1.5, count=10)
     udt3 = dtypes.register_anonymous(e, "_DcEdgeFromInst")
     assert udt3 is udt
@@ -379,8 +389,8 @@ def test_register_anonymous_zero_size():
 
 def test_register_anonymous_array_numba_cannot_type():
     # Numba cannot type an array of these, alone, in a record or in an array of records.
-    # Its own error was "AttributeError: 'Boolean' object has no attribute 'bitwidth'"
-    # and the like.
+    # Numba's own error, kept as the cause, is an AttributeError such as
+    # "'Boolean' object has no attribute 'bitwidth'".
     for np_type, element, instead in [
         (np.dtype((np.bool_, (2,))), "bool", "uint8"),
         (np.dtype(([("_nbt_e", np.bool_, (2,))], (3,))), "bool", "uint8"),
@@ -390,7 +400,7 @@ def test_register_anonymous_array_numba_cannot_type():
         (np.dtype([("_nbt_c", [("_nbt_d", "S2", (2,))])]), "bytes", "uint8"),
     ]:
         if not supports_udfs:
-            # Nothing types it without Numba, and it registers
+            # Without Numba nothing types it, so it registers
             assert dtypes.register_anonymous(np_type).np_type == np_type
             continue
         match = f"cannot type an array of {element}.*use an array of {instead}"
@@ -423,7 +433,7 @@ def test_register_new_from_dataclass():
     udt = dtypes.register_new(_DcRegNew)
     assert udt.name == "_DcRegNew"
     assert udt is dtypes._DcRegNew
-    # Explicit name + dtype still works.
+    # A name and a dtype work too.
 
     @dataclass
     class _DcRegNew2:
@@ -431,7 +441,7 @@ def test_register_new_from_dataclass():
 
     udt2 = dtypes.register_new("_DcRegNewAlias", _DcRegNew2)
     assert udt2.name == "_DcRegNewAlias"
-    # Sole non-dataclass argument is a TypeError, not a cryptic AttributeError.
+    # A single argument that is not a dataclass is a TypeError.
     with pytest.raises(TypeError, match="requires both"):
         dtypes.register_new(np.dtype([("x", np.int64)]))
 
@@ -452,13 +462,12 @@ def test_register_anonymous_from_dataclass_instance_default_name():
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.skipif("not _has_jit_set")
 def test_udt_with_macro_field_name_falls_back_to_cfunc():
-    """A stdlib-macro field name (e.g., ``M_PI``) skips JIT and falls back to cfunc.
+    """A field named like a C macro (``M_PI``) gets no C definition, and lifting warns once.
 
-    Regression for the silent JIT-compile failure: the C preprocessor would
-    expand ``M_PI`` to a numeric literal inside the struct declarator
-    (``typedef struct { double M_PI ; ... }``), producing uncompilable C
-    that SuiteSparse swallowed without warning. The ``_C_RESERVED`` set
-    blocks macros so the warning fires and JIT is skipped cleanly.
+    The preprocessor would expand ``M_PI`` to a number inside the ``typedef``,
+    and the kernel would not compile; ``_C_RESERVED`` lists such names. More
+    macros are in ``test_udt_field_named_like_a_standard_macro_skips_the_jit``
+    in ``test_ssjit.py``.
     """
     from graphblas.core.ss import jit_config
     from graphblas.exceptions import NoJITWarning
@@ -481,7 +490,7 @@ def test_udt_with_macro_field_name_falls_back_to_cfunc():
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.skipif("not _has_jit_set")
 def test_udt_with_c_reserved_field_name_falls_back_to_cfunc():
-    """A C-reserved field name skips JIT silently; the op still runs via the cfunc path."""
+    """A field named with a C reserved word gets no C definition; lifted ops warn and run."""
     from graphblas.core.ss import jit_config
     from graphblas.exceptions import NoJITWarning
 
@@ -489,23 +498,18 @@ def test_udt_with_c_reserved_field_name_falls_back_to_cfunc():
     record_dtype = np.dtype([("class", np.int64), ("ok_field", np.int64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "_CReservedUdt")
 
-    # JIT info must be ``None``: no C struct to register.
     assert udt.jit_c_name is None
     assert udt.jit_c_definition is None
 
-    # Auto-lift must succeed and emit a warning. Discard the keyed entry so
-    # this test sees the warning regardless of test ordering (the same
-    # ``(op, dtype)`` may have been warned about in an earlier test).
+    # The warning comes once per (op, dtype); forget an earlier one, whatever
+    # the test order.
     jit_config._warned_no_jit_for.discard(("plus", udt.name))
     with pytest.warns(NoJITWarning, match="without JIT") as record:
         plus_udt = gb.binary.plus[udt]
-    # The cause has to name the UDT, on every host. Nothing armed a kernel for
-    # this dtype, so ``jit_c_control`` is still whatever init set, and blaming
-    # it would send the reader to a setting that cannot fix anything.
+    # It blames the UDT; see test_no_jit_warning_blames_the_udt_not_the_host_jit_state.
     assert "not expressible as a C struct" in str(record[0].message)
-    assert plus_udt.jit_c_source is None  # no JIT
-    # ``eq`` has a separate JIT codegen path from arithmetic (BOOL output, leaf
-    # comparisons), so pin its skip independently.
+    assert plus_udt.jit_c_source is None
+    # ``eq`` has its own C codegen (a BOOL result from leaf comparisons), so check it too.
     assert gb.binary.eq[udt].jit_c_source is None
     v = gb.Vector(udt, size=2)
     v[0] = (1, 10)
@@ -521,13 +525,12 @@ def test_udt_with_c_reserved_field_name_falls_back_to_cfunc():
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.skipif("not _has_jit_set")
 def test_no_jit_warning_blames_the_udt_not_the_host_jit_state():
-    """The cause named must not move with the host's JIT state.
+    """A NoJITWarning for a UDT with no C definition blames the UDT, whatever the host's JIT state.
 
-    On a runner whose JIT probe fails, init leaves ``jit_c_control`` at
-    ``'run'`` and caches the probe's ``False``. Codegen
-    for this UDT read neither, so naming either as the cause points the
-    reader at a setting that cannot fix it. CI hit exactly that: on
-    ubuntu-latest the message blamed ``jit_c_control``.
+    Where the JIT probe fails, init leaves ``jit_c_control`` at ``'run'`` and
+    caches the probe's ``False``. Neither kept this UDT from a C definition, so
+    a message naming either points at a setting that cannot fix it.
+    Regression: on such a host the message blamed ``jit_c_control``.
     """
     from graphblas.core.ss import jit_config
     from graphblas.exceptions import NoJITWarning
@@ -553,16 +556,14 @@ def test_no_jit_warning_blames_the_udt_not_the_host_jit_state():
 
 @pytest.mark.skipif("not _has_jit_set")
 def test_udt_jit_c_info_pinned_at_first_register():
-    """SuiteSparse's ``GxB_JIT_C_DEFINITION`` is one-shot per ``GrB_Type``.
+    """A renamed UDT keeps the C name and definition of its first registration.
 
-    Re-registering an existing ``np.dtype`` under a new Python-side name
-    updates ``rv.name`` but not the SS-side JIT identity. The introspection
-    properties ``jit_c_name`` and ``jit_c_definition`` must report what
-    SS actually has, not the renamed Python value, so callers can trust
-    the introspection to match what JIT-compiled kernels see.
+    SuiteSparse takes ``GxB_JIT_C_DEFINITION`` only once per ``GrB_Type``, so
+    registering the same ``np.dtype`` under a new name changes ``name`` but not
+    the C name the kernels use. ``jit_c_name`` and ``jit_c_definition`` report
+    what SuiteSparse has.
     """
-    # Use a field/shape combo unique to this test to keep the C-side name
-    # stable.
+    # Field names unique to this test, so no other test registers this np.dtype first.
     record_dtype = np.dtype([("pin_a", np.int64), ("pin_b", np.int64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "_PinUDT_first")
     assert udt.jit_c_name == "gbudt__PinUDT_first"
@@ -570,20 +571,17 @@ def test_udt_jit_c_info_pinned_at_first_register():
     udt2 = dtypes.register_anonymous(record_dtype, "_PinUDT_renamed")
     assert udt2 is udt
     assert udt.name == "_PinUDT_renamed"
-    # SS-side name is frozen at first register; introspection must reflect that.
     assert udt.jit_c_name == "gbudt__PinUDT_first"
     assert "_PinUDT_first" in udt.jit_c_definition
 
 
 @pytest.mark.skipif("not _has_jit_set")
 def test_udt_layouts_under_one_name_get_their_own_jit_c_names():
-    """Two UDT layouts registered under one name get distinct JIT C names.
+    """Two UDT layouts registered under one name get distinct C names.
 
-    SuiteSparse's JIT knows a type by its C name alone, so the second layout
-    ran kernels compiled for the first: making an iso Vector non-iso expanded
-    28-byte elements with a kernel for 6-byte ones (wrong values), or 6-byte
-    elements with one for 28-byte ones (heap corruption, in either order of
-    the tests that did this).
+    SuiteSparse's JIT knows a type by its C name alone. Regression: the second
+    layout ran kernels compiled for the first, giving wrong values or heap
+    corruption.
     """
     small = dtypes.register_anonymous(np.dtype((np.int16, (1, 3, 1))), "_SameJitName")
     big = dtypes.register_anonymous(np.dtype((np.int16, (2, 1, 7))), "_SameJitName")
@@ -647,23 +645,22 @@ def test_dtype_to_from_string():
 # The 180-char repr exceeds GxB_MAX_NAME_LEN, which warns on SuiteSparse < 9.
 @pytest.mark.filterwarnings("ignore:UDT repr is too large")
 def test_dtype_to_string_aligned_outer_packed_inner():
-    """Regression: nested dtype with ``align=True`` outer and a packed inner
-    used to fail ``_dtype_to_string`` round-trip with ``ValueError: Unable
-    to reliably convert dtype to string and back``. Numpy's reconstruction
-    from ``str(np_type)`` enforces the outer's alignment on the inner,
-    rejecting the packed inner's offset. The explicit-offsets fallback
-    encodes the layout verbatim and round-trips cleanly.
+    """An aligned record with a packed record field round-trips through ``_dtype_to_string``.
+
+    numpy cannot rebuild ``str(np_type)``: it applies the outer alignment to the
+    inner record and rejects the record field's offset, so ``_dtype_to_string``
+    spells out the offsets instead (see the comment there). Regression: this raised
+    ``ValueError: Unable to reliably convert dtype to string and back``, and so
+    did ``register_anonymous``.
     """
     packed_inner = np.dtype([("inner_a", np.int32), ("inner_b", np.float64)])
     outer = np.dtype([("flag", np.int32), ("coord", packed_inner)], align=True)
     s = core.dtypes._dtype_to_string(outer)
     rt = core.dtypes._string_to_dtype(s)
-    # The DataType wraps an np.dtype; check the underlying layout matches.
     rt_np = rt.np_type
     assert rt_np == outer
     assert outer.fields["flag"] == rt_np.fields["flag"]
     assert outer.fields["coord"] == rt_np.fields["coord"]
-    # Registration through register_anonymous used to raise on this shape.
     udt = dtypes.register_anonymous(outer, "_NestedAlignPacked")
     assert udt.np_type == outer
 

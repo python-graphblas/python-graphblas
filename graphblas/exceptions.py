@@ -91,30 +91,26 @@ class JitError(GraphblasException):
 
 # Our errors
 class UdfParseError(GraphblasException):
-    """Raised when a UDF can't be compiled for the requested operand types.
+    """Numba could not compile a user-defined function for the operand types.
 
-    Wraps Numba compilation errors (``TypingError``, ``LoweringError``,
-    ``UnsupportedError``) into a single graphblas-level exception with the
-    actionable diagnostic line surfaced from Numba's traceback. Common
-    causes: an operator that doesn't exist for the field type
-    (``binary.floordiv`` on a complex field), a UDF that returns a tuple
-    whose length doesn't match any input UDT, or use of a Python construct
-    Numba doesn't support in nopython mode.
+    Registering a function for built-in types raises it when Numba can compile the
+    function for none of them. With ``is_udt=True``, it is raised when the operator is
+    compiled for the operand types, for example for a field the record does not have,
+    or for a return value that does not fit the result type. See :ref:`tn_udf_compile`
+    and :ref:`tn_udt_udf_returns`.
     """
 
 
 # Warnings
 class NoJITWarning(UserWarning):
-    """Auto-lifted UDT op fell back to the Numba cfunc path.
+    """A lifted operator on a UDT runs without the SuiteSparse:GraphBLAS JIT.
 
-    Emitted from :func:`graphblas.core.ss.jit_config._maybe_warn_no_jit`
-    when an op like ``binary.plus[udt]`` would otherwise have JIT-compiled,
-    but the UDT has no C form, so no kernel source was generated. Fires once
-    per ``(op, dtype)`` pair per process, so a user who registers several UDTs
-    gets one warning per pair.
+    Issued the first time an operator such as ``binary.plus[udt]`` is typed for
+    a UDT that has no C definition, once for each operator and UDT. The operator
+    still works, by calling its Numba function for each element, which is often
+    several times slower. :ref:`tn_jit_skipped` lists the causes.
 
-    Inherits from :class:`UserWarning` so existing ``UserWarning`` filters
-    still match it; users can also filter by category for a tight scope:
+    A subclass of ``UserWarning``; silence it with
     ``warnings.filterwarnings("ignore", category=NoJITWarning)``.
     """
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Find AI-ism candidates in branch-changed files: prose tells left by AI agents.
-# A helper for the gbdoc workflow (.claude/skills/gbdoc/SKILL.md). Use, adjust,
-# copy/paste, etc. as necessary; this finds candidates, judgment does the rest.
+# Find AI-ism candidates in branch-changed files: punctuation that AI-written prose
+# tends to leave. Use, adjust, copy/paste, etc. as necessary; this finds candidates,
+# judgment does the rest.
 #
 # Scans text files changed on the current branch (vs a base ref) for:
 #   1. The dash family: em-dash, en-dash, and "--" used as a separator.
@@ -10,7 +10,7 @@
 #
 # Output is `file:line:content` so hits are jump-to-able. It greps the changed
 # files directly, so PRE-EXISTING hits in those files show up too. Only touch
-# prose the branch actually changed; leave intentional dashes/unicode alone.
+# prose the branch changed; leave intentional dashes/unicode alone.
 # RST underlines and "# ---" banners are already skipped, "--flag" CLI usage is
 # not matched, and some files (e.g. README.md) use unicode on purpose.
 #
@@ -95,7 +95,6 @@ scan "stray unicode (non-ASCII bytes)" "$unicode_re" "C" || rc=1
 echo
 echo "Note: results include any pre-existing hits in changed files. Only touch"
 echo "prose the branch changed; leave intentional dashes/unicode alone."
-echo "See .claude/skills/gbdoc/SKILL.md for the full workflow."
 
 if [ "$strict" = "1" ]; then
     exit "$rc"

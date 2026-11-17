@@ -86,8 +86,7 @@ io = [
   "python-graphblas[networkx,scipy]",
   "python-graphblas[numba]; python_version<'3.16'", # make optional where numba is not supported
   "awkward >=2.0",
-  # sparse needs numba, so it stays optional and takes numba's upper guard from above:
-  # it has to drop out wherever numba does.
+  # sparse needs numba, so it has numba's Python guard.
   "sparse >=0.14; python_version<'3.16'",
   # fast-matrix-market is no longer maintained; last supported Python is 3.12
 ]
@@ -139,10 +138,10 @@ dirty_template = "{tag}+{ccount}.g{sha}.dirty"
 
 [tool.black]
 line-length = 100
-# MAINT: add "py315" once a black that knows it (26.5 or later) installs on Python 3.15
-# from conda-forge (2026-10-19: its pytokens >=0.4 has no 3.15 build, so 3.15 gets black
-# 26.1, which rejects "py315" and stops CI's auto-generated code check). Listing it also
-# makes any older black refuse to run on this repository.
+# MAINT: add "py315" once black 26.5 or later, which knows it, installs on Python 3.15
+# from conda-forge. As of 2026-10-19, black's pytokens >=0.4 has no 3.15 build there, so
+# 3.15 gets black 26.1, which rejects "py315" and fails CI's auto-generated code check.
+# Any black too old to know a listed version refuses to run on this repository.
 target-version = ["py311", "py312", "py313", "py314"]
 
 [tool.isort]
@@ -165,14 +164,9 @@ addopts = [
 ]
 markers = [
   "slow: Skipped unless --runslow passed",
-  # Not applied by our tests. ``scipy.io.tests.test_mmio`` (which
-  # ``test_mmread_mmwrite`` imports for its example matrices) sets it at module
-  # scope for the pytest-run-parallel plugin. Importing the module evaluates the
-  # marker, and with ``--strict-markers`` (always set below) an unregistered
-  # marker fails collection outright, on pytest 8 and 9 alike. Without the
-  # strict flag the same import would only warn (PytestUnknownMarkWarning),
-  # which ``filterwarnings = error`` below would turn into a failure; with it,
-  # the strict route is the only one this configuration ever takes.
+  # Not used by our tests. scipy.io.tests.test_mmio, which test_mmread_mmwrite imports
+  # for its example matrices, uses these marks when it is imported. With --strict-markers
+  # (in addopts above), an unregistered mark fails collection.
   "thread_unsafe: Declared by scipy's test modules; unused here",
   "fail_slow: Declared by scipy's test modules; unused here",
 ]
@@ -196,21 +190,14 @@ filterwarnings = [
   # MAINT: remove once we drop numpy <2 support (numpy 2.0 removed it entirely)
   "ignore:np.find_common_type is deprecated:DeprecationWarning:",
 
-  # UDT auto-lift emits a one-time ``gb.exceptions.NoJITWarning`` (subclass
-  # of ``UserWarning``) when JIT setup can't be done: compiler missing,
-  # control mode off, or UDT not C-expressible (C-reserved field name,
-  # stdlib macro, unsupported field type, packed layout, etc.). The warning
-  # uses ``stacklevel=3`` so its traceback points at the user's code rather
-  # than ``jit_config``; that makes a ``module=`` qualifier here fragile
-  # (Python attributes the warning to whatever module is 3 frames up at
-  # issue time). Match on the unique message instead. Tests that exercise
-  # this path wrap with ``pytest.warns(NoJITWarning, match="without JIT")``
-  # (or ``UserWarning``, which still matches via inheritance).
+  # NoJITWarning, a UserWarning issued once per operator and UDT when the UDT has no C
+  # definition, so its lifted operators run without the JIT. Its stacklevel points at the
+  # caller, so the module it is attributed to varies; match the message, not a module.
+  # Tests that check for it use pytest.warns.
   "ignore:UDT operator running without JIT:UserWarning",
 
-  # ``pytest -n`` (xdist) makes pytest-benchmark issue this warning during
-  # ``pytest_configure`` to say it disabled itself. Our ``error`` filter
-  # turns warnings into errors, which crashes config before tests run.
+  # With pytest -n (xdist), pytest-benchmark issues this warning in pytest_configure to
+  # say it disabled itself, and "error" above would stop pytest before any test runs.
   # Match by message only: naming the category would make pytest import
   # pytest_benchmark to resolve it, which fails where it isn't installed.
   "ignore:Benchmarks are automatically disabled:",
@@ -349,7 +336,7 @@ ignore = [
   "PLR0911", # Too many return statements
   "PLR0912", # Too many branches
   "PLR0913", # Too many arguments to function call
-  "PLR0917", # Too many positional arguments (Stable since ruff 0.16; same call for PLR0913)
+  "PLR0917", # Too many positional arguments
   "PLR0915", # Too many statements
   "PLR2004", # Magic number used in comparison, consider replacing magic with a constant variable
   "PLW0603", # Using the global statement to update ... is discouraged (Note: yeah, discouraged, but too strict)
@@ -370,7 +357,7 @@ ignore = [
 
   # Ignored categories
   "C90", # mccabe (Too strict, but maybe we should make things less complex)
-  "CPY", # flake8-copyright (Stable since ruff 0.16; we don't put a header in every file)
+  "CPY", # flake8-copyright (We don't put a copyright header in every file)
   "I",   # isort (Should we replace `isort` with this?)
   "ANN", # flake8-annotations (We don't use annotations yet)
   "BLE", # flake8-blind-except (Maybe consider)

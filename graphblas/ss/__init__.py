@@ -7,18 +7,13 @@ if not _IS_SSGB7:
     # Context was introduced in SuiteSparse:GraphBLAS 8.0.
     from ..core.ss.context import Context, global_context
 
-    # JIT compiler config helpers, introduced alongside JIT in SS 8.
+    # SuiteSparse:GraphBLAS 8.0 introduced the JIT.
     from ..core.ss.jit_config import _auto_fix_jit_at_import as _auto_fix
     from ..core.ss.jit_config import fix_jit_config, jit_compiler_is_usable
 
-    # Repair the JIT compiler path on import. Conda-built psg bakes in a
-    # compiler path that almost never exists at runtime, so JIT silently falls
-    # back to the cfunc path (2-3x slowdown). This only rewrites the compiler
-    # name and flags; ``jit_c_control`` is left where the backend's init set
-    # it (``_set_jit_c_control_at_init``), so importing this submodule cannot
-    # change what a later operation computes. Compilation is enabled on demand
-    # by ``_enable_jit_for_udt``. Skipped on vanilla: the repair reads
-    # ``gb.ss.config``, which needs GxB callables vanilla strips.
+    # Repair the JIT compiler setting; see ``_auto_fix_jit_at_import``. Not on
+    # vanilla: the repair reads ``gb.ss.config``, which needs GxB functions that
+    # vanilla leaves out.
     if backend == "suitesparse":
         _auto_fix()
     del _auto_fix

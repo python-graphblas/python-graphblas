@@ -5,8 +5,8 @@ _delayed = {}
 del operator
 
 
-# core.ss.unary imports the operators, whose setup imports this module, so
-# register_new is imported on first use: that lets core.ss.unary be imported first.
+# register_new is imported on first use. core.ss.unary imports the operators, whose
+# setup imports this module, so importing it here would fail if core.ss.unary came first.
 def __getattr__(name):
     if name == "register_new":
         from ..core.ss.unary import register_new

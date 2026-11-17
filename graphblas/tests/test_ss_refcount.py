@@ -1,12 +1,9 @@
-"""Regression tests for gh-559: Matrix/Vector must not be born in a reference cycle.
+"""A Matrix or Vector is freed by reference counting, not left to the cyclic collector (gh-559).
 
-Historically each Matrix and Vector stored ``self.ss = ss(self)``, and the ss
-object (and its config) held ``_parent`` back to the object, so instances died
-only via the cyclic garbage collector, not by reference counting. For large
-matrices in a tight loop this deferred the release of the C-side GrB buffer
-until gc happened to run. ``.ss`` is now built lazily per access and stored
-nowhere, so the cycle never forms. These tests pin that behavior; they are
-suitesparse-only because ``.ss`` exists only on that backend.
+``.ss`` is built on each access and stored nowhere. An ``ss`` object stored on the
+instance would refer back to it through ``_parent``, and the cycle would keep a large
+Matrix's C memory alive until the garbage collector happened to run. These tests run
+only on SuiteSparse, the one backend with ``.ss``.
 """
 
 import gc
@@ -54,9 +51,7 @@ def test_mxm_result_dies_by_reference_count():
 
 def test_ss_namespace_is_functional():
     A = Matrix.from_coo([0, 1, 2], [0, 1, 2], [1.0, 2.0, 3.0], nrows=3, ncols=3)
-    # Built fresh each access (nothing is stored on the instance).
     assert A.ss is not A.ss
-    # Introspection still works through a fresh access.
     assert A.ss.nbytes > 0
     matrix_formats = {
         "csr",
@@ -83,7 +78,7 @@ def test_ss_namespace_is_functional():
 
 
 def test_ss_class_access_returns_namespace_class():
-    # Class-level access must still yield the ss class so its import_* classmethods work.
+    # Class-level access gives the ss class, for its import_* classmethods.
     assert Matrix.ss is matrix_ss_class
     assert Vector.ss is vector_ss_class
     assert hasattr(Matrix.ss, "import_any")
@@ -137,7 +132,7 @@ def test_batched_mxm_loop_does_not_accumulate_matrices():
             C << A.mxm(B, semiring.min_plus)
             C.to_dense(0.0)
             del C
-        # Without the fix this would be baseline + 50.
+        # With a reference cycle this would be baseline + 50.
         assert live_matrices() <= baseline
     finally:
         if was_enabled:  # pragma: no branch (safety)

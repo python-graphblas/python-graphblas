@@ -1,14 +1,14 @@
 """How python-graphblas types a literal operand, such as the ``1`` in ``v + 1``.
 
-A Python number is weak, as numpy 2 types it (NEP 50): it takes the dtype of
-the operand beside it when that dtype's kind holds it, so ``int8_vec + 1`` is
-INT8 and ``int8_vec * 0.5`` is FP64. A numpy value keeps its own dtype. Beside
-a UDT, the same rules apply leaf by leaf. :func:`_literal_operand` decides for
-each operand; a literal that must become an element of a UDT is checked by
-:func:`_check_literal_fits`.
+A Python number is weak, as numpy 2 types it (NEP 50): it takes the other
+operand's dtype when that dtype's kind can hold it, so ``int8_vec + 1`` is
+INT8 and ``int8_vec * 0.5`` is FP64. A numpy value keeps its own dtype. With
+a UDT operand, the same rules apply leaf by leaf.
+docs/technical_notes/python_numbers.rst states the rules for users.
 
-The module also types a literal stored into an object
-(:func:`_literal_store_dtype`) and a fill value
+:func:`_literal_operand` types each operand, and :func:`_check_literal_fits`
+checks a literal that must become an element of a UDT. The module also types
+a literal stored into an object (:func:`_literal_store_dtype`) and a fill value
 (:func:`_weak_builtin_literal_dtype` with no op). A literal that converts into
 a UDT without fitting it is deprecated in :func:`_refuse_unless_exact` (MAINT).
 """
@@ -40,47 +40,29 @@ from .udt import (
 
 
 def _literal_operand(dtype, value, op, *, left=False):
-    """Return literal ``value`` and the dtype to make it, as ``op``'s operand beside ``dtype``.
+    """Return literal ``value`` and the dtype to make it, as an operand of ``op`` with ``dtype``.
 
-    A dtype of ``None`` means the value's own dtype. This is where
-    python-graphblas decides how a literal operand is typed; beside a built-in
-    dtype, see :func:`_weak_builtin_literal_dtype`.
+    ``dtype`` is the other operand's type, and a returned dtype of ``None``
+    means the value's own type. This is where python-graphblas decides how a
+    literal operand is typed (docs/technical_notes/python_numbers.rst):
 
-    A typed op (``op[T]``) takes each operand in its own input type, so the
-    literal is typed beside that instead of beside ``dtype``: the op's first
-    input type when the literal is its left operand (``left``), else its
-    second input or thunk type. GraphBLAS converts a value to a built-in input
-    type; a UDT input type it cannot, so the literal becomes an element of
-    that UDT.
-
-    Beside a UDT, a literal becomes an element of that UDT, as it must for a
-    user's op, when its type allows it (:func:`_check_literal_fits`). With a
-    built-in op that lifts to UDTs, a literal is an operand in its own right,
-    typed as numpy 2 types it (NEP 50), by :func:`_literal_type`:
-
-    - a numpy scalar or array keeps its dtype (strong); an array's type is the
-      array layout of its dtype (:func:`_array_literal_udt`);
-    - a Python ``bool``, ``int``, ``float`` or ``complex`` is weak: in each
-      element or leaf it takes that element's dtype when it fits the kind, so
-      ``int8_udt + 1`` stays ``int8_udt`` and ``int8_udt += 1`` can be stored,
-      while ``int8_udt * 2.5`` has float64 elements (see
-      :func:`_weak_literal_udt`), where converting it to the UDT would
-      multiply by 2;
-    - a tuple, list or dict of Python numbers, laid out like an element, is
-      weak in the same way, leaf by leaf: ``int8_udt + (1, 2, 3)`` stays
-      ``int8_udt`` and ``+ (0.5, 1.5, 2.5)`` has float64 elements.
-
-    ``eq`` and ``ne`` type a literal the same way, as numpy compares, so
-    ``fp32_udt == 0.1`` compares in float32, as ``fp32_vec == 0.1`` does.
-
-    A comparison keeps no result type, so a Python int beyond an integer
-    element's range is compared exactly, as numpy 2 compares it, as infinity
-    of its sign: every element compares with that infinity as with the int,
-    while a type that held both would round them (in FP64, the INT64
-    ``2**63 - 1`` and the int ``2**63`` are equal). So ``int64_vec < 2**63`` is
-    all True and ``int8_vec == 300`` all False. Beside a UDT, where only ``eq``
-    and ``ne`` compare, a literal with such an int in an integer leaf equals no
-    element: ``int8_udt == 300`` is False, not an error.
+    - A typed op (``op[T]``) takes each operand in its own input type, so the
+      literal is typed for that type instead of ``dtype``: the op's first
+      input type when the literal is its left operand (``left``), else its
+      second input or thunk type. GraphBLAS casts a value to a built-in input
+      type, but not to a UDT, so for a UDT input the literal becomes an
+      element of that UDT.
+    - With a built-in ``dtype``, :func:`_weak_builtin_literal_dtype` types the
+      literal. In a comparison, an int out of an integer ``dtype``'s range
+      becomes infinity of its sign, which compares with every element as the
+      int does, so ``int64_vec < 2**63`` is all True.
+    - With a UDT, a lifted op, ``eq`` or ``ne`` takes the literal as an
+      operand of its own type, as numpy 2 types it, when it has one
+      (:func:`_literal_type`). In ``eq`` and ``ne``, a literal with an int out
+      of its integer leaf's range equals no element: ``int8_udt == 300`` is
+      False.
+    - Otherwise, with a UDT, the literal becomes an element of the UDT, and
+      must fit it (:func:`_check_literal_fits`).
     """
     if getattr(op, "is_positional", False):
         return value, None
@@ -94,8 +76,8 @@ def _literal_operand(dtype, value, op, *, left=False):
             and type(value) is int
             and dtype.np_type.kind in "iu"
         ):
-            # Only an int beyond dtype's range takes another type here, typed so
-            # by a comparison or by an op that gives another type (truediv).
+            # Only an int out of dtype's range gets another type here: in a
+            # comparison, or an op whose result has another type (truediv).
             if isinstance(op, str):
                 op = binary_from_string(op)
             if op.name in _COMPARISONS and not op._anonymous:
@@ -118,11 +100,13 @@ def _literal_operand(dtype, value, op, *, left=False):
                 parts = value
                 if isinstance(value, dict) and np_type.names is not None:
                     parts = _dict_to_record(np_type, value)
-                # First: making an int beyond its leaf infinity reshapes the part.
+                # Check shapes first: _beyond_as_infinity reads each part in its
+                # field's shape, which would hide a part of another shape.
                 _refuse_misfit_fields(dtype, np_type, parts)
                 if _int_beyond_leaf(np_type, parts) is not None:
-                    # As infinity in its leaf, it still equals no element, and it
-                    # stays out of an array numpy makes of numpy values beside it.
+                    # Infinity equals no element, as the int does, and numpy
+                    # makes a float array, not an object one, of a part that
+                    # also holds numpy values.
                     value = _beyond_as_infinity(np_type, parts)
             literal_type = _literal_type(dtype, value, exact=exact)
             if literal_type is not None:
@@ -141,20 +125,17 @@ _SINGLE_PRECISION = {np.dtype(np.float32), np.dtype(np.complex64)}
 
 
 def _weak_builtin_literal_dtype(dtype, value, op=None):
-    """Return the dtype of Python number ``value`` beside built-in ``dtype``, or ``None``.
+    """Return the dtype of Python number ``value`` as an operand with built-in ``dtype``, or None.
 
-    A Python ``bool``, ``int``, ``float`` or ``complex`` is weak, as numpy 2
-    types it (NEP 50), by the table UDT leaves use
-    (:func:`_weak_literal_leaf`): ``int8_vec + 1`` is INT8,
-    ``fp32_vec * 0.5`` is FP32, ``int8_vec * 0.5`` is FP64, and
-    ``int8_vec + 300`` raises ``OverflowError``. python-graphblas applies the
-    table itself, so numpy 1 gives the same answers. ``None`` keeps the value's
+    A Python number is weak (see the module docstring), typed by the same rules
+    as a UDT leaf (:func:`_weak_literal_leaf`). python-graphblas applies the
+    rules itself, so numpy 1 gives the same answers. ``None`` keeps the value's
     own dtype (strong): for anything but a Python number, for a typed op, which
     fixes the operand types itself, and for the thunk of an index op that does
     not compare it with the values, such as a row index.
 
-    A comparison keeps no result type, so an int beyond ``dtype``'s range
-    takes a type that holds it rather than raise (:func:`_literal_operand` then
+    A comparison keeps no result type, so an int out of ``dtype``'s range gets
+    a type that can hold it instead of raising (:func:`_literal_operand` then
     compares it as infinity). ``op`` of ``None``, for a fill value, does the
     same, so the value is not lost.
     """
@@ -183,10 +164,10 @@ def _weak_builtin_literal_dtype(dtype, value, op=None):
         # int8_vec / 300 is FP64, as numpy divides integers in float64.
         np_type = _weak_literal_leaf([value], kind, dtype.np_type, exact=True)
         if np.result_type(dtype.np_type, np_type).kind not in "iu" and not _is_builtin_op(op):
-            # The two then unify to a float type, which rounds an int beyond 64
-            # bits: in FP64, the INT64 2**63 - 1 and the int 2**63 are equal. A
-            # built-in op that gives another type computes in float anyway (a
-            # comparison is given infinity instead), but a user's op may compare.
+            # The two would unify to a float type, which can round the int: in
+            # FP64, the INT64 2**63 - 1 and the int 2**63 are equal. A built-in
+            # op that gives another type computes in float anyway (a comparison
+            # gets infinity instead), but a user's op may compare its operands.
             raise
     # Where the backend has no complex types (vanilla), lookup_dtype registers a
     # complex literal's dtype as a UDT, so the literal keeps its own type.
@@ -240,8 +221,8 @@ def _gives_another_type(op, dtype):
 def _literal_store_dtype(dtype, value):
     """Return the dtype to make literal ``value`` a Scalar of, to store it as ``dtype``.
 
-    A UDT types the literal itself. A Python int is INT64 by itself, so one
-    beyond INT64 (the top half of UINT64) is made ``dtype``:
+    For a UDT, that is ``dtype``. A Python int on its own is INT64, so one out
+    of INT64's range (the top half of UINT64) is made ``dtype``:
     ``uint64_vec[0] = 2**64 - 1`` works, and a type that cannot hold it raises.
     ``None`` lets ``Scalar.from_value`` choose.
     """
@@ -251,21 +232,23 @@ def _literal_store_dtype(dtype, value):
 
 
 def _literal_type(dtype, value, *, exact=False):
-    """Return the type of literal ``value`` beside UDT ``dtype``, or ``None`` when it has none.
+    """Return the type of literal ``value`` as an operand with UDT ``dtype``, or ``None``.
 
-    A Python number (a ``Fraction`` or ``Decimal`` counts as the int or float
-    it is worth) or a tuple, list or dict of them is weak, leaf by leaf
-    (:func:`_weak_literal_udt`); with ``exact``, for a comparison, an int
-    out of a leaf's range takes a type that holds it. A numpy value is
-    strong: its dtype, in the array layout of its shape for an array
-    (:func:`_array_literal_udt`); a sequence holding numpy values is the
-    array numpy makes of it. Text beside a UDT of text is typed as in a
-    record's text field: the UDT itself when it converts there and back
-    unchanged, else its own type at its own length, which does not fit. A
-    date or duration beside a UDT of dates or durations is typed so too, its
-    own type being numpy's for it (:func:`_as_numpy_date`), so ``==``
-    compares it as numpy does.
-    Anything else has no type here, and ``Scalar.from_value`` reports it.
+    - A Python number, or a tuple, list or dict of them, is weak, leaf by leaf
+      (:func:`_weak_literal_udt`). A ``Fraction`` or ``Decimal`` counts as the
+      int or float it equals. With ``exact``, for a comparison, an int out of
+      a leaf's range gets a type that can hold it.
+    - A numpy value is strong: its dtype, or for an array, the array UDT of
+      its dtype and shape (:func:`_array_literal_udt`). A sequence holding
+      numpy values is the array numpy makes of it.
+    - Text, when ``dtype`` is a text UDT, is typed ``dtype`` when it converts
+      there and back unchanged, and otherwise as text of its own length, which
+      does not fit. A date or duration with a UDT of dates or durations is
+      typed the same way, its own type being numpy's for it
+      (:func:`_as_numpy_date`), so ``==`` compares it as numpy does.
+
+    Anything else has no type here (``None``), and ``Scalar.from_value``
+    reports it.
     """
     value = _as_python_number(value)
     np_type = dtype.np_type
@@ -298,20 +281,20 @@ def _literal_type(dtype, value, *, exact=False):
 
 
 def _check_literal_fits(dtype, value):
-    """Raise unless literal ``value`` may become an element of UDT ``dtype``, by its type.
+    """Raise unless literal ``value`` fits UDT ``dtype``, so it may become an element of it.
 
-    A literal becomes an element of the UDT when nothing else types it: beside
-    a user-defined op, as an IndexUnaryOp thunk, or as an ``ewise_union``
-    default, which GraphBLAS casts to the op's input type, and a UDT casts only
-    to itself. Its type decides, not its values (:func:`_literal_type`): a
-    Python number or a sequence of them is weak, so ``1`` and ``(1, 2, 3)``
-    beside ``INT8[3]`` are ``INT8[3]`` and fit, ``0.5`` is ``FP64[3]`` and does
-    not, and ``300`` is ``OverflowError``; a numpy value is strong and fits when
-    each leaf casts safely into the UDT's (``np.can_cast``), so ``np.int8(1)``
-    fits ``INT8[3]`` and ``np.int64(1)`` does not. ``Scalar.from_value`` then
-    converts it, which changes no value. A literal that does not fit by type but
-    converts exactly still converts, with a DeprecationWarning
-    (:func:`_refuse_unless_exact`).
+    A literal becomes an element of the UDT when no lifted op types it. That
+    happens for an operand of a user-defined op, an IndexUnaryOp thunk and an
+    ``ewise_union`` default. GraphBLAS casts each to the op's input type, and a
+    UDT casts only to itself. The literal fits when its type
+    (:func:`_literal_type`), not its value, is ``dtype`` or casts safely into it
+    leaf by leaf (``np.can_cast``). ``Scalar.from_value`` then converts it
+    without changing a value. ``1`` fits ``INT8[3]``; ``0.5``, typed
+    ``FP64[3]``, and ``np.int64(1)`` do not. A float too large for a float32
+    field raises ``OverflowError`` rather than become infinity. A literal that
+    does not fit but converts exactly still converts, with a
+    DeprecationWarning (:func:`_refuse_unless_exact`). The rules are stated
+    for users in docs/technical_notes/python_numbers.rst.
     """
     literal_type = _literal_type(dtype, value)
     if literal_type is not None and not _casts_safely_into(literal_type, dtype):
@@ -334,7 +317,8 @@ def _check_literal_fits(dtype, value):
         if isinstance(value, dict):
             value = _dict_to_record(np_type, value)
     else:
-        # An array's elements, or the one value of a UDT that is neither (bytes).
+        # An array's elements, or the one value of a UDT that is neither a
+        # record nor an array (bytes).
         base, shape = np_type.subdtype or (np_type, ())
         target = np.zeros(shape, dtype=base)
     with warnings.catch_warnings():
@@ -354,7 +338,7 @@ def _check_scalar_fits(dtype, scalar):
     """Raise unless a typed Scalar casts safely into UDT ``dtype``, as a literal must.
 
     An ``ewise_union`` default must have the op's input type, so it is
-    converted; the same rule as for a literal (:func:`_check_literal_fits`).
+    converted, and must fit as a literal must (:func:`_check_literal_fits`).
     """
     if (
         dtype is not None
@@ -374,10 +358,10 @@ def _check_scalar_fits(dtype, scalar):
 def _refuse_unless_exact(dtype, value, reason, advice):
     """Raise ValueError ``reason``, or only warn if ``value`` converts into ``dtype`` exactly.
 
-    MAINT 2026-10-07: a literal or Scalar that must become an element of a UDT
-    must fit it by type since #591. Before, any value was converted and what did
-    not fit was lost; one that converts exactly, such as ``0`` for a bool field
-    or ``2.0`` for an integer field, still converts, with a DeprecationWarning.
+    MAINT 2026-10-07: a literal or Scalar that becomes an element of a UDT must
+    fit it by type. Releases up to 2025.2.0 converted any value, losing what did
+    not fit, so one that converts exactly, such as ``0`` for a bool field or
+    ``2.0`` for an integer field, still converts, with a DeprecationWarning.
     Eight months after the release that adds the warning (the deprecation policy
     in docs/getting_started/faq.rst), always raise here and delete
     ``_converts_exactly`` and ``_object_layout``.
@@ -395,10 +379,11 @@ def _converts_exactly(dtype, value):
     """Whether converting ``value`` into UDT ``dtype`` keeps every number in it.
 
     A float may round to a narrower float, as numpy 2 rounds a Python number
-    beside float32, but may not become infinite or lose an imaginary part. A
-    leaf that holds no number (bytes, a date, a duration) keeps a value only
-    if it converts back to it: not a number (``1.5`` would become ``b"1.5"``),
-    a string cut short, or a duration in a coarser unit (5 ms is 0 s).
+    with a float32 operand, but may not become infinite or lose an imaginary
+    part. A leaf that holds no number (bytes, a date, a duration) keeps a value
+    only if it converts back to it: not a number (``1.5`` would become
+    ``b"1.5"``), a string cut short, or a duration in a coarser unit (5 ms is
+    0 s).
     """
     np_type = dtype.np_type
     try:
@@ -482,7 +467,7 @@ def _object_layout(np_type):
     return np.dtype(object)
 
 
-# The kinds of element a weak Python literal fits without changing kind, and
+# The kinds of element whose dtype a weak Python number of each kind takes, and
 # the dtype it takes otherwise: numpy 2's rules for Python scalars (NEP 50).
 _WEAK_LITERAL_FITS = {"b": "biufc", "i": "iufc", "f": "fc", "c": "c"}
 _WEAK_LITERAL_DEFAULT = {
@@ -500,13 +485,13 @@ def _int_bounds(elem):
 
 
 def _weak_literal_element(value, kind, elem):
-    """Return the dtype a Python literal of ``kind`` takes beside an element of ``elem``.
+    """Return the dtype a Python number of ``kind`` takes as an operand with an element of ``elem``.
 
-    It is ``elem`` when that kind of element holds the literal (``1`` beside
-    int8, ``0.5`` beside float32), else the literal's default dtype (``0.5``
-    beside int8 is float64), and complex of ``elem``'s precision for a complex
-    literal beside a float. An int literal outside an integer element's range
-    raises ``OverflowError``, as numpy 2 does, rather than wrapping.
+    It is ``elem`` when ``_WEAK_LITERAL_FITS`` says ``elem``'s kind holds the
+    number, else the number's default dtype. A complex number with a float
+    ``elem`` takes the complex type of the float's precision. An int out of an
+    integer ``elem``'s range raises ``OverflowError``, as numpy 2 does, rather
+    than wrapping.
     """
     if elem.kind in _WEAK_LITERAL_FITS[kind]:
         if kind == "i" and elem.kind in "iu":
@@ -517,7 +502,7 @@ def _weak_literal_element(value, kind, elem):
     if kind == "c" and elem.kind == "f":
         return np.result_type(elem, np.complex64)
     rv = _WEAK_LITERAL_DEFAULT[kind]
-    if kind == "i":  # beside a bool, an int is INT64, and must fit it
+    if kind == "i":  # with a bool, an int is INT64, and must be in its range
         lo, hi = _int_bounds(rv)
         if not lo <= value <= hi:
             raise OverflowError(f"Python integer {value} out of bounds for {rv}")
@@ -525,17 +510,17 @@ def _weak_literal_element(value, kind, elem):
 
 
 def _weak_literal_leaf(values, kind, elem, *, exact=False):
-    """Return the one dtype Python numbers ``values`` of widest kind ``kind`` take beside ``elem``.
+    """Return the one dtype Python numbers ``values``, of widest kind ``kind``, take with ``elem``.
 
     Each is typed by :func:`_weak_literal_element`, so an int out of an integer
-    ``elem``'s range raises ``OverflowError``. With ``exact``, for a comparison,
-    which keeps no result type, a fill value or truediv, such an int takes
-    int64, uint64 or float64, whichever holds the values (a comparison then
-    compares it as infinity: :func:`_literal_operand`). Built-in dtypes and
-    UDT leaves both use this.
+    ``elem``'s range raises ``OverflowError``. With ``exact`` (a comparison,
+    which keeps no result type, a fill value, or truediv), such an int instead
+    gives int64, uint64 or float64, the first that holds all the values (a
+    comparison then compares it as infinity: :func:`_literal_operand`).
+    Built-in dtypes and UDT leaves both use this.
     """
     if exact and kind == "i" and elem.kind in "biu":
-        # The integer type an int would take: ``elem``, or INT64 beside a bool.
+        # The integer type an int would take: ``elem``, or INT64 with a bool.
         lo, hi = _int_bounds(elem if elem.kind != "b" else _WEAK_LITERAL_DEFAULT["i"])
         for x in values:
             if not lo <= x <= hi:
@@ -597,37 +582,41 @@ def _literal_leaf_values(value, shape, *, numpy_scalars=False):
 
 
 def _weak_literal_udt(dtype, value, *, exact=False):
-    """Return the UDT a Python number, or a tuple or list of them, becomes beside UDT ``dtype``.
+    """Return the UDT a Python number, or a tuple or list of them, is as an operand with ``dtype``.
 
-    The literal is read as an element of ``dtype``: a number stands in every
+    The literal is read as an element of UDT ``dtype``: a number fills every
     leaf, a sequence fills an array UDT or an array field, and a tuple or list
-    fills a record by position, nested for a nested record. Each leaf then takes
-    the dtype numpy 2 gives a Python scalar beside that leaf's element
-    (:func:`_weak_literal_element`), of the widest kind among the leaf's
-    numbers, so the pair promotes as two UDTs do: ``int8_udt + 1`` and
-    ``int8_udt + (1, 2, 3)`` stay ``int8_udt``, while ``int8_udt * 2.5`` and
-    ``int8_udt + (0.5, 1.5, 2.5)`` give float64 elements. A leaf that is not a
-    number (bytes, datetime) takes the literal's default dtype and fails to
-    pair. With ``exact``, for ``eq`` and ``ne``, an int out of a leaf's range
-    takes a type that holds it instead of raising (:func:`_weak_literal_leaf`),
-    so ``int8_udt == 300`` is False. In a record, a numpy number or bool is
-    strong, as beside a built-in type: ``int8_record + (np.float64(1.5), 1)``
-    has a float64 field. (A sequence for an array UDT is the array numpy makes
-    of it instead: :func:`_literal_type`.) A sequence not laid out like an
-    element gives ``None``.
+    fills a record by position, nested for a nested record. Each leaf then
+    gets the dtype numpy 2 gives a Python number with that leaf's type
+    (:func:`_weak_literal_element`), for the widest kind among the leaf's
+    numbers. So the literal pairs with ``dtype`` as a UDT would.
+    ``int8_udt + 1`` and ``int8_udt + (1, 2, 3)`` stay ``int8_udt``.
+    ``int8_udt * 2.5`` and ``int8_udt + (0.5, 1.5, 2.5)`` have float64
+    elements. A number for a leaf that is not a number (bytes, a date) gets
+    the number's default dtype and does not pair. With ``exact``, for ``eq``
+    and ``ne``, an int out of a leaf's range gets a type that can hold it
+    instead of raising (:func:`_weak_literal_leaf`), so ``int8_udt == 300`` is
+    False.
+
+    In a record, a numpy number or bool is strong, as with a built-in type:
+    ``int8_record + (np.float64(1.5), 1)`` has a float64 field. A sequence not
+    laid out like an element gives ``None``, as does a sequence holding numpy
+    values for an array UDT, which :func:`_literal_type` then types as the
+    array numpy makes of it.
     """
 
     def leaf_dtype(leaf, part, *, in_record=False):
         base, shape = leaf.subdtype or (leaf, ())
         if in_record and not shape and base.kind in "SUMm":
-            # Text or a date in such a field is typed too, so the number fields
-            # beside it are. It takes the field's own type when it converts into
-            # the field and back unchanged, so ops pair the field with itself;
-            # otherwise its own type, which does not fit: text as the field's
-            # kind at its own length, a date or duration in numpy's unit for it
-            # (a datetime is microseconds), so == compares it as numpy does.
-            # Text in a duration field, or text numpy cannot read as a date,
-            # takes the field's type, and converting it reports what is wrong.
+            # Text or a date in a record field is typed too, so that the
+            # record's number fields are. It takes the field's type when it
+            # converts into the field and back unchanged, so ops pair the field
+            # with itself. Otherwise it takes its own type, which does not fit.
+            # For text, that is the field's kind at the text's length. For a
+            # date or duration, it is numpy's unit for it (a datetime is
+            # microseconds), so == compares it as numpy does. Text in a
+            # duration field, or text numpy cannot read as a date, takes the
+            # field's type, and converting it reports what is wrong.
             if isinstance(part, (str, bytes)) and base.kind in "SU":
                 own = np.dtype(f"{base.kind}{max(len(part), 1)}")
             elif (date := _as_numpy_date(part, base)) is not None:
@@ -696,13 +685,14 @@ def _weak_literal_udt(dtype, value, *, exact=False):
 def _as_numpy_date(value, leaf):
     """Return ``value`` as numpy's ``datetime64`` or ``timedelta64``, or ``None`` if it is neither.
 
-    A numpy date or duration is itself; a Python ``datetime.date`` or
-    ``datetime.datetime`` is a date in days or microseconds and a
-    ``datetime.timedelta`` a duration in microseconds, as numpy makes them;
-    text is a date in the unit it is written to (``"2020-01-01T12:00"`` is in
-    minutes) when ``leaf``, the numpy dtype it meets, is a date and numpy can
-    read it. Text numpy reads as NaT (``"NaT"`` in any case, or empty) is NaT
-    in the leaf's unit: numpy would give it no unit, which numpy 2.5 deprecates.
+    A numpy date or duration is returned as it is. A Python ``datetime.date``
+    is a date in days, a ``datetime.datetime`` one in microseconds, and a
+    ``datetime.timedelta`` a duration in microseconds, as numpy makes them.
+    Text is a date when ``leaf``, the numpy dtype of the field it is for, is a
+    date and numpy can read the text. Its unit is the one it is written to:
+    ``"2020-01-01T12:00"`` is in minutes. Text numpy reads as NaT (``"NaT"`` in
+    any case, or empty) is NaT in the leaf's unit, because numpy would give it
+    no unit, which numpy 2.5 deprecates.
     """
     if isinstance(value, (np.datetime64, np.timedelta64)):
         return value
@@ -737,12 +727,12 @@ def _refuse_misfit_fields(dtype, np_type, value):
     """Raise ValueError if a part of literal ``value`` does not broadcast to its array field.
 
     ``value`` is laid out like an element of record ``np_type`` (UDT ``dtype``,
-    or a record field in it), as :func:`_weak_literal_udt` reads it, a dict
-    already a tuple; any other value has no parts to check. An array UDT's
-    element takes the shape it broadcasts to with a literal, as numpy does, so
-    ``INT8[3]`` and ``np.array([[1, 300, 3]])`` give ``INT64[1, 3]``. A
-    record's field keeps its shape, so a part for it must broadcast to that
-    shape. Converted into the field, as a store converts it,
+    or a record field in it), as :func:`_weak_literal_udt` reads it, with a
+    dict already made a tuple; any other value has no parts to check. With an
+    array UDT, the result takes the shape the element and a literal broadcast
+    to, as numpy's does, so ``INT8[3]`` and ``np.array([[1, 300, 3]])`` give
+    ``INT64[1, 3]``. A record's field keeps its shape, so a part for it must
+    broadcast to that shape. Converted into the field, as a store converts it,
     ``np.array([[1, 300, 3]])`` would lose its leading axis and wrap 300 to 44.
     """
     if np_type.names is None or not isinstance(value, (tuple, list)):
@@ -776,8 +766,9 @@ def _int_beyond_leaf(np_type, value):
     """Return a Python int in literal ``value`` beyond its integer leaf's range, or ``None``.
 
     ``value`` is laid out like an element of ``np_type``, as
-    :func:`_weak_literal_udt` reads it (a record's dict already a tuple). No
-    element equals a literal with such an int, whatever its other leaves.
+    :func:`_weak_literal_udt` reads it (with a record's dict already made a
+    tuple). No element equals a literal with such an int, whatever its other
+    leaves.
     """
     if np_type.names is not None:
         parts = value if isinstance(value, (tuple, list)) else [value] * len(np_type.names)
@@ -825,18 +816,19 @@ def _beyond_as_infinity(np_type, value):
 
 
 def _array_literal_udt(dtype, value):
-    """Return the UDT a numpy array ``value`` is beside UDT ``dtype``, or ``None`` to convert it.
+    """Return the UDT numpy array ``value`` is as an operand with UDT ``dtype``, or ``None``.
 
     An array has a dtype, so it is strong, as numpy 2 treats it:
     ``int8_udt + np.array([0.5, 1, 2])`` has float64 elements and
-    ``+ np.array([1, 2, 3])`` int64 ones. Its type is the array layout of its
-    dtype: in the UDT's shape when it broadcasts to that (``np.array([1])``
-    beside ``INT8[3]``), which a literal that must become an element needs,
-    else in its own shape when the two broadcast together, so that an op's
-    result takes the shape numpy's would (``INT8[3]`` and a 2-by-3 array give
-    ``[2, 3]``). A 0-d structured array or ``np.void`` beside a record is its
-    record dtype. Anything else, such as a numeric array beside a record, is
-    converted into the UDT.
+    ``+ np.array([1, 2, 3])`` int64 ones. Its type is the array UDT of its
+    dtype. The shape is ``dtype``'s when the array broadcasts to it, as
+    ``np.array([1])`` does with ``INT8[3]``; a literal that must become an
+    element needs that. Otherwise the shape is the array's own, when the two
+    shapes broadcast together, so that an op's result has the shape numpy's
+    would: ``INT8[3]`` and a 2-by-3 array give ``[2, 3]``. A 0-d structured
+    array or ``np.void`` is typed as its record dtype. ``None``, for anything
+    else, such as a numeric array with a record, means it is converted into
+    the UDT.
     """
     np_type = dtype.np_type
     if value.dtype.names is not None:

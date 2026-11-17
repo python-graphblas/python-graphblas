@@ -45,17 +45,14 @@ def _pack_securely(import_, obj, format, opts, **kwargs):
 
 
 def _resolve_serialized_dtype(data_obj, data_nbytes, obj_kind):
-    """Resolve the dtype of a serialized Matrix/Vector buffer.
+    """Return the dtype of a serialized Matrix or Vector.
 
-    ``GxB_deserialize_type_name`` returns the type's short name (a built-in
-    like ``'INT64'`` or, for a UDT, its ``GxB_JIT_C_NAME``). For UDTs the
-    short name may not match any Python-side registration (e.g., when an
-    anonymous UDT was registered by-shape on the producer side). Fall back
-    to ``GrB_NAME`` (the numpy repr that ``serialize`` writes into the
-    object) when the short name fails to resolve.
+    ``GxB_deserialize_type_name`` gives the type's C name: ``'int64_t'`` for a
+    built-in type, the ``jit_c_name`` for a UDT. A UDT's C name usually names
+    no dtype (``gbudt_Edge``), so this falls back to the object's ``GrB_NAME``,
+    where ``serialize`` stores the UDT's numpy dtype as a string.
 
-    ``obj_kind`` is ``"Matrix"`` or ``"Vector"`` and only shows up in error
-    messages.
+    ``obj_kind`` is ``"Matrix"`` or ``"Vector"``, for error messages.
     """
     cname = ffi.new(f"char[{lib.GxB_MAX_NAME_LEN}]")
     info = lib.GxB_deserialize_type_name(cname, data_obj, data_nbytes)
@@ -91,15 +88,19 @@ def _jit_c_source(name, funcname, jit_c_definition, types=()):
 
     SuiteSparse finds a compiled kernel in memory by its op's name (and the types in the
     kernel's encoding), and checks an op's definition only when it loads a kernel from disk.
-    So two ops of one C name with different definitions would run each other's kernel: an op
-    defined again under its name, or two of one last name in two namespaces (``ss.f`` and
-    ``ss.nested.f``). The C name is ``funcname``, then ``_{len(t)}_{t}`` for each of
-    ``types`` (built-in types by name, UDTs by their C name), then a digest of these, the
-    full dotted ``name`` and the definition, as ``f_3a1c...``. SuiteSparse keeps a name of at
-    most 127 characters, so a longer one is ``funcname``'s start and a longer digest. One
-    name and definition give one C name on purpose: registered again, they reuse the kernel
-    compiled for them. The function is renamed in the definition wherever it is named, so a
-    recursive call follows, but not a struct member of the same name (after ``.`` or ``->``).
+    So two ops with one C name and different definitions would run each other's kernels: an
+    op defined again under its name, or two with one last name in two namespaces (``ss.f``
+    and ``ss.nested.f``).
+
+    The C name is therefore ``funcname``, then ``_{len(t)}_{t}`` for each of ``types``
+    (built-in types by name, UDTs by their C name), then a digest of these, the full dotted
+    ``name`` and the definition: ``f_3a1c...``. SuiteSparse keeps a name of at most 127
+    characters, so a longer one becomes the start of ``funcname`` and a longer digest. The
+    same name and definition always give the same C name, so registering them again reuses
+    the kernel compiled for them.
+
+    The function is renamed wherever the definition names it, so a recursive call follows,
+    but a struct member of the same name (after ``.`` or ``->``) is left alone.
     """
     parts = [re.sub(r"\W", "_", t.jit_c_name or t.name) for t in types]
     readable = funcname + "".join(f"_{len(part)}_{part}" for part in parts)

@@ -42,20 +42,14 @@ try:
     BinaryOp._initialize()
     Monoid._initialize()
     Semiring._initialize()
-    # IndexBinaryOp has no built-ins, but ``_initialize`` still needs to
-    # set ``cls._initialized = True``. Without that, user ``register_new``
-    # calls hit the "not initialized" branch and mistakenly add user op
-    # names to ``_STANDARD_OPERATOR_NAMES``. Pickle then emits a string
-    # reference that won't resolve in a fresh process. Cross-process pickle
-    # for user-registered IBOs (and bound IBOs derived from them) requires
-    # the tuple-form ``__reduce__`` that re-registers the function in the
-    # child.
+    # IndexBinaryOp has no built-ins, but must be marked initialized. Until it is,
+    # ``register_new`` records a user's op name as standard, and a standard op pickles
+    # by name, which a new process cannot resolve.
     IndexBinaryOp._initialize()
-    # Every op the namespaces hold now is python-graphblas's own, also ones made
-    # outside ``register_new`` (cdiv, truediv, rtruediv, the semirings on cdiv) and
-    # ones made on first use (binom). Record them all as standard: they pickle by
-    # name, and ``literals._is_builtin_op`` counts them built-in, with no list to
-    # keep in step.
+    # Every op in the namespaces now is python-graphblas's own, including those made
+    # outside ``register_new`` (cdiv, truediv, rtruediv, the cdiv semirings) and those
+    # made on first use (binom). Record them all as standard, so they pickle by name
+    # and ``literals._is_builtin_op`` counts them as built-in.
     for _module in [binary, unary, monoid, semiring, indexunary, select, indexbinary]:
         _modname = _module.__name__.rsplit(".", 1)[-1]
         _STANDARD_OPERATOR_NAMES.update(f"{_modname}.{key}" for key in _module._delayed)
@@ -82,23 +76,22 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
         # Handle special cases such as first and second (may have UDTs)
         if op._custom_dtype is not None and (rv := op._custom_dtype(op, dtype, dtype2)) is not None:
             return rv
-        # UDTs do not cast, so never unify a UDT with another type: numpy would
-        # promote two records to one of them (or a third), and GraphBLAS would
-        # reject the operand of the other type with GrB_DOMAIN_MISMATCH. An op
-        # that does not lift to UDTs says so here with a KeyError, where a UDT
-        # with a built-in type mostly failed to unify with numpy's TypeError.
+        # GraphBLAS does not cast a UDT operand, so never unify a UDT with another type:
+        # numpy would promote two records to one of them (or a third), and GraphBLAS
+        # would reject the operand of the other type with GrB_DOMAIN_MISMATCH. An op
+        # that does not lift to UDTs raises KeyError here.
         if dtype is not dtype2 and (dtype._is_udt or dtype2._is_udt):
             if op.is_positional:
                 return op[UINT64]
             if op._udt_types is None:
                 raise KeyError(f"{op.name} does not work with ({dtype}, {dtype2})")
             if isinstance(op, Monoid):
-                # A Monoid takes one type, but used element-wise it is its
-                # BinaryOp, which takes the pair: ``v.ewise_mult(w, monoid.plus)``
+                # A Monoid has one type, but used element-wise it acts as its
+                # BinaryOp, which accepts the two types: ``v.ewise_mult(w, monoid.plus)``
                 # works where ``v * w`` does.
                 if kind == "binary":
                     return get_typed_op(op.binaryop, dtype, dtype2)
-                # Indexed with the pair, it takes the type the pair promotes to.
+                # Indexed with two types, it has the type they promote to
                 return op[_monoid_pair_type(op.binaryop.name, dtype, dtype2)]
             return op._compile_udt(dtype, dtype2)
         # Generic case: try to unify the two dtypes

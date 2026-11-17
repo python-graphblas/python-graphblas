@@ -172,7 +172,8 @@ def test_from_coo_scalar():
 
 @pytest.mark.skipif("not suitesparse")
 def test_ss_iso_value_of_an_empty_iso_vector():
-    # As for Matrix: an empty Vector SuiteSparse marks iso has an empty iso_value.
+    # As in test_ss_iso_value_of_an_empty_iso_matrix: an empty Vector SuiteSparse marks
+    # iso has an empty iso_value.
     u = Vector.from_coo([], 7, size=3)
     w = Vector.from_coo([1], [1.0], size=3).select("==", 2).new()
     x = Vector(int, 3)
@@ -192,8 +193,8 @@ def test_ss_iso_value_of_an_empty_iso_vector():
 @pytest.mark.skipif("not suitesparse")
 @pytest.mark.parametrize("method", ["export", "unpack"])
 def test_ss_export_full_of_a_vector_that_is_not_full(method):
-    # SuiteSparse refuses with GrB_INVALID_VALUE and sets no message, so the
-    # error used to be blank.
+    # SuiteSparse refuses with GrB_INVALID_VALUE and sets no message, so the error
+    # names the missing entries itself. Regression: the message was blank.
     v = Vector.from_coo([1], [2.0], size=3)
     with pytest.raises(InvalidValue, match="1 of 3 entries is not full"):
         getattr(v.ss, method)("full")
@@ -783,7 +784,7 @@ def test_select(v):
     w8 = select.index(v >= 4).new()
     expected = Vector.from_coo([4, 6], [2, 0], size=7)
     assert w8.isequal(expected)
-    # The index is compared with the bound given, not with 300 typed beside INT8 (inf)
+    # The index is compared with the bound given, not with 300 typed as INT8 (infinity)
     w = Vector.from_coo([0, 200, 399], 1, dtype=dtypes.INT8, size=400)
     assert select.index(w < 300).new().to_coo()[0].tolist() == [0, 200]
     assert select.index(w >= 300).new().to_coo()[0].tolist() == [399]
@@ -1140,8 +1141,8 @@ def test_isclose(v):
 
 
 def test_isclose_infinity():
-    # As in math.isclose, an infinity is close only to itself. It was close to every
-    # number (abs(inf - y) is inf, and so is rel_tol * inf), with Numba and without.
+    # As in math.isclose, an infinity is close only to itself. Regression: it was close to
+    # every number (abs(inf - y) is inf, and so is rel_tol * inf), with Numba and without.
     from graphblas.core.vector import _isclose_recipe
 
     values = [math.inf, -math.inf, 1.0, 0.0, math.nan]
@@ -1155,9 +1156,9 @@ def test_isclose_infinity():
             assert _isclose_recipe(left, right, 1e-7, abs_tol) is expected, (x, y)
 
 
-# (x's dtype, y's dtype, x, y, rel_tol): each was wrong in at least one of isclose's
-# paths, because x - y or abs(x) wrapped in an integer type. The values are far enough
-# apart (or exactly on the tolerance) that FP64 gives math.isclose's answer too.
+# (x's dtype, y's dtype, x, y, rel_tol): cases where x - y or abs(x) wraps in an integer
+# type, which made at least one of isclose's paths wrong. The values are far enough apart
+# (or exactly on the tolerance) that FP64 gives math.isclose's answer too.
 ISCLOSE_WRAPPING_CASES = [
     ("UINT64", "UINT64", 0, 2**64 - 1, 1e-7),
     ("UINT64", "UINT64", 2**63, 2**64 - 1, 1e-7),
@@ -1188,7 +1189,8 @@ def test_isclose_integers_do_not_wrap():
 
 @pytest.mark.skipif("not dtypes._supports_complex")
 def test_isclose_complex():
-    # Without Numba, isclose kept only the real part of x - y, so 0 was close to 1j
+    # Regression: without Numba, isclose kept only the real part of x - y, so 0 was close
+    # to 1j
     from graphblas.core.vector import _isclose_recipe
 
     values = [0j, 1j, -1j, 1 + 1j, 3 + 4j, 3 + 4.000001j]
@@ -1199,8 +1201,8 @@ def test_isclose_complex():
         if supports_udfs:
             assert left.isclose(right, rel_tol=1e-6) is expected, (x, y)
         assert _isclose_recipe(left, right, 1e-6, 0.0) is expected, (x, y)
-    # abs(x) and abs(y) are in the type x - y is in, here FC64; abs(1 + 1j) in FC32 is
-    # smaller than in FC64, so the case exactly on the tolerance was not close
+    # abs(x) and abs(y) are computed in the type of x - y, here FC64. Regression: abs(1 + 1j)
+    # in FC32 is smaller than in FC64, so this case, exactly on the tolerance, was not close
     left = Vector.from_coo([0], [0.0])
     right = Vector.from_coo([0], [1 + 1j], dtype="FC32")
     expected = cmath.isclose(0.0, complex(np.complex64(1 + 1j)), rel_tol=1.0)
@@ -1605,12 +1607,10 @@ def test_ss_nbytes(v):
 def test_python_number_is_weak_beside_builtin_dtypes():
     """A Python number takes a built-in collection's dtype when that kind holds it (NEP 50).
 
-    How a literal was typed used to depend on the installed numpy: on numpy 2 a
-    Python int was INT64 and a float FP64 beside anything, and on numpy 1 the
-    collection's dtype won by value, so ``int8_vec + 300`` wrapped and
-    ``int8_vec < 300`` compared with 44. python-graphblas now applies numpy 2's
-    rule itself, the table UDT elements use, on numpy 1 and 2 alike. numpy
-    scalars and Scalars keep their dtype.
+    python-graphblas applies numpy 2's rule itself, so the result does not depend on
+    the installed numpy. numpy scalars and Scalars keep their dtype. Regression: the
+    result depended on numpy's version, so ``int8_vec + 300`` wrapped and
+    ``int8_vec < 300`` compared with 44.
     """
     i8 = Vector.from_coo([0, 1], [100, -100], dtype=dtypes.INT8)
     u8 = Vector.from_coo([0, 1], [0, 200], dtype=dtypes.UINT8)
@@ -1643,7 +1643,7 @@ def test_python_number_is_weak_beside_builtin_dtypes():
         assert (f32 + 1j).dtype == dtypes.FC32
     else:
         # Without complex types, a complex number keeps its own type, which plus does not
-        # take, and which compares only with itself.
+        # accept, and which compares only with itself.
         for expr in [lambda: f32 + 1j, lambda: f32 == 1j]:
             with pytest.raises(KeyError, match="does not work with"):
                 expr()
@@ -1652,7 +1652,7 @@ def test_python_number_is_weak_beside_builtin_dtypes():
     assert (Scalar.from_value(0.5, dtype=dtypes.FP32) * 0.5).new().dtype == dtypes.FP32
     A = Matrix.from_coo([0], [0], [100], dtype=dtypes.INT8)
     assert (A * 2).dtype == dtypes.INT8
-    # Beside a bool, an int is INT64, and must fit it, as in numpy's ``bools & 2**70``.
+    # With a bool, an int is INT64 and must fit it, as in numpy's ``bools & 2**70``.
     exprs = [
         lambda: i8 + 300,
         lambda: u8 + -1,
@@ -1684,8 +1684,8 @@ def test_python_number_is_weak_beside_builtin_dtypes():
     assert i8.apply(indexunary.valuelt, 300).new().to_coo()[1].tolist() == [True, True]
     assert (f32 == 0.1).new().to_coo()[1].tolist() == [True, False]  # compared as float32
     # A float too large for FP32 is infinity in a comparison too, with a warning, as in
-    # numpy 2 (an int out of range is exact; a float has no type that is both FP32 and
-    # holds it). The Scalar's == warns once, at the caller's line.
+    # numpy 2 (unlike an int out of range, which compares exactly). The Scalar's == warns
+    # once, at the caller's line.
     finf = Vector.from_coo([0, 1], [np.inf, 1], dtype=dtypes.FP32)
     with pytest.warns(RuntimeWarning, match="overflow encountered in cast") as record:
         assert (finf == 1e300).new().to_coo()[1].tolist() == [True, False]
@@ -1716,9 +1716,9 @@ def test_python_number_is_weak_beside_builtin_dtypes():
         plus = binary.register_anonymous(lambda x, y: x + y)
         with pytest.raises(OverflowError, match="out of bounds"):
             i8.apply(plus, right=300)
-        # Any op whose result is another type, as truediv's and a comparison's are, takes
-        # an int out of range exactly: a parameterized op, a user's, and the instances a
-        # parameterized op makes (these raised OverflowError; main and numpy give False).
+        # An op whose result has another type, as truediv's and a comparison's do, accepts
+        # an int out of range exactly, as numpy does: a parameterized op, a user's op, and
+        # the instances a parameterized op makes. Regression: these raised OverflowError.
         gt = binary.register_anonymous(lambda x, y: x > y)
         for op, values in [
             (binary.isclose, [False, False]),
@@ -1729,8 +1729,8 @@ def test_python_number_is_weak_beside_builtin_dtypes():
             assert i8.apply(op, left=-300).new().to_coo()[1].tolist() == values
         result = i8.ewise_union(w8, binary.isclose, 0, 300).new()
         assert result.to_coo()[1].tolist() == [False, False]
-        # A user's op named like a comparison is not one: the int is not made infinity
-        # (it gave [-inf, -inf] and [True, True]; main gives these, as numpy would)
+        # A user's op named like a comparison is not one, so the int is not made infinity,
+        # and the results are numpy's. Regression: these gave [-inf, -inf] and [True, True].
 
         def ge(x, y):
             return x * 1.0 - y
@@ -1743,8 +1743,9 @@ def test_python_number_is_weak_beside_builtin_dtypes():
         result = i8.apply(binary.register_anonymous(eq), right=300).new()
         assert result.to_coo()[1].tolist() == [False, True]
         # Where the op and the int would compute in a float type, which rounds an int
-        # beyond 64 bits, a user's op raises (it gave [False, True]: 2**63 - 1 < 2**63 is
-        # False in FP64). A built-in op that computes in float anyway does not.
+        # beyond 64 bits, a user's op raises; a built-in op that computes in float anyway
+        # does not. Regression: the user's op gave [False, True], as 2**63 - 1 < 2**63 is
+        # False in FP64.
         i64 = Vector.from_coo([0, 1], [2**63 - 1, 0], dtype=dtypes.INT64)
         u64 = Vector.from_coo([0, 1], [2**64 - 1, 0], dtype=dtypes.UINT64)
         lt = binary.register_anonymous(lambda x, y: x < y)
@@ -1758,8 +1759,8 @@ def test_python_number_is_weak_beside_builtin_dtypes():
         result = i64.apply(binary.isclose, right=2**63).new()
         assert result.to_coo()[1].tolist() == [True, False]  # as numpy's isclose
         # Built-in ops made outside register_new (truediv) or on first use (binom) count
-        # as built-in too: truediv computes beside a 64-bit int, as numpy divides
-        # (these raised OverflowError).
+        # as built-in too, so truediv computes with a 64-bit int as numpy divides.
+        # Regression: these raised OverflowError.
         assert (i64 / 2**63).new().to_coo()[1].tolist() == [1.0, 0.0]
         assert (u64 / -1).new().to_coo()[1].tolist() == [-(2.0**64), 0.0]
         assert (i8 / 2**70).new().to_coo()[1].tolist() == [100 / 2**70, -100 / 2**70]
@@ -1776,9 +1777,9 @@ def test_python_number_is_weak_beside_builtin_dtypes():
 def test_python_int_beyond_64_bit_element_compares_exactly():
     """A Python int beyond a 64-bit integer element's range compares exactly, as in numpy 2.
 
-    It compares as infinity of its sign. A type that held both would round
+    It compares as infinity of its sign. A type that can store both would round
     them: in FP64, the INT64 ``2**63 - 1`` and the int ``2**63`` are equal, so
-    ``int64_vec < 2**63`` was False there (main raised OverflowError).
+    ``int64_vec < 2**63`` would be False.
     """
     compare = {
         "eq": lambda x, y: x == y,
@@ -1826,12 +1827,10 @@ def test_python_int_beyond_64_bit_element_compares_exactly():
 def test_select_value_thunk_of_another_type():
     """Select with a value op compares exactly when the thunk's type differs from the values'.
 
-    SuiteSparse:GraphBLAS's select before 10.5.2 read such a thunk's bytes as the
-    values' type: on an INT8 vector, ``valueeq`` with 1.0 compared with 0 and kept
-    nothing, ``valuelt`` with 300 compared with 44, and ``valueeq`` with 356
-    kept 100. python-graphblas now compares in the values' own type with a
-    thunk that keeps the same elements. 10.5.2 casts both to the op's type,
-    which rounds the 2**53 + 1 thunks below to 2**53 and keeps that element.
+    python-graphblas compares in the values' own type, with a thunk that keeps the
+    same elements; ``select._value_select_in_own_type`` says why. Casting both to the
+    op's type, as SuiteSparse:GraphBLAS 10.5.2 does, would round the ``2**53 + 1``
+    thunks below to ``2**53`` and keep that element.
     """
     i8 = Vector.from_coo([0, 1, 2, 3], [-5, 1, 2, 100], dtype=dtypes.INT8)
     u8 = Vector.from_coo([0, 1], [0, 255], dtype=dtypes.UINT8)
@@ -1863,7 +1862,7 @@ def test_select_value_thunk_of_another_type():
         (f32, select.valuene, np.float64(0.1), [0, 1, 2]),
         (f32, select.valuelt, np.float64(np.nan), []),
         (f32, select.valuene, np.float64(np.nan), [0, 1, 2]),
-        # A Python float beside FP32 is FP32 (NEP 50), as numpy compares it.
+        # A Python float with FP32 values is FP32 (NEP 50), as numpy compares it.
         (f32, select.valueeq, 0.1, [0]),
     ]:
         assert x.select(op, thunk).new().to_coo()[0].tolist() == kept, (x.dtype, op, thunk)
@@ -2672,10 +2671,9 @@ def test_udt():
     if suitesparse:
         vv = Vector.ss.deserialize(v.ss.serialize(), dtype=long_udt)
         assert v.isequal(vv, check_dtype=True)
-        # The dtype name is too long to embed in the blob; dtype= must be provided.
-        # Whichever error the caller sees comes from parsing the name that is in
-        # the blob. Builds with GxB_Serialized_get_String let that SyntaxError
-        # through; older ones have no second name to try, so they wrap it.
+        # The dtype's name is too long to store in the blob, so dtype= is needed. Parsing
+        # the name that is stored raises SyntaxError; a build without
+        # GxB_Serialized_get_String cannot read that name, and raises ValueError.
         with pytest.raises(
             SyntaxError if hasattr(lib, "GxB_Serialized_get_String") else ValueError
         ):
@@ -3093,7 +3091,8 @@ def test_ss_sort(v):
 
 
 def test_subarray_dtypes_iso():
-    # An iso array UDT exports its one value with a leading axis of length 1
+    # An iso array UDT exports its one value with a leading axis of length 1, which
+    # to_dense and to_coo broadcast
     v = Vector("INT64[4]", size=3)
     v[:] = [0, 1, 2, 3]
     if suitesparse:
@@ -3153,21 +3152,20 @@ def test_subarray_dtypes():
 
 
 def test_constructor_rejects_arraylike_first_arg():
-    # The first positional arg is the dtype; passing data instead used to raise a
-    # confusing "Unknown dtype" ValueError. It should now raise TypeError pointing
-    # at the from_* constructors.
+    # The first positional argument is the dtype, so data passed there raises a
+    # TypeError that points to the from_* constructors, not "Unknown dtype".
     with pytest.raises(TypeError, match="Vector.*dtype.*from_coo.*from_dense"):
         Vector([1, 2, 3])
     with pytest.raises(TypeError, match="Vector.*expects a dtype"):
         Vector((1, 2, 3))
     with pytest.raises(TypeError, match="Vector.*expects a dtype"):
         Vector(np.array([1, 2, 3]))
-    # Valid dtype-first signatures still work, including list/tuple dtype specs
+    # A dtype first works, including a list or tuple dtype spec
     assert Vector(int, size=3).dtype == dtypes.INT64
     assert Vector("INT64", size=3).dtype == dtypes.INT64
     assert Vector(np.dtype("int64"), size=3).dtype == dtypes.INT64
     assert Vector([("x", "i8"), ("y", "f8")], size=3).dtype._is_udt
-    # A non-array-like bad dtype keeps the original ValueError
+    # A bad dtype that is not array-like raises ValueError
     with pytest.raises(ValueError, match="Unknown dtype"):
         Vector("not_a_dtype", size=3)
     # A malformed structured dtype spec gets the hint, and the lookup's reason stays
@@ -3190,8 +3188,8 @@ def test_property_attribute_error_keeps_its_message():
 # Without SuiteSparse, building a UDT uses dup_op=binary.any, which needs Numba.
 @pytest.mark.skipif("not suitesparse and not supports_udfs")
 def test_subarray_dtype_values_shape():
-    # Each of these has one entry per index but not two numbers per entry. Building
-    # from too few numbers read past the end of the array. (The dtype's name is
+    # Each of these has one entry per index but not two numbers per entry. Regression:
+    # building from too few numbers read past the end of the array. (The dtype's name is
     # whichever another test gave this anonymous dtype.)
     match = r"values must have shape \(2, 2\) for dtype \S+, not \(2,"
     for values in [np.ones(2), [1.0, 2.0], np.ones((2, 1)), np.arange(6.0).reshape(2, 3)]:
@@ -3216,7 +3214,7 @@ def test_subarray_dtype_values_shape():
     # A scalar fills whole elements
     v = Vector.from_coo([0, 1, 2], 1.5, "FP64[2]")
     assert v.to_coo()[1].tolist() == [[1.5, 1.5]] * 3
-    # The lengths compared are the number of elements, not of numbers (it said 2 != 6)
+    # The lengths compared are numbers of elements, not of numbers (which would be 2 != 6)
     with pytest.raises(ValueError, match="lengths must match: 2 != 3$"):
         Vector.from_coo([0, 1], np.ones((3, 2)), "FP64[2]")
 
@@ -3224,7 +3222,7 @@ def test_subarray_dtype_values_shape():
 @pytest.mark.skipif("not suitesparse")
 def test_ss_import_values_size():
     # GraphBLAS before 10.5.2 compares the byte size of imported values with the number
-    # of entries, not the bytes they need, so it read past the end of each of these
+    # of entries, not the bytes they need, so it would read past the end of each of these
     with pytest.raises(ValueError, match="have 4 or more elements of dtype FP64, not 2"):
         Vector.ss.import_sparse(size=5, indices=[0, 1, 2, 3], values=np.ones(2), nvals=4)
     with pytest.raises(ValueError, match="have 5 or more elements of dtype FP64, not 3"):

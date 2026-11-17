@@ -27,10 +27,9 @@ class DataType:
         "c_type",
         "numba_type",
         "np_type",
-        # ``(c_name, c_definition)`` actually registered with SuiteSparse,
-        # or ``None``. Captured at first registration. ``GxB_JIT_C_DEFINITION``
-        # is one-shot in SS, so this is the authoritative record of what SS
-        # will use for JIT, regardless of any later Python-side rename.
+        # ``(c_name, c_definition)`` given to SuiteSparse at first
+        # registration, or ``None``. SuiteSparse takes each only once, so a
+        # later rename of the UDT (``register_anonymous``) does not change them.
         "_jit_c_info",
         "__weakref__",
     )
@@ -90,9 +89,10 @@ class DataType:
     def jit_c_name(self):
         """The C type name SuiteSparse uses for this UDT, or ``None``.
 
-        Returns the name SuiteSparse actually registered (not the latest
-        Python-side ``self.name``, which can diverge after a re-register). Is
-        ``None`` for built-in types and for UDTs not expressible in C.
+        Use it to name the UDT in C source of your own. It is set when the
+        numpy dtype is first registered, so it can differ from ``name`` after
+        a later registration renames the UDT. It is ``None`` for built-in
+        types and for UDTs with no C definition. See :ref:`tn_jit_c_names`.
         """
         return self._jit_c_info[0] if self._jit_c_info is not None else None
 
@@ -111,16 +111,9 @@ class DataType:
 
 
 def _get_udt_c_type_info(datatype):
-    """Return ``(c_name, c_typedef)`` for a UDT, or ``None`` if not expressible in C.
+    """Return ``(c_name, c_typedef)`` for a UDT, or ``None`` if it has no C definition.
 
-    The returned ``c_name`` is ``gbudt_`` and ``datatype.name``, or a fresh
-    ``_gbudt_NNN`` name when the user didn't supply a name, or supplied one
-    that isn't a valid C identifier or is too long for SuiteSparse
-    (``udt_codegen._pick_c_type_name``), so the UDT can still take the JIT
-    path. Returns ``None`` only for the cases that remain unrepresentable in
-    C: an unsupported field type (object, datetime, string), or a field name
-    that collides with a C reserved word or isn't an identifier. Supports
-    record UDTs (including nested records) and array UDTs (e.g., ``FP64[3]``).
+    ``udt_codegen._udt_c_typedef`` builds it and lists when there is none.
     """
     from .operator.udt_codegen import _udt_c_typedef
 
@@ -132,21 +125,14 @@ def _get_udt_c_type_info(datatype):
 def _set_udt_jit_c_definition(datatype):
     """Set JIT C name and typedef on a UDT so SuiteSparse can JIT-compile kernels.
 
-    Without these, SuiteSparse treats UDTs as opaque byte arrays and cannot
-    JIT-compile optimized kernels for operations on them. We generate a C
-    struct definition from the numpy dtype and set both ``GxB_JIT_C_NAME``
-    and ``GxB_JIT_C_DEFINITION`` on the ``GrB_Type``. Both are needed for
-    SuiteSparse's eWise and reduce JIT templates to expand correctly.
+    Without them, SuiteSparse knows a UDT only by its size, and its JIT
+    templates for operations on the UDT cannot expand. Both
+    ``GxB_JIT_C_NAME`` and ``GxB_JIT_C_DEFINITION`` are needed.
 
-    Setting ``GxB_JIT_C_NAME`` causes ``GxB_deserialize_type_name`` to
-    return this short name rather than the numpy repr stored in
-    ``GrB_NAME``, so the deserialize path in ``Matrix.ss.deserialize`` and
-    ``Vector.ss.deserialize`` falls back to ``GrB_NAME`` when the short
-    name doesn't resolve to a known dtype. This preserves round-tripping
-    for anonymous-by-name UDTs.
-
-    Supports both record UDTs (``{'x': float, 'y': float}``) and array UDTs
-    (``np.dtype((np.float64, (3,)))``).
+    Setting ``GxB_JIT_C_NAME`` also makes ``GxB_deserialize_type_name``
+    return that name rather than the numpy repr stored in ``GrB_NAME``, so
+    ``Matrix.ss.deserialize`` and ``Vector.ss.deserialize`` fall back to
+    ``GrB_NAME`` when the C name is not a known dtype.
     """
     from .operator.udt_codegen import (
         _has_jit_set,
@@ -171,11 +157,6 @@ def _set_udt_jit_c_definition(datatype):
     lib.GrB_Type_set_String(
         datatype._carg, ffi.new("char[]", typedef.encode()), lib.GxB_JIT_C_DEFINITION
     )
-    # Remember what SS actually has. ``GxB_JIT_C_DEFINITION`` is one-shot
-    # (returns ``GrB_ALREADY_SET`` on a second call), so a later rename of
-    # the Python DataType does not change what SS uses for JIT, and the
-    # introspection properties must reflect what SS has rather than the
-    # renamed value.
     datatype._jit_c_info = info
 
 
@@ -221,15 +202,13 @@ def _numba_type(dtype):
 def register_new(name, dtype=None):
     """Register a user-defined type and put it on the ``gb.dtypes`` namespace.
 
-    Symmetric with :func:`register_anonymous`. Accepts the same dtype forms
-    (numpy dtype, dict, string, dataclass class/instance). When ``dtype`` is a
-    dataclass and no explicit ``name`` is given, the dataclass class name is
-    used; passing ``register_new(MyDataclass)`` is shorthand for
-    ``register_new(MyDataclass.__name__, MyDataclass)``.
+    ``name`` must be a Python identifier not already used there. ``dtype``
+    takes the same forms as for :func:`register_anonymous`.
+    ``register_new(MyDataclass)``, with a dataclass or an instance of one,
+    is short for ``register_new("MyDataclass", MyDataclass)``. See
+    :ref:`tn_udt_registration`.
     """
     if dtype is None:
-        # Sole-argument call. Accept a dataclass (use its class name) or a
-        # ``DataType``; otherwise complain with a useful message.
         if dataclasses.is_dataclass(name):
             dtype = name
             name = name.__name__ if isinstance(name, type) else type(name).__name__
@@ -254,60 +233,59 @@ def register_anonymous(dtype, name=None):
     """Register a user-defined type without adding it to the ``gb.dtypes`` namespace.
 
     Returns the existing ``DataType`` if one is already registered for this
-    ``np.dtype``. The new ``name`` (if given) replaces the old Python-side
-    name; the SuiteSparse-side C name set at first registration does not
-    change. See ``DataType.jit_c_name``.
+    ``np.dtype``. The new ``name`` (if given) replaces its name, but not the
+    C name SuiteSparse knows it by (``DataType.jit_c_name``).
 
     Nested subarrays are flattened first, so ``np.dtype((np.dtype((np.float64,
     (3,))), (2,)))``, two ``FP64[3]`` elements, registers as ``FP64[2, 3]`` and
     returns the same ``DataType``. This applies inside records too.
+
+    See :ref:`tn_udt_types` for every rule.
 
     Parameters
     ----------
     dtype : np.dtype | dict | str | @dataclass
         The dtype to register. Supported forms:
 
-        - A ``np.dtype`` directly (record or array, including multi-dim).
+        - A ``np.dtype``: a record, an array (of any number of dimensions), or
+          a single value GraphBLAS does not define, such as ``np.dtype("S5")``.
         - A dict like ``{"x": int, "y": float}``: keys become field names,
-          and values resolve through ``lookup_dtype``.
+          and each value is anything ``lookup_dtype`` accepts, including an
+          array type such as ``"FP64[3]"`` or a registered UDT.
         - A string like ``"INT64[3, 4]"`` for array UDTs.
         - A ``@dataclass`` class or instance: fields become record fields,
           and the class name is used as the default UDT name. Field type
           annotations may be either real types (``int``) or strings
           (``"int"``), e.g., with ``from __future__ import annotations`` or
-          PEP 649. Compound annotations like ``Optional[int]`` raise from
-          ``lookup_dtype``.
+          PEP 649. Compound annotations like ``Optional[int]`` raise
+          ``ValueError``.
 
-        Field types must resolve through ``lookup_dtype``. Python built-ins
-        (``int``, ``float``, ``bool``, ``complex``), the corresponding numpy
-        scalar types, and graphblas dtype names are supported. Object,
-        string, and nested-UDT fields are not.
+        A dict or dataclass gives a record aligned as a C struct is. Python
+        objects and a dtype of size 0 raise ``ValueError``.
+        :ref:`tn_udt_field_types` lists what a UDT can hold.
     name : str, optional
         A human-readable name for this UDT. Used in error messages and
-        ``repr``. Any name takes the SuiteSparse JIT path: its C name is
-        ``gbudt_`` and the name, or a synthetic one when that is not a C
-        identifier or is too long.
+        ``repr``. Its C name is ``gbudt_`` and the name, or a generated one
+        when that is not a C identifier or is too long (:ref:`tn_jit_c_names`).
 
     Returns
     -------
     DataType
         The registered UDT.
     """
-    # Convert a ``@dataclass`` (class or instance) directly to a numpy
-    # record dtype. ``lookup_dtype`` handles both type-object and
-    # string-annotation forms of field types.
+    # ``lookup_dtype`` accepts a type or a string annotation.
     if dataclasses.is_dataclass(dtype):
         fields = dataclasses.fields(dtype)
         if not fields:
             raise ValueError("dataclass must have at least one field to convert to a UDT")
         if name is None:
-            # Default the UDT name to the dataclass class name for both
-            # class form (``MyDC``) and instance form (``MyDC(...)``).
             name = dtype.__name__ if isinstance(dtype, type) else type(dtype).__name__
         dtype = np.dtype([(f.name, lookup_dtype(f.type).np_type) for f in fields], align=True)
     try:
         dtype = np.dtype(dtype)
-    except TypeError:
+    except (TypeError, ValueError):
+        # numpy's own dict form maps each name to a tuple, so a dict whose first value is a
+        # string (``{"pos": "FP64[3]", ...}``) raises ValueError there, not TypeError
         if isinstance(dtype, dict):
             # Allow dtypes such as `{'x': int, 'y': float}` for convenience
             dtype = np.dtype(
@@ -323,15 +301,8 @@ def register_anonymous(dtype, name=None):
             raise
     dtype = _flatten_subarrays(dtype)
     if dtype in _registry:
-        # Always use the same object, but use the latest name. The
-        # Python-side ``rv.name`` updates here, but the SuiteSparse-side
-        # ``GxB_JIT_C_NAME`` and ``GxB_JIT_C_DEFINITION`` are one-shot
-        # (return ``GrB_ALREADY_SET``) and keep the first name.
-        # ``rv._jit_c_info`` was pinned at first registration; that's what
-        # ``jit_c_name`` and ``jit_c_definition`` return, so introspection
-        # reflects what SS actually has regardless of any later Python-side
-        # rename. JIT codegen for ops on this UDT also uses the pinned name
-        # (see ``_make_jit_c_definition``).
+        # Always use the same object, but use the latest name. Its C name stays
+        # the first one (``DataType._jit_c_info``).
         rv = _registry[dtype]
         if name is not None:
             if rv.gb_name is not None and name != rv.gb_name:
@@ -342,7 +313,8 @@ def register_anonymous(dtype, name=None):
         raise ValueError("dtype must not allow Python objects")
     if dtype.itemsize == 0:
         # SuiteSparse 7 takes a size of 0 as 1 (later versions raise InvalidValue), which
-        # made ``str`` a UDT that holds nothing, so a str literal was not a TypeError
+        # would make ``str`` a UDT that holds nothing, so a str literal would not raise
+        # TypeError
         raise ValueError(f"dtype must not have a size of 0: {dtype}")
     # Before GrB_Type_new, so a dtype Numba cannot type does not leave a GrB_Type behind
     numba_type = _numba_type(dtype) if _has_numba else None
@@ -386,7 +358,6 @@ def register_anonymous(dtype, name=None):
     rv = DataType(name, gb_obj, None, f"uint8_t[{dtype.itemsize}]", numba_type, dtype)
     _registry[gb_obj] = rv
     _registry[dtype] = rv
-    # Set JIT C type definition so SuiteSparse can JIT-compile kernels for this UDT.
     _set_udt_jit_c_definition(rv)
     return rv
 
@@ -651,11 +622,9 @@ def unify(type1, type2, *, is_left_scalar=False, is_right_scalar=False):
     unify(BOOL, UINT16) -> UINT16
     unify(FP32, INT32) -> FP64
 
-    ``is_left_scalar`` and ``is_right_scalar`` no longer change the result. A
-    Python number is typed before it gets here (``literals._literal_operand``), and
-    a typed scalar promotes as any operand does, as numpy 2 promotes it. They
-    used to stand the scalar in as a 0-d array of value 0, which numpy 1 typed
-    by value, so ``int8_vec + 300`` wrapped there.
+    ``is_left_scalar`` and ``is_right_scalar`` are ignored: a Python number is
+    typed before it gets here (``literals._literal_operand``), and a typed
+    scalar promotes as any operand does, as numpy 2 promotes it.
     """
     if type1 is type2:
         return type1
@@ -812,7 +781,7 @@ def _dtype_to_explicit_dict(np_type):
     ``{names, formats, offsets, itemsize}`` dict whose nested ``formats`` may
     be further nested dicts; array dtypes become a ``(base_str, shape)``
     tuple. The result round-trips through ``np.dtype(literal_eval(s))``
-    without ever using ``aligned=True``, so the original byte layout is
+    without ever using ``align=True``, so the original byte layout is
     preserved verbatim even for the aligned-outer / packed-inner cases.
     """
     if np_type.names is not None:

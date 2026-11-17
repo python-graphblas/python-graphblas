@@ -1,4 +1,4 @@
-# Checks the CI dependency pools in scripts/ci_pick_versions.py against the world.
+# Checks the CI dependency pools in scripts/ci_pick_versions.py against PyPI and conda-forge.
 #
 # `ci_pick_versions.py --validate` runs in pre-commit and proves the picker agrees with
 # the constraints it documents. It cannot notice when a constraint has drifted from

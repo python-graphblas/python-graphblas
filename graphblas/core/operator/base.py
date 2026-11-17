@@ -161,13 +161,8 @@ def _call_op(op, left, right=None, thunk=None, **kwargs):
     )
 
 
-# Maps ``opclass`` to the SuiteSparse C type name SS allocates for it.
-# ``IndexBinaryOp`` is in the GxB_ namespace (SS-specific, added in 9.4);
-# the rest are GrB_. ``SelectOp`` is implemented on top of
-# ``GrB_IndexUnaryOp`` (BOOL-returning), so its handle frees through the
-# same ``GrB_IndexUnaryOp_free``. Used by ``TypedOpBase.__del__`` to
-# synthesize the pointer cell for ``<C type>_free``, and by
-# ``udf._finalize_udt_op`` to call ``<C type>_new``.
+# The C type of each opclass's handle, for ``<C type>_new`` (``udf._finalize_udt_op``)
+# and ``<C type>_free`` (``TypedOpBase.__del__``). A SelectOp is a GrB_IndexUnaryOp.
 _GB_OBJ_C_TYPENAME = {
     "UnaryOp": "GrB_UnaryOp",
     "BinaryOp": "GrB_BinaryOp",
@@ -192,10 +187,9 @@ class TypedOpBase:
         "_gb_obj_owner",
         "__weakref__",
     )
-    # Subclasses whose ``gb_obj`` was allocated via ``GrB_<Type>_new`` /
-    # ``GxB_<Type>_new`` (TypedUser*Op, _BoundIndexBinaryOp) override this so
-    # ``__del__`` frees the SuiteSparse handle. Built-in typed ops point at
-    # SuiteSparse's permanent built-in singletons and must never free.
+    # True for the typed ops that allocate their ``gb_obj`` (``TypedUser*Op``,
+    # ``_BoundIndexBinaryOp``), so ``__del__`` frees it. A built-in typed op points
+    # at a SuiteSparse built-in, which must never be freed.
     _owns_gb_obj = False
 
     def __init__(self, parent, name, type_, return_type, gb_obj, gb_name, dtype2=None):
@@ -206,25 +200,20 @@ class TypedOpBase:
         self.gb_obj = gb_obj
         self.gb_name = gb_name
         self._type2 = dtype2
-        # ``(c_name, c_definition)`` when SuiteSparse JIT-compiled a kernel
-        # for this typed op; ``None`` for built-in ops and for UDT ops with
-        # no JIT path.
+        # ``(c_name, c_definition)`` when this op has a C definition for the JIT, else None
         self._jit_c_info = None
-        # Set when ``gb_obj`` is borrowed from another typed op rather than
-        # allocated here (``SelectOp._from_indexunary``). Storing the owner
-        # both suppresses our free and keeps the handle alive as long as we
-        # point at it; disclaiming ownership without naming an owner would
-        # leave this op holding a dangling handle.
+        # The typed op whose ``gb_obj`` this one borrows (``SelectOp._from_indexunary``).
+        # Holding the owner, not only skipping the free, keeps the handle alive.
         self._gb_obj_owner = None
 
     @property
     def jit_c_name(self):
-        """The C symbol name SuiteSparse uses for this op's JIT kernel, or ``None``."""
+        """The C name SuiteSparse knows this op by, or ``None`` when it has no C definition."""
         return self._jit_c_info[0] if self._jit_c_info is not None else None
 
     @property
     def jit_c_source(self):
-        """C source SuiteSparse JIT-compiles for this op, or ``None`` when no JIT kernel exists."""
+        """The C definition of this op that the JIT compiles, or ``None`` when it has none."""
         return self._jit_c_info[1] if self._jit_c_info is not None else None
 
     def __repr__(self):
@@ -247,40 +236,30 @@ class TypedOpBase:
         return (getitem, (self.parent, (self.type, self._type2)))
 
     def __del__(self):
-        # Free the SuiteSparse handle we allocated. Built-in typed ops alias
-        # SuiteSparse's permanent built-in singletons and must never free.
-        # Mirrors the ``Matrix.__del__`` / ``Vector.__del__`` pattern.
         if not type(self)._owns_gb_obj:
             return
-        # A borrowed handle belongs to ``_gb_obj_owner``, which we keep alive.
-        # ``getattr`` guards the case where ``__init__`` raised before the slot
-        # was set.
+        # ``getattr``, in case ``__init__`` raised before the slot was set
         if getattr(self, "_gb_obj_owner", None) is not None:
             return
         gb_obj = getattr(self, "gb_obj", None)
         if gb_obj is None or lib is None or ffi is None:
-            # Interpreter shutdown can clear ``lib`` / ``ffi`` before
-            # finalizers run; SS will clean up the handles at process exit.
+            # Interpreter shutdown can clear ``lib`` and ``ffi`` before finalizers run
             return
         c_type_name = _GB_OBJ_C_TYPENAME.get(self.opclass)
         if c_type_name is None:  # pragma: no cover (defensive)
             return
         free_fn = getattr(lib, f"{c_type_name}_free", None)
         if free_fn is None:
-            # ``GxB_IndexBinaryOp_free`` is absent on SS < 9.4; that build
-            # also can't allocate one in the first place, so this path is
-            # unreachable in practice but guarded for safety.
+            # No ``GxB_IndexBinaryOp_free`` before SuiteSparse 9.4, which cannot make one either
             return
-        # ``GrB_<Type>_free`` takes a pointer-to-pointer (sets ``*p = NULL``
-        # after free). Synthesize a cell pointing at our handle and call it.
+        # ``<C type>_free`` takes a pointer to the handle
         free_fn(ffi.new(f"{c_type_name}*", gb_obj))
 
 
 class _BinaryopJitDelegate:
-    """Mixin for ops that don't own a JIT kernel; defer introspection to ``binaryop``.
+    """Mixin for typed Monoids and Semirings, whose C name and definition are their BinaryOp's.
 
-    Monoids and semirings reuse the binary op's JIT kernel. The setter
-    accepts ``None`` so ``TypedOpBase.__init__``'s slot init is a no-op.
+    The setter ignores the value, so ``TypedOpBase.__init__`` can set ``_jit_c_info``.
     """
 
     __slots__ = ()
@@ -291,8 +270,6 @@ class _BinaryopJitDelegate:
 
     @_jit_c_info.setter
     def _jit_c_info(self, value):
-        # No-op so ``TypedOpBase.__init__``'s ``self._jit_c_info = None``
-        # slot-init succeeds. The kernel lives on ``binaryop``.
         pass
 
 
@@ -304,9 +281,10 @@ class ParameterizedUdf:
     __slots__ = "name", "__call__", "_anonymous", "__weakref__"
     is_positional = False
     _custom_dtype = None
-    # Subclasses set this to the OpBase subclass they parameterize (e.g.,
-    # ``ParameterizedUnaryOp._op_class = UnaryOp``). Assigned after the
-    # OpBase subclass is defined to avoid an import-order cycle.
+    # The OpBase subclass this parameterizes, for ``__reduce__`` and ``_deserialize``:
+    # UnaryOp for ParameterizedUnaryOp, and so on. unary.py, binary.py, indexunary.py,
+    # select.py and indexbinary.py set it after defining that class. ParameterizedMonoid
+    # and ParameterizedSemiring pickle on their own and leave it None.
     _op_class = None
 
     def __init__(self, name, anonymous):
@@ -320,10 +298,7 @@ class ParameterizedUdf:
         raise NotImplementedError
 
     def __reduce__(self):
-        # The namespace prefix (``unary``, ``binary``, ...) comes from the
-        # OpBase subclass each parameterized op wraps. Standard ops pickle by
-        # name; user-registered ones pickle the reduce tuple and re-register
-        # on load via ``_deserialize`` (which dispatches through ``_op_class``).
+        # A standard op pickles by name; any other is registered again when unpickled
         name = f"{self._op_class._modname}.{self.name}"
         if not self._anonymous and name in _STANDARD_OPERATOR_NAMES:
             return name
@@ -331,11 +306,7 @@ class ParameterizedUdf:
 
     @classmethod
     def _deserialize(cls, name, func, anonymous, is_udt=False):
-        """Re-register a parameterized UDF on unpickle, or reuse if already present.
-
-        Shared by the five ``Parameterized*Op`` subclasses; each sets
-        ``_op_class`` to the matching OpBase subclass for the dispatch below.
-        """
+        """Register a parameterized UDF when unpickled, or return the one named ``name``."""
         op_cls = cls._op_class
         if anonymous:
             return op_cls.register_anonymous(func, name, parameterized=True, is_udt=is_udt)
@@ -557,28 +528,21 @@ class OpBase:
 
     @classmethod
     def _deserialize_udf(cls, name, orig_func, is_udt):
-        """Re-register a named UDF on unpickle, or reuse if already present.
-
-        Shared by the five UDF-capable subclasses (UnaryOp, BinaryOp,
-        IndexUnaryOp, SelectOp, IndexBinaryOp), all of which use the
-        default ``__reduce__`` below.
-        """
+        """Register a UDF when unpickled, or return the one already registered as ``name``."""
         if (rv := cls._find(name)) is not None:
             return rv
         return cls.register_new(name, orig_func, is_udt=is_udt)
 
     @classmethod
     def _deserialize_anon_udf(cls, func, name, is_udt):
-        """Re-register an anonymous UDF on unpickle."""
+        """Register an anonymous UDF when unpickled."""
         return cls.register_anonymous(func, name, is_udt=is_udt)
 
     def __reduce__(self):
-        """Default ``__reduce__`` for UDF-capable subclasses.
+        """Pickle a standard op by name, and an op made from a UDF by its function.
 
-        Assumes the instance has ``orig_func`` and ``_is_udt`` attributes (all
-        five UDF-capable subclasses do). ``Monoid``, ``Semiring``, and
-        ``Aggregator`` define their own ``__reduce__`` because their pickle
-        shape differs (they hold a binary op + identity, etc.).
+        For the op classes that have ``orig_func`` and ``_is_udt``. Monoid and Semiring
+        define their own.
         """
         if self._anonymous:
             if hasattr(self.orig_func, "_parameterized_info"):
@@ -601,7 +565,7 @@ _builtin_to_op = {}  # Populated in .utils
 
 def find_opclass(gb_op):
     if isinstance(gb_op, OpBase):
-        # A subclass may name the class it is (``ibo(theta)`` is a BinaryOp).
+        # An op can report another class: a bound IndexBinaryOp, ``ibo(theta)``, is a BinaryOp
         opclass = getattr(gb_op, "opclass", type(gb_op).__name__)
     elif isinstance(gb_op, TypedOpBase):
         opclass = gb_op.opclass

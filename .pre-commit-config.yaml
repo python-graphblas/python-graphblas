@@ -113,8 +113,8 @@ repos:
   # `pyroma` may help keep our package standards up to date if best practices change.
   # This is probably a "low value" check though and safe to remove if we want faster pre-commit.
   - repo: https://github.com/regebro/pyroma
-    # 5.1 is still in beta (5.1b2) and a pre-release pin defeats pre-commit.ci's
-    # autoupdate "avoid prereleases" logic; stay on 5.0.1 until 5.1 GAs.
+    # Stay on 5.0.1 until 5.1 is released (5.1b2 is a beta): a pre-release pin defeats
+    # pre-commit.ci's autoupdate, which avoids pre-releases.
     rev: "5.0.1"
     hooks:
       - id: pyroma
@@ -166,13 +166,13 @@ repos:
     rev: v0.5.0
     hooks:
       - id: pysentry
-        # Run when pyproject.toml or this file changes rather than at every commit, where
-        # it fails offline. security.yml also runs it weekly.
+        # Run only when pyproject.toml or this file changes, since it fails offline.
+        # security.yml also runs it weekly.
         always_run: false
         files: ^(pyproject\.toml|\.pre-commit-config\.yaml)$
         # Audit the floors in pyproject.toml. Without `--direct-only`, pysentry resolves the
-        # newest versions with uv (which the hook installs), and no longer sees a floor that
-        # allows a vulnerable release.
+        # newest versions with uv (which the hook installs), and misses a floor that allows
+        # a vulnerable release.
         args:
           - --format=human
           - --fail-on=low
@@ -199,16 +199,16 @@ repos:
         language: pygrep
         entry: "^permalink:.*_.*"
       - id: disallow-ai-dashes
-        # AI-ism: em-dash, en-dash, " -- " separator, or "word--jam".
-        # See ``scripts/find_aiisms.sh`` for the manual / branch-diff variant
-        # and ``ai/CLAUDE.md`` "Writing Style" for the rationale.
+        # Prose here uses plain ASCII punctuation: no em-dash, en-dash, or "--" as a
+        # dash (" -- " or "word--word"). scripts/find_aiisms.sh checks the same, and
+        # stray unicode too, in the files a branch changes.
         name: Disallow em/en-dash and ' -- ' as a separator
         language: pygrep
         entry: "—|–| -- |[A-Za-z0-9]--"
         types_or: [python, rst, markdown, toml, yaml, shell]
-        # README intentionally uses en-dash. docs/conf.py + jit_diagnostics.py
-        # use ``# --- Section ---`` banner comments / print output, which the
-        # regex also matches. find_aiisms.sh contains the matching regex.
+        # README.md uses en-dashes on purpose. docs/conf.py and jit_diagnostics.py have
+        # "--" banners in comments and printed output, which the pattern also matches,
+        # and find_aiisms.sh and this file contain the pattern itself.
         exclude: |
           (?x)^(
             README\.md
@@ -217,9 +217,8 @@ repos:
             | scripts/find_aiisms\.sh
             | \.pre-commit-config\.yaml
           )$
-      # Stress-tests every combination the CI dependency picker can produce against
-      # the constraints it documents. ~3s for 160k combinations, and it only runs
-      # when the picker itself changes.
+      # Checks random picks of the CI dependency picker against its rules, in about
+      # 3 seconds. It runs only when the picker changes.
       - id: ci-pick-versions
         name: Validate CI dependency version picker
         entry: python scripts/ci_pick_versions.py --validate

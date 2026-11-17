@@ -1,4 +1,6 @@
 import pickle
+import shutil
+import sys
 
 import numpy as np
 import pytest
@@ -88,9 +90,8 @@ def test_untyped_call_is_typed_when_it_runs():
 
     Theta is typed as an IndexUnaryOp's thunk is: a Python int is INT64 and a
     float FP64, a numpy scalar or a Scalar keeps its type, and the default,
-    False, changes no type. Before, the op had theta's type alone: ``op()``
-    was BOOL, so ints became True; ``op(2)`` truncated floats to INT64; and
-    ``op(np.int8(2))`` computed in INT8, where 300.0 became 127 and wrapped.
+    False, changes no type. Regression: the op took theta's type alone, so
+    ``op()`` turned ints into True and ``op(2)`` truncated floats.
     """
 
     def upper_from_x(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
@@ -116,7 +117,7 @@ def test_untyped_call_is_typed_when_it_runs():
         binop = wsum(theta)
         assert u.ewise_mult(w, binop).new().isequal(expected, check_dtype=True)
         assert binop(u & w).new().isequal(expected, check_dtype=True)
-    # One op runs at each type it meets
+    # One bound op runs at the types of each operation's inputs
     i8 = Vector.from_coo([0, 1], [1, 100], dtype="INT8")
     binop = wsum(1)
     assert u.ewise_mult(w, binop).new().isequal(Vector.from_coo([0, 1], [3.75, 301.0]))
@@ -124,7 +125,7 @@ def test_untyped_call_is_typed_when_it_runs():
     assert result.isequal(Vector.from_coo([0, 1], [2, 200], dtype="INT64"), check_dtype=True)
     for binop in [wsum(), wsum(np.int8(1))]:
         assert i8.ewise_mult(i8, binop).new().dtype == dtypes.INT8
-    # A named type is the op's type, as before
+    # A named type fixes the op's type
     for binop in [
         wsum["INT64"](2),
         wsum(2, dtype="INT64"),
@@ -138,7 +139,7 @@ def test_untyped_call_is_typed_when_it_runs():
     rec_udt = dtypes.register_anonymous(np.dtype([("theta_a", np.int64)]), "_UntypedThetaRec")
     with pytest.raises(KeyError, match="weighted does not work with _UntypedThetaRec"):
         wsum(Scalar.from_value((1,), rec_udt))
-    # Binding when it runs uses theta's value from when it was given
+    # The op is typed when it runs, but theta's value is the one it was given
     theta = Scalar.from_value(2.0)
     binop = wsum(theta)
     theta.value = 100.0
@@ -195,6 +196,22 @@ def test_ewise_add():
     binop = op(10)
     C = A.ewise_add(B, binop).new()
     assert list(C.to_coo()[2]) == [18, 19]
+
+
+def test_ewise_union():
+    """A bound op, untyped or typed, works in ``ewise_union``, defaults and indices included."""
+
+    def place(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+        return x * 100 + y * 10 + ix + theta
+
+    op = indexbinary.register_anonymous(place)
+    v = Vector.from_coo([0, 2], [1, 2], size=3)
+    w = Vector.from_coo([1, 2], [3, 4], size=3)
+    # Index 0 has only v, so y is the right default 8; index 1 has only w, so x is 7.
+    expected = [1 * 100 + 8 * 10 + 0, 7 * 100 + 3 * 10 + 1, 2 * 100 + 4 * 10 + 2]
+    assert v.ewise_union(w, op(0), 7, 8).new().to_coo()[1].tolist() == expected
+    r = v.ewise_union(w, op["INT64"](1), 7, 8).new()
+    assert r.to_coo()[1].tolist() == [x + 1 for x in expected]
 
 
 def test_default_theta():
@@ -254,10 +271,8 @@ def test_parameterized():
     assert C.to_coo()[2][0] == 26  # (3+5)*2 + 10 = 26
 
 
-# Module-level so pickle can serialize the function reference. IBO
-# ``__reduce__`` for user-registered ops returns a tuple containing the
-# original function; pickling needs the function to be globally importable
-# (i.e., not a closure / local function).
+# Module-level: an op registered from a function pickles the function by
+# reference, so it must be importable (not a closure or a local function).
 def _ibo_add_theta(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
     return x + y + theta
 
@@ -277,7 +292,7 @@ def test_pickle_registered():
         typed2 = pickle.loads(pickle.dumps(typed))
         assert typed2.name == typed.name
 
-        # Unpickled op must actually run, not just carry the right name.
+        # The unpickled op must run, not only carry the right name.
         bound = op2[int](7)
         A = Matrix.from_coo([0, 1], [0, 1], [3, 11])
         B = Matrix.from_coo([0, 1], [0, 1], [5, 1])
@@ -304,14 +319,11 @@ def test_pickle_bound():
 
 
 def test_pickle_bound_array_udt_theta():
-    """Bound IBO with an array-UDT theta value round-trips through pickle.
+    """A bound IndexBinaryOp with an array-UDT theta round-trips through pickle.
 
-    Regression: ``_BoundIndexBinaryOp.__reduce__`` stored ``_theta`` as the
-    raw numpy array. On unpickle, ``_rebind_indexbinaryop`` passed it back to
-    ``TypedBuiltinIndexBinaryOp.__call__``, which called
-    ``Scalar.from_value(theta)`` with no dtype; that crashed inside the
-    multi-dim ndarray ``Scalar.value`` setter. The fix wraps the value as a
-    typed Scalar in ``_rebind_indexbinaryop`` when the thunk type is a UDT.
+    The pickle stores theta as a numpy array, and ``_rebind_indexbinaryop``
+    makes it a Scalar of the UDT. Regression: the array went to
+    ``Scalar.from_value`` with no dtype, which failed.
     """
     from graphblas import dtypes
 
@@ -323,11 +335,7 @@ def test_pickle_bound_array_udt_theta():
         theta_scalar.value = np.array([1, 2, 3], dtype=np.int64)
         bound = op[arr_udt](theta_scalar)
         bound2 = pickle.loads(pickle.dumps(bound))
-        # ``_theta`` round-trips bit-identically.
         assert np.array_equal(bound2._theta, np.array([1, 2, 3], dtype=np.int64))
-        # The unpickled bound op is a fresh ``_BoundIndexBinaryOp`` wrapping a
-        # different ``GrB_BinaryOp`` pointing at the same kernel; pin the
-        # introspection state that previously crashed.
         assert bound2.parent is bound.parent
         assert bound2.type is arr_udt
     finally:
@@ -335,13 +343,10 @@ def test_pickle_bound_array_udt_theta():
 
 
 def test_bind_raw_array_udt_theta():
-    """A raw (non-Scalar) array-UDT theta is bound using the known thunk dtype.
+    """A numpy array theta binds as the array UDT: the typed op's thunk type, or ``dtype=``.
 
-    Regression: the ``not isinstance(theta, Scalar)`` branch of the IBO
-    ``__call__`` passed the raw value to ``Scalar.from_value`` with no dtype,
-    which inferred a scalar element type and crashed on the multi-dim ndarray.
-    The typed op now supplies its thunk dtype; the untyped op uses the explicit
-    ``dtype=`` argument.
+    Regression: the array went to ``Scalar.from_value`` with no dtype, which
+    inferred a scalar element type and failed.
     """
     from graphblas import dtypes
 
@@ -363,12 +368,10 @@ def test_bind_raw_array_udt_theta():
 
 
 def test_array_udt_udf_shape_is_checked():
-    """An IBO whose UDF builds a wrong-shape array is rejected when typed.
+    """An IndexBinaryOp whose UDF returns an array of the wrong shape raises when typed.
 
-    The same guard the binary and unary paths get. Numba's ``Array`` type
-    carries ``ndim`` but not extents, so the mismatch is not a type error; left
-    to the wrapper it raises inside the cfunc, where Numba prints the traceback
-    and returns, leaving the element as SuiteSparse found it.
+    As for a UnaryOp or BinaryOp; ``test_udt_array_udf_shape_errors`` in
+    ``test_op.py`` says why the shape is checked then.
     """
     # A shape of its own: ``register_anonymous`` caches by numpy dtype, so
     # sharing one with another test would hand back that test's DataType.
@@ -421,7 +424,7 @@ def test_bind_raw_udt_theta_without_dtype():
             result = v.ewise_mult(v, op(theta)).new()
             assert result.dtype == arr_udt
             assert result[0].new().value.tolist() == [10, 20, 30]
-        # An int64 or float64 array keeps its type, where it would have become int32
+        # An int64 or float64 array keeps its type rather than taking v's int32
         result = v.ewise_mult(v, op(np.array([10, 20, 2**40]))).new()
         assert result.dtype.np_type == np.dtype((np.int64, (3,)))
         assert result[0].new().value.tolist() == [10, 20, 2**40]
@@ -432,7 +435,8 @@ def test_bind_raw_udt_theta_without_dtype():
             op((10, 20, 30))
         with pytest.raises(TypeError, match="Cannot infer a dtype for theta"):
             op(np.array([True, False]))
-        # Its array UDT is shared, under the name it got first (another test's)
+        # Without is_udt the op takes no UDT theta. The match stops before the UDT's
+        # name, which is the one INT64[3] was first registered under, maybe by another test.
         with pytest.raises(KeyError, match="_ibo_add_theta does not work with "):
             indexbinary.register_anonymous(_ibo_add_theta)(np.array([1, 2, 3]))
     finally:
@@ -443,11 +447,11 @@ def test_untyped_bind_theta_keeps_its_type_with_is_udt():
     """With ``is_udt=True``, ``op(theta)`` compiles for x, y and theta as they are typed.
 
     SuiteSparse gives theta a type of its own (``GxB_IndexBinaryOp_new`` takes
-    ``theta_type``), so theta is not converted: 0.5 stays 0.5 beside INT64
-    inputs, and Numba types the result as it would for those three types.
-    Before, theta took y's type when the op ran. Naming two types,
-    ``op[X, Y](theta)``, still gives theta y's type and casts it, and
-    ``op[X, Y, T](theta)`` names all three.
+    ``theta_type``), so theta is not cast: with INT64 inputs 0.5 stays 0.5, and
+    Numba types the result as it would for those three types. Naming two types,
+    ``op[X, Y](theta)``, gives theta y's type and casts it, and
+    ``op[X, Y, T](theta)`` names all three. Regression: theta took y's type when
+    the op ran.
     """
     op = indexbinary.register_anonymous(_ibo_add_theta, is_udt=True)
     v = Vector.from_coo([0, 1], [1, 2])
@@ -487,7 +491,7 @@ def test_untyped_bind_theta_keeps_its_type_with_is_udt():
     bound2 = pickle.loads(pickle.dumps(bound))
     assert bound2._theta_type == dtypes.FP64
     assert v.ewise_mult(v, bound2).new().isequal(result, check_dtype=True)
-    bound2 = pickle.loads(pickle.dumps(op["INT64", "FP64"](1)))  # was op["INT64"](1)
+    bound2 = pickle.loads(pickle.dumps(op["INT64", "FP64"](1)))  # theta takes y's type
     assert (bound2.type, bound2._type2, bound2._theta_type) == (
         dtypes.INT64,
         dtypes.FP64,
@@ -502,14 +506,9 @@ def test_untyped_bind_theta_keeps_its_type_with_is_udt():
 
 
 def test_pickle_bound_record_udt_theta():
-    """Bound IBO with a record-UDT theta value round-trips through pickle.
+    """A bound IndexBinaryOp with a record-UDT theta round-trips through pickle.
 
-    Companion to :func:`test_pickle_bound_array_udt_theta` for the record
-    flavor of UDT; the array case was the one that crashed before the
-    ``_rebind_indexbinaryop`` Scalar-wrap fix, and the record case worked
-    only because ``_theta`` happened to be a 0-d ``np.void`` that
-    ``Scalar.value =`` accepted. Pin the contract for both shapes so a
-    regression in either is loud.
+    The record counterpart of ``test_pickle_bound_array_udt_theta``.
     """
     from graphblas import dtypes
 
@@ -532,67 +531,61 @@ def test_pickle_bound_record_udt_theta():
 
 
 @pytest.mark.slow
+@pytest.mark.skipif(
+    sys.platform == "win32" or shutil.which("ps") is None,
+    reason="reads the resident set size with ps",
+)
 def test_bound_ibo_memory_bounded():
-    """Regression: ``iop(theta)`` used to leak one ``GrB_BinaryOp`` per call.
+    """Binding an IndexBinaryOp in a loop frees each bound op's ``GrB_BinaryOp``.
 
-    Bound IBOs are never cached, so a loop that re-binds with different
-    theta values leaks unboundedly without the ``TypedOpBase.__del__`` free.
-    50k bound IBOs are well above the noise floor for the leak (each is
-    several hundred bytes of SS state plus a python-level wrapper); RSS
-    growth should stay below a few MB after GC drops them.
+    Bound ops are not cached, so ``TypedOpBase.__del__`` must free each one.
+    Regression: ``iop(theta)`` leaked one ``GrB_BinaryOp`` per call.
     """
     import gc
-    import sys
+    import os
+    import subprocess
 
-    pytest.importorskip("resource")
-    import resource
+    def rss_mb():
+        # The resident set size now; ``ps`` gives KiB on Linux and macOS. Not
+        # ``ru_maxrss``: that is the peak, which an earlier test that freed its
+        # memory leaves above the current size, hiding growth.
+        pid = str(os.getpid())
+        ps = subprocess.run(["ps", "-o", "rss=", "-p", pid], capture_output=True, check=True)
+        return int(ps.stdout) / 1024
 
     if hasattr(indexbinary, "leak_test_bound_ibo_op"):
         delattr(indexbinary, "leak_test_bound_ibo_op")
     indexbinary.register_new("leak_test_bound_ibo_op", _ibo_add_theta)
     op = indexbinary.leak_test_bound_ibo_op
     try:
-        # ``ru_maxrss`` is bytes on macOS, KB on Linux.
-        scale = 1024 if sys.platform.startswith("linux") else 1024 * 1024
-
-        def rss_mb():
-            return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / scale
-
-        # Warm up to populate typed-op cache; first call also touches the
-        # numba sample-types path.
+        # Warm up the typed-op cache; the first call also compiles with Numba.
         for _ in range(100):
             _ = op[int](0)
         gc.collect()
         before = rss_mb()
-        for i in range(50_000):
+        for i in range(100_000):
             _ = op[int](i)
         gc.collect()
-        after = rss_mb()
-        # 50k leaked GrB_BinaryOps were on the order of tens of MB before the
-        # fix; under the fix we expect single-digit MB.
-        assert (
-            after - before
-        ) < 25.0, f"bound-IBO leak: RSS grew {after - before:.1f} MB over 50k binds"
+        growth = rss_mb() - before
+        # A leaked bound op keeps about 290 bytes, so leaking every one grows RSS by
+        # about 28 MB (macOS, SuiteSparse 10.5); freeing them keeps the growth near 0.
+        # The limit fails a leak of more than about 100 bytes per bind.
+        assert growth < 10, f"bound-IBO leak: RSS grew {growth:.1f} MB over 100,000 binds"
     finally:
         delattr(indexbinary, "leak_test_bound_ibo_op")
 
 
 def test_bound_ibo_jit_introspection_returns_none():
-    """Bound IBOs are user-defined and don't go through the built-in JIT C
-    codegen path, so the introspection properties must report ``None``
-    without crashing. Regression for an earlier construction path that
-    used ``__new__`` directly and skipped the inherited ``_jit_c_info``
-    slot's default-None initialization. Also checks the unpickled instance,
-    which goes through a different construction path (``_rebind_indexbinaryop``
-    -> ``TypedBuiltinIndexBinaryOp.__call__``).
+    """``jit_c_name`` and ``jit_c_source`` are None for a bound user-defined op, also unpickled.
+
+    A user-defined IndexBinaryOp has no C definition. The unpickled op is built
+    another way, by ``_rebind_indexbinaryop``. Regression: a bound op made with
+    ``__new__`` lacked ``_jit_c_info``, so these properties raised.
     """
     indexbinary.register_new("_jit_introspect_test_op", _ibo_add_theta)
     try:
         op = indexbinary._jit_introspect_test_op
         bound = op[int](3)
-        # User IBOs don't go through the built-in JIT C codegen path, so these
-        # are expected to be ``None``; the introspection properties must not
-        # crash either way.
         assert bound.jit_c_name is None
         assert bound.jit_c_source is None
         bound2 = pickle.loads(pickle.dumps(bound))
@@ -615,8 +608,7 @@ def test_bad_type():
 def test_type_the_op_does_not_take():
     """``R in op`` is False and ``op[R]`` raises KeyError, as for an IndexUnaryOp.
 
-    Both raised AttributeError: IndexBinaryOp had no ``is_positional``, which
-    ``op[R]`` reads for a type the op does not have.
+    Regression: both raised AttributeError.
     """
 
     def add_vals(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
@@ -665,8 +657,7 @@ def test_with_accumulator():
 def test_reduce_refuses_a_bound_op():
     """A bound IndexBinaryOp gets the TypeError reduce gives a BinaryOp that is in no Monoid.
 
-    It raised AttributeError: neither the bound op nor its IndexBinaryOp had
-    ``monoid``, which reduce and its error message read.
+    Regression: it raised AttributeError.
     """
 
     def add_vals(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
@@ -680,7 +671,7 @@ def test_reduce_refuses_a_bound_op():
 
 
 def test_ewise_with_bound_binop():
-    """Confirm bound IndexBinaryOp works in all ewise operations."""
+    """A bound op from a typed IndexBinaryOp works in ``ewise_mult``."""
 
     def mul_plus(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
         return x * y + theta
@@ -750,19 +741,14 @@ def test_udt_tuple_return():
 
 
 def test_udt_matrix_ewise_with_bound_ibo():
-    """End-to-end: register an IBO on a record UDT, bind a theta, and use it
-    as the binary op of ``Matrix.ewise_mult`` and ``Matrix.ewise_add``.
+    """A bound IndexBinaryOp on a record UDT works in ``Matrix.ewise_mult`` and ``ewise_add``.
 
-    The matrix path is more interesting than the vector path because the
-    IBO receives both row and column indices for each operand. This also
-    exercises the full ``is_udt`` codegen with two-field-tuple returns on
-    Matrix-shaped inputs.
+    On a Matrix the op gets a row and a column index for each operand.
     """
     record_dtype = np.dtype([("a", np.int64), ("b", np.int64)], align=True)
     udt = dtypes.register_anonymous(record_dtype, "ibo_mxm_udt")
 
     def weighted_add(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
-        # Field a: x.a * theta.a + y.a; Field b: x.b + y.b + ix + jy
         return (x["a"] * theta["a"] + y["a"], x["b"] + y["b"] + ix + jy)
 
     ibo = indexbinary.register_anonymous(weighted_add, is_udt=True)
@@ -790,25 +776,21 @@ def test_udt_matrix_ewise_with_bound_ibo():
     expected[2, 0] = (53, 11)
     assert C.isequal(expected)
 
-    # ewise_add path with the same bound IBO. ewise_add applies the op only where
-    # both sides are present; pattern is the same as ewise_mult here.
+    # A and B have the same pattern, so ewise_add gives the same result.
     D = A.ewise_add(B, binop).new()
     assert D.isequal(expected)
 
 
 def _semiring_with_bound_ibo_factory(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
-    # Module-level so pickle can find it; used by both the semiring and the
-    # cross-pickle test below.
+    # Module-level so pickle can find it; used by the Semiring tests below.
     return x * y + theta * (ix + jy)
 
 
 def test_semiring_from_bound_ibo_mxm():
-    """A bound IndexBinaryOp may serve as the multiplier of a Semiring.
+    """A bound IndexBinaryOp can be the multiplier of a Semiring used in ``mxm``.
 
-    Per SS:GraphBLAS, ``GxB_BinaryOp_new_IndexOp`` turns an IBO + theta into
-    a regular ``GrB_BinaryOp``, which any Semiring can use as its multiplier.
-    Verify the end-to-end path: build a Semiring with ``monoid.plus`` plus a
-    bound IBO, and use it as ``A.mxm(B, sr)``.
+    ``GxB_BinaryOp_new_IndexOp`` makes an IndexBinaryOp and theta into a
+    ``GrB_BinaryOp``, which a Semiring can use as its multiplier.
     """
     from graphblas import monoid as monoid_module
     from graphblas import semiring as semiring_module
@@ -817,30 +799,20 @@ def test_semiring_from_bound_ibo_mxm():
     bound = ibo[dtypes.INT64](theta=2)
     sr = semiring_module.register_anonymous(monoid_module.plus, bound)
 
-    # Diagonal-ish A and B so we can compute the result by hand.
+    # Small A and B, so the result can be computed by hand.
     A = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [1, 2, 3, 4], dtype=dtypes.INT64)
     B = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [5, 6, 7, 8], dtype=dtypes.INT64)
     C = A.mxm(B, sr).new()
 
-    # mxm(A, B)[i, j] = sum_k f(A[i,k], i, k, B[k,j], k, j, theta=2)
-    #                = sum_k A[i,k]*B[k,j] + 2*(i + j)
-    # For [[1, 2], [3, 4]] @ [[5, 6], [7, 8]] = [[19, 22], [43, 50]]
-    # plus 2*(i + j) per inner-product term (two terms per cell):
-    #   C[0, 0] = 5 + 14 + 2*(0+0)*2 = 19      (theta term: 0 per k)
-    #   C[0, 1] = 6 + 16 + 2*(0+1)*2 = 22 + 4  = 26
-    #   C[1, 0] = 15 + 28 + 2*(1+0)*2 = 43 + 4 = 47
-    #   C[1, 1] = 18 + 32 + 2*(1+1)*2 = 50 + 8 = 58
+    # C[i, j] is the sum over k of A[i, k] * B[k, j] + 2 * (i + j). A @ B is
+    # [[19, 22], [43, 50]], and the two terms per cell add 4 * (i + j).
     assert C.dtype == dtypes.INT64
     expected = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [19, 26, 47, 58], dtype=dtypes.INT64)
     assert C.isequal(expected)
 
 
 def test_semiring_from_bound_ibo_pickle():
-    """A Semiring built from a bound IBO survives pickle round-trip.
-
-    The bound IBO already pickles (via its module-level parent op); the
-    Semiring inherits the same path.
-    """
+    """A Semiring built from a bound IndexBinaryOp round-trips through pickle."""
     from graphblas import monoid as monoid_module
     from graphblas import semiring as semiring_module
 
@@ -855,7 +827,7 @@ def test_semiring_from_bound_ibo_pickle():
 
 
 def test_semiring_from_bound_ibo_type_mismatch_errors():
-    """Monoid must accept the bound IBO's return type."""
+    """A Semiring's Monoid must take the bound IndexBinaryOp's return type."""
     from graphblas import monoid as monoid_module
     from graphblas import semiring as semiring_module
 
@@ -867,7 +839,7 @@ def test_semiring_from_bound_ibo_type_mismatch_errors():
 
 
 def test_semiring_register_anonymous_rejects_bad_binaryop():
-    """The error message points users at the bound-IBO syntax."""
+    """The error message points users at the syntax for binding an IndexBinaryOp."""
     from graphblas import monoid as monoid_module
     from graphblas import semiring as semiring_module
 
@@ -876,9 +848,7 @@ def test_semiring_register_anonymous_rejects_bad_binaryop():
 
 
 def test_semiring_from_bound_ibo_over_udt_mxm():
-    """A bound IBO over a UDT also composes into a Semiring via the
-    auto-lifted ``monoid.plus[udt]`` path.
-    """
+    """A bound IndexBinaryOp on a UDT makes a Semiring with the lifted ``monoid.plus``."""
     from graphblas import monoid as monoid_module
     from graphblas import semiring as semiring_module
 
@@ -892,8 +862,6 @@ def test_semiring_from_bound_ibo_over_udt_mxm():
     theta = Scalar.from_value(np.array((1, 0), dtype=record_dtype))
     bound = ibo[udt](theta)
 
-    # ``monoid.plus[udt]`` is auto-lifted (field-wise add); the semiring
-    # composes the bound IBO multiplier with that monoid.
     sr = semiring_module.register_anonymous(monoid_module.plus, bound)
 
     A = Matrix(udt, nrows=2, ncols=2)
@@ -924,8 +892,8 @@ def _ibo_decay(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
 def test_semiring_from_untyped_bound_ibo():
     """A Semiring from ``ibo(theta)`` is typed when it runs, by the inputs and theta.
 
-    Before, ``ibo(0.5)`` was an FP64 op, so its semiring refused INT64
-    matrices with KeyError, and ``ibo(1)`` was INT64 and refused FP64 ones.
+    Regression: the Semiring was typed by theta alone, and refused matrices of
+    another type with KeyError.
     """
     from graphblas import monoid as monoid_module
     from graphblas import semiring as semiring_module
@@ -953,12 +921,12 @@ def test_semiring_from_untyped_bound_ibo():
 def test_argmax_semiring_from_untyped_bound_ibo():
     """The SuiteSparse user guide's row argmax, with theta unused, bound with ``iop()``.
 
-    The multiplier turns ``A(i, k)`` into the pair ``(k, A(i, k))`` and a max
+    The multiplier turns ``A(i, k)`` into the pair ``(k, A(i, k))``, and a max
     monoid on pairs keeps the larger value (the smaller column on a tie). The
-    guide binds a BOOL theta because theta cannot be NULL. Here the matrix
-    holds pairs, so the UDF's tuple return takes their type. Before, ``iop()``
-    and ``iop(0)`` were ops on BOOL and INT64 values, not the matrix's pairs.
-    Theta keeps its own type, so each bind compiles the op for it.
+    guide binds a BOOL theta because theta cannot be NULL. Here the matrix's
+    elements are pairs, so the UDF's tuple return is typed as the pair UDT.
+    Theta keeps its own type, so each bind compiles the op for it. Regression:
+    ``iop()`` and ``iop(0)`` were ops on BOOL and INT64 values, not on pairs.
     """
     from graphblas import binary
     from graphblas import monoid as monoid_module
@@ -998,7 +966,7 @@ def test_dir_and_module():
     assert "register_new" in dir(indexbinary)
     assert "register_anonymous" in dir(indexbinary)
     assert "ss" in dir(indexbinary)
-    # Actually access the ss module to verify it exists (not just in __dir__)
+    # Access the ss module too; being listed in __dir__ is not enough
     ss = indexbinary.ss
     assert hasattr(ss, "_delayed")
     assert hasattr(ss, "register_new")

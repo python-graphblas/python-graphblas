@@ -21,41 +21,28 @@ except ImportError:  # pragma: no cover (NumPy < 1.26)
     except ImportError:  # NumPy 1.24 lacks it, and it is private, so it may go away
         _set_numpy_warn_if_no_mem_policy = None
 
-# Under ``pytest -n`` (xdist), give each worker its own ``GRAPHBLAS_CACHE_PATH``
-# so concurrent JIT compiles within a single session don't race on the same
-# ``.c``/``.dylib`` paths. SuiteSparse reads this env var at first GraphBLAS
-# init; it must be set before that init runs, or SS takes the unset
-# (HOME-derived) default. ``import graphblas`` above does not trigger
-# init (it's lazy), so setting it here is in time.
+# Under ``pytest -n`` (xdist), give each worker its own JIT cache, so workers
+# compiling the same kernel at once do not write the same files. SuiteSparse
+# reads ``GRAPHBLAS_CACHE_PATH`` when GraphBLAS initializes, and
+# ``import graphblas`` does not initialize it, so setting it here is in time.
 #
-# The path is stable per worker id (``gw0``, ``gw1``, ...) and persistent
-# across pytest invocations (not session-scoped). This way the JIT cache
-# builds up over successive runs and most kernels are dlopen'd instead of
-# recompiled. Total disk footprint is bounded by the number of unique kernels
-# the suite touches across all worker assignments (roughly a few hundred
-# ``.dylib`` files, low tens of MB).
-#
-# Caveat: two ``pytest -n`` invocations running simultaneously would both
-# write to ``gw0/`` etc. and can race on shared kernels. We accept that
-# occasional concurrent-run failure rather than reintroducing per-session
-# isolation, which would defeat cache reuse.
+# The path depends only on the worker id (``gw0``, ``gw1``, ...), so the cache
+# persists across runs and later runs load most kernels instead of compiling
+# them. Two ``pytest -n`` runs at once share these directories and can race on
+# a kernel; a directory per run would avoid that but compile every kernel anew.
 if (
     _xdist_worker := os.environ.get("PYTEST_XDIST_WORKER")
 ) and "GRAPHBLAS_CACHE_PATH" not in os.environ:
     _home = os.environ.get("HOME") or os.environ.get("LOCALAPPDATA") or str(Path.cwd())
     os.environ["GRAPHBLAS_CACHE_PATH"] = str(Path(_home) / ".SuiteSparse_xdist" / _xdist_worker)
 
-# Several ``test_formatting.py`` tests assert verbatim against a Matrix /
-# Vector ``repr()``, and those reprs are produced via pandas. With pandas'
-# default ``display.max_columns = 0`` (terminal mode), pandas auto-fits to
-# ``shutil.get_terminal_size()``, which reads the ``COLUMNS`` env var. When
-# pytest is invoked from a wide terminal the workers inherit ``COLUMNS=<wide>``
-# and pandas renders extra columns that the tests expected to be elided to
-# ``...``. Drop ``COLUMNS`` here so terminal-size detection falls back to the
-# 80x24 default the test expectations were written for. The pop has to run at
-# conftest module load, before any worker imports pandas and before xdist
-# forks. Setting ``display.width`` alone doesn't help; the terminal-size
-# branch is taken whenever ``max_columns == 0``.
+# Matrix and Vector reprs come from pandas. With ``display.max_columns`` at 0
+# (its default in a terminal), pandas fits a repr to the terminal width, which
+# it reads from ``COLUMNS`` and not from ``display.width``. Tests that compare
+# reprs expect 80 columns, the width pandas falls back to when ``COLUMNS`` is
+# unset and pytest captures output, so drop a wide terminal's ``COLUMNS``.
+# test_formatting.py also sets 80 itself; this covers any other test that
+# renders a repr.
 os.environ.pop("COLUMNS", None)
 
 
@@ -66,15 +53,12 @@ pypy = platform.python_implementation() == "PyPy"
 
 
 def pytest_configure(config):
-    # Under ``pytest -n`` (xdist), every worker imports this conftest and
-    # calls ``pytest_configure`` independently. A fresh ``default_rng()`` in
-    # each worker would pick different backend / blocking / mapnumpy values,
-    # so the workers collect different tests (vanilla skips ``test_ssjit``
-    # etc.) and xdist aborts with "Different tests were collected between
-    # gw0 and gw2." Seed once on the controller and propagate to workers via
-    # an env var; workers inherit it at spawn and derive identical choices.
-    # Set the env var unconditionally on the controller so reproducing a
-    # specific session is just ``GRAPHBLAS_TEST_SEED=<n> pytest ...``.
+    # Under ``pytest -n`` (xdist), each worker runs ``pytest_configure``. The
+    # workers must make the same random choices (backend, blocking, mapnumpy),
+    # or they collect different tests and xdist aborts with "Different tests
+    # were collected between gw0 and gw2". So the controller picks the seed and
+    # passes it to the workers in ``GRAPHBLAS_TEST_SEED``. Set that variable to
+    # reproduce a run: ``GRAPHBLAS_TEST_SEED=<n> pytest ...``.
     seed_str = os.environ.get("GRAPHBLAS_TEST_SEED")
     if seed_str is None:
         seed = int.from_bytes(os.urandom(8), "big")
@@ -174,8 +158,9 @@ def _reset_name_counters():
 def _stop_a_leaked_recorder():
     """Fail a test that leaves a Recorder running, and stop that Recorder.
 
-    A running Recorder records every later call, and the scalar fast paths step
-    aside while one runs, so every test after a leak would test the full path.
+    A running Recorder records every later call, and the fast paths for element
+    access are off while one runs, so every test after a leak would test the
+    full path.
     """
     from graphblas.core import base
 

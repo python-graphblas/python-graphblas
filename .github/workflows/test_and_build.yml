@@ -20,11 +20,11 @@ on:
 permissions:
   contents: read
 
-# GitHub can deliver a PR's pull_request event twice for one push when the PR's base
-# branch moved in the same push, as it does for every PR above the bottom of a restacked
-# stack. Keyed on the PR and its head commit, the later run cancels its identical twin,
-# and a run for an earlier commit is left to finish, as before (a group keyed on the
-# branch would cancel it). Pushes to main key on the run id, so none is ever cancelled.
+# GitHub can deliver a PR's pull_request event twice for one push, when the same push
+# moves the PR's base branch (as restacking a stack of PRs does). With the group keyed on
+# the PR and its head commit, the second run cancels its identical twin, and a run for an
+# earlier commit still finishes (a group keyed on the branch would cancel it). A push to
+# main is grouped by its run id, so it is never cancelled.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: true
@@ -120,7 +120,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       # Plain bash instead of a marketplace action; see the note on the rngs job above.
-      # To weight a choice, repeat it; to skip a choice, remove it from the list.
       - name: RNG for Python version
         id: pyver
         # We should support major Python versions for at least 36 months as per SPEC 0
@@ -149,13 +148,12 @@ jobs:
           conda-remove-defaults: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'false' || 'true' }}
           channel-priority: ${{ contains(steps.pyver.outputs.selected, 'pypy') && 'flexible' || 'strict' }}
           activate-environment: graphblas
-          # setup-miniconda deprecated ``auto-activate-base`` for this name, and warns
-          # on every run that still uses the old one.
+          # auto-activate replaces the deprecated auto-activate-base.
           auto-activate: false
       - name: Update env
         id: update_env
         env:
-          # Step outputs reach the script through the environment, not ``${{ }}``, so
+          # Step outputs reach the script through the environment, not `${{ }}`, so
           # bash never parses them as code (zizmor's template-injection audit).
           PYVER: ${{ steps.pyver.outputs.selected }}
           SOURCETYPE: ${{ steps.sourcetype.outputs.selected }}
@@ -173,8 +171,9 @@ jobs:
           fi
           eval "$picks"
 
-          # Set up psg conda package variable (conda-forge installs via conda, others via pip).
-          # For conda-forge, psg must always be installed; an empty psgver just means "latest".
+          # Set up the python-suitesparse-graphblas (psg) conda package variable
+          # (conda-forge installs via conda, others via pip).
+          # For conda-forge, psg must always be installed; an empty psgver means "latest".
           psg=""
           if [[ $SOURCETYPE == "conda-forge" ]] ; then
             psg=python-suitesparse-graphblas${psgver}
@@ -229,8 +228,7 @@ jobs:
             sparse=""
             sparsever=NA
             # Compare explicitly: `[[ false ]]` tests a non-empty string, not a
-            # boolean, so testing the substituted value on its own is always
-            # true. Matches the `== true` form used for the numba skip above.
+            # boolean, so testing the substituted value on its own is always true.
             if [[ ${{ contains(steps.pyver.outputs.selected, 'pypy') }} == true ]]; then
               awkward=""
               akver=NA
@@ -256,17 +254,13 @@ jobs:
           echo "versions: np${npver} sp${spver} pd${pdver} ak${akver} nx${nxver} numba${numbaver} yaml${yamlver} sparse${sparsever} psg${psgver}"
 
           set -x  # echo on
-          # conda-forge ships two ABIs for CPython 3.13+, and this step did not
-          # restate ``python``, so the solver was free to replace the interpreter
-          # setup-miniconda installed: a 3.14 draw on ubuntu-24.04-arm became
-          # 3.14.7-*_cp314t, where pandas 2.3 raises a GIL RuntimeWarning that
-          # filterwarnings=error turns into a collection error. Restating the
-          # version pins the interpreter and ``python-gil`` pins python_abi to
-          # the GIL build; setup-miniconda's own ``python-version`` above is
-          # equally ABI-free, so this covers that step too.
-          # python-suitesparse-graphblas pins the same pair in
-          # .github/workflows/test.yml, and asks for python-freethreading on the
-          # matrix entries that want the other ABI.
+          # conda-forge has two ABIs for CPython 3.13 and later: with the GIL and
+          # free-threaded. Neither setup-miniconda's python-version nor an install without
+          # `python` chooses one, so the solver may swap in the free-threaded build (a 3.14
+          # draw on ubuntu-24.04-arm got 3.14.7-*_cp314t). There, pandas 2.3 raises a GIL
+          # RuntimeWarning, which filterwarnings = error turns into a collection error.
+          # `python=$PYVER python-gil` keeps the version and the GIL build.
+          # python-suitesparse-graphblas pins the same pair in its .github/workflows/test.yml.
           if [[ $PYVER == *pypy* ]] ; then
             interpreter=pypy
           else
@@ -291,8 +285,8 @@ jobs:
           SOURCETYPE: ${{ steps.sourcetype.outputs.selected }}
           PSGVER: ${{ steps.update_env.outputs.psgver }}
         run: |
-          # ``python -m pip`` ensures the conda env's interpreter drives the
-          # install, not a system ``pip`` on PATH.
+          # `python -m pip` ensures the conda env's interpreter drives the
+          # install, not a system `pip` on PATH.
           if [[ $SOURCETYPE == "wheel" ]]; then
               # Add --pre if installing a pre-release
               python -m pip install --no-deps --only-binary ":all:" "suitesparse-graphblas${PSGVER}"
@@ -431,12 +425,13 @@ jobs:
         timeout-minutes: 30
         run: |
           # Most of test_ssjit.py needs the suitesparse backend, --runslow, Numba and a
-          # GraphBLAS that can JIT-compile, all in one pytest run. In one run in four or five,
-          # no job draws all four, so its coverage came and went. 'notebooks' jobs install
-          # Numba unless the picker rules it out. Windows is left out: conda-forge's GraphBLAS
-          # there names the build machine's compiler, so it never compiles. The tests skip
-          # what a draw cannot do: the JIT tests on psg's wheels (built without the JIT) and
-          # on GraphBLAS 7, the UDT tests without Numba.
+          # GraphBLAS that can JIT-compile, all in one pytest run. In about one run in four
+          # or five, no job's random draws give all four, so without this step its coverage
+          # would vary from run to run. 'notebooks' jobs install Numba unless the picker
+          # rules it out. Windows is left out: conda-forge's GraphBLAS there names the build
+          # machine's compiler, so it never compiles. The tests skip what a draw cannot do:
+          # the JIT tests on psg's wheels (built without the JIT) and on GraphBLAS 7, the UDT
+          # tests without Numba.
           coverage run -a -m pytest --color=yes --runslow --backend=suitesparse -p no:randomly -v graphblas/tests/test_ssjit.py
       - name: Auto-generated code check
         if: matrix.slowtask == 'pytest_bizarro'

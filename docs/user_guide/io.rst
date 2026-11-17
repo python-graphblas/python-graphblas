@@ -53,10 +53,10 @@ A python-graphblas Matrix can be created from a NetworkX graph using ``gb.io.fro
 The dtype and weight label can be specified. A list of nodes can also be provided to only pull out a subset
 of the NetworkX graph.
 
-``gb.io.to_networkx()`` goes the other direction for a square Matrix. It returns a DiGraph with one
-node per row, numbered by row index (rows with no entries included), and the values stored under the
-edge attribute ``edge_attribute`` ("weight" by default, or ``None`` to leave them out). A Matrix with
-huge dimensions, such as a hypersparse one, has too many rows to make each a node: pass
+``gb.io.to_networkx()`` goes the other direction for a square Matrix. It returns a DiGraph with a
+node for each index, including the indices with no edges. The values are stored in the edge
+attribute named by ``edge_attribute``: "weight" by default, or ``None`` to leave them out. A Matrix
+with huge dimensions, such as a hypersparse one, has too many indices to make each a node: pass
 ``create_isolates=False`` to make nodes only of the indices that have edges.
 
 

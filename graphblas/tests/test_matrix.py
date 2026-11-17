@@ -183,9 +183,9 @@ def test_from_coo_scalar():
 @pytest.mark.skipif("not suitesparse")
 def test_ss_iso_value_of_an_empty_iso_matrix():
     # SuiteSparse marks a Matrix built from no tuples iso, and may mark other empty
-    # results iso too; iso_value used to leak StopIteration on them (RuntimeError
-    # inside a generator). There is no value, so the Scalar is empty. A new empty
-    # Matrix is not iso, and which way D goes depends on the SuiteSparse version.
+    # results iso too. There is no value, so iso_value is an empty Scalar. A new empty
+    # Matrix is not iso, and whether D is depends on the SuiteSparse version.
+    # Regression: iso_value leaked StopIteration (RuntimeError inside a generator).
     C = Matrix.from_coo([], [], 7, nrows=3, ncols=2)
     D = Matrix.from_coo([0], [1], [1.0], nrows=3, ncols=2).select("==", 2).new()
     E = Matrix(int, 3, 2)
@@ -206,8 +206,8 @@ def test_ss_iso_value_of_an_empty_iso_matrix():
 @pytest.mark.parametrize("method", ["export", "unpack"])
 @pytest.mark.parametrize("fmt", ["fullr", "fullc"])
 def test_ss_export_full_of_a_matrix_that_is_not_full(method, fmt):
-    # SuiteSparse refuses with GrB_INVALID_VALUE and sets no message, so the
-    # error used to be blank.
+    # SuiteSparse refuses with GrB_INVALID_VALUE and sets no message, so the error
+    # names the missing entries itself. Regression: the message was blank.
     A = Matrix.from_coo([0], [1], [2.0], nrows=2, ncols=2)
     with pytest.raises(InvalidValue, match="1 of 4 entries is not full"):
         getattr(A.ss, method)(fmt)
@@ -256,10 +256,10 @@ def test_nvals(A):
 
 @pytest.mark.skipif("not suitesparse")
 def test_nvals_and_shape_raise_the_graphblas_error():
-    # export(give_ownership=True) leaves no GraphBLAS object, so these calls fail. Each
-    # count lands in a C scalar, and the error was an EmptyObject about that scalar; it
-    # is now the one checking the object itself gives (``_nvals``). A.T reports against
-    # A, since there is no error function for a TransposedMatrix.
+    # export(give_ownership=True) leaves no GraphBLAS object, so these calls fail with
+    # the error that checking the object itself gives (``_nvals``). A.T reports against
+    # A, since there is no error function for a TransposedMatrix. Regression: the error
+    # was an EmptyObject about an internal C scalar.
     A = Matrix.from_coo([0], [1], [1.5], nrows=2, ncols=3)
     v = Vector.from_coo([0], [1.5], size=3)
     A.ss.export(give_ownership=True)
@@ -280,9 +280,9 @@ def test_nvals_and_shape_raise_the_graphblas_error():
 
 @pytest.mark.skipif("not suitesparse")
 def test_ss_export_failing_after_graphblas_frees_the_object(monkeypatch):
-    # GraphBLAS frees the object as it hands its arrays over. An error after that,
-    # here in claiming the values, left the handle pointing at the freed object, so a
-    # later call read freed memory and the object was freed again when collected.
+    # GraphBLAS frees the object as it hands its arrays over, so an error after that
+    # (here in claiming the values) must leave the Python object with a NULL handle.
+    # Regression: a later call read freed memory, and collection freed the object again.
     import gc
 
     import graphblas.core.ss.matrix as ss_matrix
@@ -377,9 +377,10 @@ def test_extract_element(A):
 
 @pytest.mark.skipif("not suitesparse")
 def test_extract_element_raises_the_graphblas_error():
-    # export(give_ownership=True) leaves no GraphBLAS object, so the extract fails.
-    # Into a C scalar the error was an EmptyObject about the output, hiding this one.
-    # The text must match too: a TransposedMatrix has no error function of its own.
+    # export(give_ownership=True) leaves no GraphBLAS object, so the extract fails with
+    # the same error into a C scalar as into a GrB_Scalar, for A.T too, which has no
+    # error function of its own. Regression: into a C scalar, the error was an
+    # EmptyObject about the output.
     A = Matrix.from_coo([0], [1], [1.5], nrows=2, ncols=3)
     v = Vector.from_coo([0], [1.5], size=3)
     A.ss.export(give_ownership=True)
@@ -1353,7 +1354,7 @@ def test_select_by_a_transposed_comparison():
     expected = Matrix.from_coo([1], [0], [5], nrows=2, ncols=2)
     assert S.select(S.T == 1).new().isequal(expected)
     assert S.select((S.T == 1).new()).new().isequal(expected)
-    # The rewrite still serves the comparison of the object itself
+    # A comparison of S itself can use the rewrite (see Matrix.select)
     assert S.select(S == 1).new().isequal(Matrix.from_coo([0], [1], [1], nrows=2, ncols=2))
     B = Matrix.from_coo([0, 1], [1, 2], [1, 1], nrows=2, ncols=3)
     with pytest.raises(DimensionMismatch):
@@ -1399,9 +1400,10 @@ def test_select(A):
 
 
 def test_select_row_and_column_compare_indices_with_the_bound_given():
-    # The comparison types its literal beside the values, where 300 beside INT8 or UINT8
-    # is infinity and 2**24 + 1 beside FP32 rounds; the helpers used that for indices
-    # (row(B < 300) kept all 400 rows, row(B > 299) none; main was right).
+    # The bound is the number given, not the comparison's thunk, which is typed to match
+    # the values: with INT8 or UINT8 values 300 becomes infinity, and with FP32 values
+    # 2**24 + 1 rounds (see _index_bound). Regression: row(B < 300) kept all 400 rows,
+    # and row(B > 299) none.
     n = 400
     for dtype in ["INT8", "UINT8"]:
         B = Matrix.from_coo(np.arange(n), np.zeros(n, int), 1, dtype=dtype, nrows=n, ncols=1)
@@ -1415,7 +1417,8 @@ def test_select_row_and_column_compare_indices_with_the_bound_given():
     rows = [2**24 - 1, 2**24, 2**24 + 1]
     F = Matrix.from_coo(rows, [0, 0, 0], [1.0, 2.0, 3.0], dtype="FP32", nrows=2**24 + 3, ncols=1)
     assert select.row(F < 2**24 + 1).new().to_coo()[0].tolist() == rows[:2]
-    # A fractional bound: i < 2.5 keeps 2, i > -0.5 keeps 0 (a float thunk was truncated)
+    # A fractional bound: i < 2.5 keeps 2, and i > -0.5 keeps 0 (GraphBLAS would truncate
+    # a float thunk)
     A = Matrix.from_coo(np.arange(5), np.zeros(5, int), 1.0, nrows=5, ncols=1)
     for expr, expected in [
         (A < A.nrows / 2, [0, 1, 2]),
@@ -1437,12 +1440,12 @@ def test_select_row_and_column_compare_indices_with_the_bound_given():
     with gb.config.set(autocompute=True):
         assert select.row(A < w[0]).new().to_coo()[0].tolist() == [0, 1, 2]
         assert select.row(A >= w[0]).new().to_coo()[0].tolist() == [3, 4]
-    # A comparison with the scalar on the left gives the op's TypeError, as on main; it
-    # was AttributeError ('Matrix' object has no attribute 'value')
+    # A comparison with the scalar on the left raises the op's TypeError. Regression: it
+    # raised AttributeError.
     with pytest.raises(TypeError, match="Bad type for keyword argument `thunk=`"):
         select.row(A.apply(binary.le, left=3))
-    # NaN compares False with every index, so it keeps none; NaN cast to the INT64 thunk
-    # was 0, so < and <= kept row 0, and > and >= every other row (main too)
+    # NaN compares False with every index, so it keeps none. Regression: NaN became 0, so
+    # < and <= kept row 0, and > and >= the rest.
     nan = float("nan")
     for expr in [A < nan, A <= nan, A > nan, A >= nan, A < Scalar.from_value(nan)]:
         assert select.row(expr).new().nvals == 0, expr
@@ -2027,8 +2030,8 @@ def test_isclose(A, v):
 
 
 def test_isclose_infinity():
-    # As in math.isclose, an infinity is close only to itself. It was close to every
-    # number (abs(inf - y) is inf, and so is rel_tol * inf), with Numba and without.
+    # As in math.isclose, an infinity is close only to itself; see
+    # test_vector.test_isclose_infinity
     from graphblas.core.vector import _isclose_recipe
 
     values = [math.inf, -math.inf, 1.0, 0.0, math.nan]
@@ -2043,7 +2046,8 @@ def test_isclose_infinity():
 
 
 def test_isclose_integers_do_not_wrap():
-    # x - y or abs(x) wrapped in an integer type; see test_vector.ISCLOSE_WRAPPING_CASES
+    # Regression: x - y or abs(x) wrapped in an integer type; see
+    # test_vector.ISCLOSE_WRAPPING_CASES
     from graphblas.core.vector import _isclose_recipe
 
     from .test_vector import ISCLOSE_WRAPPING_CASES
@@ -3282,10 +3286,8 @@ def test_dup_expr(A):
 )
 @pytest.mark.parametrize("order", ["rowwise", "columnwise"])
 def test_ss_flatten_size(fmt, order):
-    # SuiteSparse holds a Vector by column. A reshape of a Matrix held by row was
-    # cast to a Vector as it stood, and SuiteSparse then saw a Vector of size 1:
-    # .size was 1 and every index past 0 raised InvalidIndex, though isequal and
-    # to_coo, which read the Python-side size, looked right.
+    # SuiteSparse holds a Vector by column. Regression: flattening a Matrix held by row
+    # gave a Vector whose .size was 1, though isequal and to_coo looked right.
     A = Matrix.from_coo([0, 0, 0, 1, 1, 1], [0, 1, 2, 0, 1, 2], [1, 2, 3, 4, 5, 6])
     B = Matrix.ss.import_any(**A.ss.export(format=fmt))
     v = B.ss.flatten(order=order)
@@ -4341,8 +4343,8 @@ def test_to_dicts_from_dicts(A):
 @pytest.mark.parametrize("shape", [(3, 2), (0, 0)])
 @pytest.mark.parametrize("order", ["rowwise", "columnwise"])
 def test_to_dicts_of_a_matrix_with_no_entries(shape, order):
-    # The compressed indptr of a Matrix with no entries is [0], which
-    # sliding_window_view(indptr, 2) refused with a ValueError.
+    # The compressed indptr of a Matrix with no entries is [0]. Regression:
+    # sliding_window_view(indptr, 2) refused it with a ValueError.
     A = Matrix(int, *shape)
     assert A.to_dicts(order) == {}
     assert A.T.to_dicts(order) == {}
@@ -4583,7 +4585,8 @@ def test_wait_chains(A):
 
 
 def test_subarray_dtypes_iso():
-    # An iso array UDT exports its one value with a leading axis of length 1
+    # An iso array UDT exports its one value with a leading axis of length 1, which the
+    # to_* methods broadcast
     A = Matrix("INT64[4]", nrows=2, ncols=3)
     A[:, :] = [0, 1, 2, 3]
     if suitesparse:
@@ -4702,7 +4705,8 @@ def test_subarray_dtype_ss_column_order(shape):
         _assert_same_udt_entries(A, B)
         assert not values.flags.owndata  # taken, as it is
         # Element axes that fit neither layout are refused, not read as a list of elements
-        # (as a list of INT64[2, 2], values of shape (2, 3, 4) put [8, 9, 10, 11] at (0, 1))
+        # (which would put [8, 9, 10, 11] at (0, 1) for values of shape (2, 3, 4) as
+        # INT64[2, 2])
         bad = expected.reshape(2, 3, 4) if len(shape) > 1 else expected.reshape(2, 12)
         kwargs = {"bitmap": np.ones((2, 3), dtype=bool)} if fmt == "bitmapc" else {}
         with pytest.raises(ValueError, match=r"in column order must have shape \(nrows, ncols"):
@@ -4725,11 +4729,11 @@ def test_subarray_dtype_ss_column_order(shape):
 
 @pytest.mark.skipif("not suitesparse")
 def test_subarray_dtype_ss_export_spare_values():
-    # A dense export of an array UDT given more values than entries keeps the first
-    # nrows * ncols (it raised ValueError, and unpack left the Matrix empty).
-    # SuiteSparse:GraphBLAS 7.4.0's memory pool rounds each allocation of 512 KiB or less
-    # up to a power of two; here a full Matrix resized smaller keeps its larger buffer,
-    # in either layout.
+    # A dense export of an array UDT whose buffer has more values than entries keeps the
+    # first nrows * ncols. Regression: it raised ValueError, and unpack left the Matrix
+    # empty. SuiteSparse:GraphBLAS 7.4.0's memory pool rounds each allocation of 512 KiB
+    # or less up to a power of two, so here a full Matrix resized smaller keeps its
+    # larger buffer, in either layout.
     big = np.arange(3 * 3 * 4, dtype=np.int64).reshape(3, 3, 4)
     for layout, nrows, ncols in [("by_row", 2, 3), ("by_col", 3, 2)]:
         expected = big[:nrows, :ncols]
@@ -4795,7 +4799,7 @@ def test_ss_import_column_order_copies_once():
     # Without take_ownership=True, fullc and bitmapc imports copy the values once and
     # never hand over the caller's array. Values converted to Fortran order or to
     # another dtype are already a new array, so GraphBLAS takes that one. An empty
-    # array is copied too, not taken (taking it left the caller's array read-only).
+    # array is copied too, not taken, which would leave the caller's array read-only.
     expected = np.arange(512 * 512, dtype=np.float64).reshape(512, 512)
     for fmt in ["fullc", "bitmapc"]:
         import_ = getattr(Matrix.ss, f"import_{fmt}")
@@ -4833,8 +4837,8 @@ def test_ss_import_column_order_copies_once():
 # Without SuiteSparse, building a UDT uses dup_op=binary.any, which needs Numba.
 @pytest.mark.skipif("not suitesparse and not supports_udfs")
 def test_subarray_dtype_values_shape():
-    # Each of these has one entry per index but not two numbers per entry. Building
-    # from too few numbers read past the end of the array. (The dtype's name is
+    # Each of these has one entry per index but not two numbers per entry. Regression:
+    # building from too few numbers read past the end of the array. (The dtype's name is
     # whichever another test gave this anonymous dtype.)
     match = r"values must have shape \(2, 2\) for dtype \S+, not \(2,"
     for values in [np.ones(2), [1.0, 2.0], np.ones((2, 1)), np.arange(6.0).reshape(2, 3)]:
@@ -4855,28 +4859,28 @@ def test_subarray_dtype_values_shape():
     assert A.to_coo()[2].tolist() == expected
     A = Matrix.from_csr([0, 1, 2], [0, 1], 1.5, "FP64[2]")
     assert A.to_coo()[2].tolist() == expected
-    # on both backends (SuiteSparse raised "values must have 1 or more elements ... not 0")
+    # from_dcsr and from_dcsc too, on both backends. Regression: on SuiteSparse they
+    # raised "values must have 1 or more elements ... not 0".
     A = Matrix.from_dcsr([0, 1], [0, 1, 2], [0, 1], 1.5, "FP64[2]")
     assert A.to_coo()[2].tolist() == expected
     A = Matrix.from_dcsc([0, 1], [0, 1, 2], [0, 1], 1.5, "FP64[2]")
     assert A.to_coo()[2].tolist() == expected
-    # The lengths compared are the number of elements, not of numbers (it said 6)
+    # The lengths compared are numbers of elements, not of numbers (which would be 6)
     with pytest.raises(ValueError, match="lengths must match: 2, 2, 3$"):
         Matrix.from_coo([0, 1], [0, 1], np.ones((3, 2)), "FP64[2]")
 
 
 @pytest.mark.skipif("not suitesparse")
 def test_ss_import_coo_with_empty_rows_and_columns():
-    # indptr was set only at the rows that appear, so every empty row after the first
-    # left a 0 in it: an empty row in the middle moved entries to another row (and
-    # isequal still said True), and an empty last row lost every entry
+    # Regression: an empty row in the middle moved entries to another row, and an empty
+    # last row lost every entry.
     def entries(M):
         return sorted(zip(*(x.tolist() for x in M.to_coo()), strict=True))
 
     cases = [
         ([0, 2], [1, 0], 3, 2),  # row 1, in the middle
         ([0, 0], [0, 1], 3, 2),  # rows 1 and 2, at the end
-        ([2, 2], [0, 1], 3, 2),  # rows 0 and 1, at the start (this one worked)
+        ([2, 2], [0, 1], 3, 2),  # rows 0 and 1, at the start
         ([1, 3], [2, 2], 5, 4),  # rows and columns empty at the start, middle and end
         ([], [], 3, 2),  # no entries
     ]
@@ -4894,7 +4898,8 @@ def test_ss_import_coo_with_empty_rows_and_columns():
         Matrix.ss.import_coor(rows=[0, 3], cols=[0, 0], values=[1.0, 2.0], nrows=3, ncols=1)
     with pytest.raises(IndexOutOfBound, match="cols must be less than ncols, 2; got 5"):
         Matrix.ss.import_cooc(rows=[0, 0], cols=[1, 5], values=[1.0, 2.0], nrows=1, ncols=2)
-    # 2-D indices are a flat buffer, as in from_coo; they read past the end (or crashed)
+    # 2-D indices are a flat buffer, as in from_coo. Regression: they read past the end
+    # (or crashed).
     rows = np.array([[0, 1], [1, 2]], np.uint64)
     B = Matrix.ss.import_coor(rows=rows, cols=[0, 0, 1, 1], values=[1, 2, 3, 4], nrows=3, ncols=2)
     assert entries(B) == entries(Matrix.from_coo(rows.ravel(), [0, 0, 1, 1], [1, 2, 3, 4]))
@@ -4906,7 +4911,7 @@ def test_ss_import_coo_with_empty_rows_and_columns():
 @pytest.mark.skipif("not suitesparse")
 def test_ss_import_values_size():
     # GraphBLAS before 10.5.2 compares the byte size of imported values with the number
-    # of entries, not the bytes they need, so it read past the end of each of these
+    # of entries, not the bytes they need, so it would read past the end of each of these
     match = "have 3 or more elements of dtype FP64, not 1"
     with pytest.raises(ValueError, match=match):
         Matrix.ss.import_csr(
@@ -4942,13 +4947,14 @@ def test_ss_import_values_size():
     match = r"values of \S+ in column order must have shape \(nrows, ncols, 2\) for an element"
     with pytest.raises(ValueError, match=match):
         Matrix.ss.import_fullc(values=np.ones((2, 2, 1)), dtype="FP64[2]")
-    # A scalar is not a whole element of a sub-array dtype (it said "not 0")
+    # A scalar is not a whole element of an array UDT
     with pytest.raises(ValueError, match=r"a scalar does not fill one element of dtype \S+, of"):
         Matrix.ss.import_fullr(values=1.5, nrows=2, ncols=2, dtype="FP64[2]", is_iso=True)
-    # A scalar that is one whole element, where more are needed, is just too few values
+    # A scalar that is one whole element, where more are needed, is too few values
     with pytest.raises(ValueError, match=r"have 4 or more elements of dtype FP64, not 1"):
         Matrix.ss.import_fullr(values=1.5, nrows=2, ncols=2)
-    # More entries than indices is an indptr problem; it was reported as too few values
+    # More entries than indices is an indptr problem. Regression: it was reported as too
+    # few values.
     match = "index pointers give 4611686018427387904 entries, more than the number of indices, 1"
     with pytest.raises(ValueError, match=match):
         Matrix.ss.import_csr(nrows=1, ncols=3, indptr=[0, 2**62], col_indices=[0], values=[1.0])
@@ -5145,27 +5151,26 @@ def test_setdiag():
 
 
 def test_constructor_rejects_arraylike_first_arg():
-    # The first positional arg is the dtype; passing data instead used to raise a
-    # confusing "Unknown dtype" ValueError. It should now raise TypeError pointing
-    # at the from_* constructors.
+    # The first positional argument is the dtype, so data passed there raises a
+    # TypeError that points to the from_* constructors, not "Unknown dtype".
     with pytest.raises(TypeError, match="Matrix.*dtype.*from_coo.*from_dense"):
         Matrix([[1, 2], [3, 4]])
     with pytest.raises(TypeError, match="Matrix.*expects a dtype"):
         Matrix(np.zeros((2, 2)))
-    # Valid dtype-first signatures still work, including list/tuple dtype specs
+    # A dtype first works, including a list or tuple dtype spec
     assert Matrix(int, 2, 2).dtype == dtypes.INT64
     assert Matrix("INT64", nrows=2, ncols=2).dtype == dtypes.INT64
     assert Matrix([("x", "i8"), ("y", "f8")], nrows=2, ncols=2).dtype._is_udt
     assert Matrix((np.int32, (2, 2)), nrows=2, ncols=2).dtype._is_udt
-    # A non-array-like bad dtype keeps the original ValueError
+    # A bad dtype that is not array-like raises ValueError
     with pytest.raises(ValueError, match="Unknown dtype"):
         Matrix("not_a_dtype", nrows=2, ncols=2)
 
 
 def test_wrong_kind_mask_on_matrix_raises():
-    # A Vector mask on a Matrix output used to leak a raw cffi/C-signature
-    # error ("initializer for ctype 'struct GB_Matrix_opaque'"). It should
-    # now raise a clear TypeError, mirroring the Vector-output guard.
+    # A Vector mask on a Matrix output raises TypeError, as a Matrix mask on a Vector
+    # output does. Regression: it leaked a raw cffi error ("initializer for ctype
+    # 'struct GB_Matrix_opaque'").
     A = Matrix(int, 3, 3)
     A[0, 0] = 1
     v = Vector(int, 3)
@@ -5177,11 +5182,11 @@ def test_wrong_kind_mask_on_matrix_raises():
     # extract path
     with pytest.raises(TypeError, match="Mask object must be type Matrix"):
         A[:, :].new(mask=v.S)
-    # Valid Matrix mask on Matrix output still works
+    # A Matrix mask on a Matrix output works
     C = Matrix(int, 3, 3)
     C(mask=A.S) << A.ewise_mult(A)
     assert C.nvals == A.nvals
-    # Valid Vector input_mask broadcast on a Matrix extract still works
+    # A Vector input_mask on a Matrix extract works
     m = Vector(bool, 3)
     m[0] = True
     m[2] = True
@@ -5189,9 +5194,9 @@ def test_wrong_kind_mask_on_matrix_raises():
 
 
 def test_wrong_kind_mask_on_dup_and_full_assign():
-    # dup and whole-object update assign with `C(mask)[...] = A`, so a
-    # Vector mask used to reach GrB_Matrix_assign and leak the same raw
-    # cffi error as full-matrix operations.
+    # dup and a whole-object update assign with `C(mask)[...] = A`, so they check the
+    # mask too. Regression: a Vector mask reached GrB_Matrix_assign and leaked the same
+    # raw cffi error as test_wrong_kind_mask_on_matrix_raises.
     A = Matrix(int, 3, 3)
     A[0, 0] = 1
     v = Vector(bool, 3)
@@ -5211,11 +5216,11 @@ def test_wrong_kind_mask_on_dup_and_full_assign():
         C(v.S)[:, :] << A
     with pytest.raises(TypeError, match=err):
         C[:, :](v.S) << A
-    # A Matrix mask on these paths still works
+    # A Matrix mask on these paths works
     assert A.dup(mask=A.S).isequal(A)
     C(A.S) << A
     assert C.isequal(A)
-    # A Vector mask on a Matrix row/column assignment is still valid
+    # A Vector mask on a Matrix row or column assignment is valid
     w = Vector(int, 3)
     w[0] = 10
     w[2] = 30
@@ -5232,8 +5237,8 @@ def test_wrong_kind_mask_on_dup_and_full_assign():
     C[:, 0](v.S) << w
     assert C.isequal(Matrix.from_coo([0], [0], [10], nrows=3, ncols=3))
 
-    # The guard keys on dimension, not exact type, so a Vector subclass's
-    # mask is caught too instead of leaking the raw cffi error
+    # The check is on the mask's ndim, not its type, so a Vector subclass's mask is
+    # caught too
     class _VecSub(Vector):
         pass
 
@@ -5244,8 +5249,8 @@ def test_wrong_kind_mask_on_dup_and_full_assign():
 
 
 def test_new_constructor_misuse_hint():
-    # `.new()` resolves expressions; it is not a constructor or an instance
-    # method on concrete objects. Both misuses should hint the right API.
+    # `.new()` resolves expressions; it is neither a constructor nor a method of a
+    # Matrix, Vector or Scalar. On an instance, the AttributeError hints at .dup().
     A = Matrix(int, 3, 3)
     v = Vector(int, 3)
     s = Scalar.from_value(5)
@@ -5259,7 +5264,7 @@ def test_new_constructor_misuse_hint():
     for obj in (A, v, s):
         with pytest.raises(AttributeError, match=r"has no attribute 'new'.*\.dup\(\)"):
             obj.new
-    # A genuinely-missing attribute keeps the plain AttributeError (no hint)
+    # Another missing attribute gets the plain AttributeError (no hint)
     with pytest.raises(AttributeError, match="has no attribute 'frobnicate'"):
         A.frobnicate
     assert not hasattr(A, "new")
@@ -5267,10 +5272,9 @@ def test_new_constructor_misuse_hint():
 
 
 def test_abc_mixin_subclass():
-    # BaseType must stay metaclass-free: a plain `type` hint metaclass broke
-    # abc-based mixins with "metaclass conflict", and an ABCMeta-derived one
-    # leaks metaclass attributes into dir(Matrix), which the
-    # expression-surface guards report as drift.
+    # BaseType has no metaclass. One derived from `type` (to hint at class-level
+    # misuse) would break abc mixins with "metaclass conflict", and one derived from
+    # ABCMeta adds attributes to Matrix, which the test_expr_is_like_* tests report.
     import collections.abc
 
     class SizedMatrix(Matrix, collections.abc.Sized):
@@ -5287,7 +5291,7 @@ def test_abc_mixin_subclass():
 
 
 def test_matrix_subclass_repr():
-    # The repr is a Matrix's but for the type's name. It used to take the
+    # The repr is a Matrix's but for the type's name. Regression: it took the
     # TransposedMatrix branch for any type that is not exactly Matrix.
     class SubMatrix(Matrix):
         pass
@@ -5309,8 +5313,9 @@ def test_matrix_subclass_repr():
 
 @pytest.mark.skipif("not suitesparse")
 def test_subclass_error_text():
-    # An error's text comes from GrB_<type name>_error, and a subclass has none of its own:
-    # it said "Unable to get the error string for type SubMatrix", asking for a bug report.
+    # An error's text comes from GrB_<type name>_error, and a subclass has none of its own.
+    # Regression: it said "Unable to get the error string for type SubMatrix", asking for
+    # a bug report.
     class SubMatrix(Matrix):
         pass
 
@@ -5340,8 +5345,9 @@ def test_subclass_error_text():
 
 @pytest.mark.skipif("not suitesparse")
 def test_transposed_error_text():
-    # GraphBLAS has no transposed type, so an error on A.T is reported against A. It said
-    # "Unable to get the error string for type TransposedMatrix", asking for a bug report.
+    # GraphBLAS has no transposed type, so an error on A.T is reported against A.
+    # Regression: it said "Unable to get the error string for type TransposedMatrix",
+    # asking for a bug report.
     A = Matrix(int, 2, 3)
     A.ss.export(give_ownership=True)  # leaves no GraphBLAS object, so these calls fail
     with pytest.raises(gb.exceptions.NullPointer) as expected:
@@ -5353,8 +5359,7 @@ def test_transposed_error_text():
 
 
 def test_transpose_hint():
-    # A.transpose() should point at the .T property rather than fail with a
-    # bare "no attribute" message; transpose is not a method here.
+    # transpose is not a method here, so the AttributeError points to the .T property
     A = Matrix(int, 3, 3)
     v = Vector(int, 3)
     with pytest.raises(AttributeError, match=r"has no attribute 'transpose'.*\.T"):

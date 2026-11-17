@@ -363,7 +363,7 @@ def _crossproc_ibo_add_theta(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (
 
 
 # Operations dispatched by ``_crossproc_worker``. Each takes the unpickled dict
-# and returns a JSON-friendly value to send through the Pipe.
+# and returns plain Python values to send through the Pipe.
 def _op_udt_reduce(d):
     return d["vector"].reduce(d["op"]).new().value
 
@@ -394,7 +394,7 @@ def _crossproc_worker(backend, op_name, payload, conn):
 
 
 def _run_crossproc(op_name, payload):
-    """Spawn a child running ``_crossproc_worker`` and return ``rest`` from ``("ok", *rest)``."""
+    """Run ``_CROSSPROC_OPS[op_name]`` in a spawned child and return what it sent after "ok"."""
     ctx = multiprocessing.get_context("spawn")
     parent_conn, child_conn = ctx.Pipe(duplex=False)
     proc = ctx.Process(
@@ -419,13 +419,11 @@ def _run_crossproc(op_name, payload):
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_pickle_crossprocess():
-    """Verify a typed UDT monoid round-trips through a spawned child process.
+    """A Monoid on a UDT, pickled with a Vector of that UDT, reduces in a spawned child process.
 
-    Same-process pickle already exercises the ``__reduce__`` and
-    ``_deserialize`` paths. This test additionally proves the child can
-    re-register the UDT and auto-lift the parent monoid for it without
-    inheriting any state from the parent process; that's the case
-    ``dask`` and ``multiprocessing`` actually hit.
+    The child inherits no state from the parent, so it must register the UDT again and
+    lift ``plus`` to it, as with dask or multiprocessing. Pickling within one process
+    covers ``__reduce__`` and ``_deserialize``.
     """
     record_dtype = np.dtype([("x", np.int64), ("y", np.int64)], align=True)
     udt_name = "CrossProcPickleUDT"
@@ -442,7 +440,6 @@ def test_udt_pickle_crossprocess():
         v[2] = (3, 30)
         payload = pickle.dumps({"op": monoid, "vector": v})
         (value,) = _run_crossproc("udt_reduce", payload)
-        # Reduce of (1,10), (2,20), (3,30) with plus = (6, 60).
         assert tuple(value) == (6, 60)
     finally:
         delattr(gb.dtypes, udt_name)
@@ -472,12 +469,11 @@ _CROSSPROC_OPS["compile_parameterized_is_udt"] = _op_compile_parameterized_is_ud
     ["unary", "binary", "indexunary", "select", "indexbinary"],
 )
 def test_parameterized_is_udt_pickle_crossprocess(module_name):
-    """``is_udt`` survives a spawn -> unpickle -> re-register chain.
+    """A parameterized op keeps ``is_udt`` when unpickled in a spawned child process.
 
-    Same-process pickle is covered by ``test_parameterized_is_udt_pickle_roundtrip``
-    in ``test_op.py``; this exercises the cross-process path that wave-5
-    fixed (parameterized ``__reduce__`` used to drop ``is_udt`` and the
-    child silently took the non-UDT compile path).
+    ``test_parameterized_is_udt_pickle_roundtrip`` in ``test_op.py`` covers one process.
+    Regression: ``__reduce__`` dropped ``is_udt``, so the child compiled the op as a
+    non-UDT op without saying so.
     """
     module = getattr(gb, module_name)
     op_name = f"_cpu_param_is_udt_{module_name}"
@@ -494,9 +490,9 @@ def test_parameterized_is_udt_pickle_crossprocess(module_name):
         assert got is True
     finally:
         delattr(module, op_name)
-        # binary and unary ops also register into the combined ``op`` namespace,
-        # which ``delattr(module, ...)`` doesn't touch; clean it so
-        # test_op_namespace doesn't see an op with no per-type home.
+        # binary and unary ops also register in the combined ``op`` namespace,
+        # which ``delattr(module, ...)`` does not touch. Clean it, or
+        # test_op_namespace finds an op missing from its own module.
         vars(gb.op).pop(op_name, None)
         gb.op._delayed.pop(op_name, None)
 
@@ -504,12 +500,11 @@ def test_parameterized_is_udt_pickle_crossprocess(module_name):
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_bound_ibo_pickle_crossprocess():
-    """A bound IBO must round-trip through a spawned child process.
+    """A bound IndexBinaryOp, pickled with its operands, runs in a spawned child process.
 
-    Bound IBOs pickle as ``(_rebind_indexbinaryop, (parent_ibo, type, theta))``.
-    The parent IBO must re-register in the child (via the registered name) so
-    the rebind can resolve it. Same-process pickle is already covered by
-    ``test_pickle_bound`` in ``test_indexbinary.py``.
+    A bound op pickles as ``(_rebind_indexbinaryop, (parent, types, theta))``, so the
+    child registers the parent IndexBinaryOp again before binding theta.
+    ``test_pickle_bound`` in ``test_indexbinary.py`` covers one process.
     """
     from graphblas.core.operator.indexbinary import _has_idxbinop
 

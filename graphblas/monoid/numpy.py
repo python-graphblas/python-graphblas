@@ -95,9 +95,9 @@ if (
 ):
     # Incorrect behavior was introduced in numba 0.56.2 and numpy 1.23.
     # See: https://github.com/numba/numba/issues/8478
-    # MAINT (2026-05): the behavioral check above still discriminates fixed
-    # vs. broken numba/numpy combinations. Once we drop everything older
-    # than the fix, this branch can become unconditional.
+    # MAINT (2026-05): the check above still tells fixed numba and numpy versions
+    # from broken ones. Once every supported version has the fix, this branch can
+    # become unconditional.
     _monoid_identities["fmax"].update(
         {
             "BOOL": False,

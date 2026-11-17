@@ -119,9 +119,9 @@ class ss:
 
     @property
     def iso_value(self):
-        """The value every entry of an iso-valued Vector holds, as a Scalar.
+        """The value of every entry of an iso-valued Vector, as a Scalar.
 
-        SuiteSparse can mark a Vector with no entries iso. It then holds no value,
+        SuiteSparse can mark a Vector with no entries as iso. It then has no value,
         and the Scalar is empty, as for an empty reduction. Raises ValueError if
         the Vector is not iso-valued.
         """
@@ -1723,8 +1723,8 @@ class ss:
             status = lib.GrB_Type_get_SIZE(parent.dtype.gb_obj[0], dtype_size, lib.GrB_NAME)
             check_status_carg(status, "Type", parent.dtype.gb_obj[0])
             if dtype_size[0] >= lib.GxB_MAX_NAME_LEN:
-                # The dtype name is too long to safely store in the blob (GxB_Serialized_get_SIZE
-                # segfaults on names >= GxB_MAX_NAME_LEN). For named UDTs, use the short
+                # The dtype name is too long to store in the blob (GxB_Serialized_get_SIZE
+                # crashes on a name of GxB_MAX_NAME_LEN or more). For named UDTs, use the short
                 # registered name instead; anonymous UDTs cannot round-trip without dtype=.
                 if not parent.dtype._is_anonymous:
                     val_obj = ffi.new("char[]", parent.dtype.name.encode())

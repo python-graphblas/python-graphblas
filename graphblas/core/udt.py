@@ -6,21 +6,22 @@ gap, in this order:
 
 - which built-in ops lift to UDTs (``BUILTIN_UDT_BINARY_OPS``), and the layout
   of an element (:func:`_iter_record_leaves`);
-- which operands an op on UDTs takes and the type of its result
+- which operand types an op on UDTs accepts and the type of its result
   (:func:`_check_udt_pair`, :func:`_udt_op_types`);
-- what may be stored in an object of another type, and how it is converted on
-  the way (:func:`_store_cast_op`);
+- what may be stored in an object of another type, and how it is cast
+  (:func:`_store_cast_op`);
 - when ``ewise_add`` would need GraphBLAS to cast a UDT;
 - how ``isequal``, and ``==`` without Numba, compare elements;
 - how an element's value becomes bytes and back, for ``Scalar.value``.
 
+docs/technical_notes/udt_operators.rst states these rules for users.
 ``operator.udt_codegen`` generates the operators that compute on UDTs,
 ``operator.udf`` wraps a user's function on them, and ``literals`` types a
-literal operand beside one.
+literal operand of an op on one.
 
 ``operator.udt_codegen`` imports this module while the operator package is still
 loading, so a function here that needs an operator, ``base`` or ``scalar``
-imports it inside the function, once it knows a UDT is involved.
+imports it inside the function.
 """
 
 import copy
@@ -52,7 +53,7 @@ BUILTIN_UDT_UNARY_OPS = {
 
 
 # Ops with no meaning on complex fields: no ordering for min and max, and no
-# integer mod for floordiv.
+# floor for floordiv.
 _OPS_NOT_FOR_COMPLEX = frozenset({"min", "max", "floordiv"})
 
 
@@ -73,19 +74,10 @@ def _get_udt_info(dtype):
 def _iter_record_leaves(np_type, python_prefix="", c_prefix=""):
     """Yield ``(python_access, c_access, leaf_dtype)`` for each leaf in a record.
 
-    A non-nested record yields one entry per field, with paths like
-    ``"['a']"`` (Python) and ``"a"`` (C struct). A nested record recurses
-    into structured fields: a top-level field ``"outer"`` whose dtype is
-    itself a struct with field ``"inner_a"`` yields
-    ``("['outer']['inner_a']", "outer.inner_a", float64_dtype)``.
-
-    Only record-in-record nesting is recognised. Array-typed fields are
-    yielded as a single leaf, which the Numba path handles: a binary op
-    computes it element by element, a unary op applies its expression to the
-    whole sub-array, and the wrapper slice-assigns the result back. The JIT
-    path never sees such a record, because a subarray dtype has no entry in
-    ``udt_codegen.NP_TO_C_TYPES`` and ``udt_codegen._udt_c_typedef`` bails out,
-    so the op keeps the cfunc for every call.
+    A field ``"a"`` yields ``("['a']", "a", dtype)``. A nested record is
+    walked down to its leaves: field ``"inner_a"`` of a record field
+    ``"outer"`` yields ``("['outer']['inner_a']", "outer.inner_a", dtype)``.
+    An array field is one leaf, whose ``leaf_dtype`` has a shape.
     """
     for name in np_type.names:
         field_dtype = np_type.fields[name][0]
@@ -104,23 +96,21 @@ def _strip_leading_ones(shape):
     return shape[i:]
 
 
-# Which operands an op on UDTs takes, and the type of its result.
+# Which operand types an op on UDTs accepts, and the type of its result.
 
 
 def _check_udt_pair(op_name, dtype, dtype2, info_x, info_y):
-    """Raise ``KeyError`` if two UDT operands disagree on shape.
+    """Raise ``KeyError`` unless ``binary.{op_name}`` pairs ``dtype`` with ``dtype2``.
 
-    ``info_x`` and ``info_y`` are ``_get_udt_info`` results. When either is
-    ``None`` (a built-in scalar side broadcasts), no further check fires. A
-    UDT that is neither a record nor an array (bytes, say) holds one value,
-    which pairs only with its own type, on either side; for ``eq`` and ``ne``
-    only, text pairs with text of the same kind at another width, and a date
-    or duration with one in another unit, as numpy and a record's fields
-    compare them. Without this gate the generated
-    wrapper code raises a cryptic Numba ``TypingError`` on the first field
-    access, or, for array fields that do not broadcast, fails inside the
-    cfunc without telling the caller. Element dtypes may differ;
-    :func:`_udt_op_types` promotes them.
+    ``info_x`` and ``info_y`` are ``_get_udt_info`` results. ``None`` is a
+    built-in type, which pairs with any UDT, or a UDT that is neither a
+    record nor an array (bytes, say), which pairs only with its own type. For
+    ``eq`` and ``ne`` only, text also pairs with text of the same kind at
+    another width, and a date or duration with one in another unit, as numpy
+    compares them. Element types may differ; :func:`_udt_op_types` promotes
+    them. Checking here gives a clear error where the generated code would
+    fail to compile with a Numba ``TypingError``, or fail inside the cfunc
+    without telling the caller.
     """
     compared_as_numpy = (
         op_name in {"eq", "ne"}
@@ -156,14 +146,10 @@ def _check_udt_pair(op_name, dtype, dtype2, info_x, info_y):
                 f"record UDTs must share field names, in the same order; got "
                 f"{list(detail_x)} vs {list(detail_y)}."
             )
-        # Matching top-level names is not enough. The codegen reads both
-        # operands at the left one's leaf paths, so a field that is a
-        # sub-record on one side and a scalar on the other, or sub-records
-        # with different names, fails Numba's typing: a compile error
-        # reported for what is really the same shape disagreement the check
-        # above reports as a KeyError. The paths must also come in the same
-        # order, as the top-level names must, so that leaf ``i`` of one
-        # operand is leaf ``i`` of the other.
+        # Matching top-level names is not enough: the generated code reads
+        # both operands at the left one's leaf paths, so the names and
+        # nesting must match at every level, in order, for leaf ``i`` of one
+        # operand to be leaf ``i`` of the other.
         leaves_x = list(_iter_record_leaves(dtype.np_type))
         leaves_y = list(_iter_record_leaves(dtype2.np_type))
         if [py for py, _c, _d in leaves_x] != [py for py, _c, _d in leaves_y]:
@@ -174,12 +160,9 @@ def _check_udt_pair(op_name, dtype, dtype2, info_x, info_y):
                 f"{[c for _py, c, _d in leaves_y]}."
             )
         # Each field must also have the same shape in both (field dtypes may
-        # differ), as numpy requires before it promotes or compares two record
-        # dtypes. Shapes that do not broadcast would raise inside the cfunc,
-        # unseen, and leave whatever was in the output buffer. Shapes that do
-        # broadcast would work one way round only, since the arithmetic ops
-        # write into a field shaped like the left operand's: ``(3,)`` plus
-        # ``(1,)`` works, ``(1,)`` plus ``(3,)`` does not.
+        # differ), as numpy requires to promote two record dtypes. The
+        # generated code indexes both array fields over the result field's
+        # shape, which is the left operand's.
         for (_py, c, leaf_x), (_py_y, _c_y, leaf_y) in zip(leaves_x, leaves_y, strict=True):
             if leaf_x.shape != leaf_y.shape:
                 raise KeyError(
@@ -188,10 +171,8 @@ def _check_udt_pair(op_name, dtype, dtype2, info_x, info_y):
                     f"{leaf_x.shape} vs {leaf_y.shape}."
                 )
         return
-    # Array UDTs broadcast as numpy arrays do, so ``(3, 1)`` with ``(1, 4)``
-    # gives ``(3, 4)``; the generated code reads each operand through a flat
-    # index map (``udt_codegen._array_operand_source``). Shapes such as ``(2, 3)`` with
-    # ``(3, 2)`` do not broadcast, as numpy refuses them.
+    # Array UDTs broadcast as numpy arrays do: ``(3, 1)`` with ``(1, 4)`` gives
+    # ``(3, 4)`` (``udt_codegen._array_operand_source``).
     (base_x, shape_x), (base_y, shape_y) = dtype.np_type.subdtype, dtype2.np_type.subdtype
     try:
         np.broadcast_shapes(shape_x, shape_y)
@@ -228,13 +209,11 @@ def _element_types(op_name, dtype, dtype2, elem_x, elem_y):
     generated code casts to them too, because Numba promotes differently: it
     adds uint64 and int64 in int64, where GraphBLAS uses float64. ``dtype`` and
     ``dtype2`` are the operands, named in errors. Two elements that are not
-    both built-in dtypes (bytes, datetime, records inside an array field) have
+    both built-in dtypes (bytes, a date, a record inside an array field) have
     no promotion rule, so they must be the same dtype, which the result keeps.
     """
-    # ``min``/``max``/``floordiv`` have no defined semantics on complex
-    # operands (no ordering, no integer mod). Reject early with a clear
-    # message; otherwise Numba's cfunc compile blows up several frames
-    # down with ``NotImplementedError: No definition for lowering lt``.
+    # Otherwise Numba fails later, compiling the op, with
+    # ``NotImplementedError: No definition for lowering lt``.
     if op_name in _OPS_NOT_FOR_COMPLEX and "c" in (elem_x.kind, elem_y.kind):
         raise _complex_op_error(op_name, dtype, dtype2)
     builtin_x = _builtin_dtype(elem_x)
@@ -262,14 +241,14 @@ def _udt_op_types(op_name, dtype, dtype2):
     """Return ``(ret_type, input_types)`` for ``binary.{op_name}`` on ``dtype`` and ``dtype2``.
 
     At least one operand is a record or array UDT, and ``_check_udt_pair`` has
-    accepted the pair; the other may be a plain scalar type. Each element, or
+    accepted the pair; the other may be a built-in type. Each element, or
     record leaf, follows :func:`_element_types`, so the result never narrows:
-    an int64 array UDT plus ``0.5`` is ``FP64[3]``. ``ret_type`` is an
-    operand's own type when that holds the result, so same-type arithmetic
-    keeps its UDT. Otherwise it is the promoted layout, which is the UDT a user
-    registered with that layout if there is one, else an anonymous one.
-    ``input_types`` holds the ``(in_x, in_y)`` pair of each record leaf, in
-    leaf order, or the single pair for an array UDT's elements.
+    ``INT64[3]`` plus ``0.5`` is ``FP64[3]``. ``ret_type`` is an operand's own
+    type when it has exactly the result's layout and element types, so
+    same-type arithmetic keeps its UDT. Otherwise it is the UDT registered for
+    the result's numpy dtype, or a new anonymous one. ``input_types`` holds the
+    ``(in_x, in_y)`` pair of each record leaf, in leaf order, or the single
+    pair for an array UDT's elements.
     """
     np_x, np_y = dtype.np_type, dtype2.np_type
     if np_x.names is not None or np_y.names is not None:
@@ -302,13 +281,13 @@ def _udt_op_types(op_name, dtype, dtype2):
 
 
 def _monoid_pair_type(binaryop_name, dtype, dtype2):
-    """Return the type a built-in Monoid indexed with a UDT pair takes, compiling nothing.
+    """Return the type of a built-in Monoid indexed with two UDT types, compiling nothing.
 
-    It is the type the pair promotes to, as ``monoid.plus["INT8", "INT16"]`` is
-    ``monoid.plus["INT16"]``: the type lifted arithmetic gives the pair, leaf by
-    leaf. ``binary.any`` keeps the second operand's type, so ``monoid.any``
-    promotes as ``plus`` does, the same in either order. A pair that does not
-    pair raises the ``KeyError`` compiling the op would.
+    It is the type the two promote to, as ``monoid.plus["INT8", "INT16"]`` is
+    ``monoid.plus["INT16"]``: the type lifted ``plus`` gives them, leaf by
+    leaf. ``binary.any`` on two UDTs gives the second one's type, so
+    ``monoid.any`` promotes as ``plus`` does, to be the same in either order.
+    Types that do not pair raise the ``KeyError`` compiling the op would.
     """
     op_name = binaryop_name if binaryop_name in BUILTIN_UDT_BINARY_OPS else "plus"
     _check_udt_pair(op_name, dtype, dtype2, _get_udt_info(dtype), _get_udt_info(dtype2))
@@ -372,17 +351,17 @@ def _check_leaves_compare(op_name, dtype, dtype2):
 
 
 def _corresponding_leaves(np_x, np_z):
-    """Return ``(reason, pairs)`` for putting an element of ``np_x`` into one of ``np_z``.
+    """Return ``(reason, pairs)`` for storing an element of ``np_x`` as one of ``np_z``.
 
     ``reason`` says why the two layouts do not correspond, or is ``None``, and
     then ``pairs`` holds the base dtypes of each pair of leaves. Records must
-    line up as the operands of a lifted op do (:func:`_check_udt_pair`): the
-    same field names, order and nesting and the same shape for each field.
-    Arrays must have the same shape apart from leading axes of length 1;
-    operands broadcast, but a stored element keeps every value in its place.
-    numpy casts records by position whatever their names, and repeats or
-    drops elements of an array field of another length, which would put
-    values in places nobody chose.
+    pair as the operands of a lifted op do (:func:`_check_udt_pair`): the same
+    field names, order and nesting and the same shape for each field. Arrays
+    must have the same shape apart from leading axes of length 1; operands
+    broadcast, but a stored element keeps every value in its place. numpy's
+    own cast differs: it matches record fields by position, whatever their
+    names, and drops or zero-fills elements of an array field of another
+    length.
     """
     if (np_x.names is None) != (np_z.names is None):
         return "a record UDT and an array UDT do not correspond", None
@@ -407,8 +386,8 @@ def _udt_cast_error(dtype, to_dtype):
     """Return why an element of UDT ``dtype`` cannot be stored as UDT ``to_dtype``, or ``None``.
 
     The layouts must correspond (:func:`_corresponding_leaves`), each pair of
-    elements must be built-in numbers, or the same type, and none float16,
-    which the Numba code that casts cannot compute on.
+    leaves must be built-in numbers or of the same type, and none may be
+    float16, which Numba cannot compute on.
     """
     reason, pairs = _corresponding_leaves(dtype.np_type, to_dtype.np_type)
     for x, z in pairs or ():
@@ -448,15 +427,15 @@ def _casts_safely_into(literal_type, dtype):
 def _store_cast_op(result_dtype, output_dtype, *, is_value=False):
     """Return the UnaryOp that converts a result for an object of ``output_dtype``, or ``None``.
 
-    GraphBLAS casts between built-in types on store (C's casts, with a float
-    saturating into an integer type), but it cannot cast to or from a UDT;
-    left to GraphBLAS, that is a bare GrB_DOMAIN_MISMATCH or, for a single
-    element, bytes read as the wrong type. So when a UDT is involved, the
-    result is stored by applying the op returned here, which casts each
-    element or record leaf the way GraphBLAS casts built-in types, between
-    UDTs whose layouts correspond (:func:`_udt_cast_error`). Any other
+    GraphBLAS casts between built-in types on store, but it cannot cast to or
+    from a UDT: left to GraphBLAS, that is a bare GrB_DOMAIN_MISMATCH or, for
+    a single element, bytes read as the wrong type. So when a UDT is
+    involved, the result is stored by applying the op returned here, which
+    casts each element or record leaf the way GraphBLAS casts built-in types,
+    between UDTs whose layouts correspond (:func:`_udt_cast_error`). Any other
     pair raises ``DomainMismatch``. ``None`` means GraphBLAS stores the result
-    as it is. This is the one place that decides what may be stored where.
+    as it is. This is the one place that decides what may be stored where;
+    docs/technical_notes/udt_operators.rst states the rules for users.
     ``is_value`` says the error is for an object stored or accumulated as it
     is, not a computed result.
     """
@@ -526,10 +505,10 @@ def _scalar_accum_operand(scalar, value):
     needs, so for a built-in Scalar GraphBLAS converts the value to that type
     before it accumulates: an INT8 Scalar's ``s += 0.5`` adds 0, as a Vector's
     ``v(accum=binary.plus) << 0.5`` does. GraphBLAS cannot convert a value to a
-    UDT, so for a UDT Scalar it is converted here, as storing it would convert
-    it: a literal as ``Scalar.from_value`` converts it, and a Scalar or an
-    element by :func:`_cast_for_store`, which raises for a type that does not
-    cast. ``value`` is a literal, a Scalar, or an element to extract.
+    UDT, so for a UDT Scalar it is converted here, as a store would convert
+    it: a literal by ``Scalar.from_value``, and a Scalar or an element by
+    :func:`_cast_for_store`, which raises for a type that does not cast.
+    ``value`` is a literal, a Scalar, or an element to extract.
     """
     if not scalar.dtype._is_udt:
         return value
@@ -615,7 +594,7 @@ def _ewise_add_casts_udt(left, right, op):
         left_dtype, right_dtype = left.dtype, right.dtype
     except TypeError:
         # An infix operand that has no dtype here (``x & y`` of non-BOOL);
-        # ewise_add reports it as before.
+        # ewise_add reports it.
         return False
     if not (left_dtype._is_udt or right_dtype._is_udt):
         return False
@@ -629,12 +608,13 @@ def _scalar_ewise_add_converted(left, right, op):
     """Return ``left``, ``right`` and ``op`` for an ``ewise_add`` of two Scalars that needs a cast.
 
     ``op`` is typed on the two, and :func:`_ewise_add_needs_cast` holds:
-    GraphBLAS would cast an unpaired entry to the result type, which a UDT
-    cannot be. For a built-in op that lifts to UDTs, both are converted to the
-    result type first, which changes no value, and the op applies in that one
-    type: an int8 UDT plus 0.5 is float64, and an empty Scalar still adds as 0.
-    A Scalar is one element, so the converted copies cost nothing; Vector and
-    Matrix raise instead, as any other op does here (:func:`_ewise_add_cast_error`).
+    GraphBLAS would cast an unpaired entry to or from a UDT. For a built-in op
+    that lifts to UDTs, both are converted to the result type first, which
+    changes no value, and the op applies in that one type: an ``INT8[3]``
+    Scalar plus 0.5 is ``FP64[3]``, and an empty Scalar leaves the other's
+    value. A Scalar is one element, so the converted copies cost nothing;
+    Vector and Matrix raise instead, as any other op does here
+    (:func:`_ewise_add_cast_error`).
     """
     if not _is_lifted_op(op.parent):
         raise _ewise_add_cast_error(op, left.dtype, right.dtype)
@@ -667,12 +647,13 @@ def _plus_zero(dtype):
 
 
 def _converted_to(operand, dtype, **new_kwargs):
-    """Return ``operand`` converted to UDT ``dtype``, which holds its elements, value for value.
+    """Return ``operand`` converted to UDT ``dtype``, which its values convert to unchanged.
 
-    It adds ``dtype``'s zero on the left with the lifted ``plus``. With the
-    zero on the left, the result is ``dtype`` itself even when the operand has
-    the same elements in another layout (a packed and an aligned record),
-    since a left operand that holds the promoted elements is the result type.
+    It adds ``dtype``'s zero (:func:`_plus_zero`) on the left with the lifted
+    ``plus``. With the zero on the left, the result is ``dtype`` itself even
+    when the operand has the same element types with other field offsets (a
+    packed and an aligned record), because the left operand's type is the
+    result type when it has the result's element types (:func:`_udt_op_types`).
     """
     from .. import binary
 
@@ -689,10 +670,10 @@ def _element_shapes_differ(dtype1, dtype2):
     """Whether elements of ``dtype1`` and ``dtype2`` differ in shape, for ``isequal``.
 
     ``==`` on array UDTs broadcasts, as numpy's does, but ``isequal`` asks
-    whether two values are the same array, as ``np.array_equal`` does: the
-    shapes must match, apart from leading axes of length 1 (the rule a store
-    uses), and an element of a built-in dtype has shape ``()``. Records pair
-    field by field instead (:func:`_check_udt_pair`).
+    whether two values are the same array, as ``np.array_equal`` does, except
+    that leading axes of length 1 are ignored (the rule a store uses). An
+    element of a built-in dtype has shape ``()``. Records pair field by field
+    instead (:func:`_check_udt_pair`).
     """
     if dtype1 is dtype2 or not (dtype1._is_udt or dtype2._is_udt):
         return False
@@ -708,8 +689,9 @@ def _literal_shape_differs(dtype, value):
     """Whether literal ``value`` differs in shape from an element of array UDT ``dtype``.
 
     As :func:`_element_shapes_differ`, for ``Scalar.isequal`` with a literal: a
-    number has shape ``()``, so it equals an ``FP64[1]`` element but not an
-    ``FP64[3]`` one, as in ``np.array_equal``. ``False`` for a record UDT.
+    number has shape ``()``, so it can equal an ``FP64[1]`` element (whose leading
+    axis of length 1 is ignored) but not an ``FP64[3]`` one. ``False`` for a record
+    UDT.
     """
     np_type = dtype.np_type
     if np_type.subdtype is None or isinstance(value, dict):
@@ -781,8 +763,6 @@ def _element_bytes(dtype, value):
     record, an array or sequence for an array UDT, or a number for every leaf.
     """
     np_type = dtype.np_type
-    # ``_udt_bytes`` zeros a record's alignment padding, which numpy may leave
-    # as junk however it writes the record.
     if np_type.subdtype is None:
         arr = np.zeros(1, dtype=np_type)
         if isinstance(value, dict) and np_type.names is not None:
@@ -913,18 +893,13 @@ def _collect_data_ranges(np_type, offset, out):
 def _udt_bytes(np_type, arr):
     """The bytes of a UDT buffer, with any alignment padding zeroed.
 
-    ``tobytes()`` flattens any-rank numpy buffers (in particular, multi-dim
-    array UDTs like ``FP64[2, 3]``) to a 1-D byte buffer that cffi can copy
-    into GrB_Scalar storage.
-
-    numpy promises nothing about the padding bytes it leaves behind, and which
-    way it goes has changed across releases: numpy 2.5 made ``arr[:] = record``
-    a whole-item copy out of an uninitialized temporary, so even a buffer from
-    ``np.zeros`` comes back with junk between the fields. A caller's own array
-    can carry junk padding in too. Since the whole record is copied into the
-    GrB_Scalar and read back out of ``Scalar.value``, anything that compares or
-    hashes those raw bytes would otherwise see an equal-valued scalar as
-    unequal.
+    numpy promises nothing about padding bytes. From numpy 2.5,
+    ``arr[:] = record`` copies a whole item out of an uninitialized temporary,
+    so even a buffer from ``np.zeros`` gets junk between the fields, and a
+    value assigned from a caller's own array can bring its junk too. The whole
+    record is copied into the GrB_Scalar and read back out of
+    ``Scalar.value``, so anything that compares or hashes those bytes would
+    see two equal values as unequal.
     """
     raw = arr.tobytes()
     ranges = _padding_ranges(np_type)

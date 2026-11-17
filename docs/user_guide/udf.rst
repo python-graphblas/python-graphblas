@@ -2,246 +2,229 @@
 User-defined Functions (UDFs)
 =============================
 
-python-graphblas lets you write custom operators in Python. ``numba``
-JIT-compiles them to native machine code so they run inside
-SuiteSparse:GraphBLAS at C speed. This guide covers every operator type
-that accepts a user function: ``UnaryOp``, ``BinaryOp``, ``IndexUnaryOp``,
-``SelectOp``, and ``IndexBinaryOp``.
+Python-graphblas requires ``numba`` which enables compiling user-defined Python functions
+to native machine code for use by the GraphBLAS backend. This provides functions which are
+very performant.
 
-A first example
----------------
+Example user-defined UnaryOp:
 
 .. code-block:: python
 
-    from graphblas import unary, Vector
+    from graphblas import Vector, unary
 
-    def force_odd(x):
+
+    def force_odd_func(x):
         if x % 2 == 0:
             return x + 1
         return x
 
-    unary.register_new("force_odd", force_odd)
+
+    unary.register_new("force_odd", force_odd_func)
 
     v = Vector.from_coo([0, 1, 3, 4, 5], [1, 2, 3, 8, 14])
     w = v.apply(unary.force_odd).new()
-    # w = [1, 3, _, 3, 9, 15]
 
-``register_new`` vs ``register_anonymous``
-------------------------------------------
+.. csv-table:: w
+    :class: matrix
+    :header: 0,1,2,3,4,5
 
-- ``register_new(name, func)`` puts the operator on ``gb.unary.{name}`` (or
-  ``gb.binary.{name}``, etc.). Use this for operators you'll reference by
-  name across files.
-- ``register_anonymous(func)`` returns the operator without adding it to a
-  namespace. Use this for one-off operators or operators created inside
-  another function.
+    1,3,,3,9,15
 
-Lambdas are auto-registered as anonymous wherever a UnaryOp is expected:
+``register_new`` adds the operator to the ``graphblas.unary`` namespace, as
+``unary.force_odd``, and compiles the function for each built-in type Numba can compile
+it for. ``register_anonymous`` returns the operator without adding it to a namespace,
+for an operator used in one place or made inside a function.
+
+Kinds of operators
+------------------
+
+Similar methods exist for BinaryOp, IndexUnaryOp, SelectOp and IndexBinaryOp. The
+function's signature depends on the kind of operator:
+
+==================  ======================================  ====================================
+Operator            Function signature                      Returns
+==================  ======================================  ====================================
+``UnaryOp``         ``f(x)``                                a value
+``BinaryOp``        ``f(x, y)``                             a value
+``IndexUnaryOp``    ``f(x, ix, jx, thunk)``                 a value
+``SelectOp``        ``f(x, ix, jx, thunk)``                 a bool: whether to keep ``x``
+``IndexBinaryOp``   ``f(x, ix, jx, y, iy, jy, theta)``      a value
+==================  ======================================  ====================================
+
+``ix`` and ``jx`` are the row and column of ``x``, and ``iy`` and ``jy`` those of ``y``;
+in a Vector, ``ix`` is the index and ``jx`` is 0. ``thunk`` and ``theta`` are a scalar
+given when the operator is used. IndexBinaryOps need SuiteSparse:GraphBLAS 9.4 or later.
+
+.. _udf_indices:
+
+The indices are unsigned 64-bit integers, so a difference such as ``ix - jx`` or
+``iy - ix`` wraps around to a huge number when it would be negative. Compare the indices
+instead, or convert them first: ``np.int64(ix) - np.int64(jx)``. ``int(ix)`` does not
+help, because Numba keeps it unsigned.
+
+A user-defined Monoid is built from a user-defined BinaryOp and its identity, and a
+Semiring from a Monoid and a BinaryOp, built-in or user-defined:
 
 .. code-block:: python
 
+    from graphblas import Matrix, Vector, binary, monoid, semiring
+
+
+    def maxabs(x, y):  # the value of greater magnitude; on a tie, the greater value
+        if abs(x) != abs(y):
+            return x if abs(x) > abs(y) else y
+        return x if x > y else y
+
+
+    binary.register_new("maxabs", maxabs)
+    monoid.register_new("maxabs", binary.maxabs, 0)
+    semiring.register_new("maxabs_times", monoid.maxabs, binary.times)
+
+    v = Vector.from_coo([0, 1, 2], [3, -7, 5])
+    largest = v.reduce(monoid.maxabs).new()  # -7
+
+    # The term A[i, j] * v[j] of greatest magnitude in each row
+    A = Matrix.from_coo([0, 0, 1, 2], [0, 1, 2, 1], [5, 1, 7, 9])
+    u = A.mxv(v, semiring.maxabs_times).new()  # [15, 35, -63]
+
+A SelectOp's function returns whether to keep each element. This one keeps the elements
+above the diagonal that are greater than the thunk:
+
+.. code-block:: python
+
+    from graphblas import select
+
+
+    def upper_and_big(x, i, j, thunk):
+        return j > i and x > thunk
+
+
+    select.register_new("upper_and_big", upper_and_big)
+
+    B = select.upper_and_big(A, 2).new()  # keeps only A[1, 2], which is 7
+
+Auto-registration of Lambdas
+----------------------------
+
+As a convenience, any function, such as a lambda expression, used in place of a UnaryOp
+or BinaryOp is compiled for the operand types and registered anonymously.
+
+Example lambda usage:
+
+.. code-block:: python
+
+    v = Vector.from_coo([0, 1, 3, 4, 5], [1, 2, 3, 8, 14])
     v.apply(lambda x: x % 5 - 2).new()
 
-Operator signatures
--------------------
+.. csv-table::
+    :class: matrix
+    :header: 0,1,2,3,4,5
 
-The function signature depends on the operator type:
+    -1,0,,1,1,2
 
-==================  ====================================================  =====================================
-Operator            Function signature                                    Returns
-==================  ====================================================  =====================================
-``UnaryOp``         ``f(x) -> z``                                         a value
-``BinaryOp``        ``f(x, y) -> z``                                      a value
-``IndexUnaryOp``    ``f(x, ix, jx, theta) -> z``                          a value (often bool, for select)
-``SelectOp``        same as IndexUnaryOp                                  ``bool``
-``IndexBinaryOp``   ``f(x, ix, jx, y, iy, jy, theta) -> z``               a value (requires SS >= 9.4)
-==================  ====================================================  =====================================
+Parameterized operators
+-----------------------
 
-``ix, jx`` are the row and column indices of ``x``; same for ``iy, jy`` and ``y``.
-``theta`` is a scalar parameter bound when the operator is used (see
-:ref:`udf_indexbinary` below).
-
-Parameterized UDFs
-------------------
-
-To parameterize a UDF (e.g., a scale factor known only at call time), write a
-factory function that returns the actual operator, and register it with
+To give an operator a parameter when it is used, such as a scale factor, write a function
+that takes the parameter and returns the function to compile, and register it with
 ``parameterized=True``:
 
 .. code-block:: python
 
-    from graphblas import binary
-
     def make_scaled_add(scale):
         def inner(x, y):
             return scale * (x + y)
+
         return inner
+
 
     binary.register_new("scaled_add", make_scaled_add, parameterized=True)
 
-    # Bind the parameter, then use the resulting op:
-    op = binary.scaled_add(2.0)
-    result = v.ewise_mult(w, op).new()
-
-User-defined types (UDTs)
--------------------------
-
-Pass ``is_udt=True`` when your UDF operates on user-defined record or array
-types. See :doc:`udt` for the full story.
-
-.. code-block:: python
-
-    from graphblas import binary, dtypes
-    import numpy as np
-
-    edge_dtype = dtypes.register_anonymous(
-        np.dtype([("weight", np.float64), ("hops", np.int32)], align=True),
-        "Edge",
-    )
-
-    def combine_edges(x, y):
-        return (x["weight"] + y["weight"], x["hops"] + y["hops"])
-
-    binary.register_new("combine_edges", combine_edges, is_udt=True)
-
-The function can return a tuple matching the record's fields, an existing
-record value, or a numpy array for array UDTs.
+    x = Vector.from_coo([0, 1], [1.0, 2.0])
+    y = Vector.from_coo([0, 1], [3.0, 4.0])
+    x.ewise_mult(y, binary.scaled_add(2.0)).new()  # [8.0, 12.0]
 
 .. _udf_indexbinary:
 
-IndexBinaryOps and the theta parameter
---------------------------------------
+IndexBinaryOps and theta
+------------------------
 
-An IndexBinaryOp receives row and column indices for both operands plus a
-scalar ``theta``. Binding ``theta`` produces a regular ``BinaryOp`` that
-works in ``ewise_mult``, ``ewise_add``, and the other elementwise paths:
+An IndexBinaryOp receives the row and column of both operands, and a scalar ``theta``.
+Binding ``theta`` makes a BinaryOp, which works in ``ewise_mult``, ``ewise_add``,
+``ewise_union`` and ``kronecker``. SuiteSparse does not accept it in ``apply`` or as an
+accumulator.
 
 .. code-block:: python
 
-    from graphblas import indexbinary, Matrix
+    from graphblas import Matrix, indexbinary
+
 
     def discounted_sum(x, ix, jx, y, iy, jy, theta):
         return (x + y) * theta
 
+
     indexbinary.register_new("discounted_sum", discounted_sum)
 
-    bound = indexbinary.discounted_sum(0.5)   # theta = 0.5
     A = Matrix.from_coo([0, 1], [0, 1], [1, 2])
     B = Matrix.from_coo([0, 1], [0, 1], [3, 4])
-    C = A.ewise_mult(B, bound).new()
-    # C is FP64: C[0,0] = (1+3)*0.5 = 2.0;  C[1,1] = (2+4)*0.5 = 3.0
+    op = indexbinary.discounted_sum(0.5)  # bind theta to 0.5
+    C = A.ewise_mult(B, op).new()  # FP64: C[0, 0] is 2.0, C[1, 1] is 3.0
 
-Like any other BinaryOp, the bound op takes its type each time it runs: the
-type that holds both inputs and ``theta``, as ``apply`` types an IndexUnaryOp
-from its input and thunk. One type serves x, y and ``theta``. ``theta`` has
-the type of its value: a Python int is INT64 and a float FP64, and a numpy
-scalar or a ``Scalar`` keeps its own type. With no ``theta``, ``theta`` is 0
-(``False``), which changes no type. Above, the INT64 matrices and the float
-``theta`` run in FP64. To choose the type yourself, name it:
-``indexbinary.discounted_sum[float](0.5)``, or
-``indexbinary.discounted_sum(0.5, dtype=float)``. The inputs and ``theta`` are
-then cast to that type.
+Like any BinaryOp, the bound op takes its type when it runs: the one type that holds both
+inputs and ``theta``. Here the INT64 matrices and the float ``theta`` run in FP64. To
+choose the type, name it: ``indexbinary.discounted_sum[float](0.5)``. The full typing
+rules, including for UDTs, are in :ref:`tn_indexbinary_typing`.
 
-An op registered with ``is_udt=True`` is compiled for the types of x, y and
-``theta`` as they are, so none of them is cast: ``op(0.5)`` on INT64 inputs
-gets the float 0.5. A numpy array ``theta`` has the array UDT of its dtype
-and shape. A tuple has no type of its own, so give a record or array
-``theta`` as a ``Scalar`` of its UDT (``Scalar.from_value((1, 2.5), udt)``).
-``op[X, Y, T](theta)`` names all three types, and ``op[X, Y](theta)`` gives
-``theta`` the type of y.
-
-This differs from an IndexUnaryOp in ``apply``, which makes a number thunk an
-element of the UDT data's type. Beside UDT data, a number ``theta`` stays a
-number: with ``x + theta`` on INT32[3] data, ``op(5)`` adds an INT64 to each
-element, which gives an int64 array, not an INT32[3] element, so the op
-raises ``UdfParseError`` when it is used. To make ``theta`` the data's type,
-pass a ``Scalar`` of that type, or a numpy value of the element type
-(``op(np.int32(5))``), or name the type: ``op(5, dtype=udt)`` binds
-``op[udt](5)``, which makes 5 an element of ``udt``.
-
-A ``Scalar`` ``theta`` is copied when it is bound, so changing the ``Scalar``
-afterwards does not change the bound op. An ``apply`` expression, by
-contrast, reads its ``Scalar`` thunk when it runs.
-
-To use a bound IndexBinaryOp as the multiplier in ``mxm`` / ``mxv`` /
-``vxm``, wrap it in a Semiring. ``Semiring.register_anonymous`` accepts a
-bound IBO directly:
+To use a bound IndexBinaryOp in ``mxm``, ``mxv`` or ``vxm``, make it the multiplier of a
+Semiring:
 
 .. code-block:: python
 
     from graphblas import monoid, semiring
 
-    sr = semiring.register_anonymous(monoid.plus, bound)
-    C = A.mxm(B, sr).new()
+    sr = semiring.register_anonymous(monoid.plus, op)
+    D = A.mxm(B, sr).new()
 
-The Semiring is typed each time it runs, as the bound op is. One built from
-an op bound at a type (``discounted_sum[float](0.5)``) is monomorphic in that
-op's input/output types instead (SuiteSparse builds exactly one
-``GrB_Semiring`` for that type pair, rather than the type-polymorphic table
-the standard semirings carry). Per SuiteSparse, monoids themselves cannot be
-built from an IndexBinaryOp; only the multiplier slot accepts one.
+A Monoid cannot be made from an IndexBinaryOp.
 
-IndexBinaryOps require SuiteSparse:GraphBLAS >= 9.4.
+Operators on user-defined types
+-------------------------------
 
-What numba accepts
-------------------
+Pass ``is_udt=True`` to use an operator on user-defined types (UDTs). It then compiles
+for each type when first used, instead of for every built-in type at registration. The
+function reads a record's fields by name (``x["weight"]``) and receives an array UDT's
+element as a numpy array. See :doc:`udt`.
 
-The function body is compiled by ``numba.njit`` and must be pure
-numerical Python, with these constraints:
+What Numba compiles
+-------------------
 
-- No closures over Python objects (capture scalars, not lists or dicts).
-- ``numpy`` array operations and standard library calls like ``math.sin``
-  work; complex Python types (sets, dicts) do not.
-- Records (UDT fields) are accessed by name: ``x["weight"]``, not ``x.weight``.
-- Tuple returns work for UDTs (one tuple element per field).
+Numba compiles the function in its nopython mode, where numbers, tuples, numpy arrays,
+many numpy functions and the ``math`` module work (see Numba's
+`supported Python features <https://numba.readthedocs.io/en/stable/reference/pysupported.html>`_
+and `supported numpy features <https://numba.readthedocs.io/en/stable/reference/numpysupported.html>`_).
+The function can use numbers and numpy arrays from outside it, but not lists or dicts.
+Dividing by zero gives numpy's answer (``inf``, ``nan``, or 0 for integers) instead of
+raising.
 
-When compilation fails, you get a ``UdfParseError`` with the actionable
-diagnostic line pulled out of Numba's typing pass, rather than the full
-multi-hundred-line traceback. The most common causes:
+If the function compiles for no built-in type, ``register_new`` raises
+``UdfParseError``. An operator registered with ``is_udt=True`` raises it when it is first
+used on a type it does not compile for, with Numba's message.
 
-- Referencing a field that doesn't exist on the record UDT.
-- Returning a tuple whose length doesn't match the record's field count
-  (the error names the expected arity).
-- Calling a function Numba doesn't support in nopython mode.
+When operators compile
+----------------------
 
-See :doc:`udt` for UDT-specific guidance.
-
-Lazy registration
------------------
-
-Pass ``lazy=True`` to defer Numba compilation until the operator is first
-used. This is useful for libraries that register many operators at import
-time:
+Compiling for every built-in type takes time at registration. To defer it, pass
+``lazy=True``, which registers the operator at the first access of its name:
 
 .. code-block:: python
 
+    def heavy_func(x):
+        return x * 2
+
+
     unary.register_new("heavy_op", heavy_func, lazy=True)
-    # heavy_func isn't compiled yet; the operator object exists, but no
-    # numba.njit has run.
+    # heavy_func compiles at the first access of unary.heavy_op
 
-The compile happens on first lookup (``unary.heavy_op[int]``).
-
-Compilation caching
--------------------
-
-A handful of built-in operators are themselves UDFs (``binary.floordiv``,
-``rfloordiv``, ``absfirst``, ``abssecond``, and ``rpow``). Because these are
-plain module-level functions, python-graphblas compiles them with Numba's
-``cache=True``, so the Numba half of the compile is paid once per machine
-instead of once per Python process. Numba writes the cache (``.nbi`` index and
-``.nbc`` data files) into the ``__pycache__`` directory next to the operator
-module. A warm cache shaves roughly 20% off a single op's first-touch build and
-about 45% when several are used; the rest is Numba/LLVM startup and per-process
-object linking, which caching cannot remove.
-
-If that ``__pycache__`` directory is not writable (a read-only install, for
-example), Numba silently falls back to its per-user cache directory
-(``~/.cache/numba`` on Linux, ``~/Library/Caches/numba`` on macOS; set
-``NUMBA_CACHE_DIR`` to override). No warning is emitted for the fallback. If
-neither is writable, these operators are compiled uncached, once per process.
-
-Operators you create with ``register_new`` or ``register_anonymous`` are never
-passed ``cache=True``: Numba can only cache a function with a stable on-disk
-source, which a lambda or an interactively defined function does not have. A
-registered operator's compile is paid once per process, and ``lazy=True`` is
-the tool for deferring it.
+A compiled operator lasts for the rest of the process; a new process compiles it again.
+:ref:`tn_udfs` has the details, including the result types of an operator on built-in
+types.

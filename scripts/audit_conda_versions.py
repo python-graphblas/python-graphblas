@@ -4,7 +4,7 @@
 CI installs its dependencies from conda-forge, so this is the authoritative companion
 to `audit_pypi_versions.py`. It can see two things PyPI cannot:
 
-* which Pythons a version was actually built for. conda-forge builds more than PyPI
+* which Pythons a version was built for. conda-forge builds more than PyPI
   ships (it has a py311 build of pyyaml 5.4.1 where PyPI's newest wheel is cp39), and
   sometimes fewer, so "no wheel" and "no build" are different questions.
 * `constrains` metadata (conda's run_constrained). Several rules in the picker exist

@@ -124,7 +124,7 @@ def test_bad_ewise(s1, v1, A1, A2):
         (s1, A1.T),
         (A1, 1),
         (1, A1),
-        # A Scalar takes a literal, but not just any object, as `s1 + object()` does not
+        # A Scalar accepts a literal, but not any object, as `s1 + object()` does not
         (s1, object()),
         (object(), s1),
         (s1, "x"),
@@ -173,7 +173,7 @@ def test_bad_ewise(s1, v1, A1, A2):
         A1.T | A1
     with pytest.raises(DimensionMismatch):
         A1.T & A1
-    # Beside an infix expression, on either side
+    # With an infix expression on either side
     for left, right in [(v1 | v1, w), (w, v1 | v1), (A2 | A2, A1), (A1, A2 | A2)]:
         with pytest.raises(DimensionMismatch):
             left | right
@@ -237,7 +237,7 @@ def test_bad_matmul(s1, v1, A1, A2):
         A1.T @ A1.T
     with pytest.raises(DimensionMismatch):
         A1 @= A1
-    # Beside an infix expression, on either side
+    # With an infix expression on either side
     for left, right in [
         (A1 @ A2, v1),
         (v1, A1 @ A2),
@@ -823,7 +823,7 @@ def test_scalar_infix_literal_keeps_its_side():
     assert binary.minus((2 & s) & 1).new().value == -4
     assert binary.minus(1 | (2 | s)).new().value == 4
 
-    # A Python literal is typed beside the Scalar as by `-` (weak), once the op is known
+    # Once the op is known, a Python literal is typed as `-` types it with the Scalar (weak)
     f32 = Scalar.from_value(2.5, dtype=dtypes.FP32)
     t = Scalar.from_value(True)
     for lit, x in [(2, s), (0.5, s), (0.5, f32), (2, f32), (2, t)]:
@@ -857,8 +857,8 @@ def test_scalar_infix_literal_keeps_its_side():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_scalar_infix_literal_keeps_its_side_udt():
-    # The op types a literal beside a UDT, on the left as on the right: a lifted op as numpy
-    # would, and `first` as an element of the UDT, which 0.5 is not
+    # The op types a literal with a UDT the same on the left as on the right: a lifted op as
+    # numpy would, and `first` as an element of the UDT, which 0.5 does not fit
     udt = dtypes.register_anonymous(np.dtype((np.int8, (2,))), "_InfixLiteralI8")
     s = Scalar.from_value([5, 7], udt)
     result = binary.minus((1, 2) & s).new()
@@ -935,7 +935,7 @@ def test_numpy_value_on_the_left():
                 np.int16(2) @ x
             with pytest.raises(TypeError, match="Bad type for argument `left`"):
                 np.ones(x.shape[0]) @ x
-        # Before, numpy computed these from s.__array__() and raised for v and A
+        # Regression: numpy computed these from s.__array__(), and raised for v and A
         with pytest.raises(TypeError, match="Bad type"):
             np.array([1, 2]) - x
         with pytest.raises(TypeError, match="unsupported operand"):
@@ -953,12 +953,12 @@ def test_numpy_value_on_the_left():
     with pytest.raises(TypeError, match="only valid for BOOL"):
         (np.int16(2) & s).new()
 
-    # In place, numpy no longer computes an array minus a Scalar
+    # In place, an array minus a Scalar raises too, and leaves the array alone
     arr = np.array([1, 2])
     with pytest.raises(TypeError, match="Bad type"):
         arr -= s
     np.testing.assert_array_equal(arr, [1, 2])
-    # Ufuncs still convert a Scalar with __array__
+    # Ufuncs convert a Scalar with __array__
     assert np.sin(s) == np.sin(np.int8(5))
     np.testing.assert_array_equal(np.asarray(s), np.array(5, np.int8))
     result = np.subtract(np.int16(2), s)

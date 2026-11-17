@@ -27,8 +27,7 @@ from .. import _has_numba, _supports_udfs, ffi, lib
 from ..dtypes import _sample_values
 from ..expr import InfixExprBase
 
-# Imported unconditionally (plain dict, no numba): ``_compile_udt`` consults it
-# even when numba is absent.
+# Not under ``if _has_numba``: ``_compile_udt`` reads it without Numba too
 from ..udt import BUILTIN_UDT_BINARY_OPS as _BUILTIN_UDT_BINARY_OPS
 from .base import (
     _SS_OPERATORS,
@@ -57,13 +56,12 @@ ffi_new = ffi.new
 if _has_numba:
 
     def _make_udt_comparison(dtype, dtype2, *, is_eq):
-        """Build a cfunc-ready wrapper for UDT eq or ne comparison.
+        """Return ``(wrapper, signature)`` for a cfunc that compares UDT elements with eq or ne.
 
-        Compares per-leaf with IEEE semantics (NaN compares unequal even
-        to itself); scalar broadcasts to every leaf when paired with a
-        UDT. Mismatched-shape UDT pairs raise ``KeyError``. A UDT that is
-        neither a record nor an array (bytes, say) compares only with its
-        own type, as one value. Returns ``(wrapper_func, wrapper_sig)``.
+        Leaves compare as numpy compares them, so NaN is unequal even to itself. A built-in
+        operand is compared with every leaf. Types that do not pair raise ``KeyError``
+        (``_check_udt_pair``). A UDT that is neither a record nor an array, such as
+        text, is compared as one value.
         """
         from ..udt import (
             _check_leaves_compare,
@@ -84,10 +82,11 @@ if _has_numba:
         join = " and " if is_eq else " or "
 
         if info_x is None and info_y is None:
-            # Bytes, a datetime, or a complex number where the backend has no
-            # complex types: an element is one value, compared as numpy compares
-            # it, as a record field of that type is. ``_check_udt_pair`` has made
-            # sure both are the one UDT, text of one kind, or dates or durations.
+            # Text, a date, or a complex number on a backend without complex types.
+            # The element is one value, compared as numpy compares it (as a record
+            # field of that type is). ``_check_udt_pair`` has checked that both
+            # operands have the same UDT, or are both text of one kind, both dates
+            # or both durations.
             wrapper = _compile_codegen(
                 f"def wrapper(z_ptr, x_ptr, y_ptr):\n    z_ptr[0] = x_ptr[0] {cmp_op} y_ptr[0]\n",
                 func_name="wrapper",
@@ -103,15 +102,12 @@ if _has_numba:
         udt_info = info_y if x_is_scalar else info_x
 
         if udt_info[0] == "array":
-            # Array UDT: a scalar side is read through its pointer, with no
-            # ``numba.carray``. The wrapper sees an array side as a flat
-            # pointer-to-element, not pointer-to-Record; passing the Record
-            # numba_type here makes ``numba.carray`` try to read N
-            # record-sized chunks. Two array UDTs may differ in base dtype,
-            # so each side gets its own; typing both as the left one would
-            # reinterpret the bytes. Their shapes broadcast, as for the
-            # arithmetic ops, so eq is True when every pair of elements numpy
-            # would compare is equal.
+            # Array UDT. An array operand is a flat pointer to its base type, not to
+            # the UDT's numba type, with which ``numba.carray`` would read N
+            # elements of the UDT's size. Each operand gets its own base type, since
+            # two array UDTs can differ in it. A built-in operand is read through
+            # its pointer. The shapes broadcast, as for the arithmetic ops, so eq is
+            # True when every pair of elements numpy would compare is equal.
             shape_x = None if x_is_scalar else dtype.np_type.subdtype[1]
             shape_y = None if y_is_scalar else dtype2.np_type.subdtype[1]
             shape = np.broadcast_shapes(*(s for s in (shape_x, shape_y) if s is not None))
@@ -122,11 +118,10 @@ if _has_numba:
             ns = {}
             x_setup, x_ref = _array_operand_source("x", shape_x, shape, ns)
             y_setup, y_ref = _array_operand_source("y", shape_y, shape, ns)
-            # A loop, not a chain of N terms, whose typing time grows faster
-            # than linearly with N (see ``_make_array_wrapper``). It reads every
-            # element rather than stopping at the first that decides, which
-            # lets the compiler vectorize it: faster on the equal values that
-            # need every element read anyway.
+            # A loop, not a chain of N terms, whose typing time grows faster than N
+            # (see ``_make_array_wrapper``). It reads every element instead of
+            # stopping at the first that decides, so the compiler can vectorize it;
+            # equal values need every element read anyway.
             accumulate = "&=" if is_eq else "|="
             src = (
                 f"def wrapper(z_ptr, x_ptr, y_ptr):\n{x_setup}{y_setup}"
@@ -143,9 +138,9 @@ if _has_numba:
             )
             return wrapper, wrapper_sig
 
-        # Record UDT (possibly nested): chain leaf comparisons. An
-        # array-valued sub-field compares as a whole, against the other
-        # operand's field or a scalar, and reduces to one bool.
+        # Record UDT, possibly nested: join the leaf comparisons. An array field is
+        # compared element by element with the other operand's field or number, and
+        # reduced to one bool with ``all`` (eq) or ``any`` (ne).
         np_type = udt_dtype.np_type
         terms = []
         for py_path, _c, leaf_dtype in _iter_record_leaves(np_type):
@@ -349,10 +344,10 @@ def _isclose(rel_tol=1e-7, abs_tol=0.0):
     return inner
 
 
-# Integer arithmetic in Numba wraps: x - y in int64 or uint64 (Numba widens smaller
-# unsigned types to uint64, so 5 - 6 is 2**64 - 1), and abs at a signed type's
-# minimum. Python ints do not, so for them these are plain Python; the overloads
-# below compile them for Numba's integers so that they do not wrap either.
+# Integer arithmetic in Numba wraps: ``x - y`` in int64 or uint64 (Numba widens smaller
+# unsigned types to uint64, so 5 - 6 is 2**64 - 1), and ``abs`` of a signed type's
+# minimum. These helpers are plain Python, which is right for Python ints; the overloads
+# below give Numba's integers versions that do not wrap.
 def _abs_diff(x, y):
     return abs(x - y)
 
@@ -369,7 +364,7 @@ if _has_numba:
         if isinstance(x, numba.types.Integer) and x == y:
 
             def abs_diff(x, y):  # pragma: no cover (numba)
-                # The difference fits uint64, where both convert modulo 2**64
+                # The difference fits in uint64, and both operands convert to it modulo 2**64
                 if x >= y:
                     return np.uint64(x) - np.uint64(y)
                 return np.uint64(y) - np.uint64(x)
@@ -579,25 +574,23 @@ class BinaryOp(OpBase):
         if name is None:
             name = getattr(func, "__name__", "<anonymous_binary>")
         success = False
-        # The error model has to be set here, not only on the cfunc wrapper
-        # below: ``.compile(sig)`` further down builds the specialization the
-        # wrapper then reuses, and a Dispatcher keeps one compilation per
-        # signature. Whichever compile happens first fixes the model, so
-        # setting it only on the wrapper leaves ``x // 0`` raising
-        # ZeroDivisionError inside a cfunc, where Numba prints the traceback
-        # and returns, handing GraphBLAS an element it never wrote.
+        # The error model has to be set here, not only on the cfunc wrapper below.
+        # ``.compile(sig)`` further down builds the specialization the wrapper then
+        # reuses, and a Dispatcher keeps one compilation per signature, so the first
+        # compile fixes the model. Set only on the wrapper, ``x // 0`` raises
+        # ZeroDivisionError inside the cfunc, where Numba prints the traceback and
+        # returns, handing GraphBLAS an element it never wrote. The other op classes'
+        # ``_build`` point here.
         #
-        # ``cache`` is only True for the module-level built-in UDFs. Numba can
-        # only key a cache entry on a stable on-disk source, which lambdas and
-        # interactively defined functions do not have, so ops registered by
-        # users stay uncached.
+        # ``cache`` is True only for the built-in UDFs, which are module-level
+        # functions; Numba cannot cache a lambda or an interactively defined function
+        # (docs/technical_notes/udfs.rst, "The Numba disk cache").
         if cache:
             try:
                 binary_udf = numba.njit(func, error_model="numpy", cache=True)
             except RuntimeError:
-                # Numba has nowhere to write the cache ("no locator available"): a
-                # read-only install whose user has no writable cache directory
-                # either. Compile uncached, as for an op a user registers.
+                # Numba has nowhere to write the cache ("no locator available"), as in
+                # a read-only install whose user has no writable cache directory
                 binary_udf = numba.njit(func, error_model="numpy")
         else:
             binary_udf = numba.njit(func, error_model="numpy")
@@ -696,10 +689,8 @@ class BinaryOp(OpBase):
             self.name in _BUILTIN_UDT_BINARY_OPS or self.name in ("eq", "ne")
         )
 
-        # Built-in arithmetic ops set ``_udt_types = {}`` to enable UDT
-        # dispatch, which also routes plain-scalar misses (e.g. ``plus[BOOL]``)
-        # here. Re-raise with the legacy single-dtype message so callers like
-        # ``mapnumpy`` see the same error as before UDT auto-lift.
+        # A lifted op has ``_udt_types``, so a built-in type it lacks (``min["FC64"]``)
+        # comes here too. Raise the KeyError ``OpBase.__getitem__`` raises for one.
         if (
             is_lifted
             and self.name in _BUILTIN_UDT_BINARY_OPS
@@ -715,12 +706,9 @@ class BinaryOp(OpBase):
             ret_type = BOOL
 
         elif _has_numba and is_lifted:
-            # Auto-generate a per-leaf wrapper for built-in arithmetic. Most
-            # of these names (plus, minus, times, truediv, min, max) have no
-            # ``_numba_func`` and would fall through to the KeyError below
-            # without this branch. ``floordiv`` does have a ``_numba_func``,
-            # which Numba won't compile against records; the per-leaf wrapper
-            # is the only path that works for it on UDTs.
+            # Generate a wrapper that computes leaf by leaf. This comes before the
+            # ``_numba_func`` branch because ``floordiv`` has a ``_numba_func``, which
+            # Numba cannot compile for records.
             py_op = _BUILTIN_UDT_BINARY_OPS[self.name]
             binary_wrapper, wrapper_sig, ret_type = compile_udt_binary_wrapper(
                 self.name, py_op, dtype, dtype2
@@ -742,13 +730,12 @@ class BinaryOp(OpBase):
         op = _finalize_udt_op(
             self, dtype, dtype2, ret_type, binary_wrapper, wrapper_sig, TypedUserBinaryOp
         )
-        # Set JIT C definition for auto-generated built-in UDT ops. A same-type
-        # pair whose result is that type too gets the one-type kernel below; a
-        # mixed pair (a scalar with a UDT, or two UDTs of one layout with other
-        # element types) gets a kernel with a C type for each of z, x and y,
-        # when it has a C form (``set_jit_c_mixed_on_op``); eq/ne on a mixed
-        # pair keep the cfunc. ``_has_jit_set`` gates access to
-        # ``lib.GrB_BinaryOp_set_String``, which is absent on SS < 9.
+        # Give a lifted op a C definition for the JIT. When x and y have one type, and
+        # an arithmetic op's result has it too, the definition uses that type
+        # (``set_jit_c_on_op``, or ``set_jit_c_comparison_on_op`` for eq and ne).
+        # Otherwise an arithmetic op gets a definition with a C type for each of z, x
+        # and y, when there is one (``set_jit_c_mixed_on_op``), and eq and ne get none.
+        # ``_has_jit_set`` is False where ``GrB_BinaryOp_set_String`` is missing.
         if is_lifted and self.name in _BUILTIN_UDT_BINARY_OPS:
             is_jittable = ret_type == dtype
         else:
@@ -764,8 +751,7 @@ class BinaryOp(OpBase):
                     arity=2,
                 )
             else:
-                # eq/ne return BOOL, not the UDT; the kernel is a chain of
-                # per-leaf scalar comparisons.
+                # eq and ne return BOOL, not the UDT; their definition compares leaf by leaf
                 from .udt_codegen import set_jit_c_comparison_on_op
 
                 op._jit_c_info = set_jit_c_comparison_on_op(
@@ -777,7 +763,8 @@ class BinaryOp(OpBase):
                 )
             _maybe_warn_jit_skipped(op._jit_c_info, self.name, dtype.name)
         elif _has_numba and _has_jit_set and is_lifted and self.name in _BUILTIN_UDT_BINARY_OPS:
-            # (no warning when there is none: the cfunc is this op's documented path)
+            # No NoJITWarning if this gives no definition, as documented in
+            # docs/technical_notes/jit.rst ("When a lifted operator runs without the JIT")
             from ..udt import _udt_op_types
 
             _, input_types = _udt_op_types(self.name, dtype, dtype2)
@@ -967,11 +954,10 @@ class BinaryOp(OpBase):
         if _supports_udfs:
             # Add floordiv
             # cdiv truncates towards 0, while floordiv truncates towards -inf
-            # cache=True persists the numba compilation of these built-in UDFs to
-            # disk so it is paid once per machine, not once per process. It shaves
-            # ~20% off a single op's first-touch build and ~45% when several are
-            # used (the per-process object-link and LLVM-init cost is not cached).
-            # Only module-level built-ins get cache=True (see _build).
+            # ``_cache=True`` saves Numba's compiled code for these UDFs on disk, so
+            # later processes load it instead of compiling. A warm cache cuts about 20%
+            # from the first use of one op, and about 45% when several are used; the
+            # per-process LLVM setup and linking are not cached. See ``_build``.
             BinaryOp.register_new("floordiv", _floordiv, lazy=True, _cache=True)  # cast to integer
             BinaryOp.register_new(
                 "rfloordiv", _rfloordiv, lazy=True, _cache=True
@@ -1097,10 +1083,8 @@ class BinaryOp(OpBase):
                 right = getattr(binary, right_name)
             left._semiring_commutes_to = right
             right._semiring_commutes_to = left
-        # ``any`` uses ``_second`` so ``monoid.any[udt].reduce(v)`` folds as
-        # ``acc = v_i`` and returns an actual element. With ``_first`` the
-        # accumulator would never advance, so the reduce would always return
-        # the identity.
+        # ``any`` runs ``_second``, so a reduce with ``monoid.any`` on a UDT returns one
+        # of the elements. With ``_first`` it would return the identity it starts from.
         for binop, func in [
             (binary.first, _first),
             (binary.second, _second),
@@ -1115,19 +1099,13 @@ class BinaryOp(OpBase):
         binary.first._custom_dtype = _udt_dtype
         binary.second._custom_dtype = _udt_dtype
         binary.pair._custom_dtype = _pair_dtype
-        # eq and ne walk the UDT leaf-by-leaf (special-cased in _compile_udt
-        # via _make_udt_comparison) so NaN propagation matches IEEE semantics
-        # rather than bit equality.
+        # eq and ne compare a UDT leaf by leaf (``_make_udt_comparison``), so NaN is
+        # unequal to itself, where a comparison of the bytes would find it equal
         binary.eq._udt_types = {}
         binary.eq._udt_ops = {}
         binary.ne._udt_types = {}
         binary.ne._udt_ops = {}
-        # Element-wise arithmetic ops on UDTs are auto-generated from
-        # per-field / per-element scalar ops; the attributes that enable this
-        # are seeded in ``__init__`` (keyed on ``_BUILTIN_UDT_BINARY_OPS``).
-        # Do not seed them here with ``getattr(binary, op_name)``: that would
-        # force lazily-registered UDF ops like ``floordiv`` to numba-compile
-        # for every dtype at import time (about half a second of startup here).
+        # The arithmetic ops that lift to UDTs are set up in ``__init__``, not here
         cls._initialized = True
 
     def __init__(
@@ -1153,10 +1131,11 @@ class BinaryOp(OpBase):
             self._udt_types = {}  # {(dtype, dtype): DataType}
             self._udt_ops = {}  # {(dtype, dtype): TypedUserBinaryOp}
         elif _has_numba and not anonymous and name in _BUILTIN_UDT_BINARY_OPS:
-            # Built-in arithmetic ops auto-lift to UDTs field-by-field.
-            # Seeded here rather than in ``_initialize`` so that delayed ops
-            # (e.g. ``floordiv``) are not force-built at import time. An
-            # anonymous op that shares a built-in's name is a user's op.
+            # A built-in arithmetic op lifts to UDTs. This is set up here, not in
+            # ``_initialize``, where ``getattr(binary, name)`` would make the lazily
+            # registered UDFs, such as ``floordiv``, compile with Numba at import
+            # (about a second). An anonymous op with a built-in's name is a user's op,
+            # which does not lift.
             self._udt_types = {}
             self._udt_ops = {}
             self._custom_dtype = _udt_dtype

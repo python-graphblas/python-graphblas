@@ -44,13 +44,14 @@ def _claim_values_2d(cdata, cdata_size, nrows, ncols, dtype, is_c_order):
 
     GraphBLAS stores an array UDT's element as one contiguous block. Given a subarray
     dtype in column order, ``claim_buffer_2d`` makes the element's own axes the
-    slowest, so ``values[i, j]`` would not be the entry at ``(i, j)``. Given more than
-    ``nrows * ncols`` elements, it raises ValueError for any subarray dtype. GraphBLAS
-    may hand over more: SuiteSparse:GraphBLAS 7.4.0's memory pool rounds each allocation
-    of 512 KiB or less up to a power of two, and a full matrix resized smaller keeps its
-    buffer. Row order with a buffer of exactly the right size goes to
-    ``claim_buffer_2d``, whose array owns the buffer, so packing the values back can
-    take them without a copy.
+    slowest, so ``values[i, j]`` would not be the entry at ``(i, j)``. It also raises
+    ValueError for a subarray dtype when the buffer has more than ``nrows * ncols``
+    elements, which GraphBLAS can hand over: SuiteSparse:GraphBLAS 7.4.0's memory pool
+    rounds each allocation of 512 KiB or less up to a power of two, and a full matrix
+    resized smaller keeps its buffer.
+
+    Row order with a buffer of exactly the right size still goes to ``claim_buffer_2d``,
+    whose array owns the buffer, so packing the values back can take them without a copy.
     """
     if not dtype.shape or (is_c_order and cdata_size == nrows * ncols):
         return claim_buffer_2d(ffi, cdata, cdata_size, nrows, ncols, dtype, is_c_order)
@@ -63,14 +64,15 @@ def _claim_values_2d(cdata, cdata_size, nrows, ncols, dtype, is_c_order):
 def _values_in_column_order(values, dtype, copy):
     """Return ``(values, dtype, owner, c_contiguous)`` for a fullc or bitmapc import.
 
-    GraphBLAS takes ``owner``'s memory, which holds the elements in column order: as
-    ``owner`` if ``c_contiguous``, else as ``owner.T``. An array UDT keeps each
-    element contiguous. Given one element per entry (``values[i, j]``), the two entry
-    axes are swapped into a copy; given a list of elements already in column order,
-    as ``raw=True`` exports them, numbers flat in that order, or one element (for an
-    iso value), they are taken as they are. Fortran order of the whole array, as other
-    types use, would put the element's own axes slowest, so GraphBLAS would read each
-    element from scattered numbers.
+    GraphBLAS takes ``owner``'s memory, which has the elements in column order: as
+    ``owner`` if ``c_contiguous``, else as ``owner.T``.
+
+    An array UDT keeps each element contiguous. Fortran order of the whole array, as
+    other types use, would put the element's own axes slowest, so GraphBLAS would read
+    each element from scattered numbers. Values with one element per entry
+    (``values[i, j]``) have their two entry axes swapped into a copy. These are taken
+    as they are: a list of elements already in column order (as ``raw=True`` exports
+    them), numbers flat in that order, or one element (for an iso value).
     """
     # Converted once, to see the shape (and infer an array UDT from it). An array UDT's
     # layout is decided below; other values go straight to Fortran order.
@@ -82,11 +84,12 @@ def _values_in_column_order(values, dtype, copy):
     values, dtype = values_to_numpy_buffer(
         values, dtype, order="K" if array_udt else "F", subarray_after=2
     )
-    # Converting an ndarray to another dtype or order made a new array, which needs no
-    # second copy to be safe to hand over. Any other input is copied again if asked:
-    # an object's ``__array__`` may return an array the object keeps. So is an empty
-    # array, at no cost: ``np.may_share_memory`` is False for one even against itself,
-    # so the check cannot tell the caller's array from a new one.
+    # When converting an ndarray to another dtype or order makes a new array, that array
+    # needs no second copy to be safe to hand over. Any other input is copied again when
+    # ``copy`` is set, since an object's ``__array__`` may return an array the object
+    # keeps. An empty array is copied too, which costs nothing: ``np.may_share_memory``
+    # is False for an empty array even against itself, so it cannot tell the caller's
+    # array from a new one.
     if (
         copy
         and isinstance(given, np.ndarray)
@@ -270,9 +273,9 @@ class ss:
 
     @property
     def iso_value(self):
-        """The value every entry of an iso-valued Matrix holds, as a Scalar.
+        """The value of every entry of an iso-valued Matrix, as a Scalar.
 
-        SuiteSparse can mark a Matrix with no entries iso. It then holds no value,
+        SuiteSparse can mark a Matrix with no entries as iso. It then has no value,
         and the Scalar is empty, as for an empty reduction. Raises ValueError if
         the Matrix is not iso-valued.
         """
@@ -4312,8 +4315,8 @@ class ss:
             status = lib.GrB_Type_get_SIZE(parent.dtype.gb_obj[0], dtype_size, lib.GrB_NAME)
             check_status_carg(status, "Type", parent.dtype.gb_obj[0])
             if dtype_size[0] >= lib.GxB_MAX_NAME_LEN:
-                # The dtype name is too long to safely store in the blob (GxB_Serialized_get_SIZE
-                # segfaults on names >= GxB_MAX_NAME_LEN). For named UDTs, use the short
+                # The dtype name is too long to store in the blob (GxB_Serialized_get_SIZE
+                # crashes on a name of GxB_MAX_NAME_LEN or more). For named UDTs, use the short
                 # registered name instead; anonymous UDTs cannot round-trip without dtype=.
                 if not parent.dtype._is_anonymous:
                     val_obj = ffi.new("char[]", parent.dtype.name.encode())

@@ -65,13 +65,11 @@ The SuiteSparse:GraphBLAS JIT
 
 SuiteSparse:GraphBLAS ships precompiled kernels for common operations. For the rest it
 can compile a kernel with a C compiler (its JIT), or else run a generic kernel that is
-often several times slower (``Matrix.reduce_rowwise`` with ``lor`` on ``BOOL`` or
-``plus`` on ``UINT64`` ran 2.7 to 8 times slower on 10 million entries). The JIT control,
-``gb.ss.config["jit_c_control"]``, is ``"run"`` by default: run only kernels already
-loaded in the process, and compile nothing. UDT operators, and types and operators
-registered from C source, raise this default to ``"on"`` the first time they need a
-kernel, for the rest of the process and for every operation (see :doc:`udt`), but leave
-a control you set as it is. To opt in for everything, set the
+often several times slower. The JIT control, ``gb.ss.config["jit_c_control"]``, is
+``"run"`` by default: run only kernels already loaded in the process, and compile nothing.
+Built-in operators on user-defined types, and types and operators registered from C
+source, raise this default to ``"on"`` the first time they need a kernel, for the rest of
+the process and for every operation (see :doc:`udt`). To opt in for everything, set the
 control to ``"on"`` (compile, load and run):
 
 .. code-block:: bash
@@ -82,28 +80,24 @@ control to ``"on"`` (compile, load and run):
 
     import graphblas as gb
 
-    gb.config.set(jit_c_control="on")     # before graphblas initializes
+    gb.config.set(jit_c_control="on")  # before graphblas initializes
     gb.ss.config["jit_c_control"] = "on"  # or later, for the rest of the process
 
 ``graphblas.config["jit_c_control"]`` is read once, when graphblas initializes. It can be
 ``"on"``, ``"load"`` (load and run cached kernels, never compile), ``"run"``, ``"pause"``
 (run no JIT kernels) or ``"off"`` (run none, and unload them). Set it with the
 ``GRAPHBLAS_JIT_C_CONTROL`` environment variable, with ``gb.config.set`` before graphblas
-initializes, or in a YAML file in ``~/.config/graphblas/``. Left unset, it is the
-default ``"run"``, which UDT work raises. With nothing configured, a ``"run"`` written
-later to ``gb.ss.config`` is that same default, so to keep UDT work from compiling, set
-``"run"`` in one of those three ways, or write ``"load"`` or ``"off"`` later. With
-``"on"``, python-graphblas checks the C compiler by compiling a tiny type (once per cache
-directory and compiler), and falls back to ``"run"``, with no error, where the JIT cannot
-work: SuiteSparse built without the JIT (as in the PyPI wheels), SuiteSparse 7, no working
-C compiler (in an activated conda environment, ``conda install c-compiler``), or a cache
-directory it cannot write to. That check is for a configured ``"on"`` only: an ``"on"``
-written later to ``gb.ss.config`` is taken as it is, and with a C compiler that does not
-work, the first operation that needs a new kernel raises ``JitError``, and SuiteSparse
-lowers the control to ``"load"``. ``gb.ss.fix_jit_config()`` repairs the compiler setting
-where it can and checks it. On Windows, SuiteSparse built with MSVC (as conda-forge
-builds it) compiles JIT kernels only through cmake, and python-graphblas does not turn the
-JIT on there yet, so a configured ``"on"`` becomes ``"run"``.
+initializes, or in a YAML file in ``~/.config/graphblas/``. A value configured this way is
+kept, so to keep built-in operators on user-defined types from compiling, configure
+``"run"``. After initialization, ``"load"`` or ``"off"`` set in ``gb.ss.config`` does the
+same; a ``"run"`` set there is not always kept.
+
+Where the JIT cannot work, a configured ``"on"`` becomes ``"run"``, with no error: for
+example, SuiteSparse built without the JIT (as in the PyPI wheels), or no working C
+compiler (in an activated conda environment, ``conda install c-compiler`` provides one).
+``gb.ss.fix_jit_config()`` repairs the compiler setting where it can and checks it. The
+exact rules, for ``"run"`` and for an ``"on"`` set after initialization too, are in
+:ref:`tn_jit_control`.
 
 With the JIT on:
 
@@ -112,17 +106,14 @@ With the JIT on:
   compile the same new kernel, and calls fail with ``JitError``, leave their outputs
   invalid or cleared, return wrong values with no error, or hang
   (`GraphBLAS issue #449 <https://github.com/DrTimothyAldenDavis/GraphBLAS/issues/449>`_).
-  With multiprocessing, dask, pytest-xdist and the like, set
-  ``GRAPHBLAS_JIT_C_CONTROL=run`` in the environment the workers start in, so that none
-  of them compiles: UDT work raises only the default ``"run"``, not one you set. (At the
-  default, the first UDT operator that needs a kernel turns the JIT on for the whole
-  process, so such processes race too.) Setting ``"run"`` costs UDTs their compiled
-  kernels: UDT operators call their Numba functions instead
-  (typically 2 to 3 times slower for elementwise operations), and registering types or
-  operators from C source fails. To keep the kernels, give each process its own cache
-  instead, by setting the ``GRAPHBLAS_CACHE_PATH`` environment variable before graphblas
-  initializes. The default will change once SuiteSparse publishes compiled kernels
-  atomically.
+  At the default, the first built-in operator on a user-defined type that needs a kernel
+  turns the JIT on, so such processes race too. With multiprocessing, dask, pytest-xdist
+  and the like, set ``GRAPHBLAS_JIT_C_CONTROL=run`` in the environment the workers start
+  in, so that none of them compiles. That costs user-defined types their compiled
+  kernels: their built-in operators call Numba functions instead, often several times
+  slower, and registering types or operators from C source fails. To keep the kernels,
+  give each process its own cache instead, by setting the ``GRAPHBLAS_CACHE_PATH``
+  environment variable before graphblas initializes.
 - The first use of each new kernel compiles it, typically in 0.2 to 1 second. Kernels are
   cached on disk, in ``gb.ss.config["jit_cache_path"]`` (by default under
   ``~/.SuiteSparse`` on Linux and macOS), so later runs load them instead.
@@ -131,7 +122,6 @@ With the JIT on:
   wrong results or errors if their internals differ. Give each build its own cache path.
 
 If you hit a bug, freeze or crash that may involve the JIT, set
-``GRAPHBLAS_JIT_C_CONTROL=run`` (which UDT work leaves alone) and delete the cache
-directory, then try again. Please
+``GRAPHBLAS_JIT_C_CONTROL=run`` and delete the cache directory, then try again. Please
 `report it <https://github.com/python-graphblas/python-graphblas/issues>`_ either way. The
 ``suitesparse-vanilla`` backend leaves the control as the SuiteSparse build sets it.

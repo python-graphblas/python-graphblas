@@ -17,6 +17,7 @@ Licensed under the `Apache 2.0 license <https://www.apache.org/licenses/LICENSE-
    getting_started/index
    user_guide/index
    api_reference/index
+   technical_notes/index
    contributor_guide/index
 
 .. grid:: 1 2 2 2
@@ -56,6 +57,17 @@ Licensed under the `Apache 2.0 license <https://www.apache.org/licenses/LICENSE-
 
         The API reference contains details about each class and method.
         It assumes familiarity with the core ideas and usage patterns.
+
+    .. grid-item-card:: Technical Notes
+        :link: technical_notes/index
+        :link-type: doc
+        :text-align: center
+        :class-card: intro-card
+
+        :octicon:`list-unordered;3em;sd-text-primary`
+
+        The exact rules and edge cases behind the user guide, such as how
+        Python numbers and user-defined types are typed.
 
     .. grid-item-card:: Contributor Guide
         :link: contributor_guide/index
