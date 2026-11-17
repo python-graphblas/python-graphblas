@@ -1,4 +1,6 @@
 import pickle
+import shutil
+import sys
 
 import numpy as np
 import pytest
@@ -529,6 +531,10 @@ def test_pickle_bound_record_udt_theta():
 
 
 @pytest.mark.slow
+@pytest.mark.skipif(
+    sys.platform == "win32" or shutil.which("ps") is None,
+    reason="reads the resident set size with ps",
+)
 def test_bound_ibo_memory_bounded():
     """Binding an IndexBinaryOp in a loop frees each bound op's ``GrB_BinaryOp``.
 
@@ -538,21 +544,14 @@ def test_bound_ibo_memory_bounded():
     import gc
     import os
     import subprocess
-    import sys
-    from pathlib import Path
-
-    if sys.platform != "darwin" and not sys.platform.startswith("linux"):
-        pytest.skip("reads the resident set size only on Linux and macOS")
 
     def rss_mb():
-        # The resident set size now. Not ``ru_maxrss``: that is the peak, which an
-        # earlier test that freed its memory leaves above the current size, hiding growth.
-        if sys.platform.startswith("linux"):
-            pages = int(Path("/proc/self/statm").read_text().split()[1])
-            return pages * os.sysconf("SC_PAGE_SIZE") / 2**20
+        # The resident set size now; ``ps`` gives KiB on Linux and macOS. Not
+        # ``ru_maxrss``: that is the peak, which an earlier test that freed its
+        # memory leaves above the current size, hiding growth.
         pid = str(os.getpid())
         ps = subprocess.run(["ps", "-o", "rss=", "-p", pid], capture_output=True, check=True)
-        return int(ps.stdout) / 1024  # macOS ps gives KiB
+        return int(ps.stdout) / 1024
 
     if hasattr(indexbinary, "leak_test_bound_ibo_op"):
         delattr(indexbinary, "leak_test_bound_ibo_op")
