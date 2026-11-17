@@ -18,6 +18,12 @@ def mmread(source, engine="auto", *, dup_op=None, name=None, **kwargs):
     to the engine's ``mmread``. For example, ``parallelism=8`` will set the
     number of threads to use to 8 when using ``fast_matrix_market``.
 
+    .. deprecated:: 2026.11.0
+        The ``"fmm"`` and ``"fast_matrix_market"`` engines are deprecated, as is
+        ``"auto"`` choosing ``fast_matrix_market`` when it is installed, because
+        ``fast_matrix_market`` is no longer maintained. Use ``engine="scipy"`` instead.
+        Will be removed in version 2027.7.0 or later.
+
     Parameters
     ----------
     source : str or file
@@ -45,7 +51,8 @@ def mmread(source, engine="auto", *, dup_op=None, name=None, **kwargs):
     using_scipy = True
     if engine in {"fmm", "fast_matrix_market"}:
         warnings.warn(
-            "fast_matrix_market is no longer maintained and will be removed in a future version. "
+            'The "fmm" and "fast_matrix_market" engines are deprecated and will be removed '
+            "in version 2027.7.0 or later: fast_matrix_market is no longer maintained. "
             'Use engine="scipy" instead.',
             DeprecationWarning,
             stacklevel=2,
@@ -56,9 +63,9 @@ def mmread(source, engine="auto", *, dup_op=None, name=None, **kwargs):
 
             if engine == "auto":
                 warnings.warn(
-                    "fast_matrix_market is installed but is no longer maintained and will be "
-                    "removed in a future version. Uninstall it or use engine='scipy' to "
-                    "silence this warning.",
+                    "fast_matrix_market is installed but is no longer maintained, so "
+                    'engine="auto" will stop using it in version 2027.7.0 or later. '
+                    'Uninstall it or use engine="scipy" to silence this warning.',
                     DeprecationWarning,
                     stacklevel=2,
                 )
@@ -111,6 +118,12 @@ def mmwrite(
     This uses `scipy.io.mmwrite
     <https://docs.scipy.org/doc/scipy/reference/generated/scipy.io.mmwrite.html>`_.
 
+    .. deprecated:: 2026.11.0
+        The ``"fmm"`` and ``"fast_matrix_market"`` engines are deprecated, as is
+        ``"auto"`` choosing ``fast_matrix_market`` when it is installed, because
+        ``fast_matrix_market`` is no longer maintained. Use ``engine="scipy"`` instead.
+        Will be removed in version 2027.7.0 or later.
+
     Parameters
     ----------
     target : str or file target
@@ -139,7 +152,8 @@ def mmwrite(
     engine = engine.lower()
     if engine in {"fmm", "fast_matrix_market"}:
         warnings.warn(
-            "fast_matrix_market is no longer maintained and will be removed in a future version. "
+            'The "fmm" and "fast_matrix_market" engines are deprecated and will be removed '
+            "in version 2027.7.0 or later: fast_matrix_market is no longer maintained. "
             'Use engine="scipy" instead.',
             DeprecationWarning,
             stacklevel=2,
@@ -150,9 +164,9 @@ def mmwrite(
 
             if engine == "auto":
                 warnings.warn(
-                    "fast_matrix_market is installed but is no longer maintained and will be "
-                    "removed in a future version. Uninstall it or use engine='scipy' to "
-                    "silence this warning.",
+                    "fast_matrix_market is installed but is no longer maintained, so "
+                    'engine="auto" will stop using it in version 2027.7.0 or later. '
+                    'Uninstall it or use engine="scipy" to silence this warning.',
                     DeprecationWarning,
                     stacklevel=2,
                 )
