@@ -255,25 +255,8 @@ def _upper_bound(specifier):
 
 
 def check_python_floor_tables():
-    """SCIPY_MIN_PYTHON and NUMBA_MIN_PYTHON must match what the releases support."""
+    """NUMBA_MIN_PYTHON must match what the releases support."""
     problems = []
-    pythons = sorted(picker.NUMPY_VERSIONS, key=picker._ver)
-
-    for pin, floor in picker.SCIPY_MIN_PYTHON.items():
-        version, _ = newest_in_series("scipy", pin)
-        if version is None:
-            problems.append(
-                f"SCIPY_MIN_PYTHON has a row for scipy {pin}, which PyPI has no release of"
-            )
-            continue
-        oldest = [p for p in pythons if supports_python("scipy", version, p)]
-        recorded = ".".join(str(part) for part in floor)
-        if oldest and oldest[0] != recorded:
-            problems.append(
-                f"SCIPY_MIN_PYTHON says scipy {pin} needs py{recorded}, "
-                f"but {version} supports py{oldest[0]}"
-            )
-
     for pyver, floor in picker.NUMBA_MIN_PYTHON.items():
         usable = [
             pin
@@ -341,14 +324,14 @@ def report_newer_releases():
     news = []
     pools = {
         "numpy": picker.NUMPY_VERSIONS,
-        "scipy": {"": picker.SCIPY_VERSIONS["2.x"]},
-        "pandas": {"": picker.PANDAS_VERSIONS["2.x"]},
-        "awkward": {"": picker.AWKWARD_VERSIONS["2.x"]},
-        "numba": {"": picker.NUMBA_VERSIONS["2.x"]},
+        "scipy": {"": picker.SCIPY_VERSIONS},
+        "pandas": {"": picker.PANDAS_VERSIONS},
+        "awkward": {"": picker.AWKWARD_VERSIONS},
+        "numba": {"": picker.NUMBA_VERSIONS},
         "networkx": picker.NETWORKX_VERSIONS,
         "pyyaml": picker.PYYAML_VERSIONS,
         "sparse": picker.SPARSE_VERSIONS,
-        "psg": {"": picker.PSG_VERSIONS_NP2},
+        "psg": {"": picker.PSG_VERSIONS},
     }
     for dep, pool in pools.items():
         pins = {p for group in pool.values() for p in group if p and p != "NA"}
