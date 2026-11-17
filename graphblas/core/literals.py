@@ -128,8 +128,7 @@ def _weak_builtin_literal_dtype(dtype, value, op=None):
     """Return the dtype of Python number ``value`` as an operand with built-in ``dtype``, or None.
 
     A Python number is weak (see the module docstring), typed by the same rules
-    as a UDT leaf (:func:`_weak_literal_leaf`). python-graphblas applies the
-    rules itself, so numpy 1 gives the same answers. ``None`` keeps the value's
+    as a UDT leaf (:func:`_weak_literal_leaf`). ``None`` keeps the value's
     own dtype (strong): for anything but a Python number, for a typed op, which
     fixes the operand types itself, and for the thunk of an index op that does
     not compare it with the values, such as a row index.
@@ -310,7 +309,7 @@ def _check_literal_fits(dtype, value):
         )
         return
     # A weak float fits a float32 field by type, but a finite one too large for
-    # it would become infinity; numpy warns as it converts, on numpy 1 and 2.
+    # it would become infinity; numpy warns as it converts.
     np_type = dtype.np_type
     if np_type.names is not None:
         target = np.zeros(1, dtype=np_type)

@@ -126,9 +126,9 @@ def _is_signed_int(np_dtype):
     return np_dtype.kind == "i"
 
 
-# Vanilla strips GxB callables but keeps GxB constants, so the bare
-# ``hasattr`` would lie; gate on the backend too.
-_has_jit_set = backend == "suitesparse" and hasattr(lib, "GxB_JIT_C_NAME")
+# JIT C names and definitions (``GxB_JIT_C_NAME``) are a SuiteSparse extension, and
+# the vanilla backend uses the standard API only.
+_has_jit_set = backend == "suitesparse"
 
 # Names that cannot be used as record field names in the JIT C source: C
 # keywords, and the macros of the JIT include chain (``GraphBLAS.h``
@@ -1605,8 +1605,8 @@ def _maybe_warn_jit_skipped(jit_info, op_name, dtype_name):
     """Emit a ``NoJITWarning`` when an op got no C definition though SuiteSparse has a JIT.
 
     Called by op-class ``_compile_udt`` paths after ``set_jit_c_*_on_op``
-    returns ``None``. ``_has_jit_set`` keeps the warning silent where no op
-    gets a C definition: before SuiteSparse 9, and on the vanilla backend.
+    returns ``None``. ``_has_jit_set`` keeps the warning silent on the vanilla
+    backend, where no op gets a C definition.
     """
     if jit_info is None and _has_jit_set:
         from ..ss.jit_config import _maybe_warn_no_jit
@@ -1661,8 +1661,7 @@ def set_jit_c_mixed_on_op(gb_obj, op_name, py_op, dtype, dtype2, ret_type, input
     """Generate and set the JIT C name and definition of a lifted binary op on two types
     (:func:`_make_jit_c_mixed_definition`). Returns ``(c_name, c_defn)``, or ``None`` when
     the op has no C form (it keeps the Numba cfunc). Callers check ``_has_jit_set`` first,
-    as for :func:`set_jit_c_on_op`: without it, SuiteSparse has no
-    ``GrB_BinaryOp_set_String``.
+    as for :func:`set_jit_c_on_op`.
     """
     result = _make_jit_c_mixed_definition(op_name, py_op, dtype, dtype2, ret_type, input_types)
     if result is None:
@@ -1678,8 +1677,7 @@ def set_jit_c_on_op(gb_obj, op_name, py_op, dtype, set_string_func, arity=2):
     Returns ``(c_name, c_defn)`` when the dtype is expressible in C, ``None``
     otherwise. Callers may cache the returned strings for introspection (see
     ``TypedUserUnaryOp.jit_c_source`` and ``TypedUserBinaryOp.jit_c_source``).
-    Callers check ``_has_jit_set`` first: without it, SuiteSparse has no
-    ``set_string_func`` to pass.
+    Callers check ``_has_jit_set`` first, so the vanilla backend sets no JIT C source.
     """
     result = _make_jit_c_definition(op_name, py_op, dtype, arity)
     if result is None:

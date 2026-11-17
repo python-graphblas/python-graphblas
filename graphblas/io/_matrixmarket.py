@@ -188,7 +188,7 @@ def mmwrite(
         array = matrix.ss.export()["values"]
     else:
         array = to_scipy_sparse(matrix, format="coo")
-        if engine == "fast_matrix_market" and __version__ < "1.7." and sp.__version__ > "1.11.":
+        if engine == "fast_matrix_market" and __version__ < "1.7.":
             # 2023-06-25: scipy 1.11.0 added `sparray` and changed e.g. `ss.isspmatrix_coo`.
             # fast_matrix_market updated to handle this in version 1.7.0
             # Also, it looks like fast_matrix_market has special writers for csr and csc;

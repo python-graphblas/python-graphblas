@@ -334,10 +334,6 @@ def _set_jit_c_control_at_init(control):
     SuiteSparse start with, and nothing raises or warns. The rules are in the
     Technical Notes, "The JIT control".
     """
-    from . import _IS_SSGB7
-
-    if _IS_SSGB7:
-        return  # no JIT before SuiteSparse:GraphBLAS 8
     global _jit_enabled_for_udt, _configured_jit_c_control, _user_set_run
     cfg = _CConfig()
     _configured_jit_c_control = control

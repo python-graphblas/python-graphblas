@@ -15,11 +15,8 @@ from graphblas.core import _supports_udfs as supports_udfs
 
 try:
     from numpy._core._multiarray_umath import _set_numpy_warn_if_no_mem_policy
-except ImportError:  # pragma: no cover (NumPy < 1.26)
-    try:
-        from numpy.core._multiarray_umath import _set_numpy_warn_if_no_mem_policy
-    except ImportError:  # NumPy 1.24 lacks it, and it is private, so it may go away
-        _set_numpy_warn_if_no_mem_policy = None
+except ImportError:  # pragma: no cover (it is private, so it may go away)
+    _set_numpy_warn_if_no_mem_policy = None
 
 # Under ``pytest -n`` (xdist), give each worker its own JIT cache, so workers
 # compiling the same kernel at once do not write the same files. SuiteSparse

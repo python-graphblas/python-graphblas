@@ -259,12 +259,11 @@ def test_openmp_enabled():
 
 def test_global_config(monkeypatch):
     d = {}
-    config = gb.ss.config
-    if "jit_c_control" in config:  # SuiteSparse:GraphBLAS 8+
-        from graphblas.core.ss import jit_config
+    from graphblas.core.ss import jit_config
 
-        # Writing jit_c_control also sets ``_user_set_run``; restore it afterwards
-        monkeypatch.setattr(jit_config, "_user_set_run", jit_config._user_set_run)
+    config = gb.ss.config
+    # Writing jit_c_control also sets ``_user_set_run``; restore it afterwards
+    monkeypatch.setattr(jit_config, "_user_set_run", jit_config._user_set_run)
     for k in config:
         d[k] = config[k]
     assert d == config
@@ -369,14 +368,12 @@ def test_about_attribute_assignment_raises():
     assert dict(about) == {k: about[k] for k in about}
 
 
-@pytest.mark.skipif("gb.core.ss._IS_SSGB7")
 def test_context_attribute_assignment_raises():
     context = gb.ss.Context(engage=False)
     with pytest.raises(AttributeError, match="item assignment"):
         context.nthreads = 4
 
 
-@pytest.mark.skipif("gb.core.ss._IS_SSGB7")
 def test_context():
     context = gb.ss.Context()
     prev = dict(context)

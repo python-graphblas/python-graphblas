@@ -710,7 +710,7 @@ def _leaves_equal(x, x_type, y, y_type):
     order (the caller checks, by ``_check_udt_pair``, that two records pair as
     for ``binary.eq``), and a value that is not a record stands in every
     field. Each pair of leaves compares in the type their dtypes promote to,
-    whatever the values (numpy 1 types a scalar by its value), and broadcasts.
+    whatever the values, and broadcasts.
     """
     if x_type.names is not None or y_type.names is not None:
         x_names = x_type.names or [None] * len(y_type.names)

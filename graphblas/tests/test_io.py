@@ -49,23 +49,20 @@ def test_vector_to_from_numpy():
 
     csr = gb.io.to_scipy_sparse(v, "csr")
     assert csr.nnz == 2
-    # 2023-06-25: scipy 1.11.0 added `sparray` and changed e.g. `ss.isspmatrix_csr`
-    assert isinstance(csr, getattr(ss, "sparray", ss.spmatrix))
+    assert isinstance(csr, ss.sparray)
     assert csr.format == "csr"
     np.testing.assert_array_equal(csr.toarray(), np.array([[0.0, 2.0, 4.1]]))
 
     csc = gb.io.to_scipy_sparse(v, "csc")
     assert csc.nnz == 2
-    # 2023-06-25: scipy 1.11.0 added `sparray` and changed e.g. `ss.isspmatrix_csc`
-    assert isinstance(csc, getattr(ss, "sparray", ss.spmatrix))
+    assert isinstance(csc, ss.sparray)
     assert csc.format == "csc"
     np.testing.assert_array_equal(csc.toarray(), np.array([[0.0, 2.0, 4.1]]).T)
 
     # default to csr-like
     coo = gb.io.to_scipy_sparse(v, "coo")
     assert coo.shape == csr.shape
-    # 2023-06-25: scipy 1.11.0 added `sparray` and changed e.g. `ss.isspmatrix_coo`
-    assert isinstance(coo, getattr(ss, "sparray", ss.spmatrix))
+    assert isinstance(coo, ss.sparray)
     assert coo.format == "coo"
     assert coo.nnz == 2
     np.testing.assert_array_equal(coo.toarray(), np.array([[0.0, 2.0, 4.1]]))
@@ -95,8 +92,7 @@ def test_matrix_to_from_numpy():
 
     for format in ["csr", "csc", "coo"]:
         sparse = gb.io.to_scipy_sparse(M, format)
-        # 2023-06-25: scipy 1.11.0 added `sparray` and changed e.g. `ss.isspmatrix_csr`
-        assert isinstance(sparse, getattr(ss, "sparray", ss.spmatrix))
+        assert isinstance(sparse, ss.sparray)
         assert sparse.format == format
         assert sparse.nnz == 3
         np.testing.assert_array_equal(sparse.toarray(), a)
@@ -501,7 +497,6 @@ def test_scipy_sparse():
 
 
 @pytest.mark.skipif("not ak")
-@pytest.mark.xfail(np.__version__[:5] in {"1.25.", "1.26."}, reason="awkward bug with numpy >=1.25")
 def test_awkward_roundtrip():
     # Vector
     v = gb.Vector.from_coo([1, 3, 5], [20, 21, -5], size=22)
@@ -523,7 +518,6 @@ def test_awkward_roundtrip():
 
 
 @pytest.mark.skipif("not ak")
-@pytest.mark.xfail(np.__version__[:5] in {"1.25.", "1.26."}, reason="awkward bug with numpy >=1.25")
 def test_awkward_iso_roundtrip():
     # Built iso with build_scalar, as from_coo with equal values is not iso on
     # SuiteSparse 10.5 (see ``_iso_vector`` in test_ss_utils.py)

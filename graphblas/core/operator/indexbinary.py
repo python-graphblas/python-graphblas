@@ -331,7 +331,7 @@ class IndexBinaryOp(OpBase):
         if not _has_idxbinop:
             raise RuntimeError(
                 "IndexBinaryOp requires SuiteSparse:GraphBLAS 9.4+ "
-                "(python-suitesparse-graphblas 9.3.1+)"
+                "(python-suitesparse-graphblas 9.4.5.0+)"
             )
         if not isinstance(func, FunctionType):
             raise TypeError(f"UDF argument must be a function, not {type(func)}")
@@ -456,7 +456,7 @@ class IndexBinaryOp(OpBase):
             # KeyError, not RuntimeError, so ``dtype in op`` returns False
             raise KeyError(
                 "IndexBinaryOp requires SuiteSparse:GraphBLAS 9.4+ "
-                "(python-suitesparse-graphblas 9.3.1+)"
+                "(python-suitesparse-graphblas 9.4.5.0+)"
             )
         if dtype2 is None:
             dtype2 = dtype

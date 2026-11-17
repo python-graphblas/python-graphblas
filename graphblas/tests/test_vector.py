@@ -15,7 +15,6 @@ from numpy.testing import assert_array_equal
 import graphblas as gb
 from graphblas import agg, backend, binary, dtypes, indexunary, monoid, select, semiring, unary
 from graphblas.core import _supports_udfs as supports_udfs
-from graphblas.core import lib
 from graphblas.exceptions import (
     DimensionMismatch,
     DomainMismatch,
@@ -32,8 +31,6 @@ from .conftest import autocompute, compute, pypy
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
 suitesparse = backend == "suitesparse"
-if suitesparse:
-    ss_version_major = gb.core.ss.version_major
 
 
 @pytest.fixture
@@ -1770,7 +1767,7 @@ def test_python_number_is_weak_beside_builtin_dtypes():
             _is_builtin_op(op)
             for op in [binary.truediv, binary.rtruediv, binary.cdiv, binary.binom]
         )
-    # Typed scalars promote as numpy 2 promotes them, on numpy 1 too.
+    # Typed scalars promote as numpy 2 promotes them.
     assert dtypes.unify(dtypes.INT8, dtypes.INT64, is_right_scalar=True) == dtypes.INT64
 
 
@@ -2656,15 +2653,7 @@ def test_udt():
         assert v.isequal(vv, check_dtype=True)
 
     long_dtype = np.dtype([("x", np.bool_), ("y" * 1000, np.float64)], align=True)
-    if suitesparse:
-        if ss_version_major < 9:
-            with pytest.warns(UserWarning, match="too large"):
-                long_udt = dtypes.register_anonymous(long_dtype)
-        else:
-            long_udt = dtypes.register_anonymous(long_dtype)
-    else:
-        # UDTs don't currently have a name in vanilla GraphBLAS
-        long_udt = dtypes.register_anonymous(long_dtype)
+    long_udt = dtypes.register_anonymous(long_dtype)
     v = Vector(long_udt, size=3)
     v[0] = 0
     v[1] = (1, 5.6)
@@ -2672,22 +2661,12 @@ def test_udt():
         vv = Vector.ss.deserialize(v.ss.serialize(), dtype=long_udt)
         assert v.isequal(vv, check_dtype=True)
         # The dtype's name is too long to store in the blob, so dtype= is needed. Parsing
-        # the name that is stored raises SyntaxError; a build without
-        # GxB_Serialized_get_String cannot read that name, and raises ValueError.
-        with pytest.raises(
-            SyntaxError if hasattr(lib, "GxB_Serialized_get_String") else ValueError
-        ):
+        # the name that is stored raises SyntaxError.
+        with pytest.raises(SyntaxError):
             Vector.ss.deserialize(v.ss.serialize())
     # May be able to look up non-anonymous dtypes by name if their names are too long
     named_long_dtype = np.dtype([("x", np.bool_), ("y" * 1000, np.float64)], align=False)
-    if suitesparse:
-        if ss_version_major < 9:
-            with pytest.warns(UserWarning, match="too large"):
-                named_long_udt = dtypes.register_new("LongUDT", named_long_dtype)
-        else:
-            named_long_udt = dtypes.register_new("LongUDT", named_long_dtype)
-    else:
-        named_long_udt = dtypes.register_new("LongUDT", named_long_dtype)
+    named_long_udt = dtypes.register_new("LongUDT", named_long_dtype)
     v = Vector(named_long_udt, size=3)
     v[0] = 0
     v[1] = (1, 5.6)

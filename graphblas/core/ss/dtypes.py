@@ -3,11 +3,9 @@ import numpy as np
 from ... import backend, core, dtypes
 from ...exceptions import check_status_carg
 from .. import _has_numba, ffi, lib
-from . import _IS_SSGB7
 
 ffi_new = ffi.new
 if _has_numba:
-    import numba
     from cffi import FFI
     from numba.core.typing import cffi_utils
 
@@ -18,14 +16,6 @@ def register_new(name, jit_c_definition, *, np_type=None):
     if backend != "suitesparse":  # pragma: no cover (safety)
         raise RuntimeError(
             "`gb.dtypes.ss.register_new` invalid when not using 'suitesparse' backend"
-        )
-    if _IS_SSGB7:
-        # JIT was introduced in SuiteSparse:GraphBLAS 8.0
-        import suitesparse_graphblas as ssgb
-
-        raise RuntimeError(
-            "JIT was added to SuiteSparse:GraphBLAS in version 8; "
-            f"current version is {ssgb.__version__}"
         )
     if not name.isidentifier():
         raise ValueError(f"`name` argument must be a valid Python identifier; got: {name!r}")
@@ -68,7 +58,7 @@ def register_new(name, jit_c_definition, *, np_type=None):
     size = size_ptr[0]
 
     save_np_type = True
-    if np_type is None and _has_numba and numba.__version__[:5] > "0.56.":
+    if np_type is None and _has_numba:
         jit_ffi.cdef(jit_c_definition)
         numba_type = cffi_utils.map_type(jit_ffi.typeof(name), use_record_dtype=True)
         np_type = numba_type.dtype

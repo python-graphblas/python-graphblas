@@ -26,7 +26,7 @@ class Descriptor:
         self.mask_structure = mask_structure
         self.transpose_first = transpose_first
         self.transpose_second = transpose_second
-        self._context = None  # Used by SuiteSparse:GraphBLAS 8
+        self._context = None  # Used by the SuiteSparse Context (ss/config.py)
 
     @property
     def _carg(self):

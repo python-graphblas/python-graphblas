@@ -1,7 +1,6 @@
 from ...exceptions import check_status, check_status_carg
 from .. import ffi, lib
 from ..descriptor import Descriptor
-from . import _IS_SSGB7
 from .config import BaseConfig
 
 ffi_new = ffi.new
@@ -19,8 +18,7 @@ _str_to_compression = {
 class _DescriptorConfig(BaseConfig):
     _get_function = "GxB_Desc_get"
     _set_function = "GxB_Desc_set"
-    if not _IS_SSGB7:
-        _context_keys = {"chunk", "gpu_id", "nthreads"}
+    _context_keys = {"chunk", "gpu_id", "nthreads"}
     _options = {
         # GrB
         "output_replace": (lib.GrB_OUTP, "GrB_Desc_Value"),
@@ -32,24 +30,12 @@ class _DescriptorConfig(BaseConfig):
         "axb_method": (lib.GxB_AxB_METHOD, "GrB_Desc_Value"),
         "sort": (lib.GxB_SORT, "int"),
         "secure_import": (lib.GxB_IMPORT, "int"),
+        "chunk": (lib.GxB_CONTEXT_CHUNK, "double"),
+        "nthreads": (lib.GxB_CONTEXT_NTHREADS, "int"),
     }
-    if _IS_SSGB7:
-        _options.update(
-            {
-                "nthreads": (lib.GxB_DESCRIPTOR_NTHREADS, "int"),
-                "chunk": (lib.GxB_DESCRIPTOR_CHUNK, "double"),
-            }
-        )
-    else:
-        _options.update(
-            {
-                "chunk": (lib.GxB_CONTEXT_CHUNK, "double"),
-                "nthreads": (lib.GxB_CONTEXT_NTHREADS, "int"),
-            }
-        )
-        # Optional, as in Context._options (context.py).
-        if hasattr(lib, "GxB_CONTEXT_GPU_ID"):
-            _options["gpu_id"] = (lib.GxB_CONTEXT_GPU_ID, "int")
+    # Optional, as in Context._options (context.py).
+    if hasattr(lib, "GxB_CONTEXT_GPU_ID"):
+        _options["gpu_id"] = (lib.GxB_CONTEXT_GPU_ID, "int")
     _enumerations = {
         # GrB
         "output_replace": {
@@ -102,9 +88,8 @@ class _DescriptorConfig(BaseConfig):
         "axb_method": "default",
         "sort": False,
         "secure_import": False,
+        "gpu_id": -1,
     }
-    if not _IS_SSGB7:
-        _defaults["gpu_id"] = -1
 
     def __init__(self):
         gb_obj = ffi_new("GrB_Descriptor*")

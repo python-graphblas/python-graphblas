@@ -12,5 +12,3 @@ try:
     version_bug = _ssgb.lib.GxB_IMPLEMENTATION_SUB
 except AttributeError:  # pragma: no cover (build without the GxB defines)
     version_major, version_minor, version_bug = map(int, _ssgb.__version__.split(".")[:3])
-
-_IS_SSGB7 = version_major == 7
