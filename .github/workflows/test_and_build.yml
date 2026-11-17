@@ -126,7 +126,7 @@ jobs:
         # We may be able to support pypy if anybody asks for it
         # 3.9.16 0_73_pypy
         run: |
-          choices=(3.11 3.12 3.13 3.14 3.15)
+          choices=(3.12 3.13 3.14 3.15)
           selected=${choices[$((RANDOM % ${#choices[@]}))]}
           echo "selected: $selected (from: ${choices[*]})"
           echo "selected=$selected" >> "$GITHUB_OUTPUT"
@@ -195,22 +195,17 @@ jobs:
             gbseries="${gbmajor}.${gbminor}"
             graphblas="graphblas>=${gbseries}.${gbpatch},<${gbseries}.$((gbpatch + 1))"
           elif [[ $SOURCETYPE != "wheel" ]] ; then
-            graphblas="graphblas>=7.4"
+            graphblas="graphblas>=9.3.1"
           fi
 
           # A psg wheel on macOS bundles its own libomp, and with conda-forge's libomp in the
           # same process too, a GraphBLAS parallel region can hang or crash (see
           # KMP_DUPLICATE_LIB_OK). conda-forge's libomp comes in with OpenBLAS's openmp build
           # and with Numba's default "omp" threading layer, so take OpenBLAS's pthreads build
-          # and Numba's "workqueue" layer instead. conda-forge has pthreads builds for macOS
-          # from libopenblas 0.3.30 on only, which scipy 1.9-1.11 do not accept, so those
-          # draws keep the openmp build.
+          # and Numba's "workqueue" layer instead.
           blas=""
           if [[ $SOURCETYPE == "wheel" && ${{ contains(matrix.os, 'macos') }} == true ]] ; then
-            case $spver in
-              =1.9 | =1.10 | =1.11) ;;
-              *) blas="libopenblas=*=*pthreads*" ;;
-            esac
+            blas="libopenblas=*=*pthreads*"
             echo "NUMBA_THREADING_LAYER=workqueue" >> "$GITHUB_ENV"
           fi
 
@@ -270,7 +265,7 @@ jobs:
           # line, nodefaults is not the environment-file keyword but a channel on
           # anaconda.org, which -c would put first.
           $(command -v mamba || command -v conda) install \
-            packaging pip pytest coverage pytest-randomly cffi donfig tomli c-compiler make \
+            packaging pip pytest coverage pytest-randomly cffi donfig c-compiler make \
             pyyaml${yamlver} ${sparse} pandas${pdver} scipy${spver} numpy${npver} ${awkward} \
             networkx${nxver} ${numba} ${psg} \
             ${{ matrix.slowtask == 'pytest_bizarro' && 'black' || '' }} \

@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pyver: [3.11]
+        pyver: [3.12]
         testopts:
           - "--blocking"
           # - "--non-blocking --record --runslow"

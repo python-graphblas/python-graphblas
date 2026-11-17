@@ -56,6 +56,8 @@ repos:
   # We can probably remove `isort` if we come to trust `ruff --fix`,
   # but we'll need to figure out the configuration to do this in `ruff`
   - repo: https://github.com/pycqa/isort
+    # `pre-commit autoupdate` takes the newest tag, which as of 2026-11-17 is the beta
+    # 10.0.0b3. Stay on the 9.x series until isort 10 is released.
     rev: 9.0.2
     hooks:
       - id: isort
@@ -64,7 +66,7 @@ repos:
     rev: v3.22.0
     hooks:
       - id: pyupgrade
-        args: [--py311-plus]
+        args: [--py312-plus]
   - repo: https://github.com/MarcoGorelli/auto-walrus
     rev: 0.4.1
     hooks:
@@ -76,7 +78,7 @@ repos:
       - id: black
       - id: black-jupyter
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.3
+    rev: v0.17.4
     hooks:
       - id: ruff-check
         args: [--fix-only, --show-fixes]
@@ -97,11 +99,9 @@ repos:
     hooks:
       - id: codespell
         types_or: [python, markdown, rst, toml, yaml]
-        additional_dependencies:
-          - tomli; python_version<'3.11'
         files: ^(graphblas|docs)/
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.3
+    rev: v0.17.4
     hooks:
       - id: ruff-check
       # - id: ruff-format  # we prefer black; uncomment to compare with ruff's formatter
@@ -113,8 +113,8 @@ repos:
   # `pyroma` may help keep our package standards up to date if best practices change.
   # This is probably a "low value" check though and safe to remove if we want faster pre-commit.
   - repo: https://github.com/regebro/pyroma
-    # Stay on 5.0.1 until 5.1 is released (5.1b2 is a beta): a pre-release pin defeats
-    # pre-commit.ci's autoupdate, which avoids pre-releases.
+    # `pre-commit autoupdate` takes the newest tag, which as of 2026-11-17 is the beta
+    # 5.1b1. Stay on 5.0.1 until 5.1 is released.
     rev: "5.0.1"
     hooks:
       - id: pyroma
