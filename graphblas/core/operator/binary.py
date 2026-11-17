@@ -43,6 +43,7 @@ if _has_numba:
 
     from .udf import (
         _bool_to_int8,
+        _compile_for_dtype,
         _compile_udf_for_udt,
         _finalize_udt_op,
         _get_udt_wrapper,
@@ -600,9 +601,7 @@ class BinaryOp(OpBase):
         if not is_udt:
             for type_ in _sample_values:
                 sig = (type_.numba_type, type_.numba_type)
-                try:
-                    binary_udf.compile(sig)
-                except numba.TypingError:
+                if not _compile_for_dtype(binary_udf, sig):
                     continue
                 ret_type = lookup_dtype(binary_udf.overloads[sig].signature.return_type)
                 if ret_type != type_ and (

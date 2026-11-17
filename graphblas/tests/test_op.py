@@ -647,6 +647,98 @@ def test_binaryop_udf():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udf_skips_dtypes_numba_cannot_lower():
+    """A UDF calling ``max`` or ``min`` registers, without the complex dtypes.
+
+    Numba types ``max`` on complex values but has no lowering for the ``>`` in
+    it, so the build skips those dtypes as it skips ones that fail to type.
+    """
+
+    def unary_max(x):
+        return max(x, 0)  # pragma: no cover (numba)
+
+    def binary_min(x, y):
+        return min(x, y)  # pragma: no cover (numba)
+
+    def indexunary_max(x, row, col, thunk):
+        return max(x, thunk)  # pragma: no cover (numba)
+
+    def select_max(x, row, col, thunk):
+        return max(x, thunk) > 0  # pragma: no cover (numba)
+
+    unary_op = UnaryOp.register_anonymous(unary_max)
+    binary_op = BinaryOp.register_anonymous(binary_min)
+    indexunary_op = IndexUnaryOp.register_anonymous(indexunary_max)
+    select_op = SelectOp.register_anonymous(select_max)
+    for udf in [unary_op, binary_op, indexunary_op, select_op]:
+        assert FP64 in udf.types
+        if dtypes._supports_complex:
+            assert FC64 not in udf.types
+    v = Vector.from_coo([0, 1], [-1.5, 2.5])
+    w = Vector.from_coo([0, 1], [1.0, 1.0])
+    assert v.apply(unary_op).new().isequal(Vector.from_coo([0, 1], [0.0, 2.5]))
+    assert v.ewise_mult(w, binary_op).new().isequal(Vector.from_coo([0, 1], [-1.5, 1.0]))
+    assert v.apply(indexunary_op, 1.0).new().isequal(Vector.from_coo([0, 1], [1.0, 2.5]))
+    assert v.select(select_op, 0.0).new().isequal(Vector.from_coo([1], [2.5], size=2))
+    # The example in the IndexUnaryOp.register_new docstring
+    row_mod = IndexUnaryOp.register_anonymous(lambda x, i, j, thunk: i % max(thunk, 2))
+    assert INT64 in row_mod.types
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_udf_on_a_dtype_numba_cannot_lower():
+    """An ``is_udt=True`` UDF that Numba cannot lower for a dtype raises UdfParseError."""
+
+    def unary_max(x):
+        return max(x, 0)  # pragma: no cover (numba)
+
+    def binary_max(x, y):
+        return max(x, y)  # pragma: no cover (numba)
+
+    unary_op = UnaryOp.register_anonymous(unary_max, is_udt=True)
+    binary_op = BinaryOp.register_anonymous(binary_max, is_udt=True)
+    for udf in [unary_op, binary_op]:
+        assert FP64 in udf
+        if dtypes._supports_complex:
+            with pytest.raises(
+                UdfParseError, match=r"does not work with \(FC64.*: No definition for lowering"
+            ):
+                udf[FC64]
+            assert FC64 not in udf
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_compile_for_dtype_raises_other_lowering_errors():
+    """Only a missing lowering skips a dtype, in either of Numba's error styles.
+
+    Numba before 0.60 raises a LoweringError while handling whatever lowering
+    raised, such as the NotImplementedError for a missing lowering; later Numba
+    raises that error itself.
+    """
+    from numba.core.errors import LoweringError
+
+    from graphblas.core.operator.udf import _compile_for_dtype
+
+    class Dispatcher:
+        def __init__(self, exc, old_style):
+            self.exc = exc
+            self.old_style = old_style
+
+        def compile(self, sig):
+            if self.old_style:
+                # Numba raises it inside the ``except`` that caught the error
+                err = LoweringError(str(self.exc))
+                err.__context__ = self.exc
+                raise err
+            raise self.exc
+
+    for old_style in [False, True]:
+        assert not _compile_for_dtype(Dispatcher(NotImplementedError("none"), old_style), ())
+        with pytest.raises(LoweringError if old_style else KeyError):
+            _compile_for_dtype(Dispatcher(KeyError("bug"), old_style), ())
+
+
+@pytest.mark.skipif("not supports_udfs")
 def test_monoid_udf():
     def plus_plus_one(x, y):
         return x + y + 1  # pragma: no cover (numba)
@@ -2109,22 +2201,22 @@ def test_udt_return_type_errors():
 def test_udt_udf_missing_field():
     """Reading a field the record does not have raises UdfParseError, by name or attribute.
 
-    For the attribute form, Numba 0.59 and later raise a bare KeyError, which the error
-    names; earlier versions raise a TypingError whose summary does not name the field.
+    The error names the field on Numba 0.60 and later. Earlier versions wrap Numba's
+    message in one whose summary line does not name it.
     """
     import numba
     from packaging.version import parse
 
     udt = dtypes.register_anonymous({"mf_a": FP64, "mf_pt": {"mf_x": FP64}}, "_MissingFieldUDT")
-    attr_names_field = parse(numba.__version__) >= parse("0.59")
+    names_field = parse(numba.__version__) >= parse("0.60")
     cases = [
-        (UnaryOp, lambda x: x["mf_nope"], True),
-        (UnaryOp, lambda x: x.mf_nope, attr_names_field),
-        (UnaryOp, lambda x: x["mf_pt"]["mf_nope"], True),
-        (UnaryOp, lambda x: x.mf_pt.mf_nope, attr_names_field),
-        (BinaryOp, lambda x, y: x.mf_a + y.mf_nope, attr_names_field),
+        (UnaryOp, lambda x: x["mf_nope"]),
+        (UnaryOp, lambda x: x.mf_nope),
+        (UnaryOp, lambda x: x["mf_pt"]["mf_nope"]),
+        (UnaryOp, lambda x: x.mf_pt.mf_nope),
+        (BinaryOp, lambda x, y: x.mf_a + y.mf_nope),
     ]
-    for cls, func, names_field in cases:
+    for cls, func in cases:
         with pytest.raises(UdfParseError, match="mf_nope" if names_field else None):
             cls.register_anonymous(func, is_udt=True)[udt]
 

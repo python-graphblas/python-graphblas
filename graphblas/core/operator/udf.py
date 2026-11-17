@@ -18,10 +18,12 @@ Importing this module needs Numba.
 """
 
 import re
+import warnings
 
 import numba
 import numpy as np
 from numba import NumbaError
+from numba.core.errors import LoweringError, NumbaPendingDeprecationWarning
 
 from ...dtypes import BOOL, INT8, UINT64, lookup_dtype
 from ...exceptions import UdfParseError, check_status_carg
@@ -44,6 +46,52 @@ def _bool_to_int8(dtype):
     drop the INT8 routing when upstream is fixed.
     """
     return INT8 if dtype == BOOL else dtype
+
+
+def _numba_compile(numba_func, sig):
+    """``numba_func.compile(sig)``, without Numba's warning about how it captures errors.
+
+    Numba before 0.60 captures errors "old_style" by default: a bare exception
+    from lowering, such as the NotImplementedError for an op Numba types but
+    cannot lower, comes out as a LoweringError raised while handling it. 0.58 and 0.59
+    also warn NumbaPendingDeprecationWarning that code may depend on this, and
+    ``-W error`` (as in our tests) raises that warning instead of the error.
+    The callers here handle both styles, so the warning only gets in the way.
+    """
+    # MAINT 2026-11-17: once Numba 0.61 is the minimum (0.60 made "new_style" the
+    # default; 0.61 removed "old_style"), drop this warning filter and the
+    # LoweringError branch in _compile_for_dtype.
+    if getattr(numba.core.config, "CAPTURED_ERRORS", None) != "old_style":
+        numba_func.compile(sig)
+        return
+    with warnings.catch_warnings():  # FLAKY COVERAGE
+        # Match anywhere: Numba re-emits a warning raised while compiling a callee
+        # with "Failed in nopython mode pipeline ..." in front of it.
+        warnings.filterwarnings(
+            "ignore",
+            "(?s).*Code using Numba extension API maybe depending on 'old_style'",
+            NumbaPendingDeprecationWarning,
+        )
+        numba_func.compile(sig)
+
+
+def _compile_for_dtype(numba_func, sig):
+    """Compile ``sig`` and return whether Numba could; raise any other error.
+
+    It cannot when the function does not type for ``sig``, or when Numba types
+    an op it has no lowering for, such as ``>`` (so ``max`` and ``min``) on
+    complex values. Numba raises a bare NotImplementedError for the latter, or
+    before 0.60 a LoweringError raised while handling one.
+    """
+    try:
+        _numba_compile(numba_func, sig)
+    except (numba.TypingError, NotImplementedError):
+        return False
+    except LoweringError as exc:
+        if isinstance(exc.__context__, NotImplementedError):
+            return False
+        raise
+    return True
 
 
 def _finalize_udt_op(parent_op, dtype, dtype2, ret_type, wrapper, wrapper_sig, typed_user_cls):
@@ -92,13 +140,14 @@ def _compile_udf_for_udt(numba_func, sig, *, op_kind, op_name, dtypes):
 
     Catches the full ``NumbaError`` hierarchy (TypingError, LoweringError,
     UnsupportedError, ...) so any compilation failure produces a
-    single-line UDT diagnostic. It also catches the bare ``KeyError`` that
-    Numba 0.59 and later raise for ``x.name`` on a record without that field;
-    earlier versions wrap it in a TypingError.
+    single-line UDT diagnostic. On Numba 0.60 and later it also catches the
+    bare ``KeyError`` raised for ``x.name`` on a record without that field, and
+    the bare NotImplementedError raised for an op Numba types but cannot lower;
+    earlier versions wrap both in a NumbaError.
     """
     try:
-        numba_func.compile(sig)
-    except (NumbaError, KeyError) as exc:
+        _numba_compile(numba_func, sig)
+    except (NumbaError, KeyError, NotImplementedError) as exc:
         if isinstance(exc, KeyError):
             snippet = f"KeyError: {exc}"
         else:
@@ -119,6 +168,7 @@ _NUMBA_DIAG_PREFIXES = (
     "Invalid use of",
     "use of undeclared",
     "Untyped global",
+    "No definition for lowering",
 )
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
