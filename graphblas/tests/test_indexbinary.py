@@ -545,6 +545,8 @@ def test_bound_ibo_memory_bounded():
     import os
     import subprocess
 
+    from graphblas.core import base
+
     def rss_mb():
         # The resident set size now; ``ps`` gives KiB on Linux and macOS. Not
         # ``ru_maxrss``: that is the peak, which an earlier test that freed its
@@ -557,6 +559,9 @@ def test_bound_ibo_memory_bounded():
         delattr(indexbinary, "leak_test_bound_ibo_op")
     indexbinary.register_new("leak_test_bound_ibo_op", _ibo_add_theta)
     op = indexbinary.leak_test_bound_ibo_op
+    # Pause the session's Recorder (``--record``). It keeps two lines of about
+    # 80 bytes for each bind, so 100,000 binds would grow RSS by about 16 MB.
+    token = base._recorder.set(None)
     try:
         # Warm up the typed-op cache; the first call also compiles with Numba.
         for _ in range(100):
@@ -572,6 +577,7 @@ def test_bound_ibo_memory_bounded():
         # The limit fails a leak of more than about 100 bytes per bind.
         assert growth < 10, f"bound-IBO leak: RSS grew {growth:.1f} MB over 100,000 binds"
     finally:
+        base._recorder.reset(token)
         delattr(indexbinary, "leak_test_bound_ibo_op")
 
 
