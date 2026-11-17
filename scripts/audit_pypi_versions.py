@@ -173,9 +173,10 @@ def check_per_python_pools():
 def note_pypi_python_gaps():
     """Pins with no PyPI build for a Python we offer them on. Advisory, not a failure.
 
-    CI installs these from conda-forge, which builds more than PyPI ships: conda-forge
-    has a py311 build of pyyaml 5.4.1 where PyPI's newest wheel is cp39. Treat a note
-    here as a prompt to check `audit_conda_versions.py`, not as a broken pool.
+    CI installs these from conda-forge, which builds more than PyPI ships: as of
+    2026-11-17, conda-forge has py3.15 builds of pyyaml 6.0.3, whose newest PyPI wheel
+    is cp314. Treat a note here as a prompt to check `audit_conda_versions.py`, not as a
+    broken pool.
     """
     notes = []
     for dep, pools in PER_PYTHON_POOLS.items():

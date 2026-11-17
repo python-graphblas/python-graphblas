@@ -241,9 +241,9 @@ def _resolve_udt_return_type(numba_ret_type, *dtypes):
         if isinstance(numba_ret_type, numba.core.types.NestedArray):
             # Extents survived, so ``lookup_dtype`` above named a UDT for
             # them unless SuiteSparse refused to create it: builds without
-            # variable-length arrays cap a UDT at 128 bytes before SS 9.0
-            # and 1024 from then on. Matching those extents to a same-rank
-            # operand would hand SuiteSparse an element of the wrong size.
+            # variable-length arrays cap a UDT at 1024 bytes. Matching those
+            # extents to a same-rank operand would hand SuiteSparse an
+            # element of the wrong size.
             shaped_like = []
         else:
             shaped_like = [

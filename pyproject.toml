@@ -57,7 +57,7 @@ classifiers = [
 dependencies = [
   "numpy >=2.0",
   "donfig >=0.8.1",
-  "pyyaml >=6.0",
+  "pyyaml >=6.0.1",
   # These should be optional once PEP 771 is accepted and supported:
   # https://peps.python.org/pep-0771/ (still draft as of 2026-03)
   # Use e.g. "python-graphblas[suitesparse]" or "python-graphblas[default]" instead
@@ -75,7 +75,7 @@ changelog = "https://github.com/python-graphblas/python-graphblas/releases"
 suitesparse = ["suitesparse-graphblas >=9.3.1.0"]
 networkx = ["networkx >=3.2"]
 numba = ["numba >=0.61"]
-pandas = ["pandas >=2.2"]
+pandas = ["pandas >=2.2.2"]
 scipy = ["scipy >=1.13"]
 suitesparse-udf = [ # udf requires numba
   "python-graphblas[suitesparse,numba]",
@@ -84,7 +84,7 @@ repr = ["python-graphblas[pandas]"]
 io = [
   "python-graphblas[networkx,scipy]",
   "python-graphblas[numba]; python_version<'3.16'", # make optional where numba is not supported
-  "awkward >=2.6",
+  "awkward >=2.6.3",
   # sparse needs numba, so it has numba's Python guard.
   "sparse >=0.14; python_version<'3.16'",
   # fast-matrix-market is no longer maintained; last supported Python is 3.12
@@ -92,7 +92,7 @@ io = [
 viz = ["python-graphblas[networkx,scipy]", "matplotlib >=3.9"]
 datashade = [ # datashade requires numba
   "python-graphblas[numba,pandas,scipy]",
-  "datashader >=0.16",
+  "datashader >=0.16.1",
   "hvplot >=0.10",
 ]
 test = ["python-graphblas[suitesparse,pandas,scipy]", "packaging >=21", "pytest >=6.2"]
@@ -180,6 +180,11 @@ filterwarnings = [
 
   # pypy gives this warning
   "ignore:can't resolve package from __spec__ or __package__:ImportWarning:",
+
+  # python-dateutil <2.9 calls datetime.datetime.utcfromtimestamp on import, which Python
+  # 3.12 deprecates. pandas 2.2 and 3.0 still accept python-dateutil 2.8.2.
+  # MAINT: remove once the pandas minimum is 3.1, which requires python-dateutil >=2.9.
+  "ignore:datetime.datetime.utcfromtimestamp:DeprecationWarning:dateutil",
 
   # NoJITWarning, a UserWarning issued once per operator and UDT when the UDT has no C
   # definition, so its lifted operators run without the JIT. Its stacklevel points at the

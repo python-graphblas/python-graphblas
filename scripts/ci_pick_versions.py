@@ -71,9 +71,9 @@ PANDAS_VERSIONS = ["2.2", "2.3", "3.0", ""]
 # (https://github.com/python-graphblas/python-graphblas/pull/605).
 LATEST_CEILINGS = {"pandas": "<3.1"}
 
-# The pool starts at 2.6 because awkward <2.6 still uses numpy.AxisError, which numpy 2.0
-# removed. Only >=2.10 pins survive numpy >=2.5; see the awkward constraints in
-# `apply_constraints`.
+# awkward before 2.6.3 still uses numpy.AxisError, which numpy 2.0 removed, so the pool
+# starts at the "2.6" pin, which resolves to the newest 2.6.x. Only >=2.10 pins survive
+# numpy >=2.5; see the awkward constraints in `apply_constraints`.
 AWKWARD_VERSIONS = ["2.6", "2.7", "2.8", "2.9", "2.10", "2.11", "2.12", "2.13", "2.14", ""]
 
 NUMBA_VERSIONS = ["0.61", "0.62", "0.63", "0.64", "0.65", "0.66", "0.67", "0.68", ""]

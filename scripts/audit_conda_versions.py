@@ -4,8 +4,8 @@
 CI installs its dependencies from conda-forge, so this is the authoritative companion
 to `audit_pypi_versions.py`. It can see two things PyPI cannot:
 
-* which Pythons a version was built for. conda-forge builds more than PyPI
-  ships (it has a py311 build of pyyaml 5.4.1 where PyPI's newest wheel is cp39), and
+* which Pythons a version was built for. conda-forge builds more than PyPI ships (as of
+  2026-11-17 it has py3.15 builds of pyyaml 6.0.3, whose newest PyPI wheel is cp314), and
   sometimes fewer, so "no wheel" and "no build" are different questions.
 * `constrains` metadata (conda's run_constrained). Several rules in the picker exist
   only because a package constrains something it does not depend on, which is what
@@ -54,8 +54,8 @@ SAMPLED_DEPS = ("scipy", "pandas", "awkward", "numba", "networkx", "sparse", "py
 # Constraints the picker hard-codes because they come from conda metadata alone. If one
 # of these drifts, the matching rule in `apply_constraints` needs another look.
 # Each entry is (dep, version pin, field, expected constraint). None today: the rules
-# that quoted networkx, pandas and matplotlib metadata only affected numpy and scipy pins
-# older than our minimums.
+# that quoted networkx, pandas and matplotlib metadata only affected numpy, scipy and
+# pandas pins older than our minimums.
 DOCUMENTED_METADATA = []
 
 

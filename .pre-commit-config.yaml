@@ -56,8 +56,8 @@ repos:
   # We can probably remove `isort` if we come to trust `ruff --fix`,
   # but we'll need to figure out the configuration to do this in `ruff`
   - repo: https://github.com/pycqa/isort
-    # `pre-commit autoupdate` takes the newest tag, which as of 2026-11-17 is the beta
-    # 10.0.0b3. Stay on the 9.x series until isort 10 is released.
+    # `pre-commit autoupdate` takes the latest tag on isort's default branch, which as of
+    # 2026-11-17 is the beta 10.0.0b3. Stay on the 9.x series until isort 10 is released.
     rev: 9.0.2
     hooks:
       - id: isort
@@ -113,8 +113,8 @@ repos:
   # `pyroma` may help keep our package standards up to date if best practices change.
   # This is probably a "low value" check though and safe to remove if we want faster pre-commit.
   - repo: https://github.com/regebro/pyroma
-    # `pre-commit autoupdate` takes the newest tag, which as of 2026-11-17 is the beta
-    # 5.1b1. Stay on 5.0.1 until 5.1 is released.
+    # `pre-commit autoupdate` takes the latest tag on pyroma's default branch, which as of
+    # 2026-11-17 is the beta 5.1b1. Stay on 5.0.1 until 5.1 is released.
     rev: "5.0.1"
     hooks:
       - id: pyroma
@@ -252,7 +252,6 @@ repos:
 #    rev: 6.3.0
 #    hooks:
 #      - id: pydocstyle
-#        additional_dependencies: [tomli]
 #
 #  - repo: https://github.com/PyCQA/bandit
 #    rev: 1.8.2

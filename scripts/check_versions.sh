@@ -25,4 +25,4 @@ conda search 'pyyaml[channel=conda-forge]>=6.0'
 # matplotlib is installed unpinned for the notebooks job.
 conda search 'matplotlib-base[channel=conda-forge]>=3.11'
 conda search 'python-suitesparse-graphblas[channel=conda-forge]>=10.5.2'
-# conda search 'python[channel=conda-forge]>=3.11 *pypy*'
+# conda search 'python[channel=conda-forge]>=3.12 *pypy*'
