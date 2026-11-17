@@ -211,12 +211,6 @@ def values_to_numpy_buffer(
             array = np.array(array, copy=copy or None, order=order)
         if array.dtype.hasobject:
             raise ValueError("object dtype for values is not allowed")
-        if not is_input_np and array.dtype == np.int32:  # pragma: no cover
-            # numpy 1 on Windows made int32 arrays from Python ints, and this gave INT64 there
-            # as on other platforms. numpy 2 makes int64 everywhere, so this now only turns
-            # int32 values not given as an ndarray (a list of np.int32, an int32 Series) into
-            # INT64. MAINT: removing it would make those INT32, a behavior change.
-            array = array.astype(np.int64)
         dtype = lookup_dtype(array.dtype)
         # Registration flattens nested subarrays, so values declared with them
         # carry a dtype the DataType we just looked up no longer matches. The

@@ -141,6 +141,14 @@ def test_from_coo():
         Vector.from_coo([0], [1, 2])
 
 
+@pytest.mark.parametrize("np_type", [np.int8, np.int16, np.int32, np.int64, np.uint32, np.float32])
+def test_from_coo_numpy_scalars_keep_dtype(np_type):
+    # A list of NumPy scalars gives the dtype an ndarray of them gives
+    expected = dtypes.lookup_dtype(np_type)
+    assert Vector.from_coo([0, 1], [np_type(1), np_type(2)]).dtype == expected
+    assert Vector.from_coo([0, 1], np.array([1, 2], np_type)).dtype == expected
+
+
 def test_from_coo_scalar():
     u = Vector.from_coo([0, 1, 3], 7)
     assert u.size == 4
