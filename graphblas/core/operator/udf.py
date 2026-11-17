@@ -81,7 +81,7 @@ def _compile_for_dtype(numba_func, sig):
     It cannot when the function does not type for ``sig``, or when Numba types
     an op it has no lowering for, such as ``>`` (so ``max`` and ``min``) on
     complex values. Numba raises a bare NotImplementedError for the latter, or
-    before 0.60 a LoweringError from one.
+    before 0.60 a LoweringError raised while handling one.
     """
     try:
         _numba_compile(numba_func, sig)
