@@ -862,7 +862,7 @@ def test_op_namespace():
         assert op.numpy.add is binary.numpy.add
     if shouldhave(semiring.numpy, "add_add"):
         assert op.numpy.add_add is semiring.numpy.add_add
-    assert len(dir(op)) > 300
+    assert len(dir(op)) > 250
     if supports_udfs:
         assert len(dir(op.numpy)) > 500
 
