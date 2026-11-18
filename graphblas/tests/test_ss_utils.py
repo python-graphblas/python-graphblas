@@ -11,6 +11,7 @@ from numpy.testing import assert_array_equal
 
 import graphblas as gb
 from graphblas import Matrix, Vector, backend
+from graphblas.core import _supports_udfs as supports_udfs
 from graphblas.core.utils import _distinct_buffers, values_to_numpy_buffer
 from graphblas.exceptions import InvalidValue
 
@@ -840,8 +841,12 @@ def test_indexbinaryop_needs_suitesparse_9_4(monkeypatch):
     def plus_theta(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (never called)
         return x + y + theta
 
-    with pytest.raises(RuntimeError, match=match):
-        gb.indexbinary.register_anonymous(plus_theta)
+    if supports_udfs:
+        with pytest.raises(RuntimeError, match=match):
+            gb.indexbinary.register_anonymous(plus_theta)
+    else:
+        with pytest.raises(RuntimeError, match="install numba for UDF support"):
+            gb.indexbinary.register_anonymous(plus_theta)
     cdef = (
         "void plus_theta (double *z, double *x, GrB_Index ix, GrB_Index jx, double *y, "
         "GrB_Index iy, GrB_Index jy, double *theta) { (*z) = (*x) + (*y) + (*theta) ; }"
