@@ -734,7 +734,7 @@ class BinaryOp(OpBase):
         # (``set_jit_c_on_op``, or ``set_jit_c_comparison_on_op`` for eq and ne).
         # Otherwise an arithmetic op gets a definition with a C type for each of z, x
         # and y, when there is one (``set_jit_c_mixed_on_op``), and eq and ne get none.
-        # ``_has_jit_set`` is False where ``GrB_BinaryOp_set_String`` is missing.
+        # ``_has_jit_set`` is False on the vanilla backend.
         if is_lifted and self.name in _BUILTIN_UDT_BINARY_OPS:
             is_jittable = ret_type == dtype
         else:

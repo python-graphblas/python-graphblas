@@ -101,11 +101,13 @@ Bugs are not considered deprecations and may be fixed immediately.
 What is the version support policy?
 +++++++++++++++++++++++++++++++++++
 
-Each major Python version will be supported for at least 36.
+Each major Python version will be supported for at least 36 months.
 Major dependencies such as NumPy should be supported for at least 24 months.
-We aim to follow SPEC 0:
+These are the support windows of SPEC 0, and we often support versions for longer:
 
 - https://scientific-python.org/specs/spec-0000/
+
+The minimum versions are in ``pyproject.toml``.
 
 ``python-graphblas`` itself follows a "single trunk" versioning strategy.
 For example, if a CVE is discovered, we won't retroactively apply the fix to previous releases.

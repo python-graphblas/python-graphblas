@@ -4,8 +4,8 @@
 CI installs its dependencies from conda-forge, so this is the authoritative companion
 to `audit_pypi_versions.py`. It can see two things PyPI cannot:
 
-* which Pythons a version was built for. conda-forge builds more than PyPI
-  ships (it has a py311 build of pyyaml 5.4.1 where PyPI's newest wheel is cp39), and
+* which Pythons a version was built for. conda-forge builds more than PyPI ships (as of
+  2026-11-17 it has py3.15 builds of pyyaml 6.0.3, whose newest PyPI wheel is cp314), and
   sometimes fewer, so "no wheel" and "no build" are different questions.
 * `constrains` metadata (conda's run_constrained). Several rules in the picker exist
   only because a package constrains something it does not depend on, which is what
@@ -40,7 +40,7 @@ picker = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(picker)
 
 # Our internal names to conda-forge package names
-CONDA_NAMES = {"psg": "python-suitesparse-graphblas", "matplotlib": "matplotlib-base"}
+CONDA_NAMES = {"psg": "python-suitesparse-graphblas"}
 
 PER_PYTHON_POOLS = {
     "numpy": picker.NUMPY_VERSIONS,
@@ -53,21 +53,10 @@ SAMPLED_DEPS = ("scipy", "pandas", "awkward", "numba", "networkx", "sparse", "py
 
 # Constraints the picker hard-codes because they come from conda metadata alone. If one
 # of these drifts, the matching rule in `apply_constraints` needs another look.
-# Each entry is (dep, version pin, field, expected constraint).
-DOCUMENTED_METADATA = [
-    ("networkx", "3.7", "constrains", "numpy >=1.25"),
-    ("networkx", "3.7", "constrains", "scipy >=1.11.2"),
-    ("networkx", "3.7", "constrains", "pandas >=2.0"),
-    ("networkx", "3.6", "constrains", "numpy >=1.25"),
-    ("networkx", "3.6", "constrains", "scipy >=1.11.2"),
-    ("networkx", "3.6", "constrains", "pandas >=2.0"),
-    ("networkx", "3.5", "constrains", "numpy >=1.25"),
-    ("pandas", "2.3", "constrains", "scipy >=1.10.0"),
-    # matplotlib 3.11.0's metadata understates its numpy floor; 3.11.1 fixed it. The
-    # picker pins matplotlib <3.11 for old numpy because of the 3.11.0 builds.
-    ("matplotlib", "3.11.0", "depends", "numpy >=1.23"),
-    ("matplotlib", "3.11.1", "depends", "numpy >=1.25"),
-]
+# Each entry is (dep, version pin, field, expected constraint). None today: the rules
+# that quoted networkx, pandas and matplotlib metadata only affected numpy, scipy and
+# pandas pins older than our minimums.
+DOCUMENTED_METADATA = []
 
 
 # ---------------------------------------------------------------------------
@@ -167,19 +156,14 @@ def _oldest_pin(dep):
     """The oldest pin we test for a dep, used to bound the conda search."""
     pools = {
         "numpy": [v for pool in picker.NUMPY_VERSIONS.values() for v in pool],
-        "scipy": [v for pool in picker.SCIPY_VERSIONS["1.x"].values() for v in pool]
-        + picker.SCIPY_VERSIONS["2.x"],
-        "pandas": [v for pool in picker.PANDAS_VERSIONS["1.x"].values() for v in pool]
-        + picker.PANDAS_VERSIONS["2.x"],
-        "awkward": [v for pool in picker.AWKWARD_VERSIONS["1.x"].values() for v in pool]
-        + picker.AWKWARD_VERSIONS["2.x"],
-        "numba": picker.NUMBA_VERSIONS["1.x"] + picker.NUMBA_VERSIONS["2.x"],
+        "scipy": picker.SCIPY_VERSIONS,
+        "pandas": picker.PANDAS_VERSIONS,
+        "awkward": picker.AWKWARD_VERSIONS,
+        "numba": picker.NUMBA_VERSIONS,
         "networkx": [v for pool in picker.NETWORKX_VERSIONS.values() for v in pool],
         "pyyaml": [v for pool in picker.PYYAML_VERSIONS.values() for v in pool],
         "sparse": [v for pool in picker.SPARSE_VERSIONS.values() for v in pool],
-        "psg": [v for pool in picker.PSG_VERSIONS_NP1.values() for p in pool.values() for v in p]
-        + picker.PSG_VERSIONS_NP2,
-        "matplotlib": ["3.11.0"],
+        "psg": picker.PSG_VERSIONS,
     }
     pins = [v for v in pools[dep] if v and v != "NA"]
     return min(pins, key=picker._ver)
@@ -271,7 +255,7 @@ def check_psg_python_floors():
     floor = _oldest_pin("psg")
     for pyver, sources in picker.PSG_MIN_PYTHON.items():
         expected = sources.get("conda-forge")
-        built = [p for p in picker.PSG_VERSIONS_NP2 if supports_python("psg", p, pyver, floor)]
+        built = [p for p in picker.PSG_VERSIONS if supports_python("psg", p, pyver, floor)]
         if built and min(built, key=picker._ver) != expected:
             problems.append(
                 f"PSG_MIN_PYTHON says conda-forge py{pyver} starts at psg {expected}, "
@@ -324,14 +308,14 @@ def report_newer_releases():
 def _newest_tested(dep):
     pools = {
         "numpy": picker.NUMPY_VERSIONS,
-        "scipy": {"": picker.SCIPY_VERSIONS["2.x"]},
-        "pandas": {"": picker.PANDAS_VERSIONS["2.x"]},
-        "awkward": {"": picker.AWKWARD_VERSIONS["2.x"]},
-        "numba": {"": picker.NUMBA_VERSIONS["2.x"]},
+        "scipy": {"": picker.SCIPY_VERSIONS},
+        "pandas": {"": picker.PANDAS_VERSIONS},
+        "awkward": {"": picker.AWKWARD_VERSIONS},
+        "numba": {"": picker.NUMBA_VERSIONS},
         "networkx": picker.NETWORKX_VERSIONS,
         "pyyaml": picker.PYYAML_VERSIONS,
         "sparse": picker.SPARSE_VERSIONS,
-        "psg": {"": picker.PSG_VERSIONS_NP2},
+        "psg": {"": picker.PSG_VERSIONS},
     }[dep]
     pins = {p for group in pools.values() for p in group if p and p != "NA"}
     return max(pins, key=picker._ver) if pins else None

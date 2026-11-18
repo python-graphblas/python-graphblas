@@ -1,7 +1,6 @@
 import itertools
 import pickle
 import string
-import sys
 import warnings
 
 import numpy as np
@@ -12,11 +11,10 @@ from graphblas import core, dtypes
 from graphblas.core import _supports_udfs as supports_udfs
 from graphblas.core import lib
 from graphblas.core.operator.udt_codegen import _has_jit_set
-from graphblas.core.utils import _NP2, values_to_numpy_buffer
+from graphblas.core.utils import values_to_numpy_buffer
 from graphblas.dtypes import lookup_dtype
 
 suitesparse = gb.backend == "suitesparse"
-is_win = sys.platform.startswith("win")
 
 all_dtypes = [
     dtypes.BOOL,
@@ -243,8 +241,6 @@ def test_nested_subarrays_register_flat():
     if _has_jit_set:
         assert udt.jit_c_definition is not None
 
-    # INT16 keeps this under 128 bytes, the most SuiteSparse < 9 accepts for a
-    # UDT on builds without variable-length arrays (Windows).
     deeper = np.dtype((np.dtype((np.dtype((np.int16, (7,))), (2,))), (3,)))
     assert lookup_dtype(deeper).np_type == np.dtype((np.int16, (3, 2, 7)))
 
@@ -623,7 +619,7 @@ def test_dtype_to_from_string():
             # See NEP 55 about StringDtype "T". Notably, this doesn't work:
             # >>> np.dtype(np.dtype("T").str)
             continue
-        if _NP2 and c == "a":
+        if c == "a":
             # Data type alias 'a' was deprecated in NumPy 2.0. Use the 'S' alias instead.
             continue
         try:
@@ -642,8 +638,6 @@ def test_dtype_to_from_string():
             assert dtype == dtype2
 
 
-# The 180-char repr exceeds GxB_MAX_NAME_LEN, which warns on SuiteSparse < 9.
-@pytest.mark.filterwarnings("ignore:UDT repr is too large")
 def test_dtype_to_string_aligned_outer_packed_inner():
     """An aligned record with a packed record field round-trips through ``_dtype_to_string``.
 
@@ -666,18 +660,8 @@ def test_dtype_to_string_aligned_outer_packed_inner():
 
 
 def test_has_complex():
-    """Only SuiteSparse has complex (with Windows support in Python after v7.4.3.1)."""
-    if not suitesparse:
-        assert not dtypes._supports_complex
-        return
-    if not is_win:
-        assert dtypes._supports_complex
-        return
-
-    import suitesparse_graphblas as ssgb
-    from packaging.version import parse
-
-    assert dtypes._supports_complex == (parse(ssgb.__version__) >= parse("7.4.3.1"))
+    """Only SuiteSparse has complex."""
+    assert dtypes._supports_complex == suitesparse
 
 
 def test_has_ss_attribute():

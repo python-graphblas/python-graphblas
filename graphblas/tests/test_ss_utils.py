@@ -11,6 +11,7 @@ from numpy.testing import assert_array_equal
 
 import graphblas as gb
 from graphblas import Matrix, Vector, backend
+from graphblas.core import _supports_udfs as supports_udfs
 from graphblas.core.utils import _distinct_buffers, values_to_numpy_buffer
 from graphblas.exceptions import InvalidValue
 
@@ -259,12 +260,11 @@ def test_openmp_enabled():
 
 def test_global_config(monkeypatch):
     d = {}
-    config = gb.ss.config
-    if "jit_c_control" in config:  # SuiteSparse:GraphBLAS 8+
-        from graphblas.core.ss import jit_config
+    from graphblas.core.ss import jit_config
 
-        # Writing jit_c_control also sets ``_user_set_run``; restore it afterwards
-        monkeypatch.setattr(jit_config, "_user_set_run", jit_config._user_set_run)
+    config = gb.ss.config
+    # Writing jit_c_control also sets ``_user_set_run``; restore it afterwards
+    monkeypatch.setattr(jit_config, "_user_set_run", jit_config._user_set_run)
     for k in config:
         d[k] = config[k]
     assert d == config
@@ -369,14 +369,12 @@ def test_about_attribute_assignment_raises():
     assert dict(about) == {k: about[k] for k in about}
 
 
-@pytest.mark.skipif("gb.core.ss._IS_SSGB7")
 def test_context_attribute_assignment_raises():
     context = gb.ss.Context(engage=False)
     with pytest.raises(AttributeError, match="item assignment"):
         context.nthreads = 4
 
 
-@pytest.mark.skipif("gb.core.ss._IS_SSGB7")
 def test_context():
     context = gb.ss.Context()
     prev = dict(context)
@@ -828,3 +826,30 @@ def test_secure_import(take_ownership):
         assert [array.flags.owndata for array in arrays] == owndata, format
         w.ss.pack_any(**w.ss.export(format), secure_import=True, take_ownership=take_ownership)
         assert w.isequal(v, check_dtype=True), format
+
+
+def test_indexbinaryop_needs_suitesparse_9_4(monkeypatch):
+    # python-suitesparse-graphblas 9.3.1.0, our minimum, bundles SuiteSparse 9.3, which
+    # has no IndexBinaryOp. Pretend the library lacks it, so this runs on every version.
+    from graphblas.core.operator import indexbinary as core_indexbinary
+    from graphblas.core.ss import indexbinary as ss_indexbinary
+
+    monkeypatch.setattr(core_indexbinary, "_has_idxbinop", False)
+    monkeypatch.setattr(ss_indexbinary, "_has_idxbinop", False)
+    match = r"python-suitesparse-graphblas 9\.4\.5\.0\+"
+
+    def plus_theta(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (never called)
+        return x + y + theta
+
+    if supports_udfs:
+        with pytest.raises(RuntimeError, match=match):
+            gb.indexbinary.register_anonymous(plus_theta)
+    else:
+        with pytest.raises(RuntimeError, match="install numba for UDF support"):
+            gb.indexbinary.register_anonymous(plus_theta)
+    cdef = (
+        "void plus_theta (double *z, double *x, GrB_Index ix, GrB_Index jx, double *y, "
+        "GrB_Index iy, GrB_Index jy, double *theta) { (*z) = (*x) + (*y) + (*theta) ; }"
+    )
+    with pytest.raises(RuntimeError, match=match):
+        gb.indexbinary.ss.register_new("plus_theta", cdef, "FP64", "FP64", "FP64", "FP64")

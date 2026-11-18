@@ -61,12 +61,6 @@ def main():
         print(f"\nERROR: Could not initialize graphblas: {e}")
         return 1
 
-    from graphblas.core.ss import _IS_SSGB7
-
-    if _IS_SSGB7:
-        print("\nSuiteSparse:GraphBLAS 7.x: JIT not available")
-        return 0
-
     print("\n--- GraphBLAS JIT settings after graphblas init ---")
     for key in [
         "jit_c_control",

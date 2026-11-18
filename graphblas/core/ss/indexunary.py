@@ -4,7 +4,6 @@ from ...exceptions import check_status_carg
 from .. import NULL, ffi, lib
 from ..operator.base import TypedOpBase
 from ..operator.indexunary import IndexUnaryOp, TypedUserIndexUnaryOp
-from . import _IS_SSGB7
 from ._utils import _jit_c_source
 
 ffi_new = ffi.new
@@ -82,14 +81,6 @@ def register_new(name, jit_c_definition, input_type, thunk_type, ret_type):
     if backend != "suitesparse":  # pragma: no cover (safety)
         raise RuntimeError(
             "`gb.indexunary.ss.register_new` invalid when not using 'suitesparse' backend"
-        )
-    if _IS_SSGB7:
-        # JIT was introduced in SuiteSparse:GraphBLAS 8.0
-        import suitesparse_graphblas as ssgb
-
-        raise RuntimeError(
-            "JIT was added to SuiteSparse:GraphBLAS in version 8; "
-            f"current version is {ssgb.__version__}"
         )
     input_type = lookup_dtype(input_type)
     thunk_type = lookup_dtype(thunk_type)

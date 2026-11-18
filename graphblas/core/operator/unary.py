@@ -271,8 +271,7 @@ class UnaryOp(OpBase):
             op = _finalize_udt_op(
                 self, dtype, None, ret_type, unary_wrapper, wrapper_sig, TypedUserUnaryOp
             )
-            # Before SuiteSparse 9, looking up ``lib.GrB_UnaryOp_set_String`` raises, so
-            # it is looked up only when ``_has_jit_set``
+            # ``_has_jit_set`` is False on the vanilla backend.
             if _has_jit_set:
                 op._jit_c_info = set_jit_c_on_op(
                     op.gb_obj, self.name, py_op, dtype, lib.GrB_UnaryOp_set_String, arity=1

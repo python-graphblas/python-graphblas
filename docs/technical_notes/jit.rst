@@ -38,7 +38,7 @@ The JIT control
 initializes, or in a YAML file in ``~/.config/graphblas/``, where an unquoted ``on`` or
 ``off`` also works. Any other value raises ``ValueError`` before anything initializes.
 Unset, the control is ``"run"``. The ``suitesparse-vanilla`` backend leaves the control
-as the SuiteSparse build sets it, and SuiteSparse:GraphBLAS 7 has no JIT.
+as the SuiteSparse build sets it.
 
 A configured ``"on"`` is set only where it works. python-graphblas repairs the compiler
 setting if its path does not exist (:ref:`tn_jit_compiler`), checks that the cache
@@ -191,8 +191,8 @@ Operators you write with Numba (:doc:`../user_guide/udf`) have no C definition e
 and always run as Numba functions. An unusable compiler, or a control that does not
 compile, also leaves lifted operators on their Numba functions, without a warning.
 
-With SuiteSparse:GraphBLAS 7 or 8, or with the ``suitesparse-vanilla`` backend, no UDT or
-lifted operator gets a C definition, and nothing warns.
+With the ``suitesparse-vanilla`` backend, no UDT or lifted operator gets a C definition,
+and nothing warns.
 
 .. _tn_jit_introspection:
 

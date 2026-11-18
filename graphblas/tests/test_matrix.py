@@ -4731,9 +4731,7 @@ def test_subarray_dtype_ss_column_order(shape):
 def test_subarray_dtype_ss_export_spare_values():
     # A dense export of an array UDT whose buffer has more values than entries keeps the
     # first nrows * ncols. Regression: it raised ValueError, and unpack left the Matrix
-    # empty. SuiteSparse:GraphBLAS 7.4.0's memory pool rounds each allocation of 512 KiB
-    # or less up to a power of two, so here a full Matrix resized smaller keeps its
-    # larger buffer, in either layout.
+    # empty. A full Matrix resized smaller keeps its larger buffer, in either layout.
     big = np.arange(3 * 3 * 4, dtype=np.int64).reshape(3, 3, 4)
     for layout, nrows, ncols in [("by_row", 2, 3), ("by_col", 3, 2)]:
         expected = big[:nrows, :ncols]
@@ -4758,8 +4756,7 @@ def test_subarray_dtype_ss_export_spare_values():
 
 @pytest.mark.skipif("not suitesparse")
 def test_subarray_dtype_ss_row_order_round_trip_takes_the_buffer():
-    # Unpacked in row order from a buffer of exactly its size (256 bytes, which
-    # SuiteSparse:GraphBLAS 7.4.0's pool does not round up), an array UDT's values own
+    # Unpacked in row order from a buffer of exactly its size, an array UDT's values own
     # that buffer, so packing them back with take_ownership=True hands it over without a
     # copy
     expected = np.arange(2 * 4 * 4, dtype=np.int64).reshape(2, 4, 4)

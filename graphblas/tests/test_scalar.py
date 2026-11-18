@@ -12,7 +12,6 @@ import pytest
 
 import graphblas as gb
 from graphblas import backend, binary, dtypes, monoid, replace, select, unary
-from graphblas.core.ss import version_major as ss_version_major  # noqa: F401 (used in skipif)
 from graphblas.exceptions import EmptyObject, NullPointer
 
 from .conftest import autocompute, compute, pypy
@@ -52,31 +51,20 @@ def test_dup(s):
     s4 = Scalar.from_value(-2.5, dtype=dtypes.FP64)
     s_empty = Scalar(dtypes.FP64)
     s_unempty = Scalar.from_value(0.0)
-    if s_empty.is_cscalar:
-        # NumPy <2 wraps around; >=2 raises OverflowError
-        uint_data = [
-            ("UINT8", 2**8 - 2),
-            ("UINT16", 2**16 - 2),
-            ("UINT32", 2**32 - 2),
-            ("UINT64", 2**64 - 2),
-        ]
-    else:
-        # SuiteSparse clips
-        uint_data = [
-            ("UINT8", 0),
-            ("UINT16", 0),
-            ("UINT32", 0),
-            ("UINT64", 0),
-        ]
     for dtype, val in [
         ("INT8", -2),
         ("INT16", -2),
         ("INT32", -2),
         ("BOOL", True),
         ("FP32", -2.5),
-        *uint_data,
+        # SuiteSparse clips
+        ("UINT8", 0),
+        ("UINT16", 0),
+        ("UINT32", 0),
+        ("UINT64", 0),
     ]:
-        if dtype.startswith("UINT") and s_empty.is_cscalar and not np.__version__.startswith("1."):
+        if dtype.startswith("UINT") and s_empty.is_cscalar:
+            # numpy raises OverflowError
             with pytest.raises(OverflowError, match="out of bounds for uint"):
                 s4.dup(dtype=dtype, name="s5")
             continue
@@ -288,11 +276,6 @@ def test_udt_scalar_padding_is_zeroed():
     assert raw == Scalar.from_value((3, 4.0), dtype=udt).value.tobytes()
 
 
-# For the GB_VLA_MAXSIZE limit, see the comment on test_udt_large_array in test_op.py
-@pytest.mark.skipif(
-    "ss_version_major < 9",
-    reason="SuiteSparse < 9 rejects a 240-byte UDT on builds without VLA support",
-)
 def test_udt_scalar_nested_array_roundtrip():
     """A UDT declared as an array of arrays reads back at full extent.
 

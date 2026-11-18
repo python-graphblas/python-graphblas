@@ -3,7 +3,6 @@ from ...dtypes import BOOL, lookup_dtype
 from .. import ffi
 from ..operator.base import TypedOpBase
 from ..operator.select import SelectOp, TypedUserSelectOp
-from . import _IS_SSGB7
 
 ffi_new = ffi.new
 
@@ -77,14 +76,6 @@ def register_new(name, jit_c_definition, input_type, thunk_type):
     if backend != "suitesparse":  # pragma: no cover (safety)
         raise RuntimeError(
             "`gb.select.ss.register_new` invalid when not using 'suitesparse' backend"
-        )
-    if _IS_SSGB7:
-        # JIT was introduced in SuiteSparse:GraphBLAS 8.0
-        import suitesparse_graphblas as ssgb
-
-        raise RuntimeError(
-            "JIT was added to SuiteSparse:GraphBLAS in version 8; "
-            f"current version is {ssgb.__version__}"
         )
     input_type = lookup_dtype(input_type)
     thunk_type = lookup_dtype(thunk_type)

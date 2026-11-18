@@ -58,29 +58,20 @@ def _resolve_serialized_dtype(data_obj, data_nbytes, obj_kind):
     info = lib.GxB_deserialize_type_name(cname, data_obj, data_nbytes)
     if info != lib.GrB_SUCCESS:
         raise _error_code_lookup[info](f"{obj_kind} deserialize failed to get the dtype name")
-    dtype_name = b"".join(itertools.takewhile(b"\x00".__ne__, cname)).decode()
-    orig_error = None
-    if dtype_name:
+    if dtype_name := b"".join(itertools.takewhile(b"\x00".__ne__, cname)).decode():
         try:
             return _string_to_dtype(dtype_name)
-        except (ValueError, TypeError, SyntaxError) as exc:
-            orig_error = exc
-    if hasattr(lib, "GxB_Serialized_get_String"):
-        dtype_size = ffi.new("size_t*")
-        info = lib.GxB_Serialized_get_SIZE(data_obj, dtype_size, lib.GrB_NAME, data_nbytes)
-        if info != lib.GrB_SUCCESS:
-            raise _error_code_lookup[info](f"{obj_kind} deserialize failed to get the size of name")
-        dtype_char = ffi.new(f"char[{dtype_size[0]}]")
-        info = lib.GxB_Serialized_get_String(data_obj, dtype_char, lib.GrB_NAME, data_nbytes)
-        if info != lib.GrB_SUCCESS:
-            raise _error_code_lookup[info](f"{obj_kind} deserialize failed to get the name")
-        return _string_to_dtype(ffi.string(dtype_char).decode())
-    # No GrB_NAME fallback available (older SS); surface the original
-    # resolution failure with the actual dtype name attached.
-    raise ValueError(
-        f"{obj_kind} deserialize cannot resolve dtype {dtype_name!r} and "
-        f"GxB_Serialized_get_String is unavailable in this SuiteSparse build"
-    ) from orig_error
+        except (ValueError, TypeError, SyntaxError):
+            pass
+    dtype_size = ffi.new("size_t*")
+    info = lib.GxB_Serialized_get_SIZE(data_obj, dtype_size, lib.GrB_NAME, data_nbytes)
+    if info != lib.GrB_SUCCESS:  # pragma: no cover (safety)
+        raise _error_code_lookup[info](f"{obj_kind} deserialize failed to get the size of name")
+    dtype_char = ffi.new(f"char[{dtype_size[0]}]")
+    info = lib.GxB_Serialized_get_String(data_obj, dtype_char, lib.GrB_NAME, data_nbytes)
+    if info != lib.GrB_SUCCESS:  # pragma: no cover (safety)
+        raise _error_code_lookup[info](f"{obj_kind} deserialize failed to get the name")
+    return _string_to_dtype(ffi.string(dtype_char).decode())
 
 
 def _jit_c_source(name, funcname, jit_c_definition, types=()):

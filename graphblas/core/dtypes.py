@@ -1,12 +1,10 @@
 import dataclasses
-import warnings
 from ast import literal_eval
 
 import numpy as np
 from numpy import promote_types
 
-from .. import backend
-from ..core import NULL, _has_numba, ffi, lib
+from ..core import _has_numba, ffi, lib
 
 # graphblas.dtypes imports names from this module, so the functions here that use it
 # import it themselves: importing it at the top fails when this module is imported first.
@@ -312,9 +310,7 @@ def register_anonymous(dtype, name=None):
     if dtype.hasobject:
         raise ValueError("dtype must not allow Python objects")
     if dtype.itemsize == 0:
-        # SuiteSparse 7 takes a size of 0 as 1 (later versions raise InvalidValue), which
-        # would make ``str`` a UDT that holds nothing, so a str literal would not raise
-        # TypeError
+        # GrB_Type_new would raise InvalidValue; a ValueError names the problem
         raise ValueError(f"dtype must not have a size of 0: {dtype}")
     # Before GrB_Type_new, so a dtype Numba cannot type does not leave a GrB_Type behind
     numba_type = _numba_type(dtype) if _has_numba else None
@@ -322,34 +318,13 @@ def register_anonymous(dtype, name=None):
     from ..exceptions import check_status_carg
 
     gb_obj = ffi.new("GrB_Type*")
-
-    if hasattr(lib, "GrB_Type_set_String"):
-        # We name this so that we can serialize and deserialize UDTs
-        # We don't yet have C definitions
-        np_repr = _dtype_to_string(dtype)
-        status = lib.GrB_Type_new(gb_obj, dtype.itemsize)
-        check_status_carg(status, "Type", gb_obj[0])
-        val_obj = ffi.new("char[]", np_repr.encode())
-        status = lib.GrB_Type_set_String(gb_obj[0], val_obj, lib.GrB_NAME)
-    elif backend == "suitesparse":
-        # For SuiteSparse < 9
-        # We name this so that we can serialize and deserialize UDTs
-        # We don't yet have C definitions
-        np_repr = _dtype_to_string(dtype).encode()
-        if len(np_repr) > lib.GxB_MAX_NAME_LEN:
-            msg = f"UDT repr is too large to serialize ({len(np_repr)} > {lib.GxB_MAX_NAME_LEN})."
-            if name is not None:
-                np_repr = name.encode()[: lib.GxB_MAX_NAME_LEN]
-            else:
-                np_repr = np_repr[: lib.GxB_MAX_NAME_LEN]
-            warnings.warn(
-                f"{msg} It will use the following name, "
-                f"and the dtype may need to be specified when deserializing: {np_repr}",
-                stacklevel=2,
-            )
-        status = lib.GxB_Type_new(gb_obj, dtype.itemsize, np_repr, NULL)
-    else:
-        status = lib.GrB_Type_new(gb_obj, dtype.itemsize)
+    # We name this so that we can serialize and deserialize UDTs
+    # We don't yet have C definitions
+    np_repr = _dtype_to_string(dtype)
+    status = lib.GrB_Type_new(gb_obj, dtype.itemsize)
+    check_status_carg(status, "Type", gb_obj[0])
+    val_obj = ffi.new("char[]", np_repr.encode())
+    status = lib.GrB_Type_set_String(gb_obj[0], val_obj, lib.GrB_NAME)
     check_status_carg(status, "Type", gb_obj[0])
 
     # For now, let's use "opaque" unsigned bytes for the c type.

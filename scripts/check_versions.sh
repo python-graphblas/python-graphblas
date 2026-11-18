@@ -22,8 +22,7 @@ conda search 'sparse[channel=conda-forge]>=0.19'
 # fast_matrix_market is deprecated (no longer maintained; last supported Python is 3.12)
 conda search 'numba[channel=conda-forge]>=0.68'
 conda search 'pyyaml[channel=conda-forge]>=6.0'
-# matplotlib is installed unpinned for the notebooks job; ci_pick_versions.py caps it
-# below 3.11 when the numpy pick predates matplotlib's numpy >=1.25 runtime floor.
+# matplotlib is installed unpinned for the notebooks job.
 conda search 'matplotlib-base[channel=conda-forge]>=3.11'
 conda search 'python-suitesparse-graphblas[channel=conda-forge]>=10.5.2'
-# conda search 'python[channel=conda-forge]>=3.11 *pypy*'
+# conda search 'python[channel=conda-forge]>=3.12 *pypy*'

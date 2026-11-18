@@ -12,8 +12,6 @@ except ImportError:  # pragma: no cover (import)
     # MAINT 2026-10-18: suitesparse-graphblas < 10.5.1.1 has neither
     can_unclaim_buffer = empty = None
 
-_NP2 = np.__version__.startswith("2.")
-
 
 def libget(name):
     """Helper to get items from GraphBLAS which might be GrB or GxB."""
@@ -113,7 +111,7 @@ def ints_to_numpy_buffer(array, dtype, *, name="array", copy=False, ownable=Fals
     if ownable:
         return _ownable_array(array, dtype, copy=copy, order=order)
     # https://numpy.org/doc/stable/release/2.0.0-notes.html#new-copy-keyword-meaning-for-array-and-asarray-constructors
-    return np.array(array, dtype, copy=copy or _NP2 and None, order=order)
+    return np.array(array, dtype, copy=copy or None, order=order)
 
 
 def _ownable_array(array, dtype, *, copy, order):
@@ -126,7 +124,7 @@ def _ownable_array(array, dtype, *, copy, order):
     """
     if not isinstance(array, np.ndarray):
         # NumPy reads a list or a scalar into an array of its own
-        array = np.array(array, dtype, copy=copy or _NP2 and None, order=order)
+        array = np.array(array, dtype, copy=copy or None, order=order)
         return _ownable(array, order)
     contiguous = array.flags.c_contiguous if order == "C" else array.flags.f_contiguous
     if not copy and type(array) is np.ndarray and array.dtype == dtype and contiguous:
@@ -200,7 +198,7 @@ def values_to_numpy_buffer(
         if ownable:
             return _ownable_array(array, np_type, copy=copy, order=order), dtype
         # https://numpy.org/doc/stable/release/2.0.0-notes.html#new-copy-keyword-meaning-for-array-and-asarray-constructors
-        array = np.array(array, np_type, copy=copy or _NP2 and None, order=order)
+        array = np.array(array, np_type, copy=copy or None, order=order)
     else:
         is_input_np = isinstance(array, np.ndarray)
         if ownable and is_input_np and not array.dtype.hasobject:
@@ -210,12 +208,9 @@ def values_to_numpy_buffer(
             array = _ownable_array(array, array.dtype, copy=copy, order=order)
         else:
             # https://numpy.org/doc/stable/release/2.0.0-notes.html#new-copy-keyword-meaning-for-array-and-asarray-constructors
-            array = np.array(array, copy=copy or _NP2 and None, order=order)
+            array = np.array(array, copy=copy or None, order=order)
         if array.dtype.hasobject:
             raise ValueError("object dtype for values is not allowed")
-        if not is_input_np and array.dtype == np.int32:  # pragma: no cover
-            # fix for win64 numpy handling of ints
-            array = array.astype(np.int64)
         dtype = lookup_dtype(array.dtype)
         # Registration flattens nested subarrays, so values declared with them
         # carry a dtype the DataType we just looked up no longer matches. The
@@ -474,9 +469,7 @@ class _CArray:
             self.array = np.empty(size, dtype=dtype.np_type)
         else:
             # https://numpy.org/doc/stable/release/2.0.0-notes.html#new-copy-keyword-meaning-for-array-and-asarray-constructors
-            self.array = np.array(
-                array, dtype=_get_subdtype(dtype.np_type), copy=_NP2 and None, order="C"
-            )
+            self.array = np.array(array, dtype=_get_subdtype(dtype.np_type), copy=None, order="C")
         c_type = dtype.c_type if dtype._is_udt else f"{dtype.c_type}*"
         self._carg = ffi.cast(c_type, ffi.from_buffer(self.array))
         self.dtype = dtype

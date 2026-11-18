@@ -128,8 +128,7 @@ def _weak_builtin_literal_dtype(dtype, value, op=None):
     """Return the dtype of Python number ``value`` as an operand with built-in ``dtype``, or None.
 
     A Python number is weak (see the module docstring), typed by the same rules
-    as a UDT leaf (:func:`_weak_literal_leaf`). python-graphblas applies the
-    rules itself, so numpy 1 gives the same answers. ``None`` keeps the value's
+    as a UDT leaf (:func:`_weak_literal_leaf`). ``None`` keeps the value's
     own dtype (strong): for anything but a Python number, for a typed op, which
     fixes the operand types itself, and for the thunk of an index op that does
     not compare it with the values, such as a row index.
@@ -310,7 +309,7 @@ def _check_literal_fits(dtype, value):
         )
         return
     # A weak float fits a float32 field by type, but a finite one too large for
-    # it would become infinity; numpy warns as it converts, on numpy 1 and 2.
+    # it would become infinity; numpy warns as it converts.
     np_type = dtype.np_type
     if np_type.names is not None:
         target = np.zeros(1, dtype=np_type)
@@ -362,15 +361,15 @@ def _refuse_unless_exact(dtype, value, reason, advice):
     fit it by type. Releases up to 2025.2.0 converted any value, losing what did
     not fit, so one that converts exactly, such as ``0`` for a bool field or
     ``2.0`` for an integer field, still converts, with a DeprecationWarning.
-    Eight months after the release that adds the warning (the deprecation policy
-    in docs/getting_started/faq.rst), always raise here and delete
-    ``_converts_exactly`` and ``_object_layout``.
+    In 2027.7.0 or later, eight months after 2026.11.0 added the warning (the
+    deprecation policy in docs/getting_started/faq.rst), always raise here and
+    delete ``_converts_exactly`` and ``_object_layout``.
     """
     if not _converts_exactly(dtype, value):
         raise ValueError(reason)
     utils._warn_from_caller(
         f"{reason} Its values convert exactly, so it is converted for now; this is "
-        f"deprecated and will raise ValueError in a future version. {advice}",
+        f"deprecated and will raise ValueError in version 2027.7.0 or later. {advice}",
         DeprecationWarning,
     )
 

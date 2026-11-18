@@ -1,4 +1,6 @@
 import functools
+import sys
+import types
 from io import BytesIO, StringIO
 
 import numpy as np
@@ -49,23 +51,20 @@ def test_vector_to_from_numpy():
 
     csr = gb.io.to_scipy_sparse(v, "csr")
     assert csr.nnz == 2
-    # 2023-06-25: scipy 1.11.0 added `sparray` and changed e.g. `ss.isspmatrix_csr`
-    assert isinstance(csr, getattr(ss, "sparray", ss.spmatrix))
+    assert isinstance(csr, ss.sparray)
     assert csr.format == "csr"
     np.testing.assert_array_equal(csr.toarray(), np.array([[0.0, 2.0, 4.1]]))
 
     csc = gb.io.to_scipy_sparse(v, "csc")
     assert csc.nnz == 2
-    # 2023-06-25: scipy 1.11.0 added `sparray` and changed e.g. `ss.isspmatrix_csc`
-    assert isinstance(csc, getattr(ss, "sparray", ss.spmatrix))
+    assert isinstance(csc, ss.sparray)
     assert csc.format == "csc"
     np.testing.assert_array_equal(csc.toarray(), np.array([[0.0, 2.0, 4.1]]).T)
 
     # default to csr-like
     coo = gb.io.to_scipy_sparse(v, "coo")
     assert coo.shape == csr.shape
-    # 2023-06-25: scipy 1.11.0 added `sparray` and changed e.g. `ss.isspmatrix_coo`
-    assert isinstance(coo, getattr(ss, "sparray", ss.spmatrix))
+    assert isinstance(coo, ss.sparray)
     assert coo.format == "coo"
     assert coo.nnz == 2
     np.testing.assert_array_equal(coo.toarray(), np.array([[0.0, 2.0, 4.1]]))
@@ -95,8 +94,7 @@ def test_matrix_to_from_numpy():
 
     for format in ["csr", "csc", "coo"]:
         sparse = gb.io.to_scipy_sparse(M, format)
-        # 2023-06-25: scipy 1.11.0 added `sparray` and changed e.g. `ss.isspmatrix_csr`
-        assert isinstance(sparse, getattr(ss, "sparray", ss.spmatrix))
+        assert isinstance(sparse, ss.sparray)
         assert sparse.format == format
         assert sparse.nnz == 3
         np.testing.assert_array_equal(sparse.toarray(), a)
@@ -323,14 +321,6 @@ def test_mmread_mmwrite(engine):
                 # fast_matrix_market v1.4.5 raises ValueError instead of OverflowError
                 M = gb.io.mmread(mm_in, engine)
         else:
-            if (
-                example == "_empty_lines_example"
-                and engine in {"fmm", "auto"}
-                and fmm is not None
-                and fmm.__version__ == "1.4.5"
-            ):
-                # `fast_matrix_market` __version__ v1.4.5 does not handle this, but v1.5.0 does
-                continue
             M = gb.io.mmread(mm_in, engine)
             if not M.isequal(expected):  # pragma: no cover (debug)
                 print(example)
@@ -446,7 +436,6 @@ def test_matrix_market_sparse_duplicates(engine):
     mm = StringIO(string)
     with pytest.raises(ValueError, match="Duplicate indices found"):
         gb.io.mmread(mm, engine)
-    # mm.seek(0)  # Doesn't work with `fast_matrix_market` 1.4.5
     mm = StringIO(string)
     a = gb.io.mmread(mm, engine, dup_op=gb.binary.plus)
     expected = gb.Matrix.from_coo([0, 1, 2], [2, 1, 0], [1, 2, 7])
@@ -484,6 +473,38 @@ def test_matrix_market_fmm_engine_unavailable():
 
 
 @pytest.mark.skipif("not ss")
+def test_matrix_market_fmm_deprecations(monkeypatch):
+    # CI does not install fast_matrix_market, so a stand-in checks that the engines
+    # that use it warn and call it. Its mmread returns what its mmwrite was given.
+    written = []
+    read = []
+
+    def mmwrite(target, a, **kwargs):
+        written.append(a)
+
+    def mmread(source, **kwargs):
+        read.append(source)
+        return written[-1]
+
+    fake = types.ModuleType("fast_matrix_market")
+    fake.mmread = mmread
+    fake.mmwrite = mmwrite
+    monkeypatch.setitem(sys.modules, "fast_matrix_market", fake)
+    A = gb.Matrix.from_coo([0, 0, 3, 5], [1, 4, 0, 2], [1, 0, 2, -1], nrows=7, ncols=6)
+    for engine, match in [
+        ("auto", 'engine="auto" will stop using it'),
+        ("fmm", '"fmm" and "fast_matrix_market" engines are deprecated'),
+        ("fast_matrix_market", '"fmm" and "fast_matrix_market" engines are deprecated'),
+    ]:
+        with pytest.warns(DeprecationWarning, match=match):
+            gb.io.mmwrite(BytesIO(), A, engine=engine)
+        with pytest.warns(DeprecationWarning, match=match):
+            B = gb.io.mmread(BytesIO(), engine=engine)
+        assert B.isequal(A, check_dtype=True)
+    assert len(written) == len(read) == 3
+
+
+@pytest.mark.skipif("not ss")
 def test_scipy_sparse():
     a = np.arange(12).reshape(3, 4)
     for a in [np.arange(12).reshape(3, 4), np.ones((3, 4)), np.zeros((3, 4))]:
@@ -501,7 +522,6 @@ def test_scipy_sparse():
 
 
 @pytest.mark.skipif("not ak")
-@pytest.mark.xfail(np.__version__[:5] in {"1.25.", "1.26."}, reason="awkward bug with numpy >=1.25")
 def test_awkward_roundtrip():
     # Vector
     v = gb.Vector.from_coo([1, 3, 5], [20, 21, -5], size=22)
@@ -523,7 +543,6 @@ def test_awkward_roundtrip():
 
 
 @pytest.mark.skipif("not ak")
-@pytest.mark.xfail(np.__version__[:5] in {"1.25.", "1.26."}, reason="awkward bug with numpy >=1.25")
 def test_awkward_iso_roundtrip():
     # Built iso with build_scalar, as from_coo with equal values is not iso on
     # SuiteSparse 10.5 (see ``_iso_vector`` in test_ss_utils.py)

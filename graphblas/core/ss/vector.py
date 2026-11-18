@@ -1715,7 +1715,7 @@ class ss:
         blob_handle = ffi_new("void**")
         blob_size_handle = ffi_new("GrB_Index*")
         parent = self._parent
-        if parent.dtype._is_udt and hasattr(lib, "GrB_Type_get_String"):
+        if parent.dtype._is_udt:
             # Get the name from the dtype and set it to the name of the vector so we can
             # recreate the UDT. This is a bit hacky and we should restore the original name.
             # First get the size of name.

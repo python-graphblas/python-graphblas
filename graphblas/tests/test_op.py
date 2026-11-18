@@ -32,7 +32,6 @@ from graphblas.core.operator import (
     UnaryOp,
     get_semiring,
 )
-from graphblas.core.ss import version_major as ss_version_major  # noqa: F401 (used in skipif)
 from graphblas.dtypes import (
     BOOL,
     FP32,
@@ -709,33 +708,19 @@ def test_udt_udf_on_a_dtype_numba_cannot_lower():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_compile_for_dtype_raises_other_lowering_errors():
-    """Only a missing lowering skips a dtype, in either of Numba's error styles.
-
-    Numba before 0.60 raises a LoweringError while handling whatever lowering
-    raised, such as the NotImplementedError for a missing lowering; later Numba
-    raises that error itself.
-    """
-    from numba.core.errors import LoweringError
-
+    """Only a missing lowering, which Numba raises as NotImplementedError, skips a dtype."""
     from graphblas.core.operator.udf import _compile_for_dtype
 
     class Dispatcher:
-        def __init__(self, exc, old_style):
+        def __init__(self, exc):
             self.exc = exc
-            self.old_style = old_style
 
         def compile(self, sig):
-            if self.old_style:
-                # Numba raises it inside the ``except`` that caught the error
-                err = LoweringError(str(self.exc))
-                err.__context__ = self.exc
-                raise err
             raise self.exc
 
-    for old_style in [False, True]:
-        assert not _compile_for_dtype(Dispatcher(NotImplementedError("none"), old_style), ())
-        with pytest.raises(LoweringError if old_style else KeyError):
-            _compile_for_dtype(Dispatcher(KeyError("bug"), old_style), ())
+    assert not _compile_for_dtype(Dispatcher(NotImplementedError("none")), ())
+    with pytest.raises(KeyError):
+        _compile_for_dtype(Dispatcher(KeyError("bug")), ())
 
 
 @pytest.mark.skipif("not supports_udfs")
@@ -1912,11 +1897,6 @@ def test_udt_complex_times_truediv_with_infinities_as_numpy(udt_op_path):
 
 
 @pytest.mark.skipif("not supports_udfs")
-# A 136-byte UDT; see test_udt_large_array.
-@pytest.mark.skipif(
-    "ss_version_major < 9",
-    reason="SuiteSparse < 9 rejects a 136-byte UDT on builds without VLA support",
-)
 def test_udt_float_truediv_by_zero_is_infinite(udt_op_path):
     """A zero divisor on a float field gives numpy's infinity, not a lost element.
 
@@ -2201,14 +2181,9 @@ def test_udt_return_type_errors():
 def test_udt_udf_missing_field():
     """Reading a field the record does not have raises UdfParseError, by name or attribute.
 
-    The error names the field on Numba 0.60 and later. Earlier versions wrap Numba's
-    message in one whose summary line does not name it.
+    The error names the field.
     """
-    import numba
-    from packaging.version import parse
-
     udt = dtypes.register_anonymous({"mf_a": FP64, "mf_pt": {"mf_x": FP64}}, "_MissingFieldUDT")
-    names_field = parse(numba.__version__) >= parse("0.60")
     cases = [
         (UnaryOp, lambda x: x["mf_nope"]),
         (UnaryOp, lambda x: x.mf_nope),
@@ -2217,7 +2192,7 @@ def test_udt_udf_missing_field():
         (BinaryOp, lambda x, y: x.mf_a + y.mf_nope),
     ]
     for cls, func in cases:
-        with pytest.raises(UdfParseError, match="mf_nope" if names_field else None):
+        with pytest.raises(UdfParseError, match="mf_nope"):
             cls.register_anonymous(func, is_udt=True)[udt]
 
 
@@ -3075,8 +3050,6 @@ def test_udt_broadcast_matches_numba_slice_assign():
 
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
-# _ProbeWhenRec's numpy repr is 142 chars; see test_udt_eq_nested_record_with_nan_leaf.
-@pytest.mark.filterwarnings("ignore:UDT repr is too large")
 def test_udt_udf_shape_check_runs_udf_only_for_built_arrays(monkeypatch):
     """The shape check runs the UDF only when Numba's type lacks the extents.
 
@@ -3218,8 +3191,6 @@ def test_udt_array_udf_returning_operand_keeps_its_type():
 
     # A record's array field returned as-is carries its extents too, so it
     # resolves to the array UDT of that shape, whether or not one existed.
-    # FP32 keeps each UDT under 128 bytes, the most SuiteSparse < 9 accepts on
-    # builds without variable-length arrays (Windows).
     rec = dtypes.register_anonymous(
         np.dtype([("ro_n", np.int64), ("ro_vec", np.float32, (19,))], align=True),
         "_RetOperandRec",
@@ -3460,14 +3431,8 @@ def test_udt_op_compilation_is_lazy():
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 # A SuiteSparse compiled without variable-length arrays (MSVC, so the Windows
-# builds) rejects a user-defined type larger than GB_VLA_MAXSIZE with
-# GrB_INVALID_VALUE. That ceiling was 128 bytes through SS 8.x and is 1024 as
-# of 9.0, so skipping on SS < 9 covers the affected builds and costs one test
-# on the rest.
-@pytest.mark.skipif(
-    "ss_version_major < 9",
-    reason="SuiteSparse < 9 rejects an 800-byte UDT on builds without VLA support",
-)
+# builds) rejects a user-defined type larger than GB_VLA_MAXSIZE (1024 bytes)
+# with GrB_INVALID_VALUE, so this 800-byte UDT stays under it.
 def test_udt_large_array():
     big_dtype = np.dtype((np.float64, (100,)))
     big_udt = dtypes.register_anonymous(big_dtype)
@@ -3561,10 +3526,6 @@ def test_udt_eq_packed_mixed_width():
 
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
-# SuiteSparse < 9 has no GrB_NAME setter, so registration falls back to storing
-# the numpy repr in the type name and warns when it does not fit in 128 chars.
-# This dtype's repr is 133; how it serializes is not what the test is about.
-@pytest.mark.filterwarnings("ignore:UDT repr is too large")
 def test_udt_eq_nested_record_with_nan_leaf():
     """A NaN in a nested-record leaf still makes the outer record compare unequal."""
     nested = np.dtype(
@@ -3866,8 +3827,6 @@ def test_udt_eq_ne_scalar_broadcast_array_2d():
 
 @pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
-# 131-char numpy repr; see test_udt_eq_nested_record_with_nan_leaf.
-@pytest.mark.filterwarnings("ignore:UDT repr is too large")
 def test_udt_eq_ne_scalar_broadcast_nested_record():
     inner = np.dtype([("a", np.float64), ("b", np.float64)], align=True)
     nested = dtypes.register_anonymous(
@@ -3932,8 +3891,6 @@ def test_udt_eq_ne_rejects_incompatible_pairs():
 
 
 @pytest.mark.skipif("not supports_udfs")
-# Nested-record reprs of 141 or 142 chars; see test_udt_eq_nested_record_with_nan_leaf.
-@pytest.mark.filterwarnings("ignore:UDT repr is too large")
 @pytest.mark.parametrize("op", ["plus", "eq"])
 @pytest.mark.parametrize("case", ["leaf_count", "nesting", "inner_names", "inner_order"])
 def test_udt_record_nesting_mismatch_is_a_keyerror(case, op):
@@ -4101,8 +4058,6 @@ def test_udt_record_pair_promotes_each_field():
 
 
 @pytest.mark.skipif("not supports_udfs")
-# Nested-record reprs over 128 chars; see test_udt_eq_nested_record_with_nan_leaf.
-@pytest.mark.filterwarnings("ignore:UDT repr is too large")
 def test_udt_record_pair_promotes_to_a_third_record():
     """Records that are each wider in some field give a third record, as numpy would.
 
@@ -4770,10 +4725,8 @@ def test_udt_literal_converts_only_when_exact():
     assert r.apply(second, right=np.int8(2)).new()[0].new().value.tolist() == (2, 2.0)
     # A numpy number in a record is strong, as alone: np.int16 fits the int16 field.
     assert r.apply(second, right=(np.int16(2), 0.5)).new()[0].new().value.tolist() == (2, 0.5)
-    # A sequence holding numpy values is strong, as the array numpy makes of it
-    # (int64, or int32 on Windows with numpy 1).
-    made = np.asarray((np.int8(1), 2, 3)).dtype
-    assert binary.plus(v, (np.int8(1), 2, 3)).new().dtype.np_type == np.dtype((made, (3,)))
+    # A sequence holding numpy values is strong, as the array numpy makes of it (int64).
+    assert binary.plus(v, (np.int8(1), 2, 3)).new().dtype.np_type == np.dtype((np.int64, (3,)))
     # The error names the literal's type; a layout's name is whatever UDT
     # registered it first, so only the built-in scalar types are pinned here.
     for expr, typed_as in [
@@ -4875,8 +4828,6 @@ def test_udt_literal_converts_only_when_exact():
     assert v.apply(monoid.max, right=2).new().dtype == arr
 
 
-# _SeqNest's numpy repr is over 128 chars; see test_udt_eq_nested_record_with_nan_leaf.
-@pytest.mark.filterwarnings("ignore:UDT repr is too large")
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_sequence_and_array_literals_type_like_numbers():
     """A tuple, list or array with a UDT under a lifted op is typed, not cast to the UDT.
@@ -4930,7 +4881,7 @@ def test_udt_sequence_and_array_literals_type_like_numbers():
     # Strong: an array is its own dtype, in its shape, or broadcast to the UDT's.
     for literal, expected in [
         (np.array([0.5, 1, 2]), f64s),
-        (np.array([1, 2, 3]), np.dtype((np.array([1]).dtype, (3,)))),  # int32 on numpy 1 Windows
+        (np.array([1, 2, 3]), np.dtype((np.int64, (3,)))),
         (np.array([1], np.int8), int8s.np_type),
         (np.array([0.5]), f64s),
         (np.ones((1, 3)), np.dtype((np.float64, (1, 3)))),
@@ -5112,7 +5063,6 @@ def test_udt_array_literal_broadcasts_with_an_array_udt():
     """
     i8x3 = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_BcastI8x3")
     i8x1 = dtypes.register_anonymous(np.dtype((np.int8, (1,))), "_BcastI8x1")
-    int64 = np.array([1]).dtype  # int32 on Windows with numpy 1
     v = Vector(i8x3, size=1)
     v[0] = [1, 2, 3]
     u = Vector(i8x1, size=1)
@@ -5120,10 +5070,10 @@ def test_udt_array_literal_broadcasts_with_an_array_udt():
     rows = np.array([[1, 2, 3], [4, 5, 6]])
     for expr in [lambda: v + rows, lambda: v.apply(binary.plus, left=rows)]:
         result = expr().new()
-        assert result.dtype.np_type == np.dtype((int64, (2, 3)))
+        assert result.dtype.np_type == np.dtype((np.int64, (2, 3)))
         assert result[0].new().value.tolist() == [[2, 4, 6], [5, 7, 9]]
     result = (u + np.array([1, 2, 3])).new()
-    assert result.dtype.np_type == np.dtype((int64, (3,)))
+    assert result.dtype.np_type == np.dtype((np.int64, (3,)))
     assert result[0].new().value.tolist() == [2, 3, 4]
     assert (v + np.array([[1], [2]])).new()[0].new().value.tolist() == [[2, 3, 4], [3, 4, 5]]
     assert (v == np.array([[1, 2, 3], [1, 2, 3]])).new()[0].new().value
@@ -5333,8 +5283,6 @@ def test_udt_ewise_union_defaults_are_typed_not_converted():
 
 
 @pytest.mark.skipif("not supports_udfs")
-# Record reprs over 128 chars; see test_udt_eq_nested_record_with_nan_leaf.
-@pytest.mark.filterwarnings("ignore:UDT repr is too large")
 def test_udt_store_casts_each_element_as_builtin_types_do():
     """A UDT result stored in an object of another UDT type is cast element by element.
 
@@ -5617,7 +5565,6 @@ def _assert_same_floats(got, expected, msg):
 
 
 @pytest.mark.skipif("not supports_udfs")
-@pytest.mark.filterwarnings("ignore:UDT repr is too large")
 def test_udt_record_array_fields_compute_element_by_element():
     """An array-valued record field computes each element as a scalar field does.
 
@@ -5791,7 +5738,6 @@ def test_udt_fused_store_keeps_min_max_and_division_semantics(udt_op_path):
 
 
 @pytest.mark.skipif("not supports_udfs")
-@pytest.mark.filterwarnings("ignore:UDT repr is too large")
 def test_udt_records_differing_only_in_layout_combine():
     """A packed and an aligned record with the same leaves combine, either way round.
 
@@ -5907,8 +5853,7 @@ def test_udt_errors_name_the_real_problem():
 def test_udt_literal_rules_edge_cases():
     """Edges of the weak rule.
 
-    ``_weak_literal_udt`` checks ``300`` against int8 itself: numpy 2 raises
-    OverflowError when casting it, but numpy 1 wraps. A ``Fraction`` or
+    ``_weak_literal_udt`` checks ``300`` against int8 itself. A ``Fraction`` or
     ``Decimal`` is typed as the int or float it is worth; numpy would
     truncate either into an int field.
     """

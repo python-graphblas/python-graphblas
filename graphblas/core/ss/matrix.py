@@ -46,9 +46,8 @@ def _claim_values_2d(cdata, cdata_size, nrows, ncols, dtype, is_c_order):
     dtype in column order, ``claim_buffer_2d`` makes the element's own axes the
     slowest, so ``values[i, j]`` would not be the entry at ``(i, j)``. It also raises
     ValueError for a subarray dtype when the buffer has more than ``nrows * ncols``
-    elements, which GraphBLAS can hand over: SuiteSparse:GraphBLAS 7.4.0's memory pool
-    rounds each allocation of 512 KiB or less up to a power of two, and a full matrix
-    resized smaller keeps its buffer.
+    elements, which GraphBLAS can hand over: a full matrix resized smaller keeps its
+    buffer.
 
     Row order with a buffer of exactly the right size still goes to ``claim_buffer_2d``,
     whose array owns the buffer, so packing the values back can take them without a copy.
@@ -4307,7 +4306,7 @@ class ss:
         blob_handle = ffi_new("void**")
         blob_size_handle = ffi_new("GrB_Index*")
         parent = self._parent
-        if parent.dtype._is_udt and hasattr(lib, "GrB_Type_get_String"):
+        if parent.dtype._is_udt:
             # Get the name from the dtype and set it to the name of the matrix so we can
             # recreate the UDT. This is a bit hacky and we should restore the original name.
             # First get the size of name.

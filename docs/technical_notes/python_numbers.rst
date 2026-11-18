@@ -5,8 +5,7 @@ Python Numbers in Operations
 
 A Python ``bool``, ``int``, ``float`` or ``complex`` used as an operand gets the type numpy 2
 gives it (NEP 50): it is *weak*, and takes the type of the other operand where it can.
-python-graphblas applies these rules itself, so numpy 1 gives the same results. The user
-guide's summary is :ref:`python_numbers`.
+The user guide's summary is :ref:`python_numbers`.
 
 In the examples on this page, ``v`` is an INT8 Vector, ``w`` an INT64 Vector, and ``f`` an
 FP32 Vector.
@@ -138,6 +137,6 @@ safely, field by field (``numpy.can_cast`` with ``"safe"``). For an ``INT8[3]`` 
 A Python ``int`` does not fit a BOOL field; write ``True`` or ``False``. A value that does
 not fit but converts exactly, such as ``0`` for a BOOL field, ``2.0`` for an integer field
 or ``np.int64(1)`` above, still converts, with a ``DeprecationWarning``; it will raise
-``ValueError`` in a future version. Any other value that does not fit raises
+``ValueError`` in version 2027.7.0 or later. Any other value that does not fit raises
 ``ValueError``. A ``float`` too large for a float32 field raises ``OverflowError`` instead
 of becoming infinity.
