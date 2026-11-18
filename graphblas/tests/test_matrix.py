@@ -27,7 +27,7 @@ from graphblas.exceptions import (
     OutputNotEmpty,
 )
 
-from .conftest import autocompute, compute, pypy, shouldhave
+from .conftest import autocompute, compute, op_items, pypy, shouldhave
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
@@ -1793,14 +1793,14 @@ def test_reduce_agg_empty():
     for B in [A, A.T]:
         ve = Vector(bool, size=B.nrows)
         we = Vector(bool, size=B.ncols)
-        for attr, aggr in vars(agg).items():
+        for attr, aggr in op_items(agg):
             if not isinstance(aggr, agg.Aggregator):
                 continue
             v = B.reduce_rowwise(aggr).new()
             assert ve.isequal(v)
             w = B.reduce_columnwise(aggr).new()
             assert we.isequal(w)
-            if attr not in {"argmin", "argmax", "first_index", "last_index"}:
+            if attr not in {"ss.argmin", "ss.argmax", "ss.first_index", "ss.last_index"}:
                 s = B.reduce_scalar(aggr).new()
                 assert compute(s.value) is None
 

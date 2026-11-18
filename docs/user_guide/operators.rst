@@ -307,20 +307,22 @@ Example usage:
 
 .. code-block:: python
 
-    pos_of_largest = v.reduce(gb.agg.argmax).value
+    pos_of_largest = v.reduce(gb.agg.ss.argmax).value
 
 Common Aggregators are:
 
   - **count** - the number of non-empty elements
-  - **argmax** - position of the largest element
-  - **argmin** - position of the smallest element
+  - **ss.argmax** - position of the largest element
+  - **ss.argmin** - position of the smallest element
   - **mean** - average value (i.e. sum / count)
   - **stdp** - population standard deviation
   - **stds** - sample standard deviation
-  - **first** - first element
-  - **last** - last element
+  - **ss.first** - first element
+  - **ss.last** - last element
 
-Aggregators are located in the ``graphblas.agg`` namespace.
+Aggregators are located in the ``graphblas.agg`` namespace. Those that use positions,
+such as ``ss.argmax`` and ``ss.first``, are specific to SuiteSparse:GraphBLAS and are
+located in ``graphblas.agg.ss``.
 
 Calling an aggregator with a collection will perform a reduction to scalar operation.
 Specifying ``rowwise=True`` or ``columnwise=True`` allows performing Matrix to

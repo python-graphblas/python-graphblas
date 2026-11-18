@@ -1,7 +1,7 @@
 import itertools
 import re
 
-from ... import _STANDARD_OPERATOR_NAMES, binary, monoid, op, semiring
+from ... import _STANDARD_OPERATOR_NAMES, backend, binary, monoid, op, semiring
 from ...dtypes import (
     BOOL,
     FP32,
@@ -52,7 +52,7 @@ class TypedBuiltinSemiring(TypedOpBase):
     def binaryop(self):
         name = self.name.split("_", 1)[1]
         if name in _SS_OPERATORS:
-            binop = binary._deprecated[name]
+            binop = getattr(binary.ss, name)
         else:
             binop = getattr(binary, name)
         return binop[self.type]
@@ -61,7 +61,7 @@ class TypedBuiltinSemiring(TypedOpBase):
     def monoid(self):
         monoid_name, binary_name = self.name.split("_", 1)
         if binary_name in _SS_OPERATORS:
-            binop = binary._deprecated[binary_name]
+            binop = getattr(binary.ss, binary_name)
         else:
             binop = getattr(binary, binary_name)
         binop = binop[self.type]
@@ -542,12 +542,15 @@ class Semiring(OpBase):
         ]:
             for left, right in itertools.product(lnames, rnames):
                 name = f"{left}_{right}"
-                if not _hasop(semiring, name):
-                    continue
-                if name in _SS_OPERATORS:
-                    cur_op = semiring._deprecated[name]
+                if name not in _SS_OPERATORS:
+                    module = semiring
+                elif backend == "suitesparse":
+                    module = semiring.ss
                 else:
-                    cur_op = getattr(semiring, name)
+                    continue
+                if not _hasop(module, name):
+                    continue
+                cur_op = getattr(module, name)
                 for input_types, target_type in types:
                     typed_op = cur_op._typed_ops[target_type]
                     output_type = cur_op.types[target_type]
@@ -606,7 +609,7 @@ class Semiring(OpBase):
         # Must be builtin
         name = self.name.split("_")[1]
         if name in _SS_OPERATORS:
-            return binary._deprecated[name]
+            return getattr(binary.ss, name)
         return getattr(binary, name)
 
     @property

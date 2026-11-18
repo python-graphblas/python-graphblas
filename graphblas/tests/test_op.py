@@ -47,7 +47,7 @@ from graphblas.dtypes import (
 )
 from graphblas.exceptions import DimensionMismatch, DomainMismatch, InvalidValue, UdfParseError
 
-from .conftest import shouldhave
+from .conftest import getop, op_items, shouldhave
 
 if dtypes._supports_complex:
     from graphblas.dtypes import FC32, FC64
@@ -108,6 +108,7 @@ def test_agg():
     assert repr(agg.count["INT32"]) == "agg.count[INT32]"
     if suitesparse:
         assert repr(agg.ss.first) == "agg.ss.first"
+        assert repr(agg.ss.argmin["INT32"]) == "agg.ss.argmin[INT32]"
     assert "INT64" in agg.sum_of_inverses
     assert agg.sum_of_inverses["INT64"].return_type == FP64
     assert "BOOL" not in agg.sum_of_inverses
@@ -908,17 +909,12 @@ def test_op_namespace():
         for key, val in vars(select).items()
         if isinstance(val, (operator.OpBase, operator.ParameterizedUdf))
     }
-    extra_unary = unarynames - opnames - unary._deprecated.keys()
-    assert not extra_unary
-    extra_binary = binarynames - opnames - binary._deprecated.keys()
-    assert not extra_binary
+    assert not unarynames - opnames, unarynames - opnames
+    assert not binarynames - opnames, binarynames - opnames
     assert not monoidnames - opnames, monoidnames - opnames
-    extra_semiring = semiringnames - opnames - semiring._deprecated.keys()
-    assert not extra_semiring
-    extra_ops = (
-        opnames - (unarynames | binarynames | monoidnames | semiringnames) - op._deprecated.keys()
-    )
-    assert not extra_ops
+    assert not semiringnames - opnames, semiringnames - opnames
+    extra_ops = opnames - (unarynames | binarynames | monoidnames | semiringnames)
+    assert not extra_ops, extra_ops
     # These are not part of the `op` namespace
     assert indexunarynames - opnames == indexunarynames, indexunarynames - opnames
     assert selectnames - opnames == selectnames, selectnames - opnames
@@ -1131,19 +1127,9 @@ def test_get_semiring():
 
 def test_create_semiring():
     # stress test / sanity check
-    monoid_names = {x for x in dir(monoid) if not x.startswith("_") and x != "ss"}
-    binary_names = {x for x in dir(binary) if not x.startswith("_") and x != "ss"}
-    for monoid_name, binary_name in itertools.product(monoid_names, binary_names):
-        cur_monoid = getattr(monoid, monoid_name)
-        if not isinstance(cur_monoid, Monoid):
-            continue
-        cur_binary = (
-            getattr(binary, binary_name)
-            if binary_name not in binary._deprecated
-            else binary._deprecated[binary_name]
-        )
-        if not isinstance(cur_binary, BinaryOp):
-            continue
+    monoids = [val for key, val in op_items(monoid) if isinstance(val, Monoid)]
+    binaryops = [val for key, val in op_items(binary) if isinstance(val, BinaryOp)]
+    for cur_monoid, cur_binary in itertools.product(monoids, binaryops):
         Semiring.register_anonymous(cur_monoid, cur_binary)
 
 
@@ -1212,14 +1198,7 @@ def test_commutes():
         assert not binary.numpy.less[int].is_commutative
 
     # Stress test (this can create extra semirings)
-    names = dir(semiring)
-    for name in names:
-        if name in semiring._deprecated:
-            val = semiring._deprecated[name]
-        elif name == "ss":
-            continue
-        else:
-            val = getattr(semiring, name)
+    for _name, val in op_items(semiring):
         if not hasattr(val, "commutes_to"):
             continue
         assert val.commutes_to is None or isinstance(val.commutes_to, type(val))
@@ -5928,7 +5907,7 @@ def test_udt_literal_rules_edge_cases():
 def test_udt_store_casts_reach_every_store_path():
     """Each way of storing into a UDT object casts as ``<<`` does, or says why it cannot.
 
-    Regression: ``agg.first`` into a Scalar and indexed assignment of an
+    Regression: ``agg.ss.first`` into a Scalar and indexed assignment of an
     expression skipped the cast, and ``dup`` refused a numpy dtype or string.
     """
     i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_PathI8")
@@ -6666,13 +6645,9 @@ def test_dir():
 def test_semiring_commute_exists():
     from .conftest import orig_semirings
 
-    vals = {
-        semiring._deprecated[key] if key in semiring._deprecated else getattr(semiring, key)
-        for key in orig_semirings
-    }
+    vals = {getop(semiring, key) for key in orig_semirings}
     missing = set()
-    for key in orig_semirings:
-        val = semiring._deprecated[key] if key in semiring._deprecated else getattr(semiring, key)
+    for val in vals:
         commutes_to = val.commutes_to
         if commutes_to is not None and commutes_to not in vals:  # pragma: no cover (debug)
             missing.add(commutes_to.name)
@@ -6683,13 +6658,9 @@ def test_semiring_commute_exists():
 def test_binaryop_commute_exists():
     from .conftest import orig_binaryops
 
-    vals = {
-        binary._deprecated[key] if key in binary._deprecated else getattr(binary, key)
-        for key in orig_binaryops
-    }
+    vals = {getop(binary, key) for key in orig_binaryops}
     missing = set()
-    for key in orig_binaryops:
-        val = binary._deprecated[key] if key in binary._deprecated else getattr(binary, key)
+    for val in vals:
         commutes_to = val.commutes_to
         if commutes_to is not None and commutes_to not in vals:  # pragma: no cover (debug)
             missing.add(commutes_to.name)
@@ -6737,19 +6708,60 @@ def test_op_ss():
             gb.agg.ss
 
 
-def test_deprecated():
-    with pytest.warns(DeprecationWarning, match="please use"):
-        gb.unary.erf
-    with pytest.warns(DeprecationWarning, match="please use `gb.indexunary.rowindex`"):
-        gb.unary.positioni
-    with pytest.warns(DeprecationWarning, match="please use"):
-        gb.binary.firsti
-    with pytest.warns(DeprecationWarning, match="please use"):
-        gb.semiring.min_firsti
-    with pytest.warns(DeprecationWarning, match="please use"):
-        gb.op.secondj
-    with pytest.warns(DeprecationWarning, match="please use"):
-        gb.agg.argmin
+def test_ss_operators_only_in_ss_namespace():
+    """SuiteSparse-specific operators are found only in ``ss``, such as ``binary.ss.firsti``.
+
+    A bare name, such as ``binary.firsti`` or the string ``"firsti"``, raises. With the
+    suitesparse backend, the error suggests the ``ss`` name.
+    """
+    import re
+
+    from graphblas.core.operator.agg import _SS_AGGREGATORS
+    from graphblas.core.operator.base import _SS_OPERATORS
+
+    found = set()
+    for module in [unary, binary, semiring, op, agg]:
+        names = _SS_AGGREGATORS if module is agg else _SS_OPERATORS
+        for name in names:
+            assert name not in dir(module)
+            if suitesparse and name in vars(module.ss):
+                found.add(name)
+                match = f"has no attribute '{name}'. Did you mean 'ss.{name}'?"
+            else:
+                match = f"has no attribute '{name}'"
+            with pytest.raises(AttributeError, match=re.escape(match)):
+                getattr(module, name)
+    if not suitesparse:
+        assert not found
+        return
+    assert found == _SS_OPERATORS | _SS_AGGREGATORS
+    # `op.ss` holds the same objects as `unary.ss`, `binary.ss` and `semiring.ss`
+    for name in _SS_OPERATORS:
+        [home] = [m for m in [unary, binary, semiring] if name in vars(m.ss)]
+        assert getattr(op.ss, name) is getattr(home.ss, name)
+    # A typed op's repr is a name that resolves
+    assert repr(binary.ss.firsti[INT64]) == "binary.ss.firsti[INT64]"
+    assert repr(semiring.ss.min_secondi[INT64]) == "semiring.ss.min_secondi[INT64]"
+    assert repr(unary.ss.erf[FP64]) == "unary.ss.erf[FP64]"
+
+    # Strings use the "ss." prefix too
+    v = Vector.from_coo([0, 2], [3, 1])
+    assert v.reduce("ss.argmin").new() == 2
+    with pytest.raises(ValueError, match=re.escape("Did you mean 'ss.argmin'?")):
+        v.reduce("argmin").new()
+    assert binary.from_string("ss.firsti[INT64]") is binary.ss.firsti[INT64]
+    with pytest.raises(ValueError, match=re.escape("Did you mean 'ss.firsti[int64]'?")):
+        binary.from_string("firsti[INT64]")
+    assert semiring.from_string("ss.min_secondi") is semiring.ss.min_secondi
+    assert semiring.from_string("min.ss.secondi") is semiring.ss.min_secondi
+    assert semiring.from_string("min.ss.secondi[INT64]") is semiring.ss.min_secondi[INT64]
+    with pytest.raises(ValueError, match=re.escape("Did you mean 'ss.secondi'?")):
+        semiring.from_string("min.secondi")
+    assert op.from_string("ss.min_secondi") is semiring.ss.min_secondi
+    with pytest.raises(ValueError, match=re.escape("Did you mean 'ss.min_secondi'?")):
+        semiring.from_string("min_secondi")
+    with pytest.raises(ValueError, match=re.escape("Did you mean 'ss.erf'?")):
+        unary.from_string("erf")
 
 
 @pytest.mark.slow

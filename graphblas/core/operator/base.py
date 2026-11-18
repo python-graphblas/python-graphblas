@@ -16,8 +16,8 @@ else:
 
 UNKNOWN_OPCLASS = "UnknownOpClass"
 
-# These now live as e.g. `gb.unary.ss.positioni`
-# Deprecations such as `gb.unary.positioni` will be removed in 2023.9.0 or later.
+# SuiteSparse-specific operators. They live in the `ss` namespaces, such as
+# `gb.unary.ss.positioni`, and exist only with the "suitesparse" backend.
 _SS_OPERATORS = {
     # unary
     "erf",  # scipy.special.erf
@@ -86,11 +86,7 @@ _SS_OPERATORS = {
 
 
 def _hasop(module, name):
-    return (
-        name in module.__dict__
-        or name in module._delayed
-        or name in getattr(module, "_deprecated", ())
-    )
+    return name in module.__dict__ or name in module._delayed
 
 
 class OpPath:
@@ -220,7 +216,11 @@ class TypedOpBase:
         classname = self.opclass.lower()
         classname = classname.removesuffix("op")
         dtype2 = "" if self._type2 is None else f", {self._type2.name}"
-        return f"{classname}.{self.name}[{self.type.name}{dtype2}]"
+        name = self.name
+        # A built-in SuiteSparse-specific op is typed by its bare name, such as "firsti"
+        if getattr(self.parent, "name", None) == f"ss.{name}":
+            name = self.parent.name
+        return f"{classname}.{name}[{self.type.name}{dtype2}]"
 
     @property
     def _carg(self):
@@ -420,10 +420,7 @@ class OpBase:
     def _find(cls, funcname):
         rv = cls._module
         for attr in funcname.split("."):
-            if attr in getattr(rv, "_deprecated", ()):
-                rv = rv._deprecated[attr]
-            else:
-                rv = getattr(rv, attr, None)
+            rv = getattr(rv, attr, None)
             if rv is None:
                 break
         return rv
@@ -466,33 +463,29 @@ class OpBase:
                         else:
                             type_ = None
                         name = "_".join(splitname).lower()
+                        if name in _SS_OPERATORS:
+                            # `lib` has these GxB objects on the vanilla backend too
+                            if backend != "suitesparse":
+                                continue
+                            module = cls._module.ss
+                            op_module = op.ss
+                            fullname = f"ss.{name}"
+                        else:
+                            module = cls._module
+                            op_module = op
+                            fullname = name
                         # Create object for name unless it already exists
-                        if not _hasop(cls._module, name):
-                            if backend == "suitesparse" and name in _SS_OPERATORS:
-                                fullname = f"ss.{name}"
-                            else:
-                                fullname = name
+                        if not _hasop(module, name):
                             if cls._positional is None:
                                 obj = cls(fullname)
                             else:
                                 obj = cls(fullname, is_positional=name in cls._positional)
-                            if name in _SS_OPERATORS:
-                                if backend == "suitesparse":
-                                    setattr(cls._module.ss, name, obj)
-                                cls._module._deprecated[name] = obj
-                                if include_in_ops and not _hasop(op, name):  # pragma: no branch
-                                    op._deprecated[name] = obj
-                                    if backend == "suitesparse":
-                                        setattr(op.ss, name, obj)
-                            else:
-                                setattr(cls._module, name, obj)
-                                if include_in_ops and not _hasop(op, name):
-                                    setattr(op, name, obj)
+                            setattr(module, name, obj)
+                            if include_in_ops and not _hasop(op_module, name):
+                                setattr(op_module, name, obj)
                             _STANDARD_OPERATOR_NAMES.add(f"{cls._modname}.{fullname}")
-                        elif name in _SS_OPERATORS:
-                            obj = cls._module._deprecated[name]
                         else:
-                            obj = getattr(cls._module, name)
+                            obj = getattr(module, name)
                         gb_obj = getattr(lib, varname)
                         # Determine return type
                         if return_prefix == "BOOL":

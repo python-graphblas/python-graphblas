@@ -3,7 +3,6 @@
 from ..core import _supports_udfs
 
 _delayed = {}
-_deprecated = {}
 _udfs = {
     # Used by aggregators
     "max_absfirst",
@@ -27,23 +26,10 @@ _udfs = {
 
 
 def __dir__():
-    return globals().keys() | _delayed.keys() | _deprecated.keys() | {"ss"}
+    return globals().keys() | _delayed.keys() | {"ss"}
 
 
 def __getattr__(key):
-    if key in _deprecated:
-        import warnings
-
-        warnings.warn(
-            f"`gb.semiring.{key}` is deprecated; please use `gb.semiring.ss.{key}` instead. "
-            f"`{key}` is specific to SuiteSparse:GraphBLAS. "
-            f"`gb.semiring.{key}` will be removed in version 2023.9.0 or later.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        rv = _deprecated[key]
-        globals()[key] = rv
-        return rv
     if key in _delayed:
         func, kwargs = _delayed.pop(key)
         if isinstance(kwargs["binaryop"], str):

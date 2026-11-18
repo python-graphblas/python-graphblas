@@ -1,30 +1,13 @@
 # All items are dynamically added by classes in operator.py
 # This module acts as a container of UnaryOp instances
 _delayed = {}
-_deprecated = {}
 
 
 def __dir__():
-    return globals().keys() | _delayed.keys() | _deprecated.keys() | {"ss"}
+    return globals().keys() | _delayed.keys() | {"ss"}
 
 
 def __getattr__(key):
-    if key in _deprecated:
-        import warnings
-
-        alt = {"positioni": "indexunary.rowindex", "positionj": "indexunary.colindex"}.get(key, "")
-        if alt:
-            alt = f"`gb.{alt}` or "
-        warnings.warn(
-            f"`gb.unary.{key}` is deprecated; please use {alt}`gb.unary.ss.{key}` instead. "
-            f"`{key}` is specific to SuiteSparse:GraphBLAS. "
-            f"`gb.unary.{key}` will be removed in version 2023.9.0 or later.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        rv = _deprecated[key]
-        globals()[key] = rv
-        return rv
     if key in _delayed:
         func, kwargs = _delayed.pop(key)
         rv = func(**kwargs)

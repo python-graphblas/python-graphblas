@@ -1025,10 +1025,12 @@ class BinaryOp(OpBase):
             )
         for names, *types in name_types:
             for name in names:
-                if name in _SS_OPERATORS:
-                    cur_op = binary._deprecated[name]
-                else:
+                if name not in _SS_OPERATORS:
                     cur_op = getattr(binary, name)
+                elif backend == "suitesparse":
+                    cur_op = getattr(binary.ss, name)
+                else:
+                    continue
                 for input_types, target_type in types:
                     typed_op = cur_op._typed_ops[target_type]
                     output_type = cur_op.types[target_type]
@@ -1043,23 +1045,25 @@ class BinaryOp(OpBase):
         # Fill in commutes info
         for left_name, right_name in cls._commutes.items():
             if left_name in _SS_OPERATORS:
-                left = binary._deprecated[left_name]
+                if backend != "suitesparse":
+                    continue
+                left = getattr(binary.ss, left_name)
             else:
                 left = getattr(binary, left_name)
-            if backend == "suitesparse" and right_name in _SS_OPERATORS:
+            if right_name in _SS_OPERATORS:
                 left._commutes_to = f"ss.{right_name}"
             else:
                 left._commutes_to = right_name
             if right_name not in binary._delayed:
                 if right_name in _SS_OPERATORS:
-                    right = binary._deprecated[right_name]
+                    right = getattr(binary.ss, right_name)
                 elif _supports_udfs:
                     right = getattr(binary, right_name)
                 else:
                     right = getattr(binary, right_name, None)
                     if right is None:
                         continue
-                if backend == "suitesparse" and left_name in _SS_OPERATORS:
+                if left_name in _SS_OPERATORS:
                     right._commutes_to = f"ss.{left_name}"
                 else:
                     right._commutes_to = left_name
@@ -1071,17 +1075,13 @@ class BinaryOp(OpBase):
                 if cur_op is None:
                     continue
             cur_op._commutes_to = name
-        for left_name, right_name in cls._commutes_to_in_semiring.items():
-            if left_name in _SS_OPERATORS:
-                left = binary._deprecated[left_name]
-            else:  # pragma: no cover (safety)
-                left = getattr(binary, left_name)
-            if right_name in _SS_OPERATORS:
-                right = binary._deprecated[right_name]
-            else:  # pragma: no cover (safety)
-                right = getattr(binary, right_name)
-            left._semiring_commutes_to = right
-            right._semiring_commutes_to = left
+        # These are all SuiteSparse-specific positional ops
+        if backend == "suitesparse":
+            for left_name, right_name in cls._commutes_to_in_semiring.items():
+                left = getattr(binary.ss, left_name)
+                right = getattr(binary.ss, right_name)
+                left._semiring_commutes_to = right
+                right._semiring_commutes_to = left
         # ``any`` runs ``_second``, so a reduce with ``monoid.any`` on a UDT returns one
         # of the elements. With ``_first`` it would return the identity it starts from.
         for binop, func in [
