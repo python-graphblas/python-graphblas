@@ -58,11 +58,6 @@ Custom recipes (specific to SuiteSparse:GraphBLAS):
     - ss.argmin
     - ss.argmax
 
-.. deprecated:: 2023.1.0
-    Aggregators ``first``, ``last``, ``first_index``, ``last_index``, ``argmin``, and ``argmax``
-    are deprecated in the ``agg`` namespace such as ``agg.first``. Use them from ``agg.ss``
-    namespace instead such as ``agg.ss.first``. Will be removed in version 2023.9.0 or later.
-
 # Possible aggregators:
 #   - absolute_deviation, sum(abs(x - mean(x))),  sum_absminus(x, mean(x))
 #   - mean_absolute_deviation, absolute_deviation / count
@@ -76,27 +71,13 @@ Custom recipes (specific to SuiteSparse:GraphBLAS):
 
 # All items are dynamically added by classes in core/operator/agg.py
 # This module acts as a container of Aggregator instances
-_deprecated = {}
 
 
 def __dir__():
-    return globals().keys() | _deprecated.keys() | {"ss"}
+    return globals().keys() | {"ss"}
 
 
 def __getattr__(key):
-    if key in _deprecated:
-        import warnings
-
-        warnings.warn(
-            f"`gb.agg.{key}` is deprecated; please use `gb.agg.ss.{key}` instead. "
-            f"`{key}` is specific to SuiteSparse:GraphBLAS. "
-            f"`gb.agg.{key}` will be removed in version 2023.9.0 or later.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        rv = _deprecated[key]
-        globals()[key] = rv
-        return rv
     if key == "ss":
         from .. import backend
 

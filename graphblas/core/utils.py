@@ -43,10 +43,16 @@ def _module_attr_error(module_name, key, names):
 
     ``names`` should be the module's ``__dir__()`` so lazily-registered operators
     are offered as "did you mean" suggestions without forcing them to build.
+    A name in the module's ``ss`` namespace, such as ``firsti``, is suggested
+    as ``ss.firsti``.
     """
     import difflib
+    import sys
 
     msg = f"module {module_name!r} has no attribute {key!r}"
+    ss = sys.modules.get(f"{module_name}.ss")
+    if ss is not None and not key.startswith("_") and key in vars(ss):
+        return AttributeError(f"{msg}. Did you mean 'ss.{key}'?")
     candidates = [name for name in names if not name.startswith("_")]
     matches = difflib.get_close_matches(key, candidates, n=3)
     if matches:

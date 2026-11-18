@@ -146,8 +146,9 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
                 try:
                     op = aggregator_from_string(op)
                 except ValueError:
+                    hint = _ss_hint(binary, op) or _ss_hint(agg, op) or "Example usage: '+[int]'"
                     raise ValueError(
-                        f"Unknown binary or aggregator string: {op!r}.  Example usage: '+[int]'"
+                        f"Unknown binary or aggregator string: {op!r}.  {hint}"
                     ) from None
 
         else:
@@ -278,18 +279,10 @@ def get_semiring(monoid, binaryop, name=None):
             name = canonical_name
 
         module, funcname = Semiring._remove_nesting(canonical_name, strict=False)
-        rv = (
-            getattr(module, funcname)
-            if funcname in module.__dict__ or funcname in module._delayed
-            else getattr(module, "_deprecated", {}).get(funcname)
-        )
+        rv = getattr(module, funcname) if _hasop(module, funcname) else None
         if rv is None and name != canonical_name:
             module, funcname = Semiring._remove_nesting(name, strict=False)
-            rv = (
-                getattr(module, funcname)
-                if funcname in module.__dict__ or funcname in module._delayed
-                else getattr(module, "_deprecated", {}).get(funcname)
-            )
+            rv = getattr(module, funcname) if _hasop(module, funcname) else None
         if rv is None:
             rv = Semiring.register_new(canonical_name, monoid, binaryop)
         elif rv.monoid is not monoid or rv.binaryop is not binaryop:  # pragma: no cover
@@ -398,6 +391,18 @@ _str_to_monoid = {
 }
 
 
+def _ss_hint(module, string):
+    """Suggest the ``ss.`` name when ``string`` names an operator in ``module.ss``, else None.
+
+    SuiteSparse-specific operators are named with ``ss.``, such as ``"ss.argmin"``.
+    """
+    s = string.lower().strip()
+    base = s.split("[", 1)[0]
+    if "." not in base and hasattr(getattr(module, "ss", None), base):
+        return f"Did you mean {'ss.' + s!r}?"
+    return None
+
+
 def _from_string(string, module, mapping, example):
     s = string.lower().strip()
     base, *dtype = s.split("[")
@@ -440,7 +445,8 @@ def _from_string(string, module, mapping, example):
         op = getattr(cur, attr, None)
         if op is None:
             name = module.__name__.split(".")[-1]
-            raise ValueError(f"Unknown {name} string: {string!r}.  Example usage: {example!r}")
+            hint = _ss_hint(module, string) or f"Example usage: {example!r}"
+            raise ValueError(f"Unknown {name} string: {string!r}.  {hint}")
     if dtype:
         op = op[dtype]
     return op
@@ -470,11 +476,16 @@ def monoid_from_string(string):
 
 def semiring_from_string(string):
     split = string.split(".")
-    if len(split) == 1:
+    # A semiring name, such as "plus_times" or "ss.min_secondi"
+    if len(split) == 1 or (len(split) == 2 and split[0].strip().lower() == "ss"):
         try:
             return _from_string(string, semiring, {}, "min.+[int]")
         except Exception:
-            pass
+            if hint := _ss_hint(semiring, string):
+                raise ValueError(f"Unknown semiring string: {string!r}.  {hint}") from None
+    # A monoid and a SuiteSparse-specific binary op, such as "min.ss.firsti"
+    if len(split) == 3 and split[1].strip().lower() == "ss":
+        split = [split[0], f"{split[1]}.{split[2]}"]
     if len(split) != 2:
         raise ValueError(
             f"Bad semiring string: {string!r}.  "

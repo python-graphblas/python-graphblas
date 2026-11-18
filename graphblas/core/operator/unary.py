@@ -2,7 +2,7 @@ import inspect
 import re
 from types import FunctionType
 
-from ... import _STANDARD_OPERATOR_NAMES, op, unary
+from ... import _STANDARD_OPERATOR_NAMES, backend, op, unary
 from ...dtypes import (
     BOOL,
     FP32,
@@ -440,10 +440,12 @@ class UnaryOp(OpBase):
             # fmt: on
         ]:
             for name in names:
-                if name in _SS_OPERATORS:
-                    op = unary._deprecated[name]
-                else:
+                if name not in _SS_OPERATORS:
                     op = getattr(unary, name)
+                elif backend == "suitesparse":
+                    op = getattr(unary.ss, name)
+                else:
+                    continue
                 for input_types, target_type in types:
                     typed_op = op._typed_ops[target_type]
                     output_type = op.types[target_type]

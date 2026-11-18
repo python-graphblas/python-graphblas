@@ -18,6 +18,8 @@ from graphblas.dtypes import (
     UINT64,
 )
 
+from .conftest import op_items
+
 if dtypes._supports_complex:
     from graphblas.dtypes import FC32, FC64
 else:
@@ -52,14 +54,14 @@ UNARY = {
     (FCFP, BOOL): {"isfinite", "isinf", "isnan"},
     (FC, FC): {"conj"},
     (FC, FP): {"carg", "cimag", "creal"},
-    (FP, FP): {"frexpe", "frexpx"},
     (INT, INT): {"bnot"},
-    (NOFC, FP): {"cbrt", "erf", "erfc", "lgamma", "tgamma"},
+    (NOFC, FP): {"cbrt"},
     (NOFC, NOFC): {"lnot"},
 }
-# Remove "suitesparse-vailla" once these deprecations are removed
-if backend in {"suitesparse", "suitesparse-vanilla"}:  # pragma: no branch (future)
-    UNARY[(ALL, POS)] = {"positioni", "positioni1", "positionj", "positionj1"}
+if suitesparse:
+    UNARY[(ALL, POS)] = {"ss.positioni", "ss.positioni1", "ss.positionj", "ss.positionj1"}
+    UNARY[(FP, FP)] = {"ss.frexpe", "ss.frexpx"}
+    UNARY[(NOFC, FP)] |= {"ss.erf", "ss.erfc", "ss.lgamma", "ss.tgamma"}
 
 BINARY = {
     (ALL, ALL): {
@@ -79,11 +81,11 @@ BINARY = {
     (NOFC, FPINT): {"floordiv", "rfloordiv"},
     (NOFC, NOFC): {"isge", "isgt", "isle", "islt", "land", "lor", "lxor", "max", "min"},
 }
-# Remove "suitesparse-vailla" once these deprecations are removed
-if backend in {"suitesparse", "suitesparse-vanilla"}:  # pragma: no branch (future)
-    BINARY[(ALL, POS)] = {
-        "firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1", "secondj", "secondj1",
-    }
+POSITIONAL_BINARY = {
+    "firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1", "secondj", "secondj1",
+}
+if suitesparse:
+    BINARY[(ALL, POS)] = {f"ss.{name}" for name in POSITIONAL_BINARY}
 if not supports_udfs:
     udfs = {"absfirst", "abssecond", "binom", "floordiv", "rfloordiv", "rpow"}
     for funcnames in BINARY.values():
@@ -161,12 +163,6 @@ _SEMIRING1 = {
         {"land", "lor", "lxor", "first", "second"},
     ],
 }
-# Remove "suitesparse-vailla" once these deprecations are removed
-if backend in {"suitesparse", "suitesparse-vanilla"}:  # pragma: no branch (future)
-    _SEMIRING1[(ALL, POS)] = [  # POS, extra->INT64
-        {"any", "max", "min", "plus", "times"},
-        {"firsti", "firsti1", "firstj", "firstj1", "secondi", "secondi1", "secondj", "secondj1"},
-    ]
 # fmt: on
 _SEMIRING2 = defaultdict(lambda: (set(), set()))  # {semiring: [input_types, output_types]}
 for key, (leftvals, rightvals) in _SEMIRING1.items():
@@ -176,6 +172,11 @@ for key, (leftvals, rightvals) in _SEMIRING1.items():
             continue
         _SEMIRING2[name][0].update(key[0])
         _SEMIRING2[name][1].update(key[1])
+if suitesparse:
+    for left, right in itertools.product({"any", "max", "min", "plus", "times"}, POSITIONAL_BINARY):
+        name = f"ss.{left}_{right}"
+        _SEMIRING2[name][0].update(ALL)
+        _SEMIRING2[name][1].update(POS)
 
 SEMIRING = defaultdict(set)
 for name, (ins, outs) in _SEMIRING2.items():
@@ -329,13 +330,7 @@ def _run_test(module, typ, expected):
             d[key] |= val
         expected = d
     seen = defaultdict(set)
-    for name in dir(module):
-        if name == "ss":
-            continue
-        if name in getattr(module, "_deprecated", ()):
-            val = module._deprecated[name]
-        else:
-            val = getattr(module, name)
+    for name, val in op_items(module):
         if not isinstance(val, typ) or name in IGNORE:
             continue
         key = (frozenset(val.types.keys()), frozenset(val.types.values()))

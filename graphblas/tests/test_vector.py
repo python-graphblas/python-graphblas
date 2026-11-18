@@ -26,7 +26,7 @@ from graphblas.exceptions import (
     UdfParseError,
 )
 
-from .conftest import autocompute, compute, pypy
+from .conftest import autocompute, compute, op_items, pypy
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
@@ -1060,7 +1060,7 @@ def test_reduce_agg_firstlast_index(v):
 
 def test_reduce_agg_empty():
     v = Vector("UINT8", size=3)
-    for attr, aggr in vars(agg).items():
+    for attr, aggr in op_items(agg):
         if not isinstance(aggr, agg.Aggregator):
             continue
         s = v.reduce(aggr).new(name=attr)

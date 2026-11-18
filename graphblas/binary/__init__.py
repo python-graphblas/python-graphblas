@@ -10,7 +10,6 @@ _delayed_commutes_to = {
     "rfloordiv": "floordiv",
     "rpow": "pow",
 }
-_deprecated = {}
 _udfs = {
     "absfirst",
     "abssecond",
@@ -23,23 +22,10 @@ _udfs = {
 
 
 def __dir__():
-    return globals().keys() | _delayed.keys() | _deprecated.keys() | {"ss"}
+    return globals().keys() | _delayed.keys() | {"ss"}
 
 
 def __getattr__(key):
-    if key in _deprecated:
-        import warnings
-
-        warnings.warn(
-            f"`gb.binary.{key}` is deprecated; please use `gb.binary.ss.{key}` instead. "
-            f"`{key}` is specific to SuiteSparse:GraphBLAS. "
-            f"`gb.binary.{key}` will be removed in version 2023.9.0 or later.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        rv = _deprecated[key]
-        globals()[key] = rv
-        return rv
     if key in _delayed:
         func, kwargs = _delayed.pop(key)
         rv = func(**kwargs)

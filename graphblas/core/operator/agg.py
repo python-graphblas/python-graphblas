@@ -39,9 +39,9 @@ class Aggregator:
     Built-in aggregators live in the ``graphblas.agg`` namespace, such as ``agg.sum``,
     ``agg.mean``, and ``agg.count``. Those that use positions (``argmin``, ``argmax``,
     ``first``, ``last``, ``first_index``, ``last_index``) are SuiteSparse-specific and live
-    under ``agg.ss``; the bare ``agg.argmin`` spellings are deprecated. Unlike the other
-    operators, an Aggregator is not a single GraphBLAS object. Most are built from a monoid
-    or semiring, with an optional finalize step, for each dtype on first use.
+    under ``agg.ss``, such as ``agg.ss.argmin``. Unlike the other operators, an Aggregator
+    is not a single GraphBLAS object. Most are built from a monoid or semiring, with an
+    optional finalize step, for each dtype on first use.
 
     Examples
     --------
@@ -146,14 +146,14 @@ class Aggregator:
         return True
 
     def __repr__(self):
-        if self.name in agg._deprecated:
+        if self.name in _SS_AGGREGATORS:
             return f"agg.ss.{self.name}"
         return f"agg.{self.name}"
 
     def __reduce__(self):
         # Aggregator has no register_anonymous/register_new, so every
         # instance is a module-level singleton; pickle by name.
-        if self.name in agg._deprecated:
+        if self.name in _SS_AGGREGATORS:
             return f"agg.ss.{self.name}"
         return f"agg.{self.name}"
 
@@ -201,7 +201,7 @@ class TypedAggregator:
             self.return_type = agg._any_dtype
 
     def __repr__(self):
-        return f"agg.{self.name}[{self.type}]"
+        return f"{self.parent!r}[{self.type}]"
 
     @property
     def jit_c_source(self):
@@ -607,8 +607,8 @@ def _argminmax(agg, updater, expr, opts, *, in_composite, monoid):
                 opts,
                 in_composite=in_composite,
                 monoid=monoid,
-                row_semiring=semiring._deprecated["min_firstj"],
-                col_semiring=semiring._deprecated["min_secondj"],
+                row_semiring=semiring.ss.min_firstj,
+                col_semiring=semiring.ss.min_secondj,
             )
         return _argminmaxij(
             agg,
@@ -617,8 +617,8 @@ def _argminmax(agg, updater, expr, opts, *, in_composite, monoid):
             opts,
             in_composite=in_composite,
             monoid=monoid,
-            row_semiring=semiring._deprecated["min_firsti"],
-            col_semiring=semiring._deprecated["min_secondi"],
+            row_semiring=semiring.ss.min_firsti,
+            col_semiring=semiring.ss.min_secondi,
         )
     if expr.cfunc_name.startswith("GrB_Vector_reduce"):
         return _argminmaxij(
@@ -628,25 +628,12 @@ def _argminmax(agg, updater, expr, opts, *, in_composite, monoid):
             opts,
             in_composite=in_composite,
             monoid=monoid,
-            row_semiring=semiring._deprecated["min_firsti"],
-            col_semiring=semiring._deprecated["min_secondi"],
+            row_semiring=semiring.ss.min_firsti,
+            col_semiring=semiring.ss.min_secondi,
         )
     if expr.cfunc_name.startswith("GrB_Matrix_reduce"):
         raise ValueError(f"Aggregator {agg.name} may not be used with Matrix.reduce_scalar.")
     raise NotImplementedError(f"{agg.name} with {expr.cfunc_name}")
-
-
-# These "do the right thing", but don't work with `reduce_scalar`
-_argmin = Aggregator(
-    "argmin",
-    custom=partial(_argminmax, monoid=monoid.min),
-    types=[semiring._deprecated["min_firsti"]],
-)
-_argmax = Aggregator(
-    "argmax",
-    custom=partial(_argminmax, monoid=monoid.max),
-    types=[semiring._deprecated["min_firsti"]],
-)
 
 
 def _first_last(agg, updater, expr, opts, *, in_composite, semiring_):
@@ -698,20 +685,6 @@ def _first_last(agg, updater, expr, opts, *, in_composite, semiring_):
         updater << A[i, j]
 
 
-_first = Aggregator(
-    "first",
-    custom=partial(_first_last, semiring_=semiring._deprecated["min_secondi"]),
-    types=[binary.first],
-    any_dtype=True,
-)
-_last = Aggregator(
-    "last",
-    custom=partial(_first_last, semiring_=semiring._deprecated["max_secondi"]),
-    types=[binary.second],
-    any_dtype=True,
-)
-
-
 def _first_last_index(agg, updater, expr, opts, *, in_composite, semiring):
     if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
         A = expr.args[0]
@@ -737,33 +710,44 @@ def _first_last_index(agg, updater, expr, opts, *, in_composite, semiring):
         raise NotImplementedError(f"{agg.name} with {expr.cfunc_name}")
 
 
-_first_index = Aggregator(
-    "first_index",
-    custom=partial(_first_last_index, semiring=semiring._deprecated["min_secondi"]),
-    types=[semiring._deprecated["min_secondi"]],
-    any_dtype=INT64,
-)
-_last_index = Aggregator(
-    "last_index",
-    custom=partial(_first_last_index, semiring=semiring._deprecated["max_secondi"]),
-    types=[semiring._deprecated["min_secondi"]],
-    any_dtype=INT64,
-)
-agg._deprecated = {
-    "argmin": _argmin,
-    "argmax": _argmax,
-    "first": _first,
-    "last": _last,
-    "first_index": _first_index,
-    "last_index": _last_index,
-}
+# The aggregators that use positions are built from SuiteSparse-specific semirings
+_SS_AGGREGATORS = {"argmin", "argmax", "first", "last", "first_index", "last_index"}
 if backend == "suitesparse":
-    agg.ss.argmin = _argmin
-    agg.ss.argmax = _argmax
-    agg.ss.first = _first
-    agg.ss.last = _last
-    agg.ss.first_index = _first_index
-    agg.ss.last_index = _last_index
+    # argmin, argmax, first_index and last_index don't work with `reduce_scalar`
+    agg.ss.argmin = Aggregator(
+        "argmin",
+        custom=partial(_argminmax, monoid=monoid.min),
+        types=[semiring.ss.min_firsti],
+    )
+    agg.ss.argmax = Aggregator(
+        "argmax",
+        custom=partial(_argminmax, monoid=monoid.max),
+        types=[semiring.ss.min_firsti],
+    )
+    agg.ss.first = Aggregator(
+        "first",
+        custom=partial(_first_last, semiring_=semiring.ss.min_secondi),
+        types=[binary.first],
+        any_dtype=True,
+    )
+    agg.ss.last = Aggregator(
+        "last",
+        custom=partial(_first_last, semiring_=semiring.ss.max_secondi),
+        types=[binary.second],
+        any_dtype=True,
+    )
+    agg.ss.first_index = Aggregator(
+        "first_index",
+        custom=partial(_first_last_index, semiring=semiring.ss.min_secondi),
+        types=[semiring.ss.min_secondi],
+        any_dtype=INT64,
+    )
+    agg.ss.last_index = Aggregator(
+        "last_index",
+        custom=partial(_first_last_index, semiring=semiring.ss.max_secondi),
+        types=[semiring.ss.min_secondi],
+        any_dtype=INT64,
+    )
 
 agg.Aggregator = Aggregator
 agg.TypedAggregator = TypedAggregator

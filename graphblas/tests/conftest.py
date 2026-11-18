@@ -46,6 +46,30 @@ os.environ.pop("COLUMNS", None)
 orig_binaryops = set()
 orig_semirings = set()
 
+
+def op_items(module):
+    """Yield ``(name, value)`` for each name in an operator namespace such as ``gb.binary``.
+
+    With the suitesparse backend, this includes the built-in operators in the ``ss``
+    namespace, with names such as ``"ss.firsti"``. Operators that tests register in
+    ``ss``, such as JIT operators, are left out. Resolve a name with :func:`getop`.
+    """
+    for key in dir(module):
+        if key != "ss":
+            yield key, getattr(module, key)
+    if gb.backend == "suitesparse":
+        from graphblas.core.operator.agg import _SS_AGGREGATORS
+        from graphblas.core.operator.base import _SS_OPERATORS
+
+        for key in sorted(vars(module.ss).keys() & (_SS_OPERATORS | _SS_AGGREGATORS)):
+            yield f"ss.{key}", getattr(module.ss, key)
+
+
+def getop(module, name):
+    """Get an operator by a name from :func:`op_items`, such as ``"ss.firsti"``."""
+    return functools.reduce(getattr, name.split("."), module)
+
+
 pypy = platform.python_implementation() == "PyPy"
 
 
@@ -109,29 +133,13 @@ def pytest_configure(config):
         atexit.register(save_records)
     orig_semirings.update(
         key
-        for key in dir(gb.semiring)
-        if key != "ss"
-        and isinstance(
-            (
-                getattr(gb.semiring, key)
-                if key not in gb.semiring._deprecated
-                else gb.semiring._deprecated[key]
-            ),
-            (gb.core.operator.Semiring, gb.core.operator.ParameterizedSemiring),
-        )
+        for key, val in op_items(gb.semiring)
+        if isinstance(val, (gb.core.operator.Semiring, gb.core.operator.ParameterizedSemiring))
     )
     orig_binaryops.update(
         key
-        for key in dir(gb.binary)
-        if key != "ss"
-        and isinstance(
-            (
-                getattr(gb.binary, key)
-                if key not in gb.binary._deprecated
-                else gb.binary._deprecated[key]
-            ),
-            (gb.core.operator.BinaryOp, gb.core.operator.ParameterizedBinaryOp),
-        )
+        for key, val in op_items(gb.binary)
+        if isinstance(val, (gb.core.operator.BinaryOp, gb.core.operator.ParameterizedBinaryOp))
     )
     for mod in [gb.unary, gb.binary, gb.monoid, gb.semiring, gb.op]:
         for name in list(mod._delayed):
