@@ -825,3 +825,26 @@ def test_secure_import(take_ownership):
         assert [array.flags.owndata for array in arrays] == owndata, format
         w.ss.pack_any(**w.ss.export(format), secure_import=True, take_ownership=take_ownership)
         assert w.isequal(v, check_dtype=True), format
+
+
+def test_indexbinaryop_needs_suitesparse_9_4(monkeypatch):
+    # python-suitesparse-graphblas 9.3.1.0, our minimum, bundles SuiteSparse 9.3, which
+    # has no IndexBinaryOp. Pretend the library lacks it, so this runs on every version.
+    from graphblas.core.operator import indexbinary as core_indexbinary
+    from graphblas.core.ss import indexbinary as ss_indexbinary
+
+    monkeypatch.setattr(core_indexbinary, "_has_idxbinop", False)
+    monkeypatch.setattr(ss_indexbinary, "_has_idxbinop", False)
+    match = r"python-suitesparse-graphblas 9\.4\.5\.0\+"
+
+    def plus_theta(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (never called)
+        return x + y + theta
+
+    with pytest.raises(RuntimeError, match=match):
+        gb.indexbinary.register_anonymous(plus_theta)
+    cdef = (
+        "void plus_theta (double *z, double *x, GrB_Index ix, GrB_Index jx, double *y, "
+        "GrB_Index iy, GrB_Index jy, double *theta) { (*z) = (*x) + (*y) + (*theta) ; }"
+    )
+    with pytest.raises(RuntimeError, match=match):
+        gb.indexbinary.ss.register_new("plus_theta", cdef, "FP64", "FP64", "FP64", "FP64")

@@ -1,4 +1,6 @@
 import functools
+import sys
+import types
 from io import BytesIO, StringIO
 
 import numpy as np
@@ -319,14 +321,6 @@ def test_mmread_mmwrite(engine):
                 # fast_matrix_market v1.4.5 raises ValueError instead of OverflowError
                 M = gb.io.mmread(mm_in, engine)
         else:
-            if (
-                example == "_empty_lines_example"
-                and engine in {"fmm", "auto"}
-                and fmm is not None
-                and fmm.__version__ == "1.4.5"
-            ):
-                # `fast_matrix_market` __version__ v1.4.5 does not handle this, but v1.5.0 does
-                continue
             M = gb.io.mmread(mm_in, engine)
             if not M.isequal(expected):  # pragma: no cover (debug)
                 print(example)
@@ -442,7 +436,6 @@ def test_matrix_market_sparse_duplicates(engine):
     mm = StringIO(string)
     with pytest.raises(ValueError, match="Duplicate indices found"):
         gb.io.mmread(mm, engine)
-    # mm.seek(0)  # Doesn't work with `fast_matrix_market` 1.4.5
     mm = StringIO(string)
     a = gb.io.mmread(mm, engine, dup_op=gb.binary.plus)
     expected = gb.Matrix.from_coo([0, 1, 2], [2, 1, 0], [1, 2, 7])
@@ -477,6 +470,38 @@ def test_matrix_market_fmm_engine_unavailable():
         pytest.raises(ImportError, match="required to read Matrix Market files"),
     ):
         gb.io.mmread(BytesIO(), engine="fast_matrix_market")
+
+
+@pytest.mark.skipif("not ss")
+def test_matrix_market_fmm_deprecations(monkeypatch):
+    # CI does not install fast_matrix_market, so a stand-in checks that the engines
+    # that use it warn and call it. Its mmread returns what its mmwrite was given.
+    written = []
+    read = []
+
+    def mmwrite(target, a, **kwargs):
+        written.append(a)
+
+    def mmread(source, **kwargs):
+        read.append(source)
+        return written[-1]
+
+    fake = types.ModuleType("fast_matrix_market")
+    fake.mmread = mmread
+    fake.mmwrite = mmwrite
+    monkeypatch.setitem(sys.modules, "fast_matrix_market", fake)
+    A = gb.Matrix.from_coo([0, 0, 3, 5], [1, 4, 0, 2], [1, 0, 2, -1], nrows=7, ncols=6)
+    for engine, match in [
+        ("auto", 'engine="auto" will stop using it'),
+        ("fmm", '"fmm" and "fast_matrix_market" engines are deprecated'),
+        ("fast_matrix_market", '"fmm" and "fast_matrix_market" engines are deprecated'),
+    ]:
+        with pytest.warns(DeprecationWarning, match=match):
+            gb.io.mmwrite(BytesIO(), A, engine=engine)
+        with pytest.warns(DeprecationWarning, match=match):
+            B = gb.io.mmread(BytesIO(), engine=engine)
+        assert B.isequal(A, check_dtype=True)
+    assert len(written) == len(read) == 3
 
 
 @pytest.mark.skipif("not ss")

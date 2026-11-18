@@ -95,7 +95,8 @@ def register_new(name, jit_c_definition, x_type, y_type, theta_type, ret_type):
         import suitesparse_graphblas as ssgb
 
         raise RuntimeError(
-            "IndexBinaryOp requires SuiteSparse:GraphBLAS 9.4+; "
+            "IndexBinaryOp requires SuiteSparse:GraphBLAS 9.4+ "
+            "(python-suitesparse-graphblas 9.4.5.0+); "
             f"current version is {ssgb.__version__}"
         )
     x_type = lookup_dtype(x_type)
