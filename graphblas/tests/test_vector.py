@@ -1104,7 +1104,7 @@ def test_reduce_agg_strings(v):
 
 
 def test_reduce_agg_empty():
-    """Each aggregator gives an empty result on an empty Vector, of any size."""
+    """Each aggregator returns an empty result on an empty Vector, of any size."""
     for size in [3, 0]:
         v = Vector("UINT8", size=size)
         for attr, aggr in op_items(agg):

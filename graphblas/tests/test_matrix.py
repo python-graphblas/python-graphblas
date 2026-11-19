@@ -1829,9 +1829,9 @@ def test_reduce_agg_position_int32_large():
 
 
 def test_reduce_agg_position_mask_accum(A):
-    """The position aggregators store with a mask, ``replace`` and an accumulator.
+    """A position aggregator stores with a mask, ``replace`` or an accumulator.
 
-    Each stores as its computed result would.
+    Each store matches the same store of the computed result, ``expr.new()``.
     """
     mask = Vector.from_coo([0, 2, 3, 6], [True, False, True, True], size=7)
     aggs = [agg.argmin, agg.argmax, agg.first, agg.last, agg.first_index, agg.last_index]

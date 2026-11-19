@@ -6498,8 +6498,8 @@ def test_udt_aggregators():
     # Aggregators not made of a monoid alone do not lift
     assert udt not in agg.hypot
 
-    # agg.first and agg.last pick an existing entry rather than combining values, so
-    # they work on any dtype; Vector.reduce compiles nothing for the UDT.
+    # agg.first and agg.last pick an existing entry instead of combining values, so they
+    # work on any dtype, a UDT included.
     assert tuple(v.reduce(agg.first).new().value) == (1, 2.0)
     assert tuple(v.reduce(agg.last).new().value) == (5, 6.0)
 

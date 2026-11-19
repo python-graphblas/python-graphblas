@@ -144,8 +144,8 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
                 binop = binary_from_string(op)
             except ValueError:
                 binop = None
-            # An Aggregator wins over a BinaryOp without a Monoid, which Vector.reduce
-            # refuses (as SuiteSparse does for a Matrix), so "first" is `agg.first`
+            # Reducing with a BinaryOp that has no Monoid fails, so the Aggregator of that
+            # name wins: "max" is `binary.max`, but "first" is `agg.first`
             if binop is not None and binop.monoid is not None:
                 op = binop
             else:

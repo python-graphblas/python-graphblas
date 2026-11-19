@@ -36,11 +36,11 @@ def _get_types(ops, initdtype):
 def _store_element(updater, element, opts):
     """``updater << element``, for a Scalar ``updater`` and an element such as ``v[0]``."""
     if updater.kwargs.get("accum") is not None:
-        # With autocompute off, an accumulator takes a Scalar, not an element to extract
+        # With autocompute off, `s(accum=op) << v[0]` raises TypeError, so extract first
         updater << element.new(**opts)
     else:
-        # GraphBLAS casts the element into the output.  Through a Scalar, 763 into an INT8
-        # C scalar would raise OverflowError instead of wrapping.
+        # Store the element itself so GraphBLAS casts it to the output type: 763 into an
+        # INT8 C scalar wraps to -5, where storing `element.new()` raises OverflowError.
         updater << element
 
 
@@ -555,8 +555,8 @@ agg.root_mean_square = Aggregator(
 
 
 # Position recipes, for argmin, argmax, first, last, first_index and last_index.
-# The positional ops are typed on INT64: typed on an INT32 input, they would return INT32
-# positions, which wrap at 2**31.
+# The positional ops (`min_secondi`, `rowindex` and the others) are typed on INT64 whatever
+# the input type: typed on INT32, they would return INT32 positions, which wrap at 2**31.
 def _end_index(expr, A, opts, *, last, rowwise):
     """Expression of the index of the first (or last) entry in each row or column of ``A``."""
     if backend == "suitesparse":
@@ -585,20 +585,23 @@ def _end_index_vector(expr, v, opts, *, last):
 
 
 def _scaling_diag(expr, x, opts):
-    """``x.diag()``, with the missing diagonal entries filled when that is cheap.
+    """Return ``x.diag()``, with the missing diagonal entries filled when that is cheap.
 
-    ``x`` holds the min (or max) of each row or column of ``A``, so it lacks an entry only
-    where that row or column of ``A`` is empty, and the fill never meets an entry of ``A``.
+    ``x`` is the min (or max) of each row or column of the matrix ``A`` being scaled, so it
+    lacks an entry only where that row or column of ``A`` is empty. A filled entry scales
+    only an empty row or column, so the product is the same.
 
     The fill is an optimization for SuiteSparse:GraphBLAS, the library under both the
-    "suitesparse" and "suitesparse-vanilla" backends. SuiteSparse scales by a diagonal
-    matrix with its rowscale or colscale kernel only when every diagonal entry is present
-    (``GB_is_diagonal``), which made ``A @ D`` 10x faster with 1e7 entries in 1e6 columns.
-    Another GraphBLAS library may gain nothing from the fill and may pay more for it, such
-    as O(size) memory for ``full[...] = False``, which SuiteSparse stores as one iso value.
-    On any library, the guard ``size <= 2 * nvals`` keeps the filled vector at most twice
-    the entries of ``x``. So a 2**60 x 2**60 matrix is never filled, since ``x`` would need
-    2**59 entries. Whoever adds another backend should revisit this function.
+    "suitesparse" and "suitesparse-vanilla" backends. SuiteSparse uses its rowscale or
+    colscale kernel for a diagonal matrix only when every diagonal entry is present
+    (``GB_is_diagonal``). With 1e7 entries in 1e6 columns, that made ``A @ D`` 10x faster.
+    Another GraphBLAS library may gain nothing from the fill and pay more for it, such as
+    O(size) memory for ``full[...] = False``, which SuiteSparse stores as one iso value.
+
+    On any library, the guard ``size <= 2 * nvals`` keeps the filled vector to at most twice
+    as many entries as ``x``. The diagonal for a 2**60 x 2**60 matrix is filled only when
+    ``x`` has at least 2**59 entries. Whoever adds another backend should revisit this
+    function.
     """
     if x._nvals < x._size <= 2 * x._nvals:
         full = expr._new_vector(x.dtype, size=x._size)
@@ -643,7 +646,7 @@ def _first_last(agg, updater, expr, opts, *, in_composite, last):
         A = expr.args[0]
         rowwise = expr.method_name == "reduce_rowwise"
         step1 = _end_index(expr, A, opts, last=last, rowwise=rowwise).new(**opts)
-        # One entry in each nonempty row (or column), where its first (or last) entry is
+        # `P` is True at the first (or last) entry of each nonempty row (or column) of `A`
         indices, positions = step1.to_coo()
         if rowwise:
             rows, cols = indices, positions
@@ -712,8 +715,8 @@ def _first_last_index(agg, updater, expr, opts, *, in_composite, last):
         raise NotImplementedError(f"{agg.name} with {expr.cfunc_name}")
 
 
-# argmin, argmax, first_index and last_index don't work with `reduce_scalar`
 _INDEX_TYPES = dict.fromkeys(binary.first.types, INT64)
+# argmin, argmax, first_index and last_index don't work with `reduce_scalar`
 agg.argmin = Aggregator(
     "argmin",
     custom=partial(_argminmax, monoid=monoid.min),
