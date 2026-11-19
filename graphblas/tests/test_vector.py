@@ -1014,6 +1014,161 @@ def test_reduce_agg_count_is_int64(v):
     assert res == 4
 
 
+def test_reduce_agg_count_exists_outputs(v):
+    """The count and exists aggregators on a Vector honor accum, C scalars and narrow types."""
+    empty = Vector(int, size=7)
+    assert empty.reduce(agg.count).new().is_empty
+    assert empty.reduce(agg.exists).new().is_empty
+    s = Scalar.from_value(10, is_cscalar=True)
+    s(accum=binary.plus) << v.reduce(agg.count)
+    assert s == 14
+    s(accum=binary.plus) << empty.reduce(agg.count)
+    assert s == 14
+    g = Scalar.from_value(10, is_cscalar=False)  # pragma: is_grbscalar
+    g << empty.reduce(agg.exists)
+    assert g.is_empty
+    # Accumulate the result of a semiring and of a composite aggregator too
+    t = Scalar.from_value(1.0)
+    t(accum=binary.plus) << v.reduce(agg.sum_of_squares)
+    t(accum=binary.plus) << v.reduce(agg.mean)
+    assert t == 1 + 6 + 1
+    # Counting in INT8 wraps, as summing ones in INT8 does
+    w = Vector.from_coo(np.arange(300), 1, size=300)
+    assert w.reduce(agg.count[dtypes.INT8]).new() == 300 - 256
+    c = Scalar(dtypes.INT8, is_cscalar=True)
+    c << w.reduce(agg.count)
+    assert c == 300 - 256
+    result = w.reduce(agg.exists[dtypes.BOOL]).new()
+    assert result.dtype == dtypes.BOOL
+    assert result.value
+    assert w.reduce(agg.mean).new() == 1
+
+
+def test_reduce_agg_logaddexp2_integers():
+    """logaddexp2 on integers computes 2**x in floating point, as on floats."""
+    v = Vector.from_coo([0, 1], [-1, -1])
+    assert v.reduce(agg.logaddexp2).new() == 0
+    v = Vector.from_coo([0, 1], [70, 70])
+    assert v.reduce(agg.logaddexp2).new() == 71
+    assert v.reduce(agg.logaddexp2).new() == v.dup(float).reduce(agg.logaddexp2).new()
+
+
+def test_reduce_agg_sum_of_inverses_rounding():
+    """sum_of_inverses gives the correctly rounded 1 / x, with infinities at zeros."""
+    # `pow(x, -1.0)` from some C libraries is one ulp off for this x
+    x = -1.545487201832955
+    assert Vector.from_coo([0], [x]).reduce(agg.sum_of_inverses).new().value == 1 / x
+    assert Vector.from_coo([0, 1], [2, 4]).reduce(agg.sum_of_inverses).new() == 0.75
+    assert Vector.from_coo([0], [0]).reduce(agg.sum_of_inverses).new() == np.inf
+    assert Vector.from_coo([0], [-0.0]).reduce(agg.sum_of_inverses).new() == -np.inf
+    if dtypes._supports_complex:
+        result = Vector.from_coo([0, 1], [2j, 1 + 1j]).reduce(agg.sum_of_inverses).new()
+        assert result.dtype == dtypes.FC64
+        assert result.isclose(0.5 - 1j)
+
+
+@pytest.mark.parametrize("dtype", ["BOOL", "INT8", "UINT8", "INT64", "FP32", "FP64", "FC64"])
+def test_reduce_agg_norms(dtype):
+    """L1norm and Linfnorm on each kind of number match numpy, on a Vector and a Matrix."""
+    if dtype == "FC64" and not dtypes._supports_complex:
+        pytest.skip("no complex dtypes")
+    values = {
+        "BOOL": [True, False, True, True, False, True],
+        # abs(-128) is -128 in INT8, as in numpy
+        "INT8": [-128, 5, -7, 0, 100, -1],
+        "UINT8": [255, 5, 7, 0, 3, 1],
+        "INT64": [-(2**40), 5, -7, 0, 3, -1],
+        "FP32": [-np.inf, 2.5, -7.25, -0.0, 3.0, -1.0],
+        "FP64": [-1e300, 2.5, -7.25, -0.0, 3.0, -1.0],
+        "FC64": [-3 + 4j, 2.5, -7.25j, 0, 1 + 1j, -1],
+    }[dtype]
+    npvals = np.array(values, dtype=dtypes.lookup_dtype(dtype).np_type)
+    v = Vector.from_coo(np.arange(6), npvals, dtype=dtype)
+    A = Matrix.from_coo([0, 0, 0, 2, 2, 2], [0, 1, 2, 0, 1, 3], npvals, dtype=dtype, nrows=3)
+    absvals = np.abs(npvals)
+    norms = [(agg.Linfnorm, np.fmax.reduce)]
+    if dtype != "BOOL":
+        # Sums wrap in the type, as in GraphBLAS: 255 + 5 + 7 is 11 in UINT8
+        norms.append((agg.L1norm, lambda x: np.add.reduce(x, dtype=x.dtype)))
+    for aggr, npfunc in norms:
+        if dtype == "FC64" and not supports_udfs:
+            # Without Numba, Linfnorm has no complex type and L1norm returns complex
+            continue
+        expected = npfunc(absvals)
+        assert v.reduce(aggr).new().isclose(expected)
+        assert A.reduce_scalar(aggr).new().isclose(expected)
+        rowwise = A.reduce_rowwise(aggr).new()
+        assert rowwise.dtype == absvals.dtype
+        assert rowwise.isclose(Vector.from_coo([0, 2], [npfunc(absvals[:3]), npfunc(absvals[3:])]))
+        columnwise = A.T.reduce_columnwise(aggr).new()
+        assert columnwise.isclose(rowwise)
+    if dtype == "FP64":
+        # NaN propagates through the sum; the max monoid skips it
+        v[2] = np.nan
+        assert np.isnan(v.reduce(agg.L1norm).new().value)
+        assert v.reduce(agg.Linfnorm).new() == 1e300
+
+
+def test_reduce_agg_all_nan_and_negative_zero():
+    """Linfnorm of only NaN is NaN, and sum_of_inverses of only -inf is -0.0.
+
+    The Vector and the row results of the Matrix are bitmap, where a reduce to a Scalar in
+    SuiteSparse starts from the identity and would give -inf and +0.0.
+    """
+    v = Vector.from_coo([0, 2, 4, 6], [np.nan] * 4, size=8)
+    assert np.isnan(v.reduce(agg.Linfnorm).new().value)
+    rows, cols = [0, 0, 2, 3], [0, 1, 1, 3]
+    A = Matrix.from_coo(rows, cols, [np.nan] * 4, nrows=4, ncols=4)
+    assert np.isnan(A.reduce_scalar(agg.Linfnorm).new().value)
+    A = Matrix.from_coo(rows, cols, [-np.inf] * 4, nrows=4, ncols=4)
+    result = A.reduce_scalar(agg.sum_of_inverses).new().value
+    assert result == 0
+    assert np.signbit(result)
+
+
+def test_reduce_agg_empty_iso():
+    """Each aggregator gives an empty Scalar for an iso Vector or Matrix with a 0 dimension.
+
+    In SuiteSparse, a product over a dimension of 0 with iso operands can give entries.
+    """
+    v = Vector("UINT8", size=0)
+    v[...] = 5
+    A = Matrix("UINT8", nrows=0, ncols=4)
+    A[...] = 5
+    B = Matrix("UINT8", nrows=3, ncols=0)
+    B[...] = 5
+    for attr, aggr in op_items(agg):
+        if not isinstance(aggr, agg.Aggregator):
+            continue
+        assert compute(v.reduce(aggr).new().value) is None
+        if attr not in {"argmin", "argmax", "first_index", "last_index"}:
+            for M in [A, A.T, B, B.T]:
+                assert compute(M.reduce_scalar(aggr).new().value) is None
+
+
+def test_reduce_agg_vector_apply():
+    """The aggregators that apply their op before reducing a Vector match numpy."""
+    rng = np.random.default_rng(0)
+    vals = rng.standard_normal(10000)
+    v = Vector.from_dense(vals)
+    assert v.reduce(agg.sum_of_squares).new().isclose(np.sum(vals**2))
+    assert v.reduce(agg.hypot).new().isclose(np.sqrt(np.sum(vals**2)))
+    assert v.reduce(agg.logaddexp).new().isclose(np.logaddexp.reduce(vals))
+    assert v.reduce(agg.logaddexp2).new().isclose(np.logaddexp2.reduce(vals))
+    assert v.reduce(agg.Linfnorm).new() == np.abs(vals).max()
+    assert v.reduce(agg.varp).new().isclose(np.var(vals))
+    assert v.reduce(agg.stds).new().isclose(np.std(vals, ddof=1))
+    assert v.reduce(agg.root_mean_square).new().isclose(np.sqrt(np.mean(vals**2)))
+    s = Scalar(float, is_cscalar=True)
+    s << v.reduce(agg.hypot)
+    assert s.isclose(np.sqrt(np.sum(vals**2)))
+    ints = rng.integers(-1000, 1000, 10000)
+    w = Vector.from_dense(ints)
+    assert w.reduce(agg.sum_of_squares).new() == np.sum(ints**2)
+    assert w.reduce(agg.Linfnorm).new() == np.abs(ints).max()
+    assert w.reduce(agg.L1norm).new() == np.abs(ints).sum()
+
+
 def test_reduce_agg_argminmax(v):
     assert v.reduce(agg.argmin).new() == 6
     assert v.reduce(agg.argmax).new() == 4

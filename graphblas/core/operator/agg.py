@@ -4,7 +4,7 @@ from operator import getitem
 import numpy as np
 
 from ... import agg, backend, binary, indexunary, monoid, semiring, unary
-from ...dtypes import INT64, lookup_dtype
+from ...dtypes import BOOL, INT64, lookup_dtype
 from ...exceptions import UdfParseError
 from .. import _supports_udfs
 from ..utils import output_type
@@ -33,6 +33,14 @@ def _get_types(ops, initdtype):
     return prev
 
 
+def _from_nvals_vector(expr, agg, x, dtype):
+    """Vector of size 1 with ``agg._from_nvals(x.nvals)``, or empty when ``x`` is empty."""
+    rv = expr._new_vector(dtype, size=1)
+    if nvals := x._nvals:
+        rv[0] = agg._from_nvals(nvals)
+    return rv
+
+
 def _store_element(updater, element, opts):
     """``updater << element``, for a Scalar ``updater`` and an element such as ``v[0]``."""
     if updater.kwargs.get("accum") is not None:
@@ -42,6 +50,15 @@ def _store_element(updater, element, opts):
         # Store the element itself so GraphBLAS casts it to the output type: 763 into an
         # INT8 C scalar wraps to -5, where storing `element.new()` raises OverflowError.
         updater << element
+
+
+def _by_kind(agg, updater, expr, opts, *, in_composite, aggs):
+    """Compute with the aggregator in ``aggs`` for the kind of ``agg.type``.
+
+    The keys are ``np.dtype.kind`` characters, and ``"other"`` for the rest.
+    """
+    sub = aggs.get(agg.type.np_type.kind, aggs["other"])
+    return sub[agg.type]._new(updater, expr, in_composite=in_composite)
 
 
 class Aggregator:
@@ -82,6 +99,8 @@ class Aggregator:
         custom=None,
         types=None,
         any_dtype=None,
+        from_nvals=None,
+        vector_apply=False,
     ):
         self.name = name
         self._initval_orig = initval
@@ -95,6 +114,13 @@ class Aggregator:
         self._finalize = finalize
         self._composite = composite
         self._custom = custom
+        # For a semiring aggregator such as `agg.count`, whose result on a Vector or a whole
+        # Matrix depends only on its number of entries, n: that result as a function of n > 0
+        self._from_nvals = from_nvals
+        # For a semiring aggregator: reduce a Vector by applying the multiplier to each
+        # entry and then reducing with the monoid.  See ``TypedAggregator._new``.  Not for a
+        # `max` monoid, whose reduce loses NaN (see the Matrix -> Scalar step there).
+        self._vector_apply = vector_apply
         if types is None:
             if monoid is not None:
                 types = [monoid]
@@ -312,13 +338,26 @@ class TypedAggregator:
             v = expr.args[0]
             if agg._applybegin is not None:
                 v = agg._applybegin(v).new(**opts)
-            step1 = expr._new_vector(semiring.return_type, size=1)
-            init = expr._new_matrix(agg._initdtype, nrows=v._size, ncols=1)
-            init(**opts)[...] = agg._initval  # O(1) dense column vector in SuiteSparse 5
-            if agg._switch:
-                step1(**opts) << semiring(init.T @ v)
+            if agg._from_nvals is not None or not v._nvals:
+                # Also when `v` is empty: in SuiteSparse, a product over a dimension of 0
+                # with iso operands can give entries
+                step1 = _from_nvals_vector(expr, agg, v, semiring.return_type)
+            elif agg._vector_apply:
+                # SuiteSparse computes `v @ init` below with one thread.  For an expensive
+                # multiplier, such as `pow`, an apply and a reduce on every thread are
+                # faster: 8 ms instead of 83 ms for `sum_of_squares` on 1e7 entries.  For a
+                # cheap one, such as `isne`, the one pass of `v @ init` is as fast.
+                binop = semiring.binaryop
+                x = binop(agg._initval, v) if agg._switch else binop(v, agg._initval)
+                step1 = x.new(**opts).reduce(semiring.monoid).new(**opts)._as_vector()
             else:
-                step1(**opts) << semiring(v @ init)
+                step1 = expr._new_vector(semiring.return_type, size=1)
+                init = expr._new_matrix(agg._initdtype, nrows=v._size, ncols=1)
+                init(**opts)[...] = agg._initval  # O(1) dense column vector in SuiteSparse 5
+                if agg._switch:
+                    step1(**opts) << semiring(init.T @ v)
+                else:
+                    step1(**opts) << semiring(v @ init)
             if agg._finalize is not None:
                 finalize = agg._finalize[semiring.return_type]
                 if step1.dtype == finalize.return_type:
@@ -333,21 +372,26 @@ class TypedAggregator:
             A = expr.args[0]
             if agg._applybegin is not None:
                 A = agg._applybegin(A).new(**opts)
-            # We need to compute in two steps: Matrix -> Vector -> Scalar.
-            # This has not been benchmarked or optimized.
-            # We may be able to intelligently choose the faster path.
-            init1 = expr._new_vector(agg._initdtype, size=A._ncols)
-            init1(**opts)[...] = agg._initval  # O(1) dense vector in SuiteSparse 5
-            step1 = expr._new_vector(semiring.return_type, size=A._nrows)
-            if agg._switch:
-                step1(**opts) << semiring(init1 @ A.T)
-            else:
-                step1(**opts) << semiring(A @ init1)
-            init2 = expr._new_matrix(agg._initdtype, nrows=A._nrows, ncols=1)
-            init2(**opts)[...] = agg._initval  # O(1) dense vector in SuiteSparse 5
             semiring2 = agg._semiring2[semiring.return_type]
-            step2 = expr._new_vector(semiring2.return_type, size=1)
-            step2(**opts) << semiring2(step1 @ init2)
+            if agg._from_nvals is not None or not A._nvals:
+                # Also when `A` is empty, as for a Vector above
+                step2 = _from_nvals_vector(expr, agg, A, semiring2.return_type)
+            else:
+                # In two steps: Matrix -> Vector -> Scalar
+                init1 = expr._new_vector(agg._initdtype, size=A._ncols)
+                init1(**opts)[...] = agg._initval  # O(1) dense vector in SuiteSparse 5
+                step1 = expr._new_vector(semiring.return_type, size=A._nrows)
+                if agg._switch:
+                    step1(**opts) << semiring(init1 @ A.T)
+                else:
+                    step1(**opts) << semiring(A @ init1)
+                # A dot product, not `step1.reduce(semiring2.monoid)`: SuiteSparse reduces
+                # bitmap data to a Scalar from the monoid's identity, so the max of only
+                # NaN would be -inf and the sum of only -0.0 would be +0.0.
+                init2 = expr._new_matrix(agg._initdtype, nrows=A._nrows, ncols=1)
+                init2(**opts)[...] = agg._initval  # O(1) dense vector in SuiteSparse 5
+                step2 = expr._new_vector(semiring2.return_type, size=1)
+                step2(**opts) << semiring2(step1 @ init2)
             if agg._finalize is not None:
                 finalize = agg._finalize[semiring2.return_type]
                 if step2.dtype == finalize.return_type:
@@ -380,7 +424,11 @@ agg.bitwise_any = Aggregator("bitwise_any", monoid=monoid.bor)
 
 # Semiring-only
 agg.count = Aggregator(
-    "count", semiring=semiring.plus_pair, semiring2=semiring.plus_first, any_dtype=INT64
+    "count",
+    semiring=semiring.plus_pair,
+    semiring2=semiring.plus_first,
+    any_dtype=INT64,
+    from_nvals=lambda n: n,
 )
 agg.count_nonzero = Aggregator(
     "count_nonzero", semiring=semiring.plus_isne, semiring2=semiring.plus_first
@@ -389,16 +437,40 @@ agg.count_zero = Aggregator(
     "count_zero", semiring=semiring.plus_iseq, semiring2=semiring.plus_first
 )
 agg.sum_of_squares = Aggregator(
-    "sum_of_squares", initval=2, semiring=semiring.plus_pow, semiring2=semiring.plus_first
-)
-agg.sum_of_inverses = Aggregator(
-    "sum_of_inverses",
-    initval=-1.0,
+    "sum_of_squares",
+    initval=2,
     semiring=semiring.plus_pow,
     semiring2=semiring.plus_first,
+    vector_apply=True,
+)
+# `rdiv(x, 1.0)` is `1.0 / x`: correctly rounded, and 8 times faster than `pow(x, -1.0)`
+# rowwise.  Complex numbers keep `pow`: at 0 and NaN, division gives other infinities and NaNs.
+_sum_of_inverses_by_kind = {
+    "c": Aggregator(
+        "sum_of_inverses",
+        initval=-1.0,
+        semiring=semiring.plus_pow,
+        semiring2=semiring.plus_first,
+        vector_apply=True,
+    ),
+    "other": Aggregator(
+        "sum_of_inverses",
+        initval=1.0,
+        semiring=semiring.plus_rdiv,
+        semiring2=semiring.plus_first,
+    ),
+}
+agg.sum_of_inverses = Aggregator(
+    "sum_of_inverses",
+    custom=partial(_by_kind, aggs=_sum_of_inverses_by_kind),
+    types=[_sum_of_inverses_by_kind["other"]],
 )
 agg.exists = Aggregator(
-    "exists", semiring=semiring.any_pair, semiring2=semiring.any_pair, any_dtype=INT64
+    "exists",
+    semiring=semiring.any_pair,
+    semiring2=semiring.any_pair,
+    any_dtype=INT64,
+    from_nvals=lambda n: 1,
 )
 
 # Semiring and finalize
@@ -408,6 +480,7 @@ agg.hypot = Aggregator(
     semiring=semiring.plus_pow,
     semiring2=semiring.plus_first,
     finalize=unary.sqrt,
+    vector_apply=True,
 )
 agg.logaddexp = Aggregator(
     "logaddexp",
@@ -416,14 +489,17 @@ agg.logaddexp = Aggregator(
     switch=True,
     semiring2=semiring.plus_first,
     finalize=unary.log,
+    vector_apply=True,
 )
+# 2.0, not 2, so that `pow` is FP64 on integers too: `pow(2, -1)` in INT64 is 0
 agg.logaddexp2 = Aggregator(
     "logaddexp2",
-    initval=2,
+    initval=2.0,
     semiring=semiring.plus_pow,
     switch=True,
     semiring2=semiring.plus_first,
     finalize=unary.log2,
+    vector_apply=True,
 )
 # Alternatives
 # logaddexp = Aggregator('logaddexp', monoid=semiring.numpy.logaddexp)
@@ -434,17 +510,56 @@ agg.logaddexp2 = Aggregator(
 
 agg.L0norm = agg.count_nonzero
 agg.L2norm = agg.hypot
+
+# On floats, `copysign(x, True)` is `fabs(x)`, and as a built-in op the JIT compiles it into
+# the reduction: 0.9 ms rowwise on 1e7 entries, instead of 2.9 ms with `absfirst`, a UDF.
+# `abs` does nothing to unsigned integers and BOOL.  Signed integers and complex numbers
+# use `absfirst`, or without Numba `abs` and then the reduction.
+_L1norm_by_kind = {
+    "f": Aggregator(
+        "L1norm", initval=True, semiring="plus.copysign", semiring2=semiring.plus_first
+    ),
+    "u": agg.sum,
+}
+_Linfnorm_by_kind = {
+    "f": Aggregator(
+        "Linfnorm", initval=True, semiring="max.copysign", semiring2=semiring.max_first
+    ),
+    "u": agg.max,
+    "b": agg.max,
+}
 if _supports_udfs:
-    agg.L1norm = Aggregator("L1norm", semiring="plus_absfirst", semiring2=semiring.plus_first)
-    agg.Linfnorm = Aggregator("Linfnorm", semiring="max_absfirst", semiring2=semiring.max_first)
+    _L1norm_by_kind["other"] = Aggregator(
+        "L1norm", semiring="plus_absfirst", semiring2=semiring.plus_first, vector_apply=True
+    )
+    _Linfnorm_by_kind["other"] = Aggregator(
+        "Linfnorm", semiring="max_absfirst", semiring2=semiring.max_first
+    )
+    # The types `absfirst` gives, without compiling it
+    _L1norm_types = [{k: v for k, v in unary.abs.types.items() if k != BOOL}]
+    _Linfnorm_types = [unary.abs]
 else:
-    # Are these always better?
-    agg.L1norm = Aggregator(
-        "L1norm", applybegin=unary.abs, semiring=semiring.plus_first, semiring2=semiring.plus_first
+    _L1norm_by_kind["other"] = Aggregator(
+        "L1norm",
+        applybegin=unary.abs,
+        semiring=semiring.plus_first,
+        semiring2=semiring.plus_first,
+        vector_apply=True,
     )
-    agg.Linfnorm = Aggregator(
-        "Linfnorm", applybegin=unary.abs, semiring=semiring.max_first, semiring2=semiring.max_first
+    _Linfnorm_by_kind["other"] = Aggregator(
+        "Linfnorm",
+        applybegin=unary.abs,
+        semiring=semiring.max_first,
+        semiring2=semiring.max_first,
     )
+    _L1norm_types = [_L1norm_by_kind["other"]]
+    _Linfnorm_types = [_Linfnorm_by_kind["other"]]
+agg.L1norm = Aggregator(
+    "L1norm", custom=partial(_by_kind, aggs=_L1norm_by_kind), types=_L1norm_types
+)
+agg.Linfnorm = Aggregator(
+    "Linfnorm", custom=partial(_by_kind, aggs=_Linfnorm_by_kind), types=_Linfnorm_types
+)
 
 
 # Composite
