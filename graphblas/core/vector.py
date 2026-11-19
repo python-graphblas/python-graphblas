@@ -1980,11 +1980,10 @@ class Vector(BaseType):
             # Report an error against this Vector: the empty C scalar has no
             # GraphBLAS object to ask for the error text.
             out = _Pointer(result, exc_arg=self)
-            if (
-                call(f"GrB_Vector_extractElement_{dtype_name}", [out, self, idx.index])
-                is not NoValue
-            ):
-                result._empty = False
+            info = call(f"GrB_Vector_extractElement_{dtype_name}", [out, self, idx.index])
+            # For a missing entry GraphBLAS leaves the value as it was, and `s << v[i]`
+            # passes in a Scalar that may hold one, so set _empty either way.
+            result._empty = info is NoValue
         else:
             call("GrB_Vector_extractElement_Scalar", [result, self, idx.index])
         return result
