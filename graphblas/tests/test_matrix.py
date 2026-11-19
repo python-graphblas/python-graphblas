@@ -1878,7 +1878,7 @@ def test_reduce_agg_position_mask_accum(A):
 
 
 def test_reduce_agg_empty():
-    """Each aggregator gives an empty result on a Matrix without entries, of any shape."""
+    """Each aggregator returns an empty result on a Matrix without entries, of any shape."""
     for nrows, ncols in [(3, 4), (0, 4), (3, 0), (0, 0)]:
         A = Matrix("UINT8", nrows=nrows, ncols=ncols)
         for B in [A, A.T]:
@@ -1897,7 +1897,10 @@ def test_reduce_agg_empty():
 
 
 def test_reduce_scalar_agg_count_exists(A):
-    """The count and exists aggregators on a whole Matrix honor accum and narrow types."""
+    """``agg.count`` and ``agg.exists`` on a whole Matrix store like any other reduce.
+
+    They accumulate, return empty on an empty Matrix, and wrap a count in INT8.
+    """
     s = Scalar.from_value(10, is_cscalar=True)
     s(accum=binary.plus) << A.T.reduce_scalar(agg.count)
     assert s == 22

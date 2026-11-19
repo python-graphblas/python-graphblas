@@ -1015,7 +1015,11 @@ def test_reduce_agg_count_is_int64(v):
 
 
 def test_reduce_agg_count_exists_outputs(v):
-    """The count and exists aggregators on a Vector honor accum, C scalars and narrow types."""
+    """``agg.count`` and ``agg.exists`` on a Vector store like any other reduce.
+
+    They accumulate, store into a C scalar, return empty on an empty Vector, and wrap a
+    count in a narrow type such as INT8.
+    """
     empty = Vector(int, size=7)
     assert empty.reduce(agg.count).new().is_empty
     assert empty.reduce(agg.exists).new().is_empty
@@ -1127,9 +1131,9 @@ def test_reduce_agg_all_nan_and_negative_zero():
 
 
 def test_reduce_agg_empty_iso():
-    """Each aggregator gives an empty Scalar for an iso Vector or Matrix with a 0 dimension.
+    """Each aggregator returns an empty Scalar for an iso Vector or Matrix with a dimension of 0.
 
-    In SuiteSparse, a product over a dimension of 0 with iso operands can give entries.
+    In SuiteSparse, a product over an inner dimension of 0 with iso operands can return an entry.
     """
     v = Vector("UINT8", size=0)
     v[...] = 5
@@ -1147,7 +1151,10 @@ def test_reduce_agg_empty_iso():
 
 
 def test_reduce_agg_vector_apply():
-    """The aggregators that apply their op before reducing a Vector match numpy."""
+    """The aggregators that reduce a Vector with an apply and then a reduce match numpy.
+
+    So do Linfnorm, L1norm on integers, and the composites built on ``sum_of_squares``.
+    """
     rng = np.random.default_rng(0)
     vals = rng.standard_normal(10000)
     v = Vector.from_dense(vals)

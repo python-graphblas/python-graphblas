@@ -53,9 +53,9 @@ def _store_element(updater, element, opts):
 
 
 def _by_kind(agg, updater, expr, opts, *, in_composite, aggs):
-    """Compute with the aggregator in ``aggs`` for the kind of ``agg.type``.
+    """Reduce with the Aggregator in ``aggs`` for the kind of ``agg.type``.
 
-    The keys are ``np.dtype.kind`` characters, and ``"other"`` for the rest.
+    ``aggs`` maps an ``np.dtype.kind`` character, or ``"other"`` for the rest, to an Aggregator.
     """
     sub = aggs.get(agg.type.np_type.kind, aggs["other"])
     return sub[agg.type]._new(updater, expr, in_composite=in_composite)
@@ -114,12 +114,14 @@ class Aggregator:
         self._finalize = finalize
         self._composite = composite
         self._custom = custom
-        # For a semiring aggregator such as `agg.count`, whose result on a Vector or a whole
-        # Matrix depends only on its number of entries, n: that result as a function of n > 0
+        # `from_nvals(n)` is the result on a Vector or a whole Matrix with n > 0 entries, for
+        # a semiring aggregator such as `agg.count` whose result depends on nothing else
         self._from_nvals = from_nvals
-        # For a semiring aggregator: reduce a Vector by applying the multiplier to each
-        # entry and then reducing with the monoid.  See ``TypedAggregator._new``.  Not for a
-        # `max` monoid, whose reduce loses NaN (see the Matrix -> Scalar step there).
+        # If True, a semiring aggregator reduces a Vector by applying its multiplier and
+        # then reducing with its monoid, instead of with one product (see
+        # ``TypedAggregator._new``).  Leave it False when the multiplier can return NaN
+        # under a `max` monoid, or -0.0 under `plus`: a reduce of bitmap data to a Scalar
+        # loses both (see the Matrix -> Scalar step there).
         self._vector_apply = vector_apply
         if types is None:
             if monoid is not None:
@@ -339,14 +341,15 @@ class TypedAggregator:
             if agg._applybegin is not None:
                 v = agg._applybegin(v).new(**opts)
             if agg._from_nvals is not None or not v._nvals:
-                # Also when `v` is empty: in SuiteSparse, a product over a dimension of 0
-                # with iso operands can give entries
+                # With no entries the result is empty, so skip the product: in SuiteSparse, a
+                # product over an inner dimension of 0 with iso operands can return an entry
                 step1 = _from_nvals_vector(expr, agg, v, semiring.return_type)
             elif agg._vector_apply:
-                # SuiteSparse computes `v @ init` below with one thread.  For an expensive
-                # multiplier, such as `pow`, an apply and a reduce on every thread are
-                # faster: 8 ms instead of 83 ms for `sum_of_squares` on 1e7 entries.  For a
-                # cheap one, such as `isne`, the one pass of `v @ init` is as fast.
+                # SuiteSparse computes `v @ init` below as one dot product, on one thread.  For
+                # an expensive multiplier, such as `pow`, an apply and a reduce on every
+                # thread are faster: 8 ms instead of 83 ms for `sum_of_squares` on 1e7
+                # entries.  For a cheap one, such as `isne`, the one pass of `v @ init` is as
+                # fast.
                 binop = semiring.binaryop
                 x = binop(agg._initval, v) if agg._switch else binop(v, agg._initval)
                 step1 = x.new(**opts).reduce(semiring.monoid).new(**opts)._as_vector()
@@ -374,7 +377,7 @@ class TypedAggregator:
                 A = agg._applybegin(A).new(**opts)
             semiring2 = agg._semiring2[semiring.return_type]
             if agg._from_nvals is not None or not A._nvals:
-                # Also when `A` is empty, as for a Vector above
+                # With no entries, skip the product, as for a Vector above
                 step2 = _from_nvals_vector(expr, agg, A, semiring2.return_type)
             else:
                 # In two steps: Matrix -> Vector -> Scalar
@@ -387,7 +390,8 @@ class TypedAggregator:
                     step1(**opts) << semiring(A @ init1)
                 # A dot product, not `step1.reduce(semiring2.monoid)`: SuiteSparse reduces
                 # bitmap data to a Scalar from the monoid's identity, so the max of only
-                # NaN would be -inf and the sum of only -0.0 would be +0.0.
+                # NaN would be -inf and the sum of only -0.0 would be +0.0.  (When `step1`
+                # is sparse, the dot product also returns +0.0 for that sum.)
                 init2 = expr._new_matrix(agg._initdtype, nrows=A._nrows, ncols=1)
                 init2(**opts)[...] = agg._initval  # O(1) dense vector in SuiteSparse 5
                 step2 = expr._new_vector(semiring2.return_type, size=1)
@@ -443,8 +447,9 @@ agg.sum_of_squares = Aggregator(
     semiring2=semiring.plus_first,
     vector_apply=True,
 )
-# `rdiv(x, 1.0)` is `1.0 / x`: correctly rounded, and 8 times faster than `pow(x, -1.0)`
-# rowwise.  Complex numbers keep `pow`: at 0 and NaN, division gives other infinities and NaNs.
+# On real types, `rdiv(x, 1.0)` is `1.0 / x`: correctly rounded, and 8 times faster rowwise
+# than `pow(x, -1.0)`.  Complex types use `pow`, which returns inf+0j at 0 and nan+0j at
+# nan+0j, where complex division returns inf+nanj and nan+nanj.
 _sum_of_inverses_by_kind = {
     "c": Aggregator(
         "sum_of_inverses",
@@ -511,10 +516,12 @@ agg.logaddexp2 = Aggregator(
 agg.L0norm = agg.count_nonzero
 agg.L2norm = agg.hypot
 
-# On floats, `copysign(x, True)` is `fabs(x)`, and as a built-in op the JIT compiles it into
-# the reduction: 0.9 ms rowwise on 1e7 entries, instead of 2.9 ms with `absfirst`, a UDF.
-# `abs` does nothing to unsigned integers and BOOL.  Signed integers and complex numbers
-# use `absfirst`, or without Numba `abs` and then the reduction.
+# On floats, `copysign(x, True)` is `fabs(x)`.  A BOOL `True`, unlike 1.0, keeps the semiring
+# typed on FP32 for FP32 input.  As a built-in op, the JIT compiles `copysign` into the
+# reduction: 0.9 ms rowwise on 1e7 entries, against 2.9 ms with the `absfirst` UDF.  `abs`
+# changes neither unsigned integers nor BOOL, so L1norm on unsigned integers is `sum`, and
+# Linfnorm on both is `max`.  Signed integers and complex numbers use `absfirst`, or, without
+# Numba, an apply of `abs` and then the reduction.
 _L1norm_by_kind = {
     "f": Aggregator(
         "L1norm", initval=True, semiring="plus.copysign", semiring2=semiring.plus_first
@@ -535,7 +542,8 @@ if _supports_udfs:
     _Linfnorm_by_kind["other"] = Aggregator(
         "Linfnorm", semiring="max_absfirst", semiring2=semiring.max_first
     )
-    # The types `absfirst` gives, without compiling it
+    # The types of `absfirst`, read from `abs` so that listing them does not compile the UDF.
+    # L1norm leaves out BOOL, which the plus monoid lacks.
     _L1norm_types = [{k: v for k, v in unary.abs.types.items() if k != BOOL}]
     _Linfnorm_types = [unary.abs]
 else:
