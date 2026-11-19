@@ -1977,14 +1977,12 @@ class Vector(BaseType):
             desc = descriptor_lookup(**opts)  # noqa: F841 (keep desc in scope for context)
         if is_cscalar:
             dtype_name = "UDT" if dtype._is_udt else dtype.name
-            # Report an error against this Vector: the empty C scalar has no
-            # GraphBLAS object to ask for the error text.
+            # Report an error against this Vector: a C scalar has no GraphBLAS object
+            # to ask for the error text.
             out = _Pointer(result, exc_arg=self)
-            if (
-                call(f"GrB_Vector_extractElement_{dtype_name}", [out, self, idx.index])
-                is not NoValue
-            ):
-                result._empty = False
+            info = call(f"GrB_Vector_extractElement_{dtype_name}", [out, self, idx.index])
+            # `s << v[i]` extracts into `s` itself, which may already have a value
+            result._empty = info is NoValue
         else:
             call("GrB_Vector_extractElement_Scalar", [result, self, idx.index])
         return result
