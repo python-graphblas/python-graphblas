@@ -751,8 +751,8 @@ A monoid or aggregator is used to perform the reduction.
     s = gb.Scalar(int)
 
     # These are equivalent
-    s << v.reduce("ss.argmin")
-    s << gb.agg.ss.argmin(v)
+    s << v.reduce("argmin")
+    s << gb.agg.argmin(v)
 
 .. csv-table:: v
     :class: inline matrix
@@ -760,7 +760,7 @@ A monoid or aggregator is used to perform the reduction.
 
     10.0,2.0,,40.0,-5.0,,24.0
 
-.. csv-table:: s << gb.agg.ss.argmin(v)
+.. csv-table:: s << gb.agg.argmin(v)
     :class: inline matrix
     :header: ,,,
 

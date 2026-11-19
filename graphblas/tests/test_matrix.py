@@ -1640,51 +1640,50 @@ def test_reduce_agg(A):
         B.reduce_scalar(agg.vars, allow_empty=False)
 
 
-@pytest.mark.skipif("not suitesparse")
 def test_reduce_agg_argminmax(A):
     # reduce_rowwise
     expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [1, 6, 5, 0, 5, 2, 4])
-    w1b = A.reduce_rowwise(agg.ss.argmin).new()
+    w1b = A.reduce_rowwise(agg.argmin).new()
     assert w1b.isequal(expected)
-    w1c = A.T.reduce_columnwise(agg.ss.argmin).new()
+    w1c = A.T.reduce_columnwise(agg.argmin).new()
     assert w1c.isequal(expected)
     expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 4, 5, 0, 5, 2, 3])
-    w2b = A.reduce_rowwise(agg.ss.argmax).new()
+    w2b = A.reduce_rowwise(agg.argmax).new()
     assert w2b.isequal(expected)
-    w2c = A.T.reduce_columnwise(agg.ss.argmax).new()
+    w2c = A.T.reduce_columnwise(agg.argmax).new()
     assert w2c.isequal(expected)
 
     # reduce_cols
     expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 0, 5, 0, 6, 2, 1])
-    w7b = A.reduce_columnwise(agg.ss.argmin).new()
+    w7b = A.reduce_columnwise(agg.argmin).new()
     assert w7b.isequal(expected)
-    w7c = A.T.reduce_rowwise(agg.ss.argmin).new()
+    w7c = A.T.reduce_rowwise(agg.argmin).new()
     assert w7c.isequal(expected)
     expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 0, 6, 6, 1, 4, 1])
-    w8b = A.reduce_columnwise(agg.ss.argmax).new()
+    w8b = A.reduce_columnwise(agg.argmax).new()
     assert w8b.isequal(expected)
-    w8c = A.T.reduce_rowwise(agg.ss.argmax).new()
+    w8c = A.T.reduce_rowwise(agg.argmax).new()
     assert w8c.isequal(expected)
 
     # reduce_scalar
     with pytest.raises(
         ValueError, match="Aggregator argmin may not be used with Matrix.reduce_scalar"
     ):
-        A.reduce_scalar(agg.ss.argmin)
+        A.reduce_scalar(agg.argmin)
 
     silly = agg.Aggregator(
         "silly",
-        composite=[agg.ss.argmin, agg.ss.argmax],
+        composite=[agg.argmin, agg.argmax],
         finalize=lambda x, y, opts: binary.plus(x & y),
-        types=[agg.ss.argmin],
+        types=[agg.argmin],
     )
-    v1 = A.reduce_rowwise(agg.ss.argmin).new()
-    v2 = A.reduce_rowwise(agg.ss.argmax).new()
+    v1 = A.reduce_rowwise(agg.argmin).new()
+    v2 = A.reduce_rowwise(agg.argmax).new()
     v3 = A.reduce_rowwise(silly).new()
     assert v3.isequal(binary.plus(v1 & v2).new())
 
-    v1 = A.reduce_columnwise(agg.ss.argmin).new()
-    v2 = A.reduce_columnwise(agg.ss.argmax).new()
+    v1 = A.reduce_columnwise(agg.argmin).new()
+    v2 = A.reduce_columnwise(agg.argmax).new()
     v3 = A.reduce_columnwise(silly).new()
     assert v3.isequal(binary.plus(v1 & v2).new())
 
@@ -1692,107 +1691,162 @@ def test_reduce_agg_argminmax(A):
         A.reduce_scalar(silly).new()
 
 
-@pytest.mark.skipif("not suitesparse")
 def test_reduce_agg_firstlast(A):
     # reduce_rowwise
-    w1 = A.reduce_rowwise(agg.ss.first).new()
+    w1 = A.reduce_rowwise(agg.first).new()
     expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [2, 8, 1, 3, 7, 1, 5])
     assert w1.isequal(expected)
-    w1b = A.T.reduce_columnwise(agg.ss.first).new()
+    w1b = A.T.reduce_columnwise(agg.first).new()
     assert w1b.isequal(expected)
-    w2 = A.reduce_rowwise(agg.ss.last).new()
+    w2 = A.reduce_rowwise(agg.last).new()
     expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 4, 1, 3, 7, 1, 3])
     assert w2.isequal(expected)
-    w2b = A.T.reduce_columnwise(agg.ss.last).new()
+    w2b = A.T.reduce_columnwise(agg.last).new()
     assert w2b.isequal(expected)
 
     # reduce_columnwise
-    w3 = A.reduce_columnwise(agg.ss.first).new()
+    w3 = A.reduce_columnwise(agg.first).new()
     expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 2, 3, 3, 8, 1, 4])
     assert w3.isequal(expected)
-    w3b = A.T.reduce_rowwise(agg.ss.first).new()
+    w3b = A.T.reduce_rowwise(agg.first).new()
     assert w3b.isequal(expected)
-    w4 = A.reduce_columnwise(agg.ss.last).new()
+    w4 = A.reduce_columnwise(agg.last).new()
     expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 2, 5, 7, 3, 7, 4])
     assert w4.isequal(expected)
-    w4b = A.T.reduce_rowwise(agg.ss.last).new()
+    w4b = A.T.reduce_rowwise(agg.last).new()
     assert w4b.isequal(expected)
 
     # reduce_scalar
-    w5 = A.reduce_scalar(agg.ss.first).new()
+    w5 = A.reduce_scalar(agg.first).new()
     assert w5 == 2
-    w6 = A.reduce_scalar(agg.ss.last).new()
+    w6 = A.reduce_scalar(agg.last).new()
     assert w6 == 3
+    assert A.reduce_rowwise("first").new().isequal(w1)
+    assert A.reduce_scalar("first").new() == w5
+    for B in [Matrix(float, nrows=0, ncols=0), Matrix(float, nrows=0, ncols=3)]:
+        assert B.reduce_scalar(agg.first).new().is_empty
+        assert B.reduce_scalar(agg.last).new().is_empty
     B = Matrix(float, nrows=2, ncols=3)
-    assert B.reduce_scalar(agg.ss.first).new().is_empty
-    assert B.reduce_scalar(agg.ss.last).new().is_empty
-    w7 = B.reduce_rowwise(agg.ss.first).new()
+    assert B.reduce_scalar(agg.first).new().is_empty
+    assert B.reduce_scalar(agg.last).new().is_empty
+    w7 = B.reduce_rowwise(agg.first).new()
     assert w7.isequal(Vector(float, size=B.nrows))
-    w8 = B.reduce_columnwise(agg.ss.last).new()
+    w8 = B.reduce_columnwise(agg.last).new()
     assert w8.isequal(Vector(float, size=B.ncols))
 
     silly = agg.Aggregator(
         "silly",
-        composite=[agg.ss.first, agg.ss.last],
+        composite=[agg.first, agg.last],
         finalize=lambda x, y, opts: binary.plus(x & y),
-        types=[agg.ss.first],
+        types=[agg.first],
     )
-    v1 = A.reduce_rowwise(agg.ss.first).new()
-    v2 = A.reduce_rowwise(agg.ss.last).new()
+    v1 = A.reduce_rowwise(agg.first).new()
+    v2 = A.reduce_rowwise(agg.last).new()
     v3 = A.reduce_rowwise(silly).new()
     assert v3.isequal(binary.plus(v1 & v2).new())
 
-    s1 = A.reduce_scalar(agg.ss.first).new()
-    s2 = A.reduce_scalar(agg.ss.last).new()
+    s1 = A.reduce_scalar(agg.first).new()
+    s2 = A.reduce_scalar(agg.last).new()
     s3 = A.reduce_scalar(silly).new()
     assert s3.isequal(s1.value + s2.value)
 
 
-@pytest.mark.skipif("not suitesparse")
 def test_reduce_agg_firstlast_index(A):
     # reduce_rowwise
-    w1 = A.reduce_rowwise(agg.ss.first_index).new()
+    w1 = A.reduce_rowwise(agg.first_index).new()
     expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [1, 4, 5, 0, 5, 2, 2])
     assert w1.isequal(expected)
-    w1b = A.T.reduce_columnwise(agg.ss.first_index).new()
+    w1b = A.T.reduce_columnwise(agg.first_index).new()
     assert w1b.isequal(expected)
-    w2 = A.reduce_rowwise(agg.ss.last_index).new()
+    w2 = A.reduce_rowwise(agg.last_index).new()
     expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 6, 5, 2, 5, 2, 4])
     assert w2.isequal(expected)
-    w2b = A.T.reduce_columnwise(agg.ss.last_index).new()
+    w2b = A.T.reduce_columnwise(agg.last_index).new()
     assert w2b.isequal(expected)
 
     # reduce_columnwise
-    w3 = A.reduce_columnwise(agg.ss.first_index).new()
+    w3 = A.reduce_columnwise(agg.first_index).new()
     expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 0, 3, 0, 1, 2, 1])
     assert w3.isequal(expected)
-    w3b = A.T.reduce_rowwise(agg.ss.first_index).new()
+    w3b = A.T.reduce_rowwise(agg.first_index).new()
     assert w3b.isequal(expected)
-    w4 = A.reduce_columnwise(agg.ss.last_index).new()
+    w4 = A.reduce_columnwise(agg.last_index).new()
     expected = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [3, 0, 6, 6, 6, 4, 1])
     assert w4.isequal(expected)
-    w4b = A.T.reduce_rowwise(agg.ss.last_index).new()
+    w4b = A.T.reduce_rowwise(agg.last_index).new()
     assert w4b.isequal(expected)
 
     # reduce_scalar
     with pytest.raises(ValueError, match="Aggregator first_index may not"):
-        A.reduce_scalar(agg.ss.first_index).new()
+        A.reduce_scalar(agg.first_index).new()
     with pytest.raises(ValueError, match="Aggregator last_index may not"):
-        A.reduce_scalar(agg.ss.last_index).new()
+        A.reduce_scalar(agg.last_index).new()
 
     silly = agg.Aggregator(
         "silly",
-        composite=[agg.ss.first_index, agg.ss.last_index],
+        composite=[agg.first_index, agg.last_index],
         finalize=lambda x, y, opts: binary.plus(x & y),
-        types=[agg.ss.first_index],
+        types=[agg.first_index],
     )
-    v1 = A.reduce_rowwise(agg.ss.first_index).new()
-    v2 = A.reduce_rowwise(agg.ss.last_index).new()
+    v1 = A.reduce_rowwise(agg.first_index).new()
+    v2 = A.reduce_rowwise(agg.last_index).new()
     v3 = A.reduce_rowwise(silly).new()
     assert v3.isequal(binary.plus(v1 & v2).new())
 
     with pytest.raises(ValueError, match="Aggregator"):
         A.reduce_scalar(silly).new()
+
+
+def test_reduce_agg_firstlast_uint64():
+    """``first`` and ``last`` return UINT64 values exactly, not rounded through FP64."""
+    big = 2**63 + 1
+    A = Matrix.from_coo([0, 0, 1], [1, 2, 1], [big, big + 2, big + 4], dtype="UINT64")
+    expected = Vector.from_coo([0, 1], [big, big + 4], dtype="UINT64")
+    assert A.reduce_rowwise(agg.first).new().isequal(expected, check_dtype=True)
+    expected = Vector.from_coo([1, 2], [big + 4, big + 2], dtype="UINT64")
+    assert A.reduce_columnwise(agg.last).new().isequal(expected, check_dtype=True)
+
+
+def test_reduce_agg_position_int32_large():
+    """Positions of 2**31 or more come back exact when the values are INT32."""
+    big = 2**40
+    A = Matrix.from_coo(
+        [0, 0, big], [big, big + 5, 1], [7, 3, 5], dtype="INT32", nrows=2**41, ncols=2**41
+    )
+    for aggr, rows, cols in [
+        (agg.first_index, [big, 1], [big, 0, 0]),
+        (agg.last_index, [big + 5, 1], [big, 0, 0]),
+        (agg.argmin, [big + 5, 1], [big, 0, 0]),
+    ]:
+        expected = Vector.from_coo([0, big], rows, size=2**41)
+        assert A.reduce_rowwise(aggr).new().isequal(expected, check_dtype=True)
+        expected = Vector.from_coo([1, big, big + 5], cols, size=2**41)
+        assert A.reduce_columnwise(aggr).new().isequal(expected, check_dtype=True)
+    expected = Vector.from_coo([0, big], [7, 5], dtype="INT32", size=2**41)
+    assert A.reduce_rowwise(agg.first).new().isequal(expected, check_dtype=True)
+    assert A.reduce_scalar(agg.first).new() == 7
+    assert A.reduce_scalar(agg.last).new() == 5
+
+
+def test_reduce_agg_position_mask_accum(A):
+    """The position aggregators store with a mask, ``replace`` and an accumulator.
+
+    Each stores as its computed result would.
+    """
+    mask = Vector.from_coo([0, 2, 3, 6], [True, False, True, True], size=7)
+    aggs = [agg.argmin, agg.argmax, agg.first, agg.last, agg.first_index, agg.last_index]
+    stores = [{"mask": mask.V}, {"mask": ~mask.S, "replace": True}, {"accum": binary.plus}]
+    for aggr, B, kwargs in itertools.product(aggs, [A, A.T], stores):
+        for expr in [B.reduce_rowwise(aggr), B.reduce_columnwise(aggr)]:
+            w1 = Vector.from_coo([1, 2, 5], [10, 20, 50], dtype=expr.dtype, size=7)
+            w2 = w1.dup()
+            w1(**kwargs) << expr
+            w2(**kwargs) << expr.new()
+            assert w1.isequal(w2, check_dtype=True)
+    for aggr, B, is_cscalar in itertools.product([agg.first, agg.last], [A, A.T], [True, False]):
+        s = Scalar.from_value(10, is_cscalar=is_cscalar)
+        s(accum=binary.plus) << B.reduce_scalar(aggr)
+        assert s == B.reduce_scalar(aggr).new() + 10
 
 
 def test_reduce_agg_empty():
@@ -1807,7 +1861,7 @@ def test_reduce_agg_empty():
             assert ve.isequal(v)
             w = B.reduce_columnwise(aggr).new()
             assert we.isequal(w)
-            if attr not in {"ss.argmin", "ss.argmax", "ss.first_index", "ss.last_index"}:
+            if attr not in {"argmin", "argmax", "first_index", "last_index"}:
                 s = B.reduce_scalar(aggr).new()
                 assert compute(s.value) is None
 
@@ -3965,21 +4019,17 @@ def test_udt():
     assert Matrix.from_csc(*A.to_csc()).isequal(A)
 
     # Just make sure these work
-    for aggop in [agg.any_value, agg.count]:
+    for aggop in [agg.any_value, agg.count, agg.first, agg.last]:
         A.reduce_rowwise(aggop).new()
         A.reduce_columnwise(aggop).new()
         A.reduce_scalar(aggop).new()
+    for aggop in [agg.first_index, agg.last_index]:
+        A.reduce_rowwise(aggop).new()
+        A.reduce_columnwise(aggop).new()
     if suitesparse:
         result = unary.ss.positioni(A).new()
         expected = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], [0, 0, 1, 1])
         assert result.isequal(expected)
-        for aggop in [agg.ss.first, agg.ss.last]:
-            A.reduce_rowwise(aggop).new()
-            A.reduce_columnwise(aggop).new()
-            A.reduce_scalar(aggop).new()
-        for aggop in [agg.ss.first_index, agg.ss.last_index]:
-            A.reduce_rowwise(aggop).new()
-            A.reduce_columnwise(aggop).new()
     A.clear()
     A[[0, 1], 1] = [(2, 3), (4, 5)]
     expected = Matrix.from_coo([0, 1], [1, 1], [(2, 3), (4, 5)], dtype=udt)

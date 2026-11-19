@@ -32,8 +32,8 @@ level of nesting, or each element of an array, as it applies to that value's bui
      - one of those monoids with one of those BinaryOps, such as ``plus_times``,
        ``min_plus``, ``max_times`` or ``any_first``
    * - Aggregator
-     - ``sum``, ``prod``, ``min``, ``max``, ``any_value``, ``count``; ``ss.first`` and
-       ``ss.last`` work on any type
+     - ``sum``, ``prod``, ``min``, ``max``, ``any_value``, ``count``; ``first`` and
+       ``last`` work on any type
 
 Any other built-in operator or aggregator raises ``KeyError`` on a UDT, among them
 ``pow``, ``lt``, ``fmod``, ``lor``, ``minv`` and the aggregators ``mean``, ``hypot``,

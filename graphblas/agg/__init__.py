@@ -49,14 +49,17 @@ Composite aggregators (require multiple aggregation steps):
     - harmonic_mean
     - root_mean_square
 
-Custom recipes (specific to SuiteSparse:GraphBLAS):
-    - ss.first
-    - ss.last
+Position aggregators:
+    - first
+    - last
     # These don't work with Matrix.reduce_scalar
-    - ss.first_index
-    - ss.last_index
-    - ss.argmin
-    - ss.argmax
+    - first_index
+    - last_index
+    - argmin
+    - argmax
+
+With the "suitesparse" backend, the position aggregators are also in ``agg.ss``, such as
+``agg.ss.argmin``.
 
 # Possible aggregators:
 #   - absolute_deviation, sum(abs(x - mean(x))),  sum_absminus(x, mean(x))

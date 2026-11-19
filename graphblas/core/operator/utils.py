@@ -141,15 +141,23 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
             op = semiring_from_string(op)
         elif kind == "binary|aggregator":
             try:
-                op = binary_from_string(op)
+                binop = binary_from_string(op)
             except ValueError:
+                binop = None
+            # An Aggregator wins over a BinaryOp without a Monoid, which Vector.reduce
+            # refuses (as SuiteSparse does for a Matrix), so "first" is `agg.first`
+            if binop is not None and binop.monoid is not None:
+                op = binop
+            else:
                 try:
                     op = aggregator_from_string(op)
                 except ValueError:
-                    hint = _ss_hint(binary, op) or _ss_hint(agg, op) or "Example usage: '+[int]'"
-                    raise ValueError(
-                        f"Unknown binary or aggregator string: {op!r}.  {hint}"
-                    ) from None
+                    if binop is None:
+                        hint = _ss_hint(binary, op) or "Example usage: '+[int]'"
+                        raise ValueError(
+                            f"Unknown binary or aggregator string: {op!r}.  {hint}"
+                        ) from None
+                    op = binop
 
         else:
             raise ValueError(
@@ -394,7 +402,7 @@ _str_to_monoid = {
 def _ss_hint(module, string):
     """Suggest the ``ss.`` name when ``string`` names an operator in ``module.ss``, else None.
 
-    SuiteSparse-specific operators are named with ``ss.``, such as ``"ss.argmin"``.
+    SuiteSparse-specific operators are named with ``ss.``, such as ``"ss.firsti"``.
     """
     s = string.lower().strip()
     base = s.split("[", 1)[0]

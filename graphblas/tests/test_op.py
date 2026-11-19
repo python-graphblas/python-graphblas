@@ -106,9 +106,12 @@ def test_semiring():
 def test_agg():
     assert repr(agg.count) == "agg.count"
     assert repr(agg.count["INT32"]) == "agg.count[INT32]"
+    assert repr(agg.first) == "agg.first"
+    assert repr(agg.argmin["INT32"]) == "agg.argmin[INT32]"
     if suitesparse:
-        assert repr(agg.ss.first) == "agg.ss.first"
-        assert repr(agg.ss.argmin["INT32"]) == "agg.ss.argmin[INT32]"
+        # The position aggregators are also in `agg.ss`
+        for name in ["argmin", "argmax", "first", "last", "first_index", "last_index"]:
+            assert getattr(agg.ss, name) is getattr(agg, name)
     assert "INT64" in agg.sum_of_inverses
     assert agg.sum_of_inverses["INT64"].return_type == FP64
     assert "BOOL" not in agg.sum_of_inverses
@@ -5907,7 +5910,7 @@ def test_udt_literal_rules_edge_cases():
 def test_udt_store_casts_reach_every_store_path():
     """Each way of storing into a UDT object casts as ``<<`` does, or says why it cannot.
 
-    Regression: ``agg.ss.first`` into a Scalar and indexed assignment of an
+    Regression: ``agg.first`` into a Scalar and indexed assignment of an
     expression skipped the cast, and ``dup`` refused a numpy dtype or string.
     """
     i8s = dtypes.register_anonymous(np.dtype((np.int8, (3,))), "_PathI8")
@@ -5915,9 +5918,11 @@ def test_udt_store_casts_reach_every_store_path():
     v = Vector(i8s, size=3)
     v[0] = [1, 2, 3]
     v[2] = [4, 5, 6]
-    aggregators = [(agg.sum, [5.0, 7.0, 9.0])]
-    if gb.backend == "suitesparse":
-        aggregators += [(agg.ss.first, [1.0, 2.0, 3.0]), (agg.ss.last, [4.0, 5.0, 6.0])]
+    aggregators = [
+        (agg.sum, [5.0, 7.0, 9.0]),
+        (agg.first, [1.0, 2.0, 3.0]),
+        (agg.last, [4.0, 5.0, 6.0]),
+    ]
     for aggregator, expected in aggregators:
         s = gb.Scalar(f8s)
         s << v.reduce(aggregator)
@@ -6493,12 +6498,10 @@ def test_udt_aggregators():
     # Aggregators not made of a monoid alone do not lift
     assert udt not in agg.hypot
 
-    if suitesparse:
-        # agg.ss.first / agg.ss.last are positional aggregators (any_dtype=True):
-        # they pick an existing entry rather than combining values, so they
-        # work on any dtype, UDT included, without per-UDT compilation.
-        assert tuple(v.reduce(agg.ss.first).new().value) == (1, 2.0)
-        assert tuple(v.reduce(agg.ss.last).new().value) == (5, 6.0)
+    # agg.first and agg.last pick an existing entry rather than combining values, so
+    # they work on any dtype; Vector.reduce compiles nothing for the UDT.
+    assert tuple(v.reduce(agg.first).new().value) == (1, 2.0)
+    assert tuple(v.reduce(agg.last).new().value) == (5, 6.0)
 
     # Array UDT path
     adt = np.dtype((np.float64, (3,)))
@@ -6716,13 +6719,11 @@ def test_ss_operators_only_in_ss_namespace():
     """
     import re
 
-    from graphblas.core.operator.agg import _SS_AGGREGATORS
     from graphblas.core.operator.base import _SS_OPERATORS
 
     found = set()
-    for module in [unary, binary, semiring, op, agg]:
-        names = _SS_AGGREGATORS if module is agg else _SS_OPERATORS
-        for name in names:
+    for module in [unary, binary, semiring, op]:
+        for name in _SS_OPERATORS:
             assert name not in dir(module)
             if suitesparse and name in vars(module.ss):
                 found.add(name)
@@ -6734,7 +6735,7 @@ def test_ss_operators_only_in_ss_namespace():
     if not suitesparse:
         assert not found
         return
-    assert found == _SS_OPERATORS | _SS_AGGREGATORS
+    assert found == _SS_OPERATORS
     # `op.ss` holds the same objects as `unary.ss`, `binary.ss` and `semiring.ss`
     for name in _SS_OPERATORS:
         [home] = [m for m in [unary, binary, semiring] if name in vars(m.ss)]
@@ -6746,9 +6747,8 @@ def test_ss_operators_only_in_ss_namespace():
 
     # Strings use the "ss." prefix too
     v = Vector.from_coo([0, 2], [3, 1])
-    assert v.reduce("ss.argmin").new() == 2
-    with pytest.raises(ValueError, match=re.escape("Did you mean 'ss.argmin'?")):
-        v.reduce("argmin").new()
+    with pytest.raises(ValueError, match=re.escape("Did you mean 'ss.firsti'?")):
+        v.reduce("firsti").new()
     assert binary.from_string("ss.firsti[INT64]") is binary.ss.firsti[INT64]
     with pytest.raises(ValueError, match=re.escape("Did you mean 'ss.firsti[int64]'?")):
         binary.from_string("firsti[INT64]")

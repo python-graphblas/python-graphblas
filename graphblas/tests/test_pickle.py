@@ -129,6 +129,7 @@ def test_serialize():
         "dtypes._INDEX": gb.dtypes._INDEX,
         "all_indices": gb.core.expr._ALL_INDICES,
         "replace": gb.replace,
+        "agg.first[int]": gb.agg.first[int],
     }
     if suitesparse:
         d["agg.ss.first[int]"] = gb.agg.ss.first[int]
@@ -178,6 +179,8 @@ def check_values(d):
     assert d["monoid.numpy.logaddexp[float]"] is gb.monoid.numpy.logaddexp[float]
     assert d["semiring.numpy.logaddexp2_hypot[float]"] is gb.semiring.numpy.logaddexp2_hypot[float]
     assert d["agg.sum"] is gb.agg.sum
+    if "agg.first[int]" in d:
+        assert d["agg.first[int]"] is gb.agg.first[int]
     if suitesparse and "agg.ss.first[int]" in d:
         assert d["agg.ss.first[int]"] is gb.agg.ss.first[int]
     assert d["binary.absfirst"] is gb.binary.absfirst

@@ -3,7 +3,7 @@ from operator import getitem
 
 import numpy as np
 
-from ... import agg, backend, binary, monoid, semiring, unary
+from ... import agg, backend, binary, indexunary, monoid, semiring, unary
 from ...dtypes import INT64, lookup_dtype
 from ...exceptions import UdfParseError
 from .. import _supports_udfs
@@ -11,8 +11,13 @@ from ..utils import output_type
 
 
 def _get_types(ops, initdtype):
-    """Determine the input and output types of an aggregator based on a list of ops."""
-    if initdtype is None:
+    """Determine the input and output types of an aggregator based on a list of ops.
+
+    The first item may instead be a dict of input types to output types.
+    """
+    if isinstance(ops[0], dict):
+        prev = dict(ops[0])
+    elif initdtype is None:
         prev = dict(ops[0].types)
     else:
         op = ops[0]
@@ -28,20 +33,29 @@ def _get_types(ops, initdtype):
     return prev
 
 
+def _store_element(updater, element, opts):
+    """``updater << element``, for a Scalar ``updater`` and an element such as ``v[0]``."""
+    if updater.kwargs.get("accum") is not None:
+        # With autocompute off, an accumulator takes a Scalar, not an element to extract
+        updater << element.new(**opts)
+    else:
+        # GraphBLAS casts the element into the output.  Through a Scalar, 763 into an INT8
+        # C scalar would raise OverflowError instead of wrapping.
+        updater << element
+
+
 class Aggregator:
     """A reduction operator that collapses the values of a Matrix or Vector.
 
     An Aggregator is used with the ``reduce`` family of methods: ``Vector.reduce``,
     ``Matrix.reduce_rowwise``, ``Matrix.reduce_columnwise``, and ``Matrix.reduce_scalar``.
     Some aggregators return a summary value (``sum``, ``mean``, ``max``); others return a
-    position (``ss.argmin``, ``ss.argmax``, ``ss.first_index``).
+    position (``argmin``, ``argmax``, ``first_index``).
 
     Built-in aggregators live in the ``graphblas.agg`` namespace, such as ``agg.sum``,
-    ``agg.mean``, and ``agg.count``. Those that use positions (``argmin``, ``argmax``,
-    ``first``, ``last``, ``first_index``, ``last_index``) are SuiteSparse-specific and live
-    under ``agg.ss``, such as ``agg.ss.argmin``. Unlike the other operators, an Aggregator
-    is not a single GraphBLAS object. Most are built from a monoid or semiring, with an
-    optional finalize step, for each dtype on first use.
+    ``agg.mean``, and ``agg.count``. Unlike the other operators, an Aggregator is not a
+    single GraphBLAS object. Most are built from a monoid or semiring, with an optional
+    finalize step, for each dtype on first use.
 
     Examples
     --------
@@ -146,15 +160,11 @@ class Aggregator:
         return True
 
     def __repr__(self):
-        if self.name in _SS_AGGREGATORS:
-            return f"agg.ss.{self.name}"
         return f"agg.{self.name}"
 
     def __reduce__(self):
         # Aggregator has no register_anonymous/register_new, so every
         # instance is a module-level singleton; pickle by name.
-        if self.name in _SS_AGGREGATORS:
-            return f"agg.ss.{self.name}"
         return f"agg.{self.name}"
 
     def __call__(self, val, *, rowwise=False, columnwise=False):
@@ -208,7 +218,7 @@ class TypedAggregator:
         """The C definition of this aggregator's monoid on its type, or ``None``.
 
         Aggregators not made of a monoid alone (``agg.hypot``, ``agg.mean``,
-        ``agg.ss.first``) have none.
+        ``agg.first``) have none.
         """
         mon = getattr(self.parent, "_monoid", None)
         if mon is None or self.type not in mon:
@@ -261,7 +271,7 @@ class TypedAggregator:
                 "GrB_Matrix_reduce"
             ):
                 final = final_expr.new(**opts)
-                updater << final[0]
+                _store_element(updater, final[0], opts)
             else:
                 raise NotImplementedError(f"{agg.name} with {expr.cfunc_name}")
             if in_composite:
@@ -317,7 +327,7 @@ class TypedAggregator:
                     step1 = finalize(step1).new(finalize.return_type, **opts)
             if in_composite:
                 return step1
-            updater << step1[0]
+            _store_element(updater, step1[0], opts)
         elif expr.cfunc_name.startswith("GrB_Matrix_reduce"):
             # Matrix -> Scalar
             A = expr.args[0]
@@ -346,7 +356,7 @@ class TypedAggregator:
                     step2 = finalize(step2).new(finalize.return_type, **opts)
             if in_composite:
                 return step2
-            updater << step2[0]
+            _store_element(updater, step2[0], opts)
         else:
             raise NotImplementedError(f"{agg.name} with {expr.cfunc_name}")
 
@@ -544,210 +554,205 @@ agg.root_mean_square = Aggregator(
 )
 
 
-# Special recipes
-def _argminmaxij(
-    agg,
-    updater,
-    expr,
-    opts,
-    *,
-    in_composite,
-    monoid,
-    col_semiring,
-    row_semiring,
-):
+# Position recipes, for argmin, argmax, first, last, first_index and last_index.
+# The positional ops are typed on INT64: typed on an INT32 input, they would return INT32
+# positions, which wrap at 2**31.
+def _end_index(expr, A, opts, *, last, rowwise):
+    """Expression of the index of the first (or last) entry in each row or column of ``A``."""
+    if backend == "suitesparse":
+        # SuiteSparse reads these from its sorted indices, which for the rows of a row-major
+        # `A` is much faster than the pass over every entry below.  `secondi` gives the
+        # column of `A` for `A @ init` and the row of `A` for `init @ A`.
+        sr = (semiring.ss.max_secondi if last else semiring.ss.min_secondi)[INT64]
+        init = expr._new_vector(bool, size=A._ncols if rowwise else A._nrows)
+        init(**opts)[...] = False  # O(1) dense vector in SuiteSparse
+        return sr(A @ init) if rowwise else sr(init @ A)
+    mon = monoid.max if last else monoid.min
+    if rowwise:
+        return A.apply(indexunary.colindex[INT64]).new(**opts).reduce_rowwise(mon)
+    return A.apply(indexunary.rowindex[INT64]).new(**opts).reduce_columnwise(mon)
+
+
+def _end_index_vector(expr, v, opts, *, last):
+    """The index of the first (or last) entry of ``v``, as a new Vector of size 1."""
+    if backend == "suitesparse":
+        sr = (semiring.ss.max_secondi if last else semiring.ss.min_secondi)[INT64]
+        init = expr._new_matrix(bool, nrows=v._size, ncols=1)
+        init(**opts)[...] = False  # O(1) dense column vector in SuiteSparse
+        return sr(v @ init).new(**opts)
+    mon = monoid.max if last else monoid.min
+    return v.apply(indexunary.rowindex[INT64]).new(**opts).reduce(mon).new(**opts)._as_vector()
+
+
+def _scaling_diag(expr, x, opts):
+    """``x.diag()``, with the missing diagonal entries filled when that is cheap.
+
+    ``x`` holds the min (or max) of each row or column of ``A``, so it lacks an entry only
+    where that row or column of ``A`` is empty, and the fill never meets an entry of ``A``.
+
+    The fill is an optimization for SuiteSparse:GraphBLAS, the library under both the
+    "suitesparse" and "suitesparse-vanilla" backends. SuiteSparse scales by a diagonal
+    matrix with its rowscale or colscale kernel only when every diagonal entry is present
+    (``GB_is_diagonal``), which made ``A @ D`` 10x faster with 1e7 entries in 1e6 columns.
+    Another GraphBLAS library may gain nothing from the fill and may pay more for it, such
+    as O(size) memory for ``full[...] = False``, which SuiteSparse stores as one iso value.
+    On any library, the guard ``size <= 2 * nvals`` keeps the filled vector at most twice
+    the entries of ``x``. So a 2**60 x 2**60 matrix is never filled, since ``x`` would need
+    2**59 entries. Whoever adds another backend should revisit this function.
+    """
+    if x._nvals < x._size <= 2 * x._nvals:
+        full = expr._new_vector(x.dtype, size=x._size)
+        full(**opts)[...] = False
+        full(mask=x.S, **opts) << x
+        x = full
+    return x.diag()
+
+
+def _argminmax(agg, updater, expr, opts, *, in_composite, monoid):
     if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
         A = expr.args[0]
-        if expr.method_name == "reduce_rowwise":
+        rowwise = expr.method_name == "reduce_rowwise"
+        # True where an entry equals the min (or max) of its row or column
+        if rowwise:
             step1 = A.reduce_rowwise(monoid).new(**opts)
-
-            D = step1.diag()
-
-            masked = semiring.any_eq(D @ A).new(**opts)
-            masked(mask=masked.V, replace=True, **opts) << masked  # Could use select
-            init = expr._new_vector(bool, size=A._ncols)
-            init(**opts)[...] = False  # O(1) dense vector in SuiteSparse 5
-            updater << row_semiring(masked @ init)
-            if in_composite:
-                return updater.parent
+            masked = semiring.any_eq(_scaling_diag(expr, step1, opts) @ A).new(**opts)
         else:
             step1 = A.reduce_columnwise(monoid).new(**opts)
-
-            D = step1.diag()
-
-            masked = semiring.any_eq(A @ D).new(**opts)
-            masked(mask=masked.V, replace=True, **opts) << masked  # Could use select
-            init = expr._new_vector(bool, size=A._nrows)
-            init(**opts)[...] = False  # O(1) dense vector in SuiteSparse 5
-            updater << col_semiring(init @ masked)
-            if in_composite:
-                return updater.parent
+            masked = semiring.any_eq(A @ _scaling_diag(expr, step1, opts)).new(**opts)
+        masked(mask=masked.V, replace=True, **opts) << masked  # Could use select
+        updater << _end_index(expr, masked, opts, last=False, rowwise=rowwise)
+        if in_composite:
+            return updater.parent
     elif expr.cfunc_name.startswith("GrB_Vector_reduce"):
         v = expr.args[0]
         step1 = v.reduce(monoid, allow_empty=False).new(**opts)
         masked = binary.eq(v, step1).new(**opts)
         masked(mask=masked.V, replace=True, **opts) << masked  # Could use select
-        init = expr._new_matrix(bool, nrows=v._size, ncols=1)
-        init(**opts)[...] = False  # O(1) dense column vector in SuiteSparse 5
-        step2 = col_semiring(masked @ init).new(**opts)
+        step2 = _end_index_vector(expr, masked, opts, last=False)
         if in_composite:
             return step2
-        updater << step2[0]
-    else:
-        raise NotImplementedError(f"{agg.name} with {expr.cfunc_name}")
-
-
-def _argminmax(agg, updater, expr, opts, *, in_composite, monoid):
-    if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
-        if expr.method_name == "reduce_rowwise":
-            return _argminmaxij(
-                agg,
-                updater,
-                expr,
-                opts,
-                in_composite=in_composite,
-                monoid=monoid,
-                row_semiring=semiring.ss.min_firstj,
-                col_semiring=semiring.ss.min_secondj,
-            )
-        return _argminmaxij(
-            agg,
-            updater,
-            expr,
-            opts,
-            in_composite=in_composite,
-            monoid=monoid,
-            row_semiring=semiring.ss.min_firsti,
-            col_semiring=semiring.ss.min_secondi,
-        )
-    if expr.cfunc_name.startswith("GrB_Vector_reduce"):
-        return _argminmaxij(
-            agg,
-            updater,
-            expr,
-            opts,
-            in_composite=in_composite,
-            monoid=monoid,
-            row_semiring=semiring.ss.min_firsti,
-            col_semiring=semiring.ss.min_secondi,
-        )
-    if expr.cfunc_name.startswith("GrB_Matrix_reduce"):
-        raise ValueError(f"Aggregator {agg.name} may not be used with Matrix.reduce_scalar.")
-    raise NotImplementedError(f"{agg.name} with {expr.cfunc_name}")
-
-
-def _first_last(agg, updater, expr, opts, *, in_composite, semiring_):
-    if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
-        A = expr.args[0]
-        if expr.method_name == "reduce_columnwise":
-            A = A.T
-        init = expr._new_vector(bool, size=A._ncols)
-        init(**opts)[...] = False  # O(1) dense vector in SuiteSparse 5
-        step1 = semiring_(A @ init).new(**opts)
-        Is, Js = step1.to_coo()
-
-        Matrix_ = type(expr._new_matrix(bool))
-        P = Matrix_.from_coo(Js, Is, 1, nrows=A._ncols, ncols=A._nrows)
-        mask = step1.diag()
-        result = semiring.any_first(A @ P).new(mask=mask.S, **opts).diag(**opts)
-
-        updater << result
-        if in_composite:
-            return updater.parent
-    elif expr.cfunc_name.startswith("GrB_Vector_reduce"):
-        v = expr.args[0]
-        init = expr._new_matrix(bool, nrows=v._size, ncols=1)
-        init(**opts)[...] = False  # O(1) dense matrix in SuiteSparse 5
-        step1 = semiring_(v @ init).new(**opts)
-        index = step1[0].new().value
-        # `==` instead of `is` automatically triggers index.compute() in dask-graphblas:
-        if index == None:  # noqa: E711
-            index = 0
-        if in_composite:
-            return v[[index]].new(**opts)
-        updater << v[index]
-    else:  # GrB_Matrix_reduce
-        A = expr.args[0]
-        init1 = expr._new_matrix(bool, nrows=A._ncols, ncols=1)
-        init1(**opts)[...] = False  # O(1) dense matrix in SuiteSparse 5
-        step1 = semiring_(A @ init1).new(**opts)
-        init2 = expr._new_vector(bool, size=A._nrows)
-        init2(**opts)[...] = False  # O(1) dense vector in SuiteSparse 5
-        step2 = semiring_(step1.T @ init2).new(**opts)
-        i = step2[0].new().value
-        # `==` instead of `is` automatically triggers i.compute() in dask-graphblas:
-        if i == None:  # noqa: E711
-            i = j = 0
-        else:
-            j = step1[i, 0].new().value
-        if in_composite:
-            return A[i, [j]].new(**opts)
-        updater << A[i, j]
-
-
-def _first_last_index(agg, updater, expr, opts, *, in_composite, semiring):
-    if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
-        A = expr.args[0]
-        if expr.method_name == "reduce_columnwise":
-            A = A.T
-        init = expr._new_vector(bool, size=A._ncols)
-        init(**opts)[...] = False  # O(1) dense vector in SuiteSparse 5
-        expr = semiring(A @ init)
-        updater << expr
-        if in_composite:
-            return updater.parent
-    elif expr.cfunc_name.startswith("GrB_Vector_reduce"):
-        v = expr.args[0]
-        init = expr._new_matrix(bool, nrows=v._size, ncols=1)
-        init(**opts)[...] = False  # O(1) dense matrix in SuiteSparse 5
-        step1 = semiring(v @ init).new(**opts)
-        if in_composite:
-            return step1
-        updater << step1[0]
+        _store_element(updater, step2[0], opts)
     elif expr.cfunc_name.startswith("GrB_Matrix_reduce"):
         raise ValueError(f"Aggregator {agg.name} may not be used with Matrix.reduce_scalar.")
     else:
         raise NotImplementedError(f"{agg.name} with {expr.cfunc_name}")
 
 
-# The aggregators that use positions are built from SuiteSparse-specific semirings
-_SS_AGGREGATORS = {"argmin", "argmax", "first", "last", "first_index", "last_index"}
+def _first_last(agg, updater, expr, opts, *, in_composite, last):
+    if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
+        A = expr.args[0]
+        rowwise = expr.method_name == "reduce_rowwise"
+        step1 = _end_index(expr, A, opts, last=last, rowwise=rowwise).new(**opts)
+        # One entry in each nonempty row (or column), where its first (or last) entry is
+        indices, positions = step1.to_coo()
+        if rowwise:
+            rows, cols = indices, positions
+        else:
+            rows, cols = positions, indices
+        Matrix_ = type(expr._new_matrix(bool))
+        P = Matrix_.from_coo(rows, cols, True, nrows=A._nrows, ncols=A._ncols)
+        step2 = binary.first(A & P).new(**opts)
+        if rowwise:
+            updater << step2.reduce_rowwise(monoid.any)
+        else:
+            updater << step2.reduce_columnwise(monoid.any)
+        if in_composite:
+            return updater.parent
+    elif expr.cfunc_name.startswith("GrB_Vector_reduce"):
+        v = expr.args[0]
+        step1 = _end_index_vector(expr, v, opts, last=last)
+        index = step1[0].new().value
+        # `==` instead of `is` automatically triggers index.compute() in dask-graphblas:
+        if index == None:  # noqa: E711
+            # `v` is empty
+            result = expr._new_vector(v.dtype, size=1)
+            if in_composite:
+                return result
+            _store_element(updater, result[0], opts)
+        elif in_composite:
+            return v[[index]].new(**opts)
+        else:
+            _store_element(updater, v[index], opts)
+    else:  # GrB_Matrix_reduce, in row-major order
+        A = expr.args[0]
+        step1 = _end_index(expr, A, opts, last=last, rowwise=True).new(**opts)
+        step2 = _end_index_vector(expr, step1, opts, last=last)
+        i = step2[0].new().value
+        # `==` instead of `is` automatically triggers i.compute() in dask-graphblas:
+        if i == None:  # noqa: E711
+            # `A` is empty
+            result = expr._new_vector(A.dtype, size=1)
+            if in_composite:
+                return result
+            _store_element(updater, result[0], opts)
+        else:
+            j = step1[i].new().value
+            if in_composite:
+                return A[i, [j]].new(**opts)
+            _store_element(updater, A[i, j], opts)
+
+
+def _first_last_index(agg, updater, expr, opts, *, in_composite, last):
+    if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
+        A = expr.args[0]
+        updater << _end_index(
+            expr, A, opts, last=last, rowwise=expr.method_name == "reduce_rowwise"
+        )
+        if in_composite:
+            return updater.parent
+    elif expr.cfunc_name.startswith("GrB_Vector_reduce"):
+        v = expr.args[0]
+        step1 = _end_index_vector(expr, v, opts, last=last)
+        if in_composite:
+            return step1
+        _store_element(updater, step1[0], opts)
+    elif expr.cfunc_name.startswith("GrB_Matrix_reduce"):
+        raise ValueError(f"Aggregator {agg.name} may not be used with Matrix.reduce_scalar.")
+    else:
+        raise NotImplementedError(f"{agg.name} with {expr.cfunc_name}")
+
+
+# argmin, argmax, first_index and last_index don't work with `reduce_scalar`
+_INDEX_TYPES = dict.fromkeys(binary.first.types, INT64)
+agg.argmin = Aggregator(
+    "argmin",
+    custom=partial(_argminmax, monoid=monoid.min),
+    types=[dict.fromkeys(monoid.min.types, INT64)],
+)
+agg.argmax = Aggregator(
+    "argmax",
+    custom=partial(_argminmax, monoid=monoid.max),
+    types=[dict.fromkeys(monoid.max.types, INT64)],
+)
+agg.first = Aggregator(
+    "first",
+    custom=partial(_first_last, last=False),
+    types=[binary.first],
+    any_dtype=True,
+)
+agg.last = Aggregator(
+    "last",
+    custom=partial(_first_last, last=True),
+    types=[binary.second],
+    any_dtype=True,
+)
+agg.first_index = Aggregator(
+    "first_index",
+    custom=partial(_first_last_index, last=False),
+    types=[_INDEX_TYPES],
+    any_dtype=INT64,
+)
+agg.last_index = Aggregator(
+    "last_index",
+    custom=partial(_first_last_index, last=True),
+    types=[_INDEX_TYPES],
+    any_dtype=INT64,
+)
 if backend == "suitesparse":
-    # argmin, argmax, first_index and last_index don't work with `reduce_scalar`
-    agg.ss.argmin = Aggregator(
-        "argmin",
-        custom=partial(_argminmax, monoid=monoid.min),
-        types=[semiring.ss.min_firsti],
-    )
-    agg.ss.argmax = Aggregator(
-        "argmax",
-        custom=partial(_argminmax, monoid=monoid.max),
-        types=[semiring.ss.min_firsti],
-    )
-    agg.ss.first = Aggregator(
-        "first",
-        custom=partial(_first_last, semiring_=semiring.ss.min_secondi),
-        types=[binary.first],
-        any_dtype=True,
-    )
-    agg.ss.last = Aggregator(
-        "last",
-        custom=partial(_first_last, semiring_=semiring.ss.max_secondi),
-        types=[binary.second],
-        any_dtype=True,
-    )
-    agg.ss.first_index = Aggregator(
-        "first_index",
-        custom=partial(_first_last_index, semiring=semiring.ss.min_secondi),
-        types=[semiring.ss.min_secondi],
-        any_dtype=INT64,
-    )
-    agg.ss.last_index = Aggregator(
-        "last_index",
-        custom=partial(_first_last_index, semiring=semiring.ss.max_secondi),
-        types=[semiring.ss.min_secondi],
-        any_dtype=INT64,
-    )
+    # Also in `agg.ss`, for code that uses those names
+    for _name in ["argmin", "argmax", "first", "last", "first_index", "last_index"]:
+        setattr(agg.ss, _name, getattr(agg, _name))
+    del _name
 
 agg.Aggregator = Aggregator
 agg.TypedAggregator = TypedAggregator

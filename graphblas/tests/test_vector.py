@@ -1014,62 +1014,104 @@ def test_reduce_agg_count_is_int64(v):
     assert res == 4
 
 
-@pytest.mark.skipif("not suitesparse")
 def test_reduce_agg_argminmax(v):
-    assert v.reduce(agg.ss.argmin).new() == 6
-    assert v.reduce(agg.ss.argmax).new() == 4
+    assert v.reduce(agg.argmin).new() == 6
+    assert v.reduce(agg.argmax).new() == 4
+    for size in [4, 0]:
+        empty = Vector(int, size=size)
+        for aggr in [agg.argmin, agg.argmax, agg.first_index, agg.last_index]:
+            assert empty.reduce(aggr).new().is_empty
 
     silly = agg.Aggregator(
         "silly",
-        composite=[agg.ss.argmin, agg.ss.argmax],
+        composite=[agg.argmin, agg.argmax],
         finalize=lambda x, y, opts: binary.plus(x & y),
-        types=[agg.ss.argmin],
+        types=[agg.argmin],
     )
     s = v.reduce(silly).new()
     assert s == 10
 
 
-@pytest.mark.skipif("not suitesparse")
 def test_reduce_agg_firstlast(v):
-    empty = Vector(int, size=4)
-    assert empty.reduce(agg.ss.first).new().is_empty
-    assert empty.reduce(agg.ss.last).new().is_empty
+    for size in [4, 0]:
+        empty = Vector(int, size=size)
+        assert empty.reduce(agg.first).new().is_empty
+        assert empty.reduce(agg.last).new().is_empty
 
-    assert v.reduce(agg.ss.first).new() == 1
-    assert v.reduce(agg.ss.last).new() == 0
+    assert v.reduce(agg.first).new() == 1
+    assert v.reduce(agg.last).new() == 0
+    # The string "first" is the Aggregator, since `binary.first` has no Monoid
+    assert v.reduce("first").new() == 1
+    assert v.reduce("last").new() == 0
 
     silly = agg.Aggregator(
         "silly",
-        composite=[agg.ss.first, agg.ss.last],
+        composite=[agg.first, agg.last],
         finalize=lambda x, y, opts: binary.plus(x & y),
-        types=[agg.ss.first],
+        types=[agg.first],
     )
     s = v.reduce(silly).new()
     assert s == 1
 
 
-@pytest.mark.skipif("not suitesparse")
 def test_reduce_agg_firstlast_index(v):
-    assert v.reduce(agg.ss.first_index).new() == 1
-    assert v.reduce(agg.ss.last_index).new() == 6
+    assert v.reduce(agg.first_index).new() == 1
+    assert v.reduce(agg.last_index).new() == 6
 
     silly = agg.Aggregator(
         "silly",
-        composite=[agg.ss.first_index, agg.ss.last_index],
+        composite=[agg.first_index, agg.last_index],
         finalize=lambda x, y, opts: binary.plus(x & y),
-        types=[agg.ss.first_index],
+        types=[agg.first_index],
     )
     s = v.reduce(silly).new()
     assert s == 7
 
 
+def test_reduce_agg_position_int32_large():
+    """Positions of 2**31 or more come back exact when the values are INT32."""
+    big = 2**40
+    v = Vector.from_coo([big, big + 5], [7, 3], dtype="INT32", size=2**41)
+    for aggr, expected in [
+        (agg.first_index, big),
+        (agg.last_index, big + 5),
+        (agg.argmin, big + 5),
+        (agg.argmax, big),
+    ]:
+        result = v.reduce(aggr).new()
+        assert result.dtype == dtypes.INT64
+        assert result == expected
+    assert v.reduce(agg.first).new() == 7
+    assert v.reduce(agg.last).new() == 3
+
+
+def test_reduce_agg_position_accum(v):
+    """The position aggregators accumulate into a Scalar."""
+    for aggr in [agg.argmin, agg.argmax, agg.first, agg.last, agg.first_index, agg.last_index]:
+        expected = v.reduce(aggr).new().value + 10
+        for is_cscalar in [True, False]:
+            s = Scalar.from_value(10, is_cscalar=is_cscalar)
+            s(accum=binary.plus) << v.reduce(aggr)
+            assert s == expected
+
+
+def test_reduce_agg_strings(v):
+    """A string names the Aggregator when the BinaryOp of that name has no Monoid."""
+    assert v.reduce("hypot").new() == v.reduce(agg.hypot).new()
+    assert v.reduce("first_index").new() == v.reduce(agg.first_index).new()
+    # `binary.max` has a Monoid
+    assert v.reduce("max").new() == v.reduce(monoid.max).new()
+
+
 def test_reduce_agg_empty():
-    v = Vector("UINT8", size=3)
-    for attr, aggr in op_items(agg):
-        if not isinstance(aggr, agg.Aggregator):
-            continue
-        s = v.reduce(aggr).new(name=attr)
-        assert compute(s.value) is None
+    """Each aggregator gives an empty result on an empty Vector, of any size."""
+    for size in [3, 0]:
+        v = Vector("UINT8", size=size)
+        for attr, aggr in op_items(agg):
+            if not isinstance(aggr, agg.Aggregator):
+                continue
+            s = v.reduce(aggr).new(name=attr)
+            assert compute(s.value) is None
 
 
 def test_reduce_coerce_dtype(v):
@@ -2572,14 +2614,14 @@ def test_udt():
     assert v.reduce(agg.any_value).new() == s
     assert v.reduce(agg.exists).new() == 1
     assert v.reduce(agg.count).new() == 3
+    assert v.reduce(agg.first).new() == s
+    assert v.reduce(agg.last).new() == s
+    assert v.reduce(agg.first_index).new() == 0
+    assert v.reduce(agg.last_index).new() == 2
     if suitesparse:
         result = unary.ss.positioni(v).new()
         expected = Vector.from_coo([0, 1, 2], [0, 1, 2])
         assert result.isequal(expected)
-        assert v.reduce(agg.ss.first).new() == s
-        assert v.reduce(agg.ss.last).new() == s
-        assert v.reduce(agg.ss.first_index).new() == 0
-        assert v.reduce(agg.ss.last_index).new() == 2
         result = binary.ss.firsti(v & v).new()
         assert result.isequal(expected)
         result = semiring.ss.min_firsti(v @ v).new()
@@ -2587,9 +2629,7 @@ def test_udt():
         info = v.ss.export()
         result = Vector.ss.import_any(**info)
         assert result.isequal(v)
-    aggs = [agg.any_value, agg.count]
-    if suitesparse:
-        aggs.extend([agg.ss.first, agg.ss.last, agg.ss.first_index, agg.ss.last_index])
+    aggs = [agg.any_value, agg.count, agg.first, agg.last, agg.first_index, agg.last_index]
     for aggop in aggs:
         v.reduce(aggop).new()
     v.clear()
@@ -2652,9 +2692,7 @@ def test_udt():
     assert s == t
     assert t == s
     # Just make sure these work
-    aggs = [agg.any_value, agg.count]
-    if suitesparse:
-        aggs.extend([agg.ss.first, agg.ss.last, agg.ss.first_index, agg.ss.last_index])
+    aggs = [agg.any_value, agg.count, agg.first, agg.last, agg.first_index, agg.last_index]
     for aggop in aggs:
         v.reduce(aggop).new()
     v.clear()

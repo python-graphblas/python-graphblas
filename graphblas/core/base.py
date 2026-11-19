@@ -477,7 +477,7 @@ class BaseType:
             raise TypeError("`input_mask` argument may only be used for extract")
         # Cast a result of another type for the store, with an accumulator too, which
         # is typed on this object's dtype. This comes before the Aggregator branch,
-        # which gives GraphBLAS the output as it is, so that agg.ss.first on another UDT
+        # which gives GraphBLAS the output as it is, so that agg.first on another UDT
         # does not read its bytes as this object's type.
         if (cast_op := _store_cast_op(expr.dtype, self.dtype)) is not None:
             if self._is_scalar:
