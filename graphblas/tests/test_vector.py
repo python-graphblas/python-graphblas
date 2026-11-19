@@ -315,7 +315,7 @@ def test_extract_element(v):
     s = Scalar(int)
     s << v[1]
     assert s == 1
-    # Extracting a missing element empties a Scalar that holds a value
+    # Extracting a missing element empties a Scalar that has a value
     for is_cscalar in [True, False]:
         s = Scalar.from_value(5, is_cscalar=is_cscalar)
         s << v[0]

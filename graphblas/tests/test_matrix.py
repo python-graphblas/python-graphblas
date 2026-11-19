@@ -373,8 +373,8 @@ def test_extract_element(A):
     s = A[1, 6].new(dtype=float)
     assert s.value == 4.0
     assert s.dtype == "FP64"
-    # Extracting a missing element empties a Scalar that holds a value.  Each element is
-    # missing here but present in the transpose, so reading the wrong one would fill `s`.
+    # Extracting a missing element empties a Scalar that has a value.  Each B[i, j] below
+    # is missing and B[j, i] is not, so mixing up the transpose would fill `s` instead.
     for is_cscalar in [True, False]:
         for B, (i, j) in [(A, (1, 0)), (A.T, (0, 1))]:
             s = Scalar.from_value(5, is_cscalar=is_cscalar)
