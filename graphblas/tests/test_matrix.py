@@ -1894,6 +1894,10 @@ def test_reduce_agg_empty():
                 if attr not in {"argmin", "argmax", "first_index", "last_index"}:
                     s = B.reduce_scalar(aggr).new()
                     assert compute(s.value) is None
+                    for is_cscalar in [True, False]:
+                        t = Scalar.from_value(1, dtype=s.dtype, is_cscalar=is_cscalar)
+                        t << B.reduce_scalar(aggr)
+                        assert t.is_empty
 
 
 def test_reduce_scalar_agg_count_exists(A):
@@ -1904,9 +1908,10 @@ def test_reduce_scalar_agg_count_exists(A):
     s = Scalar.from_value(10, is_cscalar=True)
     s(accum=binary.plus) << A.T.reduce_scalar(agg.count)
     assert s == 22
-    g = Scalar.from_value(10, is_cscalar=False)  # pragma: is_grbscalar
-    g << Matrix(int, nrows=2, ncols=2).reduce_scalar(agg.exists)
-    assert g.is_empty
+    for is_cscalar in [True, False]:
+        g = Scalar.from_value(10, is_cscalar=is_cscalar)
+        g << Matrix(int, nrows=2, ncols=2).reduce_scalar(agg.exists)
+        assert g.is_empty
     B = Matrix.from_coo(np.arange(300), np.arange(300), 1)
     assert B.reduce_scalar(agg.count[dtypes.INT8]).new() == 300 - 256
     assert B.reduce_scalar(agg.exists).new() == 1

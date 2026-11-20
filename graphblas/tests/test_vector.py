@@ -1028,9 +1028,10 @@ def test_reduce_agg_count_exists_outputs(v):
     assert s == 14
     s(accum=binary.plus) << empty.reduce(agg.count)
     assert s == 14
-    g = Scalar.from_value(10, is_cscalar=False)  # pragma: is_grbscalar
-    g << empty.reduce(agg.exists)
-    assert g.is_empty
+    for is_cscalar in [True, False]:
+        g = Scalar.from_value(10, is_cscalar=is_cscalar)
+        g << empty.reduce(agg.exists)
+        assert g.is_empty
     # Accumulate the result of a semiring and of a composite aggregator too
     t = Scalar.from_value(1.0)
     t(accum=binary.plus) << v.reduce(agg.sum_of_squares)
@@ -1268,7 +1269,7 @@ def test_reduce_agg_strings(v):
 
 
 def test_reduce_agg_empty():
-    """Each aggregator returns an empty result on an empty Vector, of any size."""
+    """Each aggregator returns an empty result on an empty Vector, which empties a Scalar."""
     for size in [3, 0]:
         v = Vector("UINT8", size=size)
         for attr, aggr in op_items(agg):
@@ -1276,6 +1277,10 @@ def test_reduce_agg_empty():
                 continue
             s = v.reduce(aggr).new(name=attr)
             assert compute(s.value) is None
+            for is_cscalar in [True, False]:
+                t = Scalar.from_value(1, dtype=s.dtype, is_cscalar=is_cscalar)
+                t << v.reduce(aggr)
+                assert t.is_empty
 
 
 def test_reduce_coerce_dtype(v):
