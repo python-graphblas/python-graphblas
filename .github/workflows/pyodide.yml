@@ -6,9 +6,10 @@ name: Pyodide
 #
 # MAINT: the versions are pinned, so a new Pyodide or pyodide-build release changes nothing
 # here until they are updated. To update, take the newest pyodide-build
-# (PYODIDE_BUILD_VERSION below), run `pyodide xbuildenv search` with it to see which Pyodide
-# versions it supports, and set each matrix row to one of them and to the Python version that
-# Pyodide version was built with (in the search's "Python" column).
+# (PYODIDE_BUILD_VERSION below), run `pyodide xbuildenv search --all` with it to see which
+# Pyodide versions it supports (without --all, it lists only those for the Python running it),
+# and set each matrix row to one of them and to the Python version that Pyodide version was
+# built with (in the search's "Python" column).
 
 on:
   pull_request:
@@ -74,8 +75,10 @@ jobs:
         id: install
         run: |
           # As many extras as Pyodide can install, so pip resolves their markers too;
-          # pytest-randomly, as test_and_build.yml has it
-          "$RUNNER_TEMP/pyodide-venv/bin/pip" install "$(ls dist/*.whl)[$EXTRAS]" pytest-randomly
+          # pytest-randomly, as test_and_build.yml has it; threadpoolctl, which the Matrix
+          # Market tests use under Pyodide, as the installation guide says to
+          "$RUNNER_TEMP/pyodide-venv/bin/pip" install "$(ls dist/*.whl)[$EXTRAS]" \
+            pytest-randomly threadpoolctl
           "$RUNNER_TEMP/pyodide-venv/bin/pip" list
           # Run the tests from a directory that holds only the repository's conftest.py (which
           # defines --backend and --runslow) and pyproject.toml (pytest's settings), so

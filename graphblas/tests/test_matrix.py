@@ -4776,7 +4776,7 @@ def test_subarray_dtype_ss_column_order(shape):
     # imported. Column order with the element's own axes slowest would scramble the
     # numbers both ways, and an unpack then pack round trip alone would hide it, since
     # the two scrambles cancel.
-    # default_int, which the values given as a list below infer
+    # The dtype that expected.tolist() below infers
     expected = np.arange(2 * 3 * 4, dtype=default_int).reshape(2, 3, *shape)
     A = Matrix.from_dense(expected)
     assert A.dtype.np_type.shape == shape
