@@ -1878,20 +1878,53 @@ def test_reduce_agg_position_mask_accum(A):
 
 
 def test_reduce_agg_empty():
-    A = Matrix("UINT8", nrows=3, ncols=4)
-    for B in [A, A.T]:
-        ve = Vector(bool, size=B.nrows)
-        we = Vector(bool, size=B.ncols)
-        for attr, aggr in op_items(agg):
-            if not isinstance(aggr, agg.Aggregator):
-                continue
-            v = B.reduce_rowwise(aggr).new()
-            assert ve.isequal(v)
-            w = B.reduce_columnwise(aggr).new()
-            assert we.isequal(w)
-            if attr not in {"argmin", "argmax", "first_index", "last_index"}:
-                s = B.reduce_scalar(aggr).new()
-                assert compute(s.value) is None
+    """Each aggregator returns an empty result on a Matrix without entries, of any shape."""
+    for nrows, ncols in [(3, 4), (0, 4), (3, 0), (0, 0)]:
+        A = Matrix("UINT8", nrows=nrows, ncols=ncols)
+        for B in [A, A.T]:
+            ve = Vector(bool, size=B.nrows)
+            we = Vector(bool, size=B.ncols)
+            for attr, aggr in op_items(agg):
+                if not isinstance(aggr, agg.Aggregator):
+                    continue
+                v = B.reduce_rowwise(aggr).new()
+                assert ve.isequal(v)
+                w = B.reduce_columnwise(aggr).new()
+                assert we.isequal(w)
+                if attr not in {"argmin", "argmax", "first_index", "last_index"}:
+                    s = B.reduce_scalar(aggr).new()
+                    assert compute(s.value) is None
+                    for is_cscalar in [True, False]:
+                        t = Scalar.from_value(1, dtype=s.dtype, is_cscalar=is_cscalar)
+                        t << B.reduce_scalar(aggr)
+                        assert t.is_empty
+
+
+def test_reduce_scalar_agg_count_exists(A):
+    """``agg.count`` and ``agg.exists`` on a whole Matrix store like any other reduce.
+
+    They accumulate, return empty on an empty Matrix, and wrap a count in INT8.
+    """
+    s = Scalar.from_value(10, is_cscalar=True)
+    s(accum=binary.plus) << A.T.reduce_scalar(agg.count)
+    assert s == 22
+    for is_cscalar in [True, False]:
+        g = Scalar.from_value(10, is_cscalar=is_cscalar)
+        g << Matrix(int, nrows=2, ncols=2).reduce_scalar(agg.exists)
+        assert g.is_empty
+    B = Matrix.from_coo(np.arange(300), np.arange(300), 1)
+    assert B.reduce_scalar(agg.count[dtypes.INT8]).new() == 300 - 256
+    assert B.reduce_scalar(agg.exists).new() == 1
+    assert A.reduce_scalar(agg.mean).new() == 47 / 12
+
+
+def test_reduce_agg_logaddexp2_integers():
+    """logaddexp2 on integers computes 2**x in floating point, as on floats."""
+    A = Matrix.from_coo([0, 0, 1], [0, 1, 1], [-1, -1, 70])
+    expected = Vector.from_coo([0, 1], [0.0, 70.0])
+    assert A.reduce_rowwise(agg.logaddexp2).new().isclose(expected)
+    assert A.dup(float).reduce_rowwise(agg.logaddexp2).new().isclose(expected)
+    assert A.reduce_scalar(agg.logaddexp2).new().isclose(np.logaddexp2.reduce([-1, -1, 70]))
 
 
 @pytest.mark.skipif("not supports_udfs")
