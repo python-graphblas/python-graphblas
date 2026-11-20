@@ -4,6 +4,8 @@ import graphblas as gb
 from graphblas.core.formatting import CSS_STYLE
 from graphblas.exceptions import OutOfMemory
 
+from .conftest import skip_on_emscripten
+
 suitesparse = gb.backend == "suitesparse"
 
 
@@ -13,8 +15,8 @@ def switch():
 
 
 def test_recorder():
-    A = gb.Matrix.from_coo([0, 1], [1, 1], [1, 2], name="A")
-    B = gb.Matrix.from_coo([0, 1], [0, 1], [3, 4], name="B")
+    A = gb.Matrix.from_coo([0, 1], [1, 1], [1, 2], dtype=int, name="A")
+    B = gb.Matrix.from_coo([0, 1], [0, 1], [3, 4], dtype=int, name="B")
     with gb.Recorder() as rec:
         assert rec.is_recording
         C = A.mxm(B).new(name="C")
@@ -226,6 +228,10 @@ def test_record_repr_html():
         assert isinstance(rec._repr_html_(), str)
 
 
+@skip_on_emscripten(
+    "GraphBLAS truncates the size of a 4 GiB or larger request to 32 bits and crashes, "
+    "instead of raising OutOfMemory"
+)
 def test_record_failed_call():
     BIG = gb.Vector(int, size=2**55)
     small = gb.Vector(int, size=2**55)
@@ -241,7 +247,7 @@ def test_record_failed_call():
 
 @pytest.mark.skipif("not suitesparse")
 def test_ss_record_inner(switch):
-    v = gb.Vector.from_coo([0, 1, 2], 1, size=3)
+    v = gb.Vector.from_coo([0, 1, 2], 1, size=3, dtype=int)
     with gb.Recorder() as rec:
         (v @ v).new(name="s_0")
     if switch:

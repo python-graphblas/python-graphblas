@@ -26,7 +26,7 @@ from graphblas.exceptions import (
     UdfParseError,
 )
 
-from .conftest import autocompute, compute, op_items, pypy
+from .conftest import autocompute, compute, default_int, emscripten, op_items, pypy
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
@@ -40,13 +40,13 @@ def A():
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4],
     ]
-    return Matrix.from_coo(*data)
+    return Matrix.from_coo(*data, dtype=dtypes.INT64)  # not default_int; see conftest.py
 
 
 @pytest.fixture
 def v():
     data = [[1, 3, 4, 6], [1, 1, 2, 0]]
-    return Vector.from_coo(*data)
+    return Vector.from_coo(*data, dtype=dtypes.INT64)  # not default_int; see conftest.py
 
 
 def test_new():
@@ -108,7 +108,7 @@ def test_from_coo():
     u3 = Vector.from_coo([0, 1, 1], [1, 2, 3], size=10, dup_op=binary.times)
     assert u3.size == 10
     assert u3.nvals == 2  # duplicates were combined
-    assert u3.dtype == int
+    assert u3.dtype == default_int
     assert u3[1].new() == 6  # 2*3
     with pytest.raises(ValueError, match="Duplicate indices found"):
         # Duplicate indices requires a dup_op
@@ -153,7 +153,7 @@ def test_from_coo_scalar():
     u = Vector.from_coo([0, 1, 3], 7)
     assert u.size == 4
     assert u.nvals == 3
-    assert u.dtype == dtypes.INT64
+    assert u.dtype == default_int
     if suitesparse:
         assert u.ss.is_iso
         assert u.ss.iso_value == 7
@@ -426,7 +426,7 @@ def test_ewise_mult(v):
 
 def test_ewise_mult_change_dtype(v):
     # We want to divide by 2, converting ints to floats
-    v2 = Vector.from_coo([1, 3, 4, 6], [2, 2, 2, 2])
+    v2 = Vector.from_coo([1, 3, 4, 6], [2, 2, 2, 2], dtype=dtypes.INT64)
     assert v.dtype == dtypes.INT64
     assert v2.dtype == dtypes.INT64
     result = Vector.from_coo([1, 3, 4, 6], [0.5, 0.5, 1.0, 0], dtype=dtypes.FP64)
@@ -3220,6 +3220,12 @@ def test_from_pairs():
         Vector.from_pairs([[1, 2, 3], [4, 5, 6]])
 
 
+@pytest.mark.xfail(
+    emscripten,
+    reason="On 32-bit platforms, a Python int is INT64 in from_scalar but NumPy's default "
+    "integer, INT32, in from_coo",
+    strict=True,
+)
 def test_from_scalar():
     v = Vector.from_scalar(1, size=3)
     w = Vector.from_coo([0, 1, 2], 1)

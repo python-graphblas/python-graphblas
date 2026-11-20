@@ -10,6 +10,8 @@ import graphblas as gb
 from graphblas import Matrix, Vector, dtypes
 from graphblas.exceptions import GraphblasException
 
+from .conftest import skip_on_emscripten
+
 try:
     import networkx as nx
 except ImportError:  # pragma: no cover (import)
@@ -107,7 +109,7 @@ def test_matrix_to_from_numpy():
 
 @pytest.mark.skipif("not nx or not ss")
 def test_matrix_to_from_networkx():
-    M = gb.Matrix.from_coo([0, 1, 1], [0, 0, 1], [1, 2, 3])
+    M = gb.Matrix.from_coo([0, 1, 1], [0, 0, 1], [1, 2, 3], dtype=int)
     G = gb.io.to_networkx(M)
     a = np.array([[1, 0], [2, 3]])
     G2 = nx.from_numpy_array(a, create_using=nx.DiGraph)
@@ -350,6 +352,7 @@ def test_mmread_mmwrite(engine):
 
 
 @pytest.mark.skipif("not ss")
+@skip_on_emscripten("scipy's Matrix Market reader and writer start threads")
 def test_mmread_asks_scipy_for_a_sparse_array(monkeypatch):
     """``mmread`` passes ``spmatrix=False`` to scipy unless the caller passes it.
 
@@ -423,6 +426,7 @@ def test_from_scipy_sparse_compressed_duplicates(format):
 
 
 @pytest.mark.skipif("not ss")
+@skip_on_emscripten("scipy's Matrix Market reader and writer start threads")
 @pytest.mark.parametrize("engine", ["auto", "scipy", "fast_matrix_market"])
 def test_matrix_market_sparse_duplicates(engine):
     if engine == "fast_matrix_market" and fmm is None:  # pragma: no cover (import)
@@ -443,6 +447,7 @@ def test_matrix_market_sparse_duplicates(engine):
 
 
 @pytest.mark.skipif("not ss")
+@skip_on_emscripten("scipy's Matrix Market reader and writer start threads")
 def test_matrix_market_bad_engine():
     A = gb.Matrix.from_coo([0, 0, 3, 5], [1, 4, 0, 2], [1, 0, 2, -1], nrows=7, ncols=6)
     with pytest.raises(ValueError, match="Bad engine value"):
