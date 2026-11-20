@@ -1052,6 +1052,8 @@ def test_reduce_agg_firstlast(v):
     )
     s = v.reduce(silly).new()
     assert s == 1
+    for size in [4, 0]:
+        assert Vector(int, size=size).reduce(silly).new().is_empty
 
 
 def test_reduce_agg_firstlast_index(v):

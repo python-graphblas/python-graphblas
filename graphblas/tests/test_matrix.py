@@ -1691,6 +1691,32 @@ def test_reduce_agg_argminmax(A):
         A.reduce_scalar(silly).new()
 
 
+def test_reduce_agg_argminmax_empty_rows():
+    """``argmin`` and ``argmax`` skip the empty rows and columns of a matrix.
+
+    Here 3 of 4 rows and 3 of 4 columns are nonempty, so the diagonal of mins (or maxes)
+    gets its missing entry filled (see ``_scaling_diag``).
+    """
+    #    0 1 2 3
+    # 0 [5 2 - 2]
+    # 1 [- - - -]
+    # 2 [- 3 - 3]
+    # 3 [1 - - 4]
+    A = Matrix.from_coo(
+        [0, 0, 0, 2, 2, 3, 3], [0, 1, 3, 1, 3, 0, 3], [5, 2, 2, 3, 3, 1, 4], nrows=4, ncols=4
+    )
+    for aggr, rows, cols in [
+        (agg.argmin, [1, 1, 0], [3, 0, 0]),
+        (agg.argmax, [0, 1, 3], [0, 2, 3]),
+    ]:
+        expected = Vector.from_coo([0, 2, 3], rows, size=4)
+        assert A.reduce_rowwise(aggr).new().isequal(expected, check_dtype=True)
+        assert A.T.reduce_columnwise(aggr).new().isequal(expected, check_dtype=True)
+        expected = Vector.from_coo([0, 1, 3], cols, size=4)
+        assert A.reduce_columnwise(aggr).new().isequal(expected, check_dtype=True)
+        assert A.T.reduce_rowwise(aggr).new().isequal(expected, check_dtype=True)
+
+
 def test_reduce_agg_firstlast(A):
     # reduce_rowwise
     w1 = A.reduce_rowwise(agg.first).new()
@@ -1749,6 +1775,8 @@ def test_reduce_agg_firstlast(A):
     s2 = A.reduce_scalar(agg.last).new()
     s3 = A.reduce_scalar(silly).new()
     assert s3.isequal(s1.value + s2.value)
+    for B in [Matrix(float, nrows=2, ncols=3), Matrix(float, nrows=0, ncols=3)]:
+        assert B.reduce_scalar(silly).new().is_empty
 
 
 def test_reduce_agg_firstlast_index(A):
