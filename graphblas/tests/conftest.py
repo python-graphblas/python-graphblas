@@ -58,10 +58,9 @@ def op_items(module):
         if key != "ss":
             yield key, getattr(module, key)
     if gb.backend == "suitesparse":
-        from graphblas.core.operator.agg import _SS_AGGREGATORS
         from graphblas.core.operator.base import _SS_OPERATORS
 
-        for key in sorted(vars(module.ss).keys() & (_SS_OPERATORS | _SS_AGGREGATORS)):
+        for key in sorted(vars(module.ss).keys() & _SS_OPERATORS):
             yield f"ss.{key}", getattr(module.ss, key)
 
 

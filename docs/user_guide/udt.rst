@@ -128,7 +128,7 @@ each element of an array, as they would to that field's built-in type.
 - Monoids ``plus``, ``times``, ``min``, ``max`` and ``any``, and the semirings made from
   them and the BinaryOps above, such as ``plus_times`` and ``min_plus``.
 - Aggregators ``sum``, ``prod``, ``min``, ``max``, ``any_value`` and ``count``, and
-  ``ss.first`` and ``ss.last``.
+  ``first`` and ``last``.
 
 Other built-in operators and aggregators, such as ``pow``, ``lt`` or ``mean``, raise
 ``KeyError`` on a UDT; write your own operator for them. ``min``, ``max`` and
