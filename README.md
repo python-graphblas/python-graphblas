@@ -51,6 +51,8 @@ $ pip install 'python-graphblas[default]'
 This will also install the [SuiteSparse:GraphBLAS](https://github.com/DrTimothyAldenDavis/GraphBLAS) compiled C library.
 We currently support the [GraphBLAS C API 2.0 specification](https://graphblas.org/docs/GraphBLAS_API_C_v2.0.0.pdf).
 
+To run python-graphblas in the browser with [Pyodide](https://pyodide.org), see [In the browser (Pyodide)](https://python-graphblas.readthedocs.io/en/stable/getting_started/index.html#in-the-browser-pyodide).
+
 ### Optional Dependencies
 
 The following are not required by python-graphblas, but may be needed for certain functionality to work.

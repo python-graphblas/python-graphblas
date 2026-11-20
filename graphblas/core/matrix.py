@@ -1422,7 +1422,9 @@ class Matrix(BaseType):
                 dtype=dtype,
                 name=name,
             )
-        indptr = ints_to_numpy_buffer(indptr, np.int64, name="indptr")  # Ensure int, not uint
+        # Signed, and intp for np.repeat, which raises TypeError for counts that do not cast
+        # safely to intp (int64 does not on 32-bit platforms such as WebAssembly)
+        indptr = ints_to_numpy_buffer(indptr, np.intp, name="indptr")
         if indptr.size == 0:
             raise InvalidValue("indptr array must not be empty")
         if indptr.size == 1:
@@ -1512,7 +1514,9 @@ class Matrix(BaseType):
                 dtype=dtype,
                 name=name,
             )
-        indptr = ints_to_numpy_buffer(indptr, np.int64, name="indptr")  # Ensure int, not uint
+        # Signed, and intp for np.repeat, which raises TypeError for counts that do not cast
+        # safely to intp (int64 does not on 32-bit platforms such as WebAssembly)
+        indptr = ints_to_numpy_buffer(indptr, np.intp, name="indptr")
         if indptr.size == 0:
             raise InvalidValue("indptr array must not be empty")
         if indptr.size == 1:
@@ -1830,7 +1834,7 @@ class Matrix(BaseType):
             else:
                 offsets = np.repeat(
                     np.arange(0, (Ap.size - 1) * num, num, dtype=np.uint64),
-                    np.diff(Ap.astype(np.int64)),
+                    np.diff(Ap.astype(np.intp)),  # see from_dcsr for why intp
                 )
                 indices = np.argsort(Ai + offsets)
             Ai = Ai[indices]

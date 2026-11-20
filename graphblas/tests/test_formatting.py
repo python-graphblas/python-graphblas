@@ -5,7 +5,7 @@ from graphblas import backend, dtypes, unary
 from graphblas.core import formatting
 from graphblas.core.formatting import CSS_STYLE
 
-from .conftest import autocompute
+from .conftest import autocompute, skip_on_emscripten
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
@@ -93,12 +93,17 @@ def _stable_repr_width(monkeypatch):
 
 @pytest.fixture
 def A():
-    return Matrix.from_coo([0, 0, 0], [0, 2, 4], [0, 1, 2], nrows=1, ncols=5, name="A_1")
+    # INT64 on every platform, as the expected reprs show; see default_int in conftest.py
+    return Matrix.from_coo(
+        [0, 0, 0], [0, 2, 4], [0, 1, 2], nrows=1, ncols=5, dtype=dtypes.INT64, name="A_1"
+    )
 
 
 @pytest.fixture
 def B():
-    return Matrix.from_coo([0, 2, 4], [0, 0, 0], [10, 20, 30], nrows=5, ncols=1, name="B_1")
+    return Matrix.from_coo(
+        [0, 2, 4], [0, 0, 0], [10, 20, 30], nrows=5, ncols=1, dtype=dtypes.INT64, name="B_1"
+    )
 
 
 @pytest.fixture
@@ -109,6 +114,7 @@ def C():
         [0, 2, 3, 4, 5, 6, 7, 8],
         nrows=70,
         ncols=77,
+        dtype=dtypes.INT64,
         name="C",
     )
 
@@ -131,7 +137,7 @@ def v():
 
 @pytest.fixture
 def w():
-    return Vector.from_coo([0, 5, 64, 69], [1, 2, 3, 4], size=77, name="w")
+    return Vector.from_coo([0, 5, 64, 69], [1, 2, 3, 4], size=77, dtype=dtypes.INT64, name="w")
 
 
 @pytest.fixture
@@ -3408,7 +3414,9 @@ def test_vector_huge_html():
 
 @pytest.mark.skipif("not pd")
 def test_sparse_vector_repr():
-    v = Vector.from_coo([100 * i for i in range(100)], [10 * i for i in range(100)], name="v")
+    v = Vector.from_coo(
+        [100 * i for i in range(100)], [10 * i for i in range(100)], dtype=dtypes.INT64, name="v"
+    )
     repr_printer(v, "v")
     assert repr(v) == (
         '"v"        nvals  size  dtype  format\n'
@@ -3563,7 +3571,11 @@ def test_sparse_vector_repr():
 @pytest.mark.skipif("not pd")
 def test_sparse_matrix_repr():
     A = Matrix.from_coo(
-        [100 * i for i in range(100)], [10 * i for i in range(100)], list(range(100)), name="A"
+        [100 * i for i in range(100)],
+        [10 * i for i in range(100)],
+        list(range(100)),
+        dtype=dtypes.INT64,
+        name="A",
     )
     repr_printer(A, "A")
     assert repr(A) == (
@@ -4154,6 +4166,32 @@ def test_autocompute(A, B, v):
         "Do expr.new() or other << expr to calculate the expression."
     )
 
+    C = A.dup(dtype=bool)
+    repr_printer(C & C, "C & C")
+    assert repr(C & C) == (
+        "gb.MatrixEwiseMultExpr  nrows  ncols  left_dtype  right_dtype\n"
+        "M_2 & M_2                   1      5        BOOL         BOOL\n"
+        "\n"
+        '"Result"   nvals  nrows  ncols  dtype\n'
+        "gb.Matrix      3      1      5   BOOL\n"
+        "-------------------------------------\n"
+        "       0 1     2 3     4\n"
+        "0  False    True    True\n"
+        "\n"
+        "Do op(expr) to create a MatrixExpression for ewise_mult.\n"
+        "For example: times(M_2 & M_2)"
+    )
+
+
+@skip_on_emscripten(
+    "GraphBLAS truncates the size of a 4 GiB or larger request to 32 bits and crashes, "
+    "instead of raising OutOfMemory"
+)
+@autocompute
+def test_autocompute_too_large():
+    """Reprs say the result is too large to compute when GraphBLAS raises OutOfMemory."""
+    if not pd:  # pragma: no cover (import)
+        pytest.skip("needs pandas")
     BIG = Vector(int, size=2**55)
     small = Vector(int, size=2**55)
     BIG[:] = 1
@@ -4192,21 +4230,6 @@ def test_autocompute(A, B, v):
         "\n"
         "Do op(expr) to create a VectorExpression for ewise_add.\n"
         "For example: plus(v_6 | v_7)"
-    )
-    C = A.dup(dtype=bool)
-    repr_printer(C & C, "C & C")
-    assert repr(C & C) == (
-        "gb.MatrixEwiseMultExpr  nrows  ncols  left_dtype  right_dtype\n"
-        "M_2 & M_2                   1      5        BOOL         BOOL\n"
-        "\n"
-        '"Result"   nvals  nrows  ncols  dtype\n'
-        "gb.Matrix      3      1      5   BOOL\n"
-        "-------------------------------------\n"
-        "       0 1     2 3     4\n"
-        "0  False    True    True\n"
-        "\n"
-        "Do op(expr) to create a MatrixExpression for ewise_mult.\n"
-        "For example: times(M_2 & M_2)"
     )
 
 
@@ -4297,6 +4320,77 @@ def test_autocompute_html(A, B, v):
         "</div></details></div>"
     )
 
+    C = A.dup(dtype=bool)
+    html_printer(C & C, "C & C")
+    assert repr_html(C & C) == (
+        "<div>"
+        f"{CSS_STYLE}"
+        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt><b>gb.MatrixEwiseMultExpr</b></tt>&nbsp;<span class="expr-tooltip"><span class="tooltip-circle">?</span><span class="tooltip-text"><em>Do <code>op(expr)</code> to create a <tt>MatrixExpression</tt> for <tt>ewise_mult</tt>.<br>For example: <code>times(M<sub>2</sub> & M<sub>2</sub>)</code></em></span></span><div>\n'
+        '<table class="gb-info-table">\n'
+        "  <tr>\n"
+        '    <td rowspan="2" class="gb-info-name-cell"><pre>M<sub>2</sub> & M<sub>2</sub></pre></td>\n'
+        "    <td><pre>nvals</pre></td>\n"
+        "    <td><pre>nrows</pre></td>\n"
+        "    <td><pre>ncols</pre></td>\n"
+        "    <td><pre>dtype</pre></td>\n"
+        "  </tr>\n"
+        "  <tr>\n"
+        "    <td>3</td>\n"
+        "    <td>1</td>\n"
+        "    <td>5</td>\n"
+        "    <td>BOOL</td>\n"
+        "  </tr>\n"
+        "</table>\n"
+        "</div>\n"
+        "</summary><div>\n"
+        "<style scoped>\n"
+        "    .dataframe tbody tr th:only-of-type {\n"
+        "        vertical-align: middle;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe tbody tr th {\n"
+        "        vertical-align: top;\n"
+        "    }\n"
+        "\n"
+        "    .dataframe thead th {\n"
+        "        text-align: right;\n"
+        "    }\n"
+        "</style>\n"
+        '<table border="1" class="dataframe">\n'
+        "  <thead>\n"
+        '    <tr style="text-align: right;">\n'
+        "      <th></th>\n"
+        "      <th>0</th>\n"
+        "      <th>1</th>\n"
+        "      <th>2</th>\n"
+        "      <th>3</th>\n"
+        "      <th>4</th>\n"
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        "    <tr>\n"
+        "      <th>0</th>\n"
+        "      <td>False</td>\n"
+        "      <td></td>\n"
+        "      <td>True</td>\n"
+        "      <td></td>\n"
+        "      <td>True</td>\n"
+        "    </tr>\n"
+        "  </tbody>\n"
+        "</table>\n"
+        "</div></details></div>"
+    )
+
+
+@skip_on_emscripten(
+    "GraphBLAS truncates the size of a 4 GiB or larger request to 32 bits and crashes, "
+    "instead of raising OutOfMemory"
+)
+@autocompute
+def test_autocompute_too_large_html():
+    """HTML reprs say the result is too large to compute when GraphBLAS raises OutOfMemory."""
+    if not pd:  # pragma: no cover (import)
+        pytest.skip("needs pandas")
     BIG = Vector(int, size=2**55)
     small = Vector(int, size=2**55)
     BIG[:] = 1
@@ -4472,66 +4566,6 @@ def test_autocompute_html(A, B, v):
         "</table>\n"
         "</div>\n"
         '</summary><span style="color: red">Result is too large to compute!</span></details></div>'
-    )
-    C = A.dup(dtype=bool)
-    html_printer(C & C, "C & C")
-    assert repr_html(C & C) == (
-        "<div>"
-        f"{CSS_STYLE}"
-        '<details open class="gb-arg-details"><summary class="gb-arg-summary"><tt><b>gb.MatrixEwiseMultExpr</b></tt>&nbsp;<span class="expr-tooltip"><span class="tooltip-circle">?</span><span class="tooltip-text"><em>Do <code>op(expr)</code> to create a <tt>MatrixExpression</tt> for <tt>ewise_mult</tt>.<br>For example: <code>times(M<sub>2</sub> & M<sub>2</sub>)</code></em></span></span><div>\n'
-        '<table class="gb-info-table">\n'
-        "  <tr>\n"
-        '    <td rowspan="2" class="gb-info-name-cell"><pre>M<sub>2</sub> & M<sub>2</sub></pre></td>\n'
-        "    <td><pre>nvals</pre></td>\n"
-        "    <td><pre>nrows</pre></td>\n"
-        "    <td><pre>ncols</pre></td>\n"
-        "    <td><pre>dtype</pre></td>\n"
-        "  </tr>\n"
-        "  <tr>\n"
-        "    <td>3</td>\n"
-        "    <td>1</td>\n"
-        "    <td>5</td>\n"
-        "    <td>BOOL</td>\n"
-        "  </tr>\n"
-        "</table>\n"
-        "</div>\n"
-        "</summary><div>\n"
-        "<style scoped>\n"
-        "    .dataframe tbody tr th:only-of-type {\n"
-        "        vertical-align: middle;\n"
-        "    }\n"
-        "\n"
-        "    .dataframe tbody tr th {\n"
-        "        vertical-align: top;\n"
-        "    }\n"
-        "\n"
-        "    .dataframe thead th {\n"
-        "        text-align: right;\n"
-        "    }\n"
-        "</style>\n"
-        '<table border="1" class="dataframe">\n'
-        "  <thead>\n"
-        '    <tr style="text-align: right;">\n'
-        "      <th></th>\n"
-        "      <th>0</th>\n"
-        "      <th>1</th>\n"
-        "      <th>2</th>\n"
-        "      <th>3</th>\n"
-        "      <th>4</th>\n"
-        "    </tr>\n"
-        "  </thead>\n"
-        "  <tbody>\n"
-        "    <tr>\n"
-        "      <th>0</th>\n"
-        "      <td>False</td>\n"
-        "      <td></td>\n"
-        "      <td>True</td>\n"
-        "      <td></td>\n"
-        "      <td>True</td>\n"
-        "    </tr>\n"
-        "  </tbody>\n"
-        "</table>\n"
-        "</div></details></div>"
     )
 
 

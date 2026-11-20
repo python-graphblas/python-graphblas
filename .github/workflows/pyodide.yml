@@ -1,0 +1,104 @@
+name: Pyodide
+
+# Test python-graphblas under Pyodide (WebAssembly). It is installed from the wheel this
+# checkout builds, with its dependencies, so the dependency markers in pyproject.toml are
+# tested too.
+#
+# MAINT: the versions are pinned, so a new Pyodide or pyodide-build release changes nothing
+# here until they are updated. To update, take the newest pyodide-build
+# (PYODIDE_BUILD_VERSION below), run `pyodide xbuildenv search --all` with it to see which
+# Pyodide versions it supports (without --all, it lists only those for the Python running it),
+# and set each matrix row to one of them and to the Python version that Pyodide version was
+# built with (in the search's "Python" column).
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+# Cancels a run's identical twin only; see the note in test_and_build.yml.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  pyodide:
+    name: Pyodide ${{ matrix.pyodide }} (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # python-suitesparse-graphblas has wheels for Pyodide 314 and 0.29.4 or later
+        include:
+          - python: "3.13"
+            pyodide: "0.29.5"
+            # Not "all": its viz extra needs matplotlib 3.9, and Pyodide 0.29 has 3.8
+            extras: "default,io,test"
+          - python: "3.14"
+            pyodide: "314.0.8"
+            extras: "all"
+    env:
+      PYODIDE_BUILD_VERSION: "0.39.4"
+      PYODIDE_VERSION: ${{ matrix.pyodide }}
+      EXTRAS: ${{ matrix.extras }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # setuptools-git-versioning takes the version from the tags
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          # `pyodide venv` needs the Python version that this Pyodide was built with
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          # The python of a Pyodide venv runs Pyodide in node
+          node-version: "24"
+          package-manager-cache: false
+      - name: Build the wheel
+        run: |
+          python -m pip install build "pyodide-build==$PYODIDE_BUILD_VERSION"
+          python -m build --wheel
+      - name: Create a Pyodide venv
+        run: |
+          pyodide xbuildenv install "$PYODIDE_VERSION"
+          pyodide venv "$RUNNER_TEMP/pyodide-venv"
+          echo "PYODIDE_PYTHON=$RUNNER_TEMP/pyodide-venv/bin/python" >> "$GITHUB_ENV"
+      - name: Install the wheel with its dependencies
+        id: install
+        run: |
+          # As many extras as Pyodide can install, so pip resolves their markers too;
+          # pytest-randomly, as test_and_build.yml has it; threadpoolctl, which the Matrix
+          # Market tests use under Pyodide, as the installation guide says to
+          "$RUNNER_TEMP/pyodide-venv/bin/pip" install "$(ls dist/*.whl)[$EXTRAS]" \
+            pytest-randomly threadpoolctl
+          "$RUNNER_TEMP/pyodide-venv/bin/pip" list
+          # Run the tests from a directory that holds only the repository's conftest.py (which
+          # defines --backend and --runslow) and pyproject.toml (pytest's settings), so
+          # `import graphblas` finds the wheel, not this checkout
+          mkdir "$RUNNER_TEMP/tests"
+          cp conftest.py pyproject.toml "$RUNNER_TEMP/tests/"
+          cd "$RUNNER_TEMP/tests"
+          "$PYODIDE_PYTHON" -c "import graphblas; print(graphblas.__file__, graphblas.__version__)"
+      # `python -m pytest`, because the `pytest` script doesn't work in a Pyodide venv
+      - name: Unit tests (suitesparse backend)
+        timeout-minutes: 10
+        run: |
+          cd "$RUNNER_TEMP/tests"
+          "$PYODIDE_PYTHON" -m pytest --pyargs graphblas.tests \
+            --color=yes --randomly -v --runslow --backend=suitesparse
+      - name: Unit tests (suitesparse-vanilla backend)
+        # Also after the other backend's tests fail
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        timeout-minutes: 10
+        run: |
+          cd "$RUNNER_TEMP/tests"
+          "$PYODIDE_PYTHON" -m pytest --pyargs graphblas.tests \
+            --color=yes --randomly -v --runslow --backend=suitesparse-vanilla

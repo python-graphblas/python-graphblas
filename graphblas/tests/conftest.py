@@ -71,6 +71,21 @@ def getop(module, name):
 
 pypy = platform.python_implementation() == "PyPy"
 
+# Pyodide (WebAssembly, wasm32) differs from 64-bit platforms in ways the tests handle:
+# - It has no subprocesses and no threads, so tests that need them skip there
+#   (``skip_on_emscripten``), as do tests that hit a limit of wasm32 or a bug there.
+# - NumPy's default integer is int32 (on every 32-bit platform), so Python ints given as
+#   values infer INT32. Tests that check this inference compare with ``default_int``; tests
+#   that need INT64 for another reason give it as the dtype. As a python-graphblas dtype,
+#   ``int`` is INT64 on every platform, unlike ``int`` as a NumPy dtype.
+emscripten = sys.platform == "emscripten"
+default_int = np.dtype(int)
+
+
+def skip_on_emscripten(reason):
+    """Skip a test under Pyodide (WebAssembly); ``reason`` says why it cannot run there."""
+    return pytest.mark.skipif(emscripten, reason=f"Pyodide (WebAssembly): {reason}")
+
 
 def pytest_configure(config):
     # Under ``pytest -n`` (xdist), each worker runs ``pytest_configure``. The

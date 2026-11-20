@@ -15,6 +15,8 @@ from graphblas.core import _supports_udfs as supports_udfs
 from graphblas.core.utils import _distinct_buffers, values_to_numpy_buffer
 from graphblas.exceptions import InvalidValue
 
+from .conftest import skip_on_emscripten
+
 if backend != "suitesparse":
     pytest.skip("gb.ss and A.ss only available with suitesparse backend", allow_module_level=True)
 
@@ -56,9 +58,9 @@ def test_vector_head(do_iso):
         v2 = _iso_vector([1, 3, 5], values2[0], 6)  # bitmap
         v3 = _iso_vector([100, 200, 300], values3[0], 301)  # sparse
     else:
-        v1 = Vector.from_coo([0, 1, 2], values1)  # full
-        v2 = Vector.from_coo([1, 3, 5], values2)  # bitmap
-        v3 = Vector.from_coo([100, 200, 300], values3)  # sparse
+        v1 = Vector.from_coo([0, 1, 2], values1, dtype=int)  # full
+        v2 = Vector.from_coo([1, 3, 5], values2, dtype=int)  # bitmap
+        v3 = Vector.from_coo([100, 200, 300], values3, dtype=int)  # sparse
     assert v1.ss.export()["format"] == "full"
     assert v2.ss.export()["format"] == "bitmap"
     assert v3.ss.export()["format"] == "sparse"
@@ -115,10 +117,10 @@ def test_matrix_head(do_iso):
         A3 = _iso_matrix([5, 5, 10], [4, 5, 10], values3[0], 11, 11)  # CSR
         A4 = _iso_matrix([500, 500, 1000], [400, 500, 1000], values4[0], 1001, 1001)  # HyperCSR
     else:
-        A1 = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], values1)  # fullr
-        A2 = Matrix.from_coo([0, 0, 1], [0, 1, 1], values2)  # Bitmap
-        A3 = Matrix.from_coo([5, 5, 10], [4, 5, 10], values3)  # CSR
-        A4 = Matrix.from_coo([500, 500, 1000], [400, 500, 1000], values4)  # HyperCSR
+        A1 = Matrix.from_coo([0, 0, 1, 1], [0, 1, 0, 1], values1, dtype=int)  # fullr
+        A2 = Matrix.from_coo([0, 0, 1], [0, 1, 1], values2, dtype=int)  # Bitmap
+        A3 = Matrix.from_coo([5, 5, 10], [4, 5, 10], values3, dtype=int)  # CSR
+        A4 = Matrix.from_coo([500, 500, 1000], [400, 500, 1000], values4, dtype=int)  # HyperCSR
     d = A1.ss.export(raw=True)
     assert d["format"] == "fullr"
     d["format"] = "fullc"
@@ -245,6 +247,7 @@ def test_about():
     assert "library_name" in repr(about)
 
 
+@skip_on_emscripten("no threads, so no OpenMP")
 def test_openmp_enabled():
     # A SuiteSparse:GraphBLAS built without OpenMP runs single-threaded, and
     # nothing else reports it. Keep this a hard failure: it caught the conda-forge
@@ -651,6 +654,7 @@ def _run_probe(source, **env):
 
 @pytest.mark.slow
 @pytest.mark.skipif("empty is None")
+@skip_on_emscripten("no subprocesses")
 def test_import_with_libc_allocator():
     # With ``memory_manager="c"`` GraphBLAS frees with libc's ``free``, so not
     # even the copy that ``take_ownership=False`` makes may come from NumPy
@@ -701,6 +705,7 @@ print("done")
 """
 
 
+@skip_on_emscripten("no subprocesses")
 def test_take_ownership_of_one_array_twice():
     # GraphBLAS frees every buffer it takes, so an array given as two arguments
     # has to be copied for one of them. Regression: an index array given twice was
@@ -788,6 +793,7 @@ print("done")
 """
 
 
+@skip_on_emscripten("no subprocesses")
 def test_failed_secure_import_frees_once():
     # GraphBLAS moves the arrays into the object before a secure check, and
     # frees them with the object when the check fails, so they must be unclaimed
