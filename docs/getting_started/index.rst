@@ -24,6 +24,27 @@ is named ``graphblas``. The convention is to import as:
 
     >>> import graphblas as gb
 
+In the browser (Pyodide)
+++++++++++++++++++++++++
+
+python-graphblas also runs in `Pyodide <https://pyodide.org>`__ 314 (Python 3.14) and 0.29.4
+or later (Python 3.13), where PyPI has WebAssembly wheels of python-suitesparse-graphblas.
+So, in Pyodide or JupyterLite (jupyterlite-pyodide-kernel 0.8 uses Pyodide 314):
+
+.. code-block:: python
+
+    import micropip
+    await micropip.install("python-graphblas")
+
+Older versions of Pyodide don't recognize these wheels: micropip says it can't find a pure
+Python 3 wheel. What differs in Pyodide:
+
+  - GraphBLAS runs single-threaded, since Pyodide has no threads.
+  - Numba is not available, so neither are :doc:`../user_guide/udf` nor computing on
+    user-defined types.
+  - scipy's Matrix Market reader and writer start threads, so ``gb.io.mmread`` and
+    ``gb.io.mmwrite`` fail unless they run inside ``threadpoolctl.threadpool_limits(1)``.
+
 Optional Dependencies
 +++++++++++++++++++++
 
