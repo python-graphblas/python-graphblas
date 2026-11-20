@@ -4653,7 +4653,9 @@ def _coo_indptr(indices, size, name, size_name):
     indptr = np.empty(size + 1, np.uint64)
     indptr[0] = 0
     counts = np.bincount(indices.view(np.int64), minlength=size)
-    np.cumsum(counts.view(np.uint64), out=indptr[1:])
+    # counts are intp, which is int32 on 32-bit platforms such as WebAssembly, so a
+    # uint64 view of them would be wrong; cumsum casts to the dtype of `out`
+    np.cumsum(counts, out=indptr[1:])
     return indptr
 
 
