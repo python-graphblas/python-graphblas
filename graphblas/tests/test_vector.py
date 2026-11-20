@@ -1154,7 +1154,8 @@ def test_reduce_agg_empty_iso():
 def test_reduce_agg_vector_apply():
     """The aggregators that reduce a Vector with an apply and then a reduce match numpy.
 
-    So do Linfnorm, L1norm on integers, and the composites built on ``sum_of_squares``.
+    So do Linfnorm, L1norm on integers, the composites built on ``sum_of_squares``, and
+    ``logaddexp`` reduced with one dot product instead.
     """
     rng = np.random.default_rng(0)
     vals = rng.standard_normal(10000)
@@ -1163,6 +1164,16 @@ def test_reduce_agg_vector_apply():
     assert v.reduce(agg.hypot).new().isclose(np.sqrt(np.sum(vals**2)))
     assert v.reduce(agg.logaddexp).new().isclose(np.logaddexp.reduce(vals))
     assert v.reduce(agg.logaddexp2).new().isclose(np.logaddexp2.reduce(vals))
+    # The same recipe without `vector_apply` reduces with one dot product, `init.T @ v`
+    dot_logaddexp = agg.Aggregator(
+        "dot_logaddexp",
+        initval=np.e,
+        semiring=semiring.plus_pow,
+        switch=True,
+        semiring2=semiring.plus_first,
+        finalize=unary.log,
+    )
+    assert v.reduce(dot_logaddexp).new().isclose(np.logaddexp.reduce(vals))
     assert v.reduce(agg.Linfnorm).new() == np.abs(vals).max()
     assert v.reduce(agg.varp).new().isclose(np.var(vals))
     assert v.reduce(agg.stds).new().isclose(np.std(vals, ddof=1))
