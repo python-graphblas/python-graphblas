@@ -1064,13 +1064,19 @@ def test_one_sided_broadcast_operand_is_gathered():
 
 
 def test_clip_fill_uses_numpys_array_loop():
-    # numpy's 0-d clip breaks a tie differently from its array loop, which the fill follows
-    # (these results store nothing, and the oracle ignores the sign of an unstored zero)
+    # numpy's 0-d clip breaks a tie differently from its array loop, which the fill follows:
+    # clip(0.0, -0.0) is -0.0 in the array loop and 0.0 on 0-d arrays. These results store
+    # nothing, and assert_array_equal ignores the sign of an unstored zero, so the sign of the
+    # fill is checked directly.
     x = xp.full((3,), 0.0)
     lo = xp.full((3,), -0.0)
     a, b = np.zeros(3), np.full(3, -0.0)
-    assert_array_equal(xp.clip(x, min=lo, max=0.5), np.clip(a, b, 0.5))
-    assert_array_equal(xp.clip(x, min=-0.0, max=0.5), np.clip(a, -0.0, 0.5))
+    for out, expected in [
+        (xp.clip(x, min=lo, max=0.5), np.clip(a, b, 0.5)),
+        (xp.clip(x, min=-0.0, max=0.5), np.clip(a, -0.0, 0.5)),
+    ]:
+        assert_array_equal(out, expected)
+        assert np.signbit(out.fill_value) == np.signbit(expected[0])
 
 
 def _spec_pow(x1, x2):
