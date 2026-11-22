@@ -1,46 +1,23 @@
-"""Guard the auto-generated expression surface against silent drift.
+"""Check that the expression classes have the public methods and properties of their types.
 
-``graphblas/core/automethods.py`` is a generated-code module. Its name sets
-(near line 347) drive ``scripts/autogenerate.py``, which copies auto-compute
-properties onto the expression classes (``VectorExpression`` /
-``VectorIndexExpr`` / ``VectorInfixExpr`` and the Scalar/Matrix equivalents) so
-that, for example, ``(A @ B).to_coo()`` works without a manual ``.new()`` first.
-The same generator run emits the surface onto the infix classes too (the
-infix.py branch of ``automethods._main()``), minus the private ``_get_value``
-helper, so the infix classes must carry the identical public surface.
+``scripts/autogenerate.py`` copies auto-compute properties, named by the sets in
+``automethods._main``, onto the expression classes of Vector, Matrix and Scalar (plain,
+index and infix), so that ``(A @ B).to_coo()`` works without ``.new()``. A public method
+added to a type but not to those sets would be missing from its expressions with nothing
+else failing. For each type and for ``TransposedMatrix``, these tests check that:
 
-The trap this module closes: add a public method to ``Matrix``/``Vector``/
-``Scalar``, forget to add its name to the sets and rerun the generator, and
-nothing fails. The expression classes silently lack the method, but the concrete
-types have it, so CI stays green. A name that lands on the plain expression
-classes but is missing from the infix classes slips through the same way.
+1. Every public method and property is on all of its expression classes, or is in
+   ``OPT_OUT`` with a reason. Mutators, constructors and metadata do not auto-compute.
+2. Every generated name still exists on the type, so a renamed method fails here with
+   the set entry to update.
+3. Every ``OPT_OUT`` entry exists and is not generated.
 
-The tests here assert, for each concrete type and for ``TransposedMatrix``:
-
-1. Forward: every public method/property is EITHER reachable on ALL of the
-   expression classes (plain, index, and infix) via auto-compute OR listed in
-   ``OPT_OUT`` with a reason. Mutating methods, constructors, and cheap metadata
-   deliberately do not auto-compute.
-2. Reverse: every auto-generated name still exists on the concrete type (a
-   rename that leaves a stale set entry is caught at import already, but this
-   makes the failure legible).
-3. Hygiene: every ``OPT_OUT`` entry is a live attribute that is not in fact
-   covered, so the table cannot rot into stale excuses.
-
-Coverage is derived at runtime from what the generator actually emitted onto the
-expression classes (properties whose getter lives in the ``automethods`` module),
-intersected across every variant so a name reachable on some classes but absent
-from another (e.g. only the infix class) counts as uncovered. It is not a second
-copy of the name sets, which keeps this test honest if the sets are reorganized:
-only a real change in the generated surface moves coverage.
-
-Dunder scope: value-forwarding dunders such as ``__getitem__``, ``__contains__``,
-and ``__matmul__`` are generated and thus checked. Arithmetic and comparison
-operator sugar such as ``__add__`` and ``__lt__`` is handled by the infix
-expression system (``infixmethods.py``), not the value-forwarding automethods
-path, so it is excluded from the dunder sweep by ``_OPERATOR_SUGAR_DUNDERS``.
-Python object machinery is excluded via a baseline class so new
-interpreter-version dunders never make this test flaky.
+Coverage comes from what the generator put on the classes (properties whose getter is
+in ``automethods``), not from a second copy of the name sets. Dunders that forward to
+the computed result, such as ``__getitem__``, ``__contains__`` and ``__matmul__``, are
+checked.
+Operators such as ``__add__`` and ``__lt__`` come from ``infixmethods.py`` and are left
+out (``_OPERATOR_SUGAR_DUNDERS``), and so are Python's own dunders.
 """
 
 from graphblas.core.infix import MatrixInfixExpr, ScalarInfixExpr, VectorInfixExpr
@@ -85,9 +62,8 @@ _RAISES_MATERIALIZE = (
     "(np.asarray / bool); mirrors Matrix-expression behavior"
 )
 
-# Every public name of a concrete type that intentionally is NOT auto-computed.
-# Adding a public method almost never belongs here; it belongs in the automethods
-# name sets. This table is for the deliberate exceptions only.
+# The public names of each type that do not auto-compute, with the reason. A new
+# public method almost always belongs in the automethods name sets instead.
 OPT_OUT = {
     "Scalar": {
         "clear": _MUTATES,
@@ -151,12 +127,8 @@ OPT_OUT = {
     },
 }
 
-# Concrete type + the expression classes the generator targets for it: the plain
-# expression, the index expression, and the infix expression. Coverage is the
-# intersection across all three, so a name emitted onto some but not the infix
-# class is treated as uncovered.
-# TransposedMatrix has no expression class of its own; as a read-only Matrix view
-# it shares Matrix's generated surface.
+# Each type and its expression classes: plain, index and infix. A name is covered only
+# if all three have it. TransposedMatrix, a view of a Matrix, shares Matrix's classes.
 _REGISTRY = {
     "Scalar": (Scalar, (ScalarExpression, ScalarIndexExpr, ScalarInfixExpr)),
     "Vector": (Vector, (VectorExpression, VectorIndexExpr, VectorInfixExpr)),
@@ -172,9 +144,8 @@ class _Baseline:
     __slots__ = ()
 
 
-# Object/interpreter machinery dunders. Computed from a trivial class so that
-# version-specific additions (e.g. __firstlineno__, __static_attributes__) are
-# absorbed automatically rather than hard-coded.
+# Python's own dunders, read from an empty class so that those a new Python adds
+# (``__firstlineno__``, ``__static_attributes__``) need no entry here
 _MACHINERY_DUNDERS = (
     set(dir(_Baseline))
     | set(vars(_Baseline))
@@ -198,9 +169,8 @@ _MACHINERY_DUNDERS = (
     }
 )
 
-# Arithmetic / comparison / item-mutation sugar. These build lazy infix
-# expressions (or mutate in place) and are handled by infixmethods.py, not the
-# value-forwarding automethods path, so they are out of scope for this sweep.
+# Operators. These build infix expressions (infixmethods.py) or assign in place, so they
+# do not forward to a computed result.
 _OPERATOR_SUGAR_DUNDERS = {
     "__add__",
     "__radd__",
@@ -300,7 +270,7 @@ def _fix_hint(label, names):  # pragma: no cover (only on failure)
         f"classes ({expr_names}) and not listed in OPT_OUT[{label!r}]:\n"
         f"    {sorted(names)}\n\n"
         "If these should auto-compute on expressions, add each name to the "
-        "matching set in graphblas/core/automethods.py (the sets near line 347) "
+        "matching set in _main of graphblas/core/automethods.py "
         "and regenerate with:\n"
         "    python scripts/autogenerate.py\n\n"
         "If they must NOT auto-compute (an in-place mutator, a constructor, or "

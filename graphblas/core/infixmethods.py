@@ -330,10 +330,8 @@ for name in [
 
 
 def _main(base_dir=None, callblack=True):
-    # base_dir lets `scripts/autogenerate.py --check` redirect the write to a scratch
-    # copy of the tree; when None we regenerate infixmethods.py in place.
-    # callblack=False keeps that check hermetic: black is optional here, and letting it
-    # run would make the scratch output depend on whether it is installed.
+    # ``scripts/autogenerate.py --check`` passes the scratch directory of its copies as
+    # base_dir, and callblack=False so that the output does not depend on black
     # Run via `python -m graphblas.core.infixmethods`
     comparisons = {
         "lt": "lt",
