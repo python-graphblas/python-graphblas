@@ -496,14 +496,13 @@ def _value_formatter(fmt_str, threshold):
         try:
             mag = abs(v)
         except OverflowError:
-            # abs() of a python complex overflows for finite components near
-            # the float max, where numpy's abs returns inf. pandas computes the
-            # magnitude with numpy, so such a value is never chopped.
+            # abs() of a Python complex raises for finite components near the
+            # float max, where numpy's abs, which pandas uses, gives inf. So such
+            # a value is never chopped.
             return base(v)
-        # Chop to the value's own type of zero. pandas chops at the array
-        # level, so a chopped complex renders " 0.000000+0.000000j"; a bare
-        # float zero here would put a j-less string into the complex column,
-        # which _trim_zeros_complex cannot parse.
+        # Chop to a zero of the value's type: a float zero would put a string
+        # without "j" into a complex column, which _trim_zeros_complex cannot
+        # parse (pandas 3.0.3, whose chop does that, raises IndexError)
         return base(v) if mag > threshold else base(type(v)(0))
 
     return formatter
@@ -545,7 +544,8 @@ def _format_float_column(values, digits):
         # scalars, not Python ones, as in pandas, so it casts a complex value the same way.
         return [na_rep if (v != v) else float_format(v) for v in arr]
     seq = arr.tolist()
-    # FC32 values come in as python complex, so a threshold > 3.4e38 can chop what pandas keeps.
+    # FC32 values arrive as Python complex, whose magnitude can pass the FP32 maximum where
+    # numpy's is inf, so a chop_threshold above 3.4e38 can chop a value pandas keeps.
     threshold = _display_option("chop_threshold")
 
     def format_with(fmt_str):

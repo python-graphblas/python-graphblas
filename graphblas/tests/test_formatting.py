@@ -6854,17 +6854,14 @@ def test_chop_threshold_complex(dtype, big_str, small_str):
         [10_000, 500_000], [complex(big, big), complex(1e-7, 0)], size=10**6, dtype=dtype
     )
     with pd.option_context("display.chop_threshold", 1e-8):
-        # abs() of a python complex overflows for FC64 components near the
-        # float max; numpy's abs is inf, so nothing chops and this must render.
-        # Byte-identical to the pandas renderer, verified against 6f1eb02.
+        # abs() of a Python complex raises for FC64 components near the float max;
+        # numpy's abs is inf, so nothing chops
         r = repr(v)
         assert big_str in r
         assert small_str in r
         v._repr_html_()
-        # A value below the threshold chops to complex zero. pandas 3.0.3
-        # itself crashes on this input (its own _trim_zeros_complex cannot
-        # parse the float zero its chop substitutes into a complex column),
-        # so rendering at all is deliberately better than byte-identity.
+        # A value below the threshold chops to a complex zero. pandas 3.0.3 raises
+        # IndexError here instead, since its chop puts a float zero into the column.
         w = Vector.from_coo(
             [10_000, 500_000], [complex(1.0, 1.0), complex(5e-9, 0)], size=10**6, dtype=dtype
         )
