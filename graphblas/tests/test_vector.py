@@ -256,22 +256,28 @@ def test_update_with_a_literal_calls_the_assign_directly(monkeypatch):
         assign_literal(output, value, mask, replace)
 
     monkeypatch.setattr(graphblas.core.base, "_assign_literal", counting)
-    w = Vector(int, 3)
-    m = Vector.from_coo([0, 2], [True, False], size=3)
-    w << 1
-    w(m.S) << 2.5
-    w(~m.V, replace=True) << True
-    assert calls == [1, 2.5, True]
-    assert w.isequal(Vector.from_coo([1, 2], [1, 1], size=3), check_dtype=True)
-    calls.clear()
-    w(m.S, accum=binary.plus) << 1
-    with pytest.raises(TypeError, match="input_mask"):
-        w(input_mask=m.S) << 1
-    with gb.Recorder():
-        w(m.S) << 1
-    Vector(dtypes.UINT64, 3)(m.S) << 2**64 - 1
-    Scalar(int) << 1
-    assert calls == []
+    # Pause the session's Recorder (``--record``), under which every update takes the
+    # full path so that it is recorded
+    token = graphblas.core.base._recorder.set(None)
+    try:
+        w = Vector(int, 3)
+        m = Vector.from_coo([0, 2], [True, False], size=3)
+        w << 1
+        w(m.S) << 2.5
+        w(~m.V, replace=True) << True
+        assert calls == [1, 2.5, True]
+        assert w.isequal(Vector.from_coo([1, 2], [1, 1], size=3), check_dtype=True)
+        calls.clear()
+        w(m.S, accum=binary.plus) << 1
+        with pytest.raises(TypeError, match="input_mask"):
+            w(input_mask=m.S) << 1
+        with gb.Recorder():
+            w(m.S) << 1
+        Vector(dtypes.UINT64, 3)(m.S) << 2**64 - 1
+        Scalar(int) << 1
+        assert calls == []
+    finally:
+        graphblas.core.base._recorder.reset(token)
 
 
 @pytest.mark.skipif("not suitesparse")
