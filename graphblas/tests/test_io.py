@@ -346,10 +346,10 @@ def _block_scipy(monkeypatch):
 @pytest.mark.parametrize(
     ("weights", "got"),
     [
-        # Sequences of uniform length infer a 2-D numeric array, which passes a
-        # dtype-kind test but which from_coo would happily read as a UDT.
+        # Sequences that all have the same length give a 2-D numeric array, which
+        # passes a dtype-kind test but which from_coo would read as a UDT.
         ([[1, 2], [3, 4]], "arrays of shape (2,)"),
-        # Strings infer a 1-D <U array, so a shape test alone would let them in.
+        # Strings give a 1-D <U array, so a shape test alone would let them in.
         (["a", "b"], "dtype <U1"),
         ([2**70, 1], "dtype object"),  # beyond 64 bits
         ([object(), 1], "dtype object"),
@@ -359,8 +359,7 @@ def _block_scipy(monkeypatch):
 def test_from_networkx_rejects_weights_a_matrix_cannot_hold(
     graph_cls, weights, got, block_scipy, monkeypatch
 ):
-    # The same ValueError whether or not scipy is installed, and on any scipy:
-    # deferring to nx.to_scipy_sparse_array gave ImportError without it.
+    # The same ValueError with and without scipy
     if block_scipy:
         _block_scipy(monkeypatch)
     G = graph_cls()
@@ -410,8 +409,7 @@ def test_from_networkx_rejects_bad_nodelist():
 
 @pytest.mark.skipif("not nx")
 def test_from_networkx_multigraph_is_scipy_free(monkeypatch):
-    # A numeric-weight multigraph ingests via the direct coo path, so networkx
-    # ingest does not require scipy for it.
+    # A multigraph with numeric weights needs no scipy
     _block_scipy(monkeypatch)
     G = nx.MultiDiGraph()
     G.add_weighted_edges_from([(0, 1, 2.0), (0, 1, 3.0), (2, 0, 1.0), (1, 1, 4.0), (1, 1, 0.5)])

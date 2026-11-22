@@ -78,14 +78,11 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
 
     values = np.array(data, dtype=dtype)
     if values.ndim != 1 or values.dtype.kind not in "biufc":
-        # Two kinds of weight land here: non-numeric attributes (object arrays,
-        # which ints beyond 64 bits also give, and e.g. all-string weights, which
-        # infer a <U dtype rather than object), and sequence-valued attributes of
-        # uniform length, which infer a 2-D numeric array that from_coo would
-        # otherwise accept as a UDT. nx.to_scipy_sparse_array rejects the same
-        # weights, but asking it made the error depend on scipy: ValueError since
-        # 1.15, TypeError or a NetworkXError blaming the sparse format before, and
-        # ImportError without scipy installed.
+        # Weights a Matrix cannot hold: objects (ints beyond 64 bits give an object
+        # array too), strings (a <U array), and sequences that all have the same
+        # length, which give a 2-D array that from_coo would read as a UDT.
+        # nx.to_scipy_sparse_array rejects them too, but its error depends on the scipy
+        # version, and without scipy it raises ImportError.
         got = f"dtype {values.dtype}" if values.ndim == 1 else f"arrays of shape {values.shape[1:]}"
         raise ValueError(
             "edge weights must be bool, int (at most 64 bits), float or complex scalars; "
