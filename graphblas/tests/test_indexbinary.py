@@ -88,9 +88,9 @@ def test_untyped_call():
 
 
 def test_int_theta_beyond_its_type():
-    """An int theta its type cannot hold names the int and the type, as ``apply`` does.
+    """An int theta its type cannot hold raises an OverflowError that names the int and the type.
 
-    It was cffi's bare ``OverflowError: int too big to convert``.
+    cffi's own message, ``int too big to convert``, names neither; ``apply`` names both.
     """
 
     def add_theta(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
@@ -110,7 +110,7 @@ def test_int_theta_beyond_its_type():
 
 
 def test_index_with_too_many_types():
-    """``op[a, b, c, d]`` names what the op takes; it was ValueError from unpacking a pair."""
+    """``op[a, b, c, d]`` raises a TypeError that says how many types the op takes."""
 
     def add_theta(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
         return x + y + theta

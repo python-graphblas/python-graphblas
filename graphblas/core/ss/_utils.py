@@ -79,7 +79,7 @@ def _resolve_serialized_dtype(data_obj, data_nbytes, obj_kind):
     except (ValueError, TypeError, SyntaxError) as exc:
         orig_error = exc
     # A type registered from C source (``dtypes.ss.register_new``) has its own name as its
-    # C name, and no numpy repr in GrB_NAME (literal_eval("") raised a bare SyntaxError).
+    # C name, and no numpy repr in GrB_NAME (literal_eval("") raises SyntaxError).
     # GraphBLAS checks that it fits the blob.
     c_source_type = getattr(dtypes.ss, dtype_name, None) if dtype_name else None
     if type(c_source_type) is DataType:

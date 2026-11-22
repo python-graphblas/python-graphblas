@@ -3026,7 +3026,7 @@ def test_udt():
         vv = Vector.ss.deserialize(v.ss.serialize(), dtype=long_udt)
         assert v.isequal(vv, check_dtype=True)
         # The dtype's name is too long to store in the blob, so dtype= is needed, and the
-        # error says so (the empty GrB_NAME raised a bare SyntaxError).
+        # error says so.
         with pytest.raises(ValueError, match="pass it as dtype="):
             Vector.ss.deserialize(v.ss.serialize())
     # May be able to look up non-anonymous dtypes by name if their names are too long
@@ -3471,8 +3471,8 @@ def test_subarray_dtypes_iso():
 @pytest.mark.skipif("not suitesparse and not supports_udfs")
 def test_subarray_dtype_values_in_another_array_dtype():
     # Asked for another array dtype of the same shape, the values convert number by
-    # number. astype to the array dtype repeated each number into an element: shape
-    # (n, 4, 4), for an iso Vector too.
+    # number, for an iso Vector too. (astype to the array dtype would repeat each
+    # number into an element: shape (n, 4, 4).)
     expected = np.arange(8, dtype=np.int64).reshape(2, 4)
     v = Vector.from_coo([0, 1], expected)
     iso = Vector("INT64[4]", size=2)

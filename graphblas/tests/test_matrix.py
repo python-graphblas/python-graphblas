@@ -5194,8 +5194,8 @@ def test_ss_import_column_order_copies_once():
 @pytest.mark.skipif("not suitesparse and not supports_udfs")
 def test_subarray_dtype_values_in_another_array_dtype():
     # Asked for another array dtype of the same shape, the values convert number by
-    # number. astype to the array dtype repeated each number into an element: shape
-    # (n, 4, 4), for an iso Matrix too.
+    # number, for an iso Matrix too. (astype to the array dtype would repeat each
+    # number into an element: shape (n, 4, 4).)
     dense = np.arange(2 * 3 * 4, dtype=np.int64).reshape(2, 3, 4)
     A = Matrix.from_dense(dense)
     iso = Matrix("INT64[4]", nrows=2, ncols=3)
@@ -5291,9 +5291,9 @@ def test_ss_import_coo_with_empty_rows_and_columns():
 
 @pytest.mark.skipif("not suitesparse")
 def test_ss_export_coo_of_an_iso_udt():
-    # An iso Matrix exports as "coo" with one value. For a UDT this called
-    # GrB_Matrix_extractTuples_<name>, which does not exist (AttributeError), and the
-    # value came from a reduce, which a UDT can do only with Numba.
+    # An iso Matrix exports as "coo" with one value. For a UDT the export calls
+    # GrB_Matrix_extractTuples_UDT (there is no _<name> form) and reads the value
+    # without a reduce, which a UDT can do only with Numba.
     arr = dtypes.register_anonymous(np.dtype((np.int64, (4,))), "_IsoCooArr")
     rec = dtypes.register_anonymous(np.dtype([("a", np.int64), ("b", np.float64)]), "_IsoCooRec")
     A = Matrix.ss.import_fullr(values=[[1, 2, 3, 4]], nrows=2, ncols=3, dtype=arr, is_iso=True)

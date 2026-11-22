@@ -885,8 +885,8 @@ class ss:
                         f"GrB_Matrix_extractTuples_{dtype_name}",
                         [rows, columns, None, _Pointer(scalar), parent],
                     )
-                    # One value, of shape (1, *element) for an array UDT. It is read with
-                    # an iterator, which needs no Numba for a UDT, as reduce did.
+                    # One value, of shape (1, *element) for an array UDT. iso_value reads
+                    # it with an iterator, which needs no Numba for a UDT (a reduce does).
                     values = np.zeros(1, dtype)  # an iso Matrix with no entries has no value
                     if nvals:
                         values[0] = self.iso_value.value

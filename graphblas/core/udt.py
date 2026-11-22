@@ -305,11 +305,11 @@ def _monoid_pair_type(binaryop_name, dtype, dtype2):
 
 
 def _unary_op_type(op_name, dtype):
-    """Return the type ``unary.{op_name}`` gives on UDT ``dtype``: each leaf as on its built-in.
+    """Return the result type of ``unary.{op_name}`` on UDT ``dtype``, leaf by leaf.
 
-    Of the ops that lift, only ``abs`` changes a leaf's type: a complex number's
-    magnitude is real, as ``unary.abs`` on FC64 gives FP64 (and numpy's ``abs``
-    a float), also where the backend has no complex types.
+    Of the ops that lift, only ``abs`` changes a leaf's type. The magnitude of a
+    complex number is real, as ``unary.abs`` of FC64 returns FP64 and numpy's
+    ``abs`` returns a float. That holds where the backend has no complex types too.
     """
     if op_name != "abs":
         return dtype

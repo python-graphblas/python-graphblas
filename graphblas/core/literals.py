@@ -102,7 +102,8 @@ def _literal_operand(dtype, value, op, *, left=False):
             np_type = dtype.np_type
             if is_comparison and np_type.kind == "S" and isinstance(value, str):
                 # A str, np.str_ included, that bytes cannot hold (numpy encodes ASCII)
-                # equals no element, as in numpy; one byte longer than any, it compares so.
+                # equals no element, as in numpy. Bytes one longer than the field stand
+                # in for it, since they equal no element either.
                 if not value.isascii():
                     value = b"\xff" * (np_type.itemsize + 1)
             elif is_comparison and not isinstance(value, (np.generic, np.ndarray)):
@@ -332,7 +333,7 @@ def _own_text_type(kind, text):
     """Return the type of ``text`` that does not fit a text leaf of ``kind``: its own length.
 
     It keeps the leaf's kind, except that a str that bytes cannot hold (numpy
-    encodes ASCII) is a str, so beside bytes it equals nothing, as in numpy.
+    encodes ASCII) stays a str, so it equals no bytes element, as in numpy.
     """
     if kind == "S" and isinstance(text, str) and not text.isascii():
         kind = "U"

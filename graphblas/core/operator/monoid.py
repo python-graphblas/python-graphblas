@@ -376,7 +376,7 @@ class Monoid(OpBase):
             status = lib.GrB_Monoid_new_UDT(new_monoid, binaryop.gb_obj, identity.gb_obj)
         else:
             # An is_udt op typed for a built-in type, as a monoid over a UDF built by
-            # ``_build`` is. GrB_Monoid_new_UDT refused it with an empty DomainMismatch.
+            # ``_build`` is. GrB_Monoid_new_UDT refuses one (DomainMismatch).
             func = libget(f"GrB_Monoid_new_{ret_type.name}")
             status = func(new_monoid, binaryop.gb_obj, identity.gb_obj[0])
         check_status_carg(status, "Monoid", new_monoid[0])

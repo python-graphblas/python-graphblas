@@ -307,7 +307,7 @@ class Scalar(BaseType):
                     return False
                 try:
                     return _isclose(rel_tol, abs_tol)(self.value, other)
-                except OverflowError:  # An int too large for a float, beside a float
+                except OverflowError:  # An int too large to compare as a float
                     return False
             try:
                 other = Scalar.from_value(other, is_cscalar=None, name="s_isclose")

@@ -779,9 +779,10 @@ def test_setup_jit_leaves_the_control_alone_where_suitesparse_uses_cmake(monkeyp
 
     ``fix_jit_config()`` sets ``'on'`` whenever it finds a compiler to repair
     from (on Windows, conda's ``clang.exe`` or the build machine's ``cl.exe``),
-    so the setup compiled every kernel of this module through cmake there, as
-    UDT work does not (``_enable_jit_for_udt``). Driven through a stand-in
-    config, so it runs on every host, whether SuiteSparse was built with MSVC or not.
+    so calling it there would compile every kernel of this module through cmake,
+    which UDT work does not do (``_enable_jit_for_udt``). Driven through a
+    stand-in config, so it runs on every host, whether SuiteSparse was built with
+    MSVC or not.
     """
     calls = []
 
@@ -1222,7 +1223,7 @@ def test_jit_udt_deserializes_without_dtype(monkeypatch):
     """A type from C source is found by its C name, which the blob keeps.
 
     Such a type has no numpy repr in GrB_NAME, the fallback for a name that does not
-    resolve, so deserializing without ``dtype=`` raised a bare SyntaxError.
+    resolve, so without the C name, deserializing without ``dtype=`` would fail.
     """
     _require_jit_on()
     name = "_jit_ser_pair"
@@ -2776,8 +2777,8 @@ def test_ss_op_module_can_be_the_first_import(kind):
 
     Importing the operator package initializes the operators, which imports
     ``graphblas.binary.ss``, which takes ``register_new`` from this module. With
-    the operator imports at its top, that raised ImportError ("partially
-    initialized module"), on main too.
+    the operator imports at its top, that would raise ImportError ("partially
+    initialized module").
     """
     script = (
         f"import graphblas.core.ss.{kind} as mod\n"

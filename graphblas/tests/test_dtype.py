@@ -383,7 +383,7 @@ def test_register_anonymous_zero_size():
             dtypes.register_anonymous(dtype)
     with pytest.raises(ValueError, match="Unknown dtype") as exc_info:
         dtypes.lookup_dtype(str)
-    # The reason it cannot be registered is chained; it was dropped.
+    # The reason it cannot be registered is chained as the cause.
     assert "size of 0" in str(exc_info.value.__cause__)
 
 
@@ -416,7 +416,8 @@ def test_register_anonymous_array_numba_cannot_type():
 
 def test_register_anonymous_raw_bytes_numba_cannot_type():
     # A void dtype with no fields is raw bytes, which Numba cannot type, alone or in
-    # an array or record. Its own error was "NumbaNotImplementedError: |V4" in color.
+    # an array or record. The error names it and suggests an array of uint8, where
+    # Numba's own says only "NumbaNotImplementedError: |V4", in terminal colors.
     for np_type, raw in [
         (np.dtype("V4"), "V4"),
         (np.dtype(("V4", (2,))), "V4"),
