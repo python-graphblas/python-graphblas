@@ -129,11 +129,11 @@ def test_draw_rejects_non_matrix():
 
 @pytest.mark.parametrize(("nrows", "ncols"), [(2, 5), (5, 2)])
 def test_draw_rejects_non_square(nrows, ncols):
-    # Drawn, a rectangular Matrix would be a graph of its rows and whichever columns
-    # have entries
+    # to_networkx refuses a Matrix that is not square, so draw does too
     _importorskip("networkx")
     M = Matrix.from_coo([0, 1], [1, 0], [1.0, 2.0], nrows=nrows, ncols=ncols)
-    with pytest.raises(ValueError, match=rf"square Matrix, not shape \({nrows}, {ncols}\)"):
+    match = rf"to_networkx needs a square Matrix, not shape \({nrows}, {ncols}\)"
+    with pytest.raises(ValueError, match=match):
         viz.draw(M)
 
 
