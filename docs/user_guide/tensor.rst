@@ -7,7 +7,7 @@ Tensors (experimental)
 
     **THIS API IS EXPERIMENTAL AND MAY CHANGE.** ``Tensor`` and ``einsum`` are new, and their
     names, defaults and behavior may change in any release. They need the ``suitesparse``
-    backend with SuiteSparse:GraphBLAS 10 or later; on the vanilla backend they import, and
+    backend with SuiteSparse:GraphBLAS 10 or later. On the vanilla backend they import, but
     using them raises ``NotImplementedError``.
 
 A **Tensor** is an n-dimensional sparse array: a Matrix and a Vector generalized to any
@@ -30,9 +30,9 @@ The examples below assume:
 The model: logical shape and stored layout
 ------------------------------------------
 
-A Tensor stores its entries in one SuiteSparse Matrix, held by row, plus a **layout**: which
-logical axes are raveled (in C order, in the order given) into the Matrix's rows, and which
-into its columns. The shape is always the logical one; the layout is how it is stored.
+A Tensor stores its entries in one SuiteSparse Matrix, stored by row, plus a **layout**:
+which logical axes are raveled (in C order, in the order given) into the Matrix's rows, and
+which into its columns. The shape is always the logical one; the layout is how it is stored.
 
 .. code-block:: python
 
@@ -52,11 +52,10 @@ into its columns. The shape is always the logical one; the layout is how it is s
     >>> X.shape, X.ndim, X.size, X.nvals
     ((2, 3, 4), 3, 24, 3)
 
-``(0|1,2)`` is short for that layout. Shape operations change only the layout, in O(1), and
-share the data. Operations move the data to another layout when they need one (a planned
-"relayout"), so the layout is mostly something to know about, not to manage. Tensors that
-share stored data copy it before one of them changes (copy-on-write), so a Tensor never sees
-another's writes.
+``(0|1,2)`` is short for that layout. Most shape operations change only the layout, in O(1),
+and share the data. Other operations move the data to another layout when they need one, so
+you rarely need to manage the layout yourself. Tensors that share stored data copy it before
+one of them changes (copy-on-write), so a Tensor never sees another's writes.
 
 Construction
 ------------
@@ -74,14 +73,15 @@ Construction
     (2, 2)
     >>> Tensor.from_matrices([A, A, A], axis=0).shape  # stacked along a new axis
     (3, 2, 2)
-    >>> Tensor.from_matrix(A).isequal(A)  # isequal and isclose take a Matrix, Vector or Scalar
+    >>> Tensor.from_matrix(A).isequal(A)  # isequal and isclose accept a Matrix, Vector or Scalar
     True
     >>> A.isequal(Tensor.from_matrix(A))  # and a Matrix or Vector compares with a Tensor
     True
 
-``from_coo`` takes one index array per axis (the ``np.nonzero`` form) or an ``(ndim, nvals)``
-array, and ``layout=`` to choose the stored layout (kept by later updates). Conversions out
-are ``to_coo``, ``to_dense``, ``to_matrix``, ``to_vector`` and ``to_scalar``.
+``from_coo`` accepts one index array per axis (the form ``np.nonzero`` returns) or one
+``(ndim, nvals)`` array. Its ``layout=`` argument chooses the stored layout, which later
+updates keep. Conversions out are ``to_coo``, ``to_dense``, ``to_matrix``, ``to_vector`` and
+``to_scalar``.
 
 Shape operations
 ----------------
@@ -103,11 +103,11 @@ Shape operations
     ...
     ValueError: reshape from (2, 3, 4) to (6, 4) with copy=False: the layout (0|1,2) does not hold the result, so the data would move
 
-``reshape`` (C order, one size may be -1) is a view, in O(1), when each run of axes it splits
-or fuses lies within one group of the layout, in order; otherwise the data moves once.
-``copy=False`` raises where it would move, as in the Array API. ``ravel()`` and ``flatten()``
-are ``reshape(-1)`` and ``reshape(-1, copy=True)``. ``relayout(layout)`` stores a Tensor in a
-layout of your choice.
+``reshape`` works in C order, and one size may be -1. It is a view, in O(1), when each run of
+axes it splits or fuses lies within one group of the layout, in order; otherwise the data
+moves once. ``copy=False`` raises where the data would move, as in the Array API. ``ravel()``
+and ``flatten()`` are ``reshape(-1)`` and ``reshape(-1, copy=True)``. ``relayout(layout)``
+returns the Tensor stored in a layout of your choice.
 
 Element-wise operations and broadcasting
 ----------------------------------------
@@ -123,7 +123,7 @@ Operations are lazy: ``.new()`` computes them.
 .. code-block:: python
 
     >>> v = gb.Vector.from_coo([0, 3], [10.0, 20.0], size=4)
-    >>> (X * v).new(name="Xv")  # v broadcast along the last axis, as in numpy
+    >>> (X * v).new(name="Xv")  # v broadcasts along the last axis, as in numpy
     gb.Tensor  "Xv"  nvals 2  shape (2, 3, 4)  dtype FP64  layout (0|1,2)  format bitmapr
     entries:
       (0, 1, 3): 20.0
@@ -132,11 +132,12 @@ Operations are lazy: ``.new()`` computes them.
     array([2., 4., 6.])
     >>> X.apply(unary.ainv).new().to_coo()[1]
     array([-1., -2., -3.])
-    >>> X.select(gb.select.valuelt, 3.0).new().nvals  # value selectors only
+    >>> X.select(gb.select.valuelt, 3.0).new().nvals  # only value selectors work
     2
 
-A union with a broadcast operand replicates it over the broadcast axes. That is refused past
-``gb.config["tensor_max_expansion"]`` entries unless ``allow_expansion=True`` is given.
+A union with a broadcast operand replicates it over the broadcast axes. When that would make
+more than ``gb.config["tensor_max_expansion"]`` entries, it raises ``ValueError`` unless you
+pass ``allow_expansion=True``.
 
 Reductions
 ----------
@@ -154,8 +155,8 @@ Reductions
 A fiber with no entries stays missing (no initial value), as in GraphBLAS. ``sum``, ``prod``,
 ``min``, ``max``, ``any`` and ``all`` are shorthands for ``reduce`` with the matching monoid.
 
-``reduce`` also takes the aggregators that are one monoid or one semiring, with the results
-and result types Matrix gives:
+``reduce`` also accepts the aggregators made of one monoid or one semiring, with the same
+results and result types as for Matrix:
 
 .. code-block:: python
 
@@ -192,19 +193,18 @@ the leading axes as batch axes; ``einsum`` takes numpy's subscripts and any semi
     array([[3., 3.],
            [3., 3.]])
 
-``einsum`` with three or more operands picks a pairwise order (``opt_einsum`` when it is
-installed), and recognizes the MTTKRP pattern (``"ijk,jr,kr->ir"``), when the semiring's
-multiply distributes over its monoid and commutes (``plus_times``, ``min_plus``, ``max_plus``,
-...; exact up to floating-point rounding and integer overflow). Otherwise it multiplies the
-operands of each term left to right, and with a multiply that does not distribute
-(``plus_pair``, ``plus_first``, ``max_times``, ...) it forms every term before summing, which
-takes more memory.
+With three or more operands, ``einsum`` contracts them in pairs when the semiring's multiply
+distributes over its monoid, as with ``plus_times``, ``min_plus`` and ``max_plus``. The result
+is then exact up to floating-point rounding and integer overflow. When the multiply also
+commutes, ``einsum`` chooses the order of the pairs (with ``opt_einsum`` when it is
+installed) and computes the MTTKRP pattern (``"ijk,jr,kr->ir"``) with ``mttkrp``. With other
+semirings (``plus_pair``, ``plus_first``, ``max_times``, ...) it multiplies the operands of
+each term left to right and forms every term before summing, which takes more memory.
 
 A contraction moves an operand whose layout does not suit it, and does not keep the moved
 copy. In a loop that contracts the same Tensor every step (a PageRank or a path query), store
 it once in the layout the contraction uses: ``E = E.relayout(((0, 1), (2, 3)))`` for
-``einsum("qu,qupv->pv", F, E)``, which contracts axes 0 and 1. That made a regular path query
-on Hetionet 17-27x faster.
+``einsum("qu,qupv->pv", F, E)``, which contracts axes 0 and 1.
 
 Masks and updates
 -----------------
@@ -237,10 +237,8 @@ not numpy's two elements).
     1.0
 
 A repeated index repeats its slice, as with ``np.ix_``: ``X[:, [1, 1]]`` is 2 x 2 x 4. A
-negative index counts from the end. An index out of range raises what Matrix raises for the
-same key: ``IndexError`` for an int, or for any index below ``-size``; otherwise
-``InvalidIndex`` (assigning to one element, or extracting with a Scalar out of range) or
-``IndexOutOfBound``, as GraphBLAS reports it.
+negative index counts from the end. An index out of range raises the exception Matrix raises
+for the same key (``IndexError``, ``IndexOutOfBound`` or ``InvalidIndex``).
 
 Assignment by index
 -------------------
@@ -248,8 +246,8 @@ Assignment by index
 ``T[...] = value`` and ``T[...] << value`` assign to the region the outer index selects, with
 GraphBLAS assign semantics, as for Matrix. The value is a Tensor, Matrix, Vector, Scalar or
 Python scalar and broadcasts against the region as in numpy (a Scalar fills it). Without
-``accum``, the region takes the value's structure: an entry the value is missing deletes the
-region's entry there. With ``accum``, the value's entries combine with the region's.
+``accum``, the region takes the value's structure: where the value has no entry, the region's
+entry is deleted. With ``accum``, the value's entries combine with the region's.
 
 .. code-block:: python
 
@@ -281,13 +279,13 @@ only there.
 .. code-block:: python
 
     >>> R = Tensor.from_dense(np.eye(3, 4, dtype=bool), missing_value=False)  # a 3 x 4 mask
-    >>> Y[1](R.S) << 9.0  # only where the mask is
+    >>> Y[1](R.S) << 9.0  # only where the mask has entries
     >>> Y[1].new().to_dense(fill_value=0)
     array([[9., 0., 0., 6.],
            [0., 9., 0., 6.],
            [0., 0., 9., 6.]])
 
-A repeated index assigns its last value given, and with ``accum`` the region's value
+A repeated index assigns the last value given for it, and with ``accum`` the region's entry
 combines with that one value, as in Matrix assignment.
 
 Gathering elements
@@ -311,9 +309,9 @@ They compute at once and return a Tensor.
            [3., 0., 0.]])
 
 ``vindex`` broadcasts its index arrays together, as numpy does. A negative index counts
-from the end, once; ``wraparound=False`` (``T.vindex(wraparound=False)[...]``) raises
-``IndexError`` for negative indices instead. An index out of range raises ``IndexError``,
-except that ``take`` has numpy's ``mode="wrap"`` and ``mode="clip"``.
+from the end; with ``wraparound=False`` (``T.vindex(wraparound=False)[...]``) it raises
+``IndexError`` instead. An index out of range raises ``IndexError``, except that ``take`` has
+numpy's ``mode="wrap"`` and ``mode="clip"``.
 
 Input and output
 ----------------
@@ -325,16 +323,17 @@ Input and output
     >>> Tensor.from_scipy_sparse(S).isequal(X)
     True
 
-scipy.sparse has n-d COO arrays (more than 2 dimensions) from scipy 1.15 on. With an older
-scipy, ``to_scipy_sparse`` of those ranks raises ``NotImplementedError``; 1-d and 2-d
+``to_scipy_sparse`` of a Tensor with more than 2 dimensions needs scipy 1.15 or later, which
+added n-d COO arrays; with an older scipy it raises ``NotImplementedError``. 1-d and 2-d
 Tensors convert with any scipy that python-graphblas supports.
 
 ``from_pydata_sparse`` and ``to_pydata_sparse`` convert to and from pydata/sparse arrays
-(COO, GCXS, DOK). A GCXS array is the Tensor's own storage (its compressed axes as rows),
-so it converts with one copy of each array. Its row pointer has one slot per position of the
-compressed axes, so a GCXS export takes memory by the product of their lengths, not by the
-entries (two compressed axes of 2^20 make 2^40 slots): choose ``compressed_axes`` to keep
-that product small. A COO export takes memory by the entries.
+(COO, GCXS, DOK). A GCXS array stores its data the way a Tensor does (its compressed axes as
+rows), so it converts with one copy of each array. Its row pointer has one slot per position
+of the compressed axes, so a GCXS export takes memory in proportion to the product of their
+lengths, not to the number of entries: two compressed axes of length 2^20 make 2^40 slots.
+Choose ``compressed_axes`` to keep that product small. A COO export takes memory in
+proportion to the entries.
 
 Engines
 -------
@@ -345,35 +344,34 @@ Some operations have more than one implementation, chosen per call:
   GraphBLAS products.
 - **TTM** (``tensordot`` of one axis with a factor) runs one SuiteSparse product with
   array-valued entries when the SuiteSparse JIT is on, a Numba kernel, or GraphBLAS
-  products; the choice follows measurements.
+  products, whichever measured faster for the case.
 - **Gathers** run one SuiteSparse extract when the result is a product of index lists
   (``take``), else a Numba binary search over the stored arrays, else (without Numba)
   a SuiteSparse intersection with the points as a pattern Matrix.
 
-The MTTKRP and TTM engines other than the products need full float64 factors and
-``plus_times`` with a float64 result. The tensor's values may be bool, integers, float32 or
-float64 (count data often loads as int64 or bool), each converted to float64 as GraphBLAS's
-typecast does; there is no need to cast first. Integer factors give an integer result,
-which wraps on overflow, and complex values a complex one: those take the GraphBLAS
-products, as do other semirings.
+The Numba and JIT engines for MTTKRP and TTM need full float64 factors and ``plus_times``
+with a float64 result. The Tensor's own values may be bool, integer, float32 or float64
+(count data often loads as int64 or bool); they are converted to float64 as GraphBLAS
+typecasts them, so there is no need to cast first. Other cases use the GraphBLAS products:
+integer factors, which give an integer result that wraps on overflow; complex values, which
+give a complex result; and other semirings.
 
 The Numba kernels are compiled on first use and cached on disk, under
 ``$GRAPHBLAS_KERNEL_CACHE`` (by default ``python-graphblas/tensor-kernels`` under
 ``$XDG_CACHE_HOME`` or ``~/.cache``; an empty value turns the cache off). When the JIT
 engine runs, it raises SuiteSparse's JIT control from its default ``"run"`` to ``"on"``, as
-user-defined types do (see :doc:`udt`); a case it leaves to another engine leaves the
-control as it was. If a compile fails, it warns once, another engine runs, and the control
-stays at ``"load"``, as after any failed compile, so later operations do not try to compile
-again. Every engine gives the same results, up to the order of floating-point sums; only the
-speed differs.
+user-defined types do (see :doc:`udt`). A case it leaves to another engine leaves the control
+as it was. If a compile fails, the engine warns once and another engine runs. The control
+then stays at ``"load"``, as after any failed compile, so later operations do not try to
+compile again. Every engine computes the same results, up to the order of floating-point
+sums; only the speed differs.
 
 Limits
 ------
 
-- Experimental: names and behavior may change.
 - No ``...`` and no repeated index (diagonal) in ``einsum``; no Tensor or Vector as
   indices.
 - No fill value: a missing entry has no value (as in all of python-graphblas).
-- Each group of the layout holds at most 2\ :sup:`60` positions (a Matrix dimension).
+- Each group of the layout has at most 2\ :sup:`60` positions (a Matrix dimension).
 - The ``suitesparse`` backend with SuiteSparse:GraphBLAS 10 or later only.
 - scipy.sparse conversion of more than 2 dimensions needs scipy 1.15 or later.
