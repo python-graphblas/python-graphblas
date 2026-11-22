@@ -6837,7 +6837,6 @@ def test_vector_as_matrix():
     )
 
 
-@pytest.mark.skipif("not pd")
 @pytest.mark.skipif("not dtypes._supports_complex")
 @pytest.mark.parametrize(
     ("dtype", "big_str", "small_str"),
@@ -6853,7 +6852,7 @@ def test_chop_threshold_complex(dtype, big_str, small_str):
     v = Vector.from_coo(
         [10_000, 500_000], [complex(big, big), complex(1e-7, 0)], size=10**6, dtype=dtype
     )
-    with pd.option_context("display.chop_threshold", 1e-8):
+    with display_options("display.chop_threshold", 1e-8):
         # abs() of a Python complex raises for FC64 components near the float max;
         # numpy's abs is inf, so nothing chops
         r = repr(v)
