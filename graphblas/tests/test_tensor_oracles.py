@@ -2,7 +2,7 @@
 
 Each oracle draws random cases (shapes of 1-5 dims with size-1 axes, random layouts and
 permuted views, iso values and explicit zeros, masks, accumulators) and compares every result
-with an independent numpy model of its values and of which positions hold a value. The models
+with an independent numpy model of its values and of which positions have a value. The models
 share no code with ``test_tensor.py`` or with the implementation. The Tensor is used through
 its public API, except for the switches that force an engine (``_TTM_ENGINES``,
 ``_MTTKRP_ENGINES``, ``tensor_index._GATHER_ENGINES``, ``_has_numba``, the kernels' size
@@ -74,7 +74,7 @@ def _restore_nthreads():
 
 @contextlib.contextmanager
 def census():
-    """The census's records while the block runs; what it held before is put back."""
+    """The census's records while the block runs; the records from before are put back."""
     was_on, saved = tensor_census.on, list(tensor_census.records)
     tensor_census.start()
     try:
@@ -89,7 +89,7 @@ def choices(records, start, point):
 
 
 # ---------------------------------------------------------------------------------------------
-# Models: dense values plus a boolean array of the positions that hold a value
+# Models: dense values plus a boolean array of the positions that have a value
 
 
 def rand_model(rng, shape, density=0.4, *, kind=None):
@@ -111,7 +111,7 @@ def random_layout(rng, ndim):
 
 
 def build(rng, values, present, *, view=True, dtype=None):
-    """A Tensor holding the model, in a random layout, or as a permuted view of a Tensor
+    """A Tensor of the model, in a random layout, or as a permuted view of a Tensor
     built in another axis order.
     """
     ndim = values.ndim
@@ -792,7 +792,7 @@ def assign_model(cv, cp, key, vv, vp, mask, how, accum, replace, region_shape, t
 
 
 def make_object(rng, kind, values, present):
-    """A Matrix, Vector, Scalar or Tensor (in a random layout) holding the model."""
+    """A Matrix, Vector, Scalar or Tensor (in a random layout) of the model."""
     if kind == "scalar" or values.ndim == 0:
         if present[()]:
             return Scalar.from_value(float(values[()]))
@@ -989,7 +989,7 @@ def oracle_einsum(rng, n, teeth=False):
         out = "".join(c for c in present if rng.random() < 0.5)
         specs.append((",".join(terms) + "->" + out, {c: int(rng.integers(1, 5)) for c in present}))
     for case in range(n):
-        spec, sizes = specs[case % len(specs)]  # reused, so a cached plan meets new layouts
+        spec, sizes = specs[case % len(specs)]  # reused, so a cached plan sees new layouts
         ins, out = spec.split("->")
         models = [rand_model(rng, tuple(sizes[c] for c in t), kind="int") for t in ins.split(",")]
         operands = [build(rng, v, p) for v, p in models]

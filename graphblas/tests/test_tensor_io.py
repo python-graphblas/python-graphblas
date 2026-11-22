@@ -24,8 +24,6 @@ except ImportError:  # (pydata sparse needs Numba)
     sparse = None
 needs_sparse = pytest.mark.skipif(sparse is None, reason="needs pydata sparse")
 
-pytestmark = pytest.mark.skipif(backend != "suitesparse", reason="Tensor needs SuiteSparse")
-
 SHAPES = [(), (7,), (4, 5), (3, 4, 5), (2, 3, 4, 3), (2, 2, 3, 2, 3)]
 DTYPES = [
     np.bool_,
@@ -73,7 +71,7 @@ def _c_order(coords, shape):
 
 
 def _todense(s):
-    """``s.todense()``, but a 0-d COO with an entry gives its value: pydata sparse before
+    """``s.todense()``, but a 0-d COO with an entry returns its value: pydata sparse before
     0.16 fails to make that one dense (``x[()] = data`` with ``data`` of length 1).
     """
     if s.shape == () and s.nnz and isinstance(s, sparse.COO):
@@ -116,8 +114,9 @@ def test_pydata_round_trip(shape, dtype):
 @needs_sparse
 @pytest.mark.parametrize("ndim", [2, 3, 4, 5])
 def test_pydata_gcxs_compressed_axes(ndim):
-    """GCXS with any compressed axes imports into that layout; export uses the Tensor's
-    layout when GCXS can hold it, else the axes asked for, or the cheapest it can hold.
+    """GCXS with any compressed axes imports into that layout. Export uses the compressed axes
+    asked for; by default, the Tensor's layout when GCXS can store it as is, else the cheapest
+    layout GCXS can store.
     """
     rng = np.random.default_rng(ndim)
     shape = SHAPES[ndim]
@@ -192,8 +191,8 @@ def test_pydata_views_and_layouts(ndim):
 def test_pydata_gcxs_repeated_or_unsorted_columns():
     """A GCXS whose rows repeat a column, or list them out of order (pydata checks neither),
     imports as pydata's todense reads it: repeats summed (or combined with ``dup_op``). Its
-    arrays were imported as they were, which made a Matrix SuiteSparse finds invalid
-    (``GxB_Matrix_fprint``: GrB_INVALID_OBJECT) holding both entries.
+    arrays imported as they are would make a Matrix with both entries, which SuiteSparse finds
+    invalid (``GxB_Matrix_fprint``: GrB_INVALID_OBJECT).
     """
     from graphblas.core import ffi, lib
 
@@ -263,8 +262,8 @@ def _no_huge_csr(monkeypatch):
 def test_pydata_gcxs_past_2_60(monkeypatch):
     """Past 2^60 positions: a GCXS whose column group is no Matrix dimension imports through
     COO, and the GCXS export compresses the axes with the fewest groups even when no Matrix
-    could hold their columns. It used to compress (0, 1), a row pointer of 16 GiB for two
-    entries, and GitHub's 16 GB runners were killed.
+    could hold their columns. Compressing (0, 1) would take a row pointer of 16 GiB for two
+    entries, enough to kill a 16 GB CI runner; ``_no_huge_csr`` fails the test first.
     """
     _no_huge_csr(monkeypatch)
     shape = (2, 2**30, 2**31)
@@ -340,9 +339,9 @@ def test_pydata_gcxs_past_2_63_round_trip(monkeypatch):
 
 @needs_sparse
 def test_pydata_gcxs_row_pointer_follows_the_entries():
-    """A few entries in a layout of 2^26 groups export by the entries, not the groups. The
-    export kept the Tensor's layout whatever its row pointer cost: here 512 MiB, and a peak
-    of 770 MiB. This shape keeps that affordable, so a regression fails the assertion.
+    """A few entries in a layout of 2^26 groups export by the entries, not the groups. Keeping
+    the Tensor's layout whatever its row pointer costs would take 512 MiB here (a peak of 770
+    MiB), which this shape keeps affordable, so that failure shows as a failed assertion.
     """
     import tracemalloc
 
@@ -351,8 +350,8 @@ def test_pydata_gcxs_row_pointer_follows_the_entries():
     T = Tensor.from_coo(coords, [1.0, 2.0, 3.0], shape=shape, layout=((0, 1), (2,)))
     # pydata/sparse 0.19.3 and later check a GCXS's arrays with a Numba function, compiled at
     # its first call for each dtype of the values and indices: 2.3-2.4 MB that tracemalloc
-    # counts, and more as the process's first Numba compile. So the test failed whenever no
-    # earlier test had exported FP64 to GCXS. A small export of the same dtype compiles it
+    # counts, and more as the process's first Numba compile, so the test would fail whenever no
+    # earlier test has exported FP64 to GCXS. A small export of the same dtype compiles it
     # here, and leaves T and any cache sized by its shape cold.
     Tensor.from_coo([[0, 1], [0, 1], [0, 1]], [1.0, 2.0], shape=(2, 2, 2)).to_pydata_sparse("gcxs")
     tracemalloc.start()
@@ -382,7 +381,9 @@ def test_pydata_gcxs_row_pointer_follows_the_entries():
 
 @needs_sparse
 def test_pydata_gcxs_keeps_a_small_row_pointer():
-    """No move when the Tensor's own row pointer is small next to the entries, or small."""
+    """The export keeps the Tensor's layout when its row pointer is small, or small next to the
+    entries.
+    """
     # Two groups per entry, though compressing axis 2 would take 8 slots
     shape = (2**12, 2**9, 7)
     coords = np.array(np.unravel_index(np.arange(2**20) * 7 + 3, shape), np.int64)
@@ -400,7 +401,7 @@ def test_pydata_gcxs_keeps_a_small_row_pointer():
 @needs_sparse
 def test_pydata_gcxs_refuses_an_enormous_row_pointer(monkeypatch):
     """An export whose memory would follow an enormous shape and not its entries raises,
-    naming "coo". (2^40, 2^40) used to start allocating an 8 TiB row pointer.
+    naming "coo". For (2^40, 2^40), the row pointer alone would take 8 TiB.
     """
     _no_huge_csr(monkeypatch)
     coords = np.array([[0, 1], [5, 6]])

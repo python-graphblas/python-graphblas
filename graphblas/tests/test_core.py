@@ -92,8 +92,8 @@ import pytest
 
 
 class OldLib:
-    # SuiteSparse's cffi lib as one without the Container API (SuiteSparse:GraphBLAS 9 and
-    # older) would be
+    # SuiteSparse's cffi lib as it would be without the Container API (before
+    # SuiteSparse:GraphBLAS 10)
     def __init__(self, lib):
         self._lib = lib
 

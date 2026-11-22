@@ -207,8 +207,9 @@ IGNORE = {
     "monoid_pickle",
     "semiring_pickle",
     "_test_weak_lt",
-    # Made by a float Tensor broadcast's diagonal product (any monoid) in test_tensor.py,
-    # and any_rpow by test_op.py::test_commutes reading any_pow.commutes_to after that
+    # Semirings that test_tensor.py makes for the diagonal product of a float Tensor broadcast
+    # (the any monoid with the op), and any_rpow, which test_op.py::test_commutes makes when
+    # its loop over all semirings reads any_pow.commutes_to
     "any_atan2",
     "any_pow",
     "any_rpow",

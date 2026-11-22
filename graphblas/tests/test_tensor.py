@@ -88,7 +88,7 @@ def model_update(cv, cp, zv, zp, *, mask=None, accum=None, replace=False):
 
 
 # --------------------------------------------------------------------------------------------
-# M1: data model
+# Data model
 
 
 def test_layout_validation():
@@ -191,7 +191,7 @@ def test_from_coo_forms():
 
 def test_from_coo_errors_and_edges():
     with pytest.raises(IndexOutOfBound, match="axis 1"):
-        # Raveled, (0, 4, 0) would land on (1, 0, 0) silently
+        # Raveled, (0, 4, 0) would land on (1, 0, 0) with no error
         Tensor.from_coo(([0], [4], [0]), [1.0], shape=(2, 4, 3))
     with pytest.raises(IndexOutOfBound, match="axis 0"):
         Tensor.from_coo(([-1], [0], [0]), [1.0], shape=(2, 4, 3))
@@ -223,7 +223,7 @@ def test_from_coo_errors_and_edges():
     assert w.isequal(Vector.from_coo([1, 3], [2, 1], size=6))
     v = Tensor.from_coo(([3, 1],), [1, 2], shape=(6,), layout=((0,), ()))  # (6 x 1 stored)
     assert v.to_vector().isequal(w)
-    # Size-1 axes and an n x 1 stored Matrix (held by row, unlike SuiteSparse's default)
+    # Size-1 axes, and an n x 1 Matrix stored by row (unlike SuiteSparse's default)
     U = Tensor.from_coo(([0, 1], [0, 2], [0, 0]), [1.0, 2.0], shape=(2, 3, 1))
     U._check_invariants()
     U = Tensor.from_coo(
@@ -234,17 +234,16 @@ def test_from_coo_errors_and_edges():
 
 
 def test_from_coo_shape_passed_as_dtype():
-    """numpy, scipy.sparse and pydata/sparse take the shape third; from_coo takes dtype there.
-    A shape in its place raised ``ValueError: Unknown dtype: (3, 3, 3)``; now a TypeError
-    that says to pass ``shape=``.
+    """from_coo accepts the dtype third, where pydata/sparse's COO accepts the shape. A shape
+    passed there raises a TypeError that says to pass ``shape=``.
     """
     coords = ([0, 1, 2], [0, 1, 2], [0, 1, 2])
     for shape in [(3, 3, 3), [3, 3, 3], (np.int64(3), 3, 3), ()]:
         with pytest.raises(TypeError, match=r"pass the shape as shape=\(") as exc:
             Tensor.from_coo(coords, [1.0, 2.0, 3.0], shape)
         assert f"shape={tuple(shape)!r}" in str(exc.value)
-    # A dtype still works there, a numpy subarray dtype spec (a tuple) is not mistaken for a
-    # shape, and Matrix's from_coo is unchanged
+    # A dtype works there, a numpy subarray dtype (a tuple) is not mistaken for a shape, and
+    # Matrix.from_coo raises its own error
     assert Tensor.from_coo(coords, [1, 2, 3], dtypes.FP32, shape=(3, 3, 3)).dtype == dtypes.FP32
     T = Tensor.from_coo(coords, np.ones((3, 2)), (np.float64, (2,)))
     assert T.dtype.np_type == np.dtype((np.float64, (2,)))
@@ -253,9 +252,9 @@ def test_from_coo_shape_passed_as_dtype():
 
 
 def test_no_implicit_dense_conversion_names_to_dense():
-    """``np.asarray(T)`` refuses, as for Matrix, since a missing entry has no value. The
-    message named only ``to_coo()``; a dense algorithm (an SVD) wants the missing entries as
-    zeros, so it also names ``to_dense(fill_value=0)``, for a Tensor small enough.
+    """``np.asarray(T)`` raises, as for Matrix, since a missing entry has no value. The message
+    names ``to_coo()`` and, for a dense algorithm (an SVD) that wants the missing entries as
+    zeros, ``to_dense(fill_value=0)``.
     """
     T = Tensor.from_coo(([0, 1], [0, 1], [0, 1]), [1.0, 2.0], name="X")
     for convert in [np.asarray, np.array, np.linalg.norm]:
@@ -289,7 +288,7 @@ def test_from_matrix_and_back():
     assert T.shape == (3, 4)
     assert T.layout == Layout((0,), (1,))
     assert T.to_matrix().isequal(A)
-    # A held by column is stored as its transpose held by row, with no transpose
+    # A Matrix stored by column becomes the layout (1|0) of the same data, with no transpose
     B = A.dup()
     B.ss.config["format"] = "by_col"
     TB = Tensor.from_matrix(B)
@@ -394,7 +393,7 @@ def test_vanilla_check(monkeypatch):
 
 
 def test_by_col_global_format():
-    """Every stored Matrix stays held by row when the global format is by column."""
+    """Every Matrix the Tensor stores is by row, even when the global format is by column."""
     rng = np.random.default_rng(4)
     prev = gb.ss.config["format"]
     gb.ss.config["format"] = "by_col"
@@ -423,7 +422,7 @@ def test_by_col_global_format():
 
 
 # --------------------------------------------------------------------------------------------
-# M2: relayout
+# Relayout
 
 
 def _rebuild_reference(T, layout):
@@ -461,7 +460,7 @@ def test_relayout_all_pairs(shape):
 
 
 def test_relayout_plans_match_measured():
-    """The planner finds the chains measured fastest for 1000^3, 1e7 nnz."""
+    """The planner finds the chains measured fastest for a 1000^3 tensor of 1e7 entries."""
     shape = (1000, 1000, 1000)
     src = ((0, 1, 2), 2)
     expected = {
@@ -474,8 +473,8 @@ def test_relayout_plans_match_measured():
     for tgt, kinds in expected.items():
         _, path, _ = tl.plan(shape, src, frozenset([(tgt, 2)]), 10**7, 8)
         assert [e[0] for e in path] == kinds, (tgt, path)
-    # Hypersparse (about 1 entry per row): no P @ M, whose rows pay a hash lookup each;
-    # REBUILD (27 / 141 ms at 8 / 1 threads) or a PERM_C chain (25 / 104 ms)
+    # Hypersparse rows of about 1 entry each: not P @ M, which pays a hash lookup per row, but
+    # a REBUILD (27 / 141 ms at 8 / 1 threads) or a PERM_C chain (25 / 104 ms)
     _, path, _ = tl.plan(
         (2**19,) * 3, ((0, 1, 2), 1), frozenset([((1, 0, 2), 2)]), 10**6, 8, hyper1=True
     )
@@ -483,9 +482,10 @@ def test_relayout_plans_match_measured():
 
 
 def test_perm_cols_paths():
-    """PERM_C reorders the column group's axes in the Container: through a cached map, by
-    computing the indices (a column group far wider than the data), by REBUILD for full
-    storage; any dtype, iso values, an empty Matrix; the input is never changed.
+    """PERM_C reorders the column group's axes in the Container each way it can: through a
+    cached map, by computing the indices (for a column group far wider than the data), and by
+    REBUILD (for full storage). Any dtype, iso values and an empty Matrix work, and the input
+    is left unchanged.
     """
     rng = np.random.default_rng(66)
     udt = dtypes.register_anonymous(np.dtype([("tensor_a", "<i4"), ("tensor_b", "<f8")]))
@@ -517,15 +517,15 @@ def test_perm_cols_paths():
                 for got, expected in zip(M.to_coo(), before, strict=True):
                     np.testing.assert_array_equal(got, expected)
             assert tl._col_map_ok(M.ncols, M.nvals) == (density is not None)
-    # The planner takes PERM_C where it replaces T PERM_R T: rows of about 10 entries
+    # With rows of about 10 entries, the planner picks PERM_C over the chain T, PERM_R, T
     shape = (10**6, 10, 100)
     _, path, _ = tl.plan(shape, ((0, 1, 2), 1), frozenset([((0, 2, 1), 1)]), 10**7, 8)
     assert path == [("PERM_C", (2, 1))]
 
 
 def test_big_total_split_move():
-    """Past 2^60 positions in total reshape is unavailable; a split move is a REBUILD whose keys
-    arrive sorted, priced as such, and chains use it.
+    """Past 2^60 positions in total, ``reshape`` is not available, so moving the split is a
+    REBUILD. Its keys arrive sorted, the planner prices it so, and longer chains use it.
     """
     shape = (2**21, 2**21, 2**20)
     src, dst = ((0, 1, 2), 1), ((0, 1, 2), 2)
@@ -619,14 +619,14 @@ def test_perm_rows_keeps_values_bit_exact(dtype, ncols):
     """A row permutation or row pick (P @ M, one term per output entry) returns each value bit
     for bit (see _put_specials), through relayout, to_coo, perm_rows and an extract. The row
     group is hypersparse and stored out of order, and its rows are full, so SuiteSparse's saxpy
-    starts each output column from the monoid's identity (under min_second a NaN came back
-    +inf).
+    starts each output column from the monoid's identity: under min_second, a NaN would come
+    back +inf.
     """
     from graphblas.core import tensor_census as census
 
     rng = np.random.default_rng(1109 + ncols)
     shape = (60, 60, ncols)
-    # 40 fibers, full along axis 2; X[5, 2:18] holds the special values
+    # 40 fibers, full along axis 2; X[5, 2:18] stores the special values
     lin = np.union1d(rng.choice(3600, 24, replace=False), 5 * 60 + np.arange(2, 18))
     xp = np.zeros(shape, bool)
     xp[np.unravel_index(lin, shape[:2])] = True
@@ -663,8 +663,8 @@ def test_selector_expansion_keeps_values_bit_exact(dtype, small_format):
     """The small side of a broadcast or a TTV, expanded over a group by a selector (St @ v, one
     term per output entry), keeps each value bit for bit (see _put_specials). Stored full, v
     goes through a dot product; stored sparse with every entry, through SuiteSparse's saxpy,
-    which starts each output column from the monoid's identity (under min_second a NaN came
-    back +inf).
+    which starts each output column from the monoid's identity: under min_second, a NaN would
+    come back +inf.
     """
     from graphblas.core import tensor_census as census
 
@@ -745,10 +745,10 @@ def _as_dict(T):
 
 def test_past_2_63_positions():
     """A Tensor of 2^63 positions or more (FROSTT's NELL-1 shape, 1.6e20, each group under
-    2^60) broadcasts, takes TTVs and assigns regions. numpy's ``broadcast_shapes`` refuses
-    such shapes (its size is an intp), which read as shapes that "do not broadcast"; and TTV
-    and broadcasting moved the split with ``ss.reshape``, which refuses 2^60 positions in
-    total (the planner replaces such moves by REBUILDs).
+    2^60) broadcasts, computes TTVs and assigns regions. numpy's ``broadcast_shapes`` refuses
+    such shapes (its size is an intp), which must not read as shapes that "do not broadcast".
+    ``ss.reshape`` refuses 2^60 positions in total, so the planner moves the split for TTV and
+    broadcasting by REBUILD.
     """
     shape = (2902330, 2143368, 25495389)  # NELL-1
     coords = [[0, 5, 9, 2902329], [1, 2, 3, 2143367], [7, 8, 9, 25495388]]
@@ -787,15 +787,15 @@ def test_past_2_63_positions():
     assert set(j.tolist()) == {1}
     assert set(k.tolist()) == {7}
     assert set(values.tolist()) == {5.0}
-    # matmul's batch axes now broadcast; they must then fit in one Matrix dimension
+    # matmul's broadcast batch axes must fit in one Matrix dimension
     X5 = Tensor.from_coo([*coords, [0, 1, 0, 1], [0, 1, 2, 0]], 1.0, shape=(*shape, 2, 3))
     with pytest.raises(ValueError, match="do not fit"):
         (X5 @ Tensor.from_dense(np.ones((3, 2)))).new()
 
 
 def test_default_layout_axis_too_long():
-    """A 1-d or 2-d Tensor with an axis past 2^60 positions gets the error a layout gets, not
-    SuiteSparse's InvalidValue from making the Matrix (default_layout did not check them).
+    """A 1-d or 2-d Tensor with an axis past 2^60 positions raises the error an invalid layout
+    raises, not SuiteSparse's InvalidValue from making the Matrix.
     """
     for shape in [(2**61,), (2**61, 2), (3, 2**61)]:
         with pytest.raises(ValueError, match="more than one Matrix dimension can hold"):
@@ -808,11 +808,11 @@ def test_default_layout_axis_too_long():
 
 @pytest.mark.parametrize("engines", [("numba", "graphblas"), ("graphblas",)])
 def test_broadcast_mult_past_2_60_no_flip(engines, monkeypatch):
-    """Past 2^60 positions, a broadcast ewise_mult whose op has no flip of its kind (pow) and
-    whose small side is sparse has no diagonal, gather or relayout option. It replicated the
-    small side, which needs a group past 2^60 (as_layout's error); it now looks the small
-    side's values up at the big side's entries. A broadcast union replicates by its nature:
-    the small side's axes go where they fit, or a clear error says they cannot.
+    """Past 2^60 positions, a broadcast ewise_mult whose op has no flipped form (pow), with a
+    sparse small side and no diagonal, gather or relayout option, looks up the small side's
+    values at the big side's entries. Replicating the small side would need a group past
+    2^60. A broadcast union must replicate: the small side's axes go where they fit, or a
+    clear error says they cannot.
     """
     from graphblas.core import tensor_census as census
     from graphblas.core import tensor_index
@@ -849,7 +849,7 @@ def test_broadcast_mult_past_2_60_no_flip(engines, monkeypatch):
             X.ewise_add(Y, binary.pow)
         with pytest.raises(ValueError, match="replicates its 3 entries .* times, more than"):
             X.ewise_union(Y, binary.pow, 1.0, 1.0, allow_expansion=True).new()
-    # A union that replicates little, whose rows cannot take the broadcast axis: the columns do
+    # A union that replicates little, whose broadcast axis fits in the columns, not the rows
     shape2 = (2, 2**40, 2**20, 2**40)
     X2 = Tensor.from_coo(([0, 1], [3, 7], [1, 2], [4, 9]), [2.0, 3.0], shape=shape2,
                          layout=((0, 1), (2, 3)))  # fmt: skip
@@ -869,9 +869,9 @@ def test_broadcast_mult_past_2_60_no_flip(engines, monkeypatch):
 
 def test_broadcast_on_nonempty_rows_sized_by_entries():
     """A broadcast multiply onto the nonempty rows of a hypersparse row group finds the small
-    side's values by a binary search. It filled a dense table over the small side's Vector:
-    9 TiB for an axis of 2^40, a MemoryError on Linux and Windows. macOS hands out zeroed
-    memory lazily, so it passed there; tracemalloc counts it.
+    side's values by a binary search, in memory sized by the entries. A dense table over the
+    small side's axis of 2^40 would take 9 TiB; tracemalloc counts it even on macOS, which
+    hands out zeroed memory lazily.
     """
     import tracemalloc
 
@@ -902,12 +902,11 @@ def test_broadcast_on_nonempty_rows_sized_by_entries():
 
 def test_broadcast_wide_groups_onto_nonempty_ids(monkeypatch):
     """A broadcast multiply whose small side's axes lie inside a group far wider than the
-    data takes the small side onto that group's nonempty rows or columns. It built a selector
-    over every position of the group: past 2^60 positions in total, where the columns' may be
-    the one option left, an arange of 2^60 (numpy refuses it: "array is too big"). Below,
-    the planner prices the selector by its positions, and up to the selector cache's bound
-    the (cached) selector is kept; forced, with that bound lowered, the new way agrees with
-    numpy.
+    data expands the small side onto that group's nonempty rows or columns. Past 2^60
+    positions in total, a selector over every position of the group would need an arange of
+    2^60, which numpy refuses ("array is too big"). Below that, the planner prices the
+    selector by its positions and keeps the cached selector up to the cache's bound. Forced,
+    with that bound lowered, the nonempty way agrees with numpy.
     """
     import tracemalloc
 
@@ -944,8 +943,8 @@ def test_broadcast_wide_groups_onto_nonempty_ids(monkeypatch):
                 (r["point"], r["choice"]) for r in records
             }
             assert peak < 2**24, (axis, op, peak)
-    # Forced below 2^60, against numpy: wide columns (4900 positions), and wide rows, about
-    # 960 of 4900 holding entries (stored sparse) or about 150 (hypersparse)
+    # Forced below 2^60, against numpy: wide columns (4900 positions), and wide rows, with
+    # entries in about 960 of 4900 (stored sparse) or about 150 (hypersparse)
     rng = np.random.default_rng(811)
     yv = rng.random((1, 70, 1))
     yv[rng.random(yv.shape) < 0.3] = 0
@@ -986,7 +985,8 @@ def test_broadcast_wide_groups_onto_nonempty_ids(monkeypatch):
 def test_broadcast_diagonal_keeps_values_bit_exact(dtype):
     """A broadcast through a diagonal product (one term per output entry) returns each value
     bit for bit (see _put_specials) when the small side is expanded onto the nonempty rows of
-    a hypersparse row group whose rows are full (under plus, a -0.0 came back +0.0).
+    a hypersparse row group whose rows are full. Starting from the monoid's identity would
+    turn a -0.0 into +0.0 under plus.
     """
     from graphblas.core import tensor_census as census
 
@@ -1019,9 +1019,9 @@ def test_broadcast_diagonal_keeps_values_bit_exact(dtype):
 
 
 def test_lookup_sorted_ways():
-    """``lookup_sorted`` indexes a full vector directly, uses a dense table while the vector
-    is within a few times its entries and the positions looked up, and a binary search past
-    that, whose memory follows the data; the three agree.
+    """``lookup_sorted`` indexes a full vector directly, uses a dense table while the vector's
+    size is within a few times its entries and the positions looked up, and otherwise a
+    binary search, whose memory grows with the data. The three ways agree.
     """
     import tracemalloc
 
@@ -1056,12 +1056,11 @@ def test_lookup_sorted_ways():
 
 @pytest.mark.parametrize("cols_log2", [24, 33])
 def test_ttv_past_2_60_by_entries(cols_log2):
-    """A TTV past 2^60 positions with the axis inside a group of several axes goes through
-    the entries: w at each entry's coordinate, one ewise_mult, the axis reduced. It took the
-    one option left there, a selector over the whole column group, whose time and memory
-    grow with the group's positions however few the entries (cols 2^24: 0.2 s; (2^31, 2^31,
-    4), cols 2^33: minutes and about 10 GB). Measured with tracemalloc; only the 2^24 case
-    was run on the old code.
+    """A TTV past 2^60 positions, along an axis inside a group of several axes, goes through
+    the entries: w at each entry's coordinate, one ewise_mult, then the axis reduced. Its peak
+    memory (by tracemalloc) follows the entries. A selector over the whole column group would
+    grow with the group's positions however few the entries: minutes and about 10 GB for a
+    column group of 2^33.
     """
     import tracemalloc
 
@@ -1102,9 +1101,9 @@ def test_ttv_past_2_60_by_entries(cols_log2):
 
 def test_ttv_long_axis_in_hypersparse_rows_sized_by_entries():
     """A TTV along a long axis inside a hypersparse row group weighs the nonempty rows by w's
-    values, found by a binary search. It filled a dense table and a presence mask over the
-    whole axis first: 9 TiB for an axis of 2^40 (lazily zeroed on macOS, which tracemalloc
-    counts; a MemoryError on Linux).
+    values, found by a binary search. A dense table and presence mask over the whole axis
+    would take 9 TiB for an axis of 2^40; tracemalloc counts that even on macOS, which zeroes
+    memory lazily.
     """
     import tracemalloc
 
@@ -1164,7 +1163,7 @@ def test_relayout_dtypes_iso(dtype, iso):
     T = Tensor.from_coo(coords, vals, dtype, shape=shape)
     assert T.ss.is_iso == iso
     for dst in all_layouts(3):
-        # Large pricing exercises PERM_R (P @ M) for every dtype
+        # Pricing as if large exercises PERM_R (P @ M) for every dtype
         _, path, _ = tl.plan(shape, T.layout.state, frozenset([dst.state]), 10**7, 8)
         M, _ = tl.execute(T.ss.matrix, shape, T.layout.state, path)
         assert M.isequal(_rebuild_reference(T, dst).ss.matrix, check_dtype=True)
@@ -1201,8 +1200,9 @@ def test_relayout_fast_path_and_cache():
 
 
 def test_plan_each_matches_plan():
-    """One search toward many targets gives each the cost, path and state of its own search
-    (so a choice among layouts by their cost is unchanged), and caches them as plan does.
+    """One search toward many targets returns for each the cost, path and state its own search
+    returns (so a choice among layouts by cost does not change), and caches them as ``plan``
+    does.
     """
     from graphblas.core import tensor_census as census
 
@@ -1303,11 +1303,11 @@ def test_flip_orientation_and_helpers():
 
 
 def test_steal_row_as_vector(monkeypatch):
-    """A (1 x n) Matrix held by row becomes a Vector without a copy, in each format (a
+    """A (1 x n) Matrix stored by row becomes a Vector without a copy, in each format. A
     hypersparse one is made sparse first, and the Vector gets the Matrix's sparsity control
-    back, so a full row can be full). Broadcasts and TTV take the small side's row this way;
-    when the relayout returns the operand's own Matrix, they copy it first, so the operand is
-    left as it was.
+    back, so a full row can be full. Broadcasts and TTV turn the small side's row into a
+    Vector this way; when the relayout returns the operand's own Matrix, they copy it first,
+    so the operand is left as it was.
     """
     w = Vector.from_coo([1, 3], [1.0, 2.0], size=5)
 
@@ -1357,8 +1357,8 @@ def test_steal_row_as_vector(monkeypatch):
 
     rng = np.random.default_rng(67)
     X, xv, xp = random_tensor((4, 5, 6), rng, density=0.5, layout=((0, 1), (2,)))
-    # The small side already one row in the diagonal's order (its own Matrix, copied), or
-    # moved there by a reshape (a new Matrix, taken over)
+    # The small side is already one row in the diagonal's order (its own Matrix, copied), or a
+    # reshape moves it there (a new Matrix, taken over)
     s = Tensor.from_dense(rng.random(6) + 1).reshape(1, 1, 6)
     m = Tensor.from_dense(rng.random((5, 6)) + 1)
     for small, label in [(s, "diagonal cols"), (m, "diagonal cols, reshape")]:
@@ -1396,7 +1396,7 @@ def test_steal_row_as_vector(monkeypatch):
 @pytest.mark.parametrize("sparsity", ["sparse", "bitmap", "full"])
 def test_steal_row_flipped_by_column(sparsity, monkeypatch):
     """A 1-d Tensor whose shared Matrix the user flipped to by-column (a state the gathers
-    support): ``to_vector``, TTV and a broadcast take its row as a valid Vector of the right
+    support): ``to_vector``, TTV and a broadcast turn its row into a valid Vector of the right
     size and values, and leave the shared Matrix as it was.
     """
     from graphblas.core import ffi, lib
@@ -1445,7 +1445,7 @@ def test_steal_row_flipped_by_column(sparsity, monkeypatch):
 
 
 # --------------------------------------------------------------------------------------------
-# M3: shape operations and copy-on-write
+# Shape operations and copy-on-write
 
 
 @pytest.mark.parametrize("layout", all_layouts(3)[::3])
@@ -1586,10 +1586,10 @@ def _views_of_same_shape(B):
 @pytest.mark.parametrize("base", ["square", "cube", "reshape", "expand_dims"])
 @pytest.mark.parametrize("target", ["itself", "dup", "assigned"])
 def test_assign_view_of_shared_store(base, target):
-    """``C << V`` where V is a view, of C's shape in another layout, of the store C shares (C
-    is T itself, ``T.dup()``, or a Tensor assigned from T): C takes V's values, and every
-    other holder of the store keeps its own. ``_share`` returned early when the stores
-    matched, so C kept its own layout over the same Matrix and did not change.
+    """``C << V``, where V is a view of the store C shares, with C's shape in another layout
+    (C is T itself, ``T.dup()`` or a Tensor assigned from T): C takes V's values, and every
+    other owner of the store keeps its own. Fails if ``_share`` returns early when the stores
+    match, which leaves C unchanged.
     """
 
     def make():
@@ -1615,7 +1615,7 @@ def test_assign_view_of_shared_store(base, target):
     assert nviews >= 3
     for k in range(nviews):
         T, tv, tp, others = make()
-        assert not T._pinned  # (a pinned target relays the view out)
+        assert not T._pinned  # (a pinned target would move the view to its own layout)
         assert all(S._store is T._store for S, *_ in others)
         if target == "itself":
             C = T
@@ -1635,7 +1635,7 @@ def test_assign_view_of_shared_store(base, target):
 
 
 # --------------------------------------------------------------------------------------------
-# M4: expressions, <<, masks, accumulators
+# Expressions, <<, masks, accumulators
 
 
 def test_expression_basics():
@@ -1787,7 +1787,7 @@ def test_assign_scalar_and_tensor():
     Ti << A
     assert Ti.dtype == dtypes.INT64
     check(Ti, av.astype(np.int64), ap)
-    # A pinned target relays the assigned Tensor
+    # A pinned target moves the assigned Tensor to its own layout
     P = Tensor(float, shape, layout=((1,), (2, 0)))
     P << A
     assert P.layout == Layout((1,), (2, 0))
@@ -1827,7 +1827,7 @@ def test_in_place_infix():
 
 
 # --------------------------------------------------------------------------------------------
-# M5: element-wise, same shape
+# Element-wise, same shape
 
 EWISE_OPS = {
     "plus": (binary.plus, np.add),
@@ -1956,10 +1956,10 @@ def test_ewise_infix_and_scalars():
 
 
 def test_index_expression_operands():
-    """An extraction (``T[i]``, a TensorIndexExpr) as an operand: with autocompute off a
-    TypeError that says to call ``.new()``, with it on numpy's result. Since TensorIndexExpr
-    counts as giving a Tensor (for ``-T[i]``), ``_compute`` passed it on uncomputed, as if it
-    were a Tensor: AttributeError ("no attribute '_M'").
+    """An extraction (``T[i]``, a TensorIndexExpr) as an operand raises a TypeError that says to
+    call ``.new()`` with autocompute off, and computes numpy's result with it on. The output
+    type of a TensorIndexExpr is Tensor (for ``-T[i]``), so the test fails if ``_compute``
+    passes it on uncomputed (an AttributeError: "no attribute '_M'").
     """
     x = np.arange(1.0, 13.0).reshape(3, 4)
     T = Tensor.from_dense(x)
@@ -1981,10 +1981,9 @@ def test_index_expression_operands():
 
 
 def test_update_from_infix_expression():
-    """``C << (X | Y)``, ``(X & Y)``, ``(X ^ Y)`` and ``(X @ Y)`` as Matrix takes them: lor,
-    land and lxor on BOOL (| and & on other dtypes refused, as for Matrix), the default
-    semiring for @; plain and with a mask and an accumulator. ``C << (X | Y)`` raised
-    TypeError ("Assignment value must be a Tensor, ..."), and Tensors had no ``^``.
+    """``C << (X | Y)``, ``(X & Y)``, ``(X ^ Y)`` and ``(X @ Y)`` work as for Matrix: lor, land
+    and lxor on BOOL (other dtypes raise for | and &, as for Matrix) and the default semiring
+    for @, plain and with a mask and an accumulator.
     """
     rng = np.random.default_rng(57)
 
@@ -2018,7 +2017,7 @@ def test_update_from_infix_expression():
         C = Tensor(dtypes.BOOL, (2, 3, 4))
         C << infix(X3, Y3)
         check(C, np.where(present, value, False), present)
-    # Other dtypes: | and & want an operator, as for Matrix; @ and ^ store
+    # Other dtypes: | and & need an operator and ^ raises, as for Matrix; @ stores
     F = Tensor.from_dense(np.arange(12.0).reshape(3, 4) - 5)
     G = Tensor.from_dense(np.arange(12.0).reshape(4, 3) % 3)
     Af, Bf = F.to_matrix(), G.to_matrix()
@@ -2045,9 +2044,9 @@ def test_update_from_infix_expression():
 
 def test_infix_or_and_need_bool():
     """``X | Y`` and ``X & Y`` on their own (``.new()``, ``C << ...``, a region's value, an
-    operand, an expression method) are lor and land of BOOL Tensors, and other dtypes raise
-    Matrix's "Bad dtypes" TypeError, as for Matrix (decisions.md, 27); they computed plus or
-    times. With an operator (``binary.plus(X | Y)``) every dtype works, and ``shape`` does too.
+    operand, an expression method) are lor and land of BOOL Tensors; other dtypes raise
+    Matrix's "Bad dtypes" TypeError, as for Matrix. With an operator (``binary.plus(X | Y)``)
+    every dtype works, and so does ``shape``.
     """
     rng = np.random.default_rng(58)
     uses = [
@@ -2075,7 +2074,7 @@ def test_infix_or_and_need_bool():
             assert infix(X, Y).shape == (3, 4)
         check(binary.plus(X | Y).new(), *np_bcast("add", xv, xp, yv, yp, np.add))
         check(binary.times(X & Y).new(), *np_bcast("mult", xv, xp, yv, yp, np.multiply))
-    # BOOL: lor and land, as before
+    # BOOL: lor and land
     Xb, Yb = (random_tensor((3, 4), rng, density=0.6, dtype=dtypes.BOOL)[0] for _ in range(2))
     Ab, Bb = Xb.to_matrix(), Yb.to_matrix()
     for infix in [operator.or_, operator.and_]:
@@ -2086,8 +2085,8 @@ def test_infix_or_and_need_bool():
 
 def test_update_from_index_expression():
     """``C << T[idx]`` and ``C(mask, accum) << T[idx]`` store the extraction, as Matrix's
-    ``v << A[1, :]`` does. ``_update`` took only an exact TensorExpression and refused an
-    extraction (its subclass) with "Assignment value must be a Tensor, ...".
+    ``v << A[1, :]`` does. Fails if ``_update`` accepts only an exact TensorExpression and
+    refuses an extraction (its subclass).
     """
     rng = np.random.default_rng(56)
     T, tv, tp = random_tensor((3, 4, 5), rng, density=0.6)
@@ -2110,9 +2109,9 @@ def test_update_from_index_expression():
 
 
 def test_unary_operators_and_select_strings():
-    """``-X``, ``abs(X)``, ``~X`` (BOOL) and ``select`` with a string op, as Matrix takes them,
-    on Tensors, their expressions and extractions. They raised TypeError ("bad operand
-    type") and NotImplementedError (a string is not a value selector by name).
+    """``-X``, ``abs(X)``, ``~X`` (BOOL) and ``select`` with a string op work as for Matrix, on
+    Tensors, their expressions and their extractions. A selector that is not by value raises
+    NotImplementedError.
     """
     rng = np.random.default_rng(55)
     T = random_tensor((3, 4), rng, density=0.7)[0]
@@ -2148,7 +2147,7 @@ def test_unary_operators_and_select_strings():
 
 @pytest.mark.parametrize("opname", ["times", "first", "plus", "second"])
 def test_ewise_iso(opname):
-    """Iso inputs give iso results exactly when the same Matrix op does."""
+    """Iso inputs make iso results exactly when the same Matrix op does."""
     rng = np.random.default_rng(21)
     shape = (3, 4, 5)
     op = EWISE_OPS[opname][0]
@@ -2166,7 +2165,7 @@ def test_ewise_iso(opname):
 
 
 # --------------------------------------------------------------------------------------------
-# M6: reductions
+# Reductions
 
 NP_REDUCE = {
     "plus": (np.add, 0),
@@ -2235,8 +2234,9 @@ def test_reduce_dtypes(dtype):
 
 
 def test_bool_selector_products():
-    """BOOL data through each product with a selector or a one-term vector (lor_land, as
-    SuiteSparse precompiles no lor_first or lor_second), stored False values included.
+    """BOOL data, stored False values included, through each product with a selector or a
+    one-term vector. They use lor_land, since SuiteSparse precompiles no lor_first or
+    lor_second.
     """
     from graphblas.core import tensor_census as census
 
@@ -2276,10 +2276,10 @@ def test_bool_selector_products():
 
 
 def test_unsigned_sums_use_typed_selectors(monkeypatch):
-    """Sums of UINT32 and UINT64 data multiply by row selectors of their type with
-    plus_times, which SuiteSparse precompiles (plus_second it does not); other types and
-    monoids, and column selectors, keep BOOL. Sparse and hypersparse rows, and sums that wrap
-    around.
+    """Sums of UINT32 and UINT64 data multiply by row selectors of their own type with
+    plus_times, which SuiteSparse precompiles (it does not precompile plus_second). Other
+    types and monoids, and column selectors, keep BOOL selectors. Covers sparse and
+    hypersparse rows, and sums that wrap around.
     """
     from graphblas.core import tensor_census as census
     from graphblas.core import tensor_reduce
@@ -2413,10 +2413,9 @@ def test_reduce_strategies(monkeypatch):
 
 def test_empty_region_of_iso_tensor():
     """Reductions and products of an empty region (a 0-size axis) of an iso Tensor have no
-    entries. SuiteSparse (seen from 8.2 through 10.5.1) returns every output position of a
-    product or reduction over a dimension of size 0 when its operands are iso and full, as
-    such a region and the iso selectors are; the Tensor gave entries of 0 ("a fiber with no
-    entries stays missing").
+    entries: a fiber with no entries stays missing. SuiteSparse (seen from 8.2 through
+    10.5.1) returns every output position of a product or reduction over a dimension of size
+    0 when its operands are iso and full, as such a region and the iso selectors are.
     """
     rng = np.random.default_rng(17)
     shape = (4, 5, 6)
@@ -2424,7 +2423,7 @@ def test_empty_region_of_iso_tensor():
     assert X.ss.is_iso
     R = 3
 
-    def iso_empty(*shape):  # an iso Tensor with a 0-size axis: held iso and full
+    def iso_empty(*shape):  # an iso Tensor with a 0-size axis: stored iso and full
         return Tensor.from_coo([np.empty(0, np.int64)] * len(shape), 2.0, shape=shape)
 
     for layout in all_layouts(3):
@@ -2467,8 +2466,8 @@ def test_reduce_by_selector_keeps_values_bit_exact(dtype, path, fmt):
     returns a fiber of one term bit for bit (see _put_specials; a signaling NaN may come back
     quiet under an arithmetic monoid), and keeps a fiber of NaNs NaN and a fiber of -0.0 at
     -0.0. The rows of the product are full, where SuiteSparse's saxpy starts a row from the
-    monoid's identity (under min, a fiber of NaNs came back +inf, and under plus a fiber of
-    -0.0 came back +0.0).
+    monoid's identity: under min, a fiber of NaNs would come back +inf, and under plus, a
+    fiber of -0.0 would come back +0.0.
     """
     from graphblas.core import tensor_census as census
     from graphblas.core.operator import BinaryOp, Monoid
@@ -2601,7 +2600,7 @@ def test_reduce_two_selector_steps_keep_values():
     rng = np.random.default_rng(1113)
     shape = (4096, 4096, 8, 5)
     # 200 rows (i, j), j >= 2, with one to three entries at each k; then j = 0 in one row (i = 7),
-    # holding a NaN at k = 1, and j = 1 in rows i = 3, 5, holding -0.0 at k = 2
+    # with a NaN at k = 1, and j = 1 in rows i = 3, 5, with -0.0 at k = 2
     ij = np.unique(rng.integers([0, 2], 4096, (200, 2)), axis=0)
     ij = np.vstack([ij, [[7, 0], [3, 1], [5, 1]]])
     coords = []
@@ -2714,7 +2713,7 @@ def test_udt_reduce():
 
 def test_udt_broadcast_inside_a_group():
     """An array-UDT operand broadcast along one axis of a two-axis group: its values are
-    expanded over the group by a selector (S @ v, with a semiring that takes the UDT).
+    expanded over the group by a selector (S @ v, with a semiring that accepts the UDT).
     """
     if not gb.core._has_numba:
         pytest.skip("UDT ops need numba")
@@ -2745,7 +2744,7 @@ def test_size_zero_axes(layout):
 
 
 # --------------------------------------------------------------------------------------------
-# M7: tensordot
+# tensordot
 
 
 def np_tensordot(xv, xp, yv, yp, axes):
@@ -2833,7 +2832,7 @@ def test_tensordot_semirings_masks_and_errors():
 
 
 # --------------------------------------------------------------------------------------------
-# Core hooks (Matrix, Vector, Scalar and operators meet a Tensor)
+# Core hooks (Matrix, Vector, Scalar and operators with a Tensor operand)
 
 
 def test_core_hooks():
@@ -2892,7 +2891,7 @@ def test_core_hooks():
 
 
 def test_isequal_from_matrix_and_vector():
-    """``A.isequal(T)`` and ``A.isclose(T)`` give what ``T.isequal(A)`` gives."""
+    """``A.isequal(T)`` and ``A.isclose(T)`` return what ``T.isequal(A)`` returns."""
     A = Matrix.from_coo([0, 1, 1], [2, 0, 3], [1.0, 2.0, 3.0], nrows=2, ncols=4)
     T = Tensor.from_matrix(A).relayout(((1,), (0,)))  # compared in another layout
     for x, y in [(A, T), (T, A), (A.T, T.T)]:
@@ -2917,7 +2916,7 @@ def test_isequal_from_matrix_and_vector():
     assert V.isequal(v)
     assert not v.isequal(Tensor.from_vector((v * 2).new()))
     assert not v.isequal(Tensor.from_matrix(A))
-    # Other Matrix methods still refuse a Tensor operand
+    # Other Matrix methods refuse a Tensor operand
     with pytest.raises(TypeError, match="Matrix methods do not take Tensor"):
         A.ewise_mult(T)
 
@@ -3053,7 +3052,7 @@ def test_broadcast_guard():
                 "add", xv, xp, np.array([1.0, 0, 2, 0, 0]), np.array([1, 0, 1, 0, 0], bool), np.add
             ),
         )
-        # the intersection with a full operand never replicates
+        # an intersection with an operand of the result's shape never replicates
         check(
             (X * v).new(),
             *np_bcast(
@@ -3092,7 +3091,7 @@ def test_broadcast_guard_hint_for_ewise_mult():
 
 
 def test_select_and_apply_take_a_0d_tensor():
-    # a full reduction is a 0-d Tensor (decision 2); it serves as the scalar operand
+    # a full reduction is a 0-d Tensor, which serves as the scalar operand
     X = Tensor.from_coo(([0, 1, 1], [0, 0, 1], [1, 2, 0]), [1.0, 5.0, 3.0], shape=(2, 2, 3))
     t = X.sum().new().apply(binary.truediv, right=3.0).new()  # 0-d, 3.0
     assert t.shape == ()
@@ -3105,8 +3104,8 @@ def test_select_and_apply_take_a_0d_tensor():
         X.select(gb.select.valuege, X.sum())
     with gb.config.set(autocompute=True):
         assert X.apply(binary.minus, right=X.sum()).new().isequal(X.apply(binary.minus, right=9.0))
-    # An empty 0-d Tensor is an empty Scalar: these operators need a value, so both raise, where
-    # ewise_mult works by position and gives an empty result
+    # An empty 0-d Tensor is an empty Scalar: these operators need a value, so both raise, while
+    # ewise_mult works by position and returns an empty result
     empty = Tensor(dtypes.FP64, ())
     for operand in [empty, Scalar(dtypes.FP64)]:
         with pytest.raises(gb.exceptions.EmptyObject):
@@ -3447,9 +3446,9 @@ SEMIRING_EINSUM_CASES = [
 
 @pytest.mark.parametrize("name", ["any_times", "any_minus"])
 def test_einsum_any_monoid(name):
-    """``any`` takes one of the terms, so it may sum early and in steps; a multiply that
-    does not commute keeps its operands in order. One term per output here (the outer
-    operands are permutations), so the result is that term, as with ``plus``.
+    """The ``any`` monoid picks one of the terms, so einsum may sum early and in steps, but a
+    multiply that does not commute keeps its operands in order. Here each output has one term
+    (the outer operands are permutations), so the result is that term, as with ``plus``.
     """
     op = getattr(gb.semiring, name)[dtypes.FP64]
     ref = getattr(gb.semiring, name.replace("any", "plus"))[dtypes.FP64]
@@ -3477,12 +3476,12 @@ def test_einsum_any_monoid(name):
      "plus_min", "plus_minus", "min_minus"],
 )  # fmt: skip
 def test_einsum_semirings(name):
-    """Einsum and MTTKRP with any semiring against every term, its operands multiplied left
-    to right, summed by the monoid. Summing an index out early, contracting in steps and the
-    MTTKRP products are right only when the multiply distributes over the monoid
-    (``max_times`` on signed values, ``plus_pair`` and ``plus_first`` do not), and with three
-    or more operands a later step put the intermediate on the right of an operand that came
-    after it (``min_first`` took C's values).
+    """Einsum and MTTKRP with any semiring, against every term with its operands multiplied
+    left to right and summed by the monoid. Summing an index out early, contracting in steps
+    and the MTTKRP products are right only when the multiply distributes over the monoid
+    (``max_times`` on signed values, ``plus_pair`` and ``plus_first`` do not). With three or
+    more operands, each step must keep the intermediate left of the operands after it, or
+    ``min_first`` returns C's values.
     """
     from graphblas.core import tensor_census as census
 
@@ -3509,8 +3508,8 @@ def test_einsum_semirings(name):
             check(X.mttkrp(F, mode, op=op).new(), *want, approx=True)
     finally:
         records = census.stop()
-    # The distributive, commutative semirings keep the fast paths: MTTKRP's engines, and
-    # contractions in pairs in opt_einsum's (or the greedy) order
+    # The distributive, commutative semirings use MTTKRP's engines, and contract in pairs in
+    # opt_einsum's (or the greedy) order
     einsum_choices = {r["choice"] for r in records if r["point"] == "einsum"}
     mttkrp_choices = {r["choice"] for r in records if r["point"] == "mttkrp"}
     if fast:
@@ -3557,7 +3556,8 @@ def test_mttkrp(mode):
 @pytest.fixture(scope="module")
 def numba_boundscheck():
     """Compile the Numba kernels with bounds checks while the kernel tests run: an
-    out-of-bounds write corrupts the heap silently (it aborted LLVM later, in another test).
+    out-of-bounds write corrupts the heap with no error, and the crash comes later, in
+    another test.
     """
     if not gb.core._has_numba:
         yield
@@ -3668,7 +3668,7 @@ def test_mttkrp_kernel_paths(monkeypatch):
         R = Y.mttkrp([Matrix.from_dense(d1[0]), same, same, d1[3]], mode).new()
         check(R, *_mttkrp_model(yv, yp, d1, mode), approx=True)
         assert calls == [True]
-    # Full factors whose values are not one row-major array (iso, held by column): copied
+    # Full factors whose values are not one row-major array (iso, stored by column): copied
     byc = Matrix.from_dense(dense[1])
     byc.ss.config["format"] = "by_col"
     d2 = [dense[0], dense[1], np.full((10, 3), 0.5), dense[3]]
@@ -3780,8 +3780,8 @@ def test_mttkrp_empty_groups(nthreads, monkeypatch):
 @pytest.mark.parametrize("shape", [(6, 7, 3000, 4), (6, 3000, 7, 4)])
 def test_mttkrp_products_order(shape, monkeypatch):
     """Without the kernel, MTTKRP contracts the widest axis first: its intermediates have one
-    row per distinct (mode, rest) fiber, which the order choice now counts from a sample
-    (relayout cost alone picks the other order here).
+    row per distinct (mode, rest) fiber, which the order choice estimates from a sample
+    (relayout cost alone would pick the other order here).
     """
     from graphblas.core import tensor
 
@@ -3842,9 +3842,8 @@ def _masked_data(rng, shape):
 
 
 def test_mask_combinations(monkeypatch):
-    """`|` and `&` of S, V, ~S and ~V masks of Tensors (the union used to raise "plus does not
-    work with BOOL"), and mixed with Matrix and Vector masks: against numpy, and against Matrix
-    for the same data in 2-d.
+    """`|` and `&` of S, V, ~S and ~V masks of Tensors, and mixed with Matrix and Vector masks:
+    against numpy, and against Matrix for the same data in 2-d.
     """
     rng = np.random.default_rng(72)
     ops = {"|": lambda a, b: a | b, "&": lambda a, b: a & b}
@@ -3861,7 +3860,7 @@ def test_mask_combinations(monkeypatch):
             np.testing.assert_array_equal(
                 _selected(op(m1, m2), shape), op(p1, p2), err_msg=f"{k1} {name} {k2}"
             )
-    # 2-d: Tensor-Tensor, Tensor-Matrix and Matrix-Tensor give what Matrix-Matrix gives
+    # 2-d: Tensor-Tensor, Tensor-Matrix and Matrix-Tensor select what Matrix-Matrix selects
     shape = (5, 6)
     av, avals = _masked_data(rng, shape)
     bv, bvals = _masked_data(rng, shape)
@@ -3879,7 +3878,7 @@ def test_mask_combinations(monkeypatch):
                 got = _selected(op(left, right), shape)
                 np.testing.assert_array_equal(got, expected, err_msg=f"{k1} {name} {k2}")
     # With a Vector: where Matrix combines (a union broadcasting the Vector along the rows),
-    # the Tensor gives the same; where Matrix refuses a mask of another shape, so does the
+    # the Tensor does the same; where Matrix refuses a mask of another shape, so does the
     # Tensor (masks do not broadcast)
     cv, cvals = _masked_data(rng, (6,))
     v = Vector.from_coo(np.flatnonzero(cv >= 0), cvals, size=6)
@@ -3905,9 +3904,9 @@ def test_mask_combinations(monkeypatch):
 
 
 def test_relayout_ends_sparse_when_rows_fill():
-    """A relayout that ends with a reshape gives its result SuiteSparse's usual hyper switch
-    (a reshape leaves 1.0, keeping full rows hypersparse, which sends mxm to its Gustavson
-    saxpy); rows that stay mostly empty stay hypersparse.
+    """A relayout that ends with a reshape sets its result's hyper switch to the global one. A
+    reshape leaves it at 1.0, which keeps even full rows hypersparse and sends mxm to its
+    Gustavson saxpy. Rows that stay mostly empty stay hypersparse.
     """
     rng = np.random.default_rng(75)
     shape = (40, 50, 300)
@@ -3927,7 +3926,7 @@ def test_relayout_ends_sparse_when_rows_fill():
 
 
 def test_scalar_index():
-    """A GraphBLAS Scalar indexes as the int it holds, on any axis and with any integer dtype;
+    """A GraphBLAS Scalar indexes as its integer value, on any axis and with any integer dtype;
     an empty or non-integer Scalar raises TypeError, as for Matrix.
     """
     rng = np.random.default_rng(74)
@@ -3976,13 +3975,13 @@ def test_infix_bool_and_operator_waits():
         assert got.to_matrix().isequal(ref.new())
     assert (monoid.any(TA | TB)).new().to_matrix().isequal(monoid.any(A | B).new())
     with pytest.raises(DimensionMismatch):
-        TA | Tensor(bool, 5, 7)  # mismatched shapes still raise at once
+        TA | Tensor(bool, 5, 7)  # mismatched shapes raise at once
     udt = dtypes.register_anonymous(np.dtype([("tensor_a", "<i4"), ("tensor_b", "<f8")]))
     vals = np.zeros(3, dtype=udt.np_type)
     vals["tensor_a"] = [1, 2, 3]
     U = Tensor.from_coo(([0, 1, 2], [0, 1, 2]), vals, udt, shape=(3, 3))
     W = Tensor.from_coo(([0, 2], [1, 2]), vals[:2], udt, shape=(3, 3))
-    expr = U | W  # building `U | W` no longer needs plus on the UDT
+    expr = U | W  # building `U | W` needs no operator on the UDT
     if gb.core._has_numba:  # (operators on UDTs need Numba)
         assert binary.first(expr).new().nvals == 4
 
@@ -4044,8 +4043,8 @@ def test_ttm_kernel_layouts(shape, nthreads, monkeypatch):
 @pytest.mark.usefixtures("numba_boundscheck")
 def test_numba_kernels_uint64_row_pointers(monkeypatch):
     """The TTM and MTTKRP kernels read 64-bit row pointers, which SuiteSparse uses past 2^32
-    entries (crafted here: ``p`` handed over as uint64). The kernels did ``q = p[s]`` and
-    ``q += 1``, which Numba types as float64 (uint64 plus int64), so they did not compile.
+    entries (crafted here: ``p`` handed over as uint64). Numba types uint64 plus int64 as
+    float64, so a kernel that does ``q = p[s]`` and then ``q += 1`` fails to compile.
     """
     if not gb.core._has_numba:
         pytest.skip("needs numba")
@@ -4121,10 +4120,10 @@ def test_give_buffer_fallback(monkeypatch):
 
 
 def test_ttm_numba_free_axes_past_2_60(monkeypatch):
-    """The Numba TTM declines when the free axes pass 2^60 positions: its output's rows are
-    all of them, which no Matrix dimension holds. It ran and GraphBLAS refused the output
-    with a bare InvalidValue; the products now refuse clearly ("do not fit"). When the free
-    axes fit, the kernel still runs.
+    """The Numba TTM declines when the free axes pass 2^60 positions, since its output has a
+    row for each of their positions and no Matrix dimension is that long. The products then
+    raise a clear error ("do not fit") instead of GraphBLAS's bare InvalidValue. When the free
+    axes fit, the kernel runs.
     """
     if not gb.core._has_numba:
         pytest.skip("needs numba")
@@ -4312,7 +4311,7 @@ def test_ttm_udt_layouts(shape, nthreads, monkeypatch):
 
 
 def test_ttm_udt_declines_an_iso_product(monkeypatch):
-    """A tensor of one entry, contracted over an axis of size 1, gives SuiteSparse's product
+    """A tensor of one entry, contracted over an axis of size 1, leaves SuiteSparse's product
     one entry, which it marks iso: the array-UDT engine declines, and the products run.
     """
     _require_jit_compile()
@@ -4326,10 +4325,10 @@ def test_ttm_udt_declines_an_iso_product(monkeypatch):
 
 def test_ttm_udt_type_name_claimed(monkeypatch):
     """The array-UDT engine's type claims its C name (``_gbtensor_fp64x{R}``) in the registry
-    that registered UDTs use. It made the type with ``GxB_Type_new`` directly, so a user UDT
-    of that name and another layout got the same C name, and its ``plus`` the engine's C op
-    name: SuiteSparse finds kernels by name, so one could run the other's kernel. A user type
-    that takes the name first makes the engine's type take another.
+    that registered UDTs use, so a user UDT of that name and another layout gets another C
+    name, and so does its ``plus``. SuiteSparse finds kernels by name, so with a shared name
+    one type could run the other's kernel. A user type that claims the name first makes the
+    engine's type use another.
     """
     from graphblas.core import ffi, lib, tensor_udt
     from graphblas.core.operator import udt_codegen
@@ -4430,8 +4429,8 @@ def test_ttm_udt_paths(monkeypatch, capfd):
         R = X.tensordot(Matrix.from_dense(U), ([2], [0])).new()
         check(R, *_ttm_model(xv, xv != 0, U, 2), approx=True)
         assert calls == [kind]
-    # The product's kernel is the JIT one (a UDT product has no other but the generic one,
-    # which burble names)
+    # The product runs the JIT kernel: a UDT product has no other but the generic one, which
+    # burble names
     import graphblas.core.tensor_udt as tu
 
     M = X._M
@@ -4538,11 +4537,11 @@ if _has_numba:
 @pytest.mark.parametrize(("control", "numba"), [("run", "numba"), ("on", "nonumba")])
 def test_ttm_udt_jit_failure(control, numba, tmp_path):
     """A compile that fails with the JIT on (a compiler gone missing after the probe, an
-    empty JIT cache, a fresh R): the UDT engine gives up once, warns, and the next engine
-    (Numba, or the products without it) gives the right result; later calls do not try the
-    engine again. The control stays at "load", where SuiteSparse puts it: the engine put
-    back "run", which UDT auto-lift raised to "on" again, so the next UDT Matrix operation
-    retried the compile and raised JitError.
+    empty JIT cache, a fresh R): the UDT engine gives up once and warns, the next engine
+    (Numba, or the products without it) returns the right result, and later calls do not try
+    the engine again. The control stays at "load", where SuiteSparse puts it. Fails if the
+    engine puts back "run": the next UDT Matrix operation then raises the control to "on",
+    retries the compile and raises JitError.
     """
     if numba == "numba" and not gb.core._has_numba:
         pytest.skip("needs numba")
@@ -4604,8 +4603,8 @@ def _engine_spies(monkeypatch):
 
 def test_engines_selectable(monkeypatch):
     """Every TTM engine (udt, numba, products) and MTTKRP engine (numba, udt, products) can be
-    forced, and each gives the numpy result; a forced engine that does not run here falls back
-    to the products, which take the hypersparse rows compacted in the stored order.
+    forced, and each returns the numpy result. The products, forced, compact the hypersparse
+    rows when the TTM is in the stored order.
     """
     if not gb.core._has_numba:
         pytest.skip("needs numba")
@@ -4643,8 +4642,8 @@ def test_engines_selectable(monkeypatch):
 def test_ttm_engine_results_keep_nan(engine, dtype, monkeypatch):
     """The Numba and array-UDT TTM engines write their result hypersparse by row, with its row
     axes in the input's stored order, so reading it back permutes the rows. An output entry
-    whose fiber holds a NaN, or +inf and -inf, is NaN after that permutation (under min_second
-    it came back +inf). FP32 tensors use these engines too.
+    whose fiber has a NaN, or +inf and -inf, is still NaN after that permutation, not +inf
+    (min_second's identity). FP32 tensors use these engines too.
     """
     from graphblas.core import tensor
 
@@ -4685,13 +4684,12 @@ def test_ttm_engine_results_keep_nan(engine, dtype, monkeypatch):
 )
 def test_kernels_take_real_value_types(dtype, monkeypatch):
     """A tensor of a real built-in type other than FP64, with FP64 factors and plus_times (an
-    FP64 result), takes the TTM and MTTKRP kernels, Numba's and the array-UDT engine. They took
-    FP64 values only, so FROSTT's count tensors (INT64 or BOOL) took the products, 13-18x
-    slower per CP-ALS sweep. The kernels read the values in their own type and convert them
-    as SuiteSparse's typecast does, so their results equal the products': exactly, here
-    (integer factors, so every sum is exact), in and out of the stored layout, iso, and for
-    INT64 and UINT64 values past 2^53, which round. Integer factors give an integer result,
-    which wraps: the products.
+    FP64 result), runs on the TTM and MTTKRP kernels: Numba's and the array-UDT engine's. The
+    kernels read the values in their own type and convert them as SuiteSparse's typecast does,
+    so their results equal the products'. The test compares them exactly (integer factors make
+    every sum exact), in and out of the stored layout, iso, and with INT64 and UINT64 values
+    past 2^53, which round. Integer factors give an integer result, which wraps, and run on
+    the products.
     """
     from graphblas.core import tensor, tensor_udt
 
@@ -4834,10 +4832,10 @@ print("warnings:", sum("array-UDT engine" in str(w.message) for w in caught))
 
 @pytest.mark.parametrize("case", ["ttm", "mttkrp"])
 def test_udt_engine_new_kernel_jit_failure(case, tmp_path):
-    """The engine's ops for an R are compiled, then the compiler breaks, and a case needs a
-    new kernel (a dense tensor): the JIT error is caught there too, for TTM and for the
-    MTTKRP products' first step, and the products give the result (Numba blocked, so the
-    UDT engine is the one tried).
+    """The engine's ops for an R compile, then the compiler breaks, and a case needs a new
+    kernel (a dense tensor). The JIT error is caught there too, for TTM and for the first step
+    of the MTTKRP products, and the products return the result. Numba is blocked, so the UDT
+    engine is the one tried.
     """
     repo_root = Path(__file__).resolve().parents[2]
     env = dict(os.environ, PYTHONPATH=str(repo_root), GRAPHBLAS_CACHE_PATH=str(tmp_path / "jit"))
@@ -4864,9 +4862,9 @@ def test_udt_engine_new_kernel_jit_failure(case, tmp_path):
 
 
 def test_ttm_engine_choice(monkeypatch):
-    """With both engines, the UDT one takes the stored order with a hypersparse output (fibers
-    under SuiteSparse's hyper switch) and R <= _TTM_UDT_MAX_R; the Numba one the rest. Without
-    Numba, the UDT one takes all.
+    """With both engines, the UDT one runs a TTM in the stored order with a hypersparse output
+    (fibers under SuiteSparse's hyper switch) and R <= _TTM_UDT_MAX_R, and the Numba one runs
+    the rest. Without Numba, the UDT one runs them all.
     """
     if not gb.core._has_numba:
         pytest.skip("needs numba")
@@ -4909,7 +4907,7 @@ def test_ttm_engine_choice(monkeypatch):
 
 def test_ttm_udt_declines(monkeypatch):
     """The array-UDT engine declines a TTM whose free axes would be one group past 2^60
-    positions (the products then refuse it too), and one it would run when the JIT cannot
+    positions (the products then raise too), and one it would run when the JIT cannot
     compile (the products run).
     """
     from graphblas.core.ss import jit_config
@@ -4964,7 +4962,8 @@ def test_udt_engine_run_in_process(monkeypatch):
 
 def test_ttm_compacted(monkeypatch):
     """Without the kernel, TTM in the stored order on hypersparse rows runs one product on the
-    rows compacted (h dropped, then given back): any dtype and semiring, as the product.
+    compacted rows (h dropped, then restored), with any dtype and semiring, and matches the
+    plain product.
     """
     from graphblas.core import tensor
 
@@ -5005,7 +5004,7 @@ def test_ttm_compacted(monkeypatch):
     R = X.tensordot(Matrix.from_coo(range(30), range(30), 2.0), ([2], [0])).new()
     check(R, xv * 2, xp, approx=True)
     assert calls == [True]
-    # Not for rows that are mostly nonempty (even held hypersparse), nor outside the stored order
+    # Not for rows that are mostly nonempty (even stored hypersparse), nor outside the stored order
     Y, yv, yp = random_tensor((10, 11, 30), rng, density=0.1, layout=((0, 1), (2,)))
     calls.clear()
     check(
@@ -5192,7 +5191,7 @@ def test_kernel_disk_cache_guards(tmp_path, monkeypatch):
 def test_mttkrp_products_udt_first(shape, monkeypatch):
     """Without the Numba kernel, the products' first step (a TTM over the last axis) runs
     on the array-UDT engine when the JIT is on: every mode and a sample of layouts, iso
-    values, against numpy and the plain products; a sparse factor keeps the product.
+    values, against numpy and the plain products. A sparse factor runs the plain product.
     """
     _require_jit_compile()
     from graphblas.core import tensor
@@ -5435,11 +5434,11 @@ _BAD_KEYS = [
 @pytest.mark.parametrize("op", list(_INDEX_OPS))
 @pytest.mark.parametrize("key", _BAD_KEYS)
 def test_out_of_range_index_raises_as_matrix(key, op):
-    """An index out of range raises what the same Matrix (or Vector) call raises, with the
-    Tensor's message, which names the axis. Matrix raises IndexError for an int out of range
-    and for any index below -size, which it checks itself; the rest GraphBLAS refuses, with
-    InvalidIndex for an assignment to one element or an extraction with a Scalar out of range,
-    else IndexOutOfBound. take and vindex raise numpy's IndexError.
+    """An index out of range raises the exception the same Matrix (or Vector) call raises, with
+    the Tensor's own message, which names the axis. Matrix checks ints, and any index below
+    -size, itself and raises IndexError. GraphBLAS refuses the rest: InvalidIndex for an
+    assignment to one element or an extraction with a Scalar out of range, else
+    IndexOutOfBound. take and vindex raise numpy's IndexError.
     """
 
     def call(X, k):
@@ -5498,7 +5497,7 @@ def test_dense_and_matrices():
         T._check_invariants()
         assert T.nvals == d.size
         np.testing.assert_array_equal(T.to_dense(), d)
-    # Under a global by-column format, the stored Matrix is still held by row
+    # Under a global by-column format, the Matrix is still stored by row
     prev = gb.ss.config["format"]
     gb.ss.config["format"] = "by_col"
     try:
@@ -5551,7 +5550,9 @@ def test_scalar_comparisons_and_pow():
 
 
 def test_mttkrp_large_dims():
-    """An intermediate past 2**31 columns takes the copying reshape (SS 10.5.1 bug)."""
+    """An MTTKRP whose intermediate has more than 2**31 columns matches numpy; there
+    ``reshape_owned`` copies on SuiteSparse 10.5.1 (see test_reshape_owned_past_2_32).
+    """
     rng = np.random.default_rng(57)
     shape = (3, 2**29, 5)
     coords = [rng.integers(0, n, 40) for n in shape]
@@ -5578,9 +5579,10 @@ def test_mttkrp_large_dims():
 
 
 def test_reshape_owned_past_2_32(monkeypatch):
-    """``reshape_owned`` reshapes in place past 2^31 rows or columns on SuiteSparse 10.5.2,
-    which fixed Issue 462, and copies before it: 10.5.1's in-place reshape of (4, 2^31) to
-    (1, 2^33) kept 32-bit indices and put the last entry at column 2^32 - 1, not 2^33 - 1.
+    """``reshape_owned`` reshapes in place past 2^31 rows or columns on SuiteSparse 10.5.2 and
+    later, which fix SuiteSparse issue 462, and copies on earlier versions: 10.5.1's in-place
+    reshape of (4, 2^31) to (1, 2^33) keeps 32-bit indices and puts the last entry at column
+    2^32 - 1, not 2^33 - 1.
     """
     M = Matrix.from_coo([0, 1, 3], [0, 2**31 - 1, 2**31 - 1], [1.0, 2.0, 3.0], ncols=2**31)
     expected = Matrix.from_coo(
@@ -5595,9 +5597,9 @@ def test_reshape_owned_past_2_32(monkeypatch):
 
 
 def test_mttkrp_long_mode_sized_by_entries(monkeypatch):
-    """MTTKRP along a mode far longer than the data takes the GraphBLAS products, sized by
-    the entries. The Numba kernel filled a dense (mode x R) output, then kept its reached
-    rows: 8 GiB for a mode of 2^28 at R = 4, 32 TiB for one of 2^40.
+    """MTTKRP along a mode far longer than the data runs the GraphBLAS products, in memory sized
+    by the entries. The Numba kernel's dense (mode x R) output would take 8 GiB for a mode of
+    2^28 at R = 4, and 32 TiB for one of 2^40.
     """
     import tracemalloc
 
@@ -5607,7 +5609,7 @@ def test_mttkrp_long_mode_sized_by_entries(monkeypatch):
         pytest.skip("needs numba")
     monkeypatch.setattr(tensor, "_MTTKRP_KERNEL_MIN_NNZ", 0)
     rng = np.random.default_rng(29)
-    # (2^28 first: the old code fails there, before asking for 32 TiB)
+    # (2^28 first: a dense output fails there, before asking for 32 TiB)
     for log2 in [28, 40]:
         n = 2**log2
         xd = {(3, 1, 2): 2.0, (n - 1, 0, 4): -1.0, (3, 3, 0): 0.5, (7, 2, 2): 4.0}
@@ -5648,8 +5650,8 @@ def _shapes_12(ndim):
 @pytest.mark.parametrize("xndim", [1, 2, 3])
 def test_broadcast_sweep(xndim):
     """Every shape pair over sizes {1, 2} (lower rank and 0-d too), both operand orders,
-    several layouts: a lower-rank operand whose missing axes are size 1 still covers the
-    result (broadcast factor 1) and once took the wrong code path.
+    several layouts, including a lower-rank operand whose missing axes are size 1, which
+    still covers the result (broadcast factor 1).
     """
     rng = np.random.default_rng(58)
     ops = [
@@ -5709,15 +5711,15 @@ def test_nonempty_row_ids_and_perm_pricing():
     assert tl.expected_rows(100, 0) == 0
     assert tl.expected_rows(10, 1000) == pytest.approx(10)
     assert tl.expected_rows(10**8, 10**7) == pytest.approx(9.5e6, rel=0.01)
-    # skew (1e5, 1e3, 10) at 1e7, permuted (1, 0, 2): PERM_R over 1e8 rows of about one entry
-    # each once won on price (26 ms predicted) and took 3.5 s; it must cost more than a REBUILD
+    # skew (1e5, 1e3, 10) at 1e7, permuted (1, 0, 2): a PERM_R over 1e8 rows of about one
+    # entry each takes 3.5 s, so the plan must not use one over that many rows
     shape = (1000, 100_000, 10)
     cost, path, _ = tl.plan(shape, ((1, 0, 2), 1), frozenset([((0, 1, 2), 1)]), 10**7, 8)
     assert cost < tl.rebuild_cost(10**7, 0)
     for state, edge in zip(_states_along(((1, 0, 2), 1), path), path, strict=True):
         if edge[0] == "PERM_R":
             assert tl.prod(shape, state[0][: state[1]]) <= 4 * 10**7, path
-    # A small version runs through the same plan and gives the REBUILD result
+    # A small version runs through the same plan and returns the REBUILD result
     X, xv, xp = random_tensor((40, 300, 3), rng, density=0.05)
     Xv = X.permute_dims((1, 0, 2))
     check(
@@ -5730,10 +5732,10 @@ def test_nonempty_row_ids_and_perm_pricing():
 def test_pending_work_before_container_surgery():
     """Container code tests the stored format only once the Matrix is finished. In
     non-blocking mode, pending tuples make a hypersparse Matrix sparse when it is finished,
-    and zombies make a sparse one hypersparse; ``ss.format`` does not finish it. A TTM in the
-    stored order then loaded a Container SuiteSparse refused, and the nonempty-row helpers
-    read the arrays of the wrong format. (A subprocess: in blocking mode, which the session
-    may be in, no pending work stays.)
+    and zombies make a sparse one hypersparse; ``ss.format`` does not finish it. Otherwise a
+    TTM in the stored order would load a Container SuiteSparse refuses, and the nonempty-row
+    helpers would read the arrays of the wrong format. (A subprocess, since in blocking mode,
+    which the session may be in, no pending work stays.)
     """
     script = """
 import numpy as np
@@ -5797,7 +5799,7 @@ for kind in ["tuples", "zombies"]:
     assert result.returncode == 0, report
     lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
     assert lines.pop("package") == str(repo_root / "graphblas" / "__init__.py"), report
-    # Each case had pending work that changes the format
+    # Each case has pending work that changes the format
     assert lines.pop("inserted") == "hypercsr", report
     assert lines.pop("tuples format") == "hypercsr csr", report
     assert lines.pop("zombies format") == "csr hypercsr", report
@@ -5817,7 +5819,7 @@ def test_default_split_follows_nonempty_rows(monkeypatch):
     from graphblas.core import tensor
 
     rng = np.random.default_rng(61)
-    # Every (i, j) row holds 5 entries: the rows are well filled, so (0,1|2)
+    # Every (i, j) row has 5 entries: the rows are well filled, so (0,1|2)
     shape = (10, 12, 50)
     i, j = np.meshgrid(np.arange(10), np.arange(12), indexing="ij")
     i, j = np.repeat(i.ravel(), 5), np.repeat(j.ravel(), 5)
@@ -5979,9 +5981,9 @@ def test_transpose_thread_choices():
 @pytest.mark.parametrize("dtype", [dtypes.UINT8, dtypes.INT8])
 def test_broadcast_pow_saturates(dtype):
     """Broadcast ``ewise_mult`` and TTV with ``pow`` on integers saturate, as GraphBLAS's pow
-    does without broadcasting, whichever side broadcasts and whatever the layout. A product
-    that put the small operand first swapped ``pow`` for ``rpow``, a Numba UDF that wraps on
-    overflow.
+    does without broadcasting, whichever side broadcasts and whatever the layout. Fails if a
+    product that puts the small operand first swaps ``pow`` for ``rpow``, a Numba UDF that
+    wraps on overflow.
     """
     from graphblas.core.operator import get_semiring
 
@@ -6064,7 +6066,7 @@ def test_broadcast_gather_path():
 
 def test_extract_filter_path():
     """A slab along an axis inside a wide column group filters the stored coordinates
-    instead of listing every column index (or both ways agree).
+    instead of listing every column index, and matches numpy.
     """
     rng = np.random.default_rng(65)
     shape = (6, 2**12, 2**10)
@@ -6085,7 +6087,7 @@ def test_extract_filter_path():
     ]:
         check(X[key].new(), np_outer_index(dense, key), np_outer_index(present, key))
     # Keys that index only axes of a hypersparse row group pick rows from h (when its rows
-    # hold enough entries to beat the filter): ranges, steps, integers, an empty result
+    # have enough entries to beat the filter): ranges, steps, integers, an empty result
     shape = (300, 400, 50)
     ij = rng.choice(300 * 400, 600, replace=False)
     k = np.concatenate([rng.choice(50, 20, replace=False) for _ in range(600)])
@@ -6111,10 +6113,11 @@ def test_extract_filter_path():
 
 
 def test_extract_cost_visits_listed_rows():
-    """The extract is priced by the rows it visits: a slab inside a sparse (not hypersparse)
-    row group lists few of the rows, and extracts (it was priced as visiting every row, and
-    filtered, 7-80x slower on Uber). A short column list over a wide column group is hashed,
-    and each visited entry pays a lookup: the filter, at 1 thread (3x faster on u6).
+    """The extract is priced by the rows it visits. A slab inside a sparse (not hypersparse)
+    row group lists few of the rows, so it extracts; priced as visiting every row, it would
+    take the filter, 7-80x slower on Uber. A short column list over a wide column group is
+    hashed, and each visited entry pays a lookup, so at 1 thread the filter wins (3x faster
+    on u6).
     """
     from graphblas.core import tensor_census as census
 
@@ -6142,9 +6145,9 @@ def test_extract_cost_visits_listed_rows():
 
 def test_extract_column_range_in_place():
     """A column range of every row filters the stored column indices in place when the rows
-    outnumber the entries (Uber's slab along its last axis: 31 against 1.4 ms at 1 thread);
-    the extract stays where the rows are few, or hypersparse. Iso values, BOOL, and a range
-    after a leading index in a column group.
+    outnumber the entries (Uber's slab along its last axis: 1.4 ms against the extract's 31,
+    at 1 thread). The extract stays where the rows are few, or hypersparse. Covers iso
+    values, BOOL, and a range after a leading index in a column group.
     """
     from graphblas.core import tensor_census as census
 
@@ -6474,7 +6477,7 @@ def _random_key(n, rng, *, dups):
     return [int(i) for i in idx] if kind == "list" else np.asarray(idx)
 
 
-def _region_model(v_shape_value, shape, rng, kind):
+def _region_model(shape, rng, kind):
     """A value for a region of ``shape``: (value, values, presence) broadcast to ``shape``."""
     if kind == "scalar":
         x = float(rng.integers(-9, 10))
@@ -6525,7 +6528,7 @@ def test_assign_random(ndim):
             rshape = tuple(len(s) for s in sel if not isinstance(s, int))
             kinds = ["tensor", "broadcast", "scalar", "empty", "matrix", "vector"]
             kind = rng.choice(kinds if rshape else ["scalar", "empty"])
-            value, rv, rp = _region_model(None, rshape, rng, kind)
+            value, rv, rp = _region_model(rshape, rng, kind)
             accum = plus if rng.random() < 0.3 else None
             how = rng.choice(["plain", "setitem", "assign_mask", "submask"][: 4 if rshape else 3])
             mask = mbool = None
@@ -6704,9 +6707,9 @@ def test_gather(ndim, engines, monkeypatch):
 
 def test_gather_graphblas_past_2_63_positions(monkeypatch):
     """The GraphBLAS lookup (no Numba, or a UDT) on a stored Matrix of 2^63 positions or more,
-    where one int64 key per point would overflow: hits are found by binary search. It matched
-    each hit by scanning every distinct point, O(hits x points): 64000 points took 2.6 s,
-    and the 400000 here about half a minute.
+    where one int64 key per point would overflow, finds hits by binary search. Scanning every
+    distinct point for each hit, O(hits x points), would take about half a minute for the
+    400000 points here.
     """
     import time
 
@@ -6740,7 +6743,7 @@ def test_gather_graphblas_past_2_63_positions(monkeypatch):
 def test_gather_matrix_flipped_by_column(sparsity, monkeypatch):
     """A Matrix the Tensor shares (``from_matrix(copy=False)``) that the user then flips to
     by-column: the Numba lookup, which reads by-row arrays only, declines it, and the
-    GraphBLAS lookup gives the right values.
+    GraphBLAS lookup returns the right values.
     """
     from graphblas.core import tensor_index
 
@@ -6829,8 +6832,8 @@ def test_gather_when_no_listed_engine_runs(monkeypatch):
 @pytest.mark.parametrize("engines", [("extract", "numba", "graphblas"), ("numba",), ("graphblas",)])
 def test_take_along_axis_size1_axes(engines, monkeypatch):
     """``take_along_axis`` whose indices broadcast over a size-1 axis of the Tensor reads
-    coordinate 0 along it, as numpy does. It used to take the broadcast grid's coordinate,
-    past the axis: wrong values, an IndexError, or a read past the stored row pointers.
+    coordinate 0 along it, as numpy does. The broadcast grid's coordinate is past the axis:
+    reading it returns wrong values, raises IndexError, or reads past the stored row pointers.
     """
     from graphblas.core import tensor_index
 
@@ -6863,10 +6866,10 @@ def test_take_along_axis_size1_axes(engines, monkeypatch):
 
 def test_take_along_axis_by_entries(monkeypatch):
     """``take_along_axis`` whose indices broadcast over long axes of the Tensor joins its
-    entries with the indices. It listed every point of the result's shape for the gather:
-    for indices of shape (1, 2, 1) along axis 1 of a (2^20, 4, 4) Tensor, 2^23 points (a peak
-    of 415 MB for 4 entries); for a (2^40, 4, 4) one, 64 TiB per axis. Against numpy at
-    moderate sizes too, where the points outnumber the entries and indices.
+    entries with the indices, in memory sized by the entries. Listing every point of the
+    result's shape instead would take 2^23 points (415 MB) for indices of shape (1, 2, 1) along
+    axis 1 of a (2^20, 4, 4) Tensor of 4 entries, and 64 TiB per axis for a (2^40, 4, 4) one.
+    Also against numpy at moderate sizes, where the points outnumber the entries and indices.
     """
     import tracemalloc
 
@@ -6874,7 +6877,7 @@ def test_take_along_axis_by_entries(monkeypatch):
 
     xd = {(3, 1, 2): 2.0, (5, 0, 0): -1.0, (3, 3, 2): 0.5, (7, 2, 3): 4.0}
     idx = np.array([1, -2]).reshape(1, 2, 1)  # (axis 1: coordinates 1 and 2)
-    # (2^20 first: the old code fails there, before asking for 64 TiB)
+    # (2^20 first: listing every point fails there, before asking for 64 TiB)
     for log2 in [20, 40]:
         shape = (2**log2, 4, 4)
         X = Tensor.from_coo(list(zip(*xd, strict=True)), list(xd.values()), shape=shape)
@@ -6889,7 +6892,7 @@ def test_take_along_axis_by_entries(monkeypatch):
         assert _as_dict(R) == want
         assert peak < 2**24, (log2, peak)
     # Past 2^63 positions numpy's broadcast_shapes refuses the shape ("broadcast dimensions
-    # too large"), which read as indices that do not broadcast
+    # too large"), which must not read as indices that do not broadcast
     X = Tensor.from_coo(list(zip(*xd, strict=True)), list(xd.values()), shape=(2**40, 2**40, 4))
     R = X.take_along_axis(np.array([2, -1]).reshape(1, 1, 2), 2)
     assert R.shape == (2**40, 2**40, 2)
@@ -6946,9 +6949,9 @@ def _outer_model(xd, n, key):
 @pytest.mark.parametrize("log2n", [26, 30])
 def test_index_long_axes(log2n):
     """Extraction, assignment and deletion on a Tensor with long axes and few entries cost by
-    the entries, not by the axis lengths. Every slice became ``np.arange`` of its length and
-    extraction ran ``np.unique`` on each (``X[n - 1]`` of a (2^30)^3 Tensor passed 33 GB).
-    Measured with tracemalloc (numpy's allocations); 2^26 shows the old cost too.
+    the entries, not by the axis lengths (tracemalloc measures numpy's allocations). Turning
+    every slice into ``np.arange`` of its length, and running ``np.unique`` on each, would
+    pass 33 GB for ``X[n - 1]`` of a (2^30)^3 Tensor.
     """
     import tracemalloc
 
@@ -6987,8 +6990,8 @@ def test_index_long_axes(log2n):
 @pytest.mark.parametrize("ndim", [2, 3, 4])
 def test_extract_repeated_indices(ndim, max_listed, monkeypatch):
     """Outer indexing with repeated indices repeats the entries (numpy's ``np.ix_``, and
-    Matrix), on every layout and storage, by SuiteSparse's extract or (``_MAX_LISTED`` 0) the
-    coordinate filter, which used to keep one of them.
+    Matrix), on every layout and storage, by SuiteSparse's extract and (with ``_MAX_LISTED``
+    0) by the coordinate filter.
     """
     from graphblas.core import tensor
 
@@ -7010,7 +7013,7 @@ def test_extract_repeated_indices(ndim, max_listed, monkeypatch):
 
 
 def test_reduce_aggregators():
-    """``reduce`` with aggregators made of a monoid or a semiring gives what Matrix gives
+    """``reduce`` with aggregators made of a monoid or a semiring returns what Matrix returns
     (values and dtypes); composite ones raise.
     """
     from graphblas import agg
@@ -7102,9 +7105,7 @@ def test_einsum_plan_cache():
 @pytest.mark.parametrize("opt_einsum", [True, False])
 def test_einsum_explicit_path(opt_einsum, monkeypatch):
     """An explicit path is used as given, with or without opt_einsum, in opt_einsum's form or
-    numpy.einsum_path's (with its leading "einsum_path"); a bad one is refused clearly.
-    Without opt_einsum it was ignored for the greedy order, and numpy's form raised
-    "'str' object cannot be interpreted as an integer" from opt_einsum.
+    numpy.einsum_path's (with its leading "einsum_path"); a bad one raises a clear error.
     """
     from graphblas.core import tensor_einsum
 
@@ -7295,7 +7296,7 @@ def test_bcast_options_offered_once():
 
 
 def test_census_notes_and_forced_paths():
-    """Paths the census notes (or a forced choice takes) give the same results: the default
+    """Paths the census records (or a forced choice takes) return the right results: the default
     layout of unsorted coordinates and past 2^60 positions, one ewise layout, a union
     broadcast, an empty or one-value small side, the hypersparse-rows diagonal, a gather
     that falls back to a relayout, reductions by rebuild or after a reshape, extraction by
@@ -7306,7 +7307,7 @@ def test_census_notes_and_forced_paths():
     rng = np.random.default_rng(708)
     X, xv, xp = random_tensor((4, 5, 6), rng, density=0.6, layout=((0, 1), (2,)))
     H, hv, hp = _hyper_rows_tensor(rng, (60, 70, 5), 150)
-    # A full Tensor held as a sparse Matrix: its gather copy goes full, so the gather declines
+    # A full Tensor stored as a sparse Matrix: its gather copy goes full, so the gather declines
     F, fv, fp = random_tensor((4, 5, 6), rng, density=1.0)
     F.ss.matrix.ss.config["sparsity_control"] = "sparse"
     F._store.exported = False
@@ -7378,8 +7379,9 @@ def test_census_notes_and_forced_paths():
 
 
 def test_relayout_allow_perm():
-    """``allow_perm`` gates each permutation edge: True both, "rows" PERM_R, "cols" PERM_C,
-    False neither; a UDT gets PERM_C only (PERM_R is a product). Results are the same.
+    """``allow_perm`` chooses the permutation edges a plan may use: True both, "rows" PERM_R,
+    "cols" PERM_C, False neither; a UDT gets PERM_C only (PERM_R is a product). Results are
+    the same.
     """
     from graphblas.core import tensor_layout as tl
 
