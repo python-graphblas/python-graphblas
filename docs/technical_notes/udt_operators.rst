@@ -233,8 +233,10 @@ With ``ret_dtype``, the function must return something that can be written as th
   or a record of that type.
 - **An array UDT**: an array that fills the element, or a number, which fills every value.
 - **A date, duration or text UDT**: a value of that type.
-- **A built-in type**: a number. A complex number cannot be written as a real type, but it
-  can be written as BOOL.
+- **A built-in type**: a number.
+
+A complex value cannot be written as a real type or into a real array element, but it can
+be written as BOOL.
 
 These raise ``UdfParseError`` when the operator is compiled for the types, not while it
 runs:
@@ -245,7 +247,8 @@ runs:
 - a field that can be ``None`` on some path (``v if cond else None``), since a record
   cannot hold ``None``;
 - an array, tuple or list for a field that holds one number;
-- an array that cannot fill the element, such as ``x[:2]`` from a 3-element UDT.
+- an array that cannot fill the element, such as ``x[:2]`` from a 3-element UDT;
+- a return that cannot be written as ``ret_dtype``, such as a complex value for a real type.
 
 Numba knows the length of a tuple but not the shape of an array the function builds, so
 for an array result the check calls the function on sample values. A function that raises

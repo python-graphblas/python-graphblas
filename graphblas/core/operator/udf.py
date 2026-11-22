@@ -230,11 +230,12 @@ def _check_declared_ret_type(ret_dtype, numba_ret_type):
 
 
 def _refuse_complex_into_real(ret_dtype, element, numba_ret_type):
-    """Raise if the UDF returns complex values for ``element``, a real type of ``ret_dtype``.
+    """Raise if the UDF returns complex values and ``element`` is real.
 
-    Numba has no cast from complex to real, so the wrapper fails to compile,
-    with a message that does not say why (``Failed in nopython mode pipeline``).
-    A bool output is written as ``bool(...)``, which takes a complex value.
+    ``element`` is the element type of ``ret_dtype``. Numba has no cast from
+    complex to real, so the wrapper fails to compile, with a message that does
+    not say why (``Failed in nopython mode pipeline``). A bool output is written
+    as ``bool(...)``, which takes a complex value.
     """
     nt = numba.core.types
     returned = numba_ret_type.dtype if isinstance(numba_ret_type, nt.Array) else numba_ret_type
@@ -591,9 +592,9 @@ def _run_udf_probe(numba_func, arg_dtypes):
 
 # The UDT ops whose UDF raised on both sets of stand-in operands (other than an
 # ArithmeticError), or returned an array of the wrong size for a scalar, with the reason as
-# text. Such an op still types, since the UDF may raise only for some values, but a number
-# used with it is typed as itself rather than as an element, as a Scalar of it would be
-# (``literals._own_scalar_type_for_user_op``).
+# text. Such an op still types, since the UDF may raise, or return that size, only for some
+# values. But a number used with it is typed as itself rather than as an element, as a Scalar
+# of it would be (``literals._own_scalar_type_for_user_op``).
 _RAISES_ON_SAMPLES = weakref.WeakKeyDictionary()
 
 

@@ -7708,7 +7708,7 @@ def test_udt_ret_dtype_errors():
 def _ret_dtype_class_cases():
     """Return (class, namespace, UDF, typed lookup) for each class that takes ret_dtype.
 
-    Each UDF returns 3 values from its longer array operand.
+    Each UDF returns a 3-element array from operands of a longer array UDT.
     """
     cases = [
         (UnaryOp, "unary", lambda x: x[:3], lambda o, t: o[t]),
