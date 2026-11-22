@@ -2,6 +2,7 @@
 # pandas' DataFrame output byte for byte without needing pandas. With pandas installed,
 # the renderer reads its display.* options, so pd.option_context applies; without it,
 # it uses pandas' defaults (_DISPLAY_DEFAULTS).
+import builtins
 import math
 import re
 import shutil
@@ -22,12 +23,22 @@ try:
 except ImportError:  # pragma: no cover (import)
     has_pandas = False
 
+
+def _in_terminal():
+    """Return whether Python runs in a terminal, not a Jupyter kernel.
+
+    This is how ``pandas.core.config_init.is_terminal`` decides it.
+    """
+    get_ipython = getattr(builtins, "get_ipython", None)
+    return get_ipython is None or not hasattr(get_ipython(), "kernel")
+
+
 # pandas' defaults for the display options the renderer reads, for when pandas is not
-# installed. max_columns is 0 as in a terminal; pandas makes it 20 in a Jupyter kernel.
+# installed.
 _DISPLAY_DEFAULTS = {
     "max_rows": 60,
     "min_rows": 10,
-    "max_columns": 0,
+    "max_columns": 0 if _in_terminal() else 20,
     "width": 80,
     "expand_frame_repr": True,
     "precision": 6,

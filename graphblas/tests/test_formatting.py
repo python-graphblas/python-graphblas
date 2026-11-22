@@ -1,4 +1,6 @@
+import builtins
 import contextlib
+import types
 
 import numpy as np
 import pytest
@@ -528,6 +530,29 @@ def test_no_pandas_repr_html(A, C, v, w):
     html = repr_html(A)
     assert "install" not in html.lower()
     assert '<table border="1" class="dataframe">' in html
+
+
+def test_display_defaults_in_a_jupyter_kernel(monkeypatch):
+    """Without pandas, display.max_columns defaults to 20 in a Jupyter kernel, as in pandas."""
+    try:
+        from pandas.core.config_init import is_terminal
+    except ImportError:  # pragma: no cover (no pandas, or pandas moved it)
+        is_terminal = None
+    kernel = types.SimpleNamespace(kernel=object())
+    for get_ipython, in_terminal in [
+        (None, True),
+        (types.SimpleNamespace, True),
+        (lambda: kernel, False),
+    ]:
+        if get_ipython is None:
+            monkeypatch.delattr(builtins, "get_ipython", raising=False)
+        else:
+            monkeypatch.setattr(builtins, "get_ipython", get_ipython, raising=False)
+        assert formatting._in_terminal() is in_terminal
+        if is_terminal is not None:
+            assert is_terminal() is in_terminal
+    monkeypatch.undo()
+    assert formatting._DISPLAY_DEFAULTS["max_columns"] == (0 if formatting._in_terminal() else 20)
 
 
 def test_matrix_repr_html_small(A, B):
