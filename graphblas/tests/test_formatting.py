@@ -513,8 +513,8 @@ def test_scalar_repr(s, t):
 
 
 def test_no_pandas_repr_html(A, C, v, w):
-    # Nor does _repr_html_: with pandas marked absent, the output is byte-identical
-    # to the output with pandas, data table and all.
+    # _repr_html_ does not need pandas either: with pandas marked absent, the output is
+    # byte-identical to the output with pandas, data table and all.
     objs = [A, A.T, C, C.S, ~C.V, v, v.S, ~w.V, w]
     expected = [repr_html(x) for x in objs]
     has_pandas_prev = formatting.has_pandas

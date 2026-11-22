@@ -687,7 +687,7 @@ class _TextFormatter:
             # is_float(v) & notna(v)) and rendered as the na_rep "NaN" instead.
             if _is_float_scalar(v) and not math.isnan(v):
                 if float_format is not None:
-                    # Without the leading space of the default format
+                    # The result is used as is, without the sign space of the default format
                     out.append(float_format(v))
                 else:
                     out.append(_trim_zeros_single_float(f"{v: .{precision}f}"))
@@ -789,7 +789,7 @@ class _TextFormatter:
 
 
 def _kept(fitted, limit, length):
-    """Return how many items to show at each end, and the positions of the items shown.
+    """Return the number of items before the dots, and the positions of the items shown.
 
     With room for one item, the first ``limit`` items are shown instead.
     """
@@ -928,8 +928,9 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
             )
     present = _count_present(arr)
     truncated = (len(rows), len(columns)) != matrix.shape
-    # The entries the COO form would show: the renderer cuts it to the rows it shows, as it
-    # does the grid
+    # How many entries the COO form would show, since the renderer cuts it to the rows it
+    # shows, as it does the grid. The COO form is used when that is more than twice the
+    # entries the grid shows.
     coo_rows = matrix._nvals if matrix._nvals <= max_rows else min(min_rows, fit_rows)
     if (
         (mask is None or mask.structure)
