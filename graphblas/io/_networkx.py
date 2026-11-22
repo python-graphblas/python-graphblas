@@ -34,11 +34,10 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
     # the errors and the node order are the same. Building the coo arrays here, not
     # through scipy, skips scipy's coo -> csr conversion and the scipy.sparse import
     # (about 100 ms on its own).
-    import numpy as np
-
     from .. import backend
     from ..binary import plus
     from ..core.matrix import Matrix
+    from ..core.udt import _builtin_dtype
 
     if len(G) == 0:
         raise nx.NetworkXError("Graph has no nodes or edges")
@@ -98,6 +97,13 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
         # With no edges there is no weight to infer a dtype from, and the values are
         # float64 when dtype is not given, as nx.to_scipy_sparse_array gives them.
         return Matrix(lookup_dtype(values.dtype), nrows=nlen, ncols=nlen, name=name)
+    if _builtin_dtype(values.dtype) is None:
+        # A numpy type that GraphBLAS has no type for, such as float16, would make the
+        # Matrix a UDT. lookup_dtype would register one, so check without it.
+        raise ValueError(
+            f"edge weights must have a GraphBLAS type; attribute {weight!r} gives dtype "
+            f"{values.dtype}"
+        )
 
     rows = np.array(row, dtype=np.uint64)
     cols = np.array(col, dtype=np.uint64)

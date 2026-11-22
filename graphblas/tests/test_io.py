@@ -295,6 +295,21 @@ def test_from_networkx_undirected_selfloop_dtype():
 
 
 @pytest.mark.skipif("not nx")
+@pytest.mark.parametrize("graph_cls", [nx.Graph, nx.DiGraph, nx.MultiDiGraph] if nx else [])
+def test_from_networkx_rejects_weights_without_a_graphblas_type(graph_cls):
+    # float16 has no GraphBLAS type, so the Matrix would be a UDT. Refusing it
+    # registers no UDT either.
+    from graphblas.core.dtypes import _registry
+
+    G = graph_cls()
+    G.add_weighted_edges_from([(0, 1, np.float16(1.5)), (1, 2, np.float16(2.5))])
+    registered = set(_registry)
+    with pytest.raises(ValueError, match="attribute 'weight' gives dtype float16"):
+        gb.io.from_networkx(G)
+    assert set(_registry) == registered
+
+
+@pytest.mark.skipif("not nx")
 def test_from_networkx_int32_weights_like_from_coo():
     # np.int32 weights give INT32, as they do in from_coo
     G = nx.DiGraph()
