@@ -98,7 +98,7 @@ def __rxor__(self, other):
 
 def _tensor_in_place(self, other, name):
     # In-place ops must not return NotImplemented: Python would fall back to `A = A op T` and
-    # silently rebind A to a Tensor expression.
+    # rebind A to a Tensor expression without an error.
     if output_type(other) in _tensor_types:
         raise TypeError(
             f"In-place `{name}` on a {type(self).__name__} with a Tensor operand is not "

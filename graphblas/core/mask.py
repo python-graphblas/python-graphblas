@@ -232,9 +232,10 @@ def _check_mask(mask, output=None, strict_kind=False):
 
 
 def _as_tensor_masks(m1, m2):
-    """A Tensor mask with a Matrix or Vector one: the other becomes the same mask of it as a
-    Tensor, as Tensor operations treat Matrix and Vector operands (the combination recipes
-    then make Tensors only; a Matrix result cannot take a Tensor mask).
+    """For a Tensor mask combined with a Matrix or Vector mask, make the other the same mask
+    of its operand as a Tensor, as Tensor operations treat Matrix and Vector operands. The
+    combination recipes then make only Tensors, since a Matrix result cannot take a Tensor
+    mask.
     """
     t1 = utils.output_type(m1.parent) in utils._tensor_types
     t2 = utils.output_type(m2.parent) in utils._tensor_types

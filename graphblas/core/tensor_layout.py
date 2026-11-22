@@ -783,8 +783,9 @@ def plan_each(shape, src, states, nnz, nthreads):
     the same order up to each target, as long as that target is within its own REBUILD cost
     (past it, both give the REBUILD). Running one search past them all, bounded by the
     largest of those costs, gives each target the cost and path its own search finds.
-    Choosing among many layouts by their cost to reach (a 5-d MTTKRP prices 24) took one
-    search each: the first 5-d MTTKRP on a new shape took 163 ms, and 12 with one search.
+    Choosing among many layouts by their cost to reach (a 5-d MTTKRP prices 24) would
+    otherwise take one search each: 163 ms for the first 5-d MTTKRP on a new shape, against
+    12 ms with one search.
     """
     ti = 0 if nthreads > 1 else 1
     nbits = int(nnz).bit_length()
@@ -1007,8 +1008,8 @@ def execute(M, shape, state, path):
                 M = new_matrix(M.dtype, nrows, ncols)
                 how = "empty: new"
             elif owned:
-                # Storage order (rowwise on a by-row Matrix), so the other 10.5.1 reshape bug
-                # (order != orientation) cannot apply either.
+                # In storage order (rowwise on a by-row Matrix), so SuiteSparse 10.5.1's other
+                # reshape bug, with order != orientation, does not apply either
                 before = M
                 M = reshape_owned(M, nrows, ncols)
                 how = "in place" if M is before else "copy (past 2^31)"
@@ -1064,7 +1065,7 @@ def _nthreads():
 
 
 def density(M):
-    """True when the rows hold fewer than about 2 entries each (the hypersparse branch)."""
+    """True when the rows have fewer than about 2 entries each (the hypersparse branch)."""
     nvals = M._nvals
     if nvals < 65536:
         # Small: the choice does not matter, and the Container round trip costs time.

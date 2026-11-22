@@ -170,9 +170,10 @@ def _ownable_copy(array, order, dtype=None):
 
 @contextmanager
 def _give_buffer(array):
-    """``give_buffer`` of suitesparse-graphblas: yields ``(ptr, nbytes, arena)`` to hand the
-    data of ``array`` (or of a copy GraphBLAS can own) to, e.g., ``GxB_Vector_load``. Before
-    10.5.1.1, the same as the ``ss`` pack methods do it, in the global arena (0).
+    """suitesparse-graphblas's ``give_buffer``: yields ``(ptr, nbytes, arena)`` for handing the
+    data of ``array``, or of a copy GraphBLAS can own, to a call such as ``GxB_Vector_load``.
+    Before suitesparse-graphblas 10.5.1.1, it does what the ``ss`` pack methods do, in the
+    global arena (0).
     """
     if give_buffer is not None:
         with give_buffer(array) as rv:

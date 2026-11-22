@@ -472,7 +472,6 @@ class Vector(BaseType):
 
         """
         if output_type(other) in _tensor_types:
-            # The Tensor compares this Vector as the 1-d Tensor of its shape
             return other.isequal(self, check_dtype=check_dtype, **opts)
         other = self._expect_type(other, Vector, within="isequal", argname="other")
         if check_dtype and self.dtype != other.dtype:
@@ -522,7 +521,6 @@ class Vector(BaseType):
 
         """
         if output_type(other) in _tensor_types:
-            # The Tensor compares this Vector as the 1-d Tensor of its shape
             return other.isclose(
                 self, rel_tol=rel_tol, abs_tol=abs_tol, check_dtype=check_dtype, **opts
             )
