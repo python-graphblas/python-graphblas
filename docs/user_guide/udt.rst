@@ -287,9 +287,9 @@ Naming the output type
 
 The result type is worked out from what the function returns, matched against the operand
 types, so it can only be an operand's type or a built-in type. A function that returns a
-smaller array, such as ``x[:3]`` on a 9-element UDT, fills no operand's element, which
-raises ``UdfParseError``. Pass ``ret_dtype`` to name the result type. It takes anything
-``lookup_dtype`` accepts and requires ``is_udt=True``:
+smaller array, such as ``x[:3]`` on a 9-element UDT, fills no operand's element and raises
+``UdfParseError``. Pass ``ret_dtype`` to name the result type. It takes anything
+``dtypes.lookup_dtype`` accepts and requires ``is_udt=True``:
 
 .. code-block:: python
 
@@ -304,15 +304,12 @@ raises ``UdfParseError``. Pass ``ret_dtype`` to name the result type. It takes a
     head[Nine].return_type  # Three
 
 ``register_anonymous`` and ``register_new`` of ``unary``, ``binary``, ``indexunary`` and
-``indexbinary`` take ``ret_dtype``. It is the result type for every operand type the
-operator is compiled for, so an operator whose result type should depend on its operands
-needs one registration for each result type. The result must still fill an element of
-``ret_dtype`` by the rules in :ref:`tn_udt_udf_returns`, and be something it can hold: one
-value per field for a record, an array or a number for an array UDT, and a number for a
-built-in type. Otherwise compiling the operator for a type (``op[dtype]``, or its first
-use) raises ``UdfParseError``. ``select`` operators always return BOOL and take no
-``ret_dtype``, and an operator registered without ``is_udt=True`` gets its result types
-from compiling the function for each operand type.
+``indexbinary`` take ``ret_dtype``; ``select`` operators always return BOOL and do not.
+It is the result type for every operand type, so an operator whose result type should
+depend on its operands needs one registration for each result type. The function must
+return something that can be written as ``ret_dtype`` (:ref:`tn_udt_udf_returns`), or
+compiling the operator for a type, with ``op[dtype]`` or on first use, raises
+``UdfParseError``.
 
 Example: shortest paths with parents
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

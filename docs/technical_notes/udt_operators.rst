@@ -227,6 +227,15 @@ An array field of a record takes an array the same way. It also takes a tuple or
 but only when the field is one-dimensional and the tuple has exactly its length; a tuple
 does not broadcast.
 
+With ``ret_dtype``, the function must return something that can be written as that type:
+
+- **A record type**: a tuple with one value per field, flat over nested records as above,
+  or a record of that type.
+- **An array UDT**: an array that fills the element, or a number, which fills every value.
+- **A date, duration or text UDT**: a value of that type.
+- **A built-in type**: a number. A complex number cannot be written as a real type, but it
+  can be written as BOOL.
+
 These raise ``UdfParseError`` when the operator is compiled for the types, not while it
 runs:
 
@@ -240,7 +249,9 @@ runs:
 
 Numba knows the length of a tuple but not the shape of an array the function builds, so
 for an array result the check calls the function on sample values. A function that raises
-on those values is not checked, since it may raise only for some values. An exception the
-function raises when the operator runs is printed and goes no further (Numba cannot pass
-it to GraphBLAS), so that element is not written; a built-in output, such as a select's
-bool, is 0 or ``False`` there.
+on those values is not checked, since it may raise only for some values.
+
+An exception the function raises while the operator runs is printed, and the operation
+goes on, since Numba cannot pass the exception to GraphBLAS. The element it raised for is
+0 (``False`` for a select, which then drops the entry) when the result type is built-in.
+An element of a UDT result is kept but not written, so its value is undefined.

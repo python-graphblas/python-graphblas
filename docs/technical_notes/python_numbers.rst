@@ -141,7 +141,9 @@ or ``np.int64(1)`` above, still converts, with a ``DeprecationWarning``; it will
 ``ValueError``. A ``float`` too large for a float32 field raises ``OverflowError`` instead
 of becoming infinity.
 
-A Python or numpy number beside a user-defined operator that cannot be typed with an
-element is typed as itself instead, as a ``Scalar`` of it would be. For example, an
-IndexUnaryOp that returns ``x[:2] * t`` with a 2-element ``ret_dtype``, applied to a Vector
-of a 6-element array UDT, cannot take a 6-element ``t``, so the thunk ``3.0`` is typed FP64.
+A user-defined operator may not work with the literal as an element: it does not compile
+for the element, or it raises on the sample values it is checked with
+(:ref:`tn_udt_udf_returns`). A Python or numpy number is then typed as itself, as a
+``Scalar`` of it would be. For example, take an IndexUnaryOp that returns ``x[:2] * t`` and
+is registered with a 2-element ``ret_dtype``. Applied to a Vector of a 6-element array UDT,
+it cannot take a 6-element ``t``, so the thunk ``3.0`` is typed FP64.
