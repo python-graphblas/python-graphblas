@@ -113,7 +113,7 @@ _JIT_WORKS_AT_IMPORT = _jit_works_here()
 def _compiles_only_through_cmake():
     """Whether SuiteSparse is built with MSVC (Windows), which compiles only through cmake.
 
-    It keeps ``jit_use_cmake`` True whatever is set.
+    Such a build keeps ``jit_use_cmake`` True whatever is set.
     """
     cfg = gb.ss.config
     prev_cmake = cfg["jit_use_cmake"]
@@ -132,9 +132,9 @@ _UDT_WORK_RAISES_RUN = _JIT_WORKS_AT_IMPORT and not _CMAKE_ONLY
 def _jit_through_cmake_here():
     """Whether SuiteSparse has the JIT and compiles only through cmake, and cmake is on the PATH.
 
-    One built without the JIT keeps ``jit_c_control`` at ``'run'``. Here
-    ``'on'`` set at init probes through cmake, which finds the Visual Studio
-    compiler itself.
+    A SuiteSparse built without the JIT keeps ``jit_c_control`` at ``'run'``.
+    Here ``'on'`` set at init probes through cmake, which finds the Visual
+    Studio compiler itself.
     """
     if not _CMAKE_ONLY or shutil.which("cmake") is None:
         return False

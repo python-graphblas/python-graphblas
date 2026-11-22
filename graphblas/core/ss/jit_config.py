@@ -252,10 +252,10 @@ def _probe_jit(cfg):
 
     The type is created through the C API, so nothing is registered in Python,
     and this can run while the backend initializes. Its name is a hash of the
-    toolchain settings, cmake or not among them, so a compiler or flags this
-    cache has not seen compile a probe of their own, rather than load one that
-    another toolchain left in a shared cache. A cached probe loads in about 2 ms;
-    a compile takes about 0.3 s.
+    toolchain settings, whether it compiles through cmake included, so a
+    compiler or flags this cache has not seen compile a probe of their own,
+    rather than load one that another toolchain left in a shared cache. A
+    cached probe loads in about 2 ms; a compile takes about 0.3 s.
     """
     from .. import ffi, lib
 
@@ -434,7 +434,7 @@ def _enable_jit_for_udt():
     compile fails, and raising it would retry that compile at every later UDT
     operator, raising ``JitError`` each time from SuiteSparse 9.4 on. Nor is the
     default raised where SuiteSparse compiles through cmake (``jit_use_cmake``,
-    always True when it is built with MSVC): there each kernel took about 10 s
+    always True when it is built with MSVC). Each kernel took about 10 s there
     on Windows CI, so only an ``'on'`` the user set compiles, even where the
     configured compiler exists. Whether this process can compile at all is
     probed once (``_jit_enabled_for_udt``). The rules for users are in the
@@ -529,9 +529,9 @@ def _compiling_c_source(name):
         elif after == before == "run" and cfg.get("jit_use_cmake"):
             reason = (
                 "jit_c_control is still 'run', which neither compiles nor loads: "
-                "SuiteSparse compiles through cmake here, which python-graphblas "
-                "does not start unasked (or SuiteSparse was built without the JIT). To "
-                "compile it through cmake, set gb.ss.config['jit_c_control'] = 'on'."
+                "SuiteSparse compiles through cmake here, where python-graphblas leaves "
+                "'run' alone (or SuiteSparse was built without the JIT). To compile it "
+                "through cmake, set gb.ss.config['jit_c_control'] = 'on'."
             )
         elif after == before == "run":
             reason = (

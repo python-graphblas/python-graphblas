@@ -50,10 +50,10 @@ cache. Where any step fails, the control is ``"run"``, with no error or warning:
   python-suitesparse-graphblas;
 - no C compiler, or one that fails the check (in a conda environment,
   ``conda install c-compiler`` provides one);
-- where SuiteSparse compiles through cmake, no cmake on the ``PATH``. SuiteSparse built
-  with MSVC, as conda-forge builds it for Windows, always does
-  (``gb.ss.config["jit_use_cmake"]`` is True), and cmake finds the Visual Studio C
-  compiler itself, so the configured compiler is not checked there;
+- no cmake on the ``PATH``, where SuiteSparse compiles through cmake. SuiteSparse built
+  with MSVC, as conda-forge builds it for Windows, always compiles through cmake
+  (``gb.ss.config["jit_use_cmake"]`` is True). cmake finds the Visual Studio C compiler
+  itself, so the configured compiler is not checked there;
 - a cache directory it cannot write to.
 
 **Later.** ``gb.ss.config["jit_c_control"] = value`` sets the control for the rest of the
