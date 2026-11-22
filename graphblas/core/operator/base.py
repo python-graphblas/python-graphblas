@@ -402,7 +402,7 @@ class OpBase:
 
     def __delitem__(self, type_):
         type_ = lookup_dtype(type_)
-        del self._typed_ops[type_]
+        self._typed_ops.pop(type_, None)  # a deferred build is in ``.types`` only
         del self.types[type_]
 
     def __contains__(self, type_):

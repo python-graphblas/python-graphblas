@@ -7075,6 +7075,21 @@ def test_builtin_udf_builds_one_dtype_when_indexed():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_builtin_udf_deletes_a_dtype_it_has_not_built():
+    floordiv = BinaryOp._build("floordiv", operator.binary._floordiv, anonymous=True, cache=True)
+    del floordiv[INT64]
+    assert INT64 not in floordiv.types
+    assert INT64 not in floordiv
+    floordiv[INT32]
+    del floordiv[INT32]
+    assert INT32 not in floordiv.types
+    assert INT32 not in floordiv._typed_ops
+    with pytest.raises(KeyError):
+        del floordiv[INT64]
+    assert floordiv[INT8].return_type == INT8
+
+
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.parametrize("name", ["floordiv", "rfloordiv", "absfirst", "abssecond", "rpow"])
 def test_builtin_udf_types_without_typing_only(name, monkeypatch):
     # Without the typing-only path (a Numba whose internals moved), every dtype
