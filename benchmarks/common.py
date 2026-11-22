@@ -24,8 +24,8 @@ from graphblas import Matrix, Vector
 LARGE_N = 1_000_000
 LARGE_NNZ = 1_000_000
 
-# "Small" operands: overhead-dominated. At this size the wall time is almost all
-# Python-side expression machinery, which is exactly what we want to track.
+# "Small" operands: at this size the time is almost all Python's expression
+# machinery, which is what these benchmarks track.
 SMALL_SIZE = 100
 
 # Dense conversions use a fully dense square matrix small enough to materialize.

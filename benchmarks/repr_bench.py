@@ -1,9 +1,8 @@
 """repr / _repr_html_ rendering.
 
-Object display goes through pandas and, for large objects, the formatting code
-that decides what to elide. Small reprs are an overhead microbenchmark; large
-reprs check that the truncation path stays cheap (it must not render every one of
-~1e6 nonzeros).
+A repr formats a table of the values and, for a large object, decides which rows and
+columns to leave out. Small reprs measure the overhead; large reprs check that leaving
+values out stays cheap (it must not format each of about 1e6 nonzeros).
 """
 
 from graphblas import Matrix, Vector

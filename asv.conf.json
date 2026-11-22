@@ -1,11 +1,7 @@
 {
-  // asv (airspeed velocity) config for python-graphblas.
-  //
-  // Placement: this file and the benchmarks/ directory are intended to live at the
-  // repo root (next to pyproject.toml). The paths below are relative to that root.
-  // asv's config loader strips these // line comments; a strict JSON linter will
-  // not. If the repo's pre-commit `check-json` hook is enabled, exclude this file
-  // (asv.conf.json is asv's own format, and its docs use // comments).
+  // asv (airspeed velocity) configuration for python-graphblas. Paths are relative to
+  // the repository root. asv strips these // comments; pre-commit's strict check-json
+  // hook skips this file. See benchmarks/README.md.
   //
   // Typical use:
   //   asv run                     # benchmark current commit

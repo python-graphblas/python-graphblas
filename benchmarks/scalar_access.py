@@ -5,11 +5,11 @@ machinery, so these times are almost entirely Python overhead. "hit" indexes an
 element that is present; "miss" indexes an empty slot (the extract returns an
 empty Scalar / ``None`` value).
 
-Several of these paths gained dedicated fast lanes (single-element extract,
-``get``, ``__contains__``, integer ``__setitem__``); the benchmarks below track
-each one so a regression that re-routes through the slow expression path shows up.
-Every ``setup`` warms the path once so the first timed sample is not inflated by
-one-off numba/dtype/operator cache population.
+Several of these paths skip most of that machinery (the extract of one element,
+``get``, ``__contains__``, and ``__setitem__`` with ints), and the benchmarks below
+time each one, so a change that sends one back through the full expression path
+shows. Every ``setup`` runs the path once, so the first timed sample does not pay for
+one-off Numba compiles or cache fills.
 """
 
 import graphblas as gb

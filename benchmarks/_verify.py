@@ -1,13 +1,12 @@
 #!/usr/bin/env python
-"""Standalone sanity check for the asv benchmark suite (not an asv benchmark).
+"""Run every benchmark of the asv suite once, without asv (not an asv benchmark).
 
-Imports every benchmark module the way asv does (benchmark_dir on sys.path),
-then for each benchmark class runs setup() and calls each benchmark method once
-across all parameter combinations. timeraw_* methods return a code string, which
-is executed in a fresh subprocess. Prints PASS/FAIL per benchmark and a timing so
-we can spot anything accidentally slow.
+Imports each benchmark module as asv does (with this directory on sys.path), then for
+each benchmark class runs setup() and calls each benchmark method once for every
+combination of its parameters. A timeraw_* method returns code, which runs in a fresh
+process. Prints PASS or FAIL and the time of each benchmark, so a slow one shows.
 
-Usage:  python _verify.py
+Usage:  python benchmarks/_verify.py
 """
 
 import importlib
@@ -18,9 +17,8 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-BENCH_DIR = HERE / "benchmarks"
-sys.path.insert(0, str(BENCH_DIR))  # flat import mode, as asv does
+BENCH_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(BENCH_DIR))  # import the modules flat, as asv does
 
 MODULES = [
     "scalar_access",
