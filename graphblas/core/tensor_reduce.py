@@ -4,6 +4,7 @@ Private: part of ``graphblas.core.tensor``, which imports it at its end.
 """
 
 import math
+from functools import partial
 
 from .. import binary, monoid, semiring
 from ..dtypes import BOOL, UINT32, UINT64
@@ -19,11 +20,17 @@ from .vector import Vector
 def _reduce_aggregator(t, op, axis, keepdims):
     """``reduce`` with an aggregator: its monoid; or its semiring's multiply applied with the
     aggregator's initial value to every entry, then the semiring's monoid, then its finalize
-    op, as Matrix aggregations do.
+    op, as Matrix aggregations do. One that picks an aggregator by the kind of number
+    (``agg.L1norm``) reduces with the one for the Tensor's dtype, and an applybegin op, if
+    any, is applied first.
     """
-    from .operator.agg import TypedAggregator
+    from .operator.agg import TypedAggregator, _by_kind
 
     agg = op.parent if isinstance(op, TypedAggregator) else op
+    if isinstance(agg._custom, partial) and agg._custom.func is _by_kind:
+        # One that picks an aggregator by the kind of number, as agg.L1norm does
+        aggs = agg._custom.keywords["aggs"]
+        agg = aggs.get(t.dtype.np_type.kind, aggs["other"])
     if agg._monoid is not None:
         return _reduce_expr(t, agg._monoid, axis, keepdims)
     if agg._semiring is None or agg._composite is not None or agg._custom is not None:
@@ -36,6 +43,8 @@ def _reduce_aggregator(t, op, axis, keepdims):
     # result type is then the one Matrix gives (INT64 for count and exists)
     agg[t.dtype]  # (a KeyError for the types Matrix refuses, as sum_of_squares of BOOL)
     sr = get_typed_op(agg._semiring, t.dtype, agg._initdtype)
+    if agg._applybegin is not None:  # Such as abs, for L1norm without Numba
+        t = t.apply(agg._applybegin).new()
     if agg._switch:
         x = t.apply(sr.binaryop, left=agg._initval).new()
     else:

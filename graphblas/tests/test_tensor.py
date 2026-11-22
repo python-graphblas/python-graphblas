@@ -7016,12 +7016,15 @@ def test_reduce_aggregators():
     from graphblas import agg
 
     rng = np.random.default_rng(600)
-    for dtype in [dtypes.FP64, dtypes.INT64, dtypes.INT8, dtypes.BOOL]:
+    types = [dtypes.FP64, dtypes.FP32, dtypes.INT64, dtypes.INT8, dtypes.BOOL]
+    if dtypes._supports_complex:
+        types += [dtypes.FC64, dtypes.FC32]
+    for dtype in types:
         X = random_tensor((3, 4, 5), rng, density=0.5, dtype=dtype, layout=((2, 0), (1,)))[0]
         A = X.permute_dims((0, 2, 1)).reshape(15, 4)  # (axis 1 last)
         M = A.to_matrix((0,))
         names = "count exists sum max count_nonzero count_zero sum_of_squares sum_of_inverses"
-        for name in [*names.split(), "hypot", "logaddexp", "logaddexp2"]:
+        for name in [*names.split(), "hypot", "logaddexp", "logaddexp2", "L1norm", "Linfnorm"]:
             a = getattr(agg, name)
             try:
                 want = M.reduce_rowwise(a).new()
