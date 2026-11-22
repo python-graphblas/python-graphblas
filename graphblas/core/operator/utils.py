@@ -2,9 +2,9 @@ from types import BuiltinFunctionType, FunctionType, ModuleType
 
 from ... import (
     _STANDARD_OPERATOR_NAMES,
+    _config_bool,
     backend,
     binary,
-    config,
     indexbinary,
     indexunary,
     monoid,
@@ -268,7 +268,7 @@ def get_semiring(monoid, binaryop, name=None):
             monoid_prefix
             and binary_prefix
             and monoid_prefix == binary_prefix
-            or config.get("mapnumpy")
+            or _config_bool("mapnumpy")
             and (
                 monoid_prefix == ["numpy"]
                 and not binary_prefix

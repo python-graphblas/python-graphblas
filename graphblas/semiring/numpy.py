@@ -8,9 +8,8 @@ https://numba.readthedocs.io/en/stable/reference/numpysupported.html#math-operat
 
 import itertools as _itertools
 
-from .. import _STANDARD_OPERATOR_NAMES
+from .. import _STANDARD_OPERATOR_NAMES, _config_bool
 from .. import binary as _binary
-from .. import config as _config
 from .. import monoid as _monoid
 from ..binary.numpy import _binary_names
 from ..core import _supports_udfs
@@ -87,7 +86,7 @@ _semiring_names -= {
         },
     )
 }
-if _fmin_is_float and not _config.get("mapnumpy"):
+if _fmin_is_float and not _config_bool("mapnumpy"):
     # See: https://github.com/numba/numba/issues/8478
     # <non-float>_<float>
     _semiring_names -= {
@@ -134,7 +133,7 @@ __all__ = list(_semiring_names)
 
 
 def __dir__():
-    if not _supports_udfs and not _config.get("mapnumpy"):
+    if not _supports_udfs and not _config_bool("mapnumpy"):
         return globals().keys()  # FLAKY COVERAGE
     attrs = _delayed.keys() | _semiring_names
     if not _supports_udfs:

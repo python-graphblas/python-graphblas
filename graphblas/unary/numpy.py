@@ -8,8 +8,7 @@ https://numba.readthedocs.io/en/stable/reference/numpysupported.html#math-operat
 
 import numpy as _np
 
-from .. import _STANDARD_OPERATOR_NAMES
-from .. import config as _config
+from .. import _STANDARD_OPERATOR_NAMES, _config_bool
 from .. import unary as _unary
 from ..core import _supports_udfs
 from ..dtypes import _supports_complex
@@ -121,7 +120,7 @@ __all__ = list(_unary_names)
 
 
 def __dir__():
-    if not _supports_udfs and not _config.get("mapnumpy"):
+    if not _supports_udfs and not _config_bool("mapnumpy"):
         return globals().keys()  # FLAKY COVERAGE
     attrs = _delayed.keys() | _unary_names
     if not _supports_udfs:
@@ -137,7 +136,7 @@ def __getattr__(name):
         return rv
     if name not in _unary_names:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    if _config.get("mapnumpy") and name in _numpy_to_graphblas:
+    if _config_bool("mapnumpy") and name in _numpy_to_graphblas:
         globals()[name] = getattr(_unary, _numpy_to_graphblas[name])
     elif not _supports_udfs:
         raise AttributeError(
