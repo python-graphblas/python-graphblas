@@ -218,14 +218,16 @@ class Array:
     def __dlpack__(self, *, stream=None, max_version=None, dl_device=None, copy=None):
         if copy is False:
             raise BufferError("exporting an Array through DLPack always copies")
+        if dl_device is not None and tuple(dl_device) != self.__dlpack_device__():
+            # Checked here so that every NumPy raises the standard's BufferError: NumPy 2.1
+            # to 2.4 raise ValueError for a device they cannot export to
+            raise BufferError("unsupported device requested")
         kwargs = {}
         if _NP_DLPACK_KWARGS:
             if max_version is not None:
                 kwargs["max_version"] = max_version
             if dl_device is not None:
                 kwargs["dl_device"] = dl_device
-        elif dl_device is not None and tuple(dl_device) != self.__dlpack_device__():
-            raise ValueError("unsupported device requested")  # (NumPy 2.1's error)
         # (An older NumPy exports an unversioned capsule whatever max_version asks for, which
         # the standard allows: a consumer checks the version it gets.)
         return self.todense().__dlpack__(stream=stream, **kwargs)
