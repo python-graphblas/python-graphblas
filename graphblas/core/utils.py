@@ -178,7 +178,7 @@ def _distinct_buffers(*arrays):
 def _repeated_value(values, dtype):
     """Return the one value a stride-0 1-d array repeats, as a 0-d array, or None.
 
-    ``np.broadcast_to(x, n)`` spells n copies of ``x`` without making them.
+    ``np.broadcast_to(x, n)`` gives n copies of ``x`` without copying it.
     Values of a UDT (from ``values`` or ``dtype``) give None.
     """
     if (

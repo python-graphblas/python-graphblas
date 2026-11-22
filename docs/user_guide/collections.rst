@@ -121,6 +121,8 @@ such as the levels of a breadth-first search:
 
 .. code-block:: python
 
+    A = gb.Matrix.from_coo([0, 1, 1, 2], [1, 2, 3, 3], True, nrows=4, ncols=4)
+    source = 0
     levels = gb.Vector(int, A.nrows)
     levels[source] = 0
     levels.ss.config["sparsity_control"] = "bitmap"
@@ -136,8 +138,8 @@ such as the levels of a breadth-first search:
 
 While ``levels`` is sparse, the masked assign leaves its new entries pending, and reading ``~levels.S``
 as the next round's mask makes SuiteSparse:GraphBLAS merge them into the Vector first. A bitmap Vector
-takes the assign in place, so no round waits. The cost is memory once the Vector fills: a bitmap keeps
-a byte per position beside the values, and it cannot become the smaller full format.
+takes the assign in place, so no round waits. The cost is memory once the Vector fills: a bitmap stores
+a byte for each position as well as the values, and it cannot become the smaller full format.
 
 Set the option once the Vector has an entry, as above. A masked assign into an empty Vector replaces
 its ``sparsity_control`` with the mask's (SuiteSparse:GraphBLAS 10.5).

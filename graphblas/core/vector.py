@@ -815,8 +815,9 @@ class Vector(BaseType):
             Vector indices.
         values : list or np.ndarray or scalar, default 1.0
             List of values. If a scalar is provided, all values will be set to this single value.
-            A 1-d array that repeats one value with stride 0, as ``np.broadcast_to(x, n)``
-            makes, is stored once (iso) as a scalar is, unless ``dup_op`` is given.
+            With the suitesparse backend, a 1-d array that repeats one value with stride 0,
+            as ``np.broadcast_to(x, n)`` makes, is stored once (iso), as a scalar is, unless
+            ``dup_op`` is given.
         dtype :
             Data type of the Vector. If not provided, the values will be inspected
             to choose an appropriate dtype.
@@ -842,8 +843,8 @@ class Vector(BaseType):
 
         """
         indices = ints_to_numpy_buffer(indices, np.uint64, name="indices")
-        # n copies of one value (as from np.broadcast_to) build iso. Unlike a
-        # scalar value, they must still number nvals, and duplicates still raise.
+        # n copies of one value (as from np.broadcast_to) build iso. Unlike a scalar
+        # value, they must match the number of indices, and duplicate indices raise.
         repeated = None
         if dup_op is None and backend == "suitesparse":
             repeated = _repeated_value(values, dtype)
