@@ -145,8 +145,8 @@ def main():
 
     # What GRAPHBLAS_JIT_C_CONTROL=on does at init: it probes the compiler, or
     # cmake where SuiteSparse compiles with it, and falls back to 'run' if that
-    # fails. A probe compiled through cmake takes about the least time a new
-    # kernel costs there.
+    # fails. Compiling a probe through cmake costs about as little as any new
+    # kernel does there.
     print("\n--- jit_c_control 'on', as init sets it ---", flush=True)
     from graphblas.core.ss import jit_config
 

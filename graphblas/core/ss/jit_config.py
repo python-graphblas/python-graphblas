@@ -252,7 +252,7 @@ def _probe_jit(cfg):
 
     The type is created through the C API, so nothing is registered in Python,
     and this can run while the backend initializes. Its name is a hash of the
-    toolchain settings, whether it compiles through cmake included, so a
+    toolchain settings, including whether it compiles through cmake, so a
     compiler or flags this cache has not seen compile a probe of their own,
     rather than load one that another toolchain left in a shared cache. A
     cached probe loads in about 2 ms; a compile takes about 0.3 s.
