@@ -181,6 +181,28 @@ def _isclose_recipe(self, other, rel_tol, abs_tol, **opts):
     return isequal.reduce_scalar(monoid.land, allow_empty=False).new(**opts).value
 
 
+def _coo_from_ss_export(info):
+    """Return the ``from_coo`` arguments for a Vector exported with ``v.ss.export(raw=True)``.
+
+    See ``matrix._coo_from_ss_export``.
+    """
+    fmt = info["format"]
+    size = info["size"]
+    values = info["values"]
+    if fmt == "sparse":
+        index = slice(info["nvals"])
+        indices = info["indices"][index]
+    elif fmt == "bitmap":
+        index = indices = np.flatnonzero(info["bitmap"][:size])
+    else:  # full
+        index = indices = np.arange(size, dtype=np.uint64)
+    if info.get("is_iso", False):
+        values = np.broadcast_to(values[:1], (indices.size, *values.shape[1:]))
+    else:
+        values = values[index]
+    return indices, values, info.get("dtype"), size
+
+
 class Vector(BaseType):
     """Create a new GraphBLAS Sparse Vector.
 
@@ -287,8 +309,12 @@ class Vector(BaseType):
 
     @staticmethod
     def _deserialize(pieces, name):
-        if backend == "suitesparse":
-            return Vector.ss.import_any(name=name, **pieces)
+        # A pickle made under suitesparse holds an ss export dict, and one made under
+        # vanilla holds a tuple. Read either under either backend.
+        if isinstance(pieces, dict):
+            if backend == "suitesparse":
+                return Vector.ss.import_any(name=name, **pieces)
+            pieces = _coo_from_ss_export(pieces)
         indices, values, dtype, size = pieces
         return Vector.from_coo(indices, values, dtype, size=size, name=name)
 
