@@ -243,6 +243,37 @@ def test_update_with_a_literal_keeps_the_full_path_errors():
     assert u.get(0) == 2**64 - 1
 
 
+def test_update_with_a_literal_calls_the_assign_directly(monkeypatch):
+    # The tests above compare with the full path, so they pass whichever path runs;
+    # count the direct assigns to check which one does
+    import graphblas.core.base
+
+    calls = []
+    assign_literal = graphblas.core.base._assign_literal
+
+    def counting(output, value, mask, replace):
+        calls.append(value)
+        assign_literal(output, value, mask, replace)
+
+    monkeypatch.setattr(graphblas.core.base, "_assign_literal", counting)
+    w = Vector(int, 3)
+    m = Vector.from_coo([0, 2], [True, False], size=3)
+    w << 1
+    w(m.S) << 2.5
+    w(~m.V, replace=True) << True
+    assert calls == [1, 2.5, True]
+    assert w.isequal(Vector.from_coo([1, 2], [1, 1], size=3), check_dtype=True)
+    calls.clear()
+    w(m.S, accum=binary.plus) << 1
+    with pytest.raises(TypeError, match="input_mask"):
+        w(input_mask=m.S) << 1
+    with gb.Recorder():
+        w(m.S) << 1
+    Vector(dtypes.UINT64, 3)(m.S) << 2**64 - 1
+    Scalar(int) << 1
+    assert calls == []
+
+
 @pytest.mark.skipif("not suitesparse")
 def test_update_with_a_literal_raises_graphblas_errors():
     # export(give_ownership=True) leaves no GraphBLAS object behind, so the assign
