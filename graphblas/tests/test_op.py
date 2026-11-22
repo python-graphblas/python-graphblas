@@ -1261,10 +1261,10 @@ def test_from_string():
     assert select.from_string(">=") is select.valuege
     assert indexunary.from_string("rowindex") is indexunary.rowindex
     assert indexunary.from_string("rowindex[int]") is indexunary.rowindex[int]
-    # The error's example is an op that resolves (it was 'row_index')
+    # The error's example is an op that exists
     with pytest.raises(ValueError, match="Example usage: 'rowindex'"):
         indexunary.from_string("bad_indexunary")
-    # Only operators: a namespace's helper functions and methods are not strings for one
+    # Only operators: a namespace's helper functions and methods are not found by name
     for ns, name in [
         (indexunary, "value"),
         (indexunary, "row"),
@@ -1282,7 +1282,7 @@ def test_from_string():
         with pytest.raises(TypeError, match=r"\.(value|row|column) is a helper, not an operator"):
             A.apply(helper)
 
-    # Every namespace's from_string carries a docstring (GH #513)
+    # Every namespace's from_string has a docstring
     for ns in [unary, binary, monoid, semiring, select, indexunary, agg, op]:
         assert ns.from_string.__doc__
 

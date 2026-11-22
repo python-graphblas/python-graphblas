@@ -37,53 +37,41 @@ def _resolve_expr(expr, callname, opname):
 
 
 def value(expr):
-    """An advanced indexunary method for easily expressing value comparison logic.
+    """Return the apply of the IndexUnaryOp that a comparison of values names.
 
-    Example usage:
-    >>> gb.indexunary.value(A > 0)
-
-    The example will dispatch to ``gb.indexunary.valuegt(A, 0)``
-    while being nicer to read.
+    ``gb.indexunary.value(A > 0)`` is ``gb.indexunary.valuegt(A, 0)``, which is True
+    where an entry of ``A`` is greater than 0. The comparison is ``<``, ``<=``, ``>``,
+    ``>=``, ``==`` or ``!=``, with a scalar on its right.
     """
     return _resolve_expr(expr, "value", "value")
 
 
 def row(expr):
-    """An advanced indexunary method for easily expressing Matrix row index comparison logic.
+    """Return the apply of the IndexUnaryOp that a comparison of row indices names.
 
-    Example usage:
-    >>> gb.indexunary.row(A <= 5)
+    ``gb.indexunary.row(A <= 5)`` is ``gb.indexunary.rowle(A, 5)``, which is True for the
+    entries in rows 0 through 5. The comparison is ``<``, ``<=``, ``>`` or ``>=``, with a
+    number or Scalar on its right. For a Vector, ``gb.indexunary.row(v < 4)`` compares
+    indices.
 
-    The example will dispatch to ``gb.indexunary.rowle(A, 5)``
-    while being potentially nicer to read.
-
-    For a Vector, ``gb.indexunary.row(v < 4)`` compares indices. Unlike
-    ``gb.select.index``, ``gb.indexunary.index`` is not a helper but the
-    ``rowindex`` op, so ``gb.indexunary.index(v < 4)`` gives the index of each
-    entry of ``v < 4``.
+    ``gb.indexunary.index`` is not a helper like ``gb.select.index`` but the ``rowindex``
+    op, so ``gb.indexunary.index(v < 4)`` gives the index of each entry of ``v < 4``.
     """
     return _resolve_expr(expr, "row", "row")
 
 
 def column(expr):
-    """An advanced indexunary method for easily expressing Matrix column index comparison logic.
+    """Return the apply of the IndexUnaryOp that a comparison of column indices names.
 
-    Example usage:
-    >>> gb.indexunary.column(A <= 5)
-
-    The example will dispatch to ``gb.indexunary.colle(A, 5)``
-    while being potentially nicer to read.
+    ``gb.indexunary.column(A <= 5)`` is ``gb.indexunary.colle(A, 5)``, which is True for
+    the entries in columns 0 through 5. The comparison is ``<``, ``<=``, ``>`` or ``>=``,
+    with a number or Scalar on its right.
     """
     return _resolve_expr(expr, "column", "col")
 
 
-# Note: an ``index`` helper (the Vector analogue of ``select.index``) is *not*
-# provided here because ``indexunary.index`` already exists as an alias for the
-# positional ``rowindex`` op (INT64). It is relied on as an operator, e.g.
-# ``v.apply(indexunary.index)``, which a helper function would break. For a
-# Vector index comparison use ``indexunary.row(v < k)`` (resolves to ``rowle``,
-# the same op ``select.index`` uses) or the explicit ``indexunary.indexle`` /
-# ``indexunary.indexgt``.
+# No ``index`` helper here, unlike in ``select``: ``indexunary.index`` is the
+# ``rowindex`` op, and code such as ``v.apply(indexunary.index)`` uses it as one.
 
 
 from ..core import operator  # noqa: E402 isort:skip

@@ -1373,12 +1373,11 @@ def test_apply_indexunary(A):
 
 
 def test_indexunary_helpers(A):
-    # indexunary.value/row/column mirror select's helpers (GH #239), but they
-    # produce apply expressions (BOOL) rather than select expressions.
+    # The indexunary helpers work as select's do, but give an apply (BOOL), not a select
     assert indexunary.value(A > 3).new().isequal(A.apply(indexunary.valuegt, 3).new())
     assert indexunary.value(A == 3).new().isequal(A.apply(indexunary.valueeq, 3).new())
-    # Only rowle/rowgt and colle/colgt exist, so `<` and `>=` are rewritten with
-    # a thunk shift, and `==`/`!=` have no counterpart (mirrors select's helpers).
+    # Only le and gt ops exist for indices, so < and >= shift the bound by one, and ==
+    # and != are refused, as in select's helpers
     assert indexunary.row(A <= 2).new().isequal(A.apply(indexunary.rowle, 2).new())
     assert indexunary.row(A < 3).new().isequal(A.apply(indexunary.rowle, 2).new())
     assert indexunary.row(A >= 3).new().isequal(A.apply(indexunary.rowgt, 2).new())
@@ -1394,8 +1393,8 @@ def test_indexunary_helpers(A):
     for helper, ns in [(indexunary.row, "indexunary"), (select.column, "select")]:
         with pytest.raises(ValueError, match=f"{ns}.(row|column) compares indices with <, <="):
             helper(A == 3)
-    # Anything but a comparison with a scalar on the right is refused by name. These
-    # raised IndexError, AttributeError, or the error of the op the helper picked.
+    # Anything but a comparison with a scalar on the right raises a TypeError that
+    # names the helper
     for expr in [
         abs(A),
         A.mxm(A),
@@ -1407,12 +1406,12 @@ def test_indexunary_helpers(A):
         for helper in [indexunary.value, select.value, indexunary.row]:
             with pytest.raises(TypeError, match=r"takes a comparison .* with a scalar on its"):
                 helper(expr)
-    # An empty Scalar thunk raises as it does for the op; it raised from the shift.
+    # An empty Scalar thunk raises EmptyObject, as it does for the op
     with pytest.raises(EmptyObject):
         indexunary.row(A < Scalar(float)).new()
     # Indices are compared with the bound given, as a whole number, not with the thunk
-    # typed beside the values: beside INT8 or UINT8, 300 is infinity, and beside FP32,
-    # 2**24 + 1 rounds (as for select's helpers).
+    # typed as the values: as INT8 or UINT8, 300 is infinity, and as FP32, 2**24 + 1
+    # rounds (as in select's helpers)
     n = 400
     for dtype in ["INT8", "UINT8"]:
         B = Matrix.from_coo(np.arange(n), np.zeros(n, int), 1, dtype=dtype, nrows=n, ncols=1)
@@ -1434,8 +1433,7 @@ def test_indexunary_helpers(A):
     ]:
         assert indexunary.row(expr).new().to_coo()[2].tolist() == expected
     assert indexunary.column(A5.T < 2.5).new().to_coo()[2].tolist() == [True] * 3 + [False] * 2
-    # NaN compares False with every index; cast to the INT64 thunk it was 0, so < and <=
-    # gave True for row 0, and > and >= for every other row (select's helpers too)
+    # NaN compares False with every index, in select's helpers too
     nan = float("nan")
     for expr in [A5 < nan, A5 <= nan, A5 > nan, A5 >= nan, A5 < Scalar.from_value(nan)]:
         assert indexunary.row(expr).new().to_coo()[2].tolist() == [False] * 5, expr
@@ -1446,14 +1444,12 @@ def test_indexunary_helpers(A):
 def test_index_helpers_find_a_lazily_registered_op():
     """A helper uses an op registered with ``lazy=True`` before anything touches it.
 
-    It looked only at the namespace's built ops, so ``row(A < 2.5)`` took the
-    ``<=`` shift until something touched ``indexunary.rowlt``, then the op. select
-    has a SelectOp for it only once the indexunary op is built, so ``select.row``
-    took the shift until ``indexunary.rowlt`` was touched.
+    So does ``select.row``, though select has a SelectOp for the op only once the
+    IndexUnaryOp is built.
     """
     A = Matrix.from_coo([0, 1, 2, 3], [0, 0, 0, 0], [1, 1, 1, 1])
     try:
-        # It answers otherwise than the <= shift, so the result shows which ran.
+        # Its results differ from the <= shift's, so they show which one ran
         indexunary.register_new("rowlt", lambda x, i, j, t: i == 0, lazy=True)
         for _ in range(2):
             assert select.row(A < 2.5).new().to_coo()[0].tolist() == [0]

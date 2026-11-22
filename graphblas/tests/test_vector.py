@@ -859,11 +859,10 @@ def test_apply_indexunary(v):
 
 
 def test_indexunary_helpers(v):
-    # indexunary.value/row/column mirror select's helpers (GH #239), returning
-    # apply expressions (BOOL) rather than select expressions.
+    # The indexunary helpers give an apply (BOOL), where select's give a select
     assert indexunary.value(v == 1).new().isequal(v.apply(indexunary.valueeq, 1).new())
     assert indexunary.value(v >= 2).new().isequal(v.apply(indexunary.valuege, 2).new())
-    # Index comparisons on a Vector go through the row helper (indexle is rowle).
+    # A Vector's indices are compared with the row helper (indexle is rowle)
     assert indexunary.row(v < 4).new().isequal(v.apply(indexunary.rowle, 3).new())
     assert indexunary.row(v >= 4).new().isequal(v.apply(indexunary.rowgt, 3).new())
     assert indexunary.value(v == 1).new().dtype == dtypes.BOOL
@@ -872,13 +871,12 @@ def test_indexunary_helpers(v):
     w = Vector.from_coo([0, 200, 399], 1, dtype=dtypes.INT8, size=400)
     assert indexunary.row(w < 300).new().to_coo()[1].tolist() == [True, True, False]
     assert indexunary.row(w > 2.5).new().to_coo()[1].tolist() == [False, True, True]
-    # Scalar expression path resolves to a ScalarExpression, like select.value.
+    # A Scalar comparison gives a ScalarExpression, as with select.value
     s = Scalar.from_value(1)
     assert indexunary.value(s < 10).new() == s.apply(indexunary.valuelt, 10).new()
-    # `index` is intentionally not a helper: it remains the rowindex op alias, so
-    # `v.apply(indexunary.index)` keeps working.
+    # ``index`` is not a helper but the rowindex op, as in ``v.apply(indexunary.index)``
     assert indexunary.index is indexunary.rowindex
-    # A value mask reads naturally through the value helper.
+    # The value helper takes v != False, the comparison a value mask reads as
     assert (
         indexunary.value(v != False).new().isequal(indexunary.valuene(v, False).new())  # noqa: E712
     )

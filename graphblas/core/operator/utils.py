@@ -67,12 +67,10 @@ except Exception:  # pragma: no cover (debug)
     raise
 
 
-# ``agg.py`` imports ``get_typed_op`` from this module, so the two form an import
-# cycle and we can't import the Aggregator classes at module load. ``agg.py``
-# registers them here when it loads, which ``core.operator.__init__`` does
-# eagerly at import. agg.py creates its Aggregators before it registers the
-# classes, but none reaches ``get_typed_op`` until then, so before registration
-# ``get_typed_op`` skips the check entirely.
+# agg.py imports get_typed_op from this module, so this module cannot import the
+# Aggregator classes when it loads. agg.py registers them here at the end of its own
+# import, which importing ``core.operator`` runs. No Aggregator reaches get_typed_op
+# before then, so until then get_typed_op skips its check.
 _Aggregator = None
 _TypedAggregator = None
 
@@ -337,15 +335,13 @@ def get_semiring(monoid, binaryop, name=None):
 
 
 def _resolve_index_expr(ns, modname, expr, callname, opname):
-    """Turn an infix comparison expression into an indexunary/select op call.
+    """Return the select or apply that a comparison expression describes.
 
-    Shared by the ``value``/``row``/``column`` helpers in the ``select`` and
-    ``indexunary`` namespaces (and ``select.index``). ``select.valuegt`` is a
-    SelectOp that defaults to ``.select``, while ``indexunary.valuegt`` is an
-    IndexUnaryOp that defaults to ``.apply``, so the same expression resolves to
-    a select or an apply depending on which namespace's ops ``ns`` holds. ``ns``
-    is the namespace module's ``globals()`` dict and ``modname`` is its short
-    name (used in the error messages).
+    The ``value``, ``row`` and ``column`` helpers of ``select`` and ``indexunary``, and
+    ``select.index``, call this. ``ns`` is the namespace module's ``globals()`` and
+    ``modname`` its short name, for error messages. The same comparison gives a select
+    in ``select``, whose ``valuegt`` is a SelectOp, and an apply in ``indexunary``, whose
+    ``valuegt`` is an IndexUnaryOp.
     """
     from ..base import BaseExpression
 
@@ -425,12 +421,12 @@ def _index_bound(literal, thunk, name):
 
 
 def _namespace_op(ns, name):
-    """The op ``name`` in namespace globals ``ns``, or None; it builds one registered lazily.
+    """Return the op ``name`` in the namespace globals ``ns``, or None.
 
-    A lazily registered op waits in the namespace's ``_delayed`` until its module
-    ``__getattr__`` builds it, so ``name in ns`` alone misses it until then. An
-    IndexUnaryOp registered lazily makes its SelectOp only once it is built, so select
-    builds it from indexunary's ``_delayed``.
+    An op registered with ``lazy=True`` is in the namespace's ``_delayed`` until the
+    module's ``__getattr__`` builds it, so this builds it. A lazily registered IndexUnaryOp
+    makes its SelectOp only when it is built, so for ``select`` this builds it from
+    ``indexunary``.
     """
     if name not in ns:
         if name in ns.get("_delayed", ()):
@@ -613,7 +609,7 @@ def _from_string(string, module, mapping, example):
                 break
         op = getattr(cur, attr, None)
     if not _is_operator(op):
-        # A namespace also holds functions (``indexunary.value``), methods and modules
+        # A namespace also has functions (``indexunary.value``), methods and modules
         name = module.__name__.split(".")[-1]
         hint = _ss_hint(module, string) or f"Example usage: {example!r}"
         raise ValueError(f"Unknown {name} string: {string!r}.  {hint}")
@@ -789,17 +785,17 @@ def monoid_from_string(string):
 def semiring_from_string(string):
     """Look up a Semiring by name, optionally typed with ``"[dtype]"``.
 
-    A semiring pairs a monoid with a binaryop. Name it either as the combined
-    namespace attribute (``"plus_times"``) or in ``"monoid.binaryop"`` form using
-    the monoid and binaryop shorthands (``"min.+"``); the two parts must be
-    separated by exactly one period.
+    Name it as in the ``gb.semiring`` namespace (``"plus_times"``), or as
+    ``"monoid.binaryop"`` with names or symbols that ``monoid.from_string`` and
+    ``binary.from_string`` take (``"min.+"``). With the suitesparse backend, a
+    SuiteSparse-specific semiring is named like ``"ss.min_secondi"`` or
+    ``"min.ss.secondi"``.
 
     Parameters
     ----------
     string : str
-        The semiring name, such as ``"plus_times"`` or ``"min_plus"``, or the
-        ``"monoid.binaryop"`` form ``"min.+"``. Append ``"[dtype]"`` to type the
-        semiring, as in ``"min.+[int]"``.
+        The semiring, such as ``"plus_times"`` or ``"min.+"``. Append ``"[dtype]"`` to
+        type it, as in ``"min.+[int]"``.
 
     Returns
     -------
