@@ -219,8 +219,8 @@ def test_ss_export_full_of_a_matrix_that_is_not_full(method, fmt):
 @pytest.mark.parametrize("mask_kind", [None, "S", "V", "~S", "~V"])
 @pytest.mark.parametrize("replace", [False, True])
 def test_update_with_a_literal_matches_the_full_path(dtype, value, mask_kind, replace):
-    # C(mask, replace) << x takes a fast path; an active Recorder sends the same
-    # update down the full path to compare with.
+    # C(mask, replace) << x with a Python number skips most of the update path; an
+    # active Recorder sends the same update down the full path to compare with.
     C = Matrix.from_coo([0, 1], [1, 2], [1, 0], dtype=dtype, nrows=3, ncols=3)
     M = Matrix.from_coo([0, 1, 2], [0, 2, 1], [True, False, True], nrows=3, ncols=3)
     mask = {None: None, "S": M.S, "V": M.V, "~S": ~M.S, "~V": ~M.V}[mask_kind]

@@ -212,8 +212,8 @@ def test_ss_export_full_of_a_vector_that_is_not_full(method):
 @pytest.mark.parametrize("mask_kind", [None, "S", "V", "~S", "~V"])
 @pytest.mark.parametrize("replace", [False, True])
 def test_update_with_a_literal_matches_the_full_path(dtype, value, mask_kind, replace):
-    # w(mask, replace) << x for a Python bool, int or float takes a fast path; an
-    # active Recorder sends the same update down the full path to compare with.
+    # w(mask, replace) << x with a Python bool, int or float skips most of the update
+    # path; an active Recorder sends the same update down the full path to compare with.
     w = Vector.from_coo([0, 2, 4], [1, 0, 1], dtype=dtype, size=6)
     m = Vector.from_coo([1, 2, 3, 5], [True, False, True, True], size=6)
     mask = {None: None, "S": m.S, "V": m.V, "~S": ~m.S, "~V": ~m.V}[mask_kind]
@@ -246,7 +246,7 @@ def test_update_with_a_literal_keeps_the_full_path_errors():
 @pytest.mark.skipif("not suitesparse")
 def test_update_with_a_literal_raises_graphblas_errors():
     # export(give_ownership=True) leaves no GraphBLAS object behind, so the assign
-    # itself fails, and the fast path raises what the full path does
+    # itself fails, and both paths raise the same error
     v = Vector(int, 3)
     v.ss.export(give_ownership=True)
     with pytest.raises(NullPointer):

@@ -31,8 +31,10 @@ _ASSIGN_LITERAL_TYPES = (bool, int, float)
 
 
 def _is_plain_mask(mask, output):
-    """Whether ``mask`` needs nothing from the full assign path: a Mask of an object
-    of ``output``'s own type and shape, and not a value mask of a UDT.
+    """Return whether ``mask`` can go to GraphBLAS as it is, without a conversion or check.
+
+    It can if it is a Mask of an object of ``output``'s type and shape, other than a value
+    mask of a UDT.
     """
     return (
         isinstance(mask, Mask)
@@ -43,14 +45,14 @@ def _is_plain_mask(mask, output):
 
 
 def _assign_literal(output, value, mask, replace):
-    """``output(mask, replace) << value`` with GrB_*_assign_<T> over all indices.
+    """Compute ``output(mask, replace) << value`` with one GrB_*_assign_<type> call.
 
-    ``value`` takes the dtype the full path gives its Scalar, and GraphBLAS casts
-    it to ``output``'s dtype, as the full path's assign does.
+    ``value`` is typed as the full path types its Scalar, and GraphBLAS casts it to
+    ``output``'s dtype, as in the full path's assign.
     """
     vdtype = lookup_dtype(type(value), value)
     cvalue = ffi.new(f"{vdtype.c_type}*")
-    cvalue[0] = value  # cffi coercion, identical to the Scalar.value setter
+    cvalue[0] = value  # converted by cffi, as the Scalar.value setter does
     if mask is None:
         mask_carg = NULL
         desc = None
@@ -400,12 +402,13 @@ class BaseType:
         return self._update(expr, opts=opts)
 
     def _update(self, expr, mask=None, accum=None, replace=False, input_mask=None, *, opts):
-        # Fast path for `w(mask, replace) << x` with an exact-fit Python bool, int or
-        # float x: the assign the Updater path ends in, without building a second
-        # Updater, an index resolver and a Scalar (about 7 us of Python a call).
-        # Ints beyond INT64 (which that path types as the target's dtype), a UDT
-        # target, accum, opts, any mask the path would convert or reject, and an
-        # active Recorder (so the call is recorded) take the full path.
+        # ``w(mask, replace) << x`` for a Python bool, int or float x calls the assign
+        # that the full path ends in, without building another Updater, an index
+        # resolver and a Scalar, which cost about 6 us of Python per call. The full
+        # path still takes an int beyond INT64 (it types one as the target's dtype), a
+        # Scalar or UDT target, accum, input_mask, opts, replace without a mask, a mask
+        # it would convert or reject, and an active Recorder, so that the call is
+        # recorded.
         if (
             type(expr) in _ASSIGN_LITERAL_TYPES
             and not self._is_scalar
