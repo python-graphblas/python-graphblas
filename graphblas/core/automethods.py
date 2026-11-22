@@ -8,7 +8,7 @@ $ python -m graphblas.core.automethods
 
 """
 
-from .. import config
+from .. import _config_bool
 
 # Scalar attributes that only read the value. For an index expression (``v[i]``,
 # ``A[i, j]``), _get_value computes them with ScalarIndexExpr._extract_fast: one
@@ -30,7 +30,7 @@ _fast_scalar_attrs = frozenset(
 
 
 def _get_value(self, attr=None, default=None):
-    if config.get("autocompute"):
+    if _config_bool("autocompute"):
         if self._value is None:
             if (
                 attr in _fast_scalar_attrs

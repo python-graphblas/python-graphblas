@@ -1,7 +1,7 @@
 # This file imports pandas, so it should only be imported when formatting
 import numpy as np
 
-from .. import backend, config, monoid, unary
+from .. import _config_bool, backend, monoid, unary
 from ..dtypes import BOOL
 from ..exceptions import OutOfMemory
 from .infix import _is_literal
@@ -543,7 +543,7 @@ def _format_expression(expr, header):
     )
 
     computed = ""
-    if config.get("autocompute"):
+    if _config_bool("autocompute"):
         computed = get_expr_result(expr, html=True)
         if "__EXPR__" in computed:
             return computed.replace("<tt>__EXPR__</tt>", topline)
@@ -571,7 +571,7 @@ def format_matrix_expression_html(expr):
 
 
 def get_result_string(expr):
-    if config.get("autocompute"):
+    if _config_bool("autocompute"):
         arg_string = get_expr_result(expr)
         arg_string += "\n\n"
     else:
@@ -718,7 +718,7 @@ def _format_infix_expression(expr, header, expr_name):
     )
 
     computed = ""
-    if config.get("autocompute") and _computes_itself(expr):
+    if _config_bool("autocompute") and _computes_itself(expr):
         computed = get_expr_result(expr, html=True)
         if "__EXPR__" in computed:
             return computed.replace("<tt>__EXPR__</tt>", topline)
@@ -901,7 +901,7 @@ def format_index_expression_html(expr):
     )
 
     computed = ""
-    if config.get("autocompute"):
+    if _config_bool("autocompute"):
         computed = get_expr_result(expr, html=True)
         if "__EXPR__" in computed:
             return computed.replace("<tt>__EXPR__</tt>", topline)

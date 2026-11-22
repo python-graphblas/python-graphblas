@@ -8,9 +8,8 @@ https://numba.readthedocs.io/en/stable/reference/numpysupported.html#math-operat
 
 import numpy as _np
 
-from .. import _STANDARD_OPERATOR_NAMES
+from .. import _STANDARD_OPERATOR_NAMES, _config_bool
 from .. import binary as _binary
-from .. import config as _config
 from .. import monoid as _monoid
 from ..core import _has_numba, _supports_udfs
 from ..dtypes import _supports_complex
@@ -87,9 +86,9 @@ if _supports_complex:
     )
     _monoid_identities["minimum"].update(dict.fromkeys(_complex_dtypes, complex(_np.inf, _np.inf)))
 
-# To increase import speed, only call njit when `_config.get("mapnumpy")` is False
+# To increase import speed, only call njit when `_config_bool("mapnumpy")` is False
 if (
-    _config.get("mapnumpy")
+    _config_bool("mapnumpy")
     or _has_numba
     and not isinstance(_numba.njit(lambda x, y: _np.fmax(x, y))(1, 2), float)  # pragma: no branch
 ):
@@ -161,7 +160,7 @@ _idempotent = {
 
 
 def __dir__():
-    if not _supports_udfs and not _config.get("mapnumpy"):
+    if not _supports_udfs and not _config_bool("mapnumpy"):
         return globals().keys()  # FLAKY COVERAGE
     attrs = _delayed.keys() | _monoid_identities.keys()
     if not _supports_udfs:
@@ -181,7 +180,7 @@ def __getattr__(name):
         return rv
     if name not in _monoid_identities:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    if _config.get("mapnumpy") and name in _numpy_to_graphblas:
+    if _config_bool("mapnumpy") and name in _numpy_to_graphblas:
         globals()[name] = getattr(_monoid, _numpy_to_graphblas[name])
     else:
         func = getattr(_binary.numpy, name)
