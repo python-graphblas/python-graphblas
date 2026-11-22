@@ -4545,6 +4545,29 @@ def test_from_scalar():
             assert A.isequal(B, check_dtype=True)
 
 
+def test_sizes_given_as_scalars_are_stored_as_ints():
+    """A Scalar or NumPy integer given for nrows or ncols gives a shape of Python ints.
+
+    ``from_csr``, and on suitesparse every path through the ss imports, stores the sizes it
+    is given without going through ``Matrix()``, which converts them.
+    """
+    n = Scalar.from_value(3)
+    m = np.uint64(4)
+    matrices = [
+        Matrix.from_scalar(1.0, n, m),
+        Matrix.from_csr([0, 1, 1, 1], [0], [1.0], ncols=n),
+        Matrix.from_csr([0, 1, 1, 1], [0], 1.0, ncols=n),  # iso: ss.import_csr on suitesparse
+        Matrix.from_dcsr([0], [0, 1], [0], [1.0], nrows=n, ncols=m),
+        Matrix.from_dicts({0: {0: 1.0}}, nrows=n, ncols=m),
+    ]
+    if suitesparse:
+        matrices.append(Matrix.ss.import_fullr(np.ones((3, 4)), nrows=np.int32(3), ncols=m))
+    for A in matrices:
+        assert [type(x) for x in A.shape] == [int, int]
+    assert matrices[0].shape == (3, 4)
+    assert matrices[1].shape == (3, 3)
+
+
 def test_to_dense_from_dense():
     A = Matrix.from_dense(np.arange(6).reshape(2, 3))
     B = Matrix.from_coo([0, 0, 0, 1, 1, 1], [0, 1, 2, 0, 1, 2], np.arange(6))

@@ -3239,6 +3239,23 @@ def test_from_scalar():
         assert v.isequal(w, check_dtype=True)
 
 
+def test_size_given_as_scalar_is_stored_as_int():
+    """A Scalar or NumPy integer given for the size gives a shape of a Python int.
+
+    On suitesparse, ``from_scalar`` and the ss imports store the size they are given without
+    going through ``Vector()``, which converts it.
+    """
+    vectors = [
+        Vector.from_scalar(1.0, Scalar.from_value(3)),
+        Vector.from_scalar(1.0, np.uint64(3)),
+    ]
+    if suitesparse:
+        vectors.append(Vector.ss.import_full(np.ones(3), size=np.int32(3)))
+    for v in vectors:
+        assert v.shape == (3,)
+        assert type(v.shape[0]) is int
+
+
 def test_to_dense_from_dense():
     v = Vector.from_dense([1, 2, 3])
     w = Vector.from_coo([0, 1, 2], [1, 2, 3])

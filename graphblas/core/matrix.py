@@ -1,4 +1,5 @@
 import itertools
+import operator
 from collections.abc import Sequence
 
 import numpy as np
@@ -254,8 +255,10 @@ class Matrix(BaseType):
         self.gb_obj = gb_obj
         self.dtype = dtype
         self.name = f"M_{next(Matrix._name_counter)}" if name is None else name
-        self._nrows = nrows
-        self._ncols = ncols
+        # Some callers (from_csr, the ss imports) pass on the nrows and ncols they were
+        # given, which may be a Scalar or a NumPy integer; store Python ints, as Matrix() does.
+        self._nrows = operator.index(nrows)
+        self._ncols = operator.index(ncols)
         self._parent = parent
         return self
 
