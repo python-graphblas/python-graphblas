@@ -833,7 +833,7 @@ def test_fix_jit_config_takes_the_compiler_from_sysconfig(monkeypatch):
 
 
 def test_fix_jit_config_replaces_a_missing_sdk(monkeypatch, tmp_path):
-    """A baked-in ``-isysroot`` that does not exist here takes xcrun's SDK, or goes.
+    """A baked-in ``-isysroot`` that does not exist here becomes xcrun's SDK, or is dropped.
 
     Without xcrun (Linux, or macOS without the command line tools) the flag is
     dropped. Driven through a stand-in config, with the compiler taken from
