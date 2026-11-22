@@ -18,17 +18,18 @@ from .vector import Vector
 
 
 def _reduce_aggregator(t, op, axis, keepdims):
-    """``reduce`` with an aggregator: its monoid; or its semiring's multiply applied with the
-    aggregator's initial value to every entry, then the semiring's monoid, then its finalize
-    op, as Matrix aggregations do. One that picks an aggregator by the kind of number
-    (``agg.L1norm``) reduces with the one for the Tensor's dtype, and an applybegin op, if
-    any, is applied first.
+    """``reduce`` with an aggregator, computed as Matrix aggregations compute it.
+
+    An aggregator with a monoid reduces with it. One with a semiring applies the semiring's
+    multiply, with the aggregator's initial value, to every entry, then reduces with the
+    semiring's monoid, then applies its finalize op. An aggregator that picks another by the
+    kind of number (``agg.L1norm``) reduces with the one for the Tensor's dtype, and an
+    applybegin op, if any, is applied first.
     """
     from .operator.agg import TypedAggregator, _by_kind
 
     agg = op.parent if isinstance(op, TypedAggregator) else op
     if isinstance(agg._custom, partial) and agg._custom.func is _by_kind:
-        # One that picks an aggregator by the kind of number, as agg.L1norm does
         aggs = agg._custom.keywords["aggs"]
         agg = aggs.get(t.dtype.np_type.kind, aggs["other"])
     if agg._monoid is not None:
@@ -38,9 +39,9 @@ def _reduce_aggregator(t, op, axis, keepdims):
             f"Tensor.reduce supports aggregators made of a monoid or a semiring; not "
             f"agg.{agg.name}"
         )
-    # The semiring typed as Matrix aggregations type it, by the values' type and the initial
-    # value's (so integer powers of INT64 values stay INT64: logaddexp2 of -3 is log2(0)); its
-    # result type is then the one Matrix gives (INT64 for count and exists)
+    # Type the semiring as Matrix aggregations do, by the values' type and the initial value's,
+    # so the result type is the one Matrix returns (INT64 for count and exists). Integer powers
+    # of INT64 values stay INT64 (logaddexp2 of -3 is log2(0)).
     agg[t.dtype]  # (a KeyError for the types Matrix refuses, as sum_of_squares of BOOL)
     sr = get_typed_op(agg._semiring, t.dtype, agg._initdtype)
     if agg._applybegin is not None:  # Such as abs, for L1norm without Numba
@@ -100,14 +101,14 @@ def _reduce_recipe(updater, a, op, axes, keepdims, cast):
 
 
 def _selector_semiring(op, mult):
-    """The semiring of monoid ``op`` and ``mult`` (first or second) that multiplies by a
-    selector, whose entries are True, or for a row selector (second) 1 of the type
-    ``_selector_dtype`` gives.
+    """The semiring of monoid ``op`` and ``mult`` (first or second) for a product with a
+    selector. The selector's entries are True, or for a row selector (``second``) 1 of the
+    type ``_selector_dtype`` returns.
     """
     if op is monoid.lor[BOOL]:
-        # land(True, x) is x, as first and second give, and SuiteSparse 10 has a factory
-        # kernel for lor_land only: BOOL has no factory FIRST or SECOND semiring (Tensor.any
-        # ran about 2x slower with the JIT at "off" or "run")
+        # land(True, x) is x, as with first and second. SuiteSparse 10 has a factory kernel
+        # for lor_land but none for a BOOL FIRST or SECOND semiring (with those, Tensor.any
+        # ran about 2x slower with the JIT "off" or at "run")
         return semiring.lor_land[BOOL]
     if mult is binary.second and _selector_dtype(op) is not BOOL:
         return semiring.plus_times[op.type]
@@ -130,7 +131,9 @@ def _selector_dtype(op):
 
 
 def _row_reducer(M, shape, rows, kept, dtype=BOOL):
-    """S with S @ M reducing the row axes not in ``kept`` (positions in ``rows``)."""
+    """The selector S for which S @ M reduces the row axes not in ``kept`` (positions in
+    ``rows``).
+    """
     if tl.stored_format(M) == "hypercsr":
         return tl.rows_selector(M, shape, rows, kept, dtype=dtype)
     return tl.selector(tuple(shape[x] for x in rows), kept, dtype=dtype)
@@ -165,8 +168,8 @@ def _selector_mxm(left, right, sr, dtype, opts, pad):
     OpenMP SIMD reduction), so a fiber of -0.0 sums to +0.0 there, as in
     Matrix.reduce_rowwise. SuiteSparse 10.5 picks it for this product only when ``right`` is
     hypersparse and ``left`` bitmap or full (it computes the transposes), and in a padded
-    product ``left`` is then a sparse selector, so forcing saxpy changes no method today and
-    cost nothing measured (2026-11-10); it keeps it so if that choice changes. The padding
+    product ``left`` is then a sparse selector. So forcing saxpy changes no method and
+    measured no cost (2026-11-10); it guards against a change in that choice. The padding
     itself cost 0.92-1.14x against none, and 1.16-1.23x under plus over wide sparse rows
     (10.5.1 and 10.5.2, 2026-11-10).
     """
@@ -324,7 +327,7 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
 
 
 def _reduce_rebuild(M, shape, layout, A, op):
-    """Reduce by rebuilding with the monoid as ``dup_op``: best when rows hold about one
+    """Reduce by rebuilding with the monoid as ``dup_op``: best when rows have about one
     entry each, and the path for UDTs.
     """
     coords, values = tl.coords_of(M, shape, layout.state)

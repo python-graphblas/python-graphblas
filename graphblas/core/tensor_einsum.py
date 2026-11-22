@@ -122,11 +122,11 @@ def einsum(subscripts, *operands, op=semiring.plus_times, optimize="greedy"):
 # (monoid, multiply) pairs whose multiply distributes over the monoid on both sides,
 # a (x) (b (+) c) = (a (x) b) (+) (a (x) c) and likewise on the right, so summing an index out
 # early, or contracting in steps, gives the sum of the terms. Each multiply here is associative.
-# Exact up to rounding and integer overflow: plus_times stays exact when it wraps (wrapping
-# arithmetic is a ring), but a min_plus or max_plus sum that overflows can wrap in another
-# place once regrouped. They stay here (a common semiring, whose overflowing sums are no
-# meaningful answer either way); max_times and min_times do not distribute on signed values
-# even without overflow, so they are not here.
+# This is exact up to rounding and integer overflow. plus_times stays exact when it wraps
+# (wrapping arithmetic is a ring), but a min_plus or max_plus sum that overflows can wrap at
+# another step once regrouped. They stay in the set: they are common, and an overflowing sum is
+# no meaningful answer either way. max_times and min_times do not distribute over signed values
+# even without overflow, so they are left out.
 _DISTRIBUTIVE = frozenset(
     {("plus", "times"), ("min", "plus"), ("max", "plus"), ("min", "max"), ("max", "min"),
      ("lor", "land"), ("land", "lor"), ("lxor", "land"), ("bor", "band"), ("band", "bor"),
@@ -290,8 +290,8 @@ def _einsum_recipe(updater, terms, output, tensors, op, path, grouping):
         for k in sorted((i, j), reverse=True):
             del ops[k]
         if step == len(path) - 1 and (direct := _direct_axes(ta, tb, output)) is not None:
-            # The last contraction runs on einsum's target: a mask (an RPQ's ~visited) or an
-            # accumulator goes into its product, not onto a computed temporary
+            # The last contraction runs on einsum's target: a mask (a regular path query's
+            # ~visited) or an accumulator goes into its product, not onto a computed temporary
             inner = _contraction_expr(A, B, op, direct)
             inner.args[-2](updater, *inner.args[-1])
             return

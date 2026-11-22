@@ -99,9 +99,8 @@ def _contract(updater, a, b, op, a_axes, b_axes, a_batch=(), b_batch=()):
         + tuple(b._shape[y] for y in free_b)
     )
     if na == 0 or nbv == 0:
-        # SuiteSparse (seen from 8.2 through 10.5.1): a product over an inner dimension of
-        # size 0 returns every output position when both operands are iso and full (see
-        # tensor_reduce._reduce_matrix). An operand with no entries gives no entries.
+        # An operand with no entries gives no entries, which SuiteSparse's product would not
+        # (see tensor_reduce._reduce_matrix)
         layout = tl.default_layout(shape)
         out = tl.new_matrix(
             op.return_type, tl.prod(shape, layout.rows), tl.prod(shape, layout.cols)
@@ -251,10 +250,10 @@ def _squeezed_batch(t, bshape):
 
 
 def _ttv(updater, x, w, axis, op, x_left):
-    """TTV: ``x`` contracted with the 1-d ``w`` over ``axis``, by the cheapest of: one mxv
-    (``axis`` is the column group), one vxm (the row group), a weighted selector (``axis`` is
-    inside a group), each possibly after moving the split; or the general relayout and
-    mxm (returns False for that).
+    """TTV: ``x`` contracted with the 1-d ``w`` over ``axis``, by the cheapest of one mxv
+    (``axis`` is the column group), one vxm (the row group) or a weighted selector (``axis``
+    is inside a group), each possibly after moving the split. Returns False when the general
+    relayout and mxm are cheaper, for the caller to run.
     """
     mult = op.binaryop
     flip = _flipped(mult)
@@ -267,9 +266,8 @@ def _ttv(updater, x, w, axis, op, x_left):
     n = len(seq)
     nv = M._nvals
     if nv == 0 or w._M._nvals == 0:
-        # SuiteSparse (seen from 8.2 through 10.5.1): mxv and vxm over a dimension of size 0
-        # return every output position when the operands are iso and full (see
-        # tensor_reduce._reduce_matrix). An operand with no entries gives no entries.
+        # An operand with no entries gives no entries, which SuiteSparse's mxv and vxm would
+        # not (see tensor_reduce._reduce_matrix)
         shape = tuple(m for a, m in enumerate(x._shape) if a != axis)
         renum = {a: i for i, a in enumerate(a for a in range(n) if a != axis)}
         out = Layout(*(tuple(renum[a] for a in g if a != axis) for g in layout))
@@ -285,7 +283,7 @@ def _ttv(updater, x, w, axis, op, x_left):
         options.append((0.0, "mxv", p))
     elif layout.rows == (axis,) and wx_op is not None and M._ncols <= 4 * max(nv, 1):
         # vxm writes into the whole column group: fine up to a few times the data (at 2.6x,
-        # 36 ms vs 56), slow into a hypersparse one (hyper 2^38: 87 ms vs 23)
+        # 36 ms against 56), slow into a hypersparse one (hyper 2^38: 87 ms against 23)
         options.append((0.0, "vxm", p))
     # SuiteSparse's reshape refuses 2^60 positions or more in total: no split moves then (the
     # planner's general option replaces them by REBUILDs, see tensor_layout._neighbors)

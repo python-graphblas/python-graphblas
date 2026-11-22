@@ -15,7 +15,7 @@ from .tensor_layout import Layout
 
 
 def _gcxs_states(shape):
-    """The layout states GCXS can hold: both groups nonempty and in increasing order (its
+    """The layout states GCXS can store: both groups nonempty and in increasing order (its
     compressed axes, sorted, are the rows; the others, sorted, the columns).
     """
     ndim = len(shape)
@@ -38,7 +38,7 @@ _GCXS_SMALL_POINTER = 2**20
 # Past this many and past two per entry, the export refuses, whoever chose the axes. The memory
 # then follows the shape and not the data. 2^28 groups is 2 GiB of pointer and a peak of about
 # 3 GiB (1.5 times the pointer through a Matrix, measured), safe on a small machine; a 2^31
-# pointer is what killed 16 GB CI runners.
+# pointer exhausts a 16 GB CI runner.
 _GCXS_MAX_POINTER = 2**28
 
 
@@ -128,7 +128,7 @@ def _rows_of(indptr):
 
 
 def _with_layout(cls, M, shape, lay, layout, name):
-    """The Tensor of ``M`` held in ``lay``, moved to ``layout`` (and pinned) if one is given."""
+    """The Tensor of ``M`` stored in ``lay``, moved to ``layout`` (and pinned) if one is given."""
     if layout is None:
         return cls._from_M(M, shape, lay, name=name)
     target = tl.as_layout(layout, shape)
@@ -165,8 +165,8 @@ def from_pydata_sparse(cls, s, *, dup_op=None, layout=None, name=None):
             # As pydata's todense: repeated coordinates add up
             dup_op = binary.lor if dtype == BOOL else binary.plus
         if not tl._valid_split(shape, lay.seq, len(rows)):
-            # Columns past 2^60, which no Matrix holds. Decode the arrays here: past 2^63
-            # positions in all, pydata's own tocoo raises.
+            # More than 2^60 column positions, too many for a Matrix. Decode the arrays here:
+            # past 2^63 positions in all, pydata's own tocoo raises.
             coords = [None] * len(shape)
             tl.unravel(_rows_of(indptr), shape, lay.rows, coords)
             tl.unravel(indices.astype(np.int64), shape, lay.cols, coords)
@@ -256,8 +256,8 @@ def to_pydata_sparse(T, format="coo", *, compressed_axes=None):
 
 
 def _scipy_coo_needs(ndim):
-    """The oldest scipy whose ``coo_array`` holds ``ndim``-d arrays, or None if this scipy
-    does: scipy.sparse has n-d COO arrays from 1.15.
+    """The oldest scipy whose ``coo_array`` supports ``ndim``-d arrays, or None if this
+    scipy does: scipy.sparse has n-d COO arrays from 1.15.
     """
     import scipy
 
@@ -277,7 +277,7 @@ def from_scipy_sparse(cls, A, *, dup_op=None, layout=None, name=None):
     if A.format in {"csr", "csc"} and A.ndim == 2 and A.has_canonical_format:
         from ..io import from_scipy_sparse as matrix_from_scipy_sparse
 
-        # (CSR or CSC imported, one copy; a CSC Matrix is held as its transpose by row)
+        # (CSR or CSC imported, one copy; a CSC Matrix is stored as its transpose by row)
         M = matrix_from_scipy_sparse(A)
         if tl.is_by_row(M):
             lay = Layout((0,), (1,))
@@ -321,8 +321,8 @@ def to_scipy_sparse(T, format="coo"):
             f"a {T.ndim}-d scipy.sparse array requires scipy {need} or later; "
             f"this is scipy {scipy.__version__}"
         )
-    # scipy's COO takes any order: the stored order, in C order (canonical) only when the
-    # layout is the identity axis order, so no relayout
+    # scipy's COO accepts any order, so export the stored order without moving data; it is C
+    # order (canonical) when the layout is the identity axis order
     canonical = T._layout.seq == tuple(range(T.ndim))
     coords, values = T.to_coo(sort=canonical)
     A = ss.coo_array((values, coords), shape=T._shape)

@@ -2,7 +2,7 @@
 
 The factor's K rows become a full Vector of K values of a type of R doubles; one ``mxv`` of
 the stored Matrix (the contracted axis as its columns) with ``plus_times[FP64, FP64[R]]``
-gives a Vector holding, for each nonempty row, the R values of its output fiber. Those are
+computes a Vector with, for each nonempty row, the R values of its output fiber. Those are
 the output's rows, so the Vector's arrays become the (rows x R) FP64 Matrix through the
 Containers without a copy of the values.
 
@@ -25,10 +25,10 @@ It is not used under an explicit "off". The type and ops of each R are made once
 
 A compile can still fail with the control "on" (a compiler that stopped working, a full
 disk, an unwritable cache): SuiteSparse then returns ``GxB_JIT_ERROR`` rather than run the
-generic kernel, and drops the control to "load" (``GB_jitifyer.c``). ``run`` catches that:
-the control stays at "load", as after a failed compile anywhere in python-graphblas (UDT
-auto-lift raises "run" to "on" again but leaves "load" alone, so putting back "run" made
-the next UDT operation retry the compile and raise), a ``NoJITWarning`` says what happened,
+generic kernel, and drops the control to "load" (``GB_jitifyer.c``). ``run`` catches that.
+The control stays at "load", as after a failed compile anywhere in python-graphblas: UDT
+auto-lift raises "run" to "on" again but leaves "load" alone, so restoring "run" would make
+the next UDT operation retry the compile and raise. A ``NoJITWarning`` says what happened,
 the engine stays off for the rest of the process, and the caller takes another engine.
 """
 
@@ -239,9 +239,9 @@ def _retype(vec, gtype, n):
 
 
 def ttm(M, U, desc=None):
-    """``M @ U`` as an (nrows x R) FP64 Matrix held by row, by one ``mxv`` with values of R
+    """``M @ U`` as an (nrows x R) FP64 Matrix stored by row, by one ``mxv`` with values of R
     doubles: full rows where ``M`` has a nonempty row, none elsewhere (bitmap, or full, when
-    at least half the rows are nonempty, else hypersparse). ``M`` is a Matrix held by row, of
+    at least half the rows are nonempty, else hypersparse). ``M`` is a Matrix stored by row, of
     FP64 or another real built-in type (SuiteSparse's kernel casts its values to FP64), ``U``
     a C-contiguous (ncols x R) float64 array that is taken over. None when the engine is not
     available (no JIT), or when the product came back iso.
@@ -260,12 +260,12 @@ def ttm(M, U, desc=None):
             cont.iso = False
             cont.jumbled = False
         if 2 * nonempty < n:
-            # A sparse output, so the product does not leave a bitmap of n values to convert
-            # The empty Vector is sparse already: nothing converts now.
-            # Otherwise the product's own bitmap or full result is kept: asking for bitmap here
-            # would convert the empty Vector at once, allocating n values, and for a UDT that
+            # Ask for a sparse output, so the product does not leave a bitmap of n values to
+            # convert; the empty Vector is sparse already, so nothing converts now. Otherwise
+            # the product's own bitmap or full result is kept: asking for bitmap here would
+            # convert the empty Vector at once, allocating n values, and for a UDT that
             # conversion is a JIT kernel of its own (with a broken compiler, the call that
-            # reported GxB_JIT_ERROR).
+            # reports GxB_JIT_ERROR).
             tl._check(lib.GrB_Vector_set_INT32(w, lib.GxB_SPARSE, lib.GxB_SPARSITY_CONTROL), "set")
         tl._check(
             lib.GrB_mxv(w, NULL, NULL, sr, M.gb_obj[0], u, NULL if desc is None else desc._carg),

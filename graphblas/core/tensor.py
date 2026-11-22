@@ -151,7 +151,7 @@ def _as_tensor(x, within):
     """``x`` as a Tensor when it is Tensor-like: a Tensor, a Matrix (2-d) or Vector (1-d), an
     expression of one (computed with autocompute), or a numpy array (full). None otherwise.
 
-    A Matrix held by row is used without a copy; a Vector, a Matrix held by column and an
+    A Matrix stored by row is used without a copy; a Vector, a Matrix stored by column and an
     ndarray are copied once.
     """
     typ = output_type(x)
@@ -176,7 +176,7 @@ def _as_tensor(x, within):
 
 def _as_scalar_operand(x):
     """A 0-d Tensor (a full reduction's result) as the Scalar that ``select`` and ``apply``
-    take; anything else unchanged.
+    accept; anything else unchanged.
     """
     if output_type(x) is Tensor:
         x = _compute(x, "a scalar operand")
@@ -201,8 +201,8 @@ def _mask_arg(x):
 class _Owners:
     """The Tensors that share one stored Matrix. Held weakly, so no ``__del__`` bookkeeping
     is needed (see "Copy-on-write views" in ai-notes/tensor/design.md). Keyed by ``id``
-    because a WeakSet compares its members with ``==``, which will build an expression once
-    Tensor has comparison operators.
+    because a WeakSet compares its members with ``==``, which for Tensors builds an
+    expression.
     """
 
     __slots__ = "_refs", "__weakref__"
@@ -315,8 +315,8 @@ class Tensor(BaseType):
             self._store.owners.discard(self)
             self._store = other._store
             self._store.owners.add(self)
-        # Also when the store is already ours: a permuted view of it (``T << T.T``) holds the
-        # same Matrix in another layout
+        # Even when the store is already ours: a permuted view of it (``T << T.T``) shares the
+        # Matrix in another layout
         self._M = other._M
         self._layout = other._layout
 
@@ -328,7 +328,7 @@ class Tensor(BaseType):
             (sorted(rows + cols) == list(range(len(shape))), "layout is not a partition"),
             (M._nrows == tl.prod(shape, rows) == M.nrows, "nrows does not match the rows"),
             (M._ncols == tl.prod(shape, cols) == M.ncols, "ncols does not match the cols"),
-            (tl.is_by_row(M), f"stored Matrix is not held by row ({M.ss.format})"),
+            (tl.is_by_row(M), f"stored Matrix is not stored by row ({M.ss.format})"),
             (M.dtype == self.dtype, f"dtype {M.dtype} != {self.dtype}"),
             (self in self._store.owners, "not an owner of its store"),
         ]
@@ -494,8 +494,8 @@ class Tensor(BaseType):
         if isinstance(dtype, (tuple, list)) and all(
             isinstance(n, (int, np.integer)) for n in dtype
         ):
-            # numpy, scipy.sparse and pydata/sparse take the shape third: lookup_dtype would
-            # say only "Unknown dtype"
+            # pydata/sparse's COO accepts the shape third; without this check lookup_dtype
+            # would say only "Unknown dtype"
             raise TypeError(
                 f"from_coo's third argument is dtype, not the shape {dtype!r}; pass the shape "
                 f"as shape={tuple(dtype)!r}"
@@ -530,14 +530,12 @@ class Tensor(BaseType):
         if len(shape) != ndim:
             raise ValueError(f"shape {shape} has {len(shape)} axes; indices have {ndim}")
         for axis, idx in enumerate(coords):
-            # A per-axis check: an index past its axis would silently land in the next row
-            # once raveled.
+            # Check each axis: once raveled, an index past its axis would land in the next row
             if n and (idx.min() < 0 or idx.max() >= shape[axis]):
                 raise IndexOutOfBound(
                     f"index out of bounds along axis {axis} of size {shape[axis]}: "
                     f"min {idx.min()}, max {idx.max()}"
                 )
-        # Reshape works only below a total size of 2**60; past it keep the shape-based split
         rows = settle = None
         if layout is None and ndim >= 3 and n > 0:
             lay, rows, settle = _data_split_layout(coords, shape, n)
@@ -614,7 +612,7 @@ class Tensor(BaseType):
             lay = tl.as_layout(layout, shape)
         nrows, ncols = tl.prod(shape, lay.rows), tl.prod(shape, lay.cols)
         arr = np.transpose(values, lay.rows + lay.cols).reshape(nrows, ncols)
-        M = Matrix.from_dense(arr, missing_value, dtype=dtype)  # (held by row: import_fullr)
+        M = Matrix.from_dense(arr, missing_value, dtype=dtype)  # (stored by row: import_fullr)
         return cls._from_M(M, shape, lay, pinned=layout is not None, name=name)
 
     def __array__(self, dtype=None, *, copy=None):
@@ -1119,7 +1117,7 @@ class Tensor(BaseType):
         Matrix (``">"``, ``"valuegt"``). Index-based selectors raise NotImplementedError.
         ``thunk`` may be a 0-d Tensor.
         """
-        # (Matrix resolves the op, strings included; the probe is not computed)
+        # Matrix.select resolves the op, strings included; its expression is never computed
         thunk = _as_scalar_operand(thunk)
         probe = self._M.select(op, thunk)
         if not probe.op.name.startswith("value"):
@@ -1279,8 +1277,8 @@ class Tensor(BaseType):
         if input_mask is not None:
             raise TypeError("input_mask is not supported for Tensor")
         if isinstance(expr, _TensorInfixExpr):
-            # C << (X | Y), (X & Y), (X @ Y): as Matrix takes them (lor, land, the default
-            # semiring), refusing | and & on other dtypes, which need an operator
+            # C << (X | Y), (X & Y) or (X @ Y) resolve as for Matrix: lor, land or the
+            # default semiring. | and & on dtypes other than BOOL need an operator and raise
             expr = expr._to_expr()
         updater = Updater(self, mask=mask, accum=accum, replace=replace, opts=opts)
         if isinstance(expr, TensorExpression):  # (an extraction too, as for Matrix)
@@ -1509,7 +1507,7 @@ class _TensorInfixExpr(InfixExprBase):
     output_type = TensorExpression
 
     def __init__(self, left, right):
-        # Matrix, Vector and ndarray operands follow Tensor rules once they meet a Tensor
+        # A Matrix, Vector or ndarray operand of a Tensor follows Tensor rules
         left = _as_tensor(left, self._infix)
         right = _as_tensor(right, self._infix)
         if left is None or right is None:
@@ -1546,8 +1544,9 @@ class _TensorEwiseInfixExpr(_TensorInfixExpr):
     __slots__ = ()
 
     def _validate(self):
-        # With an operator every dtype has: the default one may not exist for these dtypes,
-        # and `monoid.any(X | Y)` (how a mask union is built) brings its own
+        # Check shapes and dtypes with `first`, which exists for nearly every dtype pair. The
+        # default operator may not exist for these dtypes, and the caller may bring its own,
+        # as `monoid.any(X | Y)` does to build a mask union
         try:
             getattr(self.left, self.method_name)(self.right, binary.first)
         except KeyError:
@@ -1555,7 +1554,7 @@ class _TensorEwiseInfixExpr(_TensorInfixExpr):
 
     @property
     def shape(self):
-        # (without the expression, which | and & refuse for other dtypes than BOOL)
+        # Without building the expression, which | and & refuse for dtypes other than BOOL
         return _broadcast_shapes(self.left._shape, self.right._shape)
 
     def _to_expr(self):
@@ -1574,7 +1573,6 @@ class _TensorEwiseInfixExpr(_TensorInfixExpr):
                     f"{what} using {how}.\n\nTypical usage is to create an "
                     f"{self.method_name} expression such as `{example}(x {self._infix} y)`."
                 )
-            # `x | y` is lor, `x & y` land
             op = binary.lor if self.method_name == "ewise_add" else binary.land
             self._expr = getattr(self.left, self.method_name)(self.right, op)
         return self._expr
@@ -1723,10 +1721,11 @@ def _materialize(src):
 
 
 def _output_mask(updater):
-    """The update's mask as a Tensor mask: a mask of a Matrix or Vector of the output's shape
-    becomes the same mask of it as a Tensor (as Tensor operations treat such operands; mask
-    combinations make them, as in ``T.S & A.V``); one of another shape is refused, since
-    masks do not broadcast.
+    """The update's mask as a mask of a Tensor.
+
+    A mask of a Matrix or Vector with the output's shape becomes the same mask of that
+    operand as a Tensor; mask combinations such as ``T.S & A.V`` make these. A mask of
+    another shape raises, since masks do not broadcast.
     """
     mask = updater.kwargs.get("mask")
     if mask is None or type(mask.parent) is Tensor:
@@ -1845,9 +1844,10 @@ def _fill(updater, value):
 
 
 def _broadcast_shapes(*shapes):
-    """The shape numpy's ``broadcast_shapes`` gives, in Python ints: numpy refuses a result of
-    2^63 positions or more (its size is an intp), which a Tensor can have (FROSTT's NELL-1 has
-    1.6e20). Raises ValueError when the shapes do not broadcast.
+    """The shape numpy's ``broadcast_shapes`` returns, in Python ints. numpy refuses a result
+    of 2^63 positions or more, since its size is an intp, and a Tensor can be that large
+    (FROSTT's NELL-1 has 1.6e20 positions). Raises ValueError when the shapes do not
+    broadcast.
     """
     ndim = max((len(s) for s in shapes), default=0)
     out = [1] * ndim
@@ -1861,10 +1861,10 @@ def _broadcast_shapes(*shapes):
 
 
 def _flipped(op):
-    """The typed op that gives ``op(x, y)`` as ``flipped(y, x)``, for a product that puts the
-    operands the other way round; or None. Only a flip of the same kind and result type gives
-    the same values: pow's is rpow, a Numba UDF that wraps on integer overflow where
-    GraphBLAS's pow saturates (and gives INT8 on BOOL).
+    """The typed op ``flipped`` with ``flipped(y, x) == op(x, y)``, for a product that takes
+    the operands in the other order; or None. Only a flip of the same kind and result type
+    computes the same values: pow's flip is rpow, a Numba UDF that wraps on integer overflow
+    where GraphBLAS's pow saturates (and that returns INT8 for BOOL).
     """
     flip = getattr(op, "commutes_to", None)
     if flip is None or type(flip) is not type(op) or flip.return_type != op.return_type:
@@ -1935,13 +1935,13 @@ def _in_layout(t, layout, nthreads):
     return tl.relayout(t._M, t._shape, t._layout, layout, nthreads=nthreads)[0]
 
 
-# The default split puts as many axes in the rows as the data fills. A row group indexes its
-# nonempty rows (h), so selectors and expansions over it follow the data, while a column group
-# costs per position (NELL-2's (0|1,2) has a 2.6e8-position column group). But rows
-# cost too: a hypersparse row costs a hash lookup in ewise and mxm (about 19 / 130 ns at 8 / 1
-# threads: Zipf's (0,1|2), 4.3 entries per row, took 53 ms for X + Y against 9.6 in (0|1,2)), and
-# a sparse row about 3 / 16 ns. So rows must hold MIN_ROW_ENTRIES entries each, or
-# MIN_HYPER_ROW_ENTRIES when they would be hypersparse (NELL-2's hold 228 each).
+# The default split puts as many axes in the rows as the data fills. A row group indexes only
+# its nonempty rows (h), so selectors and expansions over it scale with the data, while a
+# column group costs per position (NELL-2's (0|1,2) has a column group of 2.6e8 positions).
+# Rows cost too: a hypersparse row costs a hash lookup in ewise and mxm, about 19 / 130 ns at
+# 8 / 1 threads, and a sparse row about 3 / 16 ns. (In Zipf's (0,1|2), with 4.3 entries per
+# row, X + Y took 53 ms against 9.6 in (0|1,2).) So rows must have MIN_ROW_ENTRIES entries
+# each, or MIN_HYPER_ROW_ENTRIES when they would be hypersparse (NELL-2's have 228 each).
 MIN_ROW_ENTRIES = 1.5
 MIN_HYPER_ROW_ENTRIES = 32
 FULL_ROW_ENTRIES = tl.FULL_ROW_ENTRIES
@@ -1952,7 +1952,7 @@ _SPLIT_SAMPLE_PAST = 2**23
 
 
 def _rows_ok(nvals, nonempty, positions, narrower_cols):
-    """Whether rows of ``nvals`` entries over ``nonempty`` of ``positions`` rows are worth it.
+    """Whether ``nvals`` entries in ``nonempty`` of ``positions`` rows make rows worth having.
 
     Thin sparse rows (under FULL_ROW_ENTRIES each) cost about 2x in ewise (u6, 1.6 per row:
     X + Y 3.9 ms vs 1.5), so they pay off only when the alternative, one axis fewer in the
@@ -1967,18 +1967,21 @@ def _rows_ok(nvals, nonempty, positions, narrower_cols):
 
 
 def _data_split_layout(coords, shape, n):
-    """``(layout, row index or None, settle)``: identity order split at the largest p whose
-    rows hold enough entries each. A sample of the row keys rejects thin splits cheaply (its
-    distinct count can only err low, i.e. toward rows that look full): always for large
-    input, and for unsorted input, whose exact count would need a sort. Sorted input (C
-    order, the common case) is judged exactly from its row keys, which the build then
-    reuses; unsorted input is built at the split the sample allows and settled afterwards
-    (``settle=True``).
+    """``(layout, rows, settle)`` for a layout chosen from the data: the identity axis order,
+    split at the largest p whose rows each have enough entries (``_rows_ok``).
+
+    ``rows`` is the raveled row index for the build to reuse, or None. A sample of the row
+    keys rejects thin splits cheaply; its distinct count can only err low, toward rows that
+    look full. The sample is used for large input, and for unsorted input, whose exact count
+    would need a sort. Sorted input (C order, the common case) is judged exactly from its row
+    keys. Unsorted input is built at the split the sample allows, and ``settle=True`` asks the
+    caller to move the split afterwards if the rows are too thin (``_settle_split``).
     """
     ndim = len(shape)
     seq = tuple(range(ndim))
     if math.prod(shape) >= tl.MAX_GROUP:
-        # Reshape-based relayouts are unavailable; keep the shape-based rule
+        # SuiteSparse's reshape refuses 2^60 positions or more in total, so no split can
+        # move after the build; keep the shape-based rule
         if census.on:
             census.note("layout.default", "past 2^60: shape rule", ndim=ndim, nvals=n)
         return tl.default_layout(shape, n), None, False
@@ -2041,8 +2044,8 @@ def _sampled_nonempty_rows(coords, shape, row_axes, n, sample):
 
 
 def _settle_split(M, shape, layout):
-    """Move the split left (one reshape each) while the rows are too thin (``_rows_ok``),
-    counted through the Container.
+    """Move the split left, one reshape at a time, while the rows are too thin
+    (``_rows_ok``, with the nonempty rows counted through the Container).
     """
     seq, p = layout.state
     nvals = M._nvals
@@ -2056,12 +2059,12 @@ def _settle_split(M, shape, layout):
 
 
 def _healthy(M, shape, layout):
-    """Move an empty column group (an n x 1 Matrix, held as n rows of one entry at most) to
+    """Move an empty column group (an n x 1 Matrix, stored as n rows of one entry at most) to
     the default split, by one reshape (see "Choosing a default layout" in
     ai-notes/tensor/design.md).
 
-    An empty row group is left alone: one row holding every entry costs 12 bytes per entry
-    like a Vector, and SuiteSparse runs ewise, apply and selector products on it as fast as
+    An empty row group is left alone: one row with every entry costs 12 bytes per entry, as
+    a Vector does, and SuiteSparse runs ewise, apply and selector products on it as fast as
     on a square Matrix (measured at 1e6 entries), so a reshape there would only add time.
     """
     ndim = len(shape)
@@ -2120,7 +2123,7 @@ def _rs_cost(shape, seq, q, nvals, ti):
     return tl.rs_cost(shape, seq, q, nvals, ti)
 
 
-# The TTM engines compile per R on first use, so small tensors keep the product
+# The TTM engines compile per R on first use, so small tensors keep the products
 _TTM_KERNEL_MIN_NNZ = 2**16
 # The TTM engines, tried in this order where each runs (all are kept, to measure; tests and
 # benchmarks set this to force some):
@@ -2131,12 +2134,12 @@ _TTM_KERNEL_MIN_NNZ = 2**16
 #                over the plain product); else after a relayout (_contract). It runs every
 #                TTM, so it is also what any list falls back to
 _TTM_ENGINES = ("udt", "numba", "products")
-# Where both engines run, the UDT one is faster only in the stored order with a hypersparse
-# output (fewer nonempty fibers than SuiteSparse's hyper switch, 1/16) and R up to 32
-# (NELL-2 mode 2: 77 / 139 / 329 ms against 92 / 174 / 354 at R = 8 / 16 / 32, 1 thread;
-# 14 / 24 / 55 against 18 / 31 / 62 at 8); slower with a bitmap output
-# (u7: 25-86 against 27-77 ms at R = 16, 1 thread, and 1.4-1.8x slower at 8), at R = 64,
-# and after a relayout (NELL-2 modes 0 and 1: 1.6-1.8x slower).
+# Where both the UDT and the Numba engine run, the UDT one is faster only in the stored order,
+# with a hypersparse output (fewer nonempty fibers than SuiteSparse's hyper switch, 1/16) and
+# R up to 32. NELL-2 mode 2 at R = 8 / 16 / 32: 77 / 139 / 329 ms against 92 / 174 / 354 at
+# 1 thread, 14 / 24 / 55 against 18 / 31 / 62 at 8. It is slower with a bitmap output (u7 at
+# R = 16: 25-86 against 27-77 ms at 1 thread, 1.4-1.8x slower at 8), at R = 64, and after a
+# relayout (NELL-2 modes 0 and 1: 1.6-1.8x slower).
 _TTM_UDT_MAX_R = 32
 
 

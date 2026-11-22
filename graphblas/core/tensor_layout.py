@@ -1,6 +1,6 @@
 """Physical layouts of a Tensor and the planner that moves data between them (experimental).
 
-A Tensor keeps its entries in one Matrix held by row. Its ``Layout`` says which logical axes
+A Tensor keeps its entries in one Matrix stored by row. Its ``Layout`` says which logical axes
 are raveled (C order) into the Matrix rows and which into the columns. The planner works on
 physical states ``(seq, split)``: the axis sequence ``rows + cols`` and ``len(rows)``.
 
@@ -188,7 +188,7 @@ def coords_of(M, shape, state, *, values=True, sort=False):
 
 
 # ---------------------------------------------------------------------------------------------
-# Matrices held by row, and the Container calls
+# Matrices stored by row, and the Container calls
 
 
 def _check(rc, what):
@@ -205,7 +205,7 @@ def _global_by_col():
 
 
 def new_matrix(dtype, nrows, ncols, *, name=None):
-    """An empty Matrix held by row whatever the global format is.
+    """An empty Matrix stored by row whatever the global format is.
 
     SuiteSparse creates every n x 1 Matrix by column (as a Vector), whatever the global
     format; a per-Matrix setting on the empty Matrix sticks through later updates.
@@ -217,7 +217,7 @@ def new_matrix(dtype, nrows, ncols, *, name=None):
 
 
 def from_coo(rows, cols, values, dtype, nrows, ncols, *, dup_op=None, name=None):
-    """``Matrix.from_coo`` held by row. Under a by-column global format, build the transpose
+    """``Matrix.from_coo`` stored by row. Under a by-column global format, build the transpose
     by column and flip it, which costs nothing extra.
     """
     if _global_by_col():
@@ -337,8 +337,8 @@ def give_rows(M, h, nrows):
 
 
 def flip_orientation(M):
-    """In place, O(1): an (n x m) Matrix held by column becomes the (m x n) Matrix of its
-    transpose held by row (or the reverse), sharing the same arrays.
+    """In place, O(1): an (n x m) Matrix stored by column becomes the (m x n) Matrix of its
+    transpose stored by row (or the reverse), sharing the same arrays.
     """
     with _Unloaded(M) as cont:
         cont.nrows, cont.ncols = cont.ncols, cont.nrows
@@ -379,7 +379,7 @@ def nonempty_row_ids(M):
 
 def nonempty_col_ids(M):
     """The ids of the nonempty columns of ``M``, sorted, as int64: the distinct column
-    indices, O(nnz log nnz) (a Matrix held by row keeps no list of them). A sort and a mask
+    indices, O(nnz log nnz) (a Matrix stored by row keeps no list of them). A sort and a mask
     of the changes, which took 22 ms for 1e6 indices where ``np.unique`` took 146-153.
     """
     c = np.sort(M.to_coo(rows=False, values=False, sort=False)[1].view(np.int64))
@@ -461,7 +461,7 @@ def rows_selector(M, shape, group, kept_pos, weights=None, dtype=BOOL):
 
 
 def steal_vector_as_row(v):
-    """Turn a Vector (n x 1 by column) into a (1 x n) Matrix held by row, O(1). ``v`` is
+    """Turn a Vector (n x 1 by column) into a (1 x n) Matrix stored by row, O(1). ``v`` is
     left empty and must not be used again.
     """
     M = Matrix._from_obj(
@@ -472,14 +472,14 @@ def steal_vector_as_row(v):
 
 
 def steal_row_as_vector(M):
-    """Turn a (1 x n) Matrix, which the caller owns, into a Vector, O(1) when it is held by
+    """Turn a (1 x n) Matrix, which the caller owns, into a Vector, O(1) when it is stored by
     row; the inverse of ``steal_vector_as_row``, with no copy where ``M[0, :].new()`` copies
     by an extract (SuiteSparse's generic one, without the JIT). ``M`` is left empty and must
     not be used again.
     """
     if not is_by_row(M):
         # A shared Matrix the user flipped to by-column (as the gathers allow), copied by the
-        # caller: flipping it as it is would give an (n x 1) Matrix held by row, no Vector
+        # caller: flipping it as it is would give an (n x 1) Matrix stored by row, no Vector
         M.ss.config["format"] = "by_row"
     control = None
     if stored_format(M) == "hypercsr":
@@ -990,7 +990,7 @@ def reshape_owned(M, nrows, ncols):
 
 
 def execute(M, shape, state, path):
-    """Run ``path`` on ``M`` (held by row, in ``state``); return the new Matrix and state.
+    """Run ``path`` on ``M`` (stored by row, in ``state``); return the new Matrix and state.
 
     ``M`` itself is never changed; intermediates are reshaped in place, which skips a copy
     of the values (7.1 ms vs 9.6 for 1e7 entries at 8 threads, and less peak memory), except
@@ -1168,7 +1168,7 @@ _SAMPLE = 2**14
 
 
 def sampled_nonempty_cols(M):
-    """A low estimate of the nonempty columns of ``M`` (held by row, sparse or hypersparse),
+    """A low estimate of the nonempty columns of ``M`` (stored by row, sparse or hypersparse),
     from a sample of its column indices: the distinct count d in s of them, solving
     D * (1 - exp(-s / D)) = d (equal columns; skewed ones give less). None for bitmap or full.
     """
@@ -1381,7 +1381,7 @@ def _readonly_alias(A):
 
 
 def padded_view(M):
-    """A Matrix with the entries of ``M`` (sparse or hypersparse, held by row) and one more
+    """A Matrix with the entries of ``M`` (sparse or hypersparse, stored by row) and one more
     column, which stays empty, in O(1) with no copy; None where that does not fit (a 32-bit
     column index at 2^31 columns). It reads ``M``'s arrays, and its hyper hash, loaded
     GxB_IS_READONLY, so GraphBLAS neither frees nor changes them through it: free it before
@@ -1408,7 +1408,7 @@ def padded_view(M):
 
 
 def drop_last_column(M):
-    """Remove the last column of ``M`` (held by row, sparse or hypersparse, that column empty)
+    """Remove the last column of ``M`` (stored by row, sparse or hypersparse, that column empty)
     in O(1) through the Container. Unlike _Unloaded, it does not wait first: SuiteSparse
     unloads rows that are still jumbled, and sorting them here would do early work the
     product left for later (0.4 ms of 1 ms for 4e4 entries).
@@ -1472,7 +1472,7 @@ def _coords_along(linear, shape, group, axes, out):
 
 
 def embed_block_diagonal(M, rows_per_block, nblocks):
-    """In place: ``M`` (``nblocks * rows_per_block`` x K, held by row, owned by the caller)
+    """In place: ``M`` (``nblocks * rows_per_block`` x K, stored by row, owned by the caller)
     becomes the block-diagonal (``nblocks * rows_per_block`` x ``nblocks * K``) Matrix whose
     block b holds rows ``b * rows_per_block ...``: entry (r, c) moves to column
     ``(r // rows_per_block) * K + c``.

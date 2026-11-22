@@ -330,7 +330,7 @@ def _lookup_numba(t, rows, cols):
             with tl._VectorArray(cont.b, np.int8) as b:
                 return b.array[k].astype(bool), vals
         if fmt not in {"csr", "hypercsr"}:
-            # Held by column: only a Matrix the Tensor shares (from_matrix(copy=False),
+            # Stored by column: only a Matrix the Tensor shares (from_matrix(copy=False),
             # T.ss.matrix) that the user flipped; the GraphBLAS lookup takes it
             return None
         from .tensor_numba import lookup
@@ -463,8 +463,8 @@ def take_along_axis(t, indices, axis, *, wraparound=True):
 
 def _along_by_entries(t, idx, axis, shape):
     """``take_along_axis`` by joining the Tensor's entries with the indices: position ``k``
-    of ``idx`` and an entry at ``c`` meet when ``c[axis] == idx[k]`` and they agree along
-    each other axis longer than 1 in both. Each meeting is one output entry, at ``k`` along
+    of ``idx`` and an entry at ``c`` match when ``c[axis] == idx[k]`` and they agree along
+    each other axis longer than 1 in both. Each match is one output entry, at ``k`` along
     the axes the indices are longer than 1 and ``c`` along the rest. Sized by the entries,
     the indices and the result, where the points (the gather) are sized by ``shape``: indices
     that broadcast over a Tensor axis of 2^40 list every position along it.
@@ -524,7 +524,9 @@ def vindex(t, keys, *, wraparound=True):
 
 
 class VIndexer:
-    """``T.vindex[i0, i1, ...]``; ``T.vindex(wraparound=False)[...]`` refuses negatives."""
+    """``T.vindex[i0, i1, ...]``; ``T.vindex(wraparound=False)[...]`` raises IndexError for
+    negative indices.
+    """
 
     __slots__ = "t", "wraparound"
 
@@ -702,7 +704,7 @@ C_FILTER_AXIS = (1.0, 1.5)
 
 # A column range filtered by reading the stored arrays where they are (numpy, so one
 # thread): per stored entry, and per entry kept (its row found and the result built).
-# 2026-10-27: Uber X[:, :, :, k], 3.3e6 entries, 1.2-1.4 ms (3.7 in a first version); u7
+# 2026-10-27: Uber X[:, :, :, k], 3.3e6 entries, 1.2-1.4 ms; u7
 # X[:, :, k0:k1], 1e6 of 1e7 kept, 23-28 ms
 C_CFILTER = 1.0
 
@@ -864,7 +866,7 @@ def _extract_recipe(updater, t, sel, keys):
 
 
 def _column_range(M, c0, c1):
-    """``M[:, c0:c1]`` (``M`` held by row, sparse, with entries) by one numpy pass over its
+    """``M[:, c0:c1]`` (``M`` stored by row, sparse, with entries) by one numpy pass over its
     column indices, read where they are through the Container (``M`` is not changed, and only
     the kept entries are copied); the kept entries' rows by a binary search of the row
     pointers.

@@ -114,7 +114,8 @@ def _ttm_udt(updater, a, b, op, a_axes, b_axes):
         )
     ):
         return None  # (the Numba engine is faster here: see _TTM_UDT_MAX_R)
-    # Decided: only now raise SuiteSparse's default "run" to "on", so a declined case leaves it
+    # The engine runs: only now raise SuiteSparse's default "run" to "on", so that a case
+    # declined above leaves the control as it was
     before = tensor_udt.jit_control()
     if not tensor_udt.jit_ready():
         return None
@@ -141,9 +142,9 @@ def _ttm_numba(updater, a, b, op, a_axes, b_axes):
     when it is (with leading column axes too: their runs are the output fibers), else it
     moves to the cheapest layout that has it there.
 
-    The output is today's storage: hypersparse rows of R values, or full when every output
-    fiber exists. (One mxm was 2.4-2.7x behind TACO in the stored order: its Gustavson saxpy
-    on hypersparse rows, then the output's row hash.)
+    The output is hypersparse rows of R values, bitmap when at least half the output fibers
+    exist, or full when every one does. (One mxm was 2.4-2.7x slower than TACO in the stored
+    order: its Gustavson saxpy on hypersparse rows, then the output's row hash.)
     """
     if not _t._has_numba:  # (_ttm_engines checks the operands, as for _ttm_udt)
         return None
@@ -203,9 +204,9 @@ def _ttm_compacted(updater, a, b, op, a_axes, b_axes):
     """TTM in the stored order on a hypersparse tensor, by one product on its rows compacted:
     the nonempty rows (h dropped through the Container) times the factor, then the result's
     rows given h back. On hypersparse rows SuiteSparse runs a Gustavson saxpy; on the same
-    rows stored compactly its bitmap / full kernel, with no index per output entry (NELL-2
-    mode 2: 404-430 against 689-769 ms at 1 thread). Any type and
-    semiring; ``(src, layout, shape)`` or None.
+    rows stored compactly, its bitmap or full kernel, with no index per output entry (NELL-2
+    mode 2: 404-430 against 689-769 ms at 1 thread). Any type and semiring. Returns
+    ``(src, layout, shape)``, or None.
     """
     if len(a_axes) != 1 or b.ndim != 2 or a._layout.cols != a_axes or not a._layout.rows:
         return None
@@ -292,7 +293,7 @@ def _mttkrp_numba(x, mats, mode, nthreads, *, layout=None):
     if x._shape[mode] * R > max(R * x._M._nvals, 2**22):
         # The kernel fills a dense (mode x R) output, then keeps its reached rows: a mode far
         # longer than the entries (a hypersparse output) takes the products, sized by the
-        # entries (a mode of 2^40 at R = 3 asked for 24 TiB)
+        # entries (a mode of 2^40 at R = 3 would need 24 TiB)
         return None
     X = _in_layout(x, layout, nthreads)
     if tl.stored_format(X) not in {"csr", "hypercsr"}:
@@ -358,7 +359,7 @@ def _mttkrp_order(x, mode, R, nthreads, *, products):
     """The order of the axes other than ``mode`` for the layout ``(mode, *order[:-1] |
     order[-1])``: by the cost to reach it, plus with ``products`` the size of the
     intermediates the products make (one row per distinct ``(mode, *order[:-k])``, k = 1, 2,
-    ...), estimated from a sample of the entries. Relayout cost alone picked, for Enron mode 1
+    ...), estimated from a sample of the entries. Relayout cost alone picks, for Enron mode 1
     at 1 thread, a first intermediate 55x larger than at 8 threads (26.9 s against 0.92).
     """
     others = [a for a in range(x.ndim) if a != mode]
@@ -419,10 +420,8 @@ def _krp_embedding(F, R):
 
 def _mttkrp_recipe(updater, x, mats, mode, R, op):
     if x._M._nvals == 0 or any(F._nvals == 0 for F in mats.values()):
-        # SuiteSparse (seen from 8.2 through 10.5.1): a product over a dimension of size 0
-        # returns every output position when both operands are iso and full (see
-        # tensor_reduce._reduce_matrix). Every term needs an entry of each, so none gives
-        # no entries.
+        # Every term needs an entry of each, so an operand with no entries gives no entries,
+        # which SuiteSparse's product would not (see tensor_reduce._reduce_matrix)
         out = tl.new_matrix(op.return_type, x._shape[mode], R)
         _store(updater, out, (x._shape[mode], R), Layout((0,), (1,)), fresh=True)
         return

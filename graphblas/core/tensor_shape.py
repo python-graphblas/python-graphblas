@@ -1,4 +1,4 @@
-"""Reshape for Tensors: the views a layout holds, and the relayout otherwise.
+"""Reshape for Tensors: a view when the layout represents the result, else a relayout.
 
 Private: part of ``graphblas.core.tensor``, which imports it at its end.
 """
@@ -60,9 +60,10 @@ def _reshape_chunks(old_shape, new_shape):
 
 
 def _reshape_layout(old_shape, layout, new_shape):
-    """The layout of the reshape to ``new_shape`` that the stored Matrix of ``layout`` holds
-    as it is: each run of old axes (``_reshape_chunks``) lies within one group, in order,
-    and becomes the run's new axes there. None when some run does not. Sizes positive.
+    """The layout of ``new_shape`` under which the stored Matrix of ``layout``, unchanged,
+    represents the reshape: each run of old axes (``_reshape_chunks``) lies within one group,
+    in order, and becomes the run's new axes there. None when some run does not. Sizes are
+    positive.
     """
     groups = []
     for group in (layout.rows, layout.cols):
@@ -80,9 +81,9 @@ def _reshape_layout(old_shape, layout, new_shape):
 
 
 def _reshape_targets(old_shape, new_shape):
-    """The layout states of ``old_shape`` whose stored Matrix holds the reshape: the runs as
-    blocks, in any order, split between them with both groups nonempty (a group of all the
-    axes stores the result as one row or column).
+    """The layout states of ``old_shape`` whose stored Matrix represents the reshape: the
+    runs as blocks, in any order, split between them with both groups nonempty (a group of
+    all the axes stores the result as one row or column).
     """
     chunks = [ia for ia, _ in _reshape_chunks(old_shape, new_shape)]
     units = [a for a, n in enumerate(old_shape) if n == 1]
@@ -99,7 +100,7 @@ def _reshape_targets(old_shape, new_shape):
 
 
 def _reshape(t, shape):
-    """``t.reshape(shape)`` (``shape`` resolved): a view when the layout holds it; else the
+    """``t.reshape(shape)`` (``shape`` resolved): a view when the layout represents it; else the
     data moved once to a layout that does (the runs as blocks, split between two of them);
     else, when the reshape is one run, the data in C order (a relayout to the identity
     sequence) with the stored Matrix reshaped to the new shape's default split.

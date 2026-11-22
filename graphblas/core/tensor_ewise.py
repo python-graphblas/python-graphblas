@@ -198,10 +198,10 @@ def _bcast_recipe(updater, method, a, b, op, untyped_op, extra, shape):
         _ewise_recipe(updater, method, _expand(a, shape), _expand(b, shape), op, extra)
 
 
-# Taking the small side onto a wide column group's nonempty columns, per stored entry, on top
-# of the diagonal product: the distinct column indices (a sort) and the expansion over them,
-# ns at 8 / 1 threads (2026-10-28: hyper and Zipf, forced, 1e6 entries 76 / 340 ms, 1e7 entries
-# 640 / 2050 ms)
+# The cost of expanding the small side onto a wide column group's nonempty columns, per stored
+# entry and on top of the diagonal product: the distinct column indices (a sort) and the
+# expansion over them. In ns at 8 / 1 threads (2026-10-28, hyper and Zipf, forced: 1e6 entries
+# 76 / 340 ms, 1e7 entries 640 / 2050 ms).
 C_NONEMPTY_COLS = (70.0, 250.0)
 
 
@@ -288,14 +288,14 @@ def _bcast_mult(updater, a, b, op, untyped_op, shape):
             options.append((move + C_DIAG[ti] * nv, q, "rows", False))
         if q != p:
             continue
-        # A group far wider than the data takes the small side onto its nonempty rows or
-        # columns, not through a selector, which lists every position of the group (past
-        # 2^60 positions in total it may be the one option left, over 2^60 columns). Below
-        # the cache's bound the selector is kept: it is shape-only and cached, so a repeated
-        # broadcast pays only a product over the group, where the nonempty columns are found
-        # again each call (1e6 entries over 8 to 32 times as many columns: 7-21 against
-        # 200 ms at 8 threads; past the bound the selector is rebuilt each call, 655 ms
-        # against 198 at 128 times)
+        # A group far wider than the data expands the small side onto its nonempty rows or
+        # columns instead of through a selector, which lists every position of the group
+        # (past 2^60 positions in total it may be the only option, over 2^60 columns). Below
+        # the cache's bound the selector is kept: it depends only on the shape and is cached,
+        # so a repeated broadcast pays only a product over the group, while the nonempty
+        # columns are found again on each call (1e6 entries over 8 to 32 times as many
+        # columns: 7-21 against 200 ms at 8 threads). Past the bound the selector is rebuilt
+        # on each call (655 ms against 198 at 128 times).
         limit = max(4 * nv, 4096, tl._matrix_cache.maxweight)
         if row_op is not None and Fset < set(rows):
             hyper = tl.stored_format(M) == "hypercsr"
