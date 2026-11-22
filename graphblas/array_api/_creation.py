@@ -110,6 +110,8 @@ def _from_sparse(obj, dtype, fill_value):
             # scipy.sparse's missing entries are zeros
             raise ValueError("a scipy.sparse array has fill value 0; convert it first")
         if not getattr(coo, "has_canonical_format", True):
+            # tocoo() returns a COO input itself, so sum the caller's duplicates in a copy
+            coo = coo.copy() if coo is obj else coo
             coo.sum_duplicates()
             coords, data = tuple(np.asarray(c) for c in coo.coords), np.asarray(coo.data)
     else:

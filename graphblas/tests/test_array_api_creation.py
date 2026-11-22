@@ -136,6 +136,11 @@ def test_asarray_scipy_and_pydata_sparse():
     sp = pytest.importorskip("scipy.sparse")
     A = sp.csr_array(np.array([[0.0, 1.5], [2.0, 0.0]]))
     assert_array_equal(xp.asarray(A), np.array([[0.0, 1.5], [2.0, 0.0]]))
+    # Repeated coordinates are summed, and the caller's COO array keeps them
+    coo = sp.coo_array((np.array([1.0, 2.0, 3.0]), ([0, 0, 1], [0, 0, 1])), shape=(2, 2))
+    assert_array_equal(xp.asarray(coo), np.array([[3.0, 0.0], [0.0, 3.0]]))
+    assert coo.nnz == 3
+    assert not coo.has_canonical_format
     sparse = pytest.importorskip("sparse")
     s = sparse.COO.from_numpy(np.array([[1.0, 2.0], [2.0, 3.0]]), fill_value=2.0)
     x = xp.asarray(s)
