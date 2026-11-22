@@ -1,16 +1,17 @@
 """Indexing: ``x[key]``, ``x[key] = value``, ``take`` and ``take_along_axis``.
 
-Keys follow numpy: integers, slices, ``...`` and ``None`` (basic indexing, extracted in
-GraphBLAS), and integer and boolean arrays (advanced indexing, gathered from the stored
-entries, so a position the array does not store is the fill in the result too). The Array API
-standard specifies an index of integers and integer arrays only (vectorized indexing), or one
-boolean array alone; other combinations follow numpy.
+Keys follow numpy. Integers, slices, ``...`` and ``None`` are basic indexing, which GraphBLAS
+extracts. Integer and boolean arrays are advanced indexing, which gathers from the stored
+entries, so a position the array does not store has the fill in the result too. For index
+arrays, the Array API standard specifies only a tuple of integers and integer arrays
+(vectorized indexing), or one boolean array alone; other combinations follow numpy.
 
-Costs: basic indexing is O(entries in the region). An integer index array is read densely
-(its size is the result's); a boolean index array costs O(its entries) when its fill is
-False, O(its size) when its fill is True. Assigning a scalar other than the fill, or an array
-whose fill is not ``x``'s, to a region stores every position of the region; assigning by
-several index arrays writes every selected position (O(selection)).
+Costs: basic indexing is O(entries in the region). An integer index Array is made dense
+first, at O(its size). A boolean index costs O(its entries) when its fill is False, and
+O(its size) when its fill is True. Assigning to a region stores every position of the region
+when the value is a scalar other than the fill, or an array whose fill is not ``x``'s.
+Assigning through several index arrays, a multi-dimensional one, or one together with an
+integer writes each selected position: O(selection), under the densify limit.
 """
 
 import builtins
@@ -29,7 +30,7 @@ __all__ = ["take", "take_along_axis"]
 
 # Keys
 class _Adv:
-    """An integer index array (advanced indexing) for one axis, nonnegative."""
+    """An integer index array (advanced indexing) for one axis, with nonnegative indices."""
 
     __slots__ = ("index",)
 
@@ -47,9 +48,9 @@ class _NewAxis:
 
 
 class _Gap:
-    """A ``...`` that covers no axis. It takes no axis, but separates the advanced indices on
-    either side of it, as in numpy: ``x[:, 1, ..., [0, 2]]`` of a 3-d ``x`` puts the
-    broadcast advanced axis first.
+    """A ``...`` that covers no axis. It still separates the advanced indices on either side
+    of it, as in numpy: ``x[:, 1, ..., [0, 2]]`` of a 3-d ``x`` puts the broadcast advanced
+    axis first.
     """
 
     __slots__ = ()
@@ -63,8 +64,8 @@ def _is_int(k):
 
 
 def _index_array(k):
-    """An index of array type: a boolean Array as it is, else a numpy array; None when ``k``
-    is not an array.
+    """Return the array index ``k``: a boolean Array unchanged, any other as a numpy array.
+    Return None when ``k`` is not an array.
     """
     if isinstance(k, Array):
         if k.dtype.kind == "b":
@@ -108,8 +109,9 @@ def _mask_coords(mask, shape):
 
 
 def _normalize(x, key):
-    """``key`` as a list of items: an int, slice or _Adv for each axis of ``x``, and _NewAxis
-    items for new axes. A boolean array of M dimensions becomes M _Adv items.
+    """``key`` as a list of items: an int, slice or _Adv for each axis of ``x``, a _NewAxis
+    for each new axis, and a _Gap for a ``...`` that covers no axis. A boolean array of M
+    dimensions becomes M _Adv items.
     """
     if not isinstance(key, tuple):
         key = (key,)
@@ -135,7 +137,7 @@ def _normalize(x, key):
             if arr is None:
                 raise IndexError(f"invalid index {k!r}")
             items.append(arr)
-    if sum(k is Ellipsis for k in items if not isinstance(k, (np.ndarray, Array))) > 1:
+    if sum(k is Ellipsis for k in items) > 1:
         raise IndexError("an index can only have a single ellipsis ('...')")
 
     def width(k):
@@ -186,16 +188,16 @@ def _has_adv(items):
 
 
 def _adjacent(items):
-    """Whether the advanced items (index arrays, with the ints among them) are next to each
-    other; numpy then keeps their axes in place, else puts them first.
+    """Whether the advanced items (index arrays and integers) are next to each other. numpy
+    keeps the axes of adjacent advanced items in place, and puts those of separated ones first.
     """
     positions = [i for i, k in enumerate(items) if isinstance(k, (_Adv, int))]
     return positions == list(range(positions[0], positions[-1] + 1))
 
 
 def _finish(out, items, nadv):
-    """``out`` holds the advanced axes (``nadv`` of them) first, then the sliced axes in
-    order: move the advanced ones where numpy puts them and insert the new axes.
+    """Move the advanced axes of ``out`` to where numpy puts them, and insert the new axes.
+    ``out`` has its ``nadv`` advanced axes first, then the sliced axes in order.
     """
     from ._manipulation import expand_dims, permute_dims
 
@@ -249,7 +251,7 @@ def getitem(x, key):
     if _has_adv(items):
         out, nadv = _advanced_extract(x, axes_key)
     else:
-        # (a pending product slices its operands instead)
+        # (a pending product slices its operands instead of computing first)
         if (out := _lazy.sliced(x, axes_key)) is None:
             out = _basic_extract(x, tuple(axes_key))
         nadv = 0
@@ -267,8 +269,8 @@ def _basic_extract(x, axes_key):
 
 
 def _advanced_extract(x, axes_key):
-    """``x`` indexed by ``axes_key`` (one item per axis) with the advanced axes first, then the
-    sliced ones in order, and the number of advanced axes.
+    """Return ``x`` indexed by ``axes_key`` (one item per axis), with the advanced axes first
+    and then the sliced ones in order, and the number of advanced axes.
     """
     sliced = tuple(k if isinstance(k, slice) else slice(None) for k in axes_key)
     y = _basic_extract(x, sliced) if any(k != slice(None) for k in sliced) else x
@@ -335,9 +337,9 @@ def setitem(x, key, value):
 
 
 def _without_new_axes(value, items):
-    """``value`` for a basic key with new axes (``None``): the selection numpy broadcasts it
-    against has those axes, of length 1, which the region assigned to does not; drop the
-    value's axes that line up with them.
+    """Drop the axes of ``value`` that line up with the new axes (``None``) of a basic key.
+    numpy broadcasts the value against the selection, which has those axes with length 1,
+    but the region assigned to does not have them.
     """
     kinds = [k for k in items if isinstance(k, (_NewAxis, slice))]
     offset = len(kinds) - value.ndim
@@ -355,7 +357,7 @@ def _without_new_axes(value, items):
 
 
 def _setitem_value(x, value):
-    """The value cast to ``x``'s dtype: a numpy scalar, or an Array of at least 1 dimension."""
+    """``value`` cast to ``x``'s dtype: a numpy scalar, or an Array of at least 1 dimension."""
     from ._creation import asarray
     from ._elementwise import cast
 
@@ -403,14 +405,18 @@ def _region_setitem(x, key, value):
         )
     if math.prod(region) == 0:
         return
-    # The region takes the value's structure: an unstored position of the value deletes
+    # The assign replaces the region with the value, so where the value stores nothing, x's
+    # entry is deleted
     T[key] = _utils.with_fill(value, x._fill)._T()
 
 
 def _scatter_setitem(x, axes_key, value):
-    """Assign by several index arrays: write every selected position."""
-    # numpy lays out the selection; index broadcast views of the coordinates with the key (a
-    # ``...`` that covers no axis stays: it decides where the advanced axes go)
+    """Assign through index arrays where numpy's vectorized indexing and GraphBLAS's outer
+    indexing differ (see ``setitem``): write each selected position.
+    """
+    # numpy lays out the selection: index a broadcast grid of each axis's coordinates with the
+    # key. A ``...`` that covers no axis stays in the key, since it decides where the advanced
+    # axes go.
     key = tuple(
         k.index if isinstance(k, _Adv) else Ellipsis if isinstance(k, _Gap) else k for k in axes_key
     )
@@ -469,7 +475,7 @@ def _check_bounds(idx, n, axis):
 
 
 def take(x, indices, /, *, axis=None):
-    """``x``'s elements at ``indices`` along ``axis`` (the flattened array if None)."""
+    """The elements of ``x`` at ``indices`` along ``axis``, which may be None for a 1-d ``x``."""
     from ._manipulation import _normalize_axis
 
     if not isinstance(x, Array):

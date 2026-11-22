@@ -1,10 +1,14 @@
-"""The Array API's ``linalg`` extension (``xp.linalg``).
+"""The Array API's ``linalg`` extension, ``xp.linalg``.
 
-matmul, matrix_transpose, tensordot, vecdot, diagonal, trace, vector_norm, outer, cross, the
-Frobenius, 1 and inf matrix norms, and matrix_power with n >= 0 work on the stored entries.
-The decompositions and solvers (cholesky, det, eig, eigh, eigvals, eigvalsh, inv, pinv, qr,
-slogdet, solve, svd, svdvals, matrix_rank, and matrix_norm of order 2, -2 or "nuc") are dense
-algebra: they go through numpy densely, under the densify limit.
+These functions work on the stored entries: matmul, matrix_transpose, tensordot, vecdot,
+diagonal, trace, vector_norm, outer, cross, matrix_norm of order "fro", 1, -1, inf or -inf,
+and matrix_power with ``n >= 0``. A contraction with an operand whose fill is not 0 may still
+go dense (see ``matmul``).
+
+The decompositions and solvers are dense algebra. They compute with numpy on dense copies,
+under the densify limit (``graphblas.config["array_api_densify_limit"]``): cholesky, det,
+eig, eigh, eigvals, eigvalsh, inv, pinv, qr, slogdet, solve, svd, svdvals, matrix_rank,
+matrix_norm of order 2, -2 or "nuc", and matrix_power with ``n < 0``.
 """
 
 import math
@@ -99,7 +103,7 @@ def _dense_call(name, func, *arrays):
 
 # Sparse
 def diagonal(x, /, *, offset=0):
-    """The diagonals of the last two axes: O(entries)."""
+    """The diagonal at ``offset`` of each matrix in the last two axes, in O(stored entries)."""
     _check(x, "diagonal")
     n, m = x.shape[-2:]
     offset = int(offset)
@@ -111,10 +115,10 @@ def diagonal(x, /, *, offset=0):
     coords, values = T.to_coo(sort=False)
     i, j = coords[-2], coords[-1]
     keep = j - i == offset
-    k = i if offset >= 0 else j
-    out = [c[keep] for c in coords[:-2]] + [k[keep]]
     if not keep.any():
         return Array._new(Tensor(T.dtype, shape), x._fill)
+    k = i if offset >= 0 else j
+    out = [c[keep] for c in coords[:-2]] + [k[keep]]
     return Array._new(Tensor.from_coo(out, values[keep], T.dtype, shape=shape), x._fill)
 
 
@@ -136,7 +140,9 @@ def outer(x1, x2, /):
 
 
 def cross(x1, x2, /, *, axis=-1):
-    """The cross product of 3-vectors along ``axis`` (numpy's products and differences)."""
+    """The cross product of 3-vectors along ``axis``, with the products and differences numpy
+    computes.
+    """
     from ._elementwise import multiply, subtract
     from ._manipulation import stack
 
@@ -162,7 +168,7 @@ def cross(x1, x2, /, *, axis=-1):
 
 
 def vector_norm(x, /, *, axis=None, keepdims=False, ord=2):  # noqa: A002 (the Array API's name)
-    """O(entries): the norms are reductions of ``abs(x)``."""
+    """The vector norm of order ``ord`` over ``axis``, from reductions of ``abs(x)``."""
     from ._elementwise import abs as abs_
     from ._elementwise import pow as pow_
     from ._elementwise import sqrt, square
@@ -189,9 +195,7 @@ def vector_norm(x, /, *, axis=None, keepdims=False, ord=2):  # noqa: A002 (the A
 
         return cast(count_nonzero(a, axis=axis, keepdims=keepdims), a.dtype)
     p = float(ord)
-    with np.errstate(divide="ignore"):
-        inv = 1.0 / p
-    return pow_(sum_(pow_(a, p), axis=axis, keepdims=keepdims), inv)
+    return pow_(sum_(pow_(a, p), axis=axis, keepdims=keepdims), 1.0 / p)
 
 
 def matrix_norm(x, /, *, keepdims=False, ord="fro"):  # noqa: A002 (the Array API's name)
@@ -228,7 +232,10 @@ def matrix_norm(x, /, *, keepdims=False, ord="fro"):  # noqa: A002 (the Array AP
 
 
 def matrix_power(x, n, /):
-    """``x`` to the integer power ``n``: repeated sparse products for n >= 0; inv for n < 0."""
+    """``x`` to the integer power ``n``, by repeated squaring with sparse products.
+
+    For ``n < 0`` it computes the power ``-n`` of ``inv(x)``, which is dense.
+    """
     _check(x, "matrix_power")
     if x.shape[-1] != x.shape[-2]:
         raise ValueError("matrix_power needs square matrices")

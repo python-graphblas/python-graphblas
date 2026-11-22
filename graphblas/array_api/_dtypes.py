@@ -42,8 +42,9 @@ _KINDS["numeric"] = _KINDS["integral"] | _KINDS["real floating"] | _KINDS["compl
 
 
 def as_dtype(dtype):
-    """``dtype`` (a dtype of this namespace, or anything numpy takes for one) as a supported
-    numpy dtype; TypeError otherwise.
+    """Return ``dtype`` as a supported numpy dtype, or raise TypeError.
+
+    ``dtype`` is a dtype of this namespace, or anything ``np.dtype`` accepts.
     """
     if dtype is None:
         raise TypeError("dtype must not be None here")
@@ -97,14 +98,16 @@ def result_type(*arrays_and_dtypes):
             args.append(x.dtype)
             has_typed = True
         elif isinstance(x, (builtins.bool, int, float, complex)) and not isinstance(x, np.generic):
-            args.append(x)  # weak, as numpy takes a Python scalar
+            args.append(x)  # weak, as numpy treats a Python scalar
         else:
             args.append(as_dtype(x))
             has_typed = True
     if not has_typed:
         raise ValueError("result_type needs at least one array or data type, not only scalars")
-    # numpy promotes many arguments pairwise in an order of its own: fold left to right, as the
-    # Array API's promotion table does, so that the result does not depend on the order
+    # Promote pairwise, left to right, with the Python scalars last. For dtypes of one kind this
+    # follows the Array API's promotion table, whose result does not depend on the order. With
+    # mixed kinds, which the standard leaves unspecified, it can: (int8, uint16, float32) returns
+    # float64, and (int8, float32, uint16) returns float32.
     rt = None
     for arg in args:
         if isinstance(arg, np.dtype):

@@ -1,26 +1,24 @@
-"""Deferred contractions (DESIGN D9, scoped to one level of deferral).
+"""Deferred contractions, one level deep.
 
-matmul, tensordot, vecdot and einsum return an Array whose Tensor is not computed yet when
-they skip the operands' unstored positions (their fills are the semiring's identity) and the
-result has a dimension. Such a pending Array holds copy-on-write snapshots (``Tensor.dup``,
-O(1)) of its operands' Tensors, so changing an operand afterwards does not change it (the
-operand copies its data then, and the snapshots keep the old data alive until the result is
-computed), and computes its Tensor on the first read (``Array._T``), once.
+matmul, tensordot, vecdot and einsum return a pending Array, whose Tensor is not computed yet,
+when they skip the operands' unstored positions (see ``_linalg``) and the result has a
+dimension. A pending Array stores O(1) copy-on-write snapshots (``Tensor.dup``) of its
+operands' Tensors. Changing an operand afterwards does not change the result: the operand
+copies its data then, and the snapshots keep the old data until the result is computed. The
+Tensor is computed on the first read (``Array._T``), once.
 
 Two consumers use a pending product P without computing it whole:
 
 - ``multiply(S, P)`` or ``multiply(P, S)``, with S of P's shape and both fills 0, computes P
   only at S's stored positions (a masked product, then the multiply: an SDDMM). Elsewhere S
-  is 0, and 0 times P's value there is 0 when that value is finite. That holds when the
-  operands are finite and no sum of products can overflow: the number of terms of each sum
-  times the largest magnitude of each operand stays below the dtype's largest value (one
-  GraphBLAS pass per operand for each). Otherwise P is computed whole (a sparse product, as
-  without deferral), then multiplied.
+  is 0, and 0 times P's value there is a zero when that value is finite. For floats, that
+  holds when the operands are finite and no sum can overflow (``Contraction.all_finite``).
+  Otherwise P is computed whole, then multiplied.
 - ``P[key]`` with a basic index (ints and slices) slices the operands along the indexed axes
-  of the result, then contracts (pending again).
+  of the result, then contracts them (pending again).
 
 Everything else reads the Tensor, which computes it. Values do not depend on whether a result
-was deferred; ``enabled = False`` turns deferral off, for debugging.
+was deferred. Setting ``enabled = False`` turns deferral off, for debugging.
 """
 
 import math
@@ -34,19 +32,19 @@ from . import _utils
 from ._array import Array
 from ._utils import gb_dtype, np_dtype
 
-# Private kill switch: False computes every contraction when it is called
 enabled = True
 
 
 class Contraction:
     """A contraction not computed yet.
 
-    ``build(*tensors)`` gives its TensorExpression; ``tensors`` are snapshots of the operands'
-    Tensors. ``spec``, ``(terms, output, semiring)`` of an einsum that computes it, lets a
-    slice of the result slice the operands instead (None: no such einsum). ``finite`` holds
-    each operand's finiteness: True, False, or None when not checked yet. ``nterms``: the
-    number of terms each result position sums (the product of the contracted sizes).
-    ``product``: whether it is one product of its two operands, which takes the mask.
+    ``tensors`` are snapshots of the operands' Tensors, and ``build(*tensors)`` returns its
+    TensorExpression. ``spec`` is ``(terms, output, semiring)`` of an einsum that computes it,
+    which lets a slice of the result slice the operands instead, or None when there is no such
+    einsum. ``finite`` says, for each operand, whether its values are finite: True, False, or
+    None when not checked yet. ``nterms`` is the number of terms each result position sums
+    (the product of the contracted sizes). ``product`` says whether it is one product of its
+    two operands, so that a mask goes into that product.
     """
 
     __slots__ = "tensors", "build", "gbdt", "spec", "finite", "nterms", "product"
@@ -64,9 +62,9 @@ class Contraction:
         return self.build(*self.tensors).new(dtype=self.gbdt, mask=mask, **opts)
 
     def all_finite(self):
-        """Whether every value of the product is finite: every operand value is finite, and
-        ``nterms`` times the largest magnitude of each operand is below half the largest
-        value of the result's dtype (the half covers the rounding of the sums).
+        """Whether every value of the result is finite: every operand value is finite, and
+        ``nterms`` times the product of the operands' largest magnitudes is below half the
+        largest value of the result's dtype (the half covers the rounding of the sums).
         """
         for i, ok in enumerate(self.finite):
             if ok is None:
@@ -91,20 +89,20 @@ def _max_abs(T):
     if T.nvals == 0:
         return 0.0
     if np_dtype(T.dtype).kind == "c":
-        # (FC64 exists only on the suitesparse backend: looked up here, so that this module
-        # imports on any backend, as the Tensor does)
+        # (FC64 exists only on the suitesparse backend; looking it up here lets this module
+        # import on any backend, as core.tensor does)
         A = T.apply(unary.abs[lookup_dtype("FC64")]).new()
         return float(A.reduce_scalar(monoid.max[FP64]).new().value)
-    # (two reductions in place: a copy of |values| cost 40 ms of 155 at n = 1e6, k = 64)
+    # (two reductions in place, not one over a copy of |values|: an SDDMM with full operands
+    # of 1e6 x 64 values and 1e7 entries in S took 0.136 s this way at 8 threads, and 0.154 s
+    # with the copy)
     hi = T.reduce_scalar(monoid.max[FP64]).new().value
     lo = T.reduce_scalar(monoid.min[FP64]).new().value
     return max(abs(hi), abs(lo))
 
 
 def _known_finite(x):
-    """Whether ``x``'s values are finite, if ``x`` already knows (from its cached facts);
-    else None.
-    """
+    """Whether the stored values of ``x`` are finite, if its cached facts say; else None."""
     if x.dtype.kind not in "fc":
         return True
     facts = x._facts
@@ -112,15 +110,18 @@ def _known_finite(x):
 
 
 def contraction(arrays, build, shape, dtype, fill, spec=None, nterms=1, product=False, typed=None):
-    """The Array of ``build(*tensors)`` over the arrays' Tensors (``build(*tensors, op=)``
-    with another semiring), with fill ``fill``: pending when deferral is on and the result
-    has a dimension, else computed now. ``nterms``: the number of terms each result position
-    sums; ``product``: see ``Contraction``; ``typed``: the semiring.
+    """The Array of ``build(*tensors)`` over the arrays' Tensors, with fill ``fill``: pending
+    when deferral is on and the result has a dimension, else computed at once.
 
-    When an operand holds inf or NaN, the operands' stored entries equal to their fill go
-    first, so that such a value meets an explicit fill as it meets an unstored one, with no
-    term (DESIGN D12a). When a float min or max monoid would drop a stored NaN term, the
-    result is computed now and NaN set where such a term is (D12b).
+    ``typed`` is the semiring, and ``build(*tensors, op=)`` builds the product with another
+    one. ``nterms`` is the number of terms each result position sums; for ``product``, see
+    ``Contraction``.
+
+    When an operand stores inf or NaN, the operands' stored entries equal to their fill are
+    dropped first (``prune``). An inf or NaN then contributes no term with an explicit fill,
+    as it contributes none with an unstored position. When a float min or max monoid would
+    skip a NaN term, the result is computed at once, with NaN at each position that has one
+    (see ``_with_nan_terms``).
     """
     if any(x.dtype.kind in "fc" and not _utils.fact(x, "finite") for x in arrays):
         from ._manipulation import prune
@@ -145,9 +146,11 @@ def contraction(arrays, build, shape, dtype, fill, spec=None, nterms=1, product=
 
 
 def _with_nan_terms(build, tensors, gbdt):
-    """``build(*tensors)`` with NaN wherever a term holds a stored NaN: SuiteSparse's float
-    min and max are fmin and fmax, which skip NaN, where numpy's propagate it. Those positions
-    are the product of one operand's NaN entries with the others' patterns (any_pair).
+    """``build(*tensors)``, with NaN at each position where a term has a stored NaN operand.
+
+    SuiteSparse's float min and max are C's fmin and fmax, which skip NaN; numpy's propagate
+    it. Those positions are the any_pair product of one operand's NaN entries with the other
+    operands' patterns.
     """
     R = build(*tensors).new(dtype=gbdt)
     bool_ = lookup_dtype(bool)
@@ -192,12 +195,13 @@ def masked_multiply(a, b):
 
 
 def _dot_hint(node, nmask, shape=()):
-    """``axb_method="dot"`` for a product under a mask of ``nmask`` entries when dot products
-    at the mask's entries cost well below a saxpy over the whole product, else nothing.
+    """``{"axb_method": "dot"}`` for a product under a mask of ``nmask`` entries when dot
+    products at the mask's entries cost well below a saxpy over the whole product, else ``{}``.
 
-    SuiteSparse takes a masked saxpy for A @ B with B held by row, all of A @ B's work: an
-    SDDMM with full A (n x 32) and B (32 x n), n = 4000 and 4e4 mask entries, took 0.6 s,
-    against 0.6 ms as dot products (SuiteSparse transposes B for them).
+    For A @ B with B stored by row, SuiteSparse chooses a masked saxpy, which does all of
+    A @ B's work. An SDDMM with full A (n x 32) and B (32 x n), n = 4000, and 4e4 mask entries
+    took 0.6 s that way at 1 thread, and 0.6 ms as dot products (SuiteSparse transposes B for
+    them).
     """
     if not node.product:
         return {}
@@ -218,8 +222,8 @@ def _dot_hint(node, nmask, shape=()):
 
 def sliced(x, axes_key):
     """``x[axes_key]`` (an int or a slice per axis) of a pending ``x`` that an einsum
-    computes: its operands sliced along the indexed axes, contracted (pending again). None
-    when that does not apply.
+    computes: its operands sliced along the indexed axes, then contracted (pending again).
+    None when that does not apply.
     """
     node = x._pending
     if node is None or node.spec is None or all(k == slice(None) for k in axes_key):
@@ -251,9 +255,9 @@ def sliced(x, axes_key):
     def build(*tensors, op=typed):
         return einsum(subscripts, *tensors, op=op)
 
-    # (a slice of a finite operand is finite)
     spec = (tuple(new_terms), out, typed)
     product = _one_product(new_terms, out)
+    # (a slice of a finite operand is finite)
     sub = Contraction(tensors, build, node.gbdt, spec, list(node.finite), node.nterms, product)
     return Array._deferred(sub, shape, x.dtype, x._fill)
 

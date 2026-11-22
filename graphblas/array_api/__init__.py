@@ -1,10 +1,20 @@
-"""An Array API (2025.12) namespace over ``graphblas.Tensor``: ``import graphblas.array_api as xp``.
+"""An Array API (2025.12) namespace backed by ``graphblas.Tensor``.
 
 **THIS API IS EXPERIMENTAL AND MAY CHANGE.**
 
-An Array is logically dense: its value at a position is its stored entry there, or its
-``fill_value`` where it stores none (pydata/sparse's model). Results equal numpy's on the same
-dense data, and keep the stored entries sparse where the fill values allow.
+Import it as ``import graphblas.array_api as xp``. An Array is logically dense, as in
+pydata/sparse: its value at a position is its stored entry there, or its ``fill_value`` where
+it stores none. Results match numpy's on the same dense data, and keep the stored entries
+sparse where the fill values allow. Where they differ:
+
+- transcendental functions are within libm's rounding of numpy's results, and sums may round
+  differently;
+- the sign of a zero at a position the result does not store is unspecified;
+- contractions such as ``matmul`` skip the unstored positions of an operand whose fill is 0,
+  so ``0 * inf`` there is not NaN.
+
+An operation that would allocate a dense array larger than the ``array_api_densify_limit``
+config option raises ``DensifyError``.
 """
 
 from . import (

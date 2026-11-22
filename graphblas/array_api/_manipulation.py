@@ -1,4 +1,8 @@
-"""Manipulation functions: shape changes share the stored data (copy-on-write)."""
+"""Manipulation functions.
+
+``permute_dims``, ``expand_dims`` and ``squeeze`` share the stored data (copy-on-write), in
+O(1). So does ``reshape`` when the stored layout allows it; otherwise it moves the data once.
+"""
 
 import math
 
@@ -119,8 +123,8 @@ def squeeze(x, /, axis):
 
 
 def broadcast_to(x, /, shape):
-    """``x`` broadcast to ``shape``: its entries replicated over the broadcast axes (the
-    result's entries, under the densify limit for the replication).
+    """``x`` broadcast to ``shape``. The result stores ``x``'s entries replicated along the
+    broadcast axes, so the number of its entries is checked against the densify limit.
     """
     _check_array(x, "broadcast_to")
     return _broadcast_to(x, shape)
@@ -153,10 +157,11 @@ def _broadcast_to(x, shape):
 
 
 def concat(arrays, /, *, axis=0):
-    """Join arrays along ``axis`` (None: flattened first), O(entries), in parallel.
+    """Join arrays along ``axis``, or flattened first when ``axis`` is None.
 
-    The result's fill is the one held by the most positions; a part with another fill stores
-    its fill explicitly (O(that part's size), under the densify limit).
+    This costs O(entries) and runs in parallel. The result's fill is the fill of the most
+    positions. A part with another fill stores every position, at O(that part's size), under
+    the densify limit.
     """
     from ._dtypes import result_type
     from ._elementwise import cast
@@ -182,13 +187,13 @@ def concat(arrays, /, *, axis=0):
     dtype = result_type(*arrays)
     arrays = [a if a.dtype == dtype else cast(a, dtype) for a in arrays]
     fill = _common_fill(arrays)
-    # (one GxB_Matrix_concat of the stored Matrices; a part stored in another layout moves)
+    # (one GxB_Matrix_concat of the stored Matrices; a part in another layout is relaid out)
     T = Tensor._concat([_utils.with_fill(a, fill)._T() for a in arrays], axis)
     return Array._new(T, fill)
 
 
 def _common_fill(arrays):
-    """The fill held by the most positions of ``arrays`` (the first such, on ties)."""
+    """The fill of the most positions of ``arrays`` (the first such, on ties)."""
     totals = []
     for a in arrays:
         for i, (fill, _) in enumerate(totals):
@@ -273,7 +278,9 @@ def _from_entries(coords, values, shape, x):
 
 
 def repeat(x, repeats, /, *, axis=None):
-    """Each element repeated along ``axis``, O(entries of the result)."""
+    """Each element repeated along ``axis`` (of the flattened ``x`` when None), at O(entries of
+    the result).
+    """
     _check_array(x, "repeat")
     if axis is None:
         x = reshape(x, (-1,))
@@ -323,7 +330,7 @@ def roll(x, /, shift, *, axis=None):
 
 
 def tile(x, repetitions, /):
-    """``x`` repeated ``repetitions`` times along each axis, O(entries of the result)."""
+    """``x`` repeated ``repetitions`` times along each axis, at O(entries of the result)."""
     _check_array(x, "tile")
     reps = tuple(int(r) for r in repetitions)
     if any(r < 0 for r in reps):
@@ -345,11 +352,13 @@ def tile(x, repetitions, /):
 
 
 def refill(x, /, fill_value):
-    """``x`` with the fill value ``fill_value`` (an extension): the same value at every
-    position. Positions ``x`` does not store held its old fill, so they are stored now
-    (O(size), under the densify limit; O(1) when ``x`` stores every position), and stored
-    entries equal to ``fill_value`` go (``prune``). A 0-d array's value is its fill, so it
-    is returned as it is. ``fill_value`` must be a value of ``x``'s dtype.
+    """``x`` with the fill value ``fill_value``, and the same value at every position.
+
+    An extension to the Array API. When the fill changes, each position ``x`` does not store
+    gets ``x``'s old fill stored there, at O(size), under the densify limit. Then the stored
+    entries identical to ``fill_value`` are dropped, as by ``prune``. ``fill_value`` must be a
+    value of ``x``'s dtype. A 0-d array's value is its fill, so a 0-d ``x`` comes back
+    unchanged.
     """
     if not isinstance(x, Array):
         raise TypeError(f"refill needs an Array, not {type(x).__name__}")
@@ -371,10 +380,12 @@ def refill(x, /, fill_value):
 
 
 def prune(x, /):
-    """``x`` without the stored entries that equal its fill value (an extension): the same
-    values, fewer stored entries. "Equal" is "identical": with fill 0.0 a stored -0.0 stays,
-    and with fill NaN the stored NaNs go. ``nnz`` counts stored entries, these included,
-    until they are pruned.
+    """``x`` without the stored entries identical to its fill value: the same values, with
+    fewer stored entries.
+
+    An extension to the Array API. With fill 0.0 a stored -0.0 stays, and with fill NaN the
+    stored NaNs are dropped. ``nnz`` counts every stored entry, including those identical to
+    the fill, until they are pruned.
     """
     if not isinstance(x, Array):
         raise TypeError(f"prune needs an Array, not {type(x).__name__}")
@@ -384,7 +395,7 @@ def prune(x, /):
         return x._copy()
     kind = x.dtype.kind
     if kind in "biu" or (kind == "f" and fill != 0 and not np.isnan(fill)):
-        # (a value equal to a nonzero number is that number)
+        # (a value equal to the fill is identical to it: the fill is not a float 0 or NaN)
         return Array._new(T.select(select.valuene, fill).new(), fill)
     if fill == 0 and not _utils.fact(x, "zero"):
         return x._copy()  # (no stored zero of either sign)

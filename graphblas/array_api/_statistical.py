@@ -2,11 +2,12 @@
 
 A reduction over a fiber of ``L`` positions, ``k`` of them unstored, is the monoid over the
 stored entries combined with the fill ``k`` times: ``plus`` adds ``k * fill``, ``times``
-multiplies by ``fill ** k``, and ``min``, ``max``, ``lor`` and ``land`` take the fill once
-when ``k > 0``. The counts cost a second pass, skipped when the fill is the monoid's identity
-or every position is stored. A fiber with no entries holds the result's fill. Floating-point
-sums and products may round differently from numpy's (the order of the terms differs);
-everything else is exact.
+multiplies by ``fill ** k``, and ``min``, ``max``, ``lor`` and ``land`` include the fill once
+when ``k > 0``. Counting the unstored positions costs a second pass, skipped when the fill is
+the monoid's identity or every position is stored. The result does not store the positions
+whose fibers have no entries; its fill is the reduction of ``L`` fills. Floating-point sums
+and products may round differently from numpy's, because the terms are combined in another
+order. Everything else is exact.
 """
 
 import builtins
@@ -95,9 +96,9 @@ def _int_power(base, exponent, dtype):
 
 
 def _unstored(L, c, ct):
-    """``L - c`` (counts of unstored positions), in a dtype that does not overflow: uint64
-    for integer sums (which wrap anyway), float64 otherwise (a fiber may hold 2**63 or more
-    positions).
+    """``L - c``, the counts of unstored positions: uint64 for integer and bool results
+    (integer sums wrap anyway), and float64 otherwise, since a fiber may have 2**63 positions
+    or more.
     """
     if ct.kind in "iub":
         return np.uint64(L % (1 << 64)) - np.asarray(c).astype(np.uint64)
@@ -105,7 +106,7 @@ def _unstored(L, c, ct):
 
 
 def _scaled(k, fill, ct):
-    """``fill`` added ``k`` times (k >= 0), as repeated additions give it: wrapping for
+    """``fill`` added ``k`` times (k >= 0), as repeated additions compute it: wrapping for
     integers, logical or for bool, and part by part for complex (0 * inf in one part must not
     make NaN in the other).
     """
@@ -150,7 +151,7 @@ class _Monoid:
         """
         name = self.name
         if name == "sum":
-            # (a fiber with no unstored position must not see 0 * inf)
+            # (no fill term where every position is stored: 0 * inf would be NaN)
             return lambda r, c: np.where(c < L, r + _scaled(_unstored(L, c, ct), fill, ct), r)
         if name == "prod":
             if ct.kind in "iu":
@@ -203,7 +204,8 @@ _MONOIDS = {
 def _reduce(name, x, axis, keepdims, dtype=None):
     out = _reduce_main(name, x, axis, keepdims, dtype)
     if name == "sum" and out.dtype.kind in "fc":
-        # numpy's sum starts from +0.0: a sum of -0.0 is 0.0 (GraphBLAS starts from the first)
+        # numpy's sum starts from +0.0, so a sum of -0.0 is 0.0; GraphBLAS starts from the
+        # first term
         from ._elementwise import add
 
         out = add(out, 0.0)
@@ -350,8 +352,12 @@ def _squared_magnitude(x):
 
 
 def var(x, /, *, axis=None, correction=0.0, keepdims=False):
-    """Two passes: the means, then the squared deviations from them (the stored entries'
-    in GraphBLAS, and the fill's once per fiber, times its count of unstored positions).
+    """The variance over ``axis``, with ``correction`` subtracted from the number of
+    positions in the denominator (numpy's ``ddof``).
+
+    It takes two passes: the means, then the squared deviations from them. GraphBLAS sums the
+    stored entries' squared deviations; the fill's is computed once per fiber and multiplied
+    by the fiber's count of unstored positions.
     """
     from ._elementwise import add, binary_numpy, cast, divide, subtract
 
@@ -380,7 +386,8 @@ def var(x, /, *, axis=None, correction=0.0, keepdims=False):
         C = Tensor(gb_dtype(np.int64), m.shape)
     k = subtract(L, Array._new(C, 0))
     dev = subtract(Array._new(_utils.empty_0d(rdt), x._fill), m)
-    # k unstored positions, each (fill - mean) ** 2 away; none for k == 0 (the fill may be inf)
+    # k unstored positions, each |fill - mean| ** 2 away; _times_count returns 0 for k == 0,
+    # where the fill may be inf and 0 * inf would be NaN
     missing = binary_numpy("var", _times_count, k, _squared_magnitude(dev))
     out = divide(add(Array._new(S2, 0), missing), denominator)
     if out.dtype != real_dt:
@@ -389,7 +396,9 @@ def var(x, /, *, axis=None, correction=0.0, keepdims=False):
 
 
 def _deviations(T, m, C, axes, rdt):
-    """Each entry of ``T`` minus its fiber's mean (``m``, ``C`` the entries per fiber)."""
+    """Each entry of ``T`` minus its fiber's mean, from ``m``; ``C`` counts each fiber's
+    entries.
+    """
     minus = binary.minus[gb_dtype(rdt)]
     if m.ndim == 0:
         return T.apply(minus, right=_utils.gb_scalar(m._fill, rdt)).new()
@@ -400,8 +409,8 @@ def _deviations(T, m, C, axes, rdt):
         M = _utils.full_tensor(rdt, keep_shape, m._fill)
         M(accum=binary.second) << Tm.expand_dims(axes)
         return T.ewise_mult(M, minus).new()
-    # The means store exactly the fibers that hold entries (the pattern of the sums), and every
-    # entry lies in one of them: broadcast them as they are, with no dense copy
+    # The means are stored exactly at the fibers that have entries (the pattern of the sums),
+    # and every entry lies in one of them, so they broadcast as they are, with no dense copy
     return T.ewise_mult(Tm.expand_dims(axes), minus).new()
 
 
@@ -448,19 +457,21 @@ def _cumulative(name, npfunc, x, axis, dtype, include_initial):
 
 
 def _negative_zero(fill):
-    """Whether a zero ``fill`` has a sign bit (an included initial 0 would then be stored)."""
+    """Whether a zero ``fill`` has a sign bit, so that an included initial 0 differs from it."""
     parts = [fill.real, fill.imag] if np.iscomplexobj(fill) else [fill]
     return builtins.any(bool(np.signbit(p)) for p in parts if np.asarray(p).dtype.kind == "f")
 
 
 def _cumulative_sparse(npfunc, x, axis, ct, fill, include_initial):
-    """A cumulative sum (product) along ``axis`` when the fill is the identity, 0 (1): each
-    fiber is the fill up to its first entry, so only the positions from there on are stored,
-    O(sum over fibers of the positions from the first entry on).
+    """A cumulative sum or product along ``axis`` when the fill is its identity, 0 or 1.
 
-    numpy accumulates one position at a time, so each run of unstored positions adds the fill
-    once more (0.0 + -0.0 is 0.0): each run becomes one element of the fiber's sequence, and
-    the sequences are accumulated by numpy itself, in order, for numpy's rounding.
+    Each fiber equals the fill up to its first entry, so only the positions from there on are
+    stored. The cost is the number of those positions, summed over the fibers.
+
+    numpy accumulates one position at a time. A run of unstored positions adds the fill once
+    per position, which changes the running value at most once (``-0.0 + 0.0`` is ``0.0``).
+    So each run becomes one element of its fiber's sequence, and numpy accumulates the
+    sequences in order, which keeps numpy's rounding.
     """
     from ._manipulation import permute_dims
 
@@ -531,7 +542,8 @@ def _grouped_accumulate(npfunc, seq, group_starts, ct):
     out = np.empty_like(seq)
     with np.errstate(all="ignore"):
         if longest * len(lengths) <= 4 * len(seq) + 1024:
-            # One 2-d accumulation, the groups padded at their ends (padding comes after)
+            # One 2-d accumulation, one group per row, padded at its end, where the padding
+            # cannot change the group's values
             padded = np.zeros((len(lengths), longest), dtype=ct)
             col = np.arange(len(seq)) - np.repeat(group_starts, lengths)
             row = np.repeat(np.arange(len(lengths)), lengths)
@@ -579,7 +591,7 @@ def diff(x, /, *, axis=-1, n=1, prepend=None, append=None):
 
 def _diff_part(p, x, axis):
     """A ``prepend`` or ``append`` of ``diff``: an Array, or a scalar broadcast to ``x``'s
-    shape with length 1 along ``axis`` (as numpy takes it).
+    shape with length 1 along ``axis`` (as numpy treats it).
     """
     if isinstance(p, Array) and p.ndim:
         return p

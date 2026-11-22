@@ -36,15 +36,18 @@ def _value(x):
 
 
 def where(condition, x1, x2, /):
-    """``x1`` where ``condition`` is true, else ``x2`` (broadcast); numpy's ``where``.
+    """``x1`` where ``condition`` is true and ``x2`` elsewhere, broadcast as numpy's ``where``.
 
-    Where the condition stores nothing it reads its fill, so the result there is the operand
-    that fill selects. When that operand needs no broadcast (or is a scalar, or stores
-    nothing), the result is that operand with the condition's stored positions written over:
-    O(entries of the condition and of that operand), the other operand read only at the
-    condition's entries (``xp.where(graph, labels, big)``, with ``labels`` broadcast along an
-    axis of ``graph``, stores ``graph``'s entries). Otherwise the entries are the union of
-    the three arrays' entries, with the broadcast operands' entries replicated.
+    Where the condition stores nothing, its fill decides, so the result there is the operand
+    that the fill selects. When the condition needs no broadcast, and neither does that
+    operand (or it is a scalar, or stores nothing), the result is that operand with the
+    other's values written at the condition's entries that select the other. This costs
+    O(entries of the condition and of that operand), and reads the other operand only at
+    those entries. For example, ``xp.where(graph, labels, big)``, with ``labels`` broadcast
+    along an axis of ``graph``, stores one entry per true entry of ``graph``.
+
+    Otherwise the result stores the union of the three arrays' entries, with the entries of
+    the broadcast operands replicated.
     """
     cond = _operand(condition, "where")
     if not isinstance(cond, Array):
@@ -78,9 +81,9 @@ def where(condition, x1, x2, /):
 
 
 def _where_at_condition(cond, a, b, shape, rdt):
-    """``where(cond, a, b)``'s Tensor built from the operand ``cond``'s fill selects, with
-    ``cond``'s stored positions written over (see ``where``), or None when that operand
-    would have to be broadcast over stored entries, or ``cond`` itself broadcasts.
+    """The Tensor of ``where(cond, a, b)``, built from the operand that ``cond``'s fill selects
+    (see ``where``). None when ``cond`` broadcasts, or when that operand has entries and
+    would have to be broadcast.
     """
     from .. import binary
 
@@ -94,16 +97,17 @@ def _where_at_condition(cond, a, b, shape, rdt):
     has_base = isinstance(base, Array) and base.ndim and base._T().nvals
     other = b if bool(cond._fill) else a
     if cond.dtype.kind != "c":
-        # All in GraphBLAS, in parallel. The condition's entries that select the base (those
-        # equal to its fill) hold the base's values, which the base supplies; only the others
-        # are computed, and the other operand is read there only (where(x > t, x, 0)
-        # stores x's entries > t; where(frontier, k, level) is a select and a union).
+        # This path runs in GraphBLAS, in parallel. At the condition's entries that select
+        # the base (those whose truth matches its fill's), the result has the base's values,
+        # so the base supplies them. Only the other entries are computed, and only there is
+        # the other operand read. So where(x > t, x, 0) stores x's entries above t, and
+        # where(frontier, k, level) is a select and a union.
         R = _selecting(Tc, cond, other, shape, rdt)
         if has_base:
             R = base._T().ewise_add(R, binary.second[gdt]).new(dtype=gdt)
         return R
     if not has_base:
-        # (a complex condition: through numpy)
+        # (a complex condition goes through numpy)
         coords, c = Tc.to_coo()
         c = np.asarray(c, dtype=bool)
         keep = c != bool(cond._fill)
@@ -130,10 +134,13 @@ def _where_at_condition(cond, a, b, shape, rdt):
 
 
 def _selecting(Tc, cond, other, shape, rdt):
-    """The entries of ``Tc`` (cond's Tensor, not complex) that select ``other`` (the truthy
-    ones, or the falsy ones under a truthy fill; NaN is truthy), holding ``other``'s values:
-    its fill, then its stored values written over. A broadcast ``other`` is read through a
-    diagonal scaling, without replicating it (xp.where(graph, labels, big)).
+    """The entries of ``Tc`` (cond's Tensor, not complex) that select ``other``, with
+    ``other``'s values.
+
+    Those are the truthy entries, or the falsy ones when the fill is truthy; NaN is truthy.
+    Each gets ``other``'s fill, and then ``other``'s stored values are written over. A
+    broadcast ``other`` is read through a diagonal scaling, without replicating it (as in
+    ``xp.where(graph, labels, big)``).
     """
     from .. import binary, select
     from ..dtypes import BOOL
@@ -144,9 +151,9 @@ def _selecting(Tc, cond, other, shape, rdt):
     second = binary.second[gdt]
     To = other._T() if isinstance(other, Array) and other.ndim else None
     if To is not None and other.shape != shape and other.size <= 4 * sel.nvals:
-        # (stored at every position, the broadcast operand makes the product a diagonal
-        # scaling, one pass; with gaps in the diagonal SuiteSparse multiplies in general,
-        # 17x slower at 1e7 entries)
+        # Stored at every position, the broadcast operand makes the product a diagonal
+        # scaling, one pass. With gaps in the diagonal, SuiteSparse runs a general multiply,
+        # 17x slower at 1e7 entries. Any fill but other's makes with_fill store every position.
         if To.nvals < other.size:
             To = _utils.with_fill(other, 0 if other._fill else 1)._T()
         return sel.ewise_mult(To, second).new(dtype=gdt)
@@ -158,7 +165,8 @@ def _selecting(Tc, cond, other, shape, rdt):
 
 def _values_at(coords, x, shape):
     """The values of ``x`` (an Array that broadcasts to ``shape``) at ``coords`` of
-    ``shape``: its stored value, or its fill. O(len(coords)), read from x's own entries.
+    ``shape``: its stored value, or its fill. This costs O(number of coordinates) and reads
+    only x's own entries.
     """
     lead = len(shape) - x.ndim
     n = len(coords[0])
@@ -175,16 +183,18 @@ def _check_array(x, name):
 
 
 def _arg(name, x, axis, keepdims):
-    """The first position of the extreme value of each fiber (argmax, argmin), NaN counting
-    as the extreme (numpy's rule), computed in GraphBLAS on the stored entries.
+    """The first position of the extreme value of each fiber (argmax, argmin), with NaN
+    counting as the extreme, as in numpy. It is computed in GraphBLAS on the stored entries.
 
-    With the fibers as the rows (or columns) of the stored Matrix: the extreme of each fiber
-    (a reduction), the entries equal to it (the Matrix scaled by the extremes as a diagonal,
-    under ``eq``), and the smallest position among those (a positional reduction); likewise
-    the first stored NaN. A fiber with an unstored position holds the fill there: when the
-    fill beats or ties the stored extreme, or is NaN, the fiber's first unstored position
-    takes part. That is 0 unless the fiber stores position 0, and otherwise is found from
-    that fiber's entries alone. Each step is a pass over the entries; nothing is sorted.
+    The fibers are the rows (or columns) of the stored Matrix. A reduction finds the extreme
+    of each fiber. Scaling the Matrix by the extremes as a diagonal, with the ``any_eq``
+    semiring, finds the entries equal to their fiber's extreme, and a positional reduction
+    finds the smallest position among those. The first stored NaN is found the same way.
+
+    A fiber's unstored positions have the fill. When the fill beats or ties the stored
+    extreme, or is NaN, the fiber's first unstored position takes part. That position is 0
+    unless the fiber stores position 0; otherwise it is found from that fiber's entries
+    alone. Each step is a pass over the entries, and nothing is sorted.
     """
     from ._manipulation import _normalize_axis, expand_dims, reshape
 
@@ -214,8 +224,8 @@ def _arg(name, x, axis, keepdims):
 
 
 def _arg_fibers(name, x, T, axis):
-    """A Vector over the fibers of ``T`` along ``axis`` (in C order) holding the first
-    position of each one's extreme (see ``_arg``), storing only the positions that are not 0.
+    """A Vector over the fibers of ``T`` along ``axis`` (in C order) with the first position
+    of each fiber's extreme (see ``_arg``). It stores only the positions that are not 0.
     """
     from .. import binary, monoid, select, semiring, unary
     from ..dtypes import BOOL, INT64
@@ -235,7 +245,7 @@ def _arg_fibers(name, x, T, axis):
     else:
         top = monoid.max if name == "argmax" else monoid.min
     every = Vector(BOOL, L)
-    every << True  # (iso: no values stored)
+    every << True  # (iso and full: O(1) memory)
 
     def first(P, mask=None):
         # (the smallest position along each fiber of P's entries)
@@ -265,8 +275,9 @@ def _arg_fibers(name, x, T, axis):
     if x.dtype.kind == "f" and _utils.fact(x, "nan"):
         nan = first(M.apply(unary.isnan).new().select(select.valueeq, True).new())
         R(accum=binary.second) << nan
-    # The fibers where the fill takes part, if they have an unstored position: those whose
-    # stored extreme the fill beats or ties (and that store no NaN), or all, for a NaN fill
+    # The fibers where the fill takes part, if they have an unstored position: all of them
+    # for a NaN fill, else those that store no NaN and whose stored extreme the fill beats or
+    # ties
     fill = x._fill
     fill_nan = x.dtype.kind == "f" and np.isnan(fill)
     if fill_nan:
@@ -290,10 +301,11 @@ def _arg_fibers(name, x, T, axis):
 
 
 def _fill_at_0(name, M, byrow, R, ext, nan, fill, fill_nan, at_0, L):
-    """Update R at the fibers ``at_0`` (those that take the fill and store position 0) with
-    the fill's first position, read from those fibers' entries: the first position not equal
-    to its rank among the fiber's entries, or the number of entries when they fill a prefix
-    (none when that number is L: the fiber stores every position).
+    """Update R at the fibers ``at_0`` (those where the fill takes part and position 0 is
+    stored) with the fill's first position, read from those fibers' entries. That is the
+    rank of the fiber's first entry whose position differs from its rank, or the number of
+    entries when they fill a prefix. When that number is L, the fiber stores every position
+    and the fill does not take part.
     """
     fibers = at_0.to_coo(values=False)[0]
     sub = M[fibers, :].new() if byrow else M[:, fibers].new().T.new()
@@ -330,8 +342,8 @@ def count_nonzero(x, /, *, axis=None, keepdims=False):
 
 
 def nonzero(x, /):
-    """The coordinates (C order) of the nonzero positions: O(entries) when the fill is zero,
-    O(size) otherwise (every unstored position is nonzero).
+    """The coordinates (C order) of the nonzero positions. This costs O(entries) when the
+    fill is zero, and O(size) otherwise, since then every unstored position is nonzero.
     """
     from ._creation import asarray
     from ._elementwise import not_equal
@@ -353,8 +365,10 @@ def nonzero(x, /):
 
 
 def searchsorted(x1, x2, /, *, side="left", sorter=None):
-    """Insertion positions in the sorted 1-d ``x1``: the stored values are searched, and the
-    run of the fill counted where it sorts. O(entries of x1 + entries of x2).
+    """The positions where ``x2``'s values would be inserted into the sorted 1-d ``x1``.
+
+    Only ``x1``'s stored values are searched; its unstored positions count as one run of the
+    fill, where the fill sorts. This costs O(entries of x1 + entries of x2).
     """
     from ._creation import asarray
     from ._indexing import take

@@ -1,13 +1,13 @@
 """Sorting functions: sort and argsort.
 
-``sort`` keeps the result as sparse as its input: along each fiber, the values below the fill
-come first, then the run of values equal to the fill (the unstored positions among them),
-then the values above it, NaN last; equal values keep their order (stable). Descending order
-reverses the values but keeps equal values in their order, NaN first (as
-``flip(sort(flip(x)))``). O(entries log entries).
+``sort`` keeps the result as sparse as its input. Along each fiber, the values below the fill
+come first, then the run of values equal to the fill (which includes the unstored
+positions), then the values above it, with NaN last. The sort is stable: equal values keep
+their order. Descending order reverses the values but keeps equal values in their order,
+with NaN first, as ``flip(sort(flip(x)))`` does. It costs O(entries log entries).
 
-``argsort``'s result is a permutation of every position, dense: it goes through numpy, under
-the densify limit.
+``argsort`` returns an index for every position, so its result is dense: it goes through
+numpy, under the densify limit.
 """
 
 import numpy as np
@@ -75,8 +75,8 @@ def sort(x, /, *, axis=-1, descending=False, stable=True):
     n_below = counts[fiber_index, 0]
     n_equal = counts[fiber_index, 1]
     unstored = L - counts.sum(axis=1)[fiber_index]
-    # An entry equal to the fill keeps its place among the run of the fill (stable): the
-    # positions before it in the run are every position before it but the other groups'
+    # An entry equal to the fill keeps its place in the run of the fill (stable). Its offset
+    # in the run is the number of positions before it, less the other groups' entries there.
     others_before = _count_before(f_o, p_o, g_o != 1)
     new_pos = np.where(
         g_o == 0,

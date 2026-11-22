@@ -9,7 +9,7 @@ from ._utils import np_dtype
 
 CPU_DEVICE = "cpu"
 API_VERSIONS = ("2021.12", "2022.12", "2023.12", "2024.12", "2025.12")
-# MAINT 2026-11-16: ndarray.__dlpack__ takes max_version and dl_device from NumPy 2.1 on;
+# MAINT 2026-11-16: ndarray.__dlpack__ accepts max_version and dl_device from NumPy 2.1 on;
 # drop this once that is the minimum
 _NP_DLPACK_KWARGS = np.lib.NumpyVersion(np.__version__) >= "2.1.0"
 
@@ -24,15 +24,14 @@ class Array:
     ``fill_value`` where it stores none (pydata/sparse's model).
 
     Create Arrays with the namespace's functions (``asarray``, ``zeros``, ``from_coo``, ...).
-    The backing ``graphblas.Tensor`` holds the stored entries; stored entries may equal the
-    fill value.
+    A ``graphblas.Tensor`` stores the entries, and an entry may equal the fill value.
     """
 
     # The shape and dtype are kept here, not read from the Tensor, so that an Array whose
     # Tensor is not computed yet (``_pending``, a deferred contraction) can answer them
     __slots__ = "_tensor", "_pending", "_fill", "_facts", "_shape", "_dtype", "__weakref__"
-    # numpy hands its operators over to ours (``ndarray + Array``), as it does for other
-    # array types, rather than converting the Array to a dense ndarray
+    # So that ``ndarray + Array`` calls ``Array.__radd__`` instead of converting the Array to
+    # a dense ndarray (NEP 13)
     __array_ufunc__ = None
 
     def __init__(self, *args, **kwargs):
@@ -45,7 +44,7 @@ class Array:
     def _new(cls, tensor, fill):
         """An Array of ``tensor``'s entries and ``fill`` (cast to its dtype) elsewhere.
 
-        A 0-d Array stores nothing: its value is its fill.
+        A 0-d Array stores nothing, so the entry of a 0-d ``tensor`` becomes the fill.
         """
         if tensor.ndim == 0 and tensor.nvals:
             fill = tensor.to_scalar().value
@@ -61,7 +60,7 @@ class Array:
 
     @classmethod
     def _deferred(cls, pending, shape, dtype, fill):
-        """An Array whose Tensor ``pending.compute()`` gives on first use (see ``_lazy``)."""
+        """An Array whose Tensor ``pending.compute()`` returns on first use (see ``_lazy``)."""
         self = object.__new__(cls)
         self._tensor = None
         self._pending = pending
@@ -81,9 +80,9 @@ class Array:
         return T
 
     def _replace(self, other):
-        """Make this Array hold ``other``'s values (for in-place operators and assignment)."""
+        """Give this Array ``other``'s values (for in-place operators)."""
         self._tensor = other._T()
-        self._pending = None  # (a pending product it was is not its value any more)
+        self._pending = None  # (releases this Array's own pending product and its snapshots)
         self._shape = other._shape
         self._dtype = other._dtype
         self._fill = other._fill
@@ -104,7 +103,7 @@ class Array:
         return Array._new(self._T().dup(), self._fill)
 
     def __reduce__(self):
-        # (a Tensor holds weak references, which do not pickle: rebuild from coordinates)
+        # (a Tensor has weak references, which do not pickle: rebuild from coordinates)
         coords, values = self._T().to_coo()
         return _unpickle, (coords, values, self._shape, self._dtype.str, self._fill)
 
@@ -138,7 +137,10 @@ class Array:
 
     @property
     def T(self):
-        """The axes reversed (numpy's ``.T``; the Array API defines it for 2-d arrays)."""
+        """The array with its axes reversed, as numpy's ``.T``.
+
+        The Array API defines ``T`` only for 2-d arrays.
+        """
         from ._manipulation import permute_dims
 
         return permute_dims(self, tuple(range(self.ndim - 1, -1, -1)))
@@ -161,20 +163,28 @@ class Array:
 
     @property
     def nnz(self):
-        """The number of stored entries, entries equal to the fill value included (as in
-        pydata/sparse); ``prune`` drops those. No other function's value depends on it.
+        """The number of stored entries, including any equal to the fill value (as in
+        pydata/sparse); ``prune`` drops those.
+
+        Which positions are stored changes the values the namespace computes only in rounding
+        and in the sign of a zero.
         """
         return self._T().nvals
 
     @property
     def tensor(self):
-        """The stored entries as a ``graphblas.Tensor`` (positions holding the fill value are
-        missing); a copy that shares the data until either side changes.
+        """The stored entries as a ``graphblas.Tensor``, in which an unstored position has no
+        entry.
+
+        It is a copy that shares the data until either side changes.
         """
         return self._T().dup()
 
     def todense(self):
-        """A numpy array of every position (raises past ``array_api_densify_limit``)."""
+        """The array as a dense numpy array.
+
+        Raises DensifyError if its size is past ``array_api_densify_limit``.
+        """
         _utils.check_dense(self.size, f"densifying an array of shape {self.shape}")
         dt = self.dtype
         T = self._T()
@@ -219,8 +229,8 @@ class Array:
         if copy is False:
             raise BufferError("exporting an Array through DLPack always copies")
         if dl_device is not None and tuple(dl_device) != self.__dlpack_device__():
-            # Checked here so that every NumPy raises the standard's BufferError: NumPy 2.1
-            # to 2.4 raise ValueError for a device they cannot export to
+            # Checked here so that every NumPy version raises the standard's BufferError:
+            # NumPy 2.1 to 2.4 raise ValueError for a device they cannot export to
             raise BufferError("unsupported device requested")
         kwargs = {}
         if _NP_DLPACK_KWARGS:

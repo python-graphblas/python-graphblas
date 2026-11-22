@@ -1,4 +1,4 @@
-"""Constants."""
+"""The Array API's constants: e, inf, nan, newaxis and pi."""
 
 import math
 

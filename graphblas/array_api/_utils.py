@@ -12,7 +12,10 @@ from ..dtypes import DataType, lookup_dtype
 
 
 class DensifyError(ValueError):
-    """An operation would allocate a dense array larger than the namespace allows."""
+    """An operation would allocate a dense array past ``array_api_densify_limit``.
+
+    Raise the limit with ``gb.config.set(array_api_densify_limit=...)``.
+    """
 
 
 def densify_limit():
@@ -20,7 +23,7 @@ def densify_limit():
 
 
 def check_dense(n, what):
-    """Raise DensifyError when ``what`` would hold ``n`` elements densely past the limit."""
+    """Raise DensifyError if ``what`` would store ``n`` elements densely, more than the limit."""
     if n > (limit := densify_limit()):
         raise DensifyError(
             f"{what} would hold {n} elements densely, more than the limit of {limit}. Raise "
@@ -47,10 +50,10 @@ _SCALARS = {}
 
 
 def gb_scalar(value, dtype):
-    """A GraphBLAS Scalar of the numpy ``dtype`` holding ``value`` cast as numpy casts it.
+    """A GraphBLAS Scalar of the numpy ``dtype`` whose value is ``value``, cast as numpy casts it.
 
-    The Scalars are only read (as operands), so they are cached by their bytes: a new one
-    costs about as much as a small element-wise operation.
+    The Scalars are only read (as operands), so they are cached by their bytes: making one
+    costs about three times a cache hit.
     """
     value = scalar(value, dtype)
     key = (value.dtype.str, value.tobytes())
@@ -75,7 +78,9 @@ def same_value(a, b):
 
 
 def differs(values, fill):
-    """Boolean array: where ``values`` is not identical to the scalar ``fill`` (invariant 4)."""
+    """Boolean array: where ``values`` is not identical to the scalar ``fill``, as ``same_value``
+    compares them.
+    """
     kind = values.dtype.kind
     if kind == "c":
         return differs(values.real, np.real(fill)) | differs(values.imag, np.imag(fill))
@@ -87,9 +92,10 @@ def differs(values, fill):
 
 
 def expansion_check(Ta, Tb, shape):
-    """Before a union of ``Ta`` and ``Tb`` broadcast to ``shape``: raise past the limit.
+    """Raise DensifyError if a union of ``Ta`` and ``Tb`` broadcast to ``shape`` would
+    replicate more entries than the limit.
 
-    The union replicates each broadcast operand's entries over the axes it broadcasts along.
+    A union replicates each broadcast operand's entries along the axes it broadcasts over.
     """
     if Ta.shape == Tb.shape:
         return
@@ -102,8 +108,10 @@ def expansion_check(Ta, Tb, shape):
 
 
 def mult_expansion_check(Ta, Tb, shape):
-    """Before an intersection (ewise_mult) of ``Ta`` and ``Tb`` broadcast to ``shape``: when
-    both broadcast, one is replicated (an outer product); raise past the limit.
+    """Raise DensifyError if an intersection (``ewise_mult``) of ``Ta`` and ``Tb`` broadcast
+    to ``shape`` would replicate more entries than the limit.
+
+    An intersection replicates entries only when both operands broadcast (an outer product).
     """
     fa = _broadcast_factor(Ta.shape, shape)
     fb = _broadcast_factor(Tb.shape, shape)
@@ -121,10 +129,12 @@ _EMPTY_0D = {}
 
 
 def empty_0d(dtype):
-    """An empty 0-d Tensor of ``dtype`` (a numpy dtype or a graphblas one): a 0-d Array
-    stores nothing, its value is its fill. An O(1) copy-on-write copy of one made once per
-    dtype: making one costs a Matrix and a format setting, about 6 us, half of a 0-d
-    operation (SAPS's time-stepping loops make one per operation).
+    """An empty 0-d Tensor of ``dtype``, a numpy dtype or a graphblas one (a 0-d Array stores
+    nothing: its value is its fill).
+
+    It is an O(1) copy-on-write copy of one made once per dtype. Making a new one (a Matrix
+    and a format setting) would about double the time of a 0-d operation, and time-stepping
+    loops make one per operation.
     """
     gdt = dtype if isinstance(dtype, DataType) else gb_dtype(dtype)
     if (T := _EMPTY_0D.get(gdt)) is None:
@@ -133,7 +143,7 @@ def empty_0d(dtype):
 
 
 def full_tensor(dtype, shape, value):
-    """A Tensor holding ``value`` at every position (iso and full: O(1) memory)."""
+    """A Tensor storing ``value`` at every position, iso and full, so O(1) memory."""
     T = Tensor(gb_dtype(dtype), tuple(shape))
     if math.prod(shape) > 0:
         T << gb_scalar(value, dtype)
@@ -158,8 +168,9 @@ def union_pattern(tensors, shape):
 
 
 def aligned(arrays, shape):
-    """Tensors of ``shape`` with one pattern, the union of the arrays' entries (broadcast),
-    holding each array's values there: its entry, or its fill where it has none.
+    """Tensors of ``shape``, one per array, all with one pattern: the union of the arrays'
+    entries, broadcast. Each stores its array's value at every position of the pattern, its
+    entry or its fill.
     """
     tensors = [x._T() for x in arrays]
     if len(tensors) == 1 and tensors[0].shape == shape:
@@ -175,8 +186,11 @@ def aligned(arrays, shape):
 
 
 def with_fill(x, fill):
-    """``x`` with the fill ``fill``: where it stores nothing, its old fill is stored (every
-    position it does not store is written: O(size), under the densify limit).
+    """``x`` with fill value ``fill`` and the same values everywhere; ``x`` itself when
+    ``fill`` is its fill.
+
+    Each position ``x`` does not store gets its old fill as an entry, so this costs O(size)
+    and raises DensifyError past the limit.
     """
     from ._array import Array
 
@@ -191,11 +205,9 @@ def with_fill(x, fill):
     return Array._new(T, fill)
 
 
-# Facts about an Array's stored values (not its fill), each found by one parallel GraphBLAS
-# pass and cached on the Array; ``fact`` documents them. For each: the unary op that says
-# whether a value has the property, the monoid that combines those answers, and the answer when
-# the Array stores nothing.
-# (A number in place of the unary op: whether a value equals it.)
+# The facts ``fact`` computes. For each: the unary op that tests one stored value (or a number,
+# which tests equality with it), the monoid that combines the tests, and the fact for an Array
+# that stores nothing.
 _FACT_SCANS = {
     "finite": (unary.isfinite, monoid.land, True),
     "nan": (unary.isnan, monoid.lor, False),
@@ -206,12 +218,13 @@ _FACT_SCANS = {
 
 
 def fact(x, name):
-    """A fact about the stored values of the Array ``x``, computed once (cached on ``x``):
-    "finite" (every value finite), "nan" (some value is NaN), "zero" (some value is 0 or
-    -0.0), "posinf" or "neginf" (some value is inf, or -inf). Integers and bools are finite,
-    with no NaN or infinity, without a look; each other fact is one
-    parallel GraphBLAS pass with no copy of the values (an apply to bool, then a reduction
-    that stops at the first deciding value).
+    """A fact about the stored values of the Array ``x`` (not its fill), cached on ``x``.
+
+    The facts: "finite" (every value is finite), "nan" (some value is NaN), "zero" (some value
+    is 0 or -0.0), and "posinf" or "neginf" (some value is inf, or -inf). Integers and bools
+    are finite, with no NaN or infinity, without a look. Each other fact needs one parallel
+    GraphBLAS pass: an apply to bool, then a reduction that can stop at the first value that
+    decides it.
     """
     if name not in _FACT_SCANS:  # pragma: no cover (safety)
         raise KeyError(name)
@@ -243,8 +256,8 @@ def tensor_fact(T, name):
 
 
 def keep_facts(src, dst, names=("finite", "nan", "zero")):
-    """Give ``dst`` the facts ``src`` already knows among ``names`` (for results whose stored
-    values keep them: ``abs`` and ``negative`` keep all three, a rounding keeps finiteness).
+    """Give ``dst`` the facts among ``names`` that ``src`` already knows, for a result whose
+    stored values keep them (the ``keeps`` of ``_elementwise._unary``).
     """
     if facts := src._facts:
         kept = {k: v for k, v in facts.items() if k in names}
@@ -257,7 +270,7 @@ def keep_facts(src, dst, names=("finite", "nan", "zero")):
 
 def map_values(func, tensors, dtype):
     """A Tensor with the entries of ``tensors`` (all of one shape and pattern) whose values
-    are ``func(*value_arrays)`` in ``dtype``, computed by numpy over the stored values
-    (``Tensor._map_values``: the values in place, the pattern copied in GraphBLAS).
+    are ``func(*value_arrays)`` in ``dtype``, computed by numpy over the stored values (see
+    ``Tensor._map_values``).
     """
     return tensors[0]._map_values(func, tensors[1:], gb_dtype(dtype))

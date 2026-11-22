@@ -1,27 +1,32 @@
 """Linear algebra in the main namespace: matmul, matrix_transpose, tensordot and vecdot, and
 the extension einsum.
 
-Contractions treat a fill of zero as a structural zero (DESIGN D6), as scipy.sparse and
-pydata/sparse do: a product with an unstored position is skipped, so 0 * inf there is not NaN,
-unlike numpy. Sums may round differently from numpy's (the order of the terms differs). An
-operand that stores every position never shows its fill, so a nonzero fill there is taken as
-0; another nonzero fill makes the contraction go through numpy densely, under the densify
-limit on its operands and its result (DESIGN D12c).
+A contraction treats a fill of zero as a structural zero, as scipy.sparse and pydata/sparse
+do. It skips the terms at unstored positions, so ``0 * inf`` there gives no NaN, unlike
+numpy. Sums may round differently from numpy's, because the terms are added in another order.
 
-Semirings (an extension, DESIGN D11): ``semiring=`` takes a ``graphblas`` Semiring or its
-name ("min_plus", "max_min", ...), whose monoid takes the place of the sum and whose binary
-operator that of the product. A contraction skips the unstored positions, which is right when
-every operand's fill is the identity ``e`` of the semiring's monoid and ``e`` annihilates the
-multiply from both sides, ``mult(e, y) == mult(y, e) == e``: inf for min_plus, -inf for
-max_plus, False for lor_land, 0 for plus_times. The result's fill is then ``e``; other fills
-raise ValueError. As in D6 the skipping is structural: an infinity meeting an unstored
-position makes no NaN (inf + -inf in min_plus). The annihilator is checked on a set of finite
-probe values of each operand type, once per typed semiring. The default (None) is plus_times,
-or lor_land for bool, under the rules of the first paragraph.
+An operand that stores every position never shows its fill, so a nonzero fill there is taken
+as 0. An operand with another finite fill first stores its fill at every position it does
+not store, under the densify limit, and then has the fill 0. Any other nonzero fill makes the
+contraction compute with numpy on dense copies, under the densify limit on the operands and
+on the result.
 
-A contraction that skips the unstored positions is deferred: its result computes on first use,
-or only where a consumer needs it (``multiply`` by a zero-filled array, a slice; see
-``_lazy``).
+Semirings (an extension): ``semiring=`` accepts a ``graphblas`` Semiring or its name, such as
+``"min_plus"`` or ``"max_min"``. Its monoid takes the place of the sum, and its binary
+operator the place of the product. Skipping the unstored positions is then right when every
+operand's fill is the identity ``e`` of the monoid, and ``e`` annihilates the multiply from
+both sides: ``mult(e, y) == mult(y, e) == e`` for every ``y``. ``e`` is inf for min_plus,
+-inf for max_plus, False for lor_land and 0 for plus_times. The result's fill is ``e``. An
+operand with another fill makes the call raise ValueError, unless it stores every position.
+As with zero fills, the skipping is structural: an infinity stored in one operand makes no
+NaN at a position the other does not store (``-inf + inf`` in min_plus). Whether ``e``
+annihilates the multiply is checked on a few finite values of each operand type, once per
+typed semiring. The default semiring, plus_times (lor_land for bool), follows the rules for
+zero fills above, whether it is given or not.
+
+A contraction that skips the unstored positions, and whose result has a dimension, is
+deferred. Its result is computed on first use, or only in part when a consumer needs only
+part of it: a ``multiply`` by a zero-filled array, or a slice (see ``_lazy``).
 """
 
 import math
@@ -48,7 +53,9 @@ def _check(x, name):
 
 
 def _operand(x):
-    """A numpy array as an Array (``ndarray @ Array`` comes here through ``__rmatmul__``)."""
+    """``x`` as an Array when it is a numpy array (``ndarray @ Array`` calls matmul through
+    ``Array.__rmatmul__``).
+    """
     if isinstance(x, np.ndarray):
         from ._creation import asarray
 
@@ -57,10 +64,11 @@ def _operand(x):
 
 
 def compute(x, /):
-    """``x``, computed now (an extension). matmul, tensordot, vecdot and einsum return an Array
-    that computes its value on first use, or only where a consumer needs it (DESIGN D9);
-    ``compute`` computes it at once (to time it, or before handing it on). Any other Array
-    is returned as it is.
+    """Compute ``x`` now if it is deferred, and return it (an extension).
+
+    matmul, tensordot, vecdot and einsum may return an Array whose value is computed on first
+    use, or only in part when a consumer needs only part of it. ``compute`` computes all of it
+    at once, for timing or before handing it on. Any other Array is returned unchanged.
     """
     _check(x, "compute")
     x._T()
@@ -72,7 +80,7 @@ def _semiring(dt):
 
 
 def _resolve(semiring, dt, name):
-    """``(typed semiring, whether it is the default)`` for the ``semiring=`` argument, typed
+    """``(typed semiring, whether it equals the default)`` for the ``semiring=`` argument, typed
     for ``dt``, the operands' promoted dtype.
     """
     default = _semiring(dt)
@@ -92,7 +100,7 @@ def _resolve(semiring, dt, name):
         )
     if isinstance(sr, Semiring):
         if dt.kind == "b" and sr.name == "plus_times":
-            return default, True  # (numpy's sum of bools is their lor)
+            return default, True  # (numpy contracts bools with logical or and logical and)
         try:
             sr = sr[gb_dtype(dt)]
         except KeyError:
@@ -104,8 +112,11 @@ def _resolve(semiring, dt, name):
 
 
 def _probes(dt):
-    """Values of the numpy dtype ``dt`` to check an annihilator on: both signs, zeros and the
-    extremes, all finite (an infinity meets an unstored position only structurally, as in D6).
+    """Finite values of the numpy dtype ``dt`` to check an annihilator on: both signs, zeros
+    and the extremes. Infinities are left out because an infinity is never multiplied by the
+    identity: a contraction skips unstored positions, and when an operand stores an infinity,
+    the contraction first drops the operands' stored entries equal to their fills
+    (``_lazy.contraction``).
     """
     if dt.kind == "b":
         return np.array([False, True])
@@ -127,12 +138,11 @@ _ANNIHILATES = weakref.WeakKeyDictionary()
 
 def _annihilates(typed):
     """Whether the identity of the typed semiring's monoid annihilates its multiply from both
-    sides on the probe values (cached per typed semiring object: two user semirings may share
-    a name).
+    sides on the ``_probes`` values. Cached per typed semiring object, not per name: two user
+    semirings may share a name.
     """
-    key = typed
-    if (ok := _ANNIHILATES.get(key)) is None:
-        ok = _ANNIHILATES[key] = _check_annihilates(typed)
+    if (ok := _ANNIHILATES.get(typed)) is None:
+        ok = _ANNIHILATES[typed] = _check_annihilates(typed)
     return ok
 
 
@@ -165,11 +175,15 @@ def _spell(value):
 
 
 def _sound(typed, arrays, name, *, multiplies=True):
-    """The result dtype and fill of a contraction of ``arrays`` with a typed semiring other
-    than the default, and the arrays, after checking that it may skip their unstored
-    positions (ValueError if not). An array that stores every position never shows its fill,
-    so it is relabeled with the identity when its dtype holds it (O(1)). ``multiplies``:
-    whether values meet the multiply (einsum of one operand only sums).
+    """``(result dtype, result fill, arrays)`` for a contraction of ``arrays`` with ``typed``,
+    a semiring other than the default, after checking that it may skip their unstored
+    positions.
+
+    Raise ValueError when the identity of the monoid does not annihilate the multiply, or
+    when an operand's fill is not that identity. An array that stores every position never
+    shows its fill, so it is relabeled with the identity (O(1)) when its dtype represents the
+    identity exactly. ``multiplies`` is False for an einsum of one operand, which only sums,
+    so the multiply is not checked.
     """
     e = typed.monoid.identity
     out_dt = check_supported(np_dtype(typed.return_type), name)
@@ -188,7 +202,7 @@ def _sound(typed, arrays, name, *, multiplies=True):
         if fill != e and (relabeled := _relabel_full(x, e)) is not None:
             x, fill = relabeled, e
         out.append(x)
-        if fill != e:  # (a NaN fill too)
+        if fill != e:  # (a NaN fill raises too)
             spelled = _spell(e)
             raise ValueError(
                 f"{name} with the semiring {typed.name} needs operands whose fill is {e!r}, "
@@ -203,12 +217,12 @@ def _sound(typed, arrays, name, *, multiplies=True):
 
 def _relabel_full(x, e):
     """``x`` with fill ``e`` when it stores every position (its fill is never seen) and its
-    dtype holds ``e`` exactly; else None.
+    dtype represents ``e`` exactly; else None.
     """
     if x._T().nvals != x.size:
         return None
     with np.errstate(all="ignore"):
-        fill = np.asarray(e).astype(x.dtype)[()]  # (inf as an integer: no longer inf)
+        fill = np.asarray(e).astype(x.dtype)[()]  # (inf cast to an integer is not inf)
     if not _utils.same_value(np.asarray(fill).astype(np.asarray(e).dtype)[()], e):
         return None
     return Array._new(x._T(), fill)
@@ -219,13 +233,15 @@ def _is_zero(fill):
 
 
 def _zero_fills(*arrays):
-    """The arrays with fill 0, or None when one cannot have it. An array that stores every
-    position never shows its fill, so its fill is relabeled 0 (O(1)). One with a finite fill
-    whose size fits under the densify limit (a vector or matrix of ones by a sparse matrix) is
-    stored in full first, O(its size): an unstored zero of another operand times its finite
-    values is 0 either way, so the answer does not depend on what the others store. Any other
-    nonzero fill gives None: the contraction is dense (a non-finite fill times another's
-    unstored zero is NaN there, as numpy has it).
+    """The arrays relabeled to fill 0, or None when one of them cannot be.
+
+    An array that stores every position never shows its fill, so its fill becomes 0 (O(1)).
+    An array with another finite fill and a size under the densify limit (a vector or matrix
+    of ones times a sparse matrix) first stores its fill at every position it does not store,
+    O(its size). Those positions then store a finite value, and a finite value times an
+    unstored zero of another operand is 0, so skipping those terms changes nothing. With any
+    other nonzero fill it returns None, and the caller computes with numpy densely: a
+    non-finite fill times an unstored zero of another operand is NaN.
     """
     out = []
     for x in arrays:
@@ -235,7 +251,6 @@ def _zero_fills(*arrays):
                 small = x.size <= _utils.densify_limit()
                 if x.ndim == 0 or not small or not np.isfinite(x._fill):
                     return None
-                # (its fill stored at every position it does not store, the new fill 0)
                 T = _utils.with_fill(x, _utils.scalar(0, x.dtype))._T()
             x = Array._new(T, _utils.scalar(0, x.dtype))
         out.append(x)
@@ -243,8 +258,8 @@ def _zero_fills(*arrays):
 
 
 def _dense(func, shape, *arrays):
-    """``func`` of the arrays densely by numpy, under the densify limit on the operands and on
-    the result of ``shape``.
+    """``func`` of dense numpy copies of the arrays, under the densify limit on each operand
+    and on the result, whose shape is ``shape``.
     """
     from ._creation import _from_numpy
 
@@ -252,9 +267,9 @@ def _dense(func, shape, *arrays):
     for x in arrays:
         _utils.check_dense(x.size, what)
     _utils.check_dense(math.prod(shape), what)
-    # No floating-point warnings, as on the namespace's other numpy paths: the GraphBLAS paths
-    # never warn, so whether a contraction warned would depend on the fills. (A 0 * inf term
-    # here is NaN as in numpy, and some BLAS kernels raise the invalid flag without one.)
+    # Silence floating-point warnings, as the namespace's other numpy paths do. The GraphBLAS
+    # paths never warn, so a warning here would depend on the fills. A 0 * inf term here is
+    # NaN, as in numpy, and some BLAS kernels set the invalid flag even without one.
     with np.errstate(all="ignore"):
         out = np.asarray(func(*[x.todense() for x in arrays]))
     return _from_numpy(out)
@@ -268,8 +283,12 @@ def _rdt(name, func, x1, x2):
 
 
 def matmul(x1, x2, /, *, semiring=None):
-    """The matrix product (numpy's matmul rules). ``semiring`` (an extension): a graphblas
-    Semiring or its name, under the module's rules for fills.
+    """The matrix product, with numpy's matmul rules for shapes.
+
+    ``semiring`` (an extension) is a graphblas Semiring or its name, such as ``"min_plus"``.
+    The unstored positions of an operand whose fill is 0 contribute no terms, so ``0 * inf``
+    there gives no NaN, unlike numpy. The rules for other fills and for semirings are in the
+    docstring of the ``graphblas.array_api._linalg`` module.
     """
     x1, x2 = _operand(x1), _operand(x2)
     _check(x1, "matmul")
@@ -317,7 +336,8 @@ def _product(a, b, typed, out_dt, fill):
     return _lazy.contraction((a, b), build, shape, out_dt, fill, spec, a.shape[-1], True, typed)
 
 
-# Index letters for the einsum that computes a contraction (for slicing a pending result)
+# Index letters for the einsum that computes a contraction (for slicing a pending result).
+# There is no i, j or k: _matmul_terms uses them for matmul's own axes.
 _LETTERS = "abcdefghlmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 
@@ -383,8 +403,10 @@ def _axis(i, ndim):
 
 
 def tensordot(x1, x2, /, *, axes=2, semiring=None):
-    """The tensor dot product (numpy's tensordot). ``semiring`` (an extension): a graphblas
-    Semiring or its name, under the module's rules for fills.
+    """The tensor dot product, as numpy's tensordot.
+
+    ``semiring`` (an extension) is a graphblas Semiring or its name. Fills follow the rules
+    for ``matmul``.
     """
     _check(x1, "tensordot")
     _check(x2, "tensordot")
@@ -422,11 +444,12 @@ def _tensordot(a, b, a_axes, b_axes, shape, typed, out_dt, fill):
 
 
 def vecdot(x1, x2, /, *, axis=-1, semiring=None):
-    """Sum over ``axis`` of ``conj(x1) * x2`` (broadcast), with zero fills structural.
+    """The sum over ``axis`` of ``conj(x1) * x2``, broadcast.
 
-    ``semiring`` (an extension): a graphblas Semiring or its name, whose monoid reduces
-    ``mult(x1, x2)`` over ``axis``, under the module's rules for fills. The default semiring
-    (plus_times, or lor_land for bool), given or not, conjugates ``x1``; others do not.
+    ``semiring`` (an extension) is a graphblas Semiring or its name, whose monoid reduces
+    ``mult(x1, x2)`` over ``axis``. The default semiring, plus_times (lor_land for bool),
+    conjugates ``x1`` whether it is given or not; other semirings do not. Fills follow the
+    rules for ``matmul``.
     """
     from ._elementwise import conj
 
@@ -483,14 +506,14 @@ def _both_broadcast(sa, sb, shape):
 
 def einsum(subscripts, /, *operands, semiring=None):
     """Einstein summation (an extension), with numpy's subscripts: ``einsum("ij,jk->ik", a,
-    b)`` is ``a @ b``. Each index appears at most once per operand (no diagonals), and
-    ``...`` is not supported.
+    b)`` is ``a @ b``.
 
-    ``semiring``: a graphblas Semiring or its name; the default is plus_times, or lor_land
+    An index may appear at most once in each operand (no diagonals), and ``...`` is not
+    supported.
+
+    ``semiring`` is a graphblas Semiring or its name; the default is plus_times, or lor_land
     for bool. Its multiply combines the operands of each term, and its monoid sums the terms
-    over the indices not in the output. Fills follow the module's rules; with the default
-    semiring an operand whose fill is not zero makes the computation go through numpy
-    densely (under the densify limit).
+    over the indices not in the output. Fills follow the rules for ``matmul``.
     """
     from ..core.tensor_einsum import _einsum_plan
     from ..core.tensor_einsum import einsum as tensor_einsum
@@ -508,9 +531,8 @@ def einsum(subscripts, /, *operands, semiring=None):
     shape = _einsum_plan(subscripts, shapes, "greedy")[2]
     scalars = [x._fill for x in ops if x.ndim == 0]
     if default and any(map(bool, scalars)) and all(np.isfinite(scalars)):
-        # A finite 0-d operand is a scalar factor of every term (and of the sum, for
-        # plus_times); a non-finite one goes dense, as numpy has it (inf times the unstored
-        # zeros is NaN)
+        # A finite 0-d operand is a factor of every term, so it factors out of the sum. A
+        # non-finite one goes dense, as in numpy: inf times an unstored zero is NaN
         return _einsum_scalars(subscripts, ops)
     if default:
         if (zeroed := _zero_fills(*ops)) is None:
@@ -553,16 +575,22 @@ _DISTRIBUTES = {
 
 
 def _masked_three(terms, output, ops, typed, out_dt, fill):
-    """An einsum of three operands in which one operand's indices are exactly those the
-    other two leave after contracting their shared ones (triangle counting's
-    "ij,jk,ik->", an SDDMM's "ik,ij,jk->ik"), computed as that pair's product at the third
-    operand's stored positions only, times the third, then summed into the output; else
-    None. Every term of the full einsum is a term of this one: a position the third operand
-    does not store gives no term either way (DESIGN D6). Sums differ only in their order
-    (rounding, and where a sum overflows). An operand holding inf or NaN prunes the explicit
-    fills first, as every contraction does (D12a); a NaN under a float min or max monoid
-    takes the full einsum, which propagates it (D12b). With plus_times the third operand
-    must be finite: inf * (x + y) is not inf * x + inf * y when x and y differ in sign.
+    """An einsum of three operands computed as a masked product, or None when that does not
+    apply.
+
+    It applies when one operand's indices are exactly those the other two keep after
+    contracting their shared indices: triangle counting's ``"ij,jk,ik->"``, or an SDDMM's
+    ``"ik,ij,jk->ik"``. The pair's product is computed only at the third operand's stored
+    positions, multiplied by the third, and summed into the output. This has the same terms
+    as the full einsum, since a position the third operand does not store gives no term
+    either way. Only the order of the sums differs, which can change rounding and where a
+    sum overflows.
+
+    When an operand stores inf or NaN, stored entries equal to the fill are dropped first, as
+    in every contraction (see ``_lazy.contraction``). With a NaN under a float min or max
+    monoid it returns None, so that the full einsum propagates the NaN. With plus_times the
+    third operand must be finite: ``inf * (x + y)`` is not ``inf * x + inf * y`` when x and
+    y differ in sign.
     """
     if (typed.monoid.name, typed.binaryop.name) not in _DISTRIBUTES or not all(x.ndim for x in ops):
         return None
@@ -589,7 +617,7 @@ def _masked_three(terms, output, ops, typed, out_dt, fill):
         if (node := P._pending) is not None:
             TP = node.compute(mask=TS.S, **_lazy._dot_hint(node, TS.nvals, P.shape))
         else:
-            TP = P._T()  # (computed already: a NaN or deferral off)
+            TP = P._T()  # (computed already: deferral is off, or the product is empty)
         R = Array._new(TS.ewise_mult(TP, typed.binaryop).new(dtype=gb_dtype(out_dt)), fill)
         return R if output == tm else einsum(f"{tm}->{output}", R, semiring=typed)
     return None
@@ -612,7 +640,7 @@ def _einsum_scalars(subscripts, ops):
         return _dense(lambda *a: np.einsum(subscripts, *a), (), *ops)
     rest = ",".join(terms[i] for i in keep) + arrow + output
     if not arrow:
-        # (implicit output: the letters that appear once, in order, as numpy picks them)
+        # (implicit output: the letters that appear once, sorted, as numpy orders them)
         counts = {c: "".join(terms).count(c) for c in "".join(terms)}
         rest += "->" + "".join(sorted(c for c, k in counts.items() if k == 1))
     return multiply(einsum(rest, *(ops[i] for i in keep)), factor)

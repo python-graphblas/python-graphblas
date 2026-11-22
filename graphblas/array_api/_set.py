@@ -1,9 +1,9 @@
 """Set functions: isin, unique_all, unique_counts, unique_inverse, unique_values.
 
-The unique values of an array are those of its stored entries plus the fill, counted once per
-unstored position: O(entries log entries). NaNs are distinct (each is its own value), so a
-fill of NaN with unstored positions makes as many distinct values: that case goes through
-numpy densely, under the densify limit. Values come sorted, as numpy's.
+The unique values of an array are those of its stored entries plus the fill, which counts once
+per unstored position. Finding them costs O(entries log entries). NaNs are distinct (each NaN
+is its own value), so a NaN fill makes one distinct value per unstored position; that case
+goes through numpy densely, under the densify limit. The values come sorted, as numpy's do.
 """
 
 from typing import NamedTuple
@@ -42,8 +42,9 @@ def _vector(a):
 
 
 def _unique(x, *, index=False, inverse=False, counts=False):
-    """The sorted unique values of ``x`` (as numpy's unique with equal_nan=False), and the
-    first flat index, the inverse (an Array of x's shape) and the counts when asked.
+    """A dict of the sorted unique values of ``x`` (as numpy's ``unique`` with
+    ``equal_nan=False``) and, when asked, the first flat index of each, the inverse (an
+    Array of x's shape) and the counts.
     """
     if not isinstance(x, Array):
         raise TypeError(f"needs an Array, not {type(x).__name__}")
@@ -55,12 +56,12 @@ def _unique(x, *, index=False, inverse=False, counts=False):
         return _unique_dense(x, index, inverse, counts)
     if T.nvals:
         coords, values = T.to_coo()
-        flat = np.ravel_multi_index(coords, x.shape) if x.ndim else np.zeros(1, np.int64)
+        flat = np.ravel_multi_index(coords, x.shape)
     else:
         coords = tuple(np.empty(0, np.int64) for _ in range(x.ndim))
         values, flat = np.empty(0, x.dtype), np.empty(0, np.int64)
     if k:
-        # The fill once, at its first unstored position, with the other k - 1 added later
+        # The fill once, at its first unstored position; its count gets the other k - 1 below
         first = _first_unstored(flat, x.size)
         at = np.searchsorted(flat, first)
         values = np.insert(values, at, fill)
@@ -84,7 +85,7 @@ def _unique(x, *, index=False, inverse=False, counts=False):
         if k:
             uinverse = np.delete(uinverse, at)
         if x.ndim == 0:
-            inv = Array._new(_utils.empty_0d(np.int64), uinverse[0] if len(uinverse) else inv_fill)
+            inv = Array._new(_utils.empty_0d(np.int64), inv_fill)  # (a 0-d Array stores nothing)
         elif T.nvals:
             R = Tensor.from_coo(
                 coords, uinverse.astype(np.int64), gb_dtype(np.int64), shape=x.shape
@@ -140,8 +141,8 @@ def unique_all(x, /):
 
 
 def isin(x1, x2, /, *, invert=False):
-    """Whether each element of ``x1`` is among ``x2``'s values (its stored values and its
-    fill): O(entries of both).
+    """Whether each element of ``x1`` is among the values of ``x2``: its stored values, and
+    its fill if it has an unstored position. Only the stored entries of both are read.
     """
     from ._creation import asarray
 

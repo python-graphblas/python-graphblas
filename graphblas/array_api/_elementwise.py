@@ -1,15 +1,18 @@
-"""Element-wise functions: numpy's answer on every position (DESIGN D3b: NaN, inf and signed
-zeros exact, transcendental functions within libm's rounding, the sign of a zero at an unstored
-position unspecified).
+"""Element-wise functions.
+
+Each function returns numpy's answer at every position, NaN and inf included. Transcendental
+functions are within libm's rounding of numpy's results. Signed zeros are exact too, except
+where the sign is unspecified: at a position the result does not store, and in maximum and
+minimum of 0.0 and -0.0.
 
 A function of one array maps the stored entries and the fill alike. A function of two arrays
-takes the union of their entries, an unstored position of one operand taking its fill there,
-and the new fill is the function of the two fills. Python scalars are weak (NEP 50).
+computes on the union of their entries, using an operand's fill where it stores nothing, and
+the result's fill is the function of the two fills. Python scalars are weak (NEP 50).
 
-Where a GraphBLAS operator gives numpy's answer exactly for the dtypes at hand, the entries
-are computed in GraphBLAS; otherwise numpy maps the stored values (the pattern stays as it is,
-see ``_utils.map_values``). numpy also computes every fill, so an entry equal to the fill maps
-to the new fill.
+Where a GraphBLAS operator agrees exactly with numpy for the dtypes at hand, GraphBLAS
+computes the entries; otherwise numpy maps the stored values, keeping the pattern (see
+``_utils.map_values``). The fill is computed by the operator that maps the entries, or by
+numpy where the two agree exactly, so an entry equal to the fill maps to the new fill.
 """
 
 import builtins
@@ -104,8 +107,8 @@ _REAL = "biuf"
 
 # Operands
 def _as_operand(x, name):
-    """An Array; a Python scalar stays as it is (weak); a numpy scalar or array becomes an
-    Array (strong, as numpy treats it).
+    """``x`` as an operand: an Array or a Python scalar (weak) as it is, and a numpy scalar or
+    array as an Array (strong, as numpy treats it).
     """
     if isinstance(x, Array):
         return x
@@ -119,8 +122,8 @@ def _as_operand(x, name):
 
 
 def _probe(x):
-    """What numpy's type resolution sees: an empty array of an Array's dtype, or the weak
-    Python scalar itself.
+    """A stand-in for ``x`` in numpy's type resolution: an empty array of an Array's dtype,
+    or a Python scalar itself (weak).
     """
     if isinstance(x, Array):
         return np.empty(0, x.dtype)
@@ -137,13 +140,13 @@ def _fill_operand(x):
 def _fill_of(ufunc, rdt, operands):
     """``ufunc`` of the operands' fills: the result's fill.
 
-    An Array that stores every position never shows its fill, so where the fills raise
-    (integers to a negative power) and one operand is such an Array, the result's fill is
-    never seen either, and 0 stands in for it.
+    When numpy raises on the fills (an integer to a negative power) and an operand stores
+    every position, 0 stands in: that operand's fill is never seen, so neither is the
+    result's.
     """
-    # numpy picks its loop by its operands' shapes (clip breaks ties by its 0-d path
-    # otherwise): a fill stands in for an array as a 1-element array, a 0-d Array stays 0-d,
-    # and a Python scalar stays weak
+    # numpy's 0-d path can differ from its array loop (clip breaks a tie another way), so the
+    # fill of an Array with a dimension is a 1-element array. A 0-d Array stays 0-d, and a
+    # Python scalar stays weak.
     args = [
         (
             (np.reshape(x._fill, (1,)) if x.ndim else np.asarray(x._fill))
@@ -170,10 +173,12 @@ def _result(T, fill):
 
 
 def _majority_false(T):
-    """A bool Tensor with fill True that stores mostly False entries, more than half its
-    positions (``equal(deg, 0)`` of a ``deg`` that leaves a few zero degrees unstored):
-    the same values with fill False, storing only the True positions (its unstored ones and
-    its stored True entries). O(size), which is under twice its entries. Else as it is.
+    """``(R, fill)`` with the values of the bool Tensor ``T``, whose fill is True.
+
+    When more than half of the positions of ``T`` are stored False entries, ``R`` stores only
+    the True positions (the unstored ones and the stored True entries) and ``fill`` is False.
+    That costs O(size), which is under twice the entries. ``equal(deg, 0)`` of a ``deg`` that
+    leaves a few zero degrees unstored is such a Tensor. Otherwise this returns ``(T, True)``.
     """
     ntrue = T.reduce_scalar(monoid.plus[INT64]).new().value
     if 2 * (T.nvals - ntrue) <= T.size:
@@ -186,19 +191,21 @@ def _majority_false(T):
 
 
 def _normalize_bool(T, fill):
-    """A bool Tensor that stores every position never shows its fill, so it takes fill False
-    (the fill contractions and masks work with; a fill True made a mostly-True mask times a
-    sparse matrix dense). Its False entries are dropped when at most a quarter of the
-    entries are True (``equal(deg, 0)`` of a fully stored ``deg`` then stores only its True
-    entries). Otherwise they stay; dropping more costs about as much as the comparison and
-    saves a later consumer little.
+    """``(T, False)`` for a bool Tensor ``T`` that stores every position, with its False
+    entries dropped when at most a quarter of the entries are True.
 
-    A sample of the leading entries says whether dropping is likely: a mostly-True result pays
-    only for the sample (a count over all 2e7 values cost as much as the comparison at 1
-    thread). Then one select of the True values decides, and is the result when few.
+    ``T`` never shows its fill, so it can have fill False, which lets its False entries be
+    dropped. ``equal(deg, 0)`` of a fully stored ``deg`` then stores only its True entries.
+    With more True entries the False ones stay: dropping them costs about as much as the
+    comparison and saves a later consumer little.
+
+    A sample of the leading entries first says whether dropping is likely, so that a
+    mostly-True result pays only for the sample (a count over all 2e7 values cost as much as
+    the comparison at 1 thread). Then one select of the True values decides, and is the
+    result when they are few.
     """
     n = T.nvals
-    rows = -(-_SAMPLE * T.shape[0] // n)  # (leading rows holding about _SAMPLE entries)
+    rows = -(-_SAMPLE * T.shape[0] // n)  # (the leading rows with about _SAMPLE entries)
     if rows < T.shape[0]:
         sample = T[(slice(0, rows),) + (slice(None),) * (T.ndim - 1)].new()
         if 3 * sample.reduce_scalar(monoid.plus[INT64]).new().value > sample.nvals:
@@ -221,11 +228,12 @@ _ALL_FACTS = ("finite", "nan", "zero")
 def _unary(name, ufunc, x, gb=None, *, const=None, keeps=()):
     """``ufunc`` of every position of ``x``.
 
-    ``gb(dtype)`` gives a GraphBLAS UnaryOp equal to ``ufunc`` on that dtype, a callable
-    taking the Tensor, or None; ``const(dtype)`` gives the value of every position when the
-    result does not depend on the entries (``isnan`` of an integer array), else None.
-    ``keeps``: the facts about the stored values (``_utils.fact``) that hold for the result
-    when they hold for ``x``.
+    ``gb(dtype)`` says how to compute the entries for ``x``'s dtype: a GraphBLAS UnaryOp equal
+    to ``ufunc`` there, ``"copy"`` when ``ufunc`` changes no value, a function of the Tensor,
+    or None for numpy. ``const(dtype)`` returns the value of every position when the result
+    does not depend on the entries (``isnan`` of an integer array), else None. ``keeps`` names
+    the facts about the stored values (``_utils.fact``) that hold for the result when they
+    hold for ``x``.
     """
     x = _as_operand(x, name)
     if not isinstance(x, Array):
@@ -237,7 +245,7 @@ def _unary(name, ufunc, x, gb=None, *, const=None, keeps=()):
         rdt = ufunc(np.empty(0, x.dtype)).dtype
         if getattr(op, "opclass", None) == "UnaryOp":
             # The fill by the op that maps the entries, so that an entry equal to the fill maps
-            # to the new fill (libm's rounding may differ from numpy's by an ulp)
+            # to the new fill: libm's rounding may differ from numpy's by an ulp
             s = Scalar.from_value(x._fill, gb_dtype(x.dtype))
             fill = s.apply(op).new(dtype=gb_dtype(rdt)).value
         else:
@@ -262,7 +270,7 @@ def _unary(name, ufunc, x, gb=None, *, const=None, keeps=()):
 
 
 def _typed(op, kinds):
-    """``gb`` for _unary: ``op`` typed for dtypes of these kinds, else numpy."""
+    """A ``gb`` for ``_unary``: ``op`` typed for a dtype of one of ``kinds``, else None."""
 
     def get(dtype):
         return op[gb_dtype(dtype)] if dtype.kind in kinds else None
@@ -290,7 +298,8 @@ def _first_of(*getters):
 def abs(x, /):  # noqa: A001 (the Array API's name)
     # (GraphBLAS's integer abs of the most negative value is undefined in C; numpy wraps)
     gb = _first_of(_typed(unary.abs, _FLOAT), _copy_if("ub"))
-    # (|z| of a finite complex z may overflow, and |inf + nan j| is inf: only "zero" holds)
+    # (|z| of a finite complex z may overflow, and |inf + nan j| is inf: only "zero" carries
+    # over)
     keeps = ("zero",) if isinstance(x, Array) and x.dtype.kind == "c" else _ALL_FACTS
     return _unary("abs", np.abs, x, gb, keeps=keeps)
 
@@ -409,14 +418,15 @@ def signbit(x, /):
 
 
 def _libm_unary(name, ufunc, op):
-    """``ufunc`` computed by the SuiteSparse unary op ``op`` (C's libm, in parallel) for real
-    floating dtypes, by numpy otherwise: within libm's rounding of numpy's answer, special
-    values (NaN, inf, signed zeros) exact (DESIGN D3b).
+    """The namespace function ``name``: ``ufunc`` computed by the SuiteSparse unary op ``op``
+    for real floating dtypes, and by numpy otherwise.
 
-    Complex values stay on numpy: C libraries treat the many special cases of complex
-    arguments differently from platform to platform, and SuiteSparse's complex expm1 and
-    log1p are formulas of its own, inexact near 0. Integer inputs stay too (numpy's result
-    dtype there, such as float16 for int8, is its own).
+    SuiteSparse calls C's libm, in parallel: its results are within libm's rounding of
+    numpy's, with special values (NaN, inf, signed zeros) exact. Complex values stay on
+    numpy: C libraries treat the many special cases of complex arguments differently from
+    platform to platform, and SuiteSparse's complex expm1 and log1p are ``cexp(z) - 1`` and
+    ``clog(1 + z)``, inexact near 0. Integer inputs stay on numpy too, since numpy picks their
+    result dtype (float16 for int8, for example).
     """
 
     def func(x, /):
@@ -458,7 +468,7 @@ def _exact_cast(src, dst):
     if src.kind in _INTEGRAL:
         if dst.kind in _INTEGRAL:
             return np.can_cast(src, dst, casting="safe")
-        if dst.kind in _INEXACT and dst != np.dtype(bool):
+        if dst.kind in _INEXACT:
             return src.itemsize * 8 - (src.kind == "i") <= _MANTISSA[dst.kind][dst.itemsize]
         return False
     if src.kind == "f" and dst.kind in _INEXACT:
@@ -469,8 +479,10 @@ def _exact_cast(src, dst):
 
 
 def _python_scalar_fits(value, dtype):
-    """Whether numpy converts the Python scalar ``value`` to ``dtype`` without changing it
-    (out-of-range Python ints get special treatment in numpy's comparisons).
+    """Whether numpy casts the Python scalar ``value`` to ``dtype``.
+
+    It does not cast a Python int out of the range of an integer ``dtype``: numpy's
+    comparisons compare such an int exactly.
     """
     if dtype.kind in _INTEGRAL and isinstance(value, int):
         info = np.iinfo(dtype)
@@ -481,13 +493,13 @@ def _python_scalar_fits(value, dtype):
 class _Binary:
     """How to compute one binary function.
 
-    ``kind`` is "arith" (the op works in the result dtype), "cmp" (in the promoted dtype of
-    the operands, with a bool result) or "logical" (in bool). ``gb(dtype)`` gives the
-    GraphBLAS operator that equals ``ufunc`` on operands of the dtype it works in, or None.
-    ``gb_values(a, b, dtype)``, in place of ``gb``, may look at the operands' values too.
-    ``annihilator(a, b, fill_a, fill_b, dtype)`` says whether the union equals the
-    intersection (``ewise_mult``): whether each operand's fill makes the result the result's
-    fill whatever the other operand holds.
+    ``kind`` says which dtype the op works in: "arith" in the result dtype, "cmp" in the
+    promoted dtype of the operands (with a bool result), "logical" in bool. ``gb(dtype)``
+    returns the GraphBLAS operator equal to ``ufunc`` on that dtype, or None.
+    ``gb_values(a, b, dtype)``, used in place of ``gb``, may also look at the operands'
+    values. ``annihilator(a, b, fill_a, fill_b, dtype)`` says whether the intersection
+    (``ewise_mult``) has the union's values: whether, where either operand's value is its
+    fill, the result is the result's fill whatever the other operand's value.
     """
 
     def __init__(self, name, ufunc, kind="arith", gb=None, annihilator=None, gb_values=None):
@@ -586,14 +598,16 @@ def _binary_arrays(spec, a, b, op, ct, rdt, fill):
             fa_seen = zero if _stores_all(a) else fa
             fb_seen = zero if _stores_all(b) else fb
             if spec.annihilator(a, b, fa_seen, fb_seen, ct):
-                # Where either operand holds its fill the result is the fill: the intersection
+                # Where either operand's value is its fill, the result is the result's fill:
+                # the intersection has the union's values
                 _utils.mult_expansion_check(Ta, Tb, shape)
                 R = Ta.ewise_mult(Tb, op).new(dtype=gb_dtype(rdt))
                 with np.errstate(all="ignore"):
                     return _result(R, spec.ufunc(fa_seen, fb_seen))
         if (e := _absorbing(spec, a, b, fa, fb, ct)) is not None:
-            # Each operand's fill absorbs the op: where either holds its fill the result is
-            # that fill, so the intersection, which never replicates a broadcast operand
+            # Both fills absorb the op: where either operand's value is its fill, the result is
+            # that fill. So the intersection has the union's values, and it replicates a
+            # broadcast operand only when both broadcast.
             _utils.mult_expansion_check(Ta, Tb, shape)
             R = Ta.ewise_mult(Tb, op).new(dtype=gb_dtype(rdt))
             return _result(R, _utils.scalar(e, rdt))
@@ -635,12 +649,14 @@ def _absorbing_values(name, ct):
 
 
 def _absorbing(spec, a, b, fa, fb, ct):
-    """The value both operands' fills take when it absorbs the op (inf for add and maximum,
-    -inf for add and minimum, True for logical_or, the integer extremes), so that the result
-    is the intersection of their entries with that fill; else None. An operand that stores
-    every position never shows its fill, so it counts as having that value, but not both.
-    Floats: no operand may hold NaN (numpy propagates it) or, for add, the opposite infinity
-    (inf + -inf is NaN): cached facts.
+    """The fill ``e`` of both operands when ``e`` absorbs the op, else None.
+
+    ``e`` absorbs the op when ``op(e, y)`` and ``op(y, e)`` are ``e`` (``_absorbing_values``):
+    inf for add and maximum, -inf for add and minimum, True for logical_or, or an integer
+    extreme. The result is then the intersection of the entries, with fill ``e``. An operand
+    that stores every position never shows its fill, so it counts as having fill ``e``, but
+    not both operands may. For floats, no operand may store NaN (numpy propagates it) nor,
+    for add, the opposite infinity (inf + -inf is NaN), checked by the cached facts.
     """
     full_a, full_b = _stores_all(a), _stores_all(b)
     if full_a and full_b:
@@ -659,9 +675,9 @@ def _absorbing(spec, a, b, fa, fb, ct):
 
 
 def _power(x1, x2):
-    """The power by numpy, but where numpy takes a square root for an exponent of 0.5 that
-    repeats (a scalar, or an exponent of stride 0): the Array API's pow(-inf, 0.5) is +inf and
-    pow(-0.0, 0.5) is +0.0, where sqrt gives NaN and -0.0 (review finding L11).
+    """``np.power``, corrected where numpy computes a repeated exponent of 0.5 (a scalar, or
+    an exponent of stride 0) as a square root. The Array API's pow(-inf, 0.5) is +inf and
+    pow(-0.0, 0.5) is +0.0, where sqrt returns NaN and -0.0.
     """
     out = np.power(x1, x2)
     if out.dtype.kind == "f":
@@ -673,7 +689,7 @@ def _power(x1, x2):
 
 
 def _typed_for(op_by_kind):
-    """``gb`` for _Binary: ``op_by_kind[dtype.kind]`` typed for the dtype, else None."""
+    """A ``gb`` for ``_Binary``: ``op_by_kind[dtype.kind]`` typed for the dtype, else None."""
 
     def get(dtype):
         op = op_by_kind.get(dtype.kind)
@@ -697,12 +713,13 @@ def _both_fills_zero(a, b, fa, fb, ct):
 
 
 def _multiply_intersects(a, b, fa, fb, ct):
-    """Whether ``a * b`` stores only the intersection of entries: both fills are 0 and, for
-    floats, no stored value is inf or NaN (whose product with 0.0 is NaN).
+    """Whether ``a * b`` stores only the intersection of entries: both fills are 0 (+0.0 for
+    floats) and, for floats, no stored value is inf or NaN (whose product with 0.0 is NaN).
 
-    A ``-0.0`` product with an unstored zero reads as the fill, 0.0: the sign of a zero at an
-    unstored position is unspecified (DESIGN D3a, D3b), and keeping it would make a row
-    scaling ``d[:, None] * A`` with signed ``d`` store every position.
+    numpy's product of an unstored zero and a negative value is -0.0, but that position reads
+    as the fill, 0.0. The sign of a zero at an unstored position is unspecified, and keeping
+    it would make a row scaling ``d[:, None] * A`` by a ``d`` with negative values store every
+    position.
     """
     if not _both_fills_zero(a, b, fa, fb, ct):
         return False
@@ -712,11 +729,14 @@ def _multiply_intersects(a, b, fa, fb, ct):
 
 
 def _one_sided(spec, a, b, fa, fb, op, ct, rdt, shape):
-    """``a * b`` or ``a / b`` on the entries of one operand only, when that operand's fill
-    is 0 and every value of the other makes 0 times (or divided by) it a zero: a row scaling
-    ``A * d[:, None]`` or ``A / d`` stores A's entries. The other operand's fill is computed
-    at the first operand's entries (a broadcast operand smaller than them is stored in full
-    first, so that it is not replicated). None when that does not hold.
+    """``a * b`` or ``a / b`` stored at the entries of one operand X only, or None when
+    neither operand qualifies.
+
+    X qualifies when its fill is 0, it does not store every position, it has the result's
+    shape, and 0 times (or divided by) every value of the other operand Y is a zero. A row
+    scaling ``A * d[:, None]`` or ``A / d`` then stores only A's entries. At X's entries, Y's
+    value is its entry or its fill. A Y that broadcasts and is larger than X's entries is
+    gathered at them; a smaller one is stored in full first. Either way Y is not replicated.
     """
     sides = [(a, b)] if spec.name == "divide" else [(a, b), (b, a)]
     for X, Y in sides:
@@ -732,12 +752,13 @@ def _one_sided(spec, a, b, fa, fb, op, ct, rdt, shape):
         with np.errstate(all="ignore"):
             fill = spec.ufunc(fx, fy) if X is a else spec.ufunc(fy, fx)
         if Ty.shape != shape and not _stores_all(Y) and Tx.nvals < Y.size:
-            # Y broadcasts, shows its fill, and is larger than X's entries: its value at each
-            # of X's entries, gathered from Y itself at the projected coordinates, O(entries
-            # of X). (Storing Y in full cost O(size of Y), and the union replicated Y over its
-            # broadcast axes: exp(v)[None, :] times X of shape (1000, 1e6) with 4 entries made
-            # v 1000 times.) A Y no larger is stored in full below: the broadcast ewise_mult
-            # then needs no coordinates (a row scaling of 1e7 entries: 5 ms, against 143)
+            # Y broadcasts, shows its fill, and is larger than X's entries: gather its value at
+            # each of X's entries from Y itself, at the projected coordinates, in O(entries of
+            # X). Storing Y in full would cost O(size of Y), and the union would replicate Y
+            # along its broadcast axes: exp(v)[None, :] times an X of shape (1000, 1e6) with 4
+            # entries would make v 1000 times. A Y no larger is stored in full below, so that
+            # the broadcast ewise_mult needs no coordinates (a row scaling of 1e7 entries: 5 ms,
+            # against 143 by the gather).
             Ty = _gather(Tx, Y, shape)
         elif not _stores_all(Y) and (Y.size <= Tx.nvals + 1024 or Ty.shape != shape):
             # (O(size of Y): every position of Y stored, so the product is an intersection)
@@ -756,8 +777,8 @@ def _one_sided(spec, a, b, fa, fb, op, ct, rdt, shape):
 
 
 def _gather(Tx, Y, shape):
-    """A Tensor with ``Tx``'s entries (of ``shape``) holding the values of ``Y`` (an Array
-    that broadcasts to ``shape``) there: its stored value, or its fill.
+    """A Tensor with the pattern of ``Tx`` (of ``shape``) whose values are those of ``Y``
+    there, its entry or its fill. ``Y`` is an Array that broadcasts to ``shape``.
     """
     coords = Tx.to_coo(values=False)[0]
     Ty = Y._T()
@@ -772,9 +793,10 @@ def _gather(Tx, Y, shape):
 
 
 def _zero_times(spec, y, fy):
-    """Whether 0 * v (or 0 / v) is a zero for every value v of ``y`` (its fill ``fy`` too):
-    finite values (for divide, also no 0). NaN never qualifies; the sign of the zero does not
-    matter (an unstored position reads the fill).
+    """Whether 0 * v (or 0 / v) is a zero for every value v of ``y``, its fill ``fy`` too.
+
+    For multiply every value must be finite; for divide no value may be 0 or NaN (0 / inf is
+    0). The sign of the zero does not matter, since an unstored position reads the fill.
     """
     if spec.name == "divide":
         ok = fy != 0 and not np.isnan(fy)
@@ -783,9 +805,13 @@ def _zero_times(spec, y, fy):
 
 
 def _max_min_gb(op):
-    """GraphBLAS's max and min of floats are C's fmax and fmin, which skip NaN; numpy's
-    propagate it. They agree when neither operand holds NaN (a cached fact), fills included.
-    Either may take either zero of 0.0 and -0.0: the Array API leaves that order unspecified.
+    """A ``gb_values`` for maximum or minimum: the GraphBLAS ``op`` where it agrees with
+    numpy, else None.
+
+    GraphBLAS's max and min of floats are C's fmax and fmin, which skip NaN; numpy's
+    propagate it. They agree when neither operand stores NaN (a cached fact) or has a NaN
+    fill. Either may return either zero for 0.0 and -0.0: the Array API leaves the order of
+    signed zeros unspecified.
     """
 
     def get(a, b, ct):
@@ -811,9 +837,7 @@ _SPECS = {
     "subtract": _Binary(
         "subtract", np.subtract, gb=_typed_for(dict.fromkeys("iufc", binary.minus))
     ),
-    # Complex products and quotients are computed by numpy: C's formulas round otherwise.
-    # A float zero fill annihilates only nonnegative finite values: 0.0 * -1.0 is -0.0, and
-    # 0.0 * inf is NaN.
+    # numpy computes complex products and quotients, since C's formulas round differently
     "multiply": _Binary(
         "multiply",
         np.multiply,
@@ -867,8 +891,11 @@ _SPECS = {
     "maximum": _Binary("maximum", np.maximum, gb_values=_max_min_gb(binary.max)),
     "minimum": _Binary("minimum", np.minimum, gb_values=_max_min_gb(binary.min)),
     "copysign": _Binary("copysign", np.copysign, gb=_typed_for({"f": binary.copysign})),
-    # numpy's own definitions: floored division and remainder (with its results for division
-    # by zero), integer powers, shifts past the width, and libm-free special values
+    # numpy computes the rest. SuiteSparse has no built-in operator for numpy's floored
+    # division and remainder (with its results for division by zero), logaddexp or nextafter.
+    # Its integer powers differ from numpy's, and its shifts read the shift amount as INT8
+    # and shift right when it is negative. atan2 and hypot stay on numpy too, which computes the
+    # fill (``_fill_of``): SuiteSparse's libm versions may differ from it by an ulp.
     "floor_divide": _Binary("floor_divide", np.floor_divide),
     "remainder": _Binary("remainder", np.remainder),
     "pow": _Binary("pow", _power),
@@ -930,8 +957,11 @@ bitwise_right_shift = _make_binary("bitwise_right_shift")
 
 
 def clip(x, /, min=None, max=None):
-    """``x`` clipped as numpy's ``clip`` does (NaN propagates; a tie gives the bound), in
-    the dtype of ``x``, over the union of the entries of ``x`` and of array bounds.
+    """Clip each value of ``x`` to the range [``min``, ``max``], as numpy's ``clip`` does.
+
+    ``min`` and ``max`` are arrays that broadcast with ``x``, Python scalars, or None for no
+    bound. The result has the dtype of ``x``, and NaN in ``x`` or in a bound propagates. It
+    stores the union of the entries of ``x`` and of any array bounds.
     """
     if not isinstance(x, Array):
         raise TypeError(f"clip needs an Array, not {type(x).__name__}")
@@ -954,29 +984,16 @@ def _clip_arrays(x, lo, hi):
     operands = (x, lo, hi)
     shape = np.broadcast_shapes(*[b.shape for b in operands if isinstance(b, Array)])
     is_array = [isinstance(b, Array) and b.ndim > 0 for b in operands]
-
-    def value(b):  # (a value where nothing is stored, typed as numpy types it)
-        return np.asarray(b._fill) if isinstance(b, Array) else b
-
-    def probe(b):
-        return np.empty(0, b.dtype) if isinstance(b, Array) else b
-
-    def value1(b):  # (an array's fill as a 1-element array: numpy's 0-d clip breaks ties
-        # otherwise)
-        if isinstance(b, Array):
-            return np.reshape(b._fill, (1,)) if b.ndim else np.asarray(b._fill)
-        return b
-
     with np.errstate(all="ignore"):
-        rdt = np.clip(probe(x), probe(lo), probe(hi)).dtype
-        fill = np.clip(value1(x), value1(lo), value1(hi))[0]
+        rdt = np.clip(*map(_probe, operands)).dtype
+        fill = _fill_of(np.clip, rdt, operands)
     if math.prod(shape) == 0:
         return _result(_utils.empty_tensor(rdt, shape), fill)
 
     def func(*arrays):
         it = iter(arrays)
         v, lo_v, hi_v = (
-            next(it) if arr else value(b) for b, arr in zip(operands, is_array, strict=True)
+            next(it) if arr else _fill_operand(b) for b, arr in zip(operands, is_array, strict=True)
         )
         return np.clip(v, lo_v, hi_v)
 
@@ -985,14 +1002,17 @@ def _clip_arrays(x, lo, hi):
 
 
 def _clip_bound(bound, x):
-    """A Python integer bound clamped to the range of an integer ``x`` (the Array API's clip
-    keeps the dtype of ``x``, and numpy refuses an integer out of its range).
+    """``bound`` as an operand of clip, with a Python int clamped to the range of an integer
+    ``x``: the Array API's clip keeps the dtype of ``x``, and NumPy 2.0 refuses an int out of
+    its range.
     """
     if isinstance(bound, (np.generic, np.ndarray)):
         return _as_operand(bound, "clip")
     if isinstance(bound, (builtins.bool, int, float)):
         if x.dtype.kind in _INTEGRAL and isinstance(bound, float):
             return bound
+        # MAINT 2026-11-22: NumPy 2.1 clamps such an int itself; drop this once that is the
+        # minimum
         if x.dtype.kind in _INTEGRAL and not _python_scalar_fits(bound, x.dtype):
             info = np.iinfo(x.dtype)
             return builtins.min(builtins.max(bound, int(info.min)), int(info.max))
@@ -1003,9 +1023,10 @@ def _clip_bound(bound, x):
 def _gb_cast_ok(src, dst):
     """Whether GraphBLAS's typecast from ``src`` to ``dst`` gives numpy's ``astype``.
 
-    C converts integers and floats as numpy does; float to integer differs where the value
-    does not fit (NaN, inf, out of range: numpy's result is undefined there, GraphBLAS
-    saturates), and complex to real is numpy's own rule.
+    C converts integers and floats as numpy does, except float to integer where the value
+    does not fit (NaN, inf, out of range): numpy's result is undefined there, and GraphBLAS
+    saturates. Complex to complex or bool agrees too. Complex to a real type stays on numpy
+    (to an integer, it differs as float to integer does).
     """
     if src.kind == "c":
         return dst.kind in "cb"
@@ -1015,7 +1036,8 @@ def _gb_cast_ok(src, dst):
 
 
 def _astype(values, dt):
-    # numpy's astype from complex to real keeps the real part (and warns that it does)
+    # numpy's astype from complex to real keeps the real part, but warns; dropping the
+    # imaginary part first avoids the warning
     if values.dtype.kind == "c" and dt.kind not in "cb":
         values = values.real
     return values.astype(dt)

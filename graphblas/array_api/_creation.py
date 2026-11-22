@@ -1,9 +1,10 @@
 """Creation functions.
 
-``zeros``, ``ones``, ``full``, ``empty`` and their ``_like`` forms store nothing: their value is
-the fill, so they cost O(1). Conversions from dense data store every position whose value is
-not identical to the fill (0 of the dtype unless ``fill_value=`` is given): ``-0.0`` is stored
-when the fill is ``0.0``, and NaN is stored unless the fill is NaN.
+``zeros``, ``ones``, ``full``, ``empty`` and their ``_like`` forms store nothing: their value
+at every position is the fill, so they cost O(1). Conversions from dense data store each
+position whose value is not identical to the fill, which is 0 of the dtype unless
+``fill_value=`` is given. So ``-0.0`` is stored when the fill is ``0.0``, and NaN is stored
+unless the fill is NaN.
 """
 
 import builtins
@@ -72,7 +73,7 @@ def _from_numpy(a, fill_value=None):
 
 
 def _from_graphblas(obj, dtype, fill_value):
-    """A Tensor, Matrix, Vector or Scalar as an Array whose missing entries hold the fill."""
+    """A Tensor, Matrix, Vector or Scalar as an Array with the fill where it has no entry."""
     from .. import Matrix, Scalar, Vector
     from ..core.matrix import TransposedMatrix
 
@@ -100,7 +101,7 @@ def _from_graphblas(obj, dtype, fill_value):
 
 
 def _from_sparse(obj, dtype, fill_value):
-    """A scipy.sparse array or matrix, or a pydata/sparse array."""
+    """A scipy.sparse array or matrix, or a pydata/sparse array, as an Array (by its COO form)."""
     if hasattr(obj, "tocoo") and hasattr(obj, "format") and not hasattr(obj, "fill_value"):
         coo = obj.tocoo()
         coords = tuple(np.asarray(c) for c in coo.coords)
@@ -129,18 +130,20 @@ def _is_sparse(obj):
 def asarray(obj, /, *, dtype=None, device=None, copy=None, fill_value=None):
     """Convert ``obj`` to an Array.
 
-    ``obj`` is an Array, a Python scalar or (nested) sequence, an object numpy converts (a
-    buffer, an ndarray), or (extensions) a ``graphblas`` Tensor, Matrix, Vector or Scalar, a
-    scipy.sparse array or a pydata/sparse array, whose missing entries hold the fill.
-    ``fill_value`` (an extension) is the value of unstored positions: 0 of the dtype by
-    default, or the sparse array's own fill value.
+    ``obj`` may be an Array, a Python scalar, a (nested) sequence, or anything numpy converts,
+    such as an ndarray or a buffer. As extensions, it may also be a ``graphblas`` Tensor,
+    Matrix, Vector or Scalar, a scipy.sparse array, or a pydata/sparse array; the positions
+    these do not store get the fill.
+
+    ``fill_value`` (an extension) is the value of unstored positions, 0 of the dtype by
+    default. An Array or a sparse array keeps its own fill value (``xp.refill`` changes it).
     """
     check_device(device)
     if isinstance(obj, Array):
         if fill_value is not None and not _utils.same_value(fill_value, obj._fill):
             raise ValueError(
-                "asarray of an Array keeps its fill value; xp.refill(x, fill_value) gives one "
-                "with another (the same values)"
+                "asarray of an Array keeps its fill value; xp.refill(x, fill_value) changes it "
+                "and keeps the values"
             )
         if dtype is not None and as_dtype(dtype) != obj.dtype:
             if copy is False:
@@ -177,8 +180,8 @@ def asarray(obj, /, *, dtype=None, device=None, copy=None, fill_value=None):
 
 
 def _stack_arrays(obj):
-    """A sequence of n-d Arrays of one shape (or such sequences), stacked sparsely; None for
-    anything else.
+    """A sequence of Arrays of one shape and at least 1 dimension (or of such sequences),
+    stacked without densifying; None for anything else.
     """
     from ._manipulation import stack
 
@@ -197,8 +200,9 @@ def _stack_arrays(obj):
 
 
 def _unwrap_nested(obj):
-    """A (nested) sequence with its 0-d Arrays replaced by their values (numpy would densify
-    every Array through ``__array__``, which works too, but slower).
+    """A (nested) sequence with each 0-d Array replaced by its value and each other Array by
+    its dense ndarray. numpy would do the same through ``__array__``, but is slower for 0-d
+    Arrays.
     """
     if isinstance(obj, Array):
         return obj._fill if obj.ndim == 0 else obj.todense()
@@ -208,10 +212,12 @@ def _unwrap_nested(obj):
 
 
 def from_coo(coords, data, shape=None, *, fill_value=None, dtype=None):
-    """An Array storing ``data`` at ``coords`` (one index array per axis, or an (ndim, nnz)
-    array), and ``fill_value`` (0 by default) elsewhere. ``data`` may be a scalar. Values at a
-    repeated coordinate are summed (logical or for bool), as pydata/sparse and scipy.sparse
-    do.
+    """An Array that stores ``data`` at ``coords`` and has ``fill_value`` elsewhere.
+
+    ``coords`` is one index array per axis, or one array of shape (ndim, nnz). ``data`` is
+    one value per coordinate, or a scalar for all of them. ``fill_value`` is 0 by default.
+    Without ``shape``, each axis has length one more than its largest index. Values at a
+    repeated coordinate are summed (logical or for bool), as pydata/sparse and scipy.sparse do.
     """
     data = np.asarray(data)
     dt = as_dtype(dtype) if dtype is not None else check_supported(data.dtype, "from_coo data")
@@ -233,8 +239,9 @@ def from_coo(coords, data, shape=None, *, fill_value=None, dtype=None):
         if data.ndim:
             T = Tensor.from_coo(coords, data, gdt, shape=shape, dup_op=plus)
         else:
-            # One value everywhere (iso, which keeps no duplicates); when coordinates
-            # repeat, each sums its copies: built again from the value repeated
+            # One value for every coordinate builds an iso Tensor, which keeps one entry per
+            # repeated coordinate. When coordinates repeat, build again from the value
+            # repeated, so that each sums its copies.
             T = Tensor.from_coo(coords, data, gdt, shape=shape)
             if T.nvals < coords[0].size and dt.kind != "b":
                 data = np.broadcast_to(data, coords[0].shape)
@@ -290,7 +297,7 @@ def ones(shape, *, dtype=None, device=None):
 
 
 def empty(shape, *, dtype=None, device=None):
-    """Zeros: an empty array stores nothing, and its fill is 0 of the dtype."""
+    """The same as ``zeros``: an empty array stores nothing, and its fill is 0 of the dtype."""
     return zeros(shape, dtype=dtype, device=device)
 
 
@@ -405,7 +412,8 @@ def _tri(x, k, lower):
         raise ValueError("tril and triu need at least 2 dimensions")
     zero = _default_fill(x.dtype)
     if not _utils.same_value(x._fill, zero):
-        # The kept triangle holds the fill where nothing is stored: store it there first
+        # The result's fill is 0, so the kept triangle must store x's fill where x stores
+        # nothing: convert x to fill 0 first
         _utils.check_dense(x.size, "tril or triu of an array whose fill is not 0")
         x = _from_numpy(x.todense())
     T = x._T()
