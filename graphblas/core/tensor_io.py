@@ -240,13 +240,7 @@ def to_pydata_sparse(T, format="coo", *, compressed_axes=None):
         )
     # pydata COO is in C order without duplicates: the sorted coordinates (a relayout when
     # the layout is not the identity axis order), unraveled into the (ndim, nvals) array
-    M, lay = T._M, T._layout
-    identity = tuple(range(T.ndim))
-    if lay.seq != identity:
-        targets = frozenset(
-            (identity, p) for p in range(T.ndim + 1) if tl._valid_split(shape, identity, p)
-        )
-        M, lay = tl.relayout(M, shape, lay, targets)
+    M, lay = tl.c_order(T._M, shape, T._layout)
     r, c, values = M.to_coo()
     indices = np.empty((T.ndim, values.size), np.int64)
     _unravel_into(r.view(np.int64), shape, lay.rows, indices)

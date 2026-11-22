@@ -112,11 +112,7 @@ def _reshape(t, shape):
     if targets := _reshape_targets(t._shape, shape):
         M, src = tl.relayout(t._M, t._shape, t._layout, targets)
         return Tensor._from_M(M, shape, _reshape_layout(t._shape, src, shape))
-    identity = tuple(range(t.ndim))
-    targets = frozenset(
-        (identity, p) for p in range(t.ndim + 1) if tl._valid_split(t._shape, identity, p)
-    )
-    M, _ = tl.relayout(t._M, t._shape, t._layout, targets)
+    M, _ = tl.c_order(t._M, t._shape, t._layout)
     layout = tl.default_layout(shape, M._nvals)
     nrows, ncols = tl.prod(shape, layout.rows), tl.prod(shape, layout.cols)
     # (never the shared Matrix in place)

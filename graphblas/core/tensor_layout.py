@@ -1118,6 +1118,15 @@ def relayout(M, shape, src, targets, *, nthreads=None, allow_perm=None):
     return M, Layout.from_state(state)
 
 
+def c_order(M, shape, src):
+    """``relayout`` to the identity axis order, at any split that fits; ``(M, src)`` when
+    ``src`` is in that order already.
+    """
+    seq = tuple(range(len(shape)))
+    targets = frozenset((seq, p) for p in range(len(shape) + 1) if _valid_split(shape, seq, p))
+    return relayout(M, shape, src, targets)
+
+
 _CENSUS_PERMS = {"no PERM": {"rows", "cols"}, "no PERM_R": {"rows"}, "no PERM_C": {"cols"}}
 
 

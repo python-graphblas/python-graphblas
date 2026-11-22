@@ -628,15 +628,7 @@ class Tensor(BaseType):
 
         Missing entries take ``fill_value``; without one, a missing entry raises.
         """
-        M, lay = self._M, self._layout
-        identity = tuple(range(self.ndim))
-        if lay.seq != identity:
-            targets = frozenset(
-                (identity, p)
-                for p in range(self.ndim + 1)
-                if tl._valid_split(self._shape, identity, p)
-            )
-            M, lay = tl.relayout(M, self._shape, lay, targets)
+        M, _ = tl.c_order(self._M, self._shape, self._layout)
         return M.to_dense(fill_value, dtype).reshape(self._shape)
 
     def _named(self, name):
@@ -653,14 +645,8 @@ class Tensor(BaseType):
         stored order without moving data.
         """
         M, lay = self._M, self._layout
-        identity = tuple(range(self.ndim))
-        if sort and lay.seq != identity:
-            targets = frozenset(
-                (identity, p)
-                for p in range(self.ndim + 1)
-                if tl._valid_split(self._shape, identity, p)
-            )
-            M, lay = tl.relayout(M, self._shape, lay, targets)
+        if sort:
+            M, lay = tl.c_order(M, self._shape, lay)
         r, c, v = M.to_coo(dtype, rows=indices, columns=indices, values=values, sort=sort)
         if not indices:
             return None, v
