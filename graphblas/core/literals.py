@@ -827,7 +827,7 @@ def _beyond_as_infinity(np_type, value):
     :func:`_weak_literal_udt` reads it (with a record's dict already made a
     tuple). No element equals a literal with such an int, whatever its other
     leaves, and infinity of the int's sign equals no element either. Every other
-    value is kept, so a text leaf still pairs with its field. Return ``None`` if
+    value is kept, so a text leaf still lines up with its field. Return ``None`` if
     ``value`` holds no such int.
     """
     found = False

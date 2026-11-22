@@ -177,7 +177,7 @@ def _iter_leaves(np_type):
     (numpy keeps ``np.dtype((np.dtype(("?", (2,))), (3,)))`` as it is given),
     in field order, so it reaches every value an element holds. A leaf inside
     an array of records or of arrays comes once, as its record or inner array
-    declares it. ``udt._iter_record_leaves``, which pairs two records' leaves
+    declares it. ``udt._iter_record_leaves``, which matches two records' leaves
     for an op, yields an array of records as one leaf.
     """
     if np_type.names is not None:
@@ -630,10 +630,10 @@ def unify(type1, type2, *, is_left_scalar=False, is_right_scalar=False):
     unify(BOOL, UINT16) -> UINT16
     unify(FP32, INT32) -> FP64
 
-    ``is_left_scalar`` and ``is_right_scalar`` are accepted and ignored, for code
-    that still passes them; python-graphblas itself no longer does. A Python
-    number is typed before it gets here (``literals._literal_operand``), and a
-    typed scalar promotes as any operand does, as numpy 2 promotes it.
+    ``is_left_scalar`` and ``is_right_scalar`` are accepted and ignored, for
+    callers outside python-graphblas that pass them. A Python number is typed
+    before it gets here (``literals._literal_operand``), and a typed scalar
+    promotes as any operand does, as numpy 2 promotes it.
     """
     if type1 is type2:
         return type1

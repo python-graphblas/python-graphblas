@@ -97,16 +97,16 @@ def _strip_leading_ones(shape):
 
 
 def _record_leaf_mismatch(leaves_x, leaves_y):
-    """Return where the leaves of two records do not pair, or ``None`` if they do.
+    """Return where the leaves of two records do not match, or ``None`` if they match.
 
-    ``leaves_x`` and ``leaves_y`` are :func:`_iter_record_leaves` lists. The
-    operands of a lifted op (:func:`_check_udt_pair`), and an element and the
-    one it is stored in (:func:`_corresponding_leaves`), pair as records when
-    they nest the same way, with the same field names in the same order at
-    every level, and each field has the same shape in both; field dtypes may
-    differ. The result is ``"nesting"``, or ``(c_access, shape_x, shape_y)``
-    for the first field whose shapes differ. Array UDTs pair by rules that
-    differ on purpose: operands broadcast, a stored element does not.
+    ``leaves_x`` and ``leaves_y`` are :func:`_iter_record_leaves` lists. Two
+    records match, as the operands of a lifted op (:func:`_check_udt_pair`) and
+    as an element and the one it is stored in (:func:`_corresponding_leaves`),
+    when they nest the same way, with the same field names in the same order at
+    every level, and each field has the same shape in both. Field dtypes may
+    differ. The result is ``"nesting"``, or ``(c_access, shape_x, shape_y)`` for
+    the first field whose shapes differ. Array UDTs follow other rules on
+    purpose: operands broadcast, and a stored element does not.
     """
     if [py for py, _c, _d in leaves_x] != [py for py, _c, _d in leaves_y]:
         return "nesting"
