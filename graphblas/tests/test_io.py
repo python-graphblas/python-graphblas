@@ -211,15 +211,14 @@ def test_to_networkx_limits(monkeypatch):
 
 @pytest.mark.skipif("not nx")
 def test_from_networkx_undirected():
-    # Undirected graphs go through from_networkx's direct COO path (no scipy),
-    # which symmetrizes off-diagonal entries and keeps self-loops single-counted.
+    # An undirected graph stores each edge in both directions, and each self-loop once
     G = nx.Graph()
     G.add_weighted_edges_from([(0, 1, 2.0), (0, 0, 7.0), (1, 2, 3.0)])
     M = gb.io.from_networkx(G)
     expected = gb.Matrix.from_coo([0, 0, 1, 1, 2], [0, 1, 0, 2, 1], [7.0, 2.0, 2.0, 3.0, 3.0])
     assert M.isequal(expected, check_dtype=True)
 
-    # weight=None ignores edge weights (all entries 1) and yields an int Matrix
+    # weight=None ignores the weights: every entry is 1, as INT64
     M_none = gb.io.from_networkx(G, weight=None)
     expected_none = gb.Matrix.from_coo([0, 0, 1, 1, 2], [0, 1, 0, 2, 1], 1)
     assert M_none.isequal(expected_none, check_dtype=True)
@@ -242,9 +241,8 @@ def _uniform_adjacency(G, nodelist, value):
 @pytest.mark.parametrize("selfloop", [False, True])
 @pytest.mark.parametrize("weight", [None, "weight"])
 def test_from_networkx_uniform_weights_are_iso(graph_cls, selfloop, weight):
-    # Every stored entry is the same value, so the matrix is stored iso, as
-    # from_scipy_sparse stored it. An undirected self-loop used to put both wt and
-    # -wt (the diagonal correction) into the values the uniformity test reads.
+    # Every entry is the same value, so the matrix is stored iso, as from_scipy_sparse
+    # stores it, with or without an undirected self-loop.
     G = graph_cls()
     G.add_weighted_edges_from([(0, 1, 2.5), (1, 2, 2.5)])
     if selfloop:
@@ -272,14 +270,14 @@ def test_from_networkx_undirected_selfloop_keeps_its_weight(wt):
 
 @pytest.mark.skipif("not nx")
 def test_from_networkx_undirected_selfloop_dtype():
-    # A self-loop needs no diagonal correction -wt, which cannot be written in an
-    # unsigned dtype (numpy 2 raises OverflowError).
+    # A self-loop keeps its weight in an unsigned dtype, where the diagonal correction
+    # -wt that nx.to_scipy_sparse_array computes cannot be written
     G = nx.Graph()
     G.add_weighted_edges_from([(0, 1, 2), (1, 1, 5)])
     M = gb.io.from_networkx(G, dtype="uint8")
     expected = gb.Matrix.from_coo([0, 1, 1], [1, 0, 1], [2, 2, 5], dtype="uint8")
     assert M.isequal(expected, check_dtype=True)
-    # Nor does a self-loop change the inferred dtype (-True made bool weights int64).
+    # Bool weights with a self-loop stay BOOL
     G = nx.Graph()
     G.add_weighted_edges_from([(0, 1, True), (1, 2, False), (1, 1, True)])
     M = gb.io.from_networkx(G)
@@ -287,8 +285,8 @@ def test_from_networkx_undirected_selfloop_dtype():
         [0, 1, 1, 1, 2], [1, 0, 1, 2, 1], [True, True, True, False, False]
     )
     assert M.isequal(expected, check_dtype=True)
-    # Nor is an unsigned numpy weight negated: -np.uint8(1) wraps to 255, so beside
-    # an int weight (the values infer int64) the self-loop summed to 257.
+    # An np.uint8 self-loop weight among int weights (the values are INT64) stays 1;
+    # negated, it would wrap to 255
     G = nx.Graph()
     G.add_weighted_edges_from([(0, 1, 2), (1, 1, np.uint8(1))])
     M = gb.io.from_networkx(G)
@@ -298,19 +296,16 @@ def test_from_networkx_undirected_selfloop_dtype():
 
 @pytest.mark.skipif("not nx")
 def test_from_networkx_int32_weights_like_from_coo():
-    # np.int32 scalar weights infer an int32 array from the edge sequence, and
-    # from_coo keeps INT32 for a sequence of np.int32 values. from_networkx must
-    # agree, or identical weights would produce different dtypes depending on
-    # which constructor they came through.
+    # np.int32 weights give INT32, as they do in from_coo
     G = nx.DiGraph()
     G.add_weighted_edges_from([(0, 1, np.int32(2)), (1, 0, np.int32(3))])
     M = gb.io.from_networkx(G)
     expected = gb.Matrix.from_coo([0, 1], [1, 0], [np.int32(2), np.int32(3)])
     assert expected.dtype == dtypes.INT32
     assert M.isequal(expected, check_dtype=True)
-    # An explicit dtype bypasses inference and is preserved exactly.
+    # A dtype given is kept
     assert gb.io.from_networkx(G, dtype="int32").dtype == dtypes.INT32
-    # Narrower ints are not special-cased; this also matches from_coo.
+    # np.int16 weights give INT16, also as in from_coo
     H = nx.DiGraph()
     H.add_weighted_edges_from([(0, 1, np.int16(2))])
     assert gb.io.from_networkx(H).dtype == dtypes.INT16
@@ -338,9 +333,8 @@ def test_from_networkx_rejects_array_weights(graph_cls):
     "graph_cls", [nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph] if nx else []
 )
 def test_from_networkx_matches_scipy(graph_cls):
-    # Both simple graphs and multigraphs now build the coo directly (no scipy
-    # round-trip); the result must reproduce nx.to_scipy_sparse_array exactly,
-    # including parallel-edge and parallel-self-loop weight sums.
+    # The same Matrix as through nx.to_scipy_sparse_array, including the sums of
+    # parallel edges and of parallel self-loops
     G = graph_cls()
     G.add_weighted_edges_from([(0, 1, 2.0), (1, 2, 3.0), (2, 0, 4.0), (0, 0, 5.0)])
     if G.is_multigraph():

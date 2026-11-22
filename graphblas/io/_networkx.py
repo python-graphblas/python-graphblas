@@ -30,11 +30,10 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
     if dtype is not None:
         dtype = lookup_dtype(dtype).np_type
 
-    # The node selection below mirrors nx.to_scipy_sparse_array so that empty
-    # graphs, nodelist subsets, missing nodes, and duplicate nodes raise the
-    # same errors and produce the same ordering. Building the coo arrays here
-    # (instead of via a scipy sparse round-trip) skips the extra coo -> csr
-    # materialization and the scipy.sparse import, which alone costs over 100ms.
+    # The checks of the graph and nodelist below are nx.to_scipy_sparse_array's, so
+    # the errors and the node order are the same. Building the coo arrays here, not
+    # through scipy, skips scipy's coo -> csr conversion and the scipy.sparse import
+    # (about 100 ms on its own).
     import numpy as np
 
     from .. import backend
@@ -96,8 +95,8 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
                 "edge weights must be numeric scalars"
             ) from err
     if values.size == 0:
-        # An empty graph has no data to infer a dtype from; scipy defaults an
-        # empty coo array to float64, so match that when dtype is unset.
+        # With no edges there is no weight to infer a dtype from, and the values are
+        # float64 when dtype is not given, as nx.to_scipy_sparse_array gives them.
         return Matrix(lookup_dtype(values.dtype), nrows=nlen, ncols=nlen, name=name)
 
     rows = np.array(row, dtype=np.uint64)
@@ -118,12 +117,10 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
         # coordinate, so it needs no accumulator.
         dup_op = plus
     elif backend == "suitesparse" and (values[[0]] == values).all():
-        # Every edge carries the same weight, which is the whole story for an
-        # unweighted graph. Store one value rather than one per entry, as
-        # ``from_scipy_sparse`` does for the same data. SuiteSparse used to
-        # notice this after a build on its own; 10.5.0 stopped ("no longer do
-        # a post-iso check"), so ask for it outright. A multigraph is excluded
-        # because ``plus`` can make uniform inputs non-uniform.
+        # Every edge has the same weight, as in an unweighted graph, so store the value
+        # once (iso), as ``from_scipy_sparse`` does. SuiteSparse 10.5.0 and later do not
+        # find that out after a build. A multigraph takes the ``plus`` branch above
+        # instead, since summing parallel edges can make equal weights differ.
         A = Matrix(lookup_dtype(values.dtype), nrows=nlen, ncols=nlen, name=name)
         A.ss.build_scalar(rows, cols, values[0])
         return A
