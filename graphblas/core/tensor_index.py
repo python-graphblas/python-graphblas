@@ -822,7 +822,8 @@ def _extract_recipe(updater, t, sel, keys):
         return
     if how == "rows":
         S = _hyper_rows_pick(t, sel, keys, renum, shape, layout)
-        _store(updater, S.mxm(t._M, tl._perm_semiring(t._M)).new(), shape, layout, fresh=True)
+        # (computed into a Matrix held by row; a .new() would follow the global format)
+        _store(updater, S.mxm(t._M, tl._perm_semiring(t._M)), shape, layout)
         return
     # Filter the stored coordinates: cheaper than listing many indices (a slab of a wide
     # column group), and the only way past _MAX_LISTED positions

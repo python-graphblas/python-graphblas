@@ -421,6 +421,38 @@ def test_by_col_global_format():
         gb.ss.config["format"] = prev
 
 
+@pytest.fixture
+def by_col_global():
+    """Set SuiteSparse's global format to by column for one test, and restore it after."""
+    prev = gb.ss.config["format"]
+    gb.ss.config["format"] = "by_col"
+    yield
+    gb.ss.config["format"] = prev
+
+
+def test_extract_rows_pick_by_col_global(by_col_global):
+    """The extract that picks rows of a hypersparse row group stores its result by row when
+    the global format is by column, which a result made by ``.new()`` would follow.
+    """
+    from graphblas.core import tensor_census as census
+
+    rng = np.random.default_rng(1122)
+    X, xv, xp = random_tensor((60, 60, 4), rng, density=0.02, layout=((1, 0), (2,)))
+    assert X.ss.format == "hypercsr"
+    assert xp[5, 2:18].any()
+    census.start()
+    try:
+        census.force["extract"] = "rows"
+        R = X[5, 2:18].new()
+        records = census.stop()
+    finally:
+        census.stop()
+        census.force.clear()
+        census.records.clear()
+    assert [r["choice"] for r in records if r["point"] == "extract"] == ["rows"]
+    check(R, xv[5, 2:18], xp[5, 2:18])
+
+
 # --------------------------------------------------------------------------------------------
 # Relayout
 
