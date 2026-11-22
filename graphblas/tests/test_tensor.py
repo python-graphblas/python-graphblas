@@ -283,6 +283,7 @@ def test_to_coo_order(layout):
 
 def test_from_matrix_and_back():
     A = Matrix.from_coo([0, 1, 2], [1, 2, 0], [1.0, 2.0, 3.0], nrows=3, ncols=4)
+    A.ss.config["format"] = "by_row"  # (whatever the global format)
     T = Tensor.from_matrix(A)
     T._check_invariants()
     assert T.shape == (3, 4)
@@ -1306,6 +1307,7 @@ def test_flip_orientation_and_helpers():
         assert not tl.is_by_row(B)
         assert B.isequal(A)
     H = Matrix.from_coo([0, 2**40], [1, 2], [1.0, 2.0], nrows=2**41, ncols=4)
+    H.ss.config["format"] = "by_row"  # (whatever the global format)
     assert H.ss.format == "hypercsr"
     assert tl.nonempty_rows(H) == 2
     assert tl.nonempty_rows(A) == 3
@@ -3261,6 +3263,7 @@ def test_embed_block_diagonal():
         lin = np.unique(r.astype(np.int64) * K + c)
         r, c = lin // K, lin % K
         M = Matrix.from_coo(r, c, np.arange(r.size, dtype=float), nrows=r.max() + 1, ncols=K)
+        M.ss.config["format"] = "by_row"  # (whatever the global format)
         M.resize(rows_per_block * nblocks, K)
         M.ss.config["sparsity_control"] = fmt
         assert tl.embed_block_diagonal(M, rows_per_block, nblocks)
@@ -3276,11 +3279,13 @@ def test_embed_block_diagonal():
     M = Matrix.from_dense(np.ones((4, 3)))
     assert not tl.embed_block_diagonal(M, 2, 2)
     E = Matrix(float, 4, 3)
+    E.ss.config["format"] = "by_row"
     E.ss.config["sparsity_control"] = "sparse"
     assert tl.embed_block_diagonal(E, 2, 2)
     assert E.shape == (4, 6)
     # 32-bit column indices cannot hold 2^32 columns: nothing changes
     W = Matrix.from_coo([0, 3], [1, 2], [1.0, 2.0], nrows=4, ncols=2**30)
+    W.ss.config["format"] = "by_row"
     with tl._Unloaded(W) as cont, tl._VectorArray(cont.i) as i_arr:
         wide = i_arr.array.dtype.itemsize == 8
     assert tl.embed_block_diagonal(W, 1, 4) == wide
@@ -5735,6 +5740,7 @@ def test_nonempty_row_ids_and_perm_pricing():
     c = np.array([0, 2, 1, 0, 1, 3])
     for fmt in ["sparse", "hypersparse", "bitmap"]:
         M = Matrix.from_coo(r, c, 1.0, nrows=12, ncols=4)
+        M.ss.config["format"] = "by_row"  # (whatever the global format)
         M.ss.config["sparsity_control"] = fmt
         np.testing.assert_array_equal(tl.nonempty_row_ids(M), [1, 5, 9])
         M2 = M.dup()
@@ -7448,10 +7454,13 @@ def test_plan_prices_the_first_transpose_on_the_data(monkeypatch):
     rng = np.random.default_rng(706)
     M = Matrix.from_coo(rng.integers(0, 50, 20000), rng.integers(0, 10, 20000) * 997, 1.0,
                         nrows=50, ncols=10**6)  # fmt: skip
+    M.ss.config["format"] = "by_row"  # (whatever the global format)
     est = tl.sampled_nonempty_cols(M)
     assert 9 <= est <= 10
     # Every sampled column distinct (one entry): all of them; no column index array: none
-    assert tl.sampled_nonempty_cols(Matrix.from_coo([1], [5], 1.0, nrows=3, ncols=10**6)) == 1
+    M = Matrix.from_coo([1], [5], 1.0, nrows=3, ncols=10**6)
+    M.ss.config["format"] = "by_row"
+    assert tl.sampled_nonempty_cols(M) == 1
     assert tl.sampled_nonempty_cols(Matrix.from_dense(np.ones((3, 4)))) is None
     assert tl.sampled_nonempty_cols(Matrix(float, 3, 4)) is None
     # Enron's (0,1|2,3) relayouts at 1 thread: uniform columns against measured ones
