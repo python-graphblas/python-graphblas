@@ -43,8 +43,8 @@ def head(vector, n=10, dtype=None, *, sort=False):
     else:
         dtype = lookup_dtype(dtype)
     indices, vals = zip(*itertools.islice(vector.ss.iteritems(), n), strict=True)
-    # Filled from a list: numpy reads a tuple of records as one record, and an array
-    # UDT's dtype would add its shape to that of each value.
+    # Filled from a list, since np.array reads a tuple of records as one record, and
+    # adds an array UDT's shape to the shape of each value.
     values = np.empty(len(vals), dtype.np_type)
     values[...] = list(vals)
     return np.array(indices, np.uint64), values

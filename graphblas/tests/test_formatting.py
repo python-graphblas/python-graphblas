@@ -162,10 +162,9 @@ def t():
 
 
 def test_no_pandas_repr(A, C, v, w):
-    # The rich repr is hand-rendered, so it no longer depends on pandas: with
-    # pandas marked absent the output is byte-identical to the pandas-present
-    # output, data grid and all. (When pandas is genuinely absent both branches
-    # use the same pandas-free path, so this still exercises that code.)
+    # The repr does not need pandas: with pandas marked absent, the output is
+    # byte-identical to the output with pandas, data grid and all. (Without pandas
+    # installed, both take the same path, which this still tests.)
     objs = [A, A.T, C, C.S, ~C.V, v, v.S, ~w.V, w]
     expected = [repr(x) for x in objs]
     has_pandas_prev = formatting.has_pandas
@@ -175,8 +174,7 @@ def test_no_pandas_repr(A, C, v, w):
     finally:
         formatting.has_pandas = has_pandas_prev
     assert actual == expected
-    # The data grid is rendered, not just the header: the border line and the
-    # values are present.
+    # The data grid is rendered, not only the header
     lines = repr(A).split("\n")
     assert lines[2].startswith("----")
     assert lines[-1] == "0  0    1    2"
@@ -515,8 +513,8 @@ def test_scalar_repr(s, t):
 
 
 def test_no_pandas_repr_html(A, C, v, w):
-    # _repr_html_ is hand-rendered too: marking pandas absent yields output that
-    # is byte-identical to the pandas-present output, data table included.
+    # Nor does _repr_html_: with pandas marked absent, the output is byte-identical
+    # to the output with pandas, data table and all.
     objs = [A, A.T, C, C.S, ~C.V, v, v.S, ~w.V, w]
     expected = [repr_html(x) for x in objs]
     has_pandas_prev = formatting.has_pandas
@@ -526,7 +524,7 @@ def test_no_pandas_repr_html(A, C, v, w):
     finally:
         formatting.has_pandas = has_pandas_prev
     assert actual == expected
-    # The data table is rendered, not the "install pandas" placeholder.
+    # The data table is rendered, not a note to install pandas
     html = repr_html(A)
     assert "install" not in html.lower()
     assert '<table border="1" class="dataframe">' in html
@@ -4421,8 +4419,7 @@ def test_repr_html_no_mathjax():
 
 def test_repr_html_ignores_notebook_repr_html(v):
     # Deliberately not pandas' output: with display.notebook_repr_html off, pandas'
-    # DataFrame._repr_html_ returns None, which the pandas-based renderer embedded as
-    # the text "None" where the table goes. The table is shown either way now.
+    # DataFrame._repr_html_ returns None, but the table is shown either way.
     expected = repr_html(v)
     with display_options("display.notebook_repr_html", False):
         assert repr_html(v) == expected
@@ -4515,8 +4512,8 @@ def test_repr_max_rows_zero(monkeypatch):
             "9     649  13.5\n"
             "...   ...   ..."
         )
-    # A terminal with room for one row leaves none to show. main's pandas renderer
-    # raised TypeError here (pandas fails on a frame truncated to no rows).
+    # A terminal with room for one row leaves none to show (pandas raises TypeError on a
+    # frame truncated to no rows).
     v = Vector.from_coo([100, 161, 222], [1.5, -1.0, 2.5], size=1000, name="v")
     monkeypatch.setenv("LINES", "4")
     with display_options("display.max_rows", 0):
@@ -4653,7 +4650,7 @@ def test_repr_display_options_none(monkeypatch, use_pandas):
     # pandas takes None for max_rows, min_rows and max_columns as no limit. A repr shows up
     # to 150 rows or columns instead, and the first and last 75 of more: max_rows=None is
     # max_rows=151 with min_rows=150, so the COO form can show 150 entries and its "..." row.
-    # A min_rows of None is max_rows, as in pandas. Before, each raised TypeError.
+    # A min_rows of None is max_rows, as in pandas.
     if use_pandas and pd is None:  # pragma: no cover (no pandas)
         pytest.skip("needs pandas")
     if not use_pandas:
@@ -6184,7 +6181,7 @@ def test_udt_one_field_repr():
         "index     0 1      2\n"
         "value  (5,)    (-7,)"
     )
-    # In COO form too, where main's pandas renderer raised TypeError on the record column
+    # In COO form too (pandas raises TypeError on the record column)
     v = Vector(udt, size=1000, name="v")
     v[100] = (5,)
     v[500] = (-7,)
