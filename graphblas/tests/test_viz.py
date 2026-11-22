@@ -2,10 +2,9 @@
 
 The viz module is optional-dependency heavy (matplotlib, networkx, scipy for
 ``spy``/``draw``; datashader + holoviews + hvplot + bokeh + pandas for
-``datashade``). These tests only check that each public function runs end to end
-under the headless Agg backend and populates a figure/returns an object; they do
-not assert on pixel output. Anything missing is skipped, not failed, so a
-minimal-dependency CI run sees clean skips.
+``datashade``). Most of these tests check that each public function runs under the
+headless Agg backend and fills a figure or returns an object; two check where labels
+and elements land. A missing dependency skips the tests that need it.
 """
 
 import importlib
@@ -23,12 +22,12 @@ def _importorskip(modname):
     """Skip when an optional dependency is missing *or* installed but unusable.
 
     From pytest 9.1 on, ``pytest.importorskip`` counts only ``ModuleNotFoundError``
-    as "missing".  A dependency that is installed but cannot run raises a plain
-    ``ImportError`` instead (matplotlib does exactly that when numpy is older than
-    it supports), which escapes ``importorskip`` and aborts collection for the
-    whole session.  pytest's ``exc_type`` argument covers that, but it only exists
-    in pytest >=8.2 and this project supports pytest >=6.2, so do the import here
-    and hand the already-imported module to pytest.
+    as "missing". A dependency that is installed but cannot run raises a plain
+    ``ImportError`` instead (matplotlib does when numpy is older than it supports),
+    which escapes ``importorskip`` and aborts collection for the whole session.
+    pytest's ``exc_type`` argument covers that, but it only exists in pytest 8.2 and
+    later, and this project supports pytest 6.2 and later, so do the import here and
+    hand the imported module to pytest.
     """
     try:
         with warnings.catch_warnings():
@@ -83,8 +82,7 @@ def test_spy_centered():
 
 
 def test_spy_with_axes():
-    # Passing an explicit Axes exercises the ``axes is not None`` branch,
-    # including the auto-markersize path (which once raised NameError here).
+    # An Axes given, so spy computes the markersize from it
     _importorskip("scipy.sparse")
     A = square_matrix()
     fig = mpl.figure.Figure()
@@ -95,8 +93,7 @@ def test_spy_with_axes():
 
 
 def test_spy_with_figure():
-    # Passing an explicit Figure (no Axes) once raised NameError; spy should
-    # create the Axes on the given figure and return that same figure.
+    # A Figure given without Axes: spy adds the Axes to it and returns it
     _importorskip("scipy.sparse")
     A = square_matrix()
     fig = mpl.figure.Figure()
@@ -132,8 +129,8 @@ def test_draw_rejects_non_matrix():
 
 @pytest.mark.parametrize(("nrows", "ncols"), [(2, 5), (5, 2)])
 def test_draw_rejects_non_square(nrows, ncols):
-    # A rectangular Matrix used to draw as a graph of its rows plus whichever
-    # columns had entries.
+    # Drawn, a rectangular Matrix would be a graph of its rows and whichever columns
+    # have entries
     _importorskip("networkx")
     M = Matrix.from_coo([0, 1], [1, 0], [1.0, 2.0], nrows=nrows, ncols=ncols)
     with pytest.raises(ValueError, match=rf"square Matrix, not shape \({nrows}, {ncols}\)"):
@@ -142,7 +139,7 @@ def test_draw_rejects_non_square(nrows, ncols):
 
 @pytest.mark.skipif("not dtypes._supports_complex")
 def test_draw_rejects_complex():
-    # networkx's layout used to raise "float() argument must be ... not 'complex'"
+    # Without the check, networkx's layout raises "float() argument must be ... not 'complex'"
     _importorskip("networkx")
     M = Matrix.from_coo([0, 1], [1, 0], [1j, 2], nrows=2, ncols=2)
     with pytest.raises(TypeError, match="booleans or real numbers, not FC64"):
@@ -154,7 +151,7 @@ def test_draw_rejects_complex():
     reason="building a UDT Matrix needs binary.any on it, which vanilla has only through Numba",
 )
 def test_draw_rejects_udt():
-    # networkx's layout used to raise "shape mismatch: value array of shape (2,2) ..."
+    # Without the check, networkx's layout raises "shape mismatch: value array of shape (2,2) ..."
     _importorskip("networkx")
     import numpy as np
 
@@ -166,15 +163,14 @@ def test_draw_rejects_udt():
 
 @pytest.mark.filterwarnings("ignore:FigureCanvasAgg is non-interactive")
 def test_draw_reciprocal_edges_both_labels_visible():
-    # Regression for gh-474: reciprocal directed edges (0->1 and 1->0) used to be
-    # drawn as coincident straight lines, so one weight hid the other. draw() now
-    # curves reciprocal pairs; both weights must appear at distinct positions.
+    # Reciprocal directed edges (0->1 and 1->0) are curved, so their weights show at
+    # different positions (gh-474)
     nx = _importorskip("networkx")
     _importorskip("scipy.sparse")
     # draw() only curves reciprocal pairs when networkx can place edge labels along
     # the curve; without that it deliberately draws every edge straight, and the two
     # labels then coincide (which test_draw_without_networkx_curved_label_support
-    # covers).  Ask the same question draw() asks, so the two cannot drift apart.
+    # covers). Ask the question draw() asks, so that the two cannot drift apart.
     if "connectionstyle" not in inspect.signature(nx.draw_networkx_edge_labels).parameters:
         pytest.skip("networkx <3.3: draw_networkx_edge_labels has no connectionstyle")
     M = Matrix.from_coo([0, 1], [1, 0], [10, 20], nrows=2, ncols=2)
@@ -185,11 +181,9 @@ def test_draw_reciprocal_edges_both_labels_visible():
     assert {t.get_text() for t in weight_labels} == {"10", "20"}, "both weights must be drawn"
     assert len(weight_labels) == 2
 
-    # Old behavior placed both labels on the shared straight-line midpoint.
-    # networkx returns two anchors there that differ only by floating-point
-    # noise (order 1e-6), so an exact ``!=`` comparison passes even when the
-    # labels sit on top of each other.  Require a separation that is a real
-    # fraction of the distance between the two nodes instead.
+    # Straight edges put both labels at the shared midpoint, in positions that differ
+    # by floating-point noise (about 1e-6), so an exact ``!=`` would pass. Require a
+    # separation that is a real fraction of the distance between the two nodes.
     node_positions = [t.get_position() for t in ax.texts if t.get_text() in {"0", "1"}]
     assert len(node_positions) == 2
     edge_length = math.dist(*node_positions)
@@ -199,9 +193,9 @@ def test_draw_reciprocal_edges_both_labels_visible():
 
 @pytest.mark.filterwarnings("ignore:FigureCanvasAgg is non-interactive")
 def test_draw_without_networkx_curved_label_support(monkeypatch):
-    # draw_networkx_edge_labels gained connectionstyle in networkx 3.3, and the
-    # project supports 3.2.  Standing in a pre-3.3 signature must not raise; the
-    # gh-474 curving is skipped and every edge renders straight, as it did before.
+    # draw_networkx_edge_labels takes connectionstyle from networkx 3.3 on, and we
+    # support 3.2. With a stand-in for the older signature, draw does not raise, and
+    # it draws every edge straight.
     nx = _importorskip("networkx")
     _importorskip("scipy.sparse")
     real = nx.draw_networkx_edge_labels
@@ -264,10 +258,9 @@ def test_datashade_empty_agg():
 
 
 def test_datashade_positions_match_spy():
-    # Regression for gh-473: element (row=r, col=c) must render centered on the
-    # integer tick pair (col, row), the same convention ``spy`` uses.  We check
-    # the datashader aggregation directly (no display) over the limits the
-    # interactive path uses, at one pixel per matrix cell.
+    # Element (r, c) is centered on the ticks (c, r), as in ``spy`` (gh-473). This checks
+    # the datashader aggregation over the limits datashade uses, at one pixel per cell,
+    # without a display.
     _import_datashade_deps()
     import datashader as ds
     import numpy as np
@@ -294,9 +287,8 @@ def test_datashade_positions_match_spy():
 
 
 def test_datashade_bool():
-    # datashader aggregates only numbers. A boolean Matrix used to plot blank, with
-    # holoviews logging "input must be numeric" when it rendered; now its values
-    # plot as 0 and 1.
+    # datashader aggregates only numbers, so a boolean Matrix plots as 0 and 1. As
+    # bools, it plots blank, with holoviews logging "input must be numeric".
     _import_datashade_deps()
     import numpy as np
 
@@ -315,8 +307,8 @@ def test_datashade_bool():
 
 @pytest.mark.skipif("not dtypes._supports_complex")
 def test_datashade_rejects_complex():
-    # Rendering used to fail later with a numba TypingError that holoviews only
-    # logged, leaving a blank plot.
+    # Without the check, rendering fails later with a Numba TypingError that holoviews
+    # only logs, leaving a blank plot
     _import_datashade_deps()
     M = Matrix.from_coo([0, 2], [3, 1], [1j, 2], nrows=3, ncols=4)
     with pytest.raises(TypeError, match="booleans or real numbers, not FC64"):
@@ -324,7 +316,7 @@ def test_datashade_rejects_complex():
 
 
 def test_datashade_rejects_udt():
-    # Rendering used to fail later with "NumPy datatype ... not supported"
+    # Without the check, rendering fails later with "NumPy datatype ... not supported"
     _import_datashade_deps()
     import numpy as np
 
@@ -338,7 +330,7 @@ def test_datashade_rejects_udt():
 
 @pytest.mark.parametrize(("nrows", "ncols"), [(0, 0), (3, 0), (0, 4)])
 def test_datashade_rejects_no_rows_or_columns(nrows, ncols):
-    # Rendering used to fail later with ZeroDivisionError
+    # Without the check, rendering fails later with ZeroDivisionError
     _import_datashade_deps()
     M = Matrix(float, nrows, ncols)
     with pytest.raises(ValueError, match="with rows and columns"):

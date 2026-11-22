@@ -74,17 +74,14 @@ def draw(m):
     nx.draw_networkx_nodes(g, pos, node_color="red", node_size=node_size)
     nx.draw_networkx_labels(g, pos)
 
-    # A reciprocal pair (u -> v and v -> u) drawn as two straight lines coincides,
-    # hiding one edge's weight (python-graphblas #474).  Curving both edges makes
-    # each bend toward its own side, so both arrows and both labels stay visible
-    # and attributable.  Self-loops (u == v) are not reciprocal; leave them straight.
+    # Drawn straight, a reciprocal pair (u -> v and v -> u) is one line, and one weight
+    # hides the other (python-graphblas #474). Curved, each edge bends to its own side,
+    # so both arrows and both labels show. A self-loop (u == v) is not reciprocal.
     #
-    # networkx only learned to place edge labels along a curve in 3.3, and we
-    # support 3.2, so fall back to the previous straight rendering without it.
-    # Curving the edges but not the labels would be worse than not curving at all:
-    # the labels would sit back on the shared chord midpoint, which is the overlap
-    # #474 is about, and they would no longer track their arrows.  Check the
-    # parameter rather than pin a version.
+    # networkx places edge labels along a curve from 3.3 on, and we support 3.2, so
+    # without that every edge is straight: curving the edges but not their labels would
+    # leave the labels on the shared midpoint, away from their arrows. Check for the
+    # parameter rather than for a version.
     import inspect
 
     if "connectionstyle" in inspect.signature(nx.draw_networkx_edge_labels).parameters:
@@ -150,14 +147,14 @@ def spy(M, *, centered=False, show=True, figure=None, axes=None, figsize=None, *
 
 
 def _matrix_to_dataframe(M):
-    """Build the ``(row, col, val)`` DataFrame that ``datashade`` rasterizes.
+    """Return the ``(row, col, val)`` DataFrame that ``datashade`` rasterizes.
 
-    Factored out of ``datashade`` so the coordinate convention can be checked
-    without rendering an interactive plot (see ``_cell_centered_limits``).
+    Separate from ``datashade`` so that a test can check the coordinates without
+    rendering a plot (see ``_cell_centered_limits``).
     """
     np, pd = _get_imports(["np", "pd"], "datashade")
     rows, cols, vals = M.to_coo()
-    # GraphBLAS dimensions are at most 2**60, so int64 holds every uint64 index
+    # GraphBLAS dimensions are at most 2**60, so every index fits in int64
     rows = rows.astype(np.int64)
     cols = cols.astype(np.int64)
     if vals.dtype == np.bool_:
@@ -167,13 +164,12 @@ def _matrix_to_dataframe(M):
 
 
 def _cell_centered_limits(M):
-    """Axis limits that center each element on its integer index, like ``spy``.
+    """Return axis limits that center each element on its index, as ``spy`` does.
 
-    datashader bins points into pixels by ``x_range``/``y_range``.  With limits
-    ``(0, N)`` the pixel for index ``k`` spans ``[k, k+1)``, so an element lands
-    half a cell to the lower-right of the tick labeled ``k``.  Offsetting the
-    limits by half a cell makes the pixel for index ``k`` span ``[k-0.5, k+0.5)``,
-    centered on tick ``k`` and matching what ``spy`` draws (python-graphblas #473).
+    datashader bins points into pixels by ``x_range`` and ``y_range``. With limits
+    ``(0, N)``, the pixel for index ``k`` spans ``[k, k+1)``, so an element is drawn half
+    a cell off the tick for ``k``. With the limits half a cell lower, the pixel spans
+    ``[k-0.5, k+0.5)``, centered on the tick (python-graphblas #473).
     """
     return (-0.5, M.ncols - 0.5), (-0.5, M.nrows - 0.5)
 
