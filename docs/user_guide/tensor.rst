@@ -325,9 +325,9 @@ Input and output
     >>> Tensor.from_scipy_sparse(S).isequal(X)
     True
 
-scipy.sparse has n-d COO arrays from scipy 1.15 on, and 1-d ones from scipy 1.13. With an
-older scipy, ``to_scipy_sparse`` of those ranks raises ``NotImplementedError``; 2-d Tensors
-convert with any scipy.
+scipy.sparse has n-d COO arrays (more than 2 dimensions) from scipy 1.15 on. With an older
+scipy, ``to_scipy_sparse`` of those ranks raises ``NotImplementedError``; 1-d and 2-d
+Tensors convert with any scipy that python-graphblas supports.
 
 ``from_pydata_sparse`` and ``to_pydata_sparse`` convert to and from pydata/sparse arrays
 (COO, GCXS, DOK). A GCXS array is the Tensor's own storage (its compressed axes as rows),

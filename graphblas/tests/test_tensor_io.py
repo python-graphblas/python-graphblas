@@ -72,13 +72,6 @@ def _c_order(coords, shape):
     return bool((np.diff(lin) > 0).all())
 
 
-def _scipy_coords(A):
-    """A scipy COO array's coordinates (scipy before 1.13 has ``row`` and ``col``, not
-    ``coords``).
-    """
-    return (A.row, A.col) if A.ndim == 2 else A.coords
-
-
 def _todense(s):
     """``s.todense()``, but a 0-d COO with an entry gives its value: pydata sparse before
     0.16 fails to make that one dense (``x[()] = data`` with ``data`` of length 1).
@@ -496,7 +489,7 @@ def test_scipy_round_trip(shape, dtype):
     assert B.nnz == A.nnz  # (explicit zeros kept)
     np.testing.assert_array_equal(B.todense(), A.todense())
     if B.has_canonical_format:
-        assert _c_order(np.array(_scipy_coords(B)).reshape(len(shape), -1), shape)
+        assert _c_order(np.array(B.coords).reshape(len(shape), -1), shape)
 
 
 @pytest.mark.parametrize("ndim", [1, 2, 3, 4])
@@ -514,7 +507,7 @@ def test_scipy_layouts_and_duplicates(ndim):
         # The stored order (no relayout), canonical only in the identity axis order
         assert B.has_canonical_format == (lay.seq == tuple(range(ndim)))
         if B.has_canonical_format:
-            assert _c_order(np.array(_scipy_coords(B)), shape)
+            assert _c_order(np.array(B.coords), shape)
         assert B.nnz == len(vals)
         np.testing.assert_array_equal(B.todense(), dense)
         for perm in list(itertools.permutations(range(ndim)))[:: 1 if ndim < 4 else 5]:
@@ -583,18 +576,14 @@ def test_scipy_errors(monkeypatch):
     T = Tensor.from_coo(np.array([[0, 1], [1, 2], [2, 3]]), [1.0, 2.0], shape=(2, 3, 4))
     with pytest.raises(ValueError, match="'coo' only"):
         T.to_scipy_sparse("csr")
-    # scipy.sparse is 2-d only before scipy 1.13, has 1-d COO from 1.13 and n-d from 1.15
+    # scipy.sparse has n-d COO arrays from scipy 1.15, and 1-d and 2-d ones in every scipy
+    # python-graphblas supports
     V = Tensor.from_coo(np.array([[0, 2]]), [1.0, 2.0], shape=(3,))
     M = Tensor.from_coo(np.array([[0, 1], [1, 0]]), [1.0, 2.0], shape=(2, 2))
-    real_1d = _scipy_coo_needs(1) is None  # (the real scipy makes the array below)
     monkeypatch.setattr(scipy, "__version__", "1.14.1")
     with pytest.raises(NotImplementedError, match="3-d .* requires scipy 1.15 or later"):
         T.to_scipy_sparse()
-    if real_1d:
-        assert V.to_scipy_sparse().shape == (3,)
-    monkeypatch.setattr(scipy, "__version__", "1.12.0")
-    with pytest.raises(NotImplementedError, match="1-d .* requires scipy 1.13 .* scipy 1.12.0"):
-        V.to_scipy_sparse()
+    assert V.to_scipy_sparse().shape == (3,)
     assert M.to_scipy_sparse().shape == (2, 2)
     monkeypatch.undo()
     with pytest.raises(ValueError, match="no 0-d"):

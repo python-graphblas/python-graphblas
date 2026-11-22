@@ -745,7 +745,7 @@ class Tensor(BaseType):
     def to_scipy_sparse(self, format="coo"):
         """Create a scipy.sparse array (``coo_array`` for any rank but 0).
 
-        scipy.sparse has n-d COO arrays from scipy 1.15 on and 1-d ones from 1.13; with an
+        scipy.sparse has n-d COO arrays (more than 2 dimensions) from scipy 1.15 on; with an
         older scipy, those ranks raise ``NotImplementedError``.
 
         A COO array comes in the stored order with no relayout; it is in C order (marked

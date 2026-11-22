@@ -257,11 +257,11 @@ def to_pydata_sparse(T, format="coo", *, compressed_axes=None):
 
 def _scipy_coo_needs(ndim):
     """The oldest scipy whose ``coo_array`` holds ``ndim``-d arrays, or None if this scipy
-    does: scipy.sparse is 2-d only before 1.13, has 1-d COO from 1.13 and n-d from 1.15.
+    does: scipy.sparse has n-d COO arrays from 1.15.
     """
     import scipy
 
-    need = (1, 13) if ndim == 1 else (1, 15) if ndim > 2 else (0,)
+    need = (1, 15) if ndim > 2 else (0,)
     if tuple(int(v) for v in scipy.__version__.split(".")[:2]) < need:
         return ".".join(map(str, need))
     return None
@@ -290,9 +290,9 @@ def from_scipy_sparse(cls, A, *, dup_op=None, layout=None, name=None):
     if dup_op is None:
         # As scipy: repeated coordinates add up
         dup_op = binary.lor if dtype == BOOL else binary.plus
-    # (scipy before 1.13 has no ``coords``; 2-d COO has ``row`` and ``col`` in every version)
-    coords = (A.row, A.col) if A.ndim == 2 else A.coords
-    return cls.from_coo(coords, A.data, dtype, shape=shape, layout=layout, dup_op=dup_op, name=name)
+    return cls.from_coo(
+        A.coords, A.data, dtype, shape=shape, layout=layout, dup_op=dup_op, name=name
+    )
 
 
 def to_scipy_sparse(T, format="coo"):
