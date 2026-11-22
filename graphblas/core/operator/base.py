@@ -347,17 +347,17 @@ class OpBase:
         return f"{self._modname}.{self.name}"
 
     def _build_deferred(self, type_):
-        """Build a typed op on demand for ``type_``, or return None if this op
-        has no deferred builds. Overridden where ``.types`` is populated before
-        the per-dtype numba compilation (see ``BinaryOp``).
+        """Build and return the typed op for ``type_`` if its build was deferred, else None.
+
+        ``BinaryOp`` overrides this for the built-in UDFs, which compile each dtype when it
+        is first used.
         """
         return
 
     def _materialize_deferred(self):
-        """Build every typed op that ``.types`` advertises but that has not been
-        compiled yet. A no-op unless ``_build_deferred`` defers builds; call it
-        before code that iterates ``_typed_ops`` directly (e.g. building a
-        Semiring over this op).
+        """Build every typed op in ``.types`` whose build was deferred.
+
+        Call this before reading ``_typed_ops`` directly, as ``Semiring._build`` does.
         """
         for type_ in list(self.types):
             if type_ not in self._typed_ops:

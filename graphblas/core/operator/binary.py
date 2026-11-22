@@ -51,21 +51,18 @@ if _has_numba:
     )
 
     try:
-        # Typing-only return-type inference for the module-level built-in UDFs:
-        # learn return types without lowering or codegen, so ``.types`` can be
-        # populated up front while the njit compile is deferred to first use.
-        # Numba's public API offers no way to ask for a return type without
-        # also compiling for it, so this reaches into ``numba.core``. That is
-        # internal and can change in any Numba release, so treat every part of
-        # it as breakable: a failed import or any surprise from the call leaves
-        # ``_infer_ret_types_typing_only`` returning None and ``_build`` on the
-        # eager full-compile loop, which is what it did before this existed.
+        # ``_infer_ret_types_typing_only`` learns the built-in UDFs' result types from
+        # Numba's typing pass alone, so ``.types`` is complete before any dtype compiles.
+        # Numba has no public API for a return type without a compile, so this uses
+        # ``numba.core`` internals, which can change in any Numba release. If the import
+        # fails, or the call returns something unexpected, the function returns None and
+        # ``BinaryOp._build`` compiles every dtype up front.
         from numba.core import compiler as _numba_compiler
         from numba.core import typed_passes as _numba_typed_passes
         from numba.core.registry import cpu_target as _numba_cpu_target
 
         _HAS_TYPING_ONLY = True
-    except Exception:  # pragma: no cover - numba internals moved
+    except Exception:  # pragma: no cover (numba internals moved)
         _HAS_TYPING_ONLY = False
 else:
     _HAS_TYPING_ONLY = False
@@ -458,13 +455,14 @@ def _pair_dtype(op, dtype, dtype2):
 
 
 def _adjust_ret_type(type_, ret_type, return_types):
-    """Downcast a UDF's inferred return type toward the input type when that is
-    the intent (INT->INT, FP->FP, FC->FC, and the UINT64/BOOL special cases).
+    """Return the result type of a UDF on ``type_``, given the type Numba inferred for it.
 
-    ``return_types`` holds the results already decided for earlier sample dtypes;
-    the UINT64 and BOOL rules consult INT64 and INT8, which are decided first.
-    Shared by the eager compile loop and the typing-only inference path so both
-    produce the same ``.types``.
+    An integer result for integer input is the input type, and so is a float result for
+    float input and a complex result for complex input. A UINT64 input with an FP64 result
+    gets UINT64 if INT64 kept its type, and a BOOL input with an INT64 result gets INT8 if
+    INT8 kept its type. ``return_types`` holds the results for the sample dtypes done so
+    far, which include INT64 and INT8. The eager loop and the typing-only inference both
+    call this, so they give the same ``.types``.
     """
     if ret_type != type_ and (
         ("INT" in ret_type.name and "INT" in type_.name)
@@ -481,12 +479,12 @@ def _adjust_ret_type(type_, ret_type, return_types):
 
 
 def _finalize_typed_binaryop(parent, binary_udf, name, type_, ret_type):
-    """Compile the cfunc wrapper for one dtype and register the ``GrB_BinaryOp``.
+    """Compile ``binary_udf`` for ``type_`` in a cfunc wrapper; add the typed op to ``parent``.
 
-    Shared by the eager build loop and the deferred per-dtype build. ``ret_type``
-    is already resolved (heuristic applied); this lowers ``binary_udf`` for the
-    dtype (via the cfunc), wires up the GraphBLAS op, and records the typed op.
-    For deferred built-ins this is where that dtype pays its compilation cost.
+    Return the typed op. ``ret_type`` is the result type from ``_adjust_ret_type``. The
+    eager loop in ``BinaryOp._build`` calls this for every dtype. For a built-in UDF,
+    ``BinaryOp._build_deferred`` calls it when a dtype is first used, so that is when the
+    dtype compiles.
     """
     nt = numba.types
     input_type = _bool_to_int8(type_)
@@ -539,15 +537,13 @@ def _finalize_typed_binaryop(parent, binary_udf, name, type_, ret_type):
 
 
 def _infer_ret_types_typing_only(func):
-    """Infer ``{DataType: return DataType}`` for the sample dtypes without
-    lowering ``func``, or return None on any failure so the caller falls back to
-    the eager full-compile loop.
+    """Return ``{DataType: result DataType}`` for the sample dtypes from typing alone, or None.
 
-    Used only for the module-level built-in UDFs, whose typing and lowering are
-    known to agree (verified: typing-only reproduces their live ``.types``
-    exactly). Typing is more permissive than lowering in general, so this must
-    not be used for arbitrary user funcs, where a dtype that types but fails to
-    lower would be wrongly reported as supported.
+    ``func`` is not compiled. None means that typing raised something other than a
+    TypingError for some dtype, or that Numba's internals have moved, and the caller then
+    compiles every dtype. This is only for the built-in UDFs: typing alone can accept a dtype
+    that does not compile, which only compiling would catch. For the built-ins,
+    test_builtin_udf_types_without_typing_only checks that compiling gives the same types.
     """
     if not _HAS_TYPING_ONLY:
         return None
@@ -569,7 +565,7 @@ def _infer_ret_types_typing_only(func):
                 continue
             ret_type = _adjust_ret_type(type_, lookup_dtype(numba_ret_type), return_types)
             return_types[type_] = ret_type
-    except Exception:  # pragma: no cover - unexpected numba result shape/API
+    except Exception:  # pragma: no cover (numba internals moved)
         return None
     else:
         return return_types
@@ -737,14 +733,10 @@ class BinaryOp(OpBase):
         new_type_obj = cls(name, func, anonymous=anonymous, is_udt=is_udt, numba_func=binary_udf)
         return_types = {}
         if not is_udt:
-            # ``cache=True`` marks the module-level built-in UDFs (floordiv and
-            # friends). For those, infer return types without lowering so
-            # ``.types`` is fully populated up front, then defer each dtype's
-            # njit lowering + cfunc wrapper to first use (see ``_build_deferred``).
-            # register_new/register_anonymous user funcs keep the eager loop
-            # below, which validates lowerability for every sample dtype. If
-            # inference fails for any reason it returns None and we fall back to
-            # the eager loop too.
+            # A built-in UDF (``cache=True``) gets its result types from typing alone,
+            # and compiles each dtype when it is first used (``_build_deferred``). A
+            # user's function compiles every sample dtype here, which also checks that
+            # each one compiles. So does a built-in when the typing returns None.
             inferred = _infer_ret_types_typing_only(func) if cache else None
             if inferred is not None:
                 new_type_obj.types.update(inferred)
@@ -1220,9 +1212,7 @@ class BinaryOp(OpBase):
         self._is_udt = is_udt
         self.is_positional = is_positional
         self._custom_dtype = None
-        # Set True in ``_build`` for the built-in UDFs whose ``.types`` was
-        # populated by typing-only inference; ``_build_deferred`` then compiles
-        # each dtype's typed op on first request.
+        # True for a built-in UDF whose ``.types`` came from typing alone (see ``_build``)
         self._defer_builds = False
         if is_udt:
             self._udt_types = {}  # {(dtype, dtype): DataType}
@@ -1238,10 +1228,8 @@ class BinaryOp(OpBase):
             self._custom_dtype = _udt_dtype
 
     def _build_deferred(self, type_):
-        # For built-ins whose ``.types`` was populated by typing-only inference,
-        # compile and register the typed op for ``type_`` the first time it is
-        # requested. ``ret_type`` is read back from ``.types`` (never re-derived
-        # per dtype: the UINT64/BOOL heuristic needs the full sample pass).
+        # The result type comes from ``.types``. ``_adjust_ret_type`` cannot be redone for
+        # one dtype, since UINT64 and BOOL read the results for INT64 and INT8.
         if not self._defer_builds or type_ not in self.types:
             return None
         return _finalize_typed_binaryop(self, self._numba_func, self.name, type_, self.types[type_])

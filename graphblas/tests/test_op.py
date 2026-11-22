@@ -7022,9 +7022,8 @@ def test_builtin_udf_compiles_uncached_where_numba_cannot_cache(monkeypatch):
     assert v.ewise_mult(v, op).new().isequal(Vector.from_coo([0, 1], [1, 1]))
 
 
-# The built-in UDF binops advertise every dtype in ``.types`` up front but
-# compile none of them until asked. Run in a subprocess: any earlier test may
-# already have materialized them in this process.
+# A built-in UDF lists every dtype in ``.types`` but compiles none until one is used.
+# conftest builds every dtype before the tests run, so this runs in a fresh process.
 _DEFERRED_BUILD_PROBE = """
 import graphblas as gb
 
@@ -7076,13 +7075,15 @@ def test_builtin_udf_builds_one_dtype_when_indexed():
 
 
 @pytest.mark.skipif("not supports_udfs")
-def test_builtin_udf_types_without_typing_only(monkeypatch):
-    # A Numba whose typing internals moved compiles every dtype up front instead,
-    # and must advertise the same types
-    func = operator.binary._floordiv
-    deferred = BinaryOp._build("floordiv", func, anonymous=True, cache=True)
+@pytest.mark.parametrize("name", ["floordiv", "rfloordiv", "absfirst", "abssecond", "rpow"])
+def test_builtin_udf_types_without_typing_only(name, monkeypatch):
+    # Without the typing-only path (a Numba whose internals moved), every dtype
+    # compiles up front, and ``.types`` is the same
+    func = getattr(operator.binary, f"_{name}")
+    deferred = BinaryOp._build(name, func, anonymous=True, cache=True)
+    assert deferred._defer_builds
     monkeypatch.setattr(operator.binary, "_HAS_TYPING_ONLY", False)
-    eager = BinaryOp._build("floordiv", func, anonymous=True, cache=True)
+    eager = BinaryOp._build(name, func, anonymous=True, cache=True)
     assert eager.types == deferred.types
     assert eager._typed_ops.keys() == eager.types.keys()
 
@@ -7100,12 +7101,9 @@ print("absfirst_ok: " + str(ct is gb.binary.abssecond[gb.dtypes.INT64]))
 
 @pytest.mark.skipif("not supports_udfs")
 def test_deferred_commutes_to():
-    # A deferred partner op must still answer commutes_to. The membership
-    # test consults .types, not ._typed_ops: with the latter, a fresh process
-    # answered None for floordiv[INT64].commutes_to until rfloordiv happened
-    # to be compiled, so the answer depended on access order. Subprocess for
-    # the same reason as test_initialize_does_not_build_lazy_udfs: in this
-    # process the partners may already be built.
+    # commutes_to finds the partner op for a dtype it has not compiled yet, so the
+    # answer does not depend on which op was used first. It runs in a fresh process,
+    # since conftest builds every dtype of the partners in this one.
     repo_root = Path(__file__).resolve().parents[2]
     env = dict(os.environ, PYTHONPATH=str(repo_root))
     result = subprocess.run(
