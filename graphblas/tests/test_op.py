@@ -5695,8 +5695,8 @@ def test_udt_record_literal_may_be_a_list():
 def test_udt_select_by_equality():
     """``select("==", x)`` and ``"!="`` keep what ``==`` and ``!=`` find, as for built-in dtypes.
 
-    No select op lifts to UDTs, so these select with ``==`` or ``!=`` as a mask; so does
-    ``v.select(v == x)``, whose UDT Scalar is behind a pointer.
+    No select op lifts to UDTs, so these select with ``==`` or ``!=`` as a mask, and so
+    does ``v.select(v == x)``.
     """
     rec = dtypes.register_anonymous(np.dtype([("se_a", np.int8), ("se_b", np.float64)]), "_SelEq")
     v = Vector(rec, size=4)
