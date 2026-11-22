@@ -221,38 +221,36 @@ class UnaryOp(OpBase):
                     nt.CPointer(input_type.numba_type),
                 )
 
-                # Each wrapper writes 0 (False) before it calls the UDF: if the UDF raises, Numba
-                # prints the error and returns, and GraphBLAS uses the output as it is (for a
-                # select, an unwritten bool decides whether to keep the entry). The operands are
-                # read first, since the output can be one of them (z = f(z, y) in a reduce).
+                # Read the operands, then write 0 before calling the UDF; see the note in
+                # ``binary._finalize_typed_binaryop``.
                 if type_ == BOOL:
                     if ret_type == BOOL:
 
-                        def unary_wrapper(z, x):
-                            x0 = x[0]  # pragma: no cover (numba)
-                            z[0] = 0  # pragma: no cover (numba)
-                            z[0] = bool(unary_udf(bool(x0)))  # pragma: no cover (numba)
+                        def unary_wrapper(z, x):  # pragma: no cover (numba)
+                            x0 = x[0]
+                            z[0] = 0
+                            z[0] = bool(unary_udf(bool(x0)))
 
                     else:
 
-                        def unary_wrapper(z, x):
-                            x0 = x[0]  # pragma: no cover (numba)
-                            z[0] = 0  # pragma: no cover (numba)
-                            z[0] = unary_udf(bool(x0))  # pragma: no cover (numba)
+                        def unary_wrapper(z, x):  # pragma: no cover (numba)
+                            x0 = x[0]
+                            z[0] = 0
+                            z[0] = unary_udf(bool(x0))
 
                 elif ret_type == BOOL:
 
-                    def unary_wrapper(z, x):
-                        x0 = x[0]  # pragma: no cover (numba)
-                        z[0] = 0  # pragma: no cover (numba)
-                        z[0] = bool(unary_udf(x0))  # pragma: no cover (numba)
+                    def unary_wrapper(z, x):  # pragma: no cover (numba)
+                        x0 = x[0]
+                        z[0] = 0
+                        z[0] = bool(unary_udf(x0))
 
                 else:
 
-                    def unary_wrapper(z, x):
-                        x0 = x[0]  # pragma: no cover (numba)
-                        z[0] = 0  # pragma: no cover (numba)
-                        z[0] = unary_udf(x0)  # pragma: no cover (numba)
+                    def unary_wrapper(z, x):  # pragma: no cover (numba)
+                        x0 = x[0]
+                        z[0] = 0
+                        z[0] = unary_udf(x0)
 
                 unary_wrapper = numba.cfunc(wrapper_sig, nopython=True, error_model="numpy")(
                     unary_wrapper
@@ -345,11 +343,10 @@ class UnaryOp(OpBase):
             If True, then the function will not be automatically compiled for
             builtin types, and it will be compiled "just in time" when used.
         ret_dtype : dtype, optional
-            The dtype the operator returns. Requires ``is_udt=True``.
-            Without it the return type is inferred from what the function
-            returns, which names a built-in dtype or one of the input UDTs,
-            so an output UDT that is not an operand needs this. The dtype is
-            fixed for the operator: it is the same for every input dtype.
+            The dtype the operator returns, whatever the input dtypes. Requires
+            ``is_udt=True``. Without it, the return type is inferred from what
+            the function returns, so it can only be a built-in dtype or one of
+            the input UDTs.
 
         Returns
         -------
@@ -410,8 +407,7 @@ class UnaryOp(OpBase):
 
         """
         cls._check_supports_udf("register_new")
-        # Validate eagerly even for lazy=True, so a bad combination fails at
-        # the registration site rather than at first attribute touch.
+        # Validate now, even for lazy=True, so a bad ret_dtype raises here, not on first use.
         _validate_ret_dtype(ret_dtype, "unary", is_udt=is_udt, parameterized=parameterized)
         module, funcname = cls._remove_nesting(name)
         if lazy:

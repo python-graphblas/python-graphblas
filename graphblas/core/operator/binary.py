@@ -502,10 +502,11 @@ def _finalize_typed_binaryop(parent, binary_udf, name, type_, ret_type):
         nt.CPointer(input_type.numba_type),
     )
 
-    # Each wrapper writes 0 (False) before it calls the UDF: if the UDF raises, Numba
-    # prints the error and returns, and GraphBLAS uses the output as it is (for a
-    # select, an unwritten bool decides whether to keep the entry). The operands are
-    # read first, since the output can be one of them (z = f(z, y) in a reduce).
+    # Each wrapper reads its operands, then writes 0 (False) to the output before it
+    # calls the UDF. If the UDF raises, Numba prints the exception and returns, and
+    # GraphBLAS takes the output as it is: a select would read an unwritten bool to
+    # decide whether to keep the entry. The operands are read first because the output
+    # can be one of them (z = f(z, y) in a reduce).
     if type_ == BOOL:
         if ret_type == BOOL:
 
@@ -727,11 +728,6 @@ class BinaryOp(OpBase):
             raise TypeError(f"UDF argument must be a function, not {type(func)}")
         if name is None:
             name = getattr(func, "__name__", "<anonymous_binary>")
-        # This rejects ret_dtype unless is_udt, which keeps it disjoint from the
-        # deferred builtin path below: that one only runs under ``not is_udt``,
-        # so an op can never be both deferred and carrying a declared return
-        # type. ``_build_deferred`` reads its ret_type back from ``.types`` and
-        # never consults ``_ret_dtype``.
         ret_dtype = _validate_ret_dtype(ret_dtype, "binary", is_udt=is_udt, parameterized=False)
         success = False
         # The error model has to be set here, not only on the cfunc wrapper in
@@ -928,11 +924,10 @@ class BinaryOp(OpBase):
             dtypes need to be different.
 
         ret_dtype : dtype, optional
-            The dtype the operator returns. Requires ``is_udt=True``.
-            Without it the return type is inferred from what the function
-            returns, which names a built-in dtype or one of the input UDTs,
-            so an output UDT that is not an operand needs this. The dtype is
-            fixed for the operator: it is the same for every input dtype.
+            The dtype the operator returns, whatever the input dtypes. Requires
+            ``is_udt=True``. Without it, the return type is inferred from what
+            the function returns, so it can only be a built-in dtype or one of
+            the input UDTs.
 
         Returns
         -------
@@ -1023,8 +1018,7 @@ class BinaryOp(OpBase):
 
         """
         cls._check_supports_udf("register_new")
-        # Validate eagerly even for lazy=True, so a bad combination fails at
-        # the registration site rather than at first attribute touch.
+        # Validate now, even for lazy=True, so a bad ret_dtype raises here, not on first use.
         _validate_ret_dtype(ret_dtype, "binary", is_udt=is_udt, parameterized=parameterized)
         module, funcname = cls._remove_nesting(name)
         if lazy:

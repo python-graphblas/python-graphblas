@@ -277,7 +277,7 @@ class SelectOp(OpBase):
         _compile_udf_for_udt(
             numba_func, sig, op_kind="select", op_name=self.name, dtypes=(dtype, dtype2)
         )
-        # Its return type lets the wrapper see an array returned for the bool
+        # The wrapper reads the UDF's return type to check an array returned for the bool
         numba_ret_type = numba_func.overloads[sig].signature.return_type
         select_wrapper, wrapper_sig = _get_udt_wrapper(
             numba_func, BOOL, dtype, dtype2, include_indexes=True, numba_ret_type=numba_ret_type

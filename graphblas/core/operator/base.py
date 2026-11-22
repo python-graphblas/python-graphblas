@@ -90,28 +90,21 @@ def _hasop(module, name):
 
 
 def _validate_ret_dtype(ret_dtype, opclass, *, is_udt, parameterized):
-    """Normalize a user-supplied ``ret_dtype`` to a DataType, or raise.
-
-    ``ret_dtype`` names the operator's output type outright instead of letting
-    it be inferred from what the UDF returns. Inference can only name a type it
-    can see, which is why this is limited to the UDT path: the builtin path
-    derives its output from Numba's typing of each sample input, and forcing a
-    single type across all of them would silently recast results.
-    """
+    """Return a user's ``ret_dtype`` as a DataType (None stays None), or raise ValueError."""
     if ret_dtype is None:
         return None
     if not is_udt:
         raise ValueError(
-            f"{opclass}: ret_dtype requires is_udt=True. The return type for builtin "
+            f"{opclass}: ret_dtype requires is_udt=True. The return type for built-in "
             f"dtypes comes from compiling the function for each input type, so a single "
             f"fixed type cannot describe it."
         )
     if parameterized:
         raise ValueError(
             f"{opclass}: ret_dtype does not work with parameterized=True. "
-            f"A parameterized operator builds and registers its function when called, "
-            f"and that inner registration does not accept a return dtype; register the "
-            f"built function without parameterized=True to declare one."
+            f"A parameterized operator registers the function it builds when called, "
+            f"without a ret_dtype. To declare one, register the built function without "
+            f"parameterized=True."
         )
     try:
         return lookup_dtype(ret_dtype)
@@ -576,8 +569,8 @@ class OpBase:
     def _deserialize_udf(cls, name, orig_func, is_udt, ret_dtype=None):
         """Register a UDF when unpickled, or return the one already registered as ``name``.
 
-        ``ret_dtype`` is passed on only when set: SelectOp shares this path and takes no
-        ret_dtype, and an op without one pickles as the 3-tuple it always did.
+        ``ret_dtype`` is passed on only when set, since SelectOp shares this path and its
+        registration takes no ``ret_dtype``.
         """
         if (rv := cls._find(name)) is not None:
             return rv
@@ -596,8 +589,8 @@ class OpBase:
         For the op classes that have ``orig_func`` and ``_is_udt``. Monoid and Semiring
         define their own.
         """
-        # ``ret_dtype`` rides along only when set, so an op without one pickles
-        # exactly as before and older versions can still read it.
+        # Add ``ret_dtype`` only when set, so versions without ``ret_dtype`` can read the
+        # pickle of an op that has none.
         ret = () if (ret_dtype := getattr(self, "_ret_dtype", None)) is None else (ret_dtype,)
         if self._anonymous:
             if hasattr(self.orig_func, "_parameterized_info"):

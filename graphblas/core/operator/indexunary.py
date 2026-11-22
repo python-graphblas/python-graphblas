@@ -162,10 +162,8 @@ class IndexUnaryOp(OpBase):
                     nt.CPointer(input_type.numba_type),
                 )
 
-                # Each wrapper writes 0 (False) before it calls the UDF: if the UDF raises, Numba
-                # prints the error and returns, and GraphBLAS uses the output as it is (for a
-                # select, an unwritten bool decides whether to keep the entry). The operands are
-                # read first, since the output can be one of them (z = f(z, y) in a reduce).
+                # Read the operands, then write 0 before calling the UDF; see the note in
+                # ``binary._finalize_typed_binaryop``.
                 if type_ == BOOL:
                     if ret_type == BOOL:
 
@@ -284,11 +282,10 @@ class IndexUnaryOp(OpBase):
             dtypes need to be different.
 
         ret_dtype : dtype, optional
-            The dtype the operator returns. Requires ``is_udt=True``.
-            Without it the return type is inferred from what the function
-            returns, which names a built-in dtype or one of the input UDTs,
-            so an output UDT that is not an operand needs this. The dtype is
-            fixed for the operator: it is the same for every input dtype.
+            The dtype the operator returns, whatever the input dtypes. Requires
+            ``is_udt=True``. Without it, the return type is inferred from what
+            the function returns, so it can only be a built-in dtype or one of
+            the input UDTs.
 
         Returns
         -------
@@ -361,8 +358,7 @@ class IndexUnaryOp(OpBase):
 
         """
         cls._check_supports_udf("register_new")
-        # Validate eagerly even for lazy=True, so a bad combination fails at
-        # the registration site rather than at first attribute touch.
+        # Validate now, even for lazy=True, so a bad ret_dtype raises here, not on first use.
         _validate_ret_dtype(ret_dtype, "indexunary", is_udt=is_udt, parameterized=parameterized)
         module, funcname = cls._remove_nesting(name)
         if lazy:
@@ -382,9 +378,9 @@ class IndexUnaryOp(OpBase):
         else:
             indexunary_op = cls._build(name, func, is_udt=is_udt, ret_dtype=ret_dtype)
             setattr(module, funcname, indexunary_op)
-            # If return type is BOOL, register additionally as a SelectOp. A UDT
-            # op has no types until it is compiled, so only a declared
-            # ``ret_dtype`` can rule it out here.
+            # If return type is BOOL, register additionally as a SelectOp. A UDT op
+            # has no types until it is compiled, so it is registered unless a declared
+            # ``ret_dtype`` rules that out.
             declared = indexunary_op._ret_dtype
             if (declared is None or declared == BOOL) and all(
                 x == BOOL for x in indexunary_op.types.values()
