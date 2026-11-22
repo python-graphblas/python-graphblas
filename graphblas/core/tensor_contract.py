@@ -140,10 +140,10 @@ def _contract(updater, a, b, op, a_axes, b_axes, a_batch=(), b_batch=()):
     A = B = None
     if not nb and updater.kwargs.get("mask") is not None:
         # Under a mask, an operand stored as the transpose of what the product needs goes in
-        # through the transpose descriptor, not a transposed copy: SuiteSparse can then take
-        # its masked dot product (C<M> = A*B' with both held by row: an SDDMM). Given the
-        # copy, it ran a masked saxpy over the whole product (n = 2e4, k = 64, a mask of 2e5
-        # entries: 2.0 s against 0.9 ms)
+        # through the transpose descriptor instead of as a transposed copy. SuiteSparse then
+        # uses its masked dot product (C<M> = A*B' with both stored by row, an SDDMM). With a
+        # transposed copy it runs a masked saxpy over the whole product: 2.0 s against 0.9 ms
+        # for n = 2e4, k = 64 and a mask of 2e5 entries.
         A = _transposed(a, sa)
         B = _transposed(b, sb)
     if A is None:
@@ -185,8 +185,8 @@ def _contract(updater, a, b, op, a_axes, b_axes, a_batch=(), b_batch=()):
 
 
 def _transposed(t, state):
-    """``t``'s Matrix transposed by descriptor (no copy) when that puts it in the layout
-    ``state``, else None.
+    """``t``'s Matrix transposed by descriptor (``M.T``, no copy) when that puts it in the
+    layout ``state``, else None.
     """
     rows, cols = t._layout
     seq, p = state

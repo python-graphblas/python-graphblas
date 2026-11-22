@@ -421,12 +421,13 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
                 M = M.ss.reshape(tl.prod(shape, seq[:q]), tl.prod(shape, seq[q:]))
                 layout = Layout(seq[:q], seq[q:])
                 continue
-            # Into many outputs, a sum on 2 threads is as fast as on 1 or faster; on 4 and 8 it
-            # can be 2-4x slower (FROSTT Uber, 4392 x 1.96e6: 4.0 / 4.0 / 17 / 15 ms at 1 / 2 /
-            # 4 / 8 threads; 1e4 x 1e6 with 1e7 entries: 18 / 18 / 11 / 39 ms). MAX and MIN
-            # scale instead (5e6 x 5e6 with 1e7 entries: 122 / 120 / 51 / 50 ms; 1e7 x 1e7
-            # with 1e8: 0.66 / 0.66 / 0.32 / 0.28 s; no loss on the others), so they keep
-            # every thread. (SuiteSparse 10.5.1, arm64.)
+            # Into many outputs (wide), a columnwise sum is as fast on 2 threads as on 1, or
+            # faster, and can be 2-4x slower on 4 or 8. At 1 / 2 / 4 / 8 threads: FROSTT Uber
+            # (4392 x 1.96e6) 4.0 / 4.0 / 17 / 15 ms, and 1e4 x 1e6 with 1e7 entries 18 / 18 /
+            # 11 / 39 ms. MAX and MIN get faster past 2 threads, so they keep every thread:
+            # 5e6 x 5e6 with 1e7 entries 122 / 120 / 51 / 50 ms, 1e7 x 1e7 with 1e8 entries
+            # 0.66 / 0.66 / 0.32 / 0.28 s, and no slower on the two inputs above. SuiteSparse
+            # 10.5.1, arm64.
             capped = wide and getattr(op, "name", None) not in {"max", "min"}
             if census.on:
                 census.note("reduce", "row group: reduce_columnwise" + (", 2 threads" if capped
