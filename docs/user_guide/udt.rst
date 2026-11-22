@@ -285,41 +285,34 @@ rules are in :ref:`tn_udt_udf_returns`.
 Naming the output type
 ~~~~~~~~~~~~~~~~~~~~~~
 
-By default the return type is worked out from what the UDF returns, matched
-against the input dtypes. That can only name a type the operator already has
-in hand, so an output UDT that is not one of the operands is out of reach.
-The ``x[:2]`` rejection above is a case of this: the output really is a
-2-element UDT, but nothing says so.
-
-Pass ``ret_dtype`` to say it outright. It takes anything ``lookup_dtype``
-accepts and requires ``is_udt=True``:
+The result type is worked out from what the function returns, matched against the operand
+types, so it can only be an operand's type or a built-in type. A function that returns a
+smaller array, such as ``x[:3]`` on a 9-element UDT, fills no operand's element, which
+raises ``UdfParseError``. Pass ``ret_dtype`` to name the result type. It takes anything
+``lookup_dtype`` accepts and requires ``is_udt=True``:
 
 .. code-block:: python
 
-    nine = gb.dtypes.register_anonymous(np.dtype((np.float64, (9,))), "Nine")
-    three = gb.dtypes.register_anonymous(np.dtype((np.float64, (3,))), "Three")
+    import numpy as np
 
-    head = gb.unary.register_anonymous(lambda x: x[:3], "head", is_udt=True, ret_dtype=three)
-    head[nine].return_type  # Three
+    from graphblas import dtypes, unary
 
-``ret_dtype`` is available on ``register_anonymous`` and ``register_new`` for
-``UnaryOp``, ``BinaryOp``, ``IndexUnaryOp``, and ``IndexBinaryOp``. It is a
-property of the operator, not of a particular input dtype: the same output
-type applies to every dtype the operator is typed for. An operator whose
-output type should vary with its inputs still needs one registration per
-output type.
+    Nine = dtypes.register_anonymous(np.dtype((np.float64, (9,))), "Nine")
+    Three = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "Three")
 
-Declaring the type does not switch off the shape check described above; it
-points the check at the declared type instead. The result must also be
-something the declared type can hold: one value per field for a record, an
-array or a scalar for an array UDT, and a scalar for a scalar type. A UDF that
-breaks either rule is rejected when the op is typed (``op[dtype]``, or its
-first use), so a wrong ``ret_dtype`` is an error rather than a silently
-mis-typed result.
+    head = unary.register_anonymous(lambda x: x[:3], "head", is_udt=True, ret_dtype=Three)
+    head[Nine].return_type  # Three
 
-It does not apply to ``SelectOp``, whose return type GraphBLAS fixes at
-``BOOL``, nor to an op registered without ``is_udt=True``, whose return type
-comes from compiling the function against each input type in turn.
+``register_anonymous`` and ``register_new`` of ``unary``, ``binary``, ``indexunary`` and
+``indexbinary`` take ``ret_dtype``. It is the result type for every operand type the
+operator is compiled for, so an operator whose result type should depend on its operands
+needs one registration for each result type. The result must still fill an element of
+``ret_dtype`` by the rules in :ref:`tn_udt_udf_returns`, and be something it can hold: one
+value per field for a record, an array or a number for an array UDT, and a number for a
+built-in type. Otherwise compiling the operator for a type (``op[dtype]``, or its first
+use) raises ``UdfParseError``. ``select`` operators always return BOOL and take no
+``ret_dtype``, and an operator registered without ``is_udt=True`` gets its result types
+from compiling the function for each operand type.
 
 Example: shortest paths with parents
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

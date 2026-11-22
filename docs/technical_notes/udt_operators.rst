@@ -206,7 +206,8 @@ types the first time it is used with them, or when it is indexed with them
 reads as ``x["name"]`` or ``x.name``, and an array operand as a numpy array view of the
 element, in the UDT's shape: an ``FP64[2, 4]`` operand is indexed ``x[i, j]``.
 
-The result type depends on what the function returns:
+The result type is ``ret_dtype`` when the operator was registered with one. Otherwise it
+depends on what the function returns:
 
 - **A number**: the built-in type Numba infers for it.
 - **A record**, such as one of the operands: that record's type.
