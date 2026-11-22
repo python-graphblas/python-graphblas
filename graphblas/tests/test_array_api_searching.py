@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+import graphblas as gb
 import graphblas.array_api as xp
 
 from .test_array_api_elementwise import DTYPES, assert_array_equal, inputs, make, np_call
@@ -136,6 +137,29 @@ def test_argmax_argmin(name, keepdims):
     with pytest.raises(TypeError, match="real"):
         getattr(xp, name)(xp.zeros(3, dtype=xp.complex64))
     assert_array_equal(getattr(xp, name)(xp.zeros((2, 0)), axis=0), np.zeros(0, np.int64))
+
+
+@pytest.fixture
+def by_col_global():
+    """Set SuiteSparse's global format to by column for one test, and restore it after."""
+    prev = gb.ss.config["format"]
+    gb.ss.config["format"] = "by_col"
+    yield
+    gb.ss.config["format"] = prev
+
+
+@pytest.mark.parametrize("name", ["argmax", "argmin"])
+def test_argmax_argmin_by_col_global(name, by_col_global):
+    """With the global format by column, which the Matrices they extract follow, ``argmax``
+    and ``argmin`` along an axis still read each fiber's entries in order.
+    """
+    func = getattr(np, name)
+    for dtype in SEARCH_DTYPES:
+        for shape, axes in [((3, 5), [0, 1]), ((2, 3, 4), [0, 1, 2])]:
+            for dense, x in inputs(dtype, shape, seed=8):
+                for axis in axes:
+                    expected = np.asarray(func(dense, axis=axis), dtype=np.int64)
+                    assert_array_equal(getattr(xp, name)(x, axis=axis), expected)
 
 
 def test_argmax_ties_with_the_fill():

@@ -309,7 +309,9 @@ def _fill_at_0(name, M, byrow, R, ext, nan, fill, fill_nan, at_0, L):
     """
     fibers = at_0.to_coo(values=False)[0]
     sub = M[fibers, :].new() if byrow else M[:, fibers].new().T.new()
-    r, c, _ = sub.to_coo()  # (by fiber, positions sorted)
+    r, c, _ = sub.to_coo(values=False, sort=False)
+    order = np.lexsort((c, r))  # by fiber, then position (to_coo sorts in storage order)
+    r, c = r[order], c[order]
     starts = np.flatnonzero(np.r_[True, r[1:] != r[:-1]])
     counts = np.diff(np.r_[starts, len(r)])
     rank = np.arange(len(r)) - np.repeat(starts, counts)
