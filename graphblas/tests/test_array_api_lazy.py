@@ -1,4 +1,7 @@
-"""graphblas.array_api: deferred contractions and their two push-down consumers (DESIGN D9)."""
+"""graphblas.array_api: deferred contractions, and the two consumers that push work into them:
+``multiply(S, P)`` computes the pending product ``P`` under the structure of ``S`` (an SDDMM),
+and slicing ``P`` slices its operands.
+"""
 
 import os
 import zlib
@@ -26,9 +29,10 @@ def _own_rng(request):
 
 
 def _rand(shape, fill=0.0, dtype=np.float64, density=0.5, *, every_line=False):
-    """Random values, each stored with probability ``density``; ``every_line``: every row and
-    column of each matrix in it holds a value (a slice of an operand that stores nothing is
-    an empty result at once, not a pending one).
+    """Random values: each position has a random value with probability ``density``, else
+    ``fill``. With ``every_line``, every row and column of each matrix in it has a nonzero
+    value (a slice of an operand that stores nothing is an empty result at once, not a
+    pending one).
     """
     dtype = np.dtype(dtype)
     if dtype.kind == "b":
@@ -37,8 +41,8 @@ def _rand(shape, fill=0.0, dtype=np.float64, density=0.5, *, every_line=False):
         a = rng.integers(1, 9, shape)
     else:
         a = np.round(rng.normal(size=shape) * 4, 1)
-        # (no value rounds to 0: make() would store a -0.0, which a model's ``a != 0``
-        # misses, and density=1.0 promises no zeros)
+        # (no value rounds to 0: make() would store a -0.0, which an expected-value model's
+        # ``a != 0`` misses, and density=1.0 promises no zeros)
         a[a == 0] = 0.1
     out = np.where(rng.random(shape) < density, a, fill).astype(dtype)
     if every_line:
@@ -71,7 +75,9 @@ class _Seen(list):
 
 @pytest.fixture
 def masks(monkeypatch):
-    """The masks the pending products were computed under (None: whole)."""
+    """Record the mask each pending product is computed under (None when computed whole),
+    and in ``.hints`` the options each computation gets.
+    """
     seen = _Seen()
     compute = _lazy.Contraction.compute
 
@@ -81,7 +87,7 @@ def masks(monkeypatch):
         return compute(self, mask, **opts)
 
     hints = []
-    seen.hints = hints  # (the options each computation got)
+    seen.hints = hints
 
     monkeypatch.setattr(_lazy.Contraction, "compute", recording)
     return seen
@@ -189,7 +195,7 @@ def test_pending_operands_and_consumers():
         P = x1 @ x2
         assert_close(func(P), np_func(a @ b))
         assert not pending(P)
-    # (the stored entries: where some term meets)
+    # (nnz counts the positions where some term has both factors stored)
     structure = (a != 0).astype(int) @ (b != 0).astype(int) > 0
     P = x1 @ x2
     assert P.nnz == structure.sum()
@@ -273,7 +279,7 @@ def test_sddmm_falls_back(masks):
     masks.clear()
     assert_close(xp.multiply(s, A @ xp.matrix_transpose(B)), s * expected)
     assert [m is None for m in masks] == [False]
-    # An operand holding inf or NaN: exact, as numpy (0 * inf is NaN outside S)
+    # An operand with an inf or NaN: exact, as in numpy (0 * inf is NaN outside S)
     for bad in [np.inf, np.nan]:
         a2 = a.copy()
         a2[0, 0] = bad
@@ -331,9 +337,8 @@ def test_sddmm_overflow_outside_s(masks):
 
 
 def test_sddmm_with_inf_stays_sparse(masks):
-    # (review finding H2) an operand holding inf, or values whose products may overflow,
-    # computes the product whole: a sparse product, as without deferral, with no densify
-    # check on its logical size
+    # An operand with an inf, or values whose products may overflow, computes the product
+    # whole: a sparse product, as without deferral, with no densify check on its logical size
     rng = np.random.default_rng(16)
     n = 400
     r, c = rng.integers(0, n, 400), rng.integers(0, n, 400)
@@ -346,7 +351,7 @@ def test_sddmm_with_inf_stays_sparse(masks):
     S = xp.from_coo(np.nonzero(s), s[np.nonzero(s)], (n, n))
     with gb.config.set(array_api_densify_limit=n * n // 10):
         R = xp.multiply(S, A @ A)
-    # (the product as computed without deferral: D6 skips an unstored zero times inf)
+    # (the product as computed without deferral, where an unstored zero times inf is no term)
     P = A @ A
     with np.errstate(invalid="ignore"):
         assert_close(R, s * P.todense())
@@ -378,7 +383,7 @@ def test_finite_facts():
     assert _lazy._known_finite(y) is True
     assert _lazy._known_finite(make(np.array([1, 2]), 0)) is True
     P = xp.matmul(y, make(np.array([[1.0], [2.0]]), 0.0))
-    assert P._pending.finite == [True, True]  # (every contraction asks: DESIGN D12a)
+    assert P._pending.finite == [True, True]  # (every contraction checks its operands)
 
 
 SLICES = [
@@ -404,7 +409,7 @@ def test_getitem_slices_the_operands(key, masks):
         if R.ndim and not any(k is None for k in key):
             assert pending(R)
         assert_close(R, expected)
-        assert masks == [None]  # (only the slice was computed)
+        assert masks == [None]  # (only the slice is computed)
         assert_close(P, a @ b)
 
 
@@ -468,8 +473,8 @@ def test_iteration_computes_once(masks):
 
 
 def test_sddmm_dot_products(masks):
-    # A @ B with B held by row (k x n) under a sparse mask: dot products at the mask's
-    # entries, not SuiteSparse's masked saxpy over the whole product (found by the SAPS run)
+    # A @ B with B stored by row (k x n), under a sparse mask, computes dot products at the
+    # mask's entries, not SuiteSparse's masked saxpy over the whole product
     rng = np.random.default_rng(13)
     n, k = 60, 4
     s = np.where(rng.random((n, n)) < 0.02, rng.random((n, n)), 0.0)
@@ -505,8 +510,8 @@ def test_sddmm_dot_products(masks):
      "ixor", "ilshift", "irshift"],
 )  # fmt: skip
 def test_inplace_operators_on_a_pending_array(op):
-    # (review finding H1) an in-place operator replaces a pending product: later consumers
-    # (the SDDMM, slicing) must read the new value, not the old product
+    # An in-place operator replaces a pending product: later consumers (the SDDMM, slicing)
+    # must read the new value, not the old product
     import operator
 
     func = getattr(operator, op)
@@ -529,8 +534,8 @@ def test_inplace_operators_on_a_pending_array(op):
 
 
 def test_sddmm_dot_hint_counts_batches(masks):
-    # (review finding L9) a batched product pairs entries within a batch only: the saxpy
-    # estimate divides by the number of batches, so sparse batches keep SuiteSparse's choice
+    # A batched product pairs entries within a batch only: the saxpy estimate divides by the
+    # number of batches, so sparse batches keep SuiteSparse's choice
     rng = np.random.default_rng(17)
     for dens_ab, dens_s, hint in [(1.0, 0.02, {"axb_method": "dot"}), (0.02, 0.5, {})]:
         a = np.where(rng.random((8, 16, 4)) < dens_ab, rng.random((8, 16, 4)) + 0.5, 0.0)
@@ -550,13 +555,14 @@ def test_sddmm_dot_hint_counts_batches(masks):
 
 
 def test_product_times_itself_computes_once(masks):
-    # (review finding L6) P * P: no push-down, one computation
+    # P * P: no push-down, one computation
     a = _rand((5, 5))
     P = make(a, 0.0) @ make(a, 0.0)
     assert_close(P * P, (a @ a) * (a @ a))
     assert masks == [None]
-    # (without the result's shape, one batch is assumed; a full operand, since with 8
-    # entries or fewer of 25 the saxpy is cheap enough to get no hint)
+    # (without the result's shape, _dot_hint assumes one batch; the operands are full,
+    # since with 8 or fewer of their 25 positions stored the saxpy is cheap enough to get
+    # no hint)
     a = _rand((5, 5), density=1.0)
     P = make(a, 0.0) @ make(a, 0.0)
     assert _lazy._dot_hint(P._pending, 1) == {"axb_method": "dot"}
@@ -602,7 +608,9 @@ def test_einsum_three_operands_masked(subscripts, shapes, masks):
 
 
 def _structural_three(a, b, s, mult=np.multiply):
-    """``ij,jk,ik->ik`` with a term only where all three operands are nonzero (DESIGN D6)."""
+    """``ij,jk,ik->ik`` with a term only where all three operands are nonzero, as a
+    contraction treats a zero fill as structural.
+    """
     stored = (a[:, :, None] != 0) & (b[None] != 0) & (s[:, None, :] != 0)
     with np.errstate(invalid="ignore", over="ignore"):
         terms = mult(mult(a[:, :, None], b[None]), s[:, None, :])
@@ -610,9 +618,9 @@ def _structural_three(a, b, s, mult=np.multiply):
 
 
 def test_einsum_three_operands_nonfinite(masks, monkeypatch):
-    # An operand holding inf or NaN: explicit fills go first (D12a), and the terms are the
-    # full einsum's (D6): no NaN where the masking operand stores nothing. The values do not
-    # depend on which path ran.
+    # An operand with an inf or NaN: explicitly stored fills are pruned first, and the terms
+    # are the full einsum's, with no NaN where the masking operand stores nothing. The values
+    # do not depend on which path ran.
     from graphblas.array_api import _linalg
 
     a, b, s = _rand((4, 5)), _rand((5, 6)), _rand((4, 6))
@@ -639,7 +647,7 @@ def test_einsum_three_operands_nonfinite(masks, monkeypatch):
     R = xp.einsum("ij,jk,ik->ik", *[make(x, 0j) for x in c])
     assert all(m is None for m in masks)
     assert_close(R, _structural_three(*c))
-    # A NaN under a float min or max monoid: the full einsum, which propagates it (D12b)
+    # A NaN under a float min or max monoid: the full einsum, which propagates it
     inf = np.inf
     arrays = [np.where(x == 0, inf, x) for x in (a, b, s)]
     arrays[0][0, 0] = np.nan
@@ -677,7 +685,7 @@ def test_einsum_three_operands_not_masked(masks):
         "ij,ij,->", make(m[0], inf), make(m[1], inf), xp.asarray(inf), semiring="min_plus"
     )
     assert all(x is None for x in masks)
-    assert_close(R, np.array(inf))  # (every term holds the identity inf)
+    assert_close(R, np.array(inf))  # (every term adds the 0-d operand, inf)
     # Deferral off: the pair is computed whole, then intersected
     _lazy.enabled = False
     try:

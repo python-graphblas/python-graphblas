@@ -25,8 +25,8 @@ def test_import_special_attrs():
     # Is everything special that needs to be?
     not_special = {x for x in dir(gb) if not x.startswith("_")} - gb._SPECIAL_ATTRS
     expected = {"backend", "config", "init", "replace", "tests"}
-    # graphblas.array_api is imported by name (``import graphblas.array_api as xp``), so it is
-    # an attribute only once something imports it, as its test modules do at collection
+    # ``import graphblas`` does not import graphblas.array_api, so it is an attribute of gb
+    # only once something imports it, as its test modules do at collection
     if "graphblas.array_api" in sys.modules:
         expected.add("array_api")
     assert not_special == expected

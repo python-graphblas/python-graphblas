@@ -162,15 +162,16 @@ def test_refill():
         assert same_value(y.fill_value, np.float64(fill))
         expected = sum(not same_value(v, y.fill_value) for v in a.reshape(-1))
         assert y.nnz == expected
-    # a dense distance matrix: inf becomes the fill, the zeros stay (the hint of the
-    # semiring error)
+    # a dense distance matrix, the case the semiring error suggests xp.refill for: inf
+    # becomes the fill, and the zeros become stored entries
     g = np.full((4, 4), np.inf)
     np.fill_diagonal(g, 0.0)
     g[0, 1] = 1.0
     G = xp.refill(xp.asarray(g), np.inf)
     assert (G.nnz, G.fill_value) == (5, np.inf)
     assert_array_equal(xp.matmul(G, G, semiring="min_plus"), np.min(g[:, :, None] + g[None], 1))
-    # stores every position: relabeled, then pruned; other dtypes; a 0-d array keeps its value
+    # an array that stores every position (relabeled, then pruned), other dtypes, and a 0-d
+    # array, which keeps its value
     full = xp.asarray(np.array([1, 2, 2, 3]))
     out = xp.refill(full, 2)
     assert_array_equal(out, np.array([1, 2, 2, 3]))
@@ -179,7 +180,7 @@ def test_refill():
     assert_array_equal(b, np.array([True, False, False]))
     assert (b.nnz, b.fill_value) == (2, True)
     assert_array_equal(xp.refill(xp.asarray(5.0), 1.0), np.array(5.0))
-    # errors: not an Array, a value the dtype does not hold, past the densify limit
+    # errors: not an Array, a value the dtype cannot represent, past the densify limit
     with pytest.raises(TypeError, match="needs an Array"):
         xp.refill(a, 1.0)
     with pytest.raises(ValueError, match="not a value of int64"):
@@ -221,8 +222,8 @@ def test_prune():
 
 @pytest.mark.parametrize("axis", [0, 1, 2])
 def test_concat_any_layout(axis):
-    # One GxB concat of the stored Matrices, whatever layout each part is stored in (a part in
-    # another layout moves), parts of size 0 along the axis included
+    # One GxB_Matrix_concat of the stored Matrices, whatever layout each part is stored in (a
+    # part in another layout moves first), parts of size 0 along the axis included
     from graphblas import Tensor
 
     rng = np.random.default_rng(7)

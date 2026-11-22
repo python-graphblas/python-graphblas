@@ -116,7 +116,6 @@ def test_sum_wraps_like_numpy():
     x = make(a, 0)
     assert_array_equal(xp.sum(x, axis=1, dtype=xp.int8), np.sum(a, axis=1, dtype=np.int8))
     # a nonzero fill counted many times over
-    x = make(np.full((2, 300), 7, dtype=np.int8), 0) + 0
     y = xp.full((2, 300), 7, dtype=xp.int8)
     assert_array_equal(
         xp.sum(y, axis=1, dtype=xp.int8), np.full(2, 7 * 300, np.int64).astype(np.int8)
@@ -126,7 +125,6 @@ def test_sum_wraps_like_numpy():
         np.prod(np.full((2, 300), 7, np.int8), axis=1, dtype=np.int8),
     )
     assert_array_equal(xp.prod(y, axis=1), np.prod(np.full((2, 300), 7, np.int8), axis=1))
-    del x
 
 
 def test_min_max_nan_propagates():
@@ -218,7 +216,6 @@ def test_cumulative_is_guarded():
     with gb.config.set(array_api_densify_limit=10), pytest.raises(xp.DensifyError):
         xp.cumulative_sum(xp.full(100, 1.0))
     # with the identity as fill only the positions from each fiber's first entry are stored
-    # (review finding L8)
     y = xp.zeros((20000, 20000))
     y[[1, 5, 9], [3, 19000, 7]] = 1.0
     assert xp.cumulative_sum(y, axis=1).nnz == 19997 + 1000 + 19993
@@ -313,7 +310,7 @@ def test_var_of_a_huge_sparse_array():
 
 
 def test_sum_starts_from_positive_zero():
-    # numpy's sum starts from +0.0: a sum of -0.0 is 0.0 (review finding M1)
+    # numpy's sum starts from +0.0: a sum of -0.0 is 0.0
     for a in [
         np.array([-0.0, -0.0]),
         np.array([[-0.0, 0.0], [-0.0, 1.0]]),
@@ -331,9 +328,8 @@ def test_sum_starts_from_positive_zero():
 
 
 def test_min_max_of_signed_zeros():
-    # GraphBLAS's fmin and fmax take either zero, and numpy orders -0.0 below 0.0: the Array
-    # API leaves that order unspecified (review finding M2 closed by the contract); NaN
-    # propagates
+    # GraphBLAS's fmin and fmax may return either zero, and the Array API leaves the order of
+    # -0.0 and 0.0 unspecified, so zero signs are not compared. NaN propagates.
     cases = [
         (np.array([-0.0, 0.0]), 1.0),
         (np.array([0.0, -0.0]), 1.0),
@@ -355,7 +351,7 @@ def test_min_max_of_signed_zeros():
 
 
 def test_complex_sum_of_infinite_fill():
-    # k copies of inf+0j sum to inf+0j, not inf+nanj (review finding M3)
+    # k copies of inf+0j sum to inf+0j, not inf+nanj
     for fill in [complex(np.inf, 0), complex(np.nan, 0), complex(0, -np.inf)]:
         a = np.array([[1 + 1j, fill, fill], [fill, fill, fill]])
         x = make(a, fill)
@@ -368,7 +364,7 @@ def test_complex_sum_of_infinite_fill():
 
 
 def test_sum_in_bool():
-    # a sum of booleans in bool is their logical or (review finding M5)
+    # a sum in bool is the logical or of the values, and a product their logical and
     a = np.array([[1, 0, 3], [0, 0, 2]])
     for fill in [0, 2]:
         x = make(np.where(a == 0, fill, a), fill)
@@ -383,7 +379,7 @@ def test_sum_in_bool():
 
 
 def test_mean_of_empty_complex():
-    # 0j / 0 is nan+nanj, as numpy's mean of nothing (review finding L1)
+    # the mean of an empty complex array is nan+nanj (0j / 0), as in numpy
     for dt in [np.complex128, np.complex64, np.float32]:
         assert_array_equal(
             np_call(xp.mean, xp.zeros((0,), dtype=dt)), np_call(np.mean, np.zeros(0, dt))
@@ -395,7 +391,7 @@ def test_mean_of_empty_complex():
 
 
 def test_diff_n0_ignores_prepend_append():
-    # (review finding L4)
+    # as in numpy, diff with n=0 returns the values unchanged and ignores prepend and append
     a = np.array([1.0, 0.0, 2.0])
     x = make(a, 0.0)
     assert_array_equal(
@@ -405,7 +401,7 @@ def test_diff_n0_ignores_prepend_append():
 
 
 def test_reductions_of_fibers_past_2_63_positions():
-    # (review finding L6) a fiber of 2**63 positions: counts do not overflow
+    # a fiber of 2**63 positions: counts do not overflow
     shape = (2**21,) * 3
     y = xp.full(shape, 1.0)
     y[0, 0, 0] = 3.0

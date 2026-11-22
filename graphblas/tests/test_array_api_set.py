@@ -14,7 +14,7 @@ DTYPES = [np.dtype(t) for t in ("bool", "int8", "uint32", "int64", "float32", "f
 
 
 def _check_values(out, expected):
-    """Unique values: as numpy's, except that which of 0.0 and -0.0 stands for both is free."""
+    """Unique values equal numpy's, except that either 0.0 or -0.0 may stand for both zeros."""
     check_invariants(out)
     got = out.todense()
     assert got.dtype == expected.dtype

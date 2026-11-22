@@ -394,7 +394,8 @@ def test_dup_and_clear():
     D.clear()
     assert D.nvals == 0
     check(T, values, present)
-    # A new dtype keeps an n x 1 stored Matrix held by row (Matrix.dup holds it by column)
+    # dup to a new dtype keeps an n x 1 stored Matrix by row, which Matrix.dup(dtype) would
+    # store by column
     for shape in [(2, 1), (3, 1, 1)]:
         T, values, present = random_tensor(shape, rng, density=1.0)
         check(T.dup(dtypes.FP32), values.astype(np.float32), present)
@@ -3071,7 +3072,8 @@ def test_tensordot_semirings_masks_and_errors():
 
 
 def test_private_map_values():
-    # Tensor._map_values (for graphblas.array_api): numpy over the stored values, in place
+    # Tensor._map_values (for graphblas.array_api) applies a numpy function to the stored
+    # values, writing the results into a copy of the pattern
     rng = np.random.default_rng(33)
     X, xv, xp = random_tensor((4, 5, 3), rng, density=0.4)
     Y = Tensor(dtypes.FP64, (4, 5, 3))
@@ -3101,8 +3103,9 @@ def test_private_map_values():
 
 
 def test_masked_contraction_takes_a_transpose_descriptor():
-    # Under a mask, an operand stored as the transpose of what the product needs is not
-    # copied (SuiteSparse's masked dot product, an SDDMM); the values are the masked product
+    # Under a mask, an operand stored as the transpose of what the product needs goes in
+    # through the transpose descriptor, not as a copy, so SuiteSparse can take its masked dot
+    # product (an SDDMM); the values are the masked product
     from graphblas.core import tensor as tensor_mod
     from graphblas.core import tensor_census as census
 
@@ -3129,7 +3132,8 @@ def test_masked_contraction_takes_a_transpose_descriptor():
         check(R, rv, rp, approx=True)
         moved = [r["moved"] for r in recs if r["point"] == "contract" and "moved" in r]
         assert moved == [[False, False]], moved
-    # Unmasked, the planner's relayout stays
+    # The same values without a mask (where the planner may still copy an operand), and
+    # under a mask with an accumulator
     check(X.matmul(Y.T).new(), ev, ep, approx=True)
     C, cv, cp = random_tensor((6, 5), rng)
     C(Mk.S, binary.plus) << X.matmul(Y.T)

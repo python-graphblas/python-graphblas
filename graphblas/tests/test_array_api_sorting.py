@@ -46,7 +46,7 @@ def test_sort_keeps_sparsity():
     assert out.nnz == 4
     row = out[5].todense()
     assert (row[[0, 998, 999]] == [-1.0, 2.0, 4.0]).all()
-    assert np.signbit(out[8].todense()[0])  # -0.0 keeps its place among the zeros: first
+    assert np.signbit(out[8].todense()[0])  # (stable: the stored -0.0 stays first of the zeros)
     with gb.config.set(array_api_densify_limit=10**5), pytest.raises(xp.DensifyError):
         xp.argsort(x)
 

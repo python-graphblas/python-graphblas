@@ -147,13 +147,13 @@ def test_asarray_scipy_and_pydata_sparse():
 def test_from_coo():
     x = xp.from_coo(([0, 2], [1, 0]), [1.0, 2.0], (3, 2), fill_value=5.0)
     assert_array_equal(x, np.array([[5.0, 1.0], [5.0, 5.0], [2.0, 5.0]]))
-    # a repeated coordinate sums its values (or for bool), as pydata/sparse and scipy do
+    # a repeated coordinate sums its values (logical or for bool), as pydata/sparse and scipy do
     x = xp.from_coo(([0, 0, 1], [1, 1, 0]), [1.0, 2.0, 5.0], (2, 2))
     assert_array_equal(x, np.array([[0.0, 3.0], [5.0, 0.0]]))
     x = xp.from_coo(([0, 0],), [True, False], (3,))
     assert_array_equal(x, np.array([True, False, False]))
     x = xp.from_coo(([1, 1],), np.array([100, 100], np.int8), (2,))
-    assert_array_equal(x, np.array([0, -56], np.int8))  # (wraps, as numpy's int8 sum)
+    assert_array_equal(x, np.array([0, -56], np.int8))  # (wraps, as int8 addition does in numpy)
     # one value for every coordinate: stored once (iso), summed where coordinates repeat
     x = xp.from_coo(([0, 2, 0],), 7, (3,))
     assert_array_equal(x, np.array([14, 0, 7]))
@@ -456,8 +456,8 @@ def test_copy_module():
 
 
 def test_pickle_roundtrips():
-    # (review finding L7) through coordinates, values, shape, dtype and fill; explicit fills
-    # stay stored, and a pending product is computed first
+    # A pickle stores the coordinates, values, shape, dtype and fill value. Explicitly stored
+    # fill values stay stored, and a pending product is computed first.
     rng = np.random.default_rng(19)
     for dense, fill in [
         (np.array([1.0, 0.0, 2.0]), 0.0),
@@ -583,9 +583,7 @@ def test_permute_expand_squeeze():
 
 
 def test_asarray_of_arrays_stays_sparse():
-    # a list of Arrays is stacked, not densified (review finding L7)
-    import graphblas as gb
-
+    # a list of Arrays is stacked, not densified
     x = xp.zeros((10**5, 10**5))
     x[1, 2] = 3.0
     s = xp.asarray([x, x])
@@ -602,11 +600,10 @@ def test_asarray_of_arrays_stays_sparse():
     assert_array_equal(
         xp.asarray([make(np.array([1.0]), 0.0)], dtype=xp.float32), np.array([[1.0]], np.float32)
     )
-    del gb
 
 
 def test_asarray_byte_order():
-    # (review finding L9)
+    # a non-native byte order converts to the native one
     assert_array_equal(xp.asarray(np.array([1, 2], dtype=">i8")), np.array([1, 2]))
     assert_array_equal(
         xp.asarray(np.array([1.5, 0.0], dtype=">f4")), np.array([1.5, 0.0], np.float32)

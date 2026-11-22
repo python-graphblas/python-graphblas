@@ -45,7 +45,9 @@ FLOAT_SPECIALS = [np.nan, np.inf, -np.inf, -0.0, 0.0, 1.0, -1.0, 0.5, -2.5, 3.0,
 
 
 def random_values(rng, dtype, shape):
-    """Dense values of ``dtype`` with the special values of the kind."""
+    """Random dense values of ``dtype``, mixed with the special values of its kind (integer
+    extremes; NaN, infinities and signed zeros).
+    """
     if dtype.kind == "b":
         return rng.random(shape) < 0.5
     if dtype.kind in "iu":
@@ -121,10 +123,10 @@ def check_invariants(x):
 
 
 def assert_array_equal(x, expected, *, zero_signs=True):
-    """``x`` holds ``expected`` exactly (dtype, shape, NaN, signed zeros), but for the sign of
-    a zero at a position ``x`` does not store, which the contract leaves unspecified (DESIGN
-    D3b). A 0-d array's value is exact. ``zero_signs=False`` ignores every zero's sign (as
-    for max and min, where the Array API leaves the order of -0.0 and 0.0 unspecified).
+    """``x`` equals ``expected`` exactly (dtype, shape, NaN, signed zeros), except for the
+    sign of a zero at a position ``x`` does not store, which graphblas.array_api leaves
+    unspecified. A 0-d array's value is exact. ``zero_signs=False`` ignores every zero's sign
+    (as for max and min, where the Array API leaves the order of -0.0 and 0.0 unspecified).
     """
     expected = np.asarray(expected)
     check_invariants(x)
@@ -158,19 +160,20 @@ def _assert_identical(a, b, unstored):
 
 # Functions computed by libm (SuiteSparse's unary ops) for floating dtypes: special values
 # (NaN, inf, zeros and their signs) exactly as numpy has them, other values within MAXULP units
-# in the last place. libm and numpy's own loops are each within 1 to 2 ulp of the exact value
-# for these (glibc's libm-test-ulps lists at most 2 for the real ones in double; numpy's float32
-# SIMD loops document up to 1.5), so two of them differ by up to 4; on macOS arm64 the largest
-# difference seen was 1 (tanh, float32 sin and cos). Complex values stay on numpy.
+# in the last place. Neither libm nor numpy rounds these exactly: glibc's libm-test-ulps lists
+# at most 2 ulp for the real ones in double, and numpy's accuracy tests
+# (numpy/_core/tests/data/umath-validation-set-*.csv) allow up to 2 ulp in float64 and 4 in
+# float32. On macOS arm64 the largest difference seen is 1 (tanh, float32 sin and cos).
+# Complex values stay on numpy.
 LIBM = {"acos", "acosh", "asin", "asinh", "atan", "atanh", "cos", "cosh", "exp", "expm1", "log",
         "log1p", "log2", "log10", "sin", "sinh", "tan", "tanh"}  # fmt: skip
 MAXULP = 4
 
 
 def assert_libm_close(x, expected):
-    """``x`` holds ``expected`` but for libm's rounding: special values exact, the rest within
-    MAXULP (complex: each part's special values exact, the rest within MAXULP * eps of the
-    magnitude).
+    """``x`` equals ``expected`` up to libm's rounding: special values exactly, the rest within
+    MAXULP ulp. For complex values, each part's special values are exact and the rest are
+    within MAXULP * eps of the magnitude.
     """
     expected = np.asarray(expected)
     check_invariants(x)
@@ -206,7 +209,9 @@ def np_call(func, *args, **kwargs):
 
 
 def inputs(dtype, shape, seed=0):
-    """(dense, Array) pairs over the fills of the dtype, some with explicit fills."""
+    """(dense, Array) pairs, one per fill of the dtype; every other Array also stores some
+    positions equal to its fill.
+    """
     rng = np.random.default_rng(seed)
     for i, fill in enumerate(fills_for(dtype)):
         dense = random_values(rng, dtype, shape)
@@ -330,9 +335,10 @@ def test_unary(name, func, shape):
                 continue
             out = getattr(xp, name)(x)
             if name == "reciprocal" and dense.dtype.kind in "iu":
-                # numpy's integer reciprocal of 0 is an integer division by zero, which has no
-                # defined result: CI on aarch64 with NumPy 2.5 gave -1 for the whole array but
-                # 2**31 - 1 for the fill alone. Those positions are not compared.
+                # numpy computes an integer reciprocal as (int)(1.0 / x); for 0 that converts
+                # inf to an integer, which C leaves undefined: CI on aarch64 with NumPy 2.5 gave
+                # -1 for the whole array but 2**31 - 1 for the fill alone. Those positions are
+                # not compared.
                 expected = np.where(dense == 0, out.todense(), expected)
             try:
                 (assert_libm_close if name in LIBM else assert_array_equal)(out, expected)
@@ -547,8 +553,8 @@ def test_float_multiply_of_nonnegative_values_intersects():
 
 @pytest.mark.parametrize("name", ["maximum", "minimum"])
 def test_float_maximum_minimum(name):
-    # Without NaN GraphBLAS's max and min are numpy's; with it, numpy computes. The order of
-    # -0.0 and 0.0 is unspecified.
+    # Without NaN, GraphBLAS's max and min agree with numpy's; with NaN, numpy computes the
+    # result. The order of -0.0 and 0.0 is unspecified.
     rng = np.random.default_rng(8)
     func = getattr(np, name)
 
@@ -590,8 +596,8 @@ def test_broadcast_expansion_is_guarded():
 
 
 def test_values_mapped_on_every_storage_format():
-    # numpy maps the stored values through the Container in place: check bitmap, full,
-    # hypersparse and iso storage
+    # Functions that numpy computes map the stored values in place through a GxB_Container:
+    # check bitmap, sparse, hypersparse, full and iso storage
     rng = np.random.default_rng(5)
     for density in [0.0, 0.05, 0.5, 1.0]:
         for shape in [(40,), (30, 20), (6, 5, 4)]:
@@ -616,7 +622,8 @@ def test_values_mapped_on_every_storage_format():
 
 
 def test_unseen_fill_does_not_raise():
-    # x stores every position, so its fill (-1) never meets y's fill as an exponent
+    # x stores every position, so pow never raises y's fill to x's fill (-1), which numpy
+    # refuses for integers
     x = xp.from_coo(([0, 1, 2],), [2, 3, 4], (3,), fill_value=-1)
     y = xp.full((3,), -2)
     assert_array_equal(xp.pow(y, x), np.power(np.full(3, -2), [2, 3, 4]))
@@ -675,8 +682,8 @@ def test_libm_functions_on_wide_values(dtype):
 
 
 def test_math_consistency_of_fill():
-    # An entry equal to the fill maps to the new fill, bit for bit (DESIGN D10: no value
-    # depends on which positions are stored), also where libm computes the entries
+    # An entry equal to the fill maps to the new fill bit for bit, also where libm computes the
+    # entries, so that no value depends on which positions are stored
     for name, _ in UNARY:
         if name in {"logical_not", "bitwise_invert"}:
             continue
@@ -712,7 +719,8 @@ def test_unsupported_operands():
 
 
 def test_intersection_of_broadcast_operands_is_guarded():
-    # an intersection of two broadcast operands is an outer product (review finding M4)
+    # an intersection of two broadcast operands is an outer product of their entries, and the
+    # densify limit applies to it
     x = make(np.arange(1, 101).reshape(100, 1), 0)
     y = make(np.arange(1, 101).reshape(1, 100), 0)
     b = make(np.ones((100, 1), bool), False)
@@ -762,7 +770,8 @@ def test_absorbing_fills_intersect():
         assert R.nnz <= (~gb_).sum()
     R = xp.minimum(make(~gb_, False), make(~db_, False))
     assert_array_equal(R, np.minimum(~gb_, ~db_))
-    # An operand that stores every position counts as holding the absorbing fill
+    # An operand that stores every position never shows its fill, so it counts as having the
+    # absorbing fill
     full = rng.random(n) + 1
     R = xp.expand_dims(make(full, 0.0), 1) + G
     assert_array_equal(R, full[:, None] + g)
@@ -778,7 +787,7 @@ def test_absorbing_fills_intersect():
     g2 = g.copy()
     g2[0, 0] = -np.inf
     assert_array_equal(xp.add(make(d, np.inf), make(g2, np.inf)), d + g2)
-    # Fills that do not both absorb, and two fully stored operands: the union as before
+    # Fills that do not both absorb, and two fully stored operands: the union
     assert_array_equal(xp.add(make(d, np.inf), make(d, 0.0)), d + d)
     R = xp.add(make(full, 0.0), make(full, 1.0))
     assert_array_equal(R, full + full)
@@ -787,9 +796,9 @@ def test_absorbing_fills_intersect():
 
 
 def test_fully_stored_bool_results_take_fill_false():
-    # A bool result that stores every position never shows its fill: it takes fill False,
-    # and its False entries go when at most a quarter of the entries are True (equal(deg, 0)
-    # of a fully stored deg stores the zero-degree positions only)
+    # A bool result that stores every position never shows its fill, so it gets fill False.
+    # Its False entries are dropped when at most a quarter of its entries are True, so
+    # equal(deg, 0) of a fully stored deg stores only the zero-degree positions.
     deg = xp.asarray(np.array([3, 1, 0, 2, 5, 0, 4, 1, 2, 7]))
     assert deg.nnz == 8
     assert deg.fill_value == 0
@@ -809,27 +818,28 @@ def test_fully_stored_bool_results_take_fill_false():
 
 
 def test_bool_normalization_decides_by_a_sample(monkeypatch):
-    # (review finding L10) a sample of the leading entries says whether dropping the False
-    # entries is likely; values never change, only what is stored
+    # A sample of the leading entries says whether dropping the False entries is likely;
+    # values never change, only what is stored. With _SAMPLE = 4 the sample is the first row,
+    # 1 to 4; when it is not mostly True, a select of the True values decides.
     from graphblas.array_api import _elementwise
 
     monkeypatch.setattr(_elementwise, "_SAMPLE", 4)
     v = np.arange(40.0).reshape(10, 4)
     full = xp.asarray(v + 1)
     for out, expected, nnz in [
-        (xp.greater(full, 4), v + 1 > 4, 40),  # (sample mostly True: kept, fill False)
+        (xp.greater(full, 4), v + 1 > 4, 40),  # (none True in the sample; 36 of 40: kept)
         (xp.greater(full, 36), v + 1 > 36, 4),  # (few True: dropped)
-        (xp.less(full, 37), v + 1 < 37, 40),  # (sample all True, most True: kept)
+        (xp.less(full, 37), v + 1 < 37, 40),  # (the sample is all True: kept)
         (xp.less(full, 5), v + 1 < 5, 40),  # (the sample is all True: kept, though few are)
-        (xp.greater(full, 3), v + 1 > 3, 40),  # (a quarter of the sample: the select decides)
+        (xp.greater(full, 3), v + 1 > 3, 40),  # (a quarter of the sample; 37 of 40: kept)
     ]:
         assert_array_equal(out, expected)
         assert (out.nnz, out.fill_value) == (nnz, False)
 
 
 def test_one_sided_stores_a_small_broadcast_operand():
-    # (review finding R2) a broadcast operand no larger than the other's entries is stored in
-    # full and taken by the broadcast product, with no coordinates exported
+    # A broadcast operand no larger than the other operand's entries is stored in full and
+    # used by the broadcast product, with no coordinates exported
     rng = np.random.default_rng(21)
     a = np.where(rng.random((50, 40)) < 0.6, rng.random((50, 40)) + 0.5, 0.0)
     y = np.where(rng.random(50) < 0.1, rng.random(50), 0.0)
@@ -845,7 +855,7 @@ def test_one_sided_stores_a_small_broadcast_operand():
 def test_partly_stored_bool_results_with_mostly_false_take_fill_false():
     # equal(deg, 0) of a deg that leaves its zero degrees unstored has fill True and stores
     # a False at every other position; when those are more than half of all positions, it
-    # takes fill False and stores the True positions only
+    # gets fill False and stores only the True positions
     deg = xp.asarray(np.array([3, 1, 0, 2, 5, 0, 4, 1, 2, 7]))
     out = xp.equal(deg, 0)
     assert_array_equal(out, deg.todense() == 0)
@@ -870,8 +880,8 @@ def test_partly_stored_bool_results_with_mostly_false_take_fill_false():
 
 
 def test_mostly_true_masks_stay_sparse_in_contractions():
-    # (review finding H3) a mostly-True fully stored mask keeps fill False, so a contraction
-    # with a sparse bool matrix stays sparse (it raised DensifyError with fill True)
+    # A mostly-True fully stored mask has fill False, so a contraction with a sparse bool
+    # matrix stays sparse (with fill True it would go dense and raise DensifyError)
     rng = np.random.default_rng(15)
     n = 300
     a = np.zeros((n, n), bool)
@@ -893,7 +903,7 @@ def test_mostly_true_masks_stay_sparse_in_contractions():
 
 
 def test_clip_with_array_bounds_ties():
-    # numpy's clip gives the bound on a tie, so the sign of a zero is the bound's (review M6)
+    # numpy's clip gives the bound on a tie, so the sign of a zero is the bound's
     x = make(np.array([0.0, -0.0, 0.0, 1.0, np.nan]), 0.0)
     lo = make(np.array([-0.0, 0.0, 0.0, -0.0, 0.0]), 0.0)
     hi = make(np.array([-0.0, 0.0, 2.0, 0.5, 1.0]), 0.0)
@@ -911,8 +921,8 @@ def test_clip_with_array_bounds_ties():
 
 
 def test_signed_zeros_give_way():
-    # (review finding H1, DESIGN D3a, D3b) a product with an unstored zero is the fill
-    # whatever its sign: a row scaling stores only A's entries
+    # A product with an unstored zero is the fill, whatever sign numpy would give it, so a row
+    # scaling stores only A's entries
     rng = np.random.default_rng(0)
     A = make(np.where(rng.random((50, 50)) < 0.05, rng.normal(size=(50, 50)), 0.0), 0.0)
     d = make(rng.normal(size=(50, 1)), 0.0)
@@ -944,8 +954,8 @@ def test_products_match_numpy_but_for_unstored_zero_signs(name):
 
 
 def test_operands_storing_every_position_keep_products_sparse():
-    # An operand that stores every position never shows its fill (review finding N1): A / d
-    # and A * (1 / deg)[:, None] store A's entries, whatever d's fill
+    # An operand that stores every position never shows its fill: A / d and
+    # A * (1 / deg)[:, None] store A's entries, whatever d's fill
     rng = np.random.default_rng(3)
     A = make(np.where(rng.random((40, 40)) < 0.05, rng.normal(size=(40, 40)), 0.0), 0.0)
     d = xp.asarray(rng.normal(size=40) + 5.0)
@@ -959,7 +969,7 @@ def test_operands_storing_every_position_keep_products_sparse():
     assert p.nnz == A.nnz
     assert p.fill_value == 0.0
     assert_array_equal(p, A.todense() * inv.todense()[:, None])
-    # integers too: a full operand's fill takes no part
+    # integers too: a full operand's fill plays no part
     i = make(np.where(rng.random((5, 6)) < 0.5, 0, rng.integers(1, 5, (5, 6))), 0)
     full = xp.asarray(rng.integers(1, 5, 6), fill_value=7)
     assert (i * full).nnz == i.nnz
@@ -997,7 +1007,7 @@ def test_one_sided_products():
 
 
 def test_unstored_zero_signs_in_the_oracle():
-    # The tests' oracle: a stored -0.0 must match, an unstored one may read 0.0
+    # The tests' oracle: a stored -0.0 must match, and an unstored zero matches either sign
     x = make(np.array([-0.0, 1.0]), 0.0)
     assert x.nnz == 2
     with pytest.raises(AssertionError, match="differ"):
@@ -1009,9 +1019,9 @@ def test_unstored_zero_signs_in_the_oracle():
 
 
 def test_one_sided_broadcast_operand_is_gathered():
-    # (review findings rev1 M9, rev2 M5) a broadcast operand that shows its fill is read at the
-    # other operand's entries only, O(those entries): X of shape (1000, 1e6) with 4 entries
-    # times exp(v)[None, :] (fill 1) stores 4 entries, under a densify limit of 1000
+    # A broadcast operand that shows its fill is read only at the other operand's entries, in
+    # O(those entries): X of shape (1000, 1e6) with 4 entries times exp(v)[None, :] (fill 1)
+    # stores 4 entries under a densify limit of 1000
     rng = np.random.default_rng(12)
     n = 10**6
     rows, cols = [0, 10, 500, 999], [5, 77, n - 1, 123_456]
@@ -1033,7 +1043,7 @@ def test_one_sided_broadcast_operand_is_gathered():
             coords, values = out.to_coo()
             assert coords[0].tolist() == rows
             np.testing.assert_array_equal(values, expected)
-    # numpy's answer at every position, on small ones: broadcast along either axis, 3-d, a
+    # numpy's answer at every position, on small arrays: broadcast along either axis, 3-d, a
     # 0-d operand, explicit fills, an X with no entries
     A = make(np.where(rng.random((6, 50)) < 0.05, rng.normal(size=(6, 50)), 0.0), 0.0, rng)
     u = make(np.where(rng.random(50) < 0.5, 1.0, rng.normal(size=50)), 1.0, rng)
@@ -1052,7 +1062,8 @@ def test_one_sided_broadcast_operand_is_gathered():
 
 
 def test_clip_fill_uses_numpys_array_loop():
-    # numpy's 0-d clip breaks a tie differently from its array loop (review finding N3)
+    # numpy's 0-d clip breaks a tie differently from its array loop, which the fill follows
+    # (these results store nothing, and the oracle ignores the sign of an unstored zero)
     x = xp.full((3,), 0.0)
     lo = xp.full((3,), -0.0)
     a, b = np.zeros(3), np.full(3, -0.0)
@@ -1091,8 +1102,8 @@ def _spec_pow(x1, x2):
 
 def test_pow_special_cases():
     # The Array API's special cases of pow, with arrays, 0-d arrays and Python scalars as
-    # exponents (numpy takes sqrt for an exponent of 0.5 that repeats: pow(-inf, 0.5) was NaN
-    # there, review finding L11)
+    # exponents. numpy takes the square root for a repeated exponent of 0.5, so its
+    # pow(-inf, 0.5) is NaN, not the Array API's inf.
     bases = [np.nan, np.inf, -np.inf, 0.0, -0.0, 2.0, 0.5, 1.0, -1.0, -2.0, -0.5]
     exponents = [np.nan, 0.0, -0.0, np.inf, -np.inf, 0.5, 2.0, 3.0, -1.0, -2.0, -3.0, 1.5, -0.5]
     for dt in [np.float64, np.float32]:

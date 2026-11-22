@@ -36,7 +36,7 @@ def assert_close(x, expected, fill=None):
         np.testing.assert_array_equal(got, expected)
 
 
-# (name, numpy add-monoid reduction, numpy multiply, identity) for the oracles
+# name: (numpy reduction for the add monoid, numpy multiply, identity), for the oracles
 SEMIRINGS = {
     "min_plus": (np.min, np.add, np.inf),
     "max_plus": (np.max, np.add, -np.inf),
@@ -130,7 +130,8 @@ def test_matmul_semiring_dtypes():
 
 
 def test_contraction_skips_structurally():
-    # As 0 * inf in plus_times (D6): an infinity meeting an unstored inf is no NaN
+    # As 0 * inf at an unstored zero is no term in plus_times, an infinity plus an unstored
+    # inf is no term in min_plus, so no NaN
     a = make(np.array([[-np.inf, np.inf]]), np.inf)
     b = make(np.array([[np.inf], [-np.inf]]), np.inf)
     assert a.nnz == b.nnz == 1
@@ -325,8 +326,7 @@ def test_probes():
 
 
 def test_explicit_fills_do_not_change_values():
-    # (review finding M2, DESIGN D12a) a stored entry equal to the fill meets an inf as an
-    # unstored position does: no term
+    # A stored entry equal to the fill gives no term with an inf, as an unstored position does
     a = xp.from_coo(([0], [0]), [0.0], (1, 1))
     b = make(np.array([[np.inf]]), 0.0)
     assert_close(a @ b, [[0.0]])
@@ -342,8 +342,8 @@ def test_explicit_fills_do_not_change_values():
 
 
 def test_nan_propagates_through_min_and_max():
-    # (review finding M1, DESIGN D12b) a stored NaN term makes the min or max NaN, as numpy's
-    # do, although SuiteSparse's fmin and fmax skip it; positions it does not reach keep theirs
+    # A stored NaN term makes the min or max NaN, as numpy's do, although SuiteSparse's fmin
+    # and fmax skip it; positions it does not reach keep their values
     inf = np.inf
     a = np.array([[np.nan, 5.0], [inf, 2.0]])
     b = np.array([[1.0, inf], [3.0, 4.0]])
@@ -352,7 +352,7 @@ def test_nan_propagates_through_min_and_max():
                                     ("min_max", SEMIRINGS["min_max"])]:  # fmt: skip
         with np.errstate(invalid="ignore"):
             expected = reduce(mult(a[:, :, None], b[None]), axis=1)
-        # (D6: a NaN meeting an unstored inf is no term, so [0, 1] keeps its value)
+        # (a NaN with an unstored inf is no term, so [0, 1] keeps its value)
         expected[0, 1] = reduce(mult(a[0, 1], b[1, 1]))
         assert_close(xp.matmul(A, B, semiring=name), expected, e)
         assert_close(xp.tensordot(A, B, axes=1, semiring=name), expected, e)
@@ -369,7 +369,7 @@ def test_nan_propagates_through_min_and_max():
 
 def test_fully_stored_operands_take_the_identity():
     # An operand that stores every position never shows its fill: a semiring accepts it
-    # whatever its fill, when its dtype holds the identity
+    # whatever its fill, when its dtype can represent the identity
     a = np.array([[1.0, 2.0], [np.inf, 3.0]])
     b = np.array([[0.5, 1.0], [2.0, 4.0]])
     A, B = make(a, 0.0), make(b, 0.0)
@@ -387,17 +387,17 @@ def test_fully_stored_operands_take_the_identity():
     a2[0, 0] = np.nan
     R = xp.matmul(make(a2, 0.0), B, semiring="min_plus")
     assert np.isnan(R.todense()[0]).all()
-    # An integer operand cannot hold inf: still refused
+    # An integer operand cannot represent inf, so it is refused
     i = make(np.array([[1, 2], [3, 4]]), 0)
     with pytest.raises(ValueError, match="needs operands whose fill"):
         xp.matmul(i, make(b, np.inf), semiring="min_plus")
-    # Partly stored: refused as before
+    # An operand that does not store every position, with fill 0: refused
     with pytest.raises(ValueError, match="needs operands whose fill"):
         xp.matmul(make(np.array([[0.0, 1.0]]), 0.0), B, semiring="min_plus")
 
 
 def test_soundness_is_cached_per_semiring_object():
-    # (review finding L1) two semirings of one name: each is checked
+    # Two semirings of one name are checked separately
     from graphblas.core.operator import Semiring
 
     s1 = Semiring.register_anonymous(gb.monoid.min, gb.binary.plus, name="same_name")
@@ -410,7 +410,7 @@ def test_soundness_is_cached_per_semiring_object():
 
 
 def test_vecdot_plus_times_conjugates():
-    # (review finding L4) the default semiring, given or not, conjugates x1
+    # The default semiring, given or not, conjugates x1
     x = make(np.array([1j, 2.0]), 0j)
     y = make(np.array([1j, 1.0]), 0j)
     for semiring in [None, "plus_times"]:
@@ -418,8 +418,8 @@ def test_vecdot_plus_times_conjugates():
 
 
 def test_einsum_with_scalars_and_ones_stays_sparse():
-    # (review finding L5) a 0-d operand is a scalar factor, and a small operand with a finite
-    # nonzero fill (a vector of ones: row sums) is stored in full, not densified with the rest
+    # A 0-d operand is a scalar factor, and a small operand with a finite nonzero fill (a
+    # vector of ones: row sums) is stored in full, not densified with the rest
     rng = np.random.default_rng(18)
     n = 400
     a = np.zeros((n, n))

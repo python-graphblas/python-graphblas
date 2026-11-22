@@ -97,7 +97,7 @@ def test_where_stores_the_condition_and_the_selected_operand():
             e = np.where(cond, np.asarray(x1), np.asarray(x2))
             assert_array_equal(xp.where(make(cond, fill), x1, x2), e)
     # The selected operand broadcasts over stored entries, or the condition broadcasts: the
-    # union (the result really holds the operand's entries along the broadcast axis)
+    # union (the result stores the operand's entries at every position along the broadcast axis)
     v = np.where(rng.random(n) < 0.5, rng.normal(size=n), 0.0)
     assert_array_equal(xp.where(G, -1.0, make(v, 0.0)), np.where(c, -1.0, v))
     assert_array_equal(xp.where(make(c[0], False), make(a, 0.0), 2.0), np.where(c[0], a, 2.0))
@@ -139,7 +139,7 @@ def test_argmax_argmin(name, keepdims):
 
 
 def test_argmax_ties_with_the_fill():
-    # the fill ties with a stored value: the first of either position
+    # the fill ties with a stored value: the first tied position wins, stored or not
     for a, fill in [
         ([0.0, 3.0, 0.0, 3.0], 3.0),
         ([3.0, 3.0, 1.0, 0.0], 3.0),

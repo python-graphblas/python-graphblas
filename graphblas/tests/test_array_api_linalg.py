@@ -68,7 +68,7 @@ def test_matmul(shapes):
 
 
 def test_matmul_zero_fill_is_structural():
-    # (DESIGN D6: as scipy.sparse; numpy would give NaN for 0 * inf)
+    # An unstored zero times inf is no term, as in scipy.sparse; numpy gives NaN for 0 * inf
     a = make(np.array([[np.inf, 0.0], [0.0, 1.0]]), 0.0)
     b = make(np.array([[0.0, 1.0], [1.0, 0.0]]), 0.0)
     assert_close(a @ b, np.array([[0.0, np.inf], [1.0, 0.0]]))
@@ -245,10 +245,10 @@ def test_dense_algebra():
         xp.linalg.det(a)
 
 
-def test_nonzero_fills_follow_d6():
-    # (review finding M3, DESIGN D12c) a nonzero fill of an operand that stores every
-    # position is taken as 0; any other nonzero fill goes dense (no rank-1 split, which turned
-    # inf into NaN and lost every digit when the fill dwarfs the values)
+def test_nonzero_fills_count_as_zero_or_go_dense():
+    # A nonzero fill of an operand that stores every position counts as 0; any other nonzero
+    # fill goes dense. This catches a rank-1 split (the fill times all-ones plus the rest),
+    # which turns inf into NaN and loses every digit when the fill dwarfs the values.
     inf = make(np.array([np.inf]), 0.0)
     five = xp.from_coo(([0],), [1.0], (1,), fill_value=5.0)
     assert_close(xp.vecdot(inf, five), np.array(np.inf))
@@ -260,7 +260,7 @@ def test_nonzero_fills_follow_d6():
     big32 = xp.from_coo(([0, 1],), np.array([1.0, 2.0], np.float32), (2,), fill_value=1e8)
     out = xp.vecdot(make(np.array([1.0, -1.0], np.float32), 0.0), big32)
     assert_close(out, np.array(-1.0, np.float32))
-    # dense under the limit on the result, not only on the operands (review finding L8)
+    # dense under the limit on the result, not only on the operands
     with gb.config.set(array_api_densify_limit=1000):
         c = make(np.full((100, 1), np.inf), np.inf)
         d = make(np.full((1, 100), 2.0), np.inf)
@@ -271,7 +271,7 @@ def test_nonzero_fills_follow_d6():
 
 
 def test_tensordot_axes_out_of_bounds():
-    # (review finding L2) as numpy: no wrapping modulo the number of axes
+    # as in numpy: an axis out of range raises, with no wrapping modulo the number of axes
     x = make(np.ones((2, 3)), 0.0)
     with pytest.raises(IndexError, match="out of bounds"):
         xp.tensordot(x, x.T, axes=([5], [0]))
@@ -281,10 +281,9 @@ def test_tensordot_axes_out_of_bounds():
 
 
 def test_finite_fills_are_stored_in_full():
-    # (review findings R1, R3) an operand with a finite nonzero fill that fits under the
-    # densify limit is stored in full, whatever the other operands store: matrices of ones
-    # by a large sparse matrix stay sparse, and explicit zeros in the other operand do not
-    # change the answer (D10)
+    # An operand with a finite nonzero fill that fits under the densify limit is stored in
+    # full, whatever the other operands store: a large sparse matrix times a matrix of ones
+    # stays sparse, and explicit zeros in the other operand do not change the answer
     rng = np.random.default_rng(20)
     n = 400
     a = np.zeros((n, n))
@@ -303,4 +302,4 @@ def test_finite_fills_are_stored_in_full():
     A2 = xp.from_coo((np.r_[0, r], np.r_[0, np.zeros(2000, int)]), np.r_[1.0, np.zeros(2000)],
                      (3000, 2))  # fmt: skip
     for x in [A1, A2, xp.prune(A2)]:
-        assert (x @ B).todense()[1, 0] == 0.0  # (D6: an unstored zero times inf is no term)
+        assert (x @ B).todense()[1, 0] == 0.0  # (an unstored zero times inf is no term)

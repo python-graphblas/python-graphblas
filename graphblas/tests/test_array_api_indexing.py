@@ -240,8 +240,8 @@ def _index_patterns():
 
 
 def test_mixed_keys_order_axes_as_numpy():
-    # (shim finding B1) the advanced axes go first when the advanced indices are apart, a
-    # "..." that covers no axis included; in place when they are next to each other
+    # As in numpy, the advanced axes go first when the advanced indices are apart (also when a
+    # "..." that covers no axis separates them), and stay in place when they are adjacent
     count = 0
     for a, key in itertools.chain(
         ((np.arange(36.0).reshape(3, 4, 3) + 1, k) for k in _index_patterns()),
@@ -255,7 +255,7 @@ def test_mixed_keys_order_axes_as_numpy():
         count += 1
         assert_array_equal(x[key], expected)
         if any(k is None for k in key):
-            continue  # (a value for a key with new axes is not read with them yet)
+            continue  # (with an advanced key, setitem rejects a value that has the new axes)
         b = a.copy()
         value = np.arange(expected.size, dtype=np.float64).reshape(expected.shape) - 50
         b[key] = value
@@ -275,8 +275,8 @@ def test_mixed_keys_order_axes_as_numpy():
 
 
 def test_setitem_with_new_axes():
-    # (review finding L3) the value of a basic key with None is shaped like numpy's selection,
-    # new axes included
+    # The value for a basic key with None may be shaped like numpy's selection, new axes
+    # included
     parts = [slice(None), 1, slice(0, 2), Ellipsis, None]
     count = 0
     for a in [np.arange(12.0).reshape(3, 4) + 1, np.arange(24.0).reshape(2, 3, 4) + 1]:

@@ -208,7 +208,7 @@ def test_facts_of_stored_values():
     w = make(np.array([3.0, 2.0]), 0.0)
     assert _utils.fact(w, "finite")
     assert not _utils.fact(w, "nan")
-    # integers are finite without a look; empty arrays hold nothing
+    # integers are finite without a look, and an array that stores nothing has no NaN or zero
     i = make(np.array([0, 5]), 1)
     assert _utils.fact(i, "finite")
     assert not _utils.fact(i, "nan")
@@ -231,7 +231,7 @@ def test_facts_of_stored_values():
         assert func(v)._facts == {"finite": False, "nan": True}
     assert xp.exp(v)._facts is None
     assert xp.abs(xp.zeros(3))._facts is None
-    # (review finding M4) |z| of a finite complex z may be inf: abs keeps only "zero" there
+    # |z| of a finite complex z may be inf, so abs of a complex array keeps only "zero"
     z = make(np.array([1.5e308 + 1.5e308j, 1, 0, 0]), 0j)
     assert _utils.fact(z, "finite")
     _utils.fact(z, "zero")
@@ -241,7 +241,7 @@ def test_facts_of_stored_values():
         assert_array_equal(xp.abs(z) * zz, np.abs(z.todense()) * zz.todense())
 
 
-def test_thread3_argument_checks():
+def test_take_contraction_and_sorting_argument_checks():
     x = make(np.arange(6.0).reshape(2, 3), 0.0)
     for func in [xp.take, xp.take_along_axis]:
         with pytest.raises(TypeError, match="Array"):
@@ -280,7 +280,7 @@ def test_thread3_argument_checks():
     assert_array_equal(x @ x.mT, x.todense() @ x.todense().T)
 
 
-def test_thread3_edge_cases():
+def test_edge_cases_of_keys_contractions_and_sorting():
     x = make(np.arange(6.0).reshape(2, 3), 0.0)
     assert_array_equal(x[np.array([], dtype=float)], np.zeros((0, 3)))
     assert_array_equal(x[xp.asarray(True)], x.todense()[None])
@@ -319,7 +319,8 @@ def test_thread3_edge_cases():
         xp.tensordot(i32, i8, axes=1), np.tensordot(i32.todense(), i8.todense(), axes=1)
     )
     inf = make(np.array([[np.inf, 1.0], [2.0, np.inf]]), np.inf)
-    # (no 0 * inf term here, but OpenBLAS on x86-64 Linux raises the invalid flag for it)
+    # (numpy's tensordot has no 0 * inf term here, but OpenBLAS on x86-64 Linux raises the
+    # invalid flag anyway)
     with np.errstate(invalid="ignore"):
         expected = np.tensordot(inf.todense(), i32.todense(), axes=1)
     assert_array_equal(xp.tensordot(inf, i32, axes=1), expected)
@@ -336,8 +337,8 @@ def test_thread3_edge_cases():
 
 
 def test_zero_d_tensors_are_copies_of_one_empty_tensor():
-    # (a 0-d Array stores nothing; its Tensor is an O(1) copy-on-write copy of one per dtype,
-    # which no change to a copy reaches)
+    # A 0-d Array stores nothing. Its Tensor is an O(1) copy-on-write copy of one empty Tensor
+    # per dtype, and no change to a copy reaches that Tensor.
     x = xp.asarray(1.5)
     y = xp.multiply(x, 2.0)
     assert float(y) == 3.0
