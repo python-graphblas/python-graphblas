@@ -1,7 +1,7 @@
-# The rich repr and _repr_html_ are hand-rendered here to reproduce pandas'
-# DataFrame text/HTML output byte-for-byte without importing pandas. When pandas
-# is installed we still read its display.* options so a user's option_context is
-# honored; when it is absent we fall back to pandas' documented defaults.
+# The text and HTML reprs of a Matrix or Vector render their table here, matching
+# pandas' DataFrame output byte for byte without needing pandas. With pandas installed,
+# the renderer reads its display.* options, so pd.option_context applies; without it,
+# it uses pandas' defaults (_DISPLAY_DEFAULTS).
 import math
 import re
 import shutil
@@ -22,8 +22,8 @@ try:
 except ImportError:  # pragma: no cover (import)
     has_pandas = False
 
-# pandas display.* defaults, used verbatim when pandas is not installed so the
-# hand renderer produces the same output it would with a freshly imported pandas.
+# pandas' defaults for the display options the renderer reads, for when pandas is not
+# installed. max_columns is 0 as in a terminal; pandas makes it 20 in a Jupyter kernel.
 _DISPLAY_DEFAULTS = {
     "max_rows": 60,
     "min_rows": 10,
@@ -41,11 +41,7 @@ _DISPLAY_DEFAULTS = {
 
 
 def _display_option(name):
-    """Read a pandas display.<name> option, or fall back to its default.
-
-    Reading from pandas keeps a user's ``pd.option_context`` honored while the
-    rendering logic itself stays pandas-free.
-    """
+    """Return pandas' display.<name> option, or its default when pandas is not installed."""
     if has_pandas:
         return pd.get_option(f"display.{name}")
     return _DISPLAY_DEFAULTS[name]
@@ -245,20 +241,20 @@ def _update_vector_array(arr, vector, columns, column_offset, *, mask=None):
         arr[0, cols[np.isnan(vals)]] = "nan"
 
 
-# The most rows or columns a repr reads when the display options set no limit: a max_columns of
-# 0 (as many as fit the terminal, which the renderer then cuts to its width) or None. pandas
-# takes None as no limit at all, but a repr cannot read every row of a Matrix with 2**60.
+# The most rows or columns a repr reads when the display options set no limit: a max_columns
+# of 0 (as many as fit the terminal, which the renderer then cuts to its width) or None.
+# pandas takes None as no limit at all, but a repr cannot read all 2**60 rows of a Matrix.
 _NO_LIMIT = 150
 
 
 def _display_limits():
-    """display.max_rows, min_rows and max_columns as the renderer uses them, None capped.
+    """Return display.max_rows, min_rows and max_columns as the renderer uses them.
 
-    A max_rows of None reads as ``_NO_LIMIT + 1`` with a min_rows of ``_NO_LIMIT``, whatever
-    min_rows is (pandas ignores it then): a longer frame shows its first and last
-    ``_NO_LIMIT // 2`` rows, and a COO form its first ``_NO_LIMIT`` entries and the "..." row,
-    which a max_rows of ``_NO_LIMIT`` would cut again. A min_rows of None is max_rows, as in
-    pandas, and a max_columns of None is ``_NO_LIMIT``.
+    A max_columns of None becomes ``_NO_LIMIT``. A max_rows of None becomes ``_NO_LIMIT + 1``,
+    with a min_rows of ``_NO_LIMIT`` whatever min_rows is, since pandas ignores min_rows then.
+    So a longer frame shows its first and last ``_NO_LIMIT // 2`` rows, and the COO form shows
+    ``_NO_LIMIT`` entries and the "..." row, which a max_rows of ``_NO_LIMIT`` would cut
+    again. A min_rows of None is max_rows, as in pandas.
     """
     max_rows = _display_option("max_rows")
     min_rows = _display_option("min_rows")
@@ -274,7 +270,7 @@ def _display_limits():
 
 
 def _get_limits(max_rows, min_rows, max_columns):
-    """The limits of the rows and columns to read: the display options for any not given."""
+    """Return the row and column limits to read, taking the display options for any not given."""
     display_max_rows, display_min_rows, display_max_columns = _display_limits()
     if max_rows is None:  # pragma: no branch
         max_rows = display_max_rows
@@ -283,8 +279,7 @@ def _get_limits(max_rows, min_rows, max_columns):
     if max_columns is None:  # pragma: no branch
         max_columns = display_max_columns
         if max_columns == 0:
-            # We are probably in a terminal and the renderer will size the data to fit it.
-            # In this case, let's get a sufficiently large amount of data to show.
+            # The renderer fits the columns to the terminal, so read enough to fill it
             max_columns = _NO_LIMIT
     return max_rows, min_rows, max_columns
 
@@ -336,10 +331,10 @@ class _Column:
 
 
 class _GBFrame:
-    """A minimal object/typed-column table, standing in for a pandas DataFrame.
+    """A table of ``_Column``, standing in for a pandas DataFrame.
 
-    ``col_name`` is the columns' index name (pandas ``df.columns.name``); when set
-    it appears in the top-left corner cell, as vector reprs rely on.
+    ``col_name`` is the name of the column labels (pandas ``df.columns.name``). When
+    set, it is shown in the top-left corner, as a dense Vector's repr uses it.
     """
 
     __slots__ = ("columns", "index", "col_name")
@@ -522,11 +517,10 @@ def _format_float_column(values, digits):
     is_complex = np.iscomplexobj(arr)
     na_rep = "NaN"
     if (float_format := _display_option("float_format")) is not None:
-        # A user display.float_format callable makes FloatArrayFormatter drop
-        # fixed_width: each value (real or complex) is just float_format(value),
-        # with no trailing-zero trim and no scientific switchover. Iterate the
-        # numpy array (not .tolist()) so the callable receives numpy scalars, as
-        # pandas does; e.g. a "%f"-style callable then casts complex the same way.
+        # With a display.float_format callable, FloatArrayFormatter drops fixed_width:
+        # each value, real or complex, is float_format(value), with no trimming of
+        # trailing zeros and no switch to scientific notation. The callable gets numpy
+        # scalars, not Python ones, as in pandas, so it casts a complex value the same way.
         return [na_rep if (v != v) else float_format(v) for v in arr]
     seq = arr.tolist()
     threshold = _display_option("chop_threshold")
@@ -544,7 +538,7 @@ def _format_float_column(values, digits):
     has_small = bool(((abs_vals < 10.0 ** (-digits)) & (abs_vals > 0)).any())
     if has_small or (too_long and has_large):
         result = format_with(f"{{value: .{digits:d}e}}")
-    return list(result)
+    return result
 
 
 def _justify(strings, width, mode="right"):
@@ -574,10 +568,10 @@ def _make_fixed_width(strings, justify="right", minimum=None):
 
 
 def _format_labels(labels):
-    # Reproduce pandas Index._format_flat(include_name=False) for our label types:
-    # integer labels get a sign column and are made one width, left-justified and cut
-    # short at display.max_colwidth, then the leading spaces they all share are
-    # trimmed; string labels are left as-is.
+    # Reproduces pandas Index._format_flat(include_name=False) for our label types.
+    # Integer labels get a sign column and are made one width, left-justified and cut
+    # short at display.max_colwidth, and then the leading spaces they all share are
+    # trimmed. String labels are left as they are.
     if labels and all(isinstance(x, (int, np.integer)) and not isinstance(x, bool) for x in labels):
         strs = _make_fixed_width([f"{x: d}" for x in labels], "left")
         while all(s.startswith(" ") for s in strs):
@@ -633,7 +627,10 @@ def _console_width():
 
 
 class _TextFormatter:
-    """Reproduces pandas DataFrameFormatter + StringFormatter for text repr."""
+    """Reproduces pandas DataFrameFormatter and StringFormatter.
+
+    Both reprs truncate the frame with it, and the text repr renders with it.
+    """
 
     def __init__(self, frame, max_rows, min_rows, max_cols):
         self.frame = frame
@@ -648,19 +645,13 @@ class _TextFormatter:
         self.max_rows_fitted = self._calc_max_rows_fitted()
         self.truncate()
 
-    def _is_in_terminal(self):
-        return self.max_cols == 0 or self.max_rows == 0
-
     def _calc_max_cols_fitted(self):
-        if not self._is_in_terminal():
-            return self.max_cols
-        width = shutil.get_terminal_size()[0]
-        if self.max_cols == 0 and self.frame.ncols > width:
+        if self.max_cols == 0 and self.frame.ncols > (width := shutil.get_terminal_size()[0]):
             return width
         return self.max_cols
 
     def _calc_max_rows_fitted(self):
-        if self._is_in_terminal() and self.max_rows == 0:
+        if self.max_rows == 0:
             return _terminal_rows()
         max_rows = self.max_rows
         if max_rows and self.frame.nrows > max_rows and self.min_rows:
@@ -675,39 +666,13 @@ class _TextFormatter:
     def is_truncated_vertically(self):
         return bool(self.max_rows_fitted and self.frame.nrows > self.max_rows_fitted)
 
-    @property
-    def is_truncated(self):
-        return self.is_truncated_horizontally or self.is_truncated_vertically
-
     def truncate(self):
         if self.is_truncated_horizontally:
-            self._truncate_horizontally()
+            self.tr_col_num, kept = _kept(self.max_cols_fitted, self.max_cols, self.tr_frame.ncols)
+            self.tr_frame = self.tr_frame.slice_cols(kept)
         if self.is_truncated_vertically:
-            self._truncate_vertically()
-
-    def _truncate_horizontally(self):
-        col_num = self.max_cols_fitted // 2
-        if col_num >= 1:
-            _len = self.tr_frame.ncols
-            self.tr_frame = self.tr_frame.slice_cols(
-                [*range(col_num), *range(_len - col_num, _len)]
-            )
-        else:
-            col_num = self.max_cols
-            self.tr_frame = self.tr_frame.slice_cols(list(range(col_num)))
-        self.tr_col_num = col_num
-
-    def _truncate_vertically(self):
-        row_num = self.max_rows_fitted // 2
-        if row_num >= 1:
-            _len = self.tr_frame.nrows
-            self.tr_frame = self.tr_frame.slice_rows(
-                [*range(row_num), *range(_len - row_num, _len)]
-            )
-        else:
-            row_num = self.max_rows
-            self.tr_frame = self.tr_frame.slice_rows(list(range(row_num)))
-        self.tr_row_num = row_num
+            self.tr_row_num, kept = _kept(self.max_rows_fitted, self.max_rows, self.tr_frame.nrows)
+            self.tr_frame = self.tr_frame.slice_rows(kept)
 
     def _format_col_raw(self, col):
         if col.kind == "int":
@@ -722,14 +687,10 @@ class _TextFormatter:
             # is_float(v) & notna(v)) and rendered as the na_rep "NaN" instead.
             if _is_float_scalar(v) and not math.isnan(v):
                 if float_format is not None:
-                    # A user display.float_format callable replaces the default
-                    # precision render (and adds no sign-space of its own).
+                    # Without the leading space of the default format
                     out.append(float_format(v))
                 else:
                     out.append(_trim_zeros_single_float(f"{v: .{precision}f}"))
-            elif v is None:  # pragma: no cover (defensive)
-                # Cells come from numpy values or the dense grid, which blanks None
-                out.append(" None")
             elif _is_float_scalar(v):
                 out.append(" NaN")
             else:
@@ -761,43 +722,22 @@ class _TextFormatter:
         corner = "" if self.frame.col_name is None else str(self.frame.col_name)
         return [corner, *idx]
 
-    def get_strcols(self):
-        strcols = self._get_body_strcols()
-        strcols.insert(0, self._get_index_strcol())
-        return strcols
-
-    @property
-    def _adjusted_tr_col_num(self):
-        return self.tr_col_num + 1  # index column is always shown
-
-    def _insert_dot_separators(self, strcols):
-        index_length = len(self._get_index_strcol())
-        if self.is_truncated_horizontally:
-            strcols.insert(self._adjusted_tr_col_num, [" ..."] * index_length)
-        if self.is_truncated_vertically:
-            self._insert_dots_vertical(strcols, index_length)
-        return strcols
-
-    def _insert_dots_vertical(self, strcols, index_length):
-        n_header_rows = index_length - self.tr_frame.nrows
-        row_num = self.tr_row_num
-        for ix, col in enumerate(strcols):
-            cwidth = len(col[row_num])
-            is_dot_col = self.is_truncated_horizontally and ix == self._adjusted_tr_col_num
-            dots = "..." if (cwidth > 3 or is_dot_col) else ".."
-            if ix == 0:
-                dot_mode = "left"
-            elif is_dot_col:
-                cwidth = 4
-                dot_mode = "right"
-            else:
-                dot_mode = "right"
-            col.insert(row_num + n_header_rows, _justify([dots], cwidth, dot_mode)[0])
-
     def _get_strcols(self):
-        strcols = self.get_strcols()
-        if self.is_truncated:
-            strcols = self._insert_dot_separators(strcols)
+        """Return the index and body columns as lists of lines, with dots where truncated."""
+        strcols = [self._get_index_strcol(), *self._get_body_strcols()]
+        dot_col = None
+        if self.is_truncated_horizontally:
+            dot_col = self.tr_col_num + 1  # after the index column
+            strcols.insert(dot_col, [" ..."] * (self.tr_frame.nrows + 1))
+        if self.is_truncated_vertically:
+            row_num = self.tr_row_num
+            for ix, col in enumerate(strcols):
+                cwidth = len(col[row_num])
+                dots = "..." if cwidth > 3 or ix == dot_col else ".."
+                if ix == dot_col:
+                    cwidth = 4
+                # The index column is left-justified; + 1 for the header row
+                col.insert(row_num + 1, dots.ljust(cwidth) if ix == 0 else dots.rjust(cwidth))
         return strcols
 
     def _fit_to_terminal(self, strcols):
@@ -846,6 +786,16 @@ class _TextFormatter:
         if self.max_cols > 0:
             return self._join_multiline(strcols, line_width)
         return self._fit_to_terminal(strcols)
+
+
+def _kept(fitted, limit, length):
+    """Return how many items to show at each end, and the positions of the items shown.
+
+    With room for one item, the first ``limit`` items are shown instead.
+    """
+    if (num := fitted // 2) >= 1:
+        return num, [*range(num), *range(length - num, length)]
+    return limit, list(range(limit))
 
 
 def _render_text(frame):
@@ -978,8 +928,8 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
             )
     present = _count_present(arr)
     truncated = (len(rows), len(columns)) != matrix.shape
-    # Weigh the COO form by the entries it would show: the renderer cuts it to the rows it
-    # shows, as it does the grid
+    # The entries the COO form would show: the renderer cuts it to the rows it shows, as it
+    # does the grid
     coo_rows = matrix._nvals if matrix._nvals <= max_rows else min(min_rows, fit_rows)
     if (
         (mask is None or mask.structure)
