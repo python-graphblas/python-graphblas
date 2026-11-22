@@ -309,10 +309,8 @@ def test_from_networkx_undirected_view_with_a_one_sided_edge_filter(weight):
 @pytest.mark.parametrize("nedges", [1, 2, 3])
 @pytest.mark.parametrize("dtype", ["record", "FP64[2]", "INT64[3]"])
 def test_from_networkx_rejects_udt_dtype(weight, nedges, dtype):
-    # numpy read the weights as the fields or elements of one UDT value, so a type
-    # whose element count matched the number of weights came back as its base
-    # dtype (FP64[2] with two edges gave FP64), and other counts raised unrelated
-    # numpy errors.
+    # Refused for every edge count. numpy would read the weights as the fields or
+    # elements of one UDT value, so FP64[2] with two edges would give an FP64 Matrix.
     if dtype == "record":
         dtype = dtypes.register_anonymous(
             np.dtype([("from_networkx_x", np.int64), ("from_networkx_y", np.float64)])

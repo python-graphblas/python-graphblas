@@ -46,9 +46,8 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
     if dtype is not None:
         dtype = lookup_dtype(dtype)
         if dtype._is_udt:
-            # numpy reads the weights as the fields or elements of one value of
-            # the type, which built a matrix of the type's base dtype for some edge
-            # counts and raised unrelated errors for others (through scipy too).
+            # numpy would read the weights as the fields or elements of one value of
+            # the type
             raise ValueError(
                 f"dtype must be a built-in bool, int, float or complex type, not the UDT {dtype}"
             )
