@@ -18,33 +18,35 @@ from .operator import get_typed_op
 
 
 def einsum(subscripts, *operands, op=semiring.plus_times, optimize="greedy"):
-    """Einstein summation over sparse Tensors with a semiring (numpy.einsum subscripts).
+    """Einstein summation over sparse Tensors with a semiring, using numpy.einsum's subscripts.
 
     **THIS API IS EXPERIMENTAL AND MAY CHANGE.**
 
-    ``op``'s multiply combines the operands of each term, left to right
-    (``mult(mult(a, b), c)``), and its monoid sums the terms over the contracted indices; a
-    result position is present when at least one term exists. Operands may be Tensors,
-    Matrices, Vectors or ndarrays. Each index appears at most once per operand (no
-    diagonals) and ``...`` is not supported.
+    The multiply of the semiring ``op`` combines the operands of each term left to right
+    (``mult(mult(a, b), c)``), and its monoid sums the terms over the contracted indices. A
+    result position has an entry when at least one term exists there. Operands may be
+    Tensors, Matrices, Vectors or ndarrays. Each index appears at most once per operand (no
+    diagonals), and ``...`` is not supported.
 
     When the multiply distributes over the monoid (``plus_times``, ``min_plus``,
     ``max_plus``, ``lor_land``, ``min_max``, any ``min``, ``max`` or ``any`` with ``first``,
-    ``second`` or ``pair``, ...), an index only one operand has is summed out first, and
-    three or more operands are contracted in pairs: in the order ``optimize`` gives if the
-    multiply is also commutative, else left to right. The MTTKRP pattern (``'ijk,jr,kr->ir'``)
-    then goes to ``Tensor.mttkrp``, which never forms the Khatri-Rao product. Other semirings
-    (``plus_pair``, ``plus_first``, ``max_times``, ...) form every term, left to right, and sum
-    only at the end, which takes more memory. The regrouping is exact up to floating-point
-    rounding and integer overflow: an integer ``min_plus`` or ``max_plus`` sum that overflows
-    may wrap in another place than in the term-by-term sum.
+    ``second`` or ``pair``, ...), an index that only one operand has is summed out first,
+    and three or more operands are contracted in pairs. The pairs come in the order
+    ``optimize`` chooses when the multiply also commutes, else left to right. The MTTKRP
+    pattern (``"ijk,jr,kr->ir"``) then goes to ``Tensor.mttkrp``, which never forms the
+    Khatri-Rao product. Other semirings (``plus_pair``, ``plus_first``, ``max_times``, ...)
+    form every term, left to right, and sum only at the end, which takes more memory.
+    Regrouping is exact up to floating-point rounding and integer overflow: an integer
+    ``min_plus`` or ``max_plus`` sum that overflows may wrap at another step than the
+    term-by-term sum does.
 
-    ``optimize`` picks the pairwise order: an ``opt_einsum`` strategy (default ``"greedy"``,
-    or True), used through ``opt_einsum.contract_path`` when it is installed, else a greedy
-    choice by result size (False too); or an explicit path, a sequence of pairs of positions
-    in the list of operands left at each step (each pair's result goes last), as
-    ``opt_einsum.contract_path`` and ``numpy.einsum_path`` give it (numpy's leading
-    ``"einsum_path"`` may stay), used as given with or without ``opt_einsum``.
+    ``optimize`` chooses the pairwise order. It may be an ``opt_einsum`` strategy (default
+    ``"greedy"``, or True), used through ``opt_einsum.contract_path`` when that is installed;
+    without ``opt_einsum``, or with ``optimize=False``, the order is a greedy choice by result
+    size. It may also be an explicit path, as ``opt_einsum.contract_path`` and
+    ``numpy.einsum_path`` return it: a sequence of pairs of positions in the list of operands
+    left at each step, each pair's result going last. numpy's leading ``"einsum_path"`` may
+    stay. An explicit path is used as given, with or without ``opt_einsum``.
     """
     pre = []
     for x in operands:

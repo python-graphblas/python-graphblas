@@ -4,17 +4,17 @@ Semantics follow GraphBLAS for missing values (no fill value) and numpy / the Ar
 shapes and axes. Operations are lazy, as for Matrix: they return a ``TensorExpression``
 that computes on ``.new()`` or ``T(mask, accum, replace) << expr``.
 
-A Tensor stores its entries in one Matrix held by row (``T.ss.matrix``) plus a ``Layout``:
+A Tensor stores its entries in one Matrix stored by row (``T.ss.matrix``) plus a ``Layout``:
 which axes are raveled (C order) into the rows and which into the columns. ``permute_dims``,
-``.T``, ``.mT``, ``expand_dims``, ``squeeze``, and ``reshape`` where the layout holds the
-result, only change the layout, in O(1); the data moves inside an operation when that
+``.T``, ``.mT``, ``expand_dims``, ``squeeze``, and a ``reshape`` that the layout represents
+as it is, change only the layout, in O(1). The data moves inside an operation when that
 operation needs it (``tensor_layout.relayout``).
 Tensors that share a stored Matrix copy it before one of them is changed in place
 (copy-on-write), so a Tensor never sees another's writes.
 
-**THIS API IS EXPERIMENTAL AND MAY CHANGE.** SuiteSparse:GraphBLAS 10 or later, with the
-suitesparse backend. ``gb.Tensor`` and ``gb.einsum``; the user guide's "Tensors" page
-covers the model, the operations and the engines.
+**THIS API IS EXPERIMENTAL AND MAY CHANGE.** It needs SuiteSparse:GraphBLAS 10 or later and
+the suitesparse backend. The public names are ``gb.Tensor`` and ``gb.einsum``; the user
+guide's "Tensors" page covers the model, the operations and the engines.
 
 The operation families live in their own modules (tensor_shape, tensor_ewise, tensor_reduce,
 tensor_contract, tensor_engines, tensor_einsum, tensor_index), which this module imports at
@@ -390,20 +390,25 @@ class Tensor(BaseType):
         return TensorUpdater(self, opts=u.opts, **u.kwargs)
 
     def __getitem__(self, keys):
-        """Extract with outer (orthogonal) indexing, as GraphBLAS extract does: ints drop
-        their axis; slices, lists and int arrays keep it (``T[[0, 1], [0, 1]]`` is 2 x 2,
-        not numpy's two elements). ``...`` fills in full slices. Returns a TensorExpression
-        (an all-int key gives a 0-d Tensor), which also receives an assignment:
-        ``T[idx] << value``, ``T[idx](mask, accum, replace) << value`` (the mask has the
-        region's shape: GxB_subassign).
+        """Extract with outer (orthogonal) indexing, as GraphBLAS extract does.
+
+        Ints drop their axis; slices, lists and integer arrays keep it, so ``T[[0, 1], [0, 1]]``
+        is 2 x 2, not numpy's two elements. ``...`` stands for full slices. A key of all ints
+        gives a 0-d Tensor.
+
+        Returns a lazy expression, which can also be assigned to: ``T[idx] << value``, or
+        ``T[idx](mask, accum, replace) << value`` with a mask of the region's shape
+        (GxB_subassign).
         """
         return _extract_expr(self, keys)
 
     def __setitem__(self, keys, value):
-        """``T[idx] = value``: assign as Matrix does (GraphBLAS assign), the value broadcast
-        to the region's shape (numpy rules); the region takes the value's structure, and a
-        scalar fills it. ``T(mask, accum, replace)[idx] = value`` masks over the whole Tensor
-        (GrB_assign).
+        """Assign ``value`` to the region ``T[idx]`` selects, as Matrix assignment does.
+
+        The value broadcasts to the region's shape by numpy's rules, and a scalar fills the
+        region. Without ``accum`` the region takes the value's structure.
+        ``T(mask, accum, replace)[idx] = value`` applies a mask of the Tensor's shape to the
+        whole Tensor (GrB_assign).
         """
         self()._assign(keys, value, is_submask=False)
 
@@ -413,10 +418,10 @@ class Tensor(BaseType):
 
     @classmethod
     def from_matrices(cls, mats, axis=0, *, name=None):
-        """Stack equally shaped Matrices along a new ``axis`` (0, 1 or 2) into a 3-d Tensor.
+        """Stack Matrices of one shape along a new ``axis`` (0, 1 or 2) into a 3-d Tensor.
 
-        The data is one vertical concatenation (``ss.concat``); ``axis`` only chooses which
-        logical axis the stacking is.
+        The result's dtype unifies the Matrices' dtypes. It costs one concatenation
+        (``ss.concat``) for any ``axis``, which only sets the layout.
         """
         _check_backend()
         mats = [
@@ -440,7 +445,10 @@ class Tensor(BaseType):
         return cls._from_M(M, tuple(shape), Layout((axis, r_ax), (c_ax,)), name=name)
 
     def to_matrices(self, axis=0):
-        """The Matrices of a 3-d Tensor along ``axis`` (the other two axes in order)."""
+        """Split a 3-d Tensor along ``axis`` into a list of Matrices.
+
+        Each Matrix has the other two axes, in order, as its rows and columns.
+        """
         if self.ndim != 3:
             raise ValueError(f"to_matrices needs a 3-d Tensor; this one has shape {self._shape}")
         axis = _normalize_axis(axis, 3)
@@ -467,7 +475,8 @@ class Tensor(BaseType):
         Parameters
         ----------
         indices : sequence of 1-d integer arrays, or an (ndim, nvals) integer array
-            ``indices[a]`` holds the coordinates along axis ``a`` (the ``np.nonzero`` form).
+            ``indices[a]`` has the coordinates along axis ``a`` (the form ``np.nonzero``
+            returns).
         values : array or scalar, default 1.0
             A scalar stores one value for every entry (iso).
         dtype : optional
@@ -475,8 +484,8 @@ class Tensor(BaseType):
         shape : tuple of ints, optional
             Inferred from the largest index along each axis if not given.
         layout : Layout or (rows, cols), optional
-            The stored layout (pinned). The default is the identity axis order with the
-            split chosen for about four entries per nonempty row.
+            The stored layout, which later updates keep (it is pinned). The default is the
+            identity axis order, split so that the rows have enough entries each.
         dup_op : BinaryOp, optional
             Combines values at repeated coordinates; repeated coordinates raise without it.
         name : str, optional
@@ -559,11 +568,11 @@ class Tensor(BaseType):
 
     @classmethod
     def from_matrix(cls, A, *, copy=True, name=None):
-        """A 2-d Tensor from a Matrix (or ``A.T``).
+        """Create a 2-d Tensor from a Matrix (or ``A.T``).
 
-        With ``copy=False`` the Tensor uses A's data without copying when A is held by row
-        (use it read-only: changing A changes the Tensor). A Matrix held by column is copied
-        and stored as its transpose held by row, which costs no transpose.
+        With ``copy=False`` and A stored by row, the Tensor uses A's data without a copy, so
+        changing A changes the Tensor; use it read-only. A Matrix stored by column is always
+        copied, without a transpose: the Tensor stores it in layout ``(1|0)``.
         """
         _check_backend()
         if type(A) is TransposedMatrix:
@@ -582,7 +591,7 @@ class Tensor(BaseType):
 
     @classmethod
     def from_vector(cls, v, *, name=None):
-        """A 1-d Tensor from a Vector (a copy, stored as one row like the Vector itself)."""
+        """Create a 1-d Tensor from a Vector (a copy)."""
         _check_backend()
         if type(v) is not Vector:
             raise TypeError(f"from_vector needs a Vector; got {type(v)}")
@@ -591,8 +600,10 @@ class Tensor(BaseType):
 
     @classmethod
     def from_dense(cls, values, missing_value=None, *, dtype=None, layout=None, name=None):
-        """A Tensor from a numpy array (or array-like): every position is present, except
-        those equal to ``missing_value`` when it is given (as ``Matrix.from_dense``).
+        """Create a Tensor from a numpy array or array-like.
+
+        Every position becomes an entry, except those equal to ``missing_value`` when it is
+        given, as in ``Matrix.from_dense``.
         """
         _check_backend()
         values = np.asarray(values)
@@ -615,7 +626,10 @@ class Tensor(BaseType):
         )
 
     def to_dense(self, fill_value=None, dtype=None):
-        """A numpy array; raises if an entry is missing and ``fill_value`` is not given."""
+        """Return the values as a numpy array.
+
+        Missing entries take ``fill_value``; without one, a missing entry raises.
+        """
         M, lay = self._M, self._layout
         identity = tuple(range(self.ndim))
         if lay.seq != identity:
@@ -636,9 +650,9 @@ class Tensor(BaseType):
         """Return ``(indices, values)``: a tuple of int64 index arrays (one per axis) and the
         values.
 
-        With ``sort=True`` the entries come in logical C order. A Tensor whose layout is not
-        the identity axis order is relaid out for that first, which costs a relayout of the
-        whole Tensor; ``sort=False`` returns the stored order without moving data.
+        With ``sort=True`` the entries come in C order of their indices, which moves the data
+        first when the layout is not the identity axis order. ``sort=False`` returns the
+        stored order without moving data.
         """
         M, lay = self._M, self._layout
         identity = tuple(range(self.ndim))
@@ -661,20 +675,19 @@ class Tensor(BaseType):
     def from_pydata_sparse(cls, s, *, dup_op=None, layout=None, name=None):
         """Create a Tensor from a pydata/sparse array (COO, GCXS or DOK) of any rank.
 
-        Explicit zeros stay entries. The array's fill value must be 0: a Tensor has no fill
-        value. Values are copied once; a COO's coordinates are raveled into the Matrix's row
-        and column indices. A GCXS array (ndim >= 2) imports its arrays as they are, one copy
-        each, and the Tensor takes its layout: the compressed axes as rows, the others as
-        columns. If those columns are past 2^60 positions, which no Matrix holds, its entries
-        are decoded and the Tensor takes a layout of its own.
+        Explicit zeros stay entries. The array's fill value must be 0, since a Tensor has no
+        fill value. Values are copied once. A GCXS array (ndim >= 2) imports its arrays with
+        one copy each, and the Tensor takes its layout: the compressed axes as rows and the
+        others as columns. When the other axes have more than 2^60 positions, too many for a
+        Matrix, the entries are decoded and the Tensor gets a layout of its own.
 
         Parameters
         ----------
         s : sparse.SparseArray
             See https://sparse.pydata.org
         dup_op : BinaryOp, optional
-            Combines values at repeated coordinates, which only a GCXS array can hold
-            (pydata's COO sums them); by default they are summed, as pydata's ``todense``
+            Combines values at repeated coordinates, which only a GCXS array can have
+            (pydata's COO sums them). By default they are summed, as pydata's ``todense``
             does.
         layout : Layout or (rows, cols), optional
             The stored layout (pinned), as in ``from_coo``.
@@ -691,28 +704,29 @@ class Tensor(BaseType):
         Parameters
         ----------
         format : {"coo", "gcxs", "dok"}, default "coo"
-            "coo" is in C order, so a Tensor whose layout is not the identity axis order is
-            relaid out first. "gcxs" uses the Tensor's layout as it is when GCXS can hold it
-            (both groups nonempty and in increasing order) and its row pointer is small, else
-            the compressed axes described below.
+            "coo" is in C order, which moves the data first when the layout is not the
+            identity axis order. "gcxs" uses the Tensor's layout when GCXS can store it and
+            its row pointer is small; see below.
         compressed_axes : sequence of ints, optional
-            The axes GCXS compresses (the rows of a layout), for "gcxs".
+            For "gcxs", the axes to compress (the rows of a layout).
 
-        A "coo" array (and "dok", built from it) takes memory by the entries. A "gcxs" array
-        also holds a row pointer with one int64 per position of its compressed axes (the
-        product of their lengths, plus one), so its memory follows that product whatever the
-        entries: two compressed axes of 2^20 make a row pointer of 2^40 slots.
+        A "coo" array, and a "dok" array built from it, takes memory in proportion to the
+        entries. A "gcxs" array also has a row pointer with one int64 per position of its
+        compressed axes (the product of their lengths, plus one), so its memory grows with
+        that product whatever the entries: two compressed axes of length 2^20 make a row
+        pointer of 2^40 slots.
 
-        Without ``compressed_axes``, the Tensor's own row axes are compressed when GCXS can
-        hold its layout and the pointer has at most 2^20 slots or two per entry. Otherwise the
-        export takes the cheapest layout whose pointer is that small, or failing that the
-        compressed axes with the shortest pointer. Those may leave a column group past 2^60
-        positions, which no Matrix can hold and GCXS stores in int64 indices (below 2^63).
-        ``from_pydata_sparse`` reads such an array back; past 2^63 positions in all, pydata's
-        own ``tocoo``, ``sum``, indexing and ``transpose`` raise on it.
+        Without ``compressed_axes``, the export compresses the Tensor's own row axes when GCXS
+        can store its layout (both groups nonempty and in increasing order) and the pointer
+        has at most 2^20 slots or two per entry. Otherwise it takes the cheapest layout whose
+        pointer is that small, or failing that the compressed axes with the shortest pointer.
+        Those may leave more than 2^60 positions in the other axes, too many for a Matrix;
+        GCXS stores them in int64 indices (below 2^63), and ``from_pydata_sparse`` reads such
+        an array back. Past 2^63 positions in all, pydata's own ``tocoo``, ``sum``, indexing
+        and ``transpose`` raise on it.
 
-        A pointer of more than 2^28 positions and more than two per entry (2 GiB, out of
-        proportion to the data) raises ``ValueError``, with or without ``compressed_axes``:
+        A pointer with more than 2^28 slots and more than two per entry (2 GiB, out of
+        proportion to the data) raises ``ValueError``, with or without ``compressed_axes``;
         use "coo" for such an array.
         """
         from .tensor_io import to_pydata_sparse
@@ -723,10 +737,10 @@ class Tensor(BaseType):
     def from_scipy_sparse(cls, A, *, dup_op=None, layout=None, name=None):
         """Create a Tensor from a scipy.sparse array: an n-d ``coo_array``, or any 2-d format.
 
-        Explicit zeros stay entries; repeated coordinates add up as in scipy unless
-        ``dup_op`` says otherwise. A COO array's coordinates are raveled into the Matrix's row
-        and column indices and its values copied once. A canonical 2-d CSR or CSC array
-        imports its arrays (one copy each) into layout ``(0|1)`` or ``(1|0)``.
+        Explicit zeros stay entries, and repeated coordinates are summed as in scipy unless
+        ``dup_op`` says otherwise. A COO array's values are copied once. A 2-d CSR or CSC
+        array in canonical format imports its arrays with one copy each, into layout
+        ``(0|1)`` or ``(1|0)``.
 
         Parameters
         ----------
@@ -743,27 +757,28 @@ class Tensor(BaseType):
         return from_scipy_sparse(cls, A, dup_op=dup_op, layout=layout, name=name)
 
     def to_scipy_sparse(self, format="coo"):
-        """Create a scipy.sparse array (``coo_array`` for any rank but 0).
+        """Create a scipy.sparse array, by default a ``coo_array``.
 
-        scipy.sparse has n-d COO arrays (more than 2 dimensions) from scipy 1.15 on; with an
-        older scipy, those ranks raise ``NotImplementedError``.
+        A Tensor with more than 2 dimensions needs scipy 1.15 or later, which added n-d COO
+        arrays; with an older scipy it raises ``NotImplementedError``. A 0-d Tensor raises
+        ``ValueError``, since scipy.sparse has no 0-d arrays.
 
-        A COO array comes in the stored order with no relayout; it is in C order (marked
-        canonical) when the layout is the identity axis order. A 2-d Tensor may also give
-        the other scipy formats, as ``graphblas.io.to_scipy_sparse``: "csr" from layout
-        ``(0|1)`` and "csc" from ``(1|0)`` take the stored arrays (one copy).
+        The COO array comes in the stored order, without moving data. It is in C order, and
+        marked canonical, when the layout is the identity axis order. A 2-d Tensor also
+        converts to the other formats of ``graphblas.io.to_scipy_sparse``: "csr" from layout
+        ``(0|1)`` and "csc" from ``(1|0)`` copy the stored arrays once.
         """
         from .tensor_io import to_scipy_sparse
 
         return to_scipy_sparse(self, format)
 
     def to_matrix(self, rows=None, *, copy=True):
-        """A Matrix with the axes ``rows`` (in that order) raveled into the rows and the other
-        axes (in increasing order) into the columns, both in C order.
+        """Return a Matrix whose rows ravel the axes ``rows``, in that order, and whose
+        columns ravel the other axes in increasing order (both in C order).
 
-        ``rows=None`` gives the stored grouping for ndim != 2 (no data moves) and the plain
-        Matrix (``rows=(0,)``) for a 2-d Tensor. With ``copy=False`` the result may be the
-        stored Matrix itself; use it read-only.
+        By default a 2-d Tensor gives the plain Matrix (``rows=(0,)``), and a Tensor of
+        another rank gives its stored Matrix, without moving data. With ``copy=False`` the
+        result may be the stored Matrix itself; use it read-only.
         """
         if rows is None and self.ndim != 2:
             M = self._M
@@ -781,7 +796,7 @@ class Tensor(BaseType):
         return M
 
     def to_vector(self):
-        """The Vector of a 1-d Tensor."""
+        """Return a 1-d Tensor as a Vector."""
         if self.ndim != 1:
             raise ValueError(f"to_vector needs a 1-d Tensor; this one has shape {self._shape}")
         if self._layout.rows:
@@ -789,13 +804,17 @@ class Tensor(BaseType):
         return tl.steal_row_as_vector(self._M.dup())
 
     def to_scalar(self):
-        """The Scalar of a 0-d Tensor."""
+        """Return a 0-d Tensor as a Scalar."""
         if self.ndim != 0:
             raise ValueError(f"to_scalar needs a 0-d Tensor; this one has shape {self._shape}")
         return self._M[0, 0].new()
 
     def dup(self, dtype=None, *, layout=None, clear=False, name=None):
-        """A copy (sharing data copy-on-write when the layout and dtype stay the same)."""
+        """Return a copy, optionally with another dtype or layout, or empty (``clear=True``).
+
+        When the dtype and layout stay the same, the copy shares the data until one of them
+        changes (copy-on-write).
+        """
         dtype = self.dtype if dtype is None else lookup_dtype(dtype)
         if clear:
             return Tensor(dtype, self._shape, layout=layout, name=name)
@@ -812,7 +831,10 @@ class Tensor(BaseType):
         return T
 
     def relayout(self, layout, *, inplace=False):
-        """Store the data in ``layout``; the layout is then pinned (kept by ``<<``)."""
+        """Return the Tensor stored in ``layout``, or with ``inplace=True`` change this one.
+
+        The layout is then pinned: later ``<<`` updates keep it.
+        """
         target = tl.as_layout(layout, self._shape)
         M, lay = tl.relayout(self._M, self._shape, self._layout, target)
         if inplace:
@@ -846,14 +868,13 @@ class Tensor(BaseType):
             "complete" establishes a "happens-before" relation useful with multi-threading.
             See GraphBLAS documentation for more details.
 
-        "materialize" finishes any pending work and, when the stored Matrix is hypersparse
-        and its list of rows (the hyperlist) is longer than SuiteSparse's ``GxB_HYPER_HASH``
-        setting (1024 by default), builds the hash of those rows that row lookups use. That
-        hash is not free: 0.7-1.0 s at 1 thread for the 1.7e7 to 2.1e7 rows of a TTM of the
-        NELL-2 tensor along mode 0 or 1, 40-55% of the time. "complete" does no work at all,
-        and most operations on the Tensor finish their operand first, so the next one does
-        both then. A result the Tensor builds from arrays (the Numba engines) has no hash
-        until it is materialized, so this can take time in blocking mode too.
+        "materialize" can take time. Besides finishing pending work, it builds the hash of
+        rows that row lookups use when the stored Matrix is hypersparse with more nonempty
+        rows than SuiteSparse's ``GxB_HYPER_HASH`` setting (1024 by default). For a TTM of a
+        large tensor, building that hash can take about half the time of the TTM. "complete"
+        does no work, and the next operation on the Tensor does that work instead. A result
+        the Numba engines build from arrays has no hash until it is materialized, so this can
+        take time in blocking mode too.
 
         Returns the Tensor, as ``Matrix.wait`` returns the Matrix.
         """
@@ -873,8 +894,10 @@ class Tensor(BaseType):
         return self._expect_type(other, Tensor, within=within, argname="other")
 
     def isequal(self, other, *, check_dtype=False):
-        """Whether ``other`` has the same shape, the same entries and equal values. ``other``
-        is a Tensor, or a Matrix, Vector or Scalar (compared as a 2-, 1- or 0-d Tensor).
+        """Whether ``other`` has the same shape, the same entries and equal values.
+
+        ``other`` is a Tensor, or a Matrix, Vector or Scalar, compared as a 2-, 1- or 0-d
+        Tensor.
         """
         other = self._comparand(other, "isequal")
         if check_dtype and self.dtype != other.dtype:
@@ -885,8 +908,9 @@ class Tensor(BaseType):
         return A.isequal(B, check_dtype=check_dtype)
 
     def isclose(self, other, *, rel_tol=1e-7, abs_tol=0.0, check_dtype=False):
-        """Whether ``other`` has the same shape, the same entries and close values (a Tensor,
-        Matrix, Vector or Scalar, as for ``isequal``).
+        """Whether ``other`` has the same shape, the same entries and close values.
+
+        ``other`` is a Tensor, Matrix, Vector or Scalar, as for ``isequal``.
         """
         other = self._comparand(other, "isclose")
         if check_dtype and self.dtype != other.dtype:
@@ -908,12 +932,12 @@ class Tensor(BaseType):
 
     @property
     def T(self):
-        """All axes reversed (numpy's ``.T``); a Tensor sharing this one's data."""
+        """The Tensor with all axes reversed (numpy's ``.T``), sharing this one's data."""
         return self.permute_dims(tuple(range(self.ndim - 1, -1, -1)))
 
     @property
     def mT(self):
-        """The last two axes swapped (the Array API's matrix transpose)."""
+        """The Tensor with the last two axes swapped (the Array API's matrix transpose)."""
         if self.ndim < 2:
             raise ValueError("mT needs at least 2 dimensions")
         axes = list(range(self.ndim))
@@ -951,23 +975,23 @@ class Tensor(BaseType):
         return self._view(tuple(self._shape[a] for a in keep), Layout(rows, cols))
 
     def reshape(self, *shape, copy=None):
-        """The same entries in a new shape, in C order (numpy's and the Array API's
-        ``reshape``): ``T.reshape(2, -1)`` or ``T.reshape((2, -1))``; one size may be -1.
+        """The same entries in a new shape, in C order, as numpy's and the Array API's
+        ``reshape``: ``T.reshape(2, -1)`` or ``T.reshape((2, -1))``. One size may be -1.
 
-        A reshape splits and fuses runs of axes. When each such run lies within one group of
-        the layout, in order, the stored Matrix holds the result as it is: the result is a
-        view in O(1), sharing the data copy-on-write as ``permute_dims`` does (size-1 axes
-        never matter). Otherwise the data moves once, by a planned relayout to a layout
-        where that holds, and the result has data of its own.
+        A reshape splits and fuses runs of axes. When each run lies within one group of the
+        layout, in order, the stored Matrix already represents the result: the result is a
+        view, in O(1), sharing the data copy-on-write as ``permute_dims`` does (size-1 axes
+        never matter). Otherwise the data moves once, to a layout where that is so, and the
+        result has data of its own.
 
         Parameters
         ----------
         shape : ints, or a tuple of ints
         copy : bool, optional
             True: the result has data of its own, copied now. False: raise ValueError where
-            the data would have to move. None (default): a view where possible. (A view
-            behaves as a copy either way: changing it, or this Tensor, copies the data
-            first.)
+            the data would have to move. None (default): a view where possible. A view
+            behaves as a copy either way, since changing it, or this Tensor, copies the data
+            first.
         """
         if len(shape) == 1 and not isinstance(shape[0], (int, np.integer)):
             shape = shape[0]
@@ -988,21 +1012,27 @@ class Tensor(BaseType):
         return T
 
     def take(self, indices, axis=None, *, mode="raise", wraparound=True):
-        """Numpy's ``take``: the entries at ``indices`` (any shape) along ``axis``, or of the
-        flattened Tensor (C order) when ``axis`` is None; the result's shape puts
-        ``indices.shape`` in place of the axis. A position that lands on a missing entry is
-        missing. Negative indices count from the end once (``wraparound=False``: they raise
-        IndexError). ``mode`` is numpy's: out of range raises IndexError (``"raise"``), wraps
-        (``"wrap"``) or clips (``"clip"``, where a negative index clips to 0).
+        """Numpy's ``take``: the entries at ``indices`` (of any shape) along ``axis``.
+
+        With ``axis=None`` it indexes the flattened Tensor, in C order. The result's shape
+        has ``indices.shape`` in place of the axis, and a position that lands on a missing
+        entry is missing. Negative indices count from the end, or with ``wraparound=False``
+        raise IndexError. ``mode`` is numpy's: an index out of range raises IndexError
+        (``"raise"``), wraps (``"wrap"``) or clips (``"clip"``, where a negative index clips
+        to 0).
+
+        Unlike most Tensor methods, it computes at once and returns a Tensor.
         """
         from .tensor_index import take
 
         return take(self, indices, axis, mode=mode, wraparound=wraparound)
 
     def take_along_axis(self, indices, axis=-1, *, wraparound=True):
-        """Numpy's ``take_along_axis``: ``indices`` has the Tensor's ndim and broadcasts
-        against it except along ``axis``; ``out[..., i, ...] = T[..., indices[..., i, ...],
-        ...]``, missing where the Tensor is. Negatives as for ``take``.
+        """Numpy's ``take_along_axis``: ``out[..., i, ...] = T[..., indices[..., i, ...], ...]``.
+
+        ``indices`` has the Tensor's ndim and broadcasts against it except along ``axis``.
+        The result is missing where the Tensor is, and negative indices work as for ``take``.
+        It computes at once and returns a Tensor.
         """
         from .tensor_index import take_along_axis
 
@@ -1010,25 +1040,30 @@ class Tensor(BaseType):
 
     @property
     def vindex(self):
-        """Vectorized (pointwise) integer indexing, as numpy's advanced indexing (dask's and
-        zarr's ``vindex``): ``T.vindex[i0, i1, ...]`` with one int, Scalar or integer array per
-        axis, broadcast together; the result has their broadcast shape and is missing where
-        the Tensor is. ``T[...]`` stays outer indexing. ``T.vindex(wraparound=False)[...]``
-        refuses negative indices.
+        """Vectorized (pointwise) integer indexing, as in numpy's advanced indexing and in
+        dask's and zarr's ``vindex``.
+
+        ``T.vindex[i0, i1, ...]`` takes one int, Scalar or integer array per axis, broadcast
+        together. The result has their broadcast shape and is missing where the Tensor is.
+        ``T[...]`` stays outer indexing. ``T.vindex(wraparound=False)[...]`` raises
+        IndexError for negative indices.
         """
         from .tensor_index import VIndexer
 
         return VIndexer(self)
 
     def ravel(self):
-        """The 1-d Tensor of all positions in C order: ``reshape(-1)``, a view where
-        possible (numpy's ``ravel``).
+        """The 1-d Tensor of all positions in C order (numpy's ``ravel``).
+
+        This is ``reshape(-1)``, a view where possible.
         """
         return self.reshape(-1)
 
     def flatten(self):
-        """The 1-d Tensor of all positions in C order, with data of its own:
-        ``reshape(-1, copy=True)`` (numpy's ``flatten``).
+        """The 1-d Tensor of all positions in C order, with data of its own (numpy's
+        ``flatten``).
+
+        This is ``reshape(-1, copy=True)``.
         """
         return self.reshape(-1, copy=True)
 
@@ -1037,23 +1072,25 @@ class Tensor(BaseType):
         """Element-wise ``op`` on the union of entries.
 
         Shapes broadcast as in numpy. A position present in only one operand takes its value,
-        so a broadcast operand is replicated over the broadcast axes; that raises when it would
-        replicate more than ``graphblas.config["tensor_max_expansion"]`` entries unless
-        ``allow_expansion=True``.
+        so a broadcast operand is replicated over the broadcast axes. That raises ValueError
+        when it would replicate more than ``graphblas.config["tensor_max_expansion"]``
+        entries, unless ``allow_expansion=True``.
         """
         return _ewise_expr(self, "ewise_add", other, op, allow_expansion=allow_expansion)
 
     def ewise_mult(self, other, op=binary.times):
         """Element-wise ``op`` on the intersection of entries (numpy broadcasting).
 
-        When one operand covers the whole result shape the other is applied as a diagonal
-        scaling, without replicating it.
+        When one operand has the result's shape, the other is not replicated over the
+        broadcast axes.
         """
         return _ewise_expr(self, "ewise_mult", other, op)
 
     def ewise_union(self, other, op, left_default, right_default, *, allow_expansion=False):
-        """Element-wise ``op`` on the union, with defaults for a missing side (numpy
-        broadcasting, replicated as for ``ewise_add``).
+        """Element-wise ``op`` on the union of entries, with defaults for a missing side.
+
+        Shapes broadcast as in numpy, and a broadcast operand is replicated as for
+        ``ewise_add``.
         """
         return _ewise_expr(
             self,
@@ -1076,9 +1113,11 @@ class Tensor(BaseType):
         return self.ewise_union(other, op, left_default, right_default)
 
     def select(self, op, thunk=None):
-        """Keep the entries whose values pass ``op``: a value selector, as an operator
-        (``select.valuegt``) or a string as Matrix takes it (``">"``, ``"valuegt"``);
-        index-based selectors are not supported yet. ``thunk`` may be a 0-d Tensor.
+        """Keep the entries whose values pass ``op``.
+
+        ``op`` is a value selector, as an operator (``select.valuegt``) or a string as for
+        Matrix (``">"``, ``"valuegt"``). Index-based selectors raise NotImplementedError.
+        ``thunk`` may be a 0-d Tensor.
         """
         # (Matrix resolves the op, strings included; the probe is not computed)
         thunk = _as_scalar_operand(thunk)
@@ -1100,8 +1139,9 @@ class Tensor(BaseType):
         )
 
     def apply(self, op, right=None, *, left=None):
-        """Apply ``op`` to every stored value (with a scalar ``left`` or ``right`` for a
-        BinaryOp); a 0-d Tensor serves as that scalar.
+        """Apply ``op`` to every stored value.
+
+        A BinaryOp needs a scalar ``left`` or ``right``, which may be a 0-d Tensor.
         """
         right, left = _as_scalar_operand(right), _as_scalar_operand(left)
         probe = self._M.apply(op, right=right, left=left)
@@ -1118,11 +1158,13 @@ class Tensor(BaseType):
 
     # Reductions
     def reduce(self, op=monoid.plus, axis=None, *, keepdims=False):
-        """Reduce over ``axis`` (None: all axes, giving a 0-d Tensor) with the monoid ``op``,
-        or an aggregator made of one (``agg.sum``, ``agg.max``, ...) or of a semiring
-        (``agg.count``, ``agg.count_nonzero``, ``agg.sum_of_squares``, ``agg.hypot``, ...).
-        Composite aggregators (``agg.mean``, ``agg.varp``, ...) and ones that need positions
-        (``agg.argmin``, ``agg.first``, ...) are not supported.
+        """Reduce over ``axis`` with the monoid ``op`` or an aggregator.
+
+        ``axis=None`` reduces over all axes and gives a 0-d Tensor. An aggregator may be made
+        of a monoid (``agg.sum``, ``agg.max``, ...) or of a semiring (``agg.count``,
+        ``agg.count_nonzero``, ``agg.sum_of_squares``, ``agg.hypot``, ...). Composite
+        aggregators (``agg.mean``, ``agg.varp``, ...) and ones that need positions
+        (``agg.argmin``, ``agg.first``, ...) raise NotImplementedError.
 
         A position whose fiber has no entries stays missing (it is not 0).
         """
@@ -1136,9 +1178,9 @@ class Tensor(BaseType):
     def matmul(self, other, op=semiring.plus_times):
         """Matrix product with numpy's ``matmul`` rules (also ``X @ Y``).
 
-        The last two axes multiply as matrices; leading (batch) axes broadcast. A 1-d operand
-        is promoted to a matrix (a row on the left, a column on the right) and the added axis
-        is removed from the result. Batch axes that both operands have are done in one
+        The last two axes multiply as matrices, and leading (batch) axes broadcast. A 1-d
+        operand is promoted to a matrix (a row on the left, a column on the right), and the
+        added axis is removed from the result. Batch axes that both operands have run as one
         product over a block-diagonal embedding.
         """
         return _matmul_expr(self, other, op)
@@ -1151,37 +1193,43 @@ class Tensor(BaseType):
 
         ``axes`` is an int N (the last N axes of this Tensor with the first N of ``other``)
         or a pair of axis sequences. The result has this Tensor's free axes, then those of
-        ``other``. ``op`` is the semiring; a position is present when at least one pair of
-        entries meets there. ``other`` may be a Tensor, Matrix, Vector or ndarray.
+        ``other``. ``op`` is the semiring; a result position has an entry when at least one
+        pair of entries contributes to it. ``other`` may be a Tensor, Matrix, Vector or
+        ndarray.
 
-        A vector contracted over an axis inside one group of the stored layout (TTV) scales
-        by a diagonal and reduces with a selector, without moving the data.
+        A contraction of one axis with a 1-d operand (TTV) can run on the stored layout
+        without moving the data: one mxv or vxm when the axis is a whole group of the
+        layout, or a weighted selector when it lies inside one.
         """
         return _tensordot_expr(self, other, axes, op)
 
     def mttkrp(self, factors, mode, op=semiring.plus_times):
         """Matricized tensor times Khatri-Rao product for ``mode``: an (I_mode x R) Tensor.
 
-        ``factors`` holds one (I_n x R) factor per axis (Matrix or ndarray; the entry for
-        ``mode`` is ignored). For 3-d mode 0 this is ``einsum('ijk,jr,kr->ir', X, B, C)``,
-        computed as one TTM and then one product per remaining axis against an (I_n R x R)
-        embedding of its factor, never materializing the Khatri-Rao product.
-        With Numba installed, a tensor of 3 or more axes and 2^16 entries or more, of bool,
-        integer, FP32 or FP64 values, with full FP64 factors and ``plus_times`` (an FP64
-        result), takes a kernel over the stored arrays instead, in the layout it is stored in
-        (or after a relayout). Both
-        sum over one axis before multiplying by the next factor, which needs a semiring
-        whose multiply distributes over its monoid and commutes (see ``einsum``); others
-        take einsum's way, ``mult(mult(X, F_0), F_1)``... in axis order for each term.
+        ``factors`` has one (I_n x R) factor per axis, a Matrix or ndarray; the one for
+        ``mode`` is ignored. For a 3-d Tensor and mode 0 this is
+        ``einsum("ijk,jr,kr->ir", X, B, C)``. It never forms the Khatri-Rao product: it
+        computes one TTM, then one product per remaining axis with an (I_n R x R) embedding
+        of that axis's factor.
+
+        With Numba installed, a kernel over the stored arrays runs instead for a Tensor of 3
+        or more axes and at least 2^16 entries, with bool, integer, FP32 or FP64 values, full
+        FP64 factors and ``plus_times`` (an FP64 result).
+
+        Both ways sum over one axis before multiplying by the next factor, which needs a
+        semiring whose multiply commutes and distributes over its monoid (see ``einsum``).
+        With other semirings each term multiplies its operands in axis order, as ``einsum``
+        does: ``mult(mult(X, F_0), F_1)`` and so on.
         """
         return _mttkrp_expr(self, factors, mode, op)
 
     def unfold(self, mode, order="C"):
         """The mode-``mode`` unfolding as a Matrix of shape (I_mode, prod(other sizes)).
 
-        ``order="C"`` (numpy and tensorly): the other axes in increasing order, the last
-        varying fastest, as ``np.moveaxis(X, mode, 0).reshape(I_mode, -1)``. ``order="F"``
-        (Kolda and Bader): the first of the other axes varies fastest.
+        With ``order="C"`` (as in numpy and tensorly) the columns ravel the other axes in
+        increasing order, the last varying fastest, as
+        ``np.moveaxis(X, mode, 0).reshape(I_mode, -1)``. With ``order="F"`` (as in Kolda and
+        Bader) the first of the other axes varies fastest.
         """
         mode = _normalize_axis(mode, self.ndim)
         others = tuple(a for a in range(self.ndim) if a != mode)
@@ -1398,9 +1446,10 @@ class TensorExpression(BaseExpression):
 
 
 class TensorIndexExpr(TensorExpression):
-    """``T[idx]``: an extraction (``.new()``, or an operand), or the target of an assignment:
-    ``T[idx] << value`` and ``T[idx](mask, accum, replace) << value`` (the mask has the
-    region's shape: GxB_subassign).
+    """``T[idx]``: an extraction (``.new()``, or an operand), or the target of an assignment.
+
+    It receives ``T[idx] << value`` and ``T[idx](mask, accum, replace) << value``, with a mask
+    of the region's shape (GxB_subassign).
     """
 
     __slots__ = ("_parent", "_keys")
@@ -1643,7 +1692,7 @@ class _TensorSS:
 
     @property
     def format(self):
-        """The SuiteSparse format of the stored Matrix (always held by row)."""
+        """The SuiteSparse format of the stored Matrix, which is always stored by row."""
         return self._parent._M.ss.format
 
     @property
@@ -1652,9 +1701,11 @@ class _TensorSS:
 
     @property
     def matrix(self):
-        """The stored Matrix itself. Use it read-only: the Tensor copies its data before its
-        next in-place change, but changes made through this Matrix reach the Tensor, and every
-        Tensor that shares its storage (its views, ``dup()``, Tensors assigned from it).
+        """The stored Matrix itself; use it read-only.
+
+        Changes made through it reach this Tensor and every Tensor that shares its storage
+        (its views, ``dup()``, Tensors assigned from it). The Tensor's own next in-place
+        change copies the data first.
         """
         parent = self._parent
         parent._store.exported = True
