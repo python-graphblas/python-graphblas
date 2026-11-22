@@ -420,8 +420,9 @@ def _krp_embedding(F, R):
 
 def _mttkrp_recipe(updater, x, mats, mode, R, op):
     if x._M._nvals == 0 or any(F._nvals == 0 for F in mats.values()):
-        # Every term needs an entry of each, so an operand with no entries gives no entries,
-        # which SuiteSparse's product would not (see tensor_reduce._reduce_matrix)
+        # Every term needs an entry of each, so an operand with no entries gives no entries.
+        # SuiteSparse's product can return entries over a dimension of size 0 (see
+        # tensor_reduce._reduce_matrix)
         out = tl.new_matrix(op.return_type, x._shape[mode], R)
         _store(updater, out, (x._shape[mode], R), Layout((0,), (1,)), fresh=True)
         return

@@ -99,8 +99,8 @@ def _contract(updater, a, b, op, a_axes, b_axes, a_batch=(), b_batch=()):
         + tuple(b._shape[y] for y in free_b)
     )
     if na == 0 or nbv == 0:
-        # An operand with no entries gives no entries, which SuiteSparse's product would not
-        # (see tensor_reduce._reduce_matrix)
+        # An operand with no entries gives no entries. SuiteSparse's product can return
+        # entries over a dimension of size 0 (see tensor_reduce._reduce_matrix)
         layout = tl.default_layout(shape)
         out = tl.new_matrix(
             op.return_type, tl.prod(shape, layout.rows), tl.prod(shape, layout.cols)
@@ -266,8 +266,8 @@ def _ttv(updater, x, w, axis, op, x_left):
     n = len(seq)
     nv = M._nvals
     if nv == 0 or w._M._nvals == 0:
-        # An operand with no entries gives no entries, which SuiteSparse's mxv and vxm would
-        # not (see tensor_reduce._reduce_matrix)
+        # An operand with no entries gives no entries. SuiteSparse's mxv and vxm can return
+        # entries over a dimension of size 0 (see tensor_reduce._reduce_matrix)
         shape = tuple(m for a, m in enumerate(x._shape) if a != axis)
         renum = {a: i for i, a in enumerate(a for a in range(n) if a != axis)}
         out = Layout(*(tuple(renum[a] for a in g if a != axis) for g in layout))

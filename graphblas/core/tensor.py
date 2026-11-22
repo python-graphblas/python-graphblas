@@ -815,9 +815,10 @@ class Tensor(BaseType):
         return T
 
     def relayout(self, layout, *, inplace=False):
-        """Return the Tensor stored in ``layout``, or with ``inplace=True`` change this one.
+        """Return a Tensor with the same entries stored in ``layout``.
 
-        The layout is then pinned: later ``<<`` updates keep it.
+        With ``inplace=True``, change this Tensor instead and return None. The layout is then
+        pinned: later ``<<`` updates keep it.
         """
         target = tl.as_layout(layout, self._shape)
         M, lay = tl.relayout(self._M, self._shape, self._layout, target)
