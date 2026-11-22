@@ -9,7 +9,8 @@ sparse where the fill values allow. Where they differ:
 
 - transcendental functions are within libm's rounding of numpy's results, and sums may round
   differently;
-- the sign of a zero at a position the result does not store is unspecified;
+- the sign of a zero is unspecified at a position the result does not store, and where 0.0
+  and -0.0 compare equal (maximum, minimum, max, min and the unique functions);
 - contractions such as ``matmul`` skip the unstored positions of an operand whose fill is 0,
   so ``0 * inf`` there is not NaN.
 

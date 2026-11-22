@@ -2,7 +2,7 @@
 the extension einsum.
 
 A contraction treats a fill of zero as a structural zero, as scipy.sparse and pydata/sparse
-do. It skips the terms at unstored positions, so ``0 * inf`` there gives no NaN, unlike
+do. It skips the terms at unstored positions, so ``0 * inf`` there is not NaN, unlike
 numpy. Sums may round differently from numpy's, because the terms are added in another order.
 
 An operand that stores every position never shows its fill, so a nonzero fill there is taken
@@ -17,7 +17,8 @@ operator the place of the product. Skipping the unstored positions is then right
 operand's fill is the identity ``e`` of the monoid, and ``e`` annihilates the multiply from
 both sides: ``mult(e, y) == mult(y, e) == e`` for every ``y``. ``e`` is inf for min_plus,
 -inf for max_plus, False for lor_land and 0 for plus_times. The result's fill is ``e``. An
-operand with another fill makes the call raise ValueError, unless it stores every position.
+operand with another fill makes the call raise ValueError, unless it stores every position
+and its dtype can represent ``e`` (an integer array cannot represent inf).
 As with zero fills, the skipping is structural: an infinity stored in one operand makes no
 NaN at a position the other does not store (``-inf + inf`` in min_plus). Whether ``e``
 annihilates the multiply is checked on a few finite values of each operand type, once per
@@ -287,7 +288,7 @@ def matmul(x1, x2, /, *, semiring=None):
 
     ``semiring`` (an extension) is a graphblas Semiring or its name, such as ``"min_plus"``.
     The unstored positions of an operand whose fill is 0 contribute no terms, so ``0 * inf``
-    there gives no NaN, unlike numpy. The rules for other fills and for semirings are in the
+    there is not NaN, unlike numpy. The rules for other fills and for semirings are in the
     docstring of the ``graphblas.array_api._linalg`` module.
     """
     x1, x2 = _operand(x1), _operand(x2)
@@ -532,7 +533,8 @@ def einsum(subscripts, /, *operands, semiring=None):
     scalars = [x._fill for x in ops if x.ndim == 0]
     if default and any(map(bool, scalars)) and all(np.isfinite(scalars)):
         # A finite 0-d operand is a factor of every term, so it factors out of the sum. A
-        # non-finite one goes dense, as in numpy: inf times an unstored zero is NaN
+        # non-finite one makes the contraction compute densely with numpy, since inf times an
+        # unstored zero is NaN
         return _einsum_scalars(subscripts, ops)
     if default:
         if (zeroed := _zero_fills(*ops)) is None:
@@ -582,8 +584,8 @@ def _masked_three(terms, output, ops, typed, out_dt, fill):
     contracting their shared indices: triangle counting's ``"ij,jk,ik->"``, or an SDDMM's
     ``"ik,ij,jk->ik"``. The pair's product is computed only at the third operand's stored
     positions, multiplied by the third, and summed into the output. This has the same terms
-    as the full einsum, since a position the third operand does not store gives no term
-    either way. Only the order of the sums differs, which can change rounding and where a
+    as the full einsum, since a position the third operand does not store contributes no
+    term either way. Only the order of the sums differs, which can change rounding and where a
     sum overflows.
 
     When an operand stores inf or NaN, stored entries equal to the fill are dropped first, as

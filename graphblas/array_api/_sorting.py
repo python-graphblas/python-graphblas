@@ -6,7 +6,7 @@ positions), then the values above it, with NaN last. The sort is stable: equal v
 their order. Descending order reverses the values but keeps equal values in their order,
 with NaN first, as ``flip(sort(flip(x)))`` does. It costs O(entries log entries).
 
-``argsort`` returns an index for every position, so its result is dense: it goes through
+``argsort`` returns an index for every position, so its result is dense: it is computed with
 numpy, under the densify limit.
 """
 

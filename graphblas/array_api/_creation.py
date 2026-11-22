@@ -136,14 +136,16 @@ def asarray(obj, /, *, dtype=None, device=None, copy=None, fill_value=None):
     these do not store get the fill.
 
     ``fill_value`` (an extension) is the value of unstored positions, 0 of the dtype by
-    default. An Array or a sparse array keeps its own fill value (``xp.refill`` changes it).
+    default. An Array or a pydata/sparse array keeps its own fill value, and another
+    ``fill_value`` raises ValueError (``xp.refill`` returns a copy with a new fill). A
+    scipy.sparse array has fill 0 and accepts no ``fill_value``.
     """
     check_device(device)
     if isinstance(obj, Array):
         if fill_value is not None and not _utils.same_value(fill_value, obj._fill):
             raise ValueError(
-                "asarray of an Array keeps its fill value; xp.refill(x, fill_value) changes it "
-                "and keeps the values"
+                "asarray of an Array keeps its fill value; xp.refill(x, fill_value) returns a "
+                "copy with that fill and the same values"
             )
         if dtype is not None and as_dtype(dtype) != obj.dtype:
             if copy is False:

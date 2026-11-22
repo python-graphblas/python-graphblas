@@ -9,10 +9,11 @@ A function of one array maps the stored entries and the fill alike. A function o
 computes on the union of their entries, using an operand's fill where it stores nothing, and
 the result's fill is the function of the two fills. Python scalars are weak (NEP 50).
 
-Where a GraphBLAS operator agrees exactly with numpy for the dtypes at hand, GraphBLAS
-computes the entries; otherwise numpy maps the stored values, keeping the pattern (see
-``_utils.map_values``). The fill is computed by the operator that maps the entries, or by
-numpy where the two agree exactly, so an entry equal to the fill maps to the new fill.
+GraphBLAS computes the entries where its operator agrees exactly with numpy for the dtypes
+at hand, and for the libm functions on real floating dtypes (see ``_libm_unary``); otherwise
+numpy maps the stored values, keeping the pattern (see ``_utils.map_values``). The fill is
+computed by the operator that maps the entries, or by numpy where the two agree exactly, so
+an entry equal to the fill maps to the new fill.
 """
 
 import builtins
@@ -757,8 +758,8 @@ def _one_sided(spec, a, b, fa, fb, op, ct, rdt, shape):
             # X). Storing Y in full would cost O(size of Y), and the union would replicate Y
             # along its broadcast axes: exp(v)[None, :] times an X of shape (1000, 1e6) with 4
             # entries would make v 1000 times. A Y no larger is stored in full below, so that
-            # the broadcast ewise_mult needs no coordinates (a row scaling of 1e7 entries: 5 ms,
-            # against 143 by the gather).
+            # the broadcast ewise_mult needs no coordinates. (A of 1e6 x 1e6 with 1e7 entries
+            # times y[:, None], y 10% stored, at 8 threads: 6 ms, against 147 ms by the gather.)
             Ty = _gather(Tx, Y, shape)
         elif not _stores_all(Y) and (Y.size <= Tx.nvals + 1024 or Ty.shape != shape):
             # (O(size of Y): every position of Y stored, so the product is an intersection)

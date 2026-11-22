@@ -130,8 +130,8 @@ def test_matmul_semiring_dtypes():
 
 
 def test_contraction_skips_structurally():
-    # As 0 * inf at an unstored zero is no term in plus_times, an infinity plus an unstored
-    # inf is no term in min_plus, so no NaN
+    # Just as plus_times skips 0 * inf at an unstored zero, min_plus skips -inf + inf at an
+    # unstored inf, so no NaN
     a = make(np.array([[-np.inf, np.inf]]), np.inf)
     b = make(np.array([[np.inf], [-np.inf]]), np.inf)
     assert a.nnz == b.nnz == 1
@@ -326,7 +326,8 @@ def test_probes():
 
 
 def test_explicit_fills_do_not_change_values():
-    # A stored entry equal to the fill gives no term with an inf, as an unstored position does
+    # A stored entry equal to the fill contributes no term with an inf, just as an unstored
+    # position contributes none
     a = xp.from_coo(([0], [0]), [0.0], (1, 1))
     b = make(np.array([[np.inf]]), 0.0)
     assert_close(a @ b, [[0.0]])
@@ -440,7 +441,7 @@ def test_einsum_with_scalars_and_ones_stays_sparse():
     ):
         assert_close(out, expected)
     assert_close(xp.einsum(",->", two, xp.asarray(3.0)), np.array(6.0))
-    # a non-finite fill that shows goes dense, as numpy computes it (inf * 0 is NaN there)
+    # a non-finite fill that shows is computed densely, as numpy computes it (inf * 0 is NaN)
     c = np.array([[1.0, np.inf], [np.inf, 2.0]])
     d = np.array([[0.0, 1.0], [1.0, 0.0]])
     with np.errstate(invalid="ignore"):

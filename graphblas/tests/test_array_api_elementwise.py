@@ -164,7 +164,8 @@ def _assert_identical(a, b, unstored):
 # at most 2 ulp for the real ones in double, and numpy's accuracy tests
 # (numpy/_core/tests/data/umath-validation-set-*.csv) allow up to 2 ulp in float64 and 4 in
 # float32. On macOS arm64 the largest difference seen is 1 (tanh, float32 sin and cos).
-# Complex values stay on numpy.
+# MAXULP = 4 covers two float64 results each within 2 ulp; for float32 it is a margin over the
+# largest difference seen, not a bound from these figures. Complex values stay on numpy.
 LIBM = {"acos", "acosh", "asin", "asinh", "atan", "atanh", "cos", "cosh", "exp", "expm1", "log",
         "log1p", "log2", "log10", "sin", "sinh", "tan", "tanh"}  # fmt: skip
 MAXULP = 4
@@ -335,10 +336,10 @@ def test_unary(name, func, shape):
                 continue
             out = getattr(xp, name)(x)
             if name == "reciprocal" and dense.dtype.kind in "iu":
-                # numpy computes an integer reciprocal as (int)(1.0 / x); for 0 that converts
-                # inf to an integer, which C leaves undefined: CI on aarch64 with NumPy 2.5 gave
-                # -1 for the whole array but 2**31 - 1 for the fill alone. Those positions are
-                # not compared.
+                # numpy computes an integer reciprocal as (int)(1.0 / x). For 0 that converts
+                # inf to an integer, which C leaves undefined. CI on aarch64 with NumPy 2.5 gave
+                # -1 for the whole array but 2**31 - 1 for the fill alone, so those positions
+                # are not compared.
                 expected = np.where(dense == 0, out.todense(), expected)
             try:
                 (assert_libm_close if name in LIBM else assert_array_equal)(out, expected)
@@ -820,7 +821,7 @@ def test_fully_stored_bool_results_take_fill_false():
 def test_bool_normalization_decides_by_a_sample(monkeypatch):
     # A sample of the leading entries says whether dropping the False entries is likely;
     # values never change, only what is stored. With _SAMPLE = 4 the sample is the first row,
-    # 1 to 4; when it is not mostly True, a select of the True values decides.
+    # 1 to 4; when at most a third of the sample is True, a select of the True values decides.
     from graphblas.array_api import _elementwise
 
     monkeypatch.setattr(_elementwise, "_SAMPLE", 4)
@@ -880,8 +881,9 @@ def test_partly_stored_bool_results_with_mostly_false_take_fill_false():
 
 
 def test_mostly_true_masks_stay_sparse_in_contractions():
-    # A mostly-True fully stored mask has fill False, so a contraction with a sparse bool
-    # matrix stays sparse (with fill True it would go dense and raise DensifyError)
+    # A mostly-True mask that stores every position: contractions with a sparse bool matrix
+    # stay sparse under a small densify limit, since a fully stored operand's fill is never
+    # seen
     rng = np.random.default_rng(15)
     n = 300
     a = np.zeros((n, n), bool)

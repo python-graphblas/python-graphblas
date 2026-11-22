@@ -3103,8 +3103,8 @@ def test_private_map_values():
 
 
 def test_masked_contraction_takes_a_transpose_descriptor():
-    # Under a mask, an operand stored as the transpose of what the product needs goes in
-    # through the transpose descriptor, not as a copy, so SuiteSparse can take its masked dot
+    # Under a mask, an operand stored as the transpose of what the product needs is passed
+    # through the transpose descriptor, not copied, so SuiteSparse can use its masked dot
     # product (an SDDMM); the values are the masked product
     from graphblas.core import tensor as tensor_mod
     from graphblas.core import tensor_census as census

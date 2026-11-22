@@ -3,7 +3,7 @@
 The unique values of an array are those of its stored entries plus the fill, which counts once
 per unstored position. Finding them costs O(entries log entries). NaNs are distinct (each NaN
 is its own value), so a NaN fill makes one distinct value per unstored position; that case
-goes through numpy densely, under the densify limit. The values come sorted, as numpy's do.
+is computed densely with numpy, under the densify limit. The values come sorted, as numpy's do.
 """
 
 from typing import NamedTuple

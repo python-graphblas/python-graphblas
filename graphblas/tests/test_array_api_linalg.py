@@ -68,7 +68,7 @@ def test_matmul(shapes):
 
 
 def test_matmul_zero_fill_is_structural():
-    # An unstored zero times inf is no term, as in scipy.sparse; numpy gives NaN for 0 * inf
+    # An unstored zero times inf is no term, as in scipy.sparse; numpy returns NaN for 0 * inf
     a = make(np.array([[np.inf, 0.0], [0.0, 1.0]]), 0.0)
     b = make(np.array([[0.0, 1.0], [1.0, 0.0]]), 0.0)
     assert_close(a @ b, np.array([[0.0, np.inf], [1.0, 0.0]]))
@@ -245,10 +245,11 @@ def test_dense_algebra():
         xp.linalg.det(a)
 
 
-def test_nonzero_fills_count_as_zero_or_go_dense():
+def test_nonzero_fills_of_contraction_operands():
     # A nonzero fill of an operand that stores every position counts as 0; any other nonzero
-    # fill goes dense. This catches a rank-1 split (the fill times all-ones plus the rest),
-    # which turns inf into NaN and loses every digit when the fill dwarfs the values.
+    # fill is stored in full or computed with numpy densely. This catches a rank-1 split (the
+    # fill times all-ones plus the rest), which turns inf into NaN and loses every digit when
+    # the fill dwarfs the values.
     inf = make(np.array([np.inf]), 0.0)
     five = xp.from_coo(([0],), [1.0], (1,), fill_value=5.0)
     assert_close(xp.vecdot(inf, five), np.array(np.inf))
@@ -282,8 +283,8 @@ def test_tensordot_axes_out_of_bounds():
 
 def test_finite_fills_are_stored_in_full():
     # An operand with a finite nonzero fill that fits under the densify limit is stored in
-    # full, whatever the other operands store: a large sparse matrix times a matrix of ones
-    # stays sparse, and explicit zeros in the other operand do not change the answer
+    # full, whatever the other operands store. A large sparse matrix times a matrix of ones
+    # stays sparse, and explicit zeros in the other operand do not change the answer.
     rng = np.random.default_rng(20)
     n = 400
     a = np.zeros((n, n))

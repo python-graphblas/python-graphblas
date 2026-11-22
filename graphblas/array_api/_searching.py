@@ -107,7 +107,7 @@ def _where_at_condition(cond, a, b, shape, rdt):
             R = base._T().ewise_add(R, binary.second[gdt]).new(dtype=gdt)
         return R
     if not has_base:
-        # (a complex condition goes through numpy)
+        # (a complex condition is converted to bool by numpy)
         coords, c = Tc.to_coo()
         c = np.asarray(c, dtype=bool)
         keep = c != bool(cond._fill)
