@@ -7965,6 +7965,8 @@ def test_udt_ret_dtype_rejects_a_return_it_cannot_hold():
         v = Vector(udt, size=1)
         v[0] = value
         assert v.apply(own).new()[0].new().value == value
+        # A number cannot be written as one
+        unary_rejects(lambda x: 7, udt, udt, r"returned .*int.*, which cannot be written as ret_dt")
 
 
 def _ret_dtype_pickle_udf(x):  # pragma: no cover (numba)

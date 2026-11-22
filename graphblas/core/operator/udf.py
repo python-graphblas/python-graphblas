@@ -206,12 +206,15 @@ def _check_declared_ret_type(ret_dtype, numba_ret_type):
         if isinstance(numba_ret_type, (nt.Array, nt.Number, nt.Boolean)):
             return  # a scalar fills every slot; the shape is checked later
         wanted = "an array, or a scalar to fill every slot"
+    elif ret_dtype._is_udt:
+        # A date, duration or text UDT; Numba cannot write a number into one
+        if numba_ret_type == ret_dtype.numba_type:
+            return  # such as an operand returned as is
+        wanted = f"a {ret_dtype} value"
     else:
         _refuse_complex_into_real(ret_dtype, np_type, numba_ret_type)
         if isinstance(numba_ret_type, (nt.Number, nt.Boolean)):
             return
-        if ret_dtype._is_udt and numba_ret_type == ret_dtype.numba_type:
-            return  # a value of a date, duration or text UDT, such as an operand returned as is
         wanted = "a scalar"
     if isinstance(numba_ret_type, nt.BaseTuple):
         returned = f"a tuple of length {len(numba_ret_type.types)}"
