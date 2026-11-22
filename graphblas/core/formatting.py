@@ -695,14 +695,15 @@ class _TextFormatter:
         out = []
         for v in col.values:
             # A float NaN is excluded from pandas' float-format branch (it uses
-            # is_float(v) & notna(v)) and rendered as the na_rep "NaN" instead.
+            # is_float(v) & notna(v)) and rendered as the na_rep "NaN" instead, as is
+            # a complex value with a NaN part, for which pandas' isna is True too.
             if _is_float_scalar(v) and not math.isnan(v):
                 if float_format is not None:
                     # The result is used as is, without the sign space of the default format
                     out.append(float_format(v))
                 else:
                     out.append(_trim_zeros_single_float(f"{v: .{precision}f}"))
-            elif _is_float_scalar(v):
+            elif _is_float_scalar(v) or (isinstance(v, (complex, np.complexfloating)) and v != v):
                 out.append(" NaN")
             else:
                 out.append(f" {_pprint(v)}")

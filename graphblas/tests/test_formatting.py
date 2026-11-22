@@ -4069,6 +4069,28 @@ def test_repr_float_format_complex():
         )
 
 
+@pytest.mark.skipif("not dtypes._supports_complex")
+def test_repr_complex_with_nan_part_truncated():
+    # Past display.max_rows the COO form is an object column, where a complex value with
+    # a NaN part shows as "NaN", as pandas shows it, in the text and the HTML
+    vals = [1 + 2j, complex(np.nan, 1), complex(1, np.nan), complex(np.nan, np.nan), 3, 4]
+    v = Vector.from_coo([100, 161, 222, 283, 344, 405], vals, size=1000, name="v")
+    with display_options("display.max_rows", 5, "display.min_rows", 4):
+        repr_printer(v, "v")
+        assert repr(v) == (
+            '"v"        nvals  size  dtype  format\n'
+            "gb.Vector      6  1000   FC64  sparse\n"
+            "-------------------------------------\n"
+            "    index     val\n"
+            "0     100  (1+2j)\n"
+            "1     161     NaN\n"
+            "2     222     NaN\n"
+            "3     283     NaN\n"
+            "...   ...     ..."
+        )
+        assert repr_html(v).count("<td>NaN</td>") == 3
+
+
 def test_sparse_bool_repr():
     v = Vector.from_coo([100, 161, 222], [True, False, True], size=1000, name="v")
     repr_printer(v, "v")
