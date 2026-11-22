@@ -329,6 +329,11 @@ def test_unary(name, func, shape):
                     getattr(xp, name)(x)
                 continue
             out = getattr(xp, name)(x)
+            if name == "reciprocal" and dense.dtype.kind in "iu":
+                # numpy's integer reciprocal of 0 is an integer division by zero, which has no
+                # defined result: CI on aarch64 with NumPy 2.5 gave -1 for the whole array but
+                # 2**31 - 1 for the fill alone. Those positions are not compared.
+                expected = np.where(dense == 0, out.todense(), expected)
             try:
                 (assert_libm_close if name in LIBM else assert_array_equal)(out, expected)
             except AssertionError as exc:
