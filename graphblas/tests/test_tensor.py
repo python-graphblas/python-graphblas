@@ -7758,9 +7758,10 @@ def test_reduce_first_last_over_several_axes():
 def test_reduce_scalar_aggregators(name):
     """``reduce_scalar`` takes the aggregators ``reduce`` takes and returns the value
     ``reduce(op)`` has over every axis: Matrix's ``reduce_scalar`` for a 2-d Tensor (C order,
-    which is row-major, for ``first`` and ``last``), whatever the layout, and numpy's mean for
-    INT8 values that Matrix would wrap. An accumulator applies as for any Scalar update;
-    ``allow_empty=False`` and ``argmin`` raise as for Matrix.
+    which is row-major, for ``first`` and ``last``, and numpy's C order for a 3-d one),
+    whatever the layout, and numpy's mean for INT8 values that Matrix would wrap. An
+    accumulator applies as for any Scalar update; ``allow_empty=False`` and ``argmin`` raise
+    as for Matrix.
     """
     from graphblas import agg
 
@@ -7774,6 +7775,13 @@ def test_reduce_scalar_aggregators(name):
         np.testing.assert_allclose(got.value, want.value, rtol=1e-12)
     Y = random_tensor((2, 3, 4), rng, density=0.5, layout=((2, 0), (1,)))[0]
     assert Y.reduce_scalar(a).new().isclose(Y.reduce(a).new().to_scalar())
+    if name in {"first", "last"}:
+        # Entries whose first and last in C order differ from those in any other axis order
+        coords = ([0, 0, 1, 1], [1, 2, 0, 1], [1, 0, 3, 1])
+        Z = Tensor.from_coo(coords, [3.0, 1.0, 4.0, 2.0], shape=(2, 3, 4))
+        for layout in all_layouts(3):
+            got = Z.dup(layout=layout).reduce_scalar(a).new().value
+            assert got == (3.0 if name == "first" else 2.0), layout
     assert Tensor(dtypes.FP64, (2, 3)).reduce_scalar(a).new().nvals == 0
     s = gb.Scalar.from_value(100.0, dtype=want.dtype)
     s(accum=binary.plus) << X.reduce_scalar(a)
