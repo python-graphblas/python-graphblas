@@ -5313,11 +5313,38 @@ def test_kernel_disk_cache(tmp_path):
     assert int(_kernel_cache_lines(_run_kernel_cache_script(""))["cache_hits"]) == 0
 
 
+def test_kernel_disk_cache_keeps_the_first_file(tmp_path, monkeypatch):
+    """When two processes find no cache file and both write it, the second leaves the first's
+    file in place (same inode and stamp). Replacing it would change the stamp under the first
+    process's Numba cache index, so a third process would compile the kernel again.
+    """
+    if not gb.core._has_numba:
+        pytest.skip("needs numba")
+    from graphblas.core import tensor_numba
+
+    path = tmp_path / "k_test.py"
+    text = (
+        "import numba\nfrom numba import njit\n\n@njit(cache=True)\ndef kernel(x):\n    return x\n"
+    )
+    tensor_numba._load_cached(path, "_graphblas_kernel_first_file", text)
+    before = path.stat()
+    # The race: this process checked before the other one wrote the file
+    real_exists = Path.exists
+    monkeypatch.setattr(Path, "exists", lambda self: False if self == path else real_exists(self))
+    kernel = tensor_numba._load_cached(path, "_graphblas_kernel_first_file_2", text)
+    monkeypatch.undo()
+    assert kernel(3) == 3
+    after = path.stat()
+    assert (after.st_ino, after.st_mtime_ns) == (before.st_ino, before.st_mtime_ns)
+    assert [p.name for p in tmp_path.iterdir() if p.is_file()] == ["k_test.py"]  # (no .tmp)
+
+
 def test_kernel_disk_cache_guards(tmp_path, monkeypatch):
     """A cache file that is not the kernel's source (corrupt, tampered with, or a digest
-    prefix collision) is neither run nor overwritten: the kernel compiles in memory. A failed
-    rename leaves no temporary file behind; one that failed because another process wrote the
-    same file first uses that file.
+    prefix collision) is neither run nor overwritten: the kernel compiles in memory. On a file
+    system without hard links the file is renamed into place: a failed rename leaves no
+    temporary file behind, and one that failed because another process wrote the same file
+    first uses that file.
     """
     if not gb.core._has_numba:
         pytest.skip("needs numba")
@@ -5346,8 +5373,12 @@ def test_kernel_disk_cache_guards(tmp_path, monkeypatch):
     def fail(self, target):
         raise OSError("rename failed")
 
+    def no_links(src, dst):
+        raise OSError("hard links not supported")
+
     monkeypatch.setenv(tensor_numba._CACHE_ENV, str(tmp_path / "other"))
     with monkeypatch.context() as m:
+        m.setattr(tensor_numba.os, "link", no_links)
         m.setattr(Path, "replace", fail)
         k = tensor_numba._compile(source)
     assert k(x) == 45
@@ -5362,6 +5393,7 @@ def test_kernel_disk_cache_guards(tmp_path, monkeypatch):
 
     monkeypatch.setenv(tensor_numba._CACHE_ENV, str(tmp_path / "raced"))
     with monkeypatch.context() as m:
+        m.setattr(tensor_numba.os, "link", no_links)
         m.setattr(Path, "replace", raced)
         k = tensor_numba._compile(source + "\n")  # (a new digest)
     assert k(x) == 45

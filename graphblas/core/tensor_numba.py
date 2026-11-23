@@ -66,20 +66,20 @@ def _load_cached(path, name, text):
     ``text`` is what runs, not a second read of the file.
     """
     data = text.encode()
-    if path.exists():
-        if path.read_bytes() != data:
-            return None
-    else:
+    if not path.exists():
         tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
         try:
             tmp.write_bytes(data)
-            tmp.replace(path)
+            _publish(tmp, path)
         except OSError:
-            tmp.unlink(missing_ok=True)
-            # Another process may have written the file meanwhile: on Windows the rename then
+            # Another process may have written the file meanwhile: on Windows a rename onto it
             # fails while that process has the file open. Its file is as good as ours.
-            if not (path.exists() and path.read_bytes() == data):
+            if not path.exists():
                 raise
+        finally:
+            tmp.unlink(missing_ok=True)
+    if path.read_bytes() != data:
+        return None
     module = types.ModuleType(name)
     module.__file__ = str(path)
     # (registered: Numba imports the module by name when it loads cached code)
@@ -90,6 +90,20 @@ def _load_cached(path, name, text):
         sys.modules.pop(name, None)
         raise
     return module.kernel
+
+
+def _publish(tmp, path):
+    """Put the file ``tmp`` at ``path`` unless another process has written ``path`` meanwhile:
+    by a hard link, which fails if ``path`` exists. A rename would replace that process's file
+    and change its stamp under that process's Numba cache index, so the next process would
+    compile the kernel again. Where the file system has no hard links, a rename.
+    """
+    try:
+        os.link(tmp, path)
+    except FileExistsError:
+        pass
+    except OSError:
+        tmp.replace(path)
 
 
 def _compile(source):

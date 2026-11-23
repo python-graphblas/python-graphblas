@@ -23,9 +23,11 @@ later (`verification.md`, "What this does not cover"). What remains:
     and its tests skip in CI. With "on", whether the
     compiler works there is unknown; if it does not, the engine warns once and turns itself
     off, and the Numba or GraphBLAS engines run: correct, slower.
-  - **The kernel cache's file locking.** A rename onto a file another process holds open
-    raises there; the cache then uses that process's file if it holds the same source, or
-    compiles in memory. That was tested by simulating the failure, not on Windows.
+  - **The kernel cache's file handling.** Two processes writing one kernel file: the
+    second's hard link fails and it uses the first's file. Without hard links, a rename onto
+    a file another process holds open raises there; the cache then uses that process's file
+    if it holds the same source, or compiles in memory. Both were tested by simulating them,
+    not on Windows.
 - **x86 planner constants.** The cost model was fitted on one machine, an Apple M5 Pro
   (`design.md`, "Fitted constants"). Atomics are slow there, which is why wide transposes
   and column reductions prefer 2 threads. That rule, and the rest of the ranking, may differ
@@ -164,7 +166,7 @@ later (`verification.md`, "What this does not cover"). What remains:
    the Container calls that hand arrays to SuiteSparse unchecked, the planner's pricing, and
    the engine rules.
 2. **Windows with the JIT:** the array-UDT engine with `jit_c_control` set to "on", and the
-   kernel cache's file locking under two processes (above).
+   kernel cache's file handling under two processes (above).
 3. **Refit the cost constants** on x86, and with a script driven by the census instead of by
    hand. Then fix the mispricings listed above, and finish the census on NELL-2 and Enron.
 4. **Performance:** a TTM-chain route in einsum and a TTMc kernel (above); TTM along
