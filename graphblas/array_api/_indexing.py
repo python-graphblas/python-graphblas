@@ -400,10 +400,10 @@ def _check_fits(vshape, shape):
     """Raise ValueError unless a value of shape ``vshape`` broadcasts to the selection's
     ``shape``, also when the selection is empty.
     """
-    try:
-        ok = np.broadcast_shapes(vshape, shape) == tuple(shape)
-    except ValueError:
-        ok = False
+    # (in Python ints: on 32-bit platforms np.broadcast_shapes refuses an axis past 2**31 - 1)
+    ok = len(vshape) <= len(shape) and all(
+        v in (1, n) for v, n in zip(reversed(vshape), reversed(shape), strict=False)
+    )
     if not ok:
         raise ValueError(
             f"cannot assign an array of shape {vshape} to a selection of shape {shape}"
@@ -422,7 +422,7 @@ def _empty_selection_shape(x, items):
         if isinstance(k, _NewAxis):
             shape.append(k.length)  # (None or True: 1, False: 0)
         elif isinstance(k, slice):
-            shape.append(len(range(*k.indices(next(dims)))))
+            shape.append(_utils.slice_length(k, next(dims)))
         # (a _Gap covers no axis)
     return tuple(shape)
 
@@ -503,7 +503,14 @@ def _scatter_setitem(x, items, value):
     # ranges take at most 32 MiB or 16 times the selection's coordinates, and where numpy can
     # build it: its largest size in bytes allows 2**60 positions on 64-bit platforms and
     # 2**28 on 32-bit ones
-    nsel = _selection_size(x.shape, key)
+    sel_shape = _selection_shape(x.shape, key)
+    nsel = None if sel_shape is None else math.prod(sel_shape)
+    if nsel == 0:
+        # An empty selection writes nothing, so only its shape is checked; its coordinates
+        # could be long (x[:, [], []] beside an axis of 2**40), or past what numpy holds
+        if isinstance(value, Array):
+            _check_fits(value.shape, sel_shape)
+        return
     if nsel:  # (before the coordinates are made)
         _utils.check_dense(nsel, "assigning to the selected positions")
     if math.prod(x.shape) <= _utils._MAX_INTP // 8 and sum(x.shape) <= builtins.max(
@@ -513,7 +520,7 @@ def _scatter_setitem(x, items, value):
             grid = np.arange(n, dtype=np.int64).reshape([n if b == a else 1 for b in range(x.ndim)])
             coords.append(np.asarray(np.broadcast_to(grid, x.shape)[key]))
     else:
-        coords = _selected_coords(x.shape, key, empty=nsel == 0)
+        coords = _selected_coords(x.shape, key)
     shape = coords[0].shape
     size = math.prod(shape)
     if isinstance(value, Array):
@@ -544,37 +551,51 @@ def _scatter_setitem(x, items, value):
         T(D.S) << Tensor(gbdt, x.shape)
 
 
-def _selection_size(shape, key):
-    """The number of positions numpy's selection by ``key`` (as ``_scatter_setitem`` builds
-    it) has, from the key alone, or None when its index arrays do not broadcast.
+def _selection_shape(shape, key):
+    """The shape of numpy's selection by ``key`` (as ``_scatter_setitem`` builds it), from the
+    key alone in Python ints, or None when its index arrays do not broadcast.
+
+    numpy's layout: the index arrays, integers and 0-d booleans broadcast together; their
+    axes take the place of the first of them when they are adjacent in the key, and go first
+    otherwise (a ``None`` or a ``...`` between them separates them).
     """
-    arrays = []
-    size = 1
+    out, arrays, where = [], [], []
     axis = 0
-    for k in key:
-        if k is None or k is Ellipsis:
+    for i, k in enumerate(key):
+        if k is None:
+            out.append(1)
+        elif k is Ellipsis:
             continue
-        if isinstance(k, (bool, np.bool_)):  # (an index array over a new axis, [0] or [])
-            arrays.append((int(k),))
-            continue
-        if isinstance(k, slice):
-            size *= len(range(*k.indices(shape[axis])))
+        elif isinstance(k, slice):
+            out.append(_utils.slice_length(k, shape[axis]))
+            axis += 1
         else:
-            arrays.append(np.shape(k))
-        axis += 1
+            if isinstance(k, (bool, np.bool_)):  # (an index array over a new axis, [0] or [])
+                arrays.append((int(k),))
+            else:
+                arrays.append(np.shape(k))
+                axis += 1
+            where.append(i)
+            out.append(None)
     try:
-        return size * math.prod(np.broadcast_shapes(*arrays))
+        adv = tuple(np.broadcast_shapes(*arrays))
     except ValueError:
         return None
+    if not where:
+        return tuple(out)
+    dims = [n for n in out if n is not None]
+    if where == list(range(where[0], where[-1] + 1)):
+        first = out.index(None)
+        return (*dims[:first], *adv, *dims[first:])
+    return (*adv, *dims)
 
 
-def _selected_coords(shape, key, *, empty=False):
+def _selected_coords(shape, key):
     """Each axis's coordinates of the positions ``key`` selects, laid out as numpy lays out
     the selection, from a grid of each axis's selected coordinates only. A grid over
     ``shape`` stops at numpy's largest size, 2**31 - 1 positions on 32-bit platforms such as
     WebAssembly, and costs an np.arange of each axis. Each item of the key becomes positions
-    among its axis's coordinates. For an ``empty`` selection, whose shape alone is used, a
-    slice's coordinates are a view.
+    among its axis's coordinates.
     """
     picked, small = [], []
     for k in key:
@@ -583,11 +604,7 @@ def _selected_coords(shape, key, *, empty=False):
             continue
         n = shape[len(picked)]
         if isinstance(k, slice):
-            length = len(range(*k.indices(n)))
-            if empty:
-                picked.append(np.broadcast_to(np.int64(0), (length,)))
-            else:
-                picked.append(np.arange(*k.indices(n), dtype=np.int64))
+            picked.append(np.arange(*k.indices(n), dtype=np.int64))
             small.append(slice(None))
         elif isinstance(k, np.ndarray):
             sel, at = np.unique(k.reshape(-1), return_inverse=True)

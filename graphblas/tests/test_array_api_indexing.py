@@ -411,6 +411,27 @@ def test_scatter_assignment_past_the_densify_limit_allocates_nothing():
     assert x.nnz == 0
 
 
+def test_empty_scatter_selection_makes_no_coordinates():
+    """An empty selection through index arrays, beside a slice of a long axis, makes none of
+    that axis's coordinates (128 MiB of them here, 8 TiB for an axis of 2**40): its shape
+    alone is checked.
+    """
+    import tracemalloc
+
+    z = xp.zeros((2**24, 3, 4))
+    tracemalloc.start()
+    try:
+        z[:, [], []] = 1.0
+        z[:, [], []] = xp.ones((2**24, 0))
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak < 2**23
+    assert z.nnz == 0
+    with pytest.raises(ValueError, match="cannot assign"):
+        z[:, [], []] = xp.ones(3)
+
+
 def test_setitem_with_new_axes():
     # The value for a basic key with None may be shaped like numpy's selection, new axes
     # included
