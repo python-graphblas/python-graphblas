@@ -1230,8 +1230,8 @@ class Tensor(BaseType):
         ``agg.first_index`` and ``agg.last_index`` the index of the first or last entry, and
         ``agg.first`` and ``agg.last`` its value. ``first`` and ``last`` also take several
         axes, in C order over them. ``argmin`` and ``argmax`` skip NaN, unlike numpy's: the
-        index is that of the first value equal to the fiber's minimum, which a NaN never
-        equals, and a fiber of NaN only stays missing.
+        index is that of the first value equal to the fiber's minimum (or maximum), which a
+        NaN never equals, and a fiber of NaN only stays missing.
 
         A position whose fiber has no entries stays missing (it is not 0).
         """

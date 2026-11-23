@@ -113,10 +113,11 @@ def _reduce_positional(t, agg, kind, axis, keepdims):
 
     Each entry's position is its C-order index over the reduced axes (``_positions``). The
     index aggregators take one axis, as numpy's ``argmin`` and Matrix's (which refuses
-    ``reduce_scalar``) do: ``first_index`` is the least position, and ``argmin`` the least
-    position among the entries equal to their fiber's minimum (``eq``, so a NaN never
-    matches). ``first`` and ``last`` take any axes: the value at the least or greatest
-    position, so over every axis they return what ``reduce_scalar`` returns for a Matrix.
+    ``reduce_scalar``) do: ``first_index`` is the least position, and ``argmin`` (``argmax``)
+    the least position among the entries equal to their fiber's minimum (maximum) (``eq``,
+    so a NaN never matches). ``first`` and ``last`` take any axes: the value at the least or
+    greatest position, so over every axis they return what ``reduce_scalar`` returns for a
+    Matrix.
     """
     what, last = kind
     axes = _normalize_axes(axis, t.ndim)

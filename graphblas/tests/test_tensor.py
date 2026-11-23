@@ -3034,8 +3034,10 @@ def test_broadcast(xshape, yshape):
     ("xshape", "yshape"), [((2, 1), (1, 0)), ((1, 0), (2, 1)), ((0, 1), (1, 3)), ((2, 0, 1), (4,))]
 )
 def test_broadcast_to_no_positions(xshape, yshape):
-    # A broadcast result with no positions: ewise_mult's diagonal scaling multiplied
-    # mismatched shapes (GrB_DIMENSION_MISMATCH)
+    """A broadcast ``ewise_mult`` or ``ewise_add`` into a shape with no positions returns an
+    empty Tensor of that shape, where the diagonal scaling of ``ewise_mult`` would multiply
+    matrices of mismatched shapes (GrB_DIMENSION_MISMATCH).
+    """
     X = Tensor.from_dense(np.ones(xshape))
     Y = Tensor.from_dense(np.ones(yshape))
     shape = np.broadcast_shapes(xshape, yshape)
@@ -3043,6 +3045,12 @@ def test_broadcast_to_no_positions(xshape, yshape):
         R = getattr(X, method)(Y).new()
         assert R.shape == shape
         assert R.nvals == 0
+
+
+def test_einsum_outer_product_into_no_positions():
+    """An einsum outer product into a shape with no positions returns numpy's empty shape."""
+    R = gb.core.tensor.einsum("i,jk->ijk", Tensor.from_dense(np.ones(3)), Tensor(float, 3, 0))
+    assert R.new().shape == np.einsum("i,jk->ijk", np.ones(3), np.ones((3, 0))).shape == (3, 3, 0)
 
 
 def test_broadcast_operands_and_dtypes():
