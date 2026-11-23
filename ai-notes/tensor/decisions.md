@@ -5,7 +5,7 @@ says what was decided and why, and some say what would change it. "Maintainers" 
 python-graphblas maintainers. Status: everything here is experimental and may change before
 the API settles. `design.md` describes how the code implements these.
 
-The dated decisions (26 to 33) were made during development by the AI agents that wrote the
+The dated decisions (26 to 34) were made during development by the AI agents that wrote the
 Tensor, on the maintainer's instruction to decide and record a reason rather than wait. Like
 the rest, they are open to review.
 
@@ -255,6 +255,19 @@ the rest, they are open to review.
     for `argmin(axis=None)`:_ it is an index into a dense array that a sparse Tensor does
     not have, Matrix refuses it, and `T.ravel().reduce(agg.argmin)` gives it. Decided
     2026-11-22. _Revisit_ if a user needs an index over several axes.
+34. **`unfold` takes `traversal_order=`, not `order=`.** Its "C" or "F" is the order in
+    which the columns traverse the other axes, numpy's `reshape(order=)` sense. In
+    python-graphblas `order=` names a Matrix's storage orientation, "rowwise" or
+    "columnwise", with "C" and "F" accepted as aliases (`Matrix.from_dicts`, `to_dicts`;
+    the matrix-orientation work, #495, adds it to `Matrix()`, `dup`, `from_coo`,
+    `from_dense` and other methods that make a Matrix). `unfold` returns a Matrix, so
+    `unfold(order="F")` would read as a columnwise result. _Roads not taken:_ `order=`, for that clash; `index_order=`, numpy's own
+    documentation term, but in a sparse library it suggests the order of stored indices;
+    `ravel_order=`, the Tensor's word for how a group's axes combine, a close second;
+    `convention="tensorly"` or `"kolda"`, which names a source rather than the effect.
+    TensorLy's `unfold(tensor, mode)` has no such keyword (C order only), and pydata/sparse
+    has no `unfold`. Decided 2026-11-22: the maintainer kept `order=` for #495 and
+    suggested `traversal_order`.
 
 ## Deferred, on purpose
 

@@ -5404,6 +5404,11 @@ print("max_err:", err)
 
 
 def test_unfold():
+    """``unfold`` ravels the other axes into the columns in C order, or in F order (Kolda and
+    Bader's) with ``traversal_order="F"``. The keyword is not ``order``, which names a
+    Matrix's storage orientation elsewhere ("C" and "F" are aliases of "rowwise" and
+    "columnwise" there).
+    """
     rng = np.random.default_rng(51)
     X, xv, _ = random_tensor((3, 4, 5), rng, layout=((2,), (1, 0)))
     for mode in range(3):
@@ -5411,13 +5416,15 @@ def test_unfold():
         np.testing.assert_allclose(
             M.to_dense(0.0), np.moveaxis(xv, mode, 0).reshape(xv.shape[mode], -1)
         )
-        M = X.unfold(mode, order="F")
+        M = X.unfold(mode, traversal_order="F")
         np.testing.assert_allclose(
             M.to_dense(0.0), np.moveaxis(xv, mode, 0).reshape(xv.shape[mode], -1, order="F")
         )
     assert X.unfold(2) is not X.ss.matrix
-    with pytest.raises(ValueError, match="order"):
-        X.unfold(0, order="X")
+    with pytest.raises(ValueError, match="traversal_order"):
+        X.unfold(0, traversal_order="X")
+    with pytest.raises(TypeError, match="order"):
+        X.unfold(0, order="F")
 
 
 @pytest.mark.parametrize("layout", all_layouts(3)[::2])

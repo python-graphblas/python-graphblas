@@ -1215,20 +1215,20 @@ class Tensor(BaseType):
         """
         return _mttkrp_expr(self, factors, mode, op)
 
-    def unfold(self, mode, order="C"):
+    def unfold(self, mode, traversal_order="C"):
         """The mode-``mode`` unfolding as a Matrix of shape (I_mode, prod(other sizes)).
 
-        With ``order="C"`` (as in numpy and tensorly) the columns ravel the other axes in
-        increasing order, the last varying fastest, as
-        ``np.moveaxis(X, mode, 0).reshape(I_mode, -1)``. With ``order="F"`` (as in Kolda and
-        Bader) the first of the other axes varies fastest.
+        ``traversal_order`` is the order in which the columns traverse the other axes. With
+        "C" (as in numpy and TensorLy) the last of them varies fastest, as
+        ``np.moveaxis(X, mode, 0).reshape(I_mode, -1)``. With "F" (as in Kolda and Bader) the
+        first of them varies fastest.
         """
         mode = _normalize_axis(mode, self.ndim)
         others = tuple(a for a in range(self.ndim) if a != mode)
-        if order in {"F", "f", "fortran"}:
+        if traversal_order in {"F", "f", "fortran"}:
             others = others[::-1]
-        elif order not in {"C", "c"}:
-            raise ValueError(f"order must be 'C' or 'F', not {order!r}")
+        elif traversal_order not in {"C", "c"}:
+            raise ValueError(f"traversal_order must be 'C' or 'F', not {traversal_order!r}")
         target = tl.as_layout(((mode,), others), self._shape)
         M, _ = tl.relayout(self._M, self._shape, self._layout, target)
         return M.dup() if M is self._M else M
