@@ -39,12 +39,17 @@ class _Adv:
 
 
 class _NewAxis:
-    """``None``, or a 0-d boolean index: a new axis of length 1 (0 for False)."""
+    """``None``, or a 0-d boolean index: a new axis of length 1 (0 for False).
 
-    __slots__ = ("length",)
+    numpy indexes a 0-d boolean as an index array over a new axis of length 1
+    (``_boolean_scalars``), so ``boolean`` tells the two apart.
+    """
 
-    def __init__(self, length=1):
+    __slots__ = ("boolean", "length")
+
+    def __init__(self, length=1, *, boolean=False):
         self.length = length
+        self.boolean = boolean
 
 
 class _Gap:
@@ -122,12 +127,12 @@ def _normalize(x, key):
         elif k is Ellipsis or isinstance(k, slice):
             items.append(k)
         elif isinstance(k, (bool, np.bool_)):
-            items.append(_NewAxis(1 if k else 0))
+            items.append(_NewAxis(1 if k else 0, boolean=True))
         elif _is_int(k):
             items.append(int(k))
         elif isinstance(k, Array) and k.ndim == 0:
             if k.dtype.kind == "b":
-                items.append(_NewAxis(1 if k._fill else 0))
+                items.append(_NewAxis(1 if k._fill else 0, boolean=True))
             elif k.dtype.kind in "iu":
                 items.append(operator.index(k))
             else:
@@ -161,7 +166,7 @@ def _normalize(x, key):
             continue
         if isinstance(k, (np.ndarray, Array)) and k.dtype.kind == "b":
             if k.ndim == 0:  # (a 0-d boolean numpy array)
-                out.append(_NewAxis(1 if k[()] else 0))
+                out.append(_NewAxis(1 if k[()] else 0, boolean=True))
                 continue
             coords = _mask_coords(k, x.shape[axis : axis + k.ndim])
             out.extend(_Adv(np.asarray(c, dtype=np.int64)) for c in coords)
@@ -185,6 +190,35 @@ def _normalize(x, key):
 
 def _has_adv(items):
     return any(isinstance(k, _Adv) for k in items)
+
+
+def _indexes_boolean_scalars(items):
+    """Whether the key's 0-d booleans must be indexed as numpy does. numpy indexes each as an
+    index array over a new axis (``_boolean_scalars``); alone among slices, ``None`` and
+    ``...``, that gives the same result as a new axis.
+    """
+    n = sum(isinstance(k, _NewAxis) and k.boolean for k in items)
+    return n > 1 or (n == 1 and any(isinstance(k, (_Adv, int)) for k in items))
+
+
+def _boolean_scalars(x, items):
+    """``(x with a length-1 axis for each 0-d boolean of the key, the items with an index
+    array there)``. numpy indexes such an axis with ``[0]`` for True and ``[]`` for False,
+    which broadcast with the other index arrays (and integers).
+    """
+    from ._manipulation import expand_dims
+
+    out = []
+    positions = []
+    axis = 0
+    for k in items:
+        if isinstance(k, _NewAxis) and k.boolean:
+            positions.append(axis)
+            k = _Adv(np.zeros(k.length, np.int64))
+        if not isinstance(k, (_NewAxis, _Gap)):
+            axis += 1
+        out.append(k)
+    return expand_dims(x, tuple(positions)), out
 
 
 def _adjacent(items):
@@ -247,6 +281,8 @@ def _basic_shape(shape, axes_key):
 # getitem
 def getitem(x, key):
     items = _normalize(x, key)
+    if _indexes_boolean_scalars(items):
+        x, items = _boolean_scalars(x, items)
     axes_key = [k for k in items if not isinstance(k, (_NewAxis, _Gap))]
     if _has_adv(items):
         out, nadv = _advanced_extract(x, axes_key)
@@ -276,13 +312,18 @@ def _advanced_extract(x, axes_key):
     y = _basic_extract(x, sliced) if any(k != slice(None) for k in sliced) else x
     adv_axes = [a for a, k in enumerate(axes_key) if not isinstance(k, slice)]
     rest = [a for a, k in enumerate(axes_key) if isinstance(k, slice)]
-    indices = np.broadcast_arrays(
-        *[
-            k.index if isinstance(k, _Adv) else np.asarray(k, np.int64)
-            for k in axes_key
-            if not isinstance(k, slice)
-        ]
-    )
+    arrays = [
+        k.index if isinstance(k, _Adv) else np.asarray(k, np.int64)
+        for k in axes_key
+        if not isinstance(k, slice)
+    ]
+    try:
+        indices = np.broadcast_arrays(*arrays)
+    except ValueError:
+        shapes = " ".join(str(a.shape) for a in arrays)
+        raise IndexError(
+            f"shape mismatch: indexing arrays could not be broadcast together with shapes {shapes}"
+        ) from None
     S2 = indices[0].shape
     adv_shape = tuple(y.shape[a] for a in adv_axes)
     rest_shape = tuple(y.shape[a] for a in rest)
@@ -308,12 +349,14 @@ def setitem(x, key, value):
     value = _setitem_value(x, value)
     items = _normalize(x, key)
     axes_key = [k for k in items if not isinstance(k, (_NewAxis, _Gap))]
-    if any(isinstance(k, _NewAxis) and k.length == 0 for k in items):
-        return  # (a False index selects nothing)
     adv = [k for k in axes_key if isinstance(k, _Adv)]
+    booleans = _indexes_boolean_scalars(items)
+    if not booleans and any(isinstance(k, _NewAxis) and k.length == 0 for k in items):
+        return  # (a False index selects nothing)
     # With one 1-d index array among slices, outer (GraphBLAS) and vectorized indexing agree
-    scatter = adv and (
-        len(adv) > 1 or adv[0].index.ndim != 1 or any(isinstance(k, int) for k in axes_key)
+    scatter = booleans or (
+        adv
+        and (len(adv) > 1 or adv[0].index.ndim != 1 or any(isinstance(k, int) for k in axes_key))
     )
     if isinstance(value, Array) and not scatter:
         value = _without_new_axes(value, items)
@@ -414,6 +457,7 @@ def _scatter_setitem(x, items, value):
     key = tuple(
         k.index if isinstance(k, _Adv)
         else Ellipsis if isinstance(k, _Gap)
+        else bool(k.length) if isinstance(k, _NewAxis) and k.boolean
         else None if isinstance(k, _NewAxis)
         else k
         for k in items

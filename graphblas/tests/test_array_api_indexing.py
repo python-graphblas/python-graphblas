@@ -256,7 +256,7 @@ def test_mixed_keys_order_axes_as_numpy():
         assert_array_equal(x[key], expected)
         vshapes = [expected.shape]
         if any(k is None for k in key):
-            # The value may have the new axes, as numpy's selection does, or leave them out
+            # Values without the selection's first axis, or of all ones, broadcast as in numpy
             vshapes += [expected.shape[1:], (1,) * expected.ndim]
         for vshape in vshapes:
             b = a.copy()
@@ -275,6 +275,47 @@ def test_mixed_keys_order_axes_as_numpy():
         b = np.arange(24.0).reshape(2, 3, 4)
         b[:, 1, ..., [0, 2]] = -expected
         assert_array_equal(y, b)
+
+
+def test_boolean_scalars_with_index_arrays_as_numpy():
+    """With index arrays in the key, a 0-d boolean indexes a new axis of length 1 by [0]
+    (True) or [] (False), which broadcast with the other index arrays, as in numpy; alone, it
+    adds an axis. getitem, setitem and the IndexError of shapes that do not broadcast agree
+    with numpy.
+    """
+    a = np.arange(24.0).reshape(3, 4, 2) + 1
+    parts = [slice(None), 1, np.array([0, 2]), np.array([[1], [0]]), Ellipsis, None, True, False]
+    checked = []
+    for n in range(1, 4):
+        for key in itertools.product(parts, repeat=n):
+            if not any(k is True or k is False for k in key):
+                continue
+            if sum(k is Ellipsis for k in key) > 1:
+                continue
+            try:
+                expected = a[key]
+            except IndexError:
+                x = make(a, 0.0)
+                with pytest.raises(IndexError):
+                    x[key]
+                with pytest.raises(IndexError):
+                    x[key] = 1.0
+                continue
+            checked.append(key)
+            x = make(a, 0.0)
+            assert_array_equal(x[key], expected)
+            value = np.arange(expected.size, dtype=np.float64).reshape(expected.shape) - 50
+            b = a.copy()
+            b[key] = value
+            x[key] = make(value, 0.0) if value.ndim else xp.asarray(value)
+            assert_array_equal(x, b)
+    assert len(checked) > 250
+    x = make(a, 0.0)
+    assert x[[0, 2], True].shape == (2, 4, 2)
+    assert x[xp.asarray(True), [0, 2]].shape == (2, 4, 2)
+    assert x[np.array(True), [0, 2]].shape == (2, 4, 2)
+    with pytest.raises(IndexError, match="shape mismatch"):
+        x[[0, 2], [0, 1, 2]]
 
 
 def test_setitem_with_new_axes():
