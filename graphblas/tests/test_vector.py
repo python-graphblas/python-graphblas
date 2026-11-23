@@ -3256,6 +3256,27 @@ def test_size_given_as_scalar_is_stored_as_int():
         assert type(v.shape[0]) is int
 
 
+@pytest.mark.skipif("not suitesparse")
+@pytest.mark.parametrize("autocompute_on", [False, True])
+def test_ss_import_size_given_as_scalar(autocompute_on):
+    """Every ss import, and ``import_any``, takes a Scalar for the size.
+
+    An import that compares the size with the number of values before converting it to an
+    int gets a Scalar expression, which fails with autocompute off.
+    """
+    values = np.arange(3.0)
+    full = Vector.from_dense(values)
+    sparse = Vector.from_dense(values, missing_value=1.0)
+    with gb.config.set(autocompute=autocompute_on):
+        for fmt in ["sparse", "bitmap", "full"]:
+            v = full if fmt == "full" else sparse
+            pieces = {**v.dup().ss.export(fmt), "size": Scalar.from_value(3)}
+            for import_ in [getattr(Vector.ss, f"import_{fmt}"), Vector.ss.import_any]:
+                w = import_(**pieces)
+                assert type(w.size) is int
+                assert w.isequal(v)
+
+
 def test_to_dense_from_dense():
     v = Vector.from_dense([1, 2, 3])
     w = Vector.from_coo([0, 1, 2], [1, 2, 3])

@@ -4568,6 +4568,30 @@ def test_sizes_given_as_scalars_are_stored_as_ints():
     assert matrices[1].shape == (3, 3)
 
 
+@pytest.mark.skipif("not suitesparse")
+@pytest.mark.parametrize("autocompute_on", [False, True])
+def test_ss_import_sizes_given_as_scalars(autocompute_on):
+    """Every ss import, and ``import_any``, takes a Scalar for nrows and ncols.
+
+    An import that does arithmetic or comparisons on a size before converting it to an int
+    gets a Scalar expression, which fails with autocompute off, and in Numba code with it on.
+    """
+    values = np.arange(12.0).reshape(3, 4)
+    full = Matrix.from_dense(values)
+    sparse = Matrix.from_dense(values, missing_value=5.0)
+    sizes = {"nrows": Scalar.from_value(3), "ncols": Scalar.from_value(4)}
+    formats = ["csr", "csc", "hypercsr", "hypercsc", "bitmapr", "bitmapc", "fullr", "fullc"]
+    formats += ["coo", "coor", "cooc"]
+    with gb.config.set(autocompute=autocompute_on):
+        for fmt in formats:
+            A = full if fmt.startswith("full") else sparse
+            pieces = {**A.dup().ss.export(fmt), **sizes}
+            for import_ in [getattr(Matrix.ss, f"import_{fmt}"), Matrix.ss.import_any]:
+                B = import_(**pieces)
+                assert [type(x) for x in B.shape] == [int, int]
+                assert B.isequal(A)
+
+
 def test_to_dense_from_dense():
     A = Matrix.from_dense(np.arange(6).reshape(2, 3))
     B = Matrix.from_coo([0, 0, 0, 1, 1, 1], [0, 1, 2, 0, 1, 2], np.arange(6))
