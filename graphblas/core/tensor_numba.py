@@ -21,9 +21,11 @@ int64 as float64, which no array takes as an index. The values ``x`` are of the 
 C's (double) cast, as SuiteSparse's typecast does.
 """
 
+import contextlib
 import hashlib
 import os
 import sys
+import tempfile
 import types
 from pathlib import Path
 
@@ -67,9 +69,17 @@ def _load_cached(path, name, text):
     """
     data = text.encode()
     if not path.exists():
-        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        # A name no other writer has (a pid is not enough: containers and hosts sharing one
+        # cache reuse pids), so nobody else can open the published inode through it
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f"{path.name}.", suffix=".tmp")
+        tmp = Path(tmp)
         try:
-            tmp.write_bytes(data)
+            with os.fdopen(fd, "wb") as f:
+                f.write(data)
+                f.flush()
+                os.fsync(f.fileno())  # (a crash must not leave a short file published)
+            with contextlib.suppress(OSError):
+                tmp.chmod(0o644)  # (mkstemp's 0600 would hide it from a shared cache's users)
             _publish(tmp, path)
         except OSError:
             # Another process may have written the file meanwhile: on Windows a rename onto it
@@ -77,7 +87,10 @@ def _load_cached(path, name, text):
             if not path.exists():
                 raise
         finally:
-            tmp.unlink(missing_ok=True)
+            # On Windows the unlink fails while another process reads the published file,
+            # which this name links to; the leftover link is harmless
+            with contextlib.suppress(OSError):
+                tmp.unlink(missing_ok=True)
     if path.read_bytes() != data:
         return None
     module = types.ModuleType(name)
@@ -110,9 +123,10 @@ def _compile(source):
     """Compile generated kernel source (a function ``kernel``) with ``njit(parallel=True)``:
     from a file named by its hash in the cache directory, with Numba's disk cache, else (no
     writable directory, a file that is not this source, or any failure there) in memory. The
-    file is written once, through a temporary file and a rename, so concurrent processes see
-    either nothing or all of it; Numba's cache index checks its own version and the file's
-    stamp. Bounds checks (tests) are part of the source, so they get their own file.
+    file is written once, through a temporary file and a hard link (``_publish``), so
+    concurrent processes see either nothing or all of it, and the first file stays; Numba's
+    cache index checks its own version and the file's stamp. Bounds checks (tests) are part
+    of the source, so they get their own file.
     """
     check = ", boundscheck=True" if numba.config.BOUNDSCHECK else ""
     text = "import numba\nimport numpy as np\nfrom numba import njit, prange\n\n" + source.replace(

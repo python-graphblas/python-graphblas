@@ -5362,6 +5362,52 @@ def test_kernel_disk_cache_keeps_the_first_file(tmp_path, monkeypatch):
     assert [p.name for p in tmp_path.iterdir() if p.is_file()] == ["k_test.py"]  # (no .tmp)
 
 
+def test_kernel_disk_cache_writes_safely(tmp_path, monkeypatch):
+    """A kernel file is written through a temporary file of its own name, synced before it is
+    published: another writer with this process's pid (in another container or host sharing
+    the cache) cannot truncate the published file through its temporary name. A temporary
+    name that cannot be removed (on Windows, while another process reads the file) still
+    lets the published file load.
+    """
+    if not gb.core._has_numba:
+        pytest.skip("needs numba")
+    from graphblas.core import tensor_numba
+
+    text = (
+        "import numba\nfrom numba import njit\n\n@njit(cache=True)\ndef kernel(x):\n    return x\n"
+    )
+    synced = []
+    real_fsync = os.fsync
+    monkeypatch.setattr(tensor_numba.os, "fsync", lambda fd: synced.append(fd) or real_fsync(fd))
+    real_publish = tensor_numba._publish
+
+    def publish_then_race(tmp, path):
+        real_publish(tmp, path)
+        # Another process with this pid opens its temporary name now, truncating that file
+        (path.parent / f"{path.name}.{os.getpid()}.tmp").write_bytes(b"")
+
+    path = tmp_path / "k_safe.py"
+    with monkeypatch.context() as m:
+        m.setattr(tensor_numba, "_publish", publish_then_race)
+        kernel = tensor_numba._load_cached(path, "_graphblas_kernel_safe", text)
+    assert kernel(3) == 3
+    assert path.read_text() == text
+    assert synced
+    real_unlink = Path.unlink
+
+    def unlink(self, missing_ok=False):
+        if self.suffix == ".tmp":
+            raise PermissionError("the file is open in another process")
+        return real_unlink(self, missing_ok=missing_ok)
+
+    path = tmp_path / "k_safe_2.py"
+    with monkeypatch.context() as m:
+        m.setattr(Path, "unlink", unlink)
+        kernel = tensor_numba._load_cached(path, "_graphblas_kernel_safe_2", text)
+    assert kernel(3) == 3
+    assert path.read_text() == text
+
+
 def test_kernel_disk_cache_guards(tmp_path, monkeypatch):
     """A cache file that is not the kernel's source (corrupt, tampered with, or a digest
     prefix collision) is neither run nor overwritten: the kernel compiles in memory. On a file

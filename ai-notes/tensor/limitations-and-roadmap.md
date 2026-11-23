@@ -26,8 +26,9 @@ later (`verification.md`, "What this does not cover"). What remains:
   - **The kernel cache's file handling.** Two processes writing one kernel file: the
     second's hard link fails and it uses the first's file. Without hard links, a rename onto
     a file another process holds open raises there; the cache then uses that process's file
-    if it holds the same source, or compiles in memory. Both were tested by simulating them,
-    not on Windows.
+    if it holds the same source, or compiles in memory. Removing the temporary name fails
+    while another process reads the published file it links to; the leftover is ignored.
+    All were tested by simulating them, not on Windows.
 - **x86 planner constants.** The cost model was fitted on one machine, an Apple M5 Pro
   (`design.md`, "Fitted constants"). Atomics are slow there, which is why wide transposes
   and column reductions prefer 2 threads. That rule, and the rest of the ranking, may differ
