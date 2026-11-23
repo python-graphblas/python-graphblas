@@ -42,11 +42,16 @@ def _get_imports(names, within):
     return rv
 
 
-def draw(m):  # pragma: no cover
+def draw(m):
     """Draw a square adjacency Matrix as a graph.
 
     Requires `networkx <https://networkx.org/>`_ and
     `matplotlib <https://matplotlib.org/>`_ to be installed.
+
+    Reciprocal directed edges (``u -> v`` and ``v -> u``) are drawn as curves so
+    both arrows and both edge weights stay visible; all other edges are straight.
+    Curving them needs networkx 3.3 or newer; with older versions every edge is
+    drawn straight.
 
     Example output:
 
@@ -56,12 +61,47 @@ def draw(m):  # pragma: no cover
     typ = _output_type(m)
     if typ is not _Matrix and typ is not _TransposedMatrix:
         raise TypeError(f"Can only draw a Matrix, not {type(m)}")
+    if m.dtype._is_udt or m.dtype.np_type.kind == "c":
+        # The layout reads the values as edge weights, which networkx needs as floats
+        raise TypeError(f"Can only draw a Matrix of booleans or real numbers, not {m.dtype}")
 
     g = to_networkx(m)
     pos = nx.spring_layout(g)
-    edge_labels = {(i, j): d["weight"] for i, j, d in g.edges(data=True)}
-    nx.draw_networkx(g, pos, node_color="red", node_size=500)
-    nx.draw_networkx_edge_labels(g, pos, edge_labels=edge_labels)
+    node_size = 500
+    nx.draw_networkx_nodes(g, pos, node_color="red", node_size=node_size)
+    nx.draw_networkx_labels(g, pos)
+
+    # Drawn straight, a reciprocal pair (u -> v and v -> u) is one line, and one weight
+    # hides the other (python-graphblas #474). Curved, each edge bends to its own side,
+    # so both arrows and both labels show. A self-loop (u == v) is not reciprocal.
+    #
+    # networkx places edge labels along a curve from 3.3 on, and we support 3.2, so
+    # without that every edge is straight: curving the edges but not their labels would
+    # leave the labels on the shared midpoint, away from their arrows. Check for the
+    # parameter rather than for a version.
+    import inspect
+
+    if "connectionstyle" in inspect.signature(nx.draw_networkx_edge_labels).parameters:
+        curved = {(u, v) for u, v in g.edges if u != v and g.has_edge(v, u)}
+    else:
+        curved = set()
+    straight = [e for e in g.edges if e not in curved]
+    connectionstyle = "arc3,rad=0.1"
+
+    def _edge_labels(edges):
+        return {(u, v): g[u][v]["weight"] for u, v in edges}
+
+    if straight:
+        nx.draw_networkx_edges(g, pos, edgelist=straight, node_size=node_size)
+        nx.draw_networkx_edge_labels(g, pos, edge_labels=_edge_labels(straight))
+    if curved:
+        curved = list(curved)
+        nx.draw_networkx_edges(
+            g, pos, edgelist=curved, node_size=node_size, connectionstyle=connectionstyle
+        )
+        nx.draw_networkx_edge_labels(
+            g, pos, edge_labels=_edge_labels(curved), connectionstyle=connectionstyle
+        )
     plt.show()
 
 
@@ -88,12 +128,12 @@ def spy(M, *, centered=False, show=True, figure=None, axes=None, figsize=None, *
         plt.show()
     if axes is None:
         if figure is None:
-            fig = mpl.figure.Figure(figsize=figsize)
-        axes = fig.subplots()
+            figure = mpl.figure.Figure(figsize=figsize)
+        axes = figure.subplots()
     if kwargs.get("markersize") is None:
         # Make the square markers "fill" their space
         markersize = min(axes.bbox.width / A.shape[1], axes.bbox.height / A.shape[0])
-        kwargs["markersize"] = max(0.002, markersize * 72 / fig.dpi)
+        kwargs["markersize"] = max(0.002, markersize * 72 / axes.figure.dpi)
     axes.spy(A, **kwargs)
     # Fix offsets
     if not centered:
@@ -101,6 +141,34 @@ def spy(M, *, centered=False, show=True, figure=None, axes=None, figsize=None, *
         axes.set_xticks(axes.get_xticks()[1:-1] - 0.5, axes.get_xticklabels()[1:-1])
         axes.set_yticks(axes.get_yticks()[1:-1] - 0.5, axes.get_yticklabels()[1:-1])
     return axes.figure
+
+
+def _matrix_to_dataframe(M):
+    """Return the ``(row, col, val)`` DataFrame that ``datashade`` rasterizes.
+
+    Separate from ``datashade`` so that a test can check the coordinates without
+    rendering a plot (see ``_cell_centered_limits``).
+    """
+    np, pd = _get_imports(["np", "pd"], "datashade")
+    rows, cols, vals = M.to_coo()
+    # GraphBLAS dimensions are at most 2**60, so every index fits in int64
+    rows = rows.astype(np.int64)
+    cols = cols.astype(np.int64)
+    if vals.dtype == np.bool_:
+        # datashader aggregates only numbers, so a boolean Matrix plots as 0 and 1
+        vals = vals.astype(np.uint8)
+    return pd.DataFrame({"row": rows, "col": cols, "val": vals})
+
+
+def _cell_centered_limits(M):
+    """Return axis limits that center each element on its index, as ``spy`` does.
+
+    datashader bins points into pixels by ``x_range`` and ``y_range``. With limits
+    ``(0, N)``, the pixel for index ``k`` spans ``[k, k+1)``, so an element is drawn half
+    a cell off the tick for ``k``. With the limits half a cell lower, the pixel spans
+    ``[k-0.5, k+0.5)``, centered on the tick (python-graphblas #473).
+    """
+    return (-0.5, M.ncols - 0.5), (-0.5, M.nrows - 0.5)
 
 
 def datashade(M, agg="count", *, width=None, height=None, opts_kwargs=None, **kwargs):
@@ -132,19 +200,15 @@ def datashade(M, agg="count", *, width=None, height=None, opts_kwargs=None, **kw
     spy
 
     """
-    np, pd, bk, hv, _hp, _ds = _get_imports(["np", "pd", "bk", "hv", "hp", "ds"], "datashade")
+    bk, hv, _hp, _ds = _get_imports(["bk", "hv", "hp", "ds"], "datashade")
+    # The plot renders lazily, and holoviews only logs an error raised then and
+    # shows a blank plot, so refuse up front what datashader cannot draw.
+    if M.dtype._is_udt or M.dtype.np_type.kind == "c":
+        raise TypeError(f"Can only datashade a Matrix of booleans or real numbers, not {M.dtype}")
+    if M.nrows == 0 or M.ncols == 0:
+        raise ValueError(f"Can only datashade a Matrix with rows and columns, not shape {M.shape}")
     if "df" not in kwargs:
-        rows, cols, vals = M.to_coo()
-        max_int = np.iinfo(np.int64).max
-        if M.nrows > max_int and rows.max() > max_int:
-            rows = rows.astype(np.float64)
-        else:
-            rows = rows.astype(np.int64)
-        if M.ncols > max_int and cols.max() > max_int:
-            cols = cols.astype(np.float64)
-        else:
-            cols = cols.astype(np.int64)
-        df = pd.DataFrame({"row": rows, "col": cols, "val": vals})
+        df = _matrix_to_dataframe(M)
     else:
         df = kwargs.pop("df")
 
@@ -183,6 +247,7 @@ def datashade(M, agg="count", *, width=None, height=None, opts_kwargs=None, **kw
             images.extend(image_row)
         return hv.Layout(images).cols(ncols)
 
+    xlim, ylim = _cell_centered_limits(M)
     kwds = {
         "x": "col",
         "y": "row",
@@ -192,8 +257,8 @@ def datashade(M, agg="count", *, width=None, height=None, opts_kwargs=None, **kw
         "frame_height": height,
         "cmap": "fire",
         "cnorm": "eq_hist",
-        "xlim": (0, M.ncols),
-        "ylim": (0, M.nrows),
+        "xlim": xlim,
+        "ylim": ylim,
         "rasterize": True,
         "flip_yaxis": True,
         "hover": True,
