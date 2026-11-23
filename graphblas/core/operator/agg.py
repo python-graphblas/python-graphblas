@@ -495,8 +495,15 @@ def _logaddexp(agg, updater, expr, opts, *, in_composite, fast, exp, log, np_log
     """
     dtype = agg.return_type
     result = fast[agg.type]._new(expr.construct_output(dtype)(**opts), expr, in_composite=True)
-    values = result.to_coo(indices=False)[1]
-    if np.isposinf(values).any() or (values < low).any():
+    # A NaN result comes only from a NaN value, as numpy's would, so it is not checked
+    if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
+        # Two reduces, not a copy of a value per row (max and min skip NaN)
+        top = result.reduce(monoid.max).new().value
+        redo = top is not None and (top == np.inf or result.reduce(monoid.min).new().value < low)
+    else:
+        values = result.to_coo(indices=False)[1]  # (one value at most)
+        redo = values.size > 0 and (values[0] == np.inf or values[0] < low)
+    if redo:
         result = _logaddexp_shifted(expr, dtype, opts, exp, log, np_log)
     if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
         updater << result
