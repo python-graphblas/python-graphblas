@@ -357,6 +357,7 @@ def test_einsum_sublists_and_subscript_errors():
         ("i...", [()]),
         ("i,i", [(3,), (2,)]),
         ("ij,jk", [(2, 3)]),
+        ("i1,1j", [(2, 2), (2, 2)]),
     ]:
         arrays = [np.ones(shape) for shape in shapes]
         with pytest.raises(ValueError):  # noqa: PT011 (numpy's messages vary by version)
@@ -365,7 +366,7 @@ def test_einsum_sublists_and_subscript_errors():
             xp.einsum(subscripts, *[xp.asarray(a) for a in arrays])
     # numpy's "..." may stand for more axes than there are letters; here it may not
     assert xp.einsum("ab...", xp.zeros((1,) * 52)).shape == (1,) * 52
-    with pytest.raises(ValueError, match="more than 52"):
+    with pytest.raises(ValueError, match="unused letters"):
         xp.einsum("...", xp.zeros((1,) * 53))
 
 

@@ -14,8 +14,6 @@ The rules for fills, semirings and deferred results are in the Technical Notes p
   or NaN, handles NaN under a float min or max monoid, and defers the result.
 """
 
-import collections
-import functools
 import math
 import string
 import weakref
@@ -614,117 +612,36 @@ def _from_sublists(args):
 def _explicit_einsum(subscripts, ops):
     """``(subscripts, operands)`` under numpy's einsum rules, as the Tensor's einsum takes
     them: each term names each axis of its operand once, the sizes of an index agree, and the
-    output is explicit (see ``_einsum_rewrite``).
+    output is explicit.
+
+    The Tensor's einsum rewrites numpy's ``...``, repeated indices and size-1 broadcasting
+    (``core.tensor_einsum._einsum_rewrite``); here its steps apply to the operands' Tensors,
+    and each operand keeps its fill. A size mismatch raises ValueError, as in numpy.
     """
-    from ._manipulation import squeeze
+    from ..core.tensor_einsum import _einsum_plan, _einsum_rewrite, _prepare_operand
+    from ..exceptions import DimensionMismatch
 
-    subscripts, steps = _einsum_rewrite(subscripts, tuple(x.shape for x in ops))
-    if steps:
-        ops = list(ops)
-        for i, term, drop in steps:
-            if term is not None:
-                ops[i] = _einsum_diagonal(term, ops[i])
-            if drop:
-                ops[i] = squeeze(ops[i], axis=drop)
-    return subscripts, ops
-
-
-@functools.lru_cache(maxsize=1024)
-def _einsum_rewrite(subscripts, shapes):
-    """``(explicit subscripts, steps)`` for operands of ``shapes``, cached. Each step
-    ``(i, term, drop)`` takes operand i's diagonal for ``term`` (when not None), then squeezes
-    out its axes ``drop``.
-
-    ``...`` becomes letters of its own, aligned from the right. An index repeated in one term
-    takes the operand's diagonal over those axes (``_einsum_diagonal``). An axis of size 1
-    whose index has another size elsewhere is squeezed out of its operand, and its letter out
-    of the term: an operand without an index is constant along it.
-    """
-    s = subscripts.replace(" ", "")
-    inputs, arrow, output = s.partition("->")
-    terms = inputs.split(",")
-    if len(terms) != len(shapes):
-        raise ValueError(f"einsum: {len(terms)} terms for {len(shapes)} operands")
-    for t in terms + ([output] if arrow else []):
-        rest = t.replace("...", "", 1)
-        if any(c not in string.ascii_letters for c in rest):
-            raise ValueError(
-                f"einsum: invalid subscripts {subscripts!r}: each term is letters and at most "
-                "one '...'"
-            )
-    widths = []
-    for t, shape in zip(terms, shapes, strict=True):
-        named = len(t.replace("...", ""))
-        if (len(shape) < named) if "..." in t else (len(shape) != named):
-            raise ValueError(f"einsum: term {t!r} does not match an operand of shape {shape}")
-        widths.append(len(shape) - named)
-    fresh = [c for c in string.ascii_letters if c not in s]
-    if max(widths) > len(fresh):
-        raise ValueError(f"einsum: {subscripts!r} needs more than 52 indices")
-    ell = "".join(fresh[: max(widths)])
-    terms = [t.replace("...", ell[len(ell) - w :]) for t, w in zip(terms, widths, strict=True)]
-    if not arrow:
-        # numpy's implicit output: the axes of "...", then the indices that appear once, sorted
-        counts = collections.Counter("".join(terms))
-        output = ell + "".join(sorted(c for c, k in counts.items() if k == 1 and c not in ell))
-    elif "..." in output:
-        output = output.replace("...", ell)
-    elif ell:
+    if any(c not in _SUBSCRIPT_CHARS for c in subscripts.replace("->", "", 1)):
         raise ValueError(
-            f"einsum: {subscripts!r} has no '...' in the output for the axes that '...' "
-            "stands for in the operands"
+            f"einsum: invalid subscripts {subscripts!r}: each term is letters and at most one "
+            "'...'"
         )
-    if len(set(output)) != len(output):
-        raise ValueError(f"einsum: the output {output!r} repeats an index")
-    if missing := set(output) - set("".join(terms)):
-        raise ValueError(f"einsum: the output index {min(missing)!r} is in no operand")
-    shapes = list(shapes)
-    diagonal = [None] * len(terms)
-    for i, (t, shape) in enumerate(zip(terms, shapes, strict=True)):
-        if len(set(t)) != len(t):
-            diagonal[i] = t
-            terms[i] = "".join(dict.fromkeys(t))
-            for a, c in enumerate(t):
-                if shape[a] != shape[t.index(c)]:
-                    raise ValueError(
-                        f"einsum: the axes of index {c!r} in {t!r} differ in size "
-                        f"({shape[t.index(c)]} and {shape[a]})"
-                    )
-            shapes[i] = tuple(shape[t.index(c)] for c in terms[i])
-    sizes = {}
-    for t, shape in zip(terms, shapes, strict=True):
-        for c, n in zip(t, shape, strict=True):
-            if n != 1 and sizes.setdefault(c, n) != n:
-                raise ValueError(f"einsum: index {c!r} has sizes {sizes[c]} and {n}")
-    steps = []
-    for i, (t, shape) in enumerate(zip(terms, shapes, strict=True)):
-        drop = tuple(a for a, c in enumerate(t) if shape[a] == 1 and sizes.get(c, 1) != 1)
-        if drop:
-            terms[i] = "".join(c for a, c in enumerate(t) if a not in drop)
-        if drop or diagonal[i] is not None:
-            steps.append((i, diagonal[i], drop))
-    return ",".join(terms) + "->" + output, tuple(steps)
+    shapes = tuple(x.shape for x in ops)
+    try:
+        if (rewritten := _einsum_rewrite(subscripts, shapes)) is not None:
+            subscripts, preps = rewritten
+            ops = [
+                x if p is None else Array._new(_prepare_operand(x._T(), *p), x._fill)
+                for x, p in zip(ops, preps, strict=True)
+            ]
+            shapes = tuple(x.shape for x in ops)
+        terms, output = _einsum_plan(subscripts, shapes, "greedy")[:2]
+    except DimensionMismatch as exc:
+        raise ValueError(str(exc)) from None
+    return ",".join(terms) + "->" + output, ops
 
 
-def _einsum_diagonal(term, x):
-    """``x`` on the distinct letters of ``term``, in the order they first appear: the entries
-    whose indices agree on the axes of each repeated letter. It costs O(entries of ``x``), and
-    the fill stays.
-    """
-    first = [term.index(c) for c in dict.fromkeys(term)]
-    shape = tuple(x.shape[a] for a in first)
-    T = x._T()
-    if T.nvals:
-        coords, values = T.to_coo()
-        keep = np.ones(values.size, bool)
-        for a, c in enumerate(term):
-            keep &= coords[a] == coords[term.index(c)]
-        if keep.any():
-            D = Tensor.from_coo(
-                [coords[a][keep] for a in first], values[keep], T.dtype, shape=shape
-            )
-            return Array._new(D, x._fill)
-    return Array._new(Tensor(T.dtype, shape), x._fill)
+_SUBSCRIPT_CHARS = frozenset(string.ascii_letters + ",. ")
 
 
 # (monoid, multiply) pairs where the multiply distributes over the monoid, so that a term's
