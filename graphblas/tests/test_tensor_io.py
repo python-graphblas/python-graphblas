@@ -575,7 +575,7 @@ def test_scipy_errors(monkeypatch):
     import scipy
 
     T = Tensor.from_coo(np.array([[0, 1], [1, 2], [2, 3]]), [1.0, 2.0], shape=(2, 3, 4))
-    with pytest.raises(ValueError, match="'coo' only"):
+    with pytest.raises(ValueError, match="converts a 3-d Tensor to 'coo' only"):
         T.to_scipy_sparse("csr")
     # scipy.sparse has n-d COO arrays from scipy 1.15, and 1-d and 2-d ones in every scipy
     # python-graphblas supports
@@ -589,6 +589,11 @@ def test_scipy_errors(monkeypatch):
     monkeypatch.undo()
     with pytest.raises(ValueError, match="no 0-d"):
         Tensor.from_coo((), [1.0], shape=()).to_scipy_sparse()
+    with pytest.raises(ValueError, match="no 0-d"):
+        Tensor.from_coo((), [1.0], shape=()).to_scipy_sparse("csr")
+    # (this function's limit: scipy 1.18 also has 1-d csr and dok arrays)
+    with pytest.raises(ValueError, match="converts a 1-d Tensor to 'coo' only"):
+        V.to_scipy_sparse("csr")
     with pytest.raises(TypeError, match="scipy.sparse"):
         Tensor.from_scipy_sparse(np.eye(2))
     with pytest.raises(ValueError, match="Invalid format"):

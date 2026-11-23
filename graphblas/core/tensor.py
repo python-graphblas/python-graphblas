@@ -831,7 +831,8 @@ class Tensor(BaseType):
         The COO array comes in the stored order, without moving data. It is in C order, and
         marked canonical, when the layout is the identity axis order. A 2-d Tensor also
         converts to the other formats of ``graphblas.io.to_scipy_sparse``: "csr" from layout
-        ``(0|1)`` and "csc" from ``(1|0)`` copy the stored arrays once.
+        ``(0|1)`` and "csc" from ``(1|0)`` copy the stored arrays once. Other Tensors convert
+        to "coo" only (a 1-d one too, though scipy also has 1-d "csr" and "dok" arrays).
         """
         from .tensor_io import to_scipy_sparse
 

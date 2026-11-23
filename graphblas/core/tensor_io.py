@@ -304,12 +304,12 @@ def to_scipy_sparse(T, format="coo"):
         else:
             A = T.to_matrix((0,), copy=False)
         return matrix_to_scipy_sparse(A, format)
-    if format != "coo":
-        raise ValueError(
-            f"scipy.sparse holds {T.ndim}-d arrays as 'coo' only; got format {format!r}"
-        )
     if T.ndim == 0:
         raise ValueError("scipy.sparse has no 0-d arrays")
+    if format != "coo":
+        raise ValueError(
+            f"to_scipy_sparse converts a {T.ndim}-d Tensor to 'coo' only; got format {format!r}"
+        )
     if need := _scipy_coo_needs(T.ndim):
         raise NotImplementedError(
             f"a {T.ndim}-d scipy.sparse array requires scipy {need} or later; "
