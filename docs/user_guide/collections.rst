@@ -116,6 +116,34 @@ SuiteSparse:GraphBLAS has very good defaults which work for most use cases witho
 
 When manual tuning is required, look in the :ref:`api_reference` for details about the ``.ss`` namespace.
 
+One pattern worth tuning is a Vector written by a masked assign and read back as a mask in every round,
+such as the levels of a breadth-first search:
+
+.. code-block:: python
+
+    A = gb.Matrix.from_coo([0, 1, 1, 2], [1, 2, 3, 3], True, nrows=4, ncols=4)
+    source = 0
+    levels = gb.Vector(int, A.nrows)
+    levels[source] = 0
+    levels.ss.config["sparsity_control"] = "bitmap"
+    frontier = gb.Vector(bool, A.nrows)
+    frontier[source] = True
+    depth = 1
+    while True:
+        frontier(~levels.S, replace=True) << frontier.vxm(A, gb.semiring.any_pair)
+        if frontier.nvals == 0:
+            break
+        levels(frontier.S) << depth
+        depth += 1
+
+While ``levels`` is sparse, the masked assign leaves its new entries pending, and reading ``~levels.S``
+as the next round's mask makes SuiteSparse:GraphBLAS merge them into the Vector first. A bitmap Vector
+takes the assign in place, so no round waits. The cost is memory once the Vector fills: a bitmap stores
+a byte for each position as well as the values, and it cannot become the smaller full format.
+
+Set the option once the Vector has an entry, as above. A masked assign into an empty Vector replaces
+its ``sparsity_control`` with the mask's.
+
 Collection Methods
 ------------------
 

@@ -50,6 +50,7 @@ from .udt import (
 from .utils import (
     _CArray,
     _Pointer,
+    _repeated_value,
     check_element_shape,
     class_property,
     get_order,
@@ -1018,6 +1019,9 @@ class Matrix(BaseType):
             Column indices.
         values : list or np.ndarray or scalar, default 1.0
             List of values. If a scalar is provided, all values will be set to this single value.
+            With the suitesparse backend, a 1-d array that repeats one value with stride 0,
+            as ``np.broadcast_to(x, n)`` makes, is stored once (iso), as a scalar is, unless
+            ``dup_op`` is given.
         dtype :
             Data type of the Matrix. If not provided, the values will be inspected
             to choose an appropriate dtype.
@@ -1046,6 +1050,14 @@ class Matrix(BaseType):
         """
         rows = ints_to_numpy_buffer(rows, np.uint64, name="row indices")
         columns = ints_to_numpy_buffer(columns, np.uint64, name="column indices")
+        # n copies of one value (as from np.broadcast_to) build iso. Unlike a scalar
+        # value, they must match the number of indices, and duplicate indices raise.
+        repeated = None
+        if dup_op is None and backend == "suitesparse":
+            repeated = _repeated_value(values, dtype)
+        if repeated is not None:
+            n = values.size
+            values = repeated
         values, dtype = values_to_numpy_buffer(values, dtype, subarray_after=1)
         # Compute nrows and ncols if not provided
         if nrows is None:
@@ -1058,7 +1070,16 @@ class Matrix(BaseType):
             ncols = int(columns.max()) + 1
         # Create the new matrix
         C = cls(dtype, nrows, ncols, name=name)
-        if values.ndim == 0:
+        if repeated is not None:
+            if rows.size != n or columns.size != n:
+                raise ValueError(
+                    "`rows` and `columns` and `values` lengths must match: "
+                    f"{rows.size}, {columns.size}, {n}"
+                )
+            C.ss.build_scalar(rows, columns, values.tolist())
+            if C._nvals < n:
+                raise ValueError("Duplicate indices found, must provide `dup_op` BinaryOp")
+        elif values.ndim == 0:
             if dup_op is not None:
                 raise ValueError(
                     "dup_op must be None if values is a scalar so that all "
