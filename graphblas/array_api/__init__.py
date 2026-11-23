@@ -12,8 +12,8 @@ sparse where the fill values allow. Where they differ:
 - the sign of a zero is unspecified at a position the result does not store, and where 0.0
   and -0.0 compare equal (maximum, minimum, max, min and the unique functions);
 - contractions such as ``matmul`` skip the unstored positions of an operand whose fill is 0,
-  so ``0 * inf`` there is not NaN (see the Technical Notes page "Contractions in the
-  Array API Namespace", :ref:`tn_array_api_contractions`).
+  so ``0 * inf`` there is not NaN (see the Technical Notes page
+  :ref:`Contractions in the Array API Namespace <tn_array_api_contractions>`).
 
 An operation that would allocate a dense array larger than the ``array_api_densify_limit``
 config option raises ``DensifyError``.

@@ -1,18 +1,22 @@
 .. _array_api:
 
-Array API Namespace
-===================
+Array API Namespace (experimental)
+==================================
 
 .. warning::
 
-    ``graphblas.array_api`` is experimental and may change. It needs the ``suitesparse``
-    backend.
+    **THIS API IS EXPERIMENTAL AND MAY CHANGE.** ``graphblas.array_api`` needs the
+    ``suitesparse`` backend with SuiteSparse:GraphBLAS 10 or later, as ``Tensor`` does. On the
+    vanilla backend it imports, but using it raises ``NotImplementedError``.
 
 ``graphblas.array_api`` implements the `Python array API standard
 <https://data-apis.org/array-api/2025.12/>`_ (version 2025.12) over :class:`~graphblas.Tensor`,
 with every function of the standard except the ``fft`` extension. Code written against the
-standard runs on these arrays as it runs on numpy's or PyTorch's, and the arrays store only
-the positions they need to.
+standard can run on these arrays unchanged, and the arrays store only the positions they
+need to. The results are numpy's on the same values, with a few exceptions. A contraction
+skips unstored positions, so ``0 * inf`` there is not NaN. The sign of a zero that the
+result does not store is unspecified, and sums and transcendental functions may round
+differently. An operation past the densify limit (below) raises instead of allocating.
 
 .. code-block:: python
 
@@ -60,7 +64,7 @@ standard.
 An operation that would store more positions densely than
 ``graphblas.config["array_api_densify_limit"]`` (10**8 by default) raises
 ``xp.DensifyError`` instead of allocating them. Raise the limit with
-``gb.config.set(array_api_densify_limit=...)``.
+``graphblas.config.set(array_api_densify_limit=...)``.
 
 Converting
 ----------
@@ -77,9 +81,9 @@ array. The positions these do not store get the fill. Going back:
 Contractions
 ------------
 
-``matmul`` (``x1 @ x2``), ``tensordot``, ``vecdot`` and ``einsum`` (an extension, with numpy's
-subscripts) take a ``semiring=`` keyword as an extension. For example, ``min_plus`` with
-fill ``inf`` relaxes shortest paths:
+``matmul`` (``x1 @ x2``), ``tensordot`` and ``vecdot`` take a ``semiring=`` keyword, an
+extension to the standard. So does ``einsum``, itself an extension, which takes numpy's
+subscripts. For example, ``min_plus`` with fill ``inf`` relaxes shortest paths:
 
 .. code-block:: python
 
