@@ -154,7 +154,8 @@ def test_from_coo_numpy_scalars_keep_dtype(np_type):
 @pytest.mark.skipif("not supports_udfs and not suitesparse")  # (a text UDT's dup_op)
 def test_durations_into_short_text():
     """An array of durations converts into a text UDT too short for it by being cut short, as
-    a number is, for values, an element and a literal.
+    a number is, for values, an element and a literal. So does a list of such arrays, and each
+    array or scalar in a list keeps its own unit.
     """
     text = dtypes.register_anonymous(np.dtype("U4"), "_ShortTextDurations")
     data = dtypes.register_anonymous(np.dtype("S4"), "_ShortBytesDurations")
@@ -165,19 +166,35 @@ def test_durations_into_short_text():
     assert [b[0].new().value, b[1].new().value] == [b"1 da", b"1234"]
     v[0] = np.array([5], "m8[D]")
     assert v[0].new().value == "5 da"
+    v[1] = np.array(6, "m8[D]")
+    assert v[1].new().value == "6 da"
     assert Scalar.from_value(np.array([5], "m8[D]"), text).value == "5 da"
+    A = Matrix.from_dense([durations], dtype=text)
+    assert A.to_dense().tolist() == [["1 da", "1234"]]
+    mixed = [np.timedelta64(1, "D"), np.array(3, "m8[h]")]
+    assert Vector.from_coo([0, 1], mixed, dtype=text).to_coo()[1].tolist() == ["1 da", "3 ho"]
 
 
 _SHORT_TEXT_PROBE = """
 import numpy as np
-from graphblas import Scalar, Vector, binary, dtypes
+from graphblas import Matrix, Scalar, Vector, binary, dtypes
 text = dtypes.register_anonymous(np.dtype("U4"), "_ShortTextProbe")
 durations = np.array([1, 123456], "m8[D]")
 v = Vector.from_coo([0, 1], durations, dtype=text)
 v[0] = np.array([5], "m8[D]")
+v[1] = np.array(6, "m8[D]")
 Scalar.from_value(np.array([5], "m8[D]"), text)
 (v == np.array([5], "m8[D]")).new()
 v.ewise_union(v, binary.first, durations[:1], durations[:1]).new()
+Matrix.from_dense([durations], dtype=text)
+try:
+    import pandas as pd
+except ImportError:
+    pass
+else:
+    week = np.array([1, 7], "m8[D]")  # (fits pandas' nanoseconds, if it uses them)
+    Vector.from_coo([0, 1], pd.Series(week), dtype=text)
+    Vector.from_dense(pd.TimedeltaIndex(week), dtype=text)
 print("done")
 """
 
