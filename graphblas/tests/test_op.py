@@ -1365,6 +1365,30 @@ def test_lazy_op_first_used_by_threads_at_once():
         assert all(x is got[0] for x in got), namespace
 
 
+def test_lazy_op_whose_build_fails_is_built_again():
+    """A lazily registered op whose build raises stays delayed, so the next use builds it again.
+
+    Regression: its name was gone from the delayed table, so later uses raised "has no
+    attribute", which hid the cause.
+    """
+    calls = []
+
+    def build():
+        calls.append(None)
+        if len(calls) == 1:
+            raise RuntimeError("the first build fails")
+        return calls
+
+    binary._delayed["_failing_probe"] = (build, {})
+    try:
+        with pytest.raises(RuntimeError, match="the first build fails"):
+            binary._failing_probe
+        assert binary._failing_probe is calls
+    finally:
+        binary._delayed.pop("_failing_probe", None)
+        vars(binary).pop("_failing_probe", None)
+
+
 def test_positional():
     assert not unary.exp.is_positional
     assert not unary.abs[bool].is_positional
