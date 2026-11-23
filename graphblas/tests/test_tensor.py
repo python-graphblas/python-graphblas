@@ -7516,6 +7516,7 @@ def test_gather_matrix_flipped_by_column(sparsity, monkeypatch):
     monkeypatch.setattr(tensor_index, "_lookup_numba", spy)
     x = np.array([[0.0, 1.5, 0.0, 2.0], [3.0, 0.0, 0.0, 0.0], [0.0, 4.0, 5.0, 0.0]])
     A = Matrix.from_dense(x, missing_value=0.0)
+    A.ss.config["format"] = "by_row"  # (shared only when stored by row)
     A.ss.config["sparsity_control"] = sparsity
     T = Tensor.from_matrix(A, copy=False)
     A.ss.config["format"] = "by_col"
