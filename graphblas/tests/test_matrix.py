@@ -3506,6 +3506,53 @@ def test_ss_reshape(A):
     assert rv.isequal(expected)
 
 
+@pytest.mark.skipif("not suitesparse")
+def test_ss_reshape_past_2_31_positions():
+    """A Matrix of 2**31 positions or more reshapes and flattens on every platform.
+
+    numpy's sizes stop at 2**31 - 1 on 32-bit platforms such as WebAssembly, where working
+    out the new shape with numpy raised ValueError.
+    """
+    n = 2**16
+    A = Matrix(int, n, n)
+    A[1, 2] = 3
+    B = A.ss.reshape(2 * n, -1)
+    assert B.shape == (2 * n, n // 2)
+    assert B[2, 2].new() == 3  # position 1 * n + 2
+    v = A.ss.flatten()
+    assert v.size == n * n
+    assert v[n + 2].new() == 3
+    assert v.ss.reshape(n, n).isequal(A)
+    assert A.ss.reshape((n // 2, 2 * n), inplace=True) is None
+    assert A.shape == (n // 2, 2 * n)
+    with pytest.raises(ValueError, match="cannot reshape array"):
+        A.ss.reshape(n, n // 2)
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_ss_reshape_shape_in_python_ints_as_numpy_gives_it(monkeypatch):
+    """Where numpy cannot hold a Matrix's size, the new shape follows numpy's rules anyway."""
+    from graphblas.core.ss import matrix as ss_matrix
+
+    cases = [
+        *[(4, 16), (4, -1), (-1, 1), (-2, 32), (np.int64(4), 16), (64,)],
+        *[((4, 16),), ((-1, 16),), ([4, 16],), (np.array([4, 16]),), ((4, 4, 4),)],
+        *[(5, 5), (4,), ((4,),), ((4, 5),), (-1, -1), (3, -1), (0, -1), (4.0, 16), ("4", 16)],
+    ]
+
+    def outcome(args):
+        try:
+            return ss_matrix._reshape_dims((8, 8), *args)
+        except (TypeError, ValueError) as exc:
+            return type(exc)
+
+    expected = [outcome(args) for args in cases]  # by numpy
+    monkeypatch.setattr(ss_matrix, "_MAX_INTP", 0)  # as if numpy could not hold 64
+    assert [outcome(args) for args in cases] == expected
+    with pytest.raises(ValueError, match="can only specify one unknown dimension"):
+        ss_matrix._reshape_dims((8, 8), -1, -1)
+
+
 def test_autocompute_argument_messages(A, v):
     with pytest.raises(TypeError, match="autocompute"):
         A.ewise_mult(A & A)

@@ -1,4 +1,6 @@
 import itertools
+import math
+import operator
 
 import numpy as np
 from suitesparse_graphblas.utils import claim_buffer, claim_buffer_2d
@@ -190,6 +192,39 @@ def _concat_mn(tiles, *, is_matrix=None):
 
 def _as_matrix(x):
     return x._as_matrix() if hasattr(x, "_as_matrix") else x
+
+
+# numpy's largest array size: 2**63 - 1 on 64-bit platforms, but 2**31 - 1 on 32-bit ones
+# such as WebAssembly, where a Matrix may still have more positions
+_MAX_INTP = np.iinfo(np.intp).max
+
+
+def _reshape_dims(shape, nrows, ncols=None):
+    """The shape numpy would reshape an array of ``shape`` to (``nrows`` may be a tuple)."""
+    size = shape[0] * shape[1]
+    if size <= _MAX_INTP or size > 2**63 - 1:
+        # numpy's rules and messages; past 2**63 - 1 positions numpy raises ValueError, on
+        # 64-bit platforms too
+        array = np.broadcast_to(False, shape)
+        return (array.reshape(nrows) if ncols is None else array.reshape(nrows, ncols)).shape
+    # The same rules in Python ints (a 32-bit platform, past 2**31 - 1 positions)
+    if ncols is not None:
+        dims = [nrows, ncols]
+    else:
+        try:
+            dims = [operator.index(nrows)]
+        except TypeError:
+            dims = list(nrows)
+    dims = [operator.index(dim) for dim in dims]
+    unknown = [i for i, dim in enumerate(dims) if dim < 0]
+    if len(unknown) > 1:
+        raise ValueError("can only specify one unknown dimension")
+    known = math.prod(dim for dim in dims if dim >= 0)
+    if unknown and known > 0:
+        dims[unknown[0]] = size // known
+    if math.prod(dims) != size:
+        raise ValueError(f"cannot reshape array of size {size} into shape {tuple(dims)}")
+    return tuple(dims)
 
 
 class MatrixConfig(BaseConfig):
@@ -3992,14 +4027,10 @@ class ss:
 
         order = get_order(order)
         parent = self._parent
-        array = np.broadcast_to(False, parent.shape)
-        if ncols is None:
-            array = array.reshape(nrows)
-        else:
-            array = array.reshape(nrows, ncols)
-        if array.ndim != 2:
-            raise ValueError(f"Shape tuple must be of length 2, not {array.ndim}")
-        nrows, ncols = array.shape
+        dims = _reshape_dims(parent.shape, nrows, ncols)
+        if len(dims) != 2:
+            raise ValueError(f"Shape tuple must be of length 2, not {len(dims)}")
+        nrows, ncols = dims
         if inplace:
             call(
                 "GxB_Matrix_reshape",
