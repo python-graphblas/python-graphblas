@@ -16,6 +16,7 @@ from ..utils import (
     _distinct_buffers,
     _MatrixArray,
     check_values_size,
+    index_or_none,
     ints_to_numpy_buffer,
     normalize_chunks,
     values_to_numpy_buffer,
@@ -978,6 +979,7 @@ class ss:
     ):
         if format is not None and format.lower() != "sparse":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'sparse'.")
+        size = index_or_none(size)
         if method == "pack" and secure_import:
             return _pack_securely(
                 cls._import_sparse,
@@ -1175,6 +1177,7 @@ class ss:
     ):
         if format is not None and format.lower() != "bitmap":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'bitmap'.")
+        size = index_or_none(size)
         if method == "pack" and secure_import:
             return _pack_securely(
                 cls._import_bitmap,
@@ -1363,6 +1366,7 @@ class ss:
     ):
         if format is not None and format.lower() != "full":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'full'.")
+        size = index_or_none(size)
         if method == "pack" and secure_import:
             return _pack_securely(
                 cls._import_full,

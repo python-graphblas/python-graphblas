@@ -285,6 +285,15 @@ def normalize_values(self, values, dtype, shape=None, is_iso=False):
     return values
 
 
+def index_or_none(size):
+    """Return ``size`` as a Python int, or None if it is None.
+
+    The ss imports compare and multiply the sizes they are given, and on a Scalar these
+    give expressions, which raise when autocompute is off.
+    """
+    return None if size is None else index(size)
+
+
 def get_shape(nrows, ncols, dtype=None, **arrays):
     if nrows is None or ncols is None:
         # Get nrows and ncols from the first 2d array
