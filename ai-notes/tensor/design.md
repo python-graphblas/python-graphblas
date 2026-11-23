@@ -319,19 +319,22 @@ or built from the nonempty rows of a hypersparse group (`rows_selector`). One mx
 relayout. UDT values always take the REBUILD path. `reduce` also takes aggregators made of one
 monoid or one semiring (`_reduce_aggregator`), typed as Matrix types them (a semiring
 aggregator with a type of its own, as `count`'s INT64, counts in it, and one with a float
-result of integer values, as `hypot`, computes in that float type), and composite ones (`mean`,
-`varp`, ...): integer and BOOL values are first copied into the float result type, then each
-part is computed now as its own aggregator, and Matrix's finalize function combines them into
-the expression returned, which stores in the result type Matrix gives (`decisions.md`, 32). The
-aggregators of positions (`_reduce_positional`) start from an INT64 Tensor of each entry's
-C-order index over the reduced axes (`_positions`: one pass over the stored indices, and a
-build from keys in storage order). `first_index` is its minimum; `first` keeps the entries
-whose index equals that minimum (`eq` against the broadcast reduction, then a value mask) and
-reduces them with `any`; `argmin` keeps the entries equal to their fiber's minimum and takes
-the least index among them (`decisions.md`, 33). `reduce_scalar` with an aggregator other than
-a monoid's returns its `reduce` over every axis (`_reduce_scalar_aggregator_recipe`): the
-stored Matrix's own `reduce_scalar` would take `first` and `last` in storage order, and sum
-integers in their own type.
+result of integer values, as `hypot`, computes in that float type), and the counters that
+python-graphblas builds by the kind of the values (`_count_by_kind`: `count_nonzero` and
+`count_zero` in INT64, FP64 for floats) count with the one for the Tensor's dtype and store the
+counts in INT64 or the caller's type, as Matrix does, and composite ones (`mean`, `varp`, ...):
+integer and BOOL values are first copied into the float result type, then each part is computed
+now as its own aggregator, and Matrix's finalize function combines them into the expression
+returned, which stores in the result type Matrix gives (`decisions.md`, 32). The aggregators of
+positions (`_reduce_positional`) start from an INT64 Tensor of each entry's C-order index over
+the reduced axes (`_positions`: one pass over the stored indices, and a build from keys in
+storage order). `first_index` is its minimum; `first` keeps the entries whose index equals that
+minimum (`eq` against the broadcast reduction, then a value mask) and reduces them with `any`;
+`argmin` keeps the entries equal to their fiber's minimum and takes the least index among them
+(`decisions.md`, 33). `reduce_scalar` with an aggregator other than a monoid's returns its
+`reduce` over every axis (`_reduce_scalar_aggregator_recipe`): the stored Matrix's own
+`reduce_scalar` would take `first` and `last` in storage order, and sum integers in their own
+type.
 
 ## Contractions and batched products
 

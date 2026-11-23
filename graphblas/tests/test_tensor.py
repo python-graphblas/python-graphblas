@@ -7455,48 +7455,95 @@ def test_reduce_aggregators():
         X.reduce(mine, axis=1)
 
 
-def test_reduce_counting_aggregators_old_and_new():
-    """``reduce`` with ``agg.count_nonzero``, ``agg.count_zero`` and ``agg.L0norm`` returns
-    what Matrix returns with the definitions this python-graphblas has, and with the ones
-    that count in INT64 (an ``applybegin`` function comparing with 0, then ``plus_first``
-    typed by ``any_dtype``) it returns numpy's counts, NaN nonzero and -0.0 zero. ``hypot``
-    of integers squares them in its float result type.
+def test_reduce_counting_aggregators(monkeypatch):
+    """``reduce`` with ``agg.count_nonzero``, ``agg.count_zero`` and ``agg.L0norm`` returns what
+    Matrix returns, with the definitions this python-graphblas has and with the ones that count
+    in INT64 (FP64 for floats) by the kind of the values (``_counter`` and ``_count_by_kind``
+    in ``operator.agg``; copied here where this python-graphblas has none): numpy's counts, as
+    INT64 or the type a typed aggregator names. ``hypot`` of integers squares them in its float
+    result type.
     """
     from graphblas import agg, semiring
+    from graphblas.core.operator import agg as agg_module
     from graphblas.core.operator.agg import Aggregator
 
+    if not hasattr(agg_module, "_count_by_kind"):
+
+        def count_by_kind(agg, updater, expr, opts, *, in_composite, aggs):
+            dtype = expr.args[0].dtype
+            if (sub := aggs.get(dtype.np_type.kind)) is None:
+                raise KeyError(f"{agg.name} does not work with {dtype}")
+            sub_agg, sub_type = sub
+            return sub_agg[sub_type]._new(updater, expr, in_composite=in_composite)
+
+        monkeypatch.setattr(agg_module, "_count_by_kind", count_by_kind, raising=False)
+
+    def counter(name, sr, compare):
+        if hasattr(agg_module, "_counter"):
+            return agg_module._counter(name, sr, compare)
+        by_value = Aggregator(name, semiring=sr, semiring2=semiring.plus_first, vector_apply=True)
+        compared = Aggregator(
+            name, applybegin=compare, semiring=semiring.plus_first,
+            semiring2=semiring.plus_first, any_dtype=dtypes.INT64, vector_apply=True,
+        )  # fmt: skip
+        aggs = dict.fromkeys("biu", (by_value, dtypes.INT64))
+        aggs["f"] = (by_value, dtypes.FP64)
+        aggs["c"] = (compared, dtypes.INT64)
+        custom = functools.partial(agg_module._count_by_kind, aggs=aggs)
+        return Aggregator(name, custom=custom, types=[semiring.plus_first], any_dtype=dtypes.INT64)
+
+    by_kind = {
+        "nonzero": counter("count_nonzero", semiring.plus_isne, lambda x: binary.ne(x, 0)),
+        "zero": counter("count_zero", semiring.plus_iseq, lambda x: binary.eq(x, 0)),
+    }
+
+    def outcome(f):
+        try:
+            r = f()
+        except (KeyError, TypeError) as e:
+            return type(e)
+        return r.dtype, r.to_coo() if isinstance(r, gb.Vector) else r.value
+
     rng = np.random.default_rng(611)
-    for dtype in [dtypes.FP64, dtypes.INT64, dtypes.INT8]:
+    aggs = [agg.count_nonzero, agg.count_zero, agg.L0norm, *by_kind.values()]
+    aggs.append(by_kind["nonzero"][dtypes.FP32])
+    for dtype in [dtypes.FP64, dtypes.FP32, dtypes.INT64, dtypes.INT8, dtypes.BOOL]:
         X = random_tensor((3, 4, 5), rng, density=0.6, dtype=dtype)[0]
+        Z = Tensor.from_dense(rng.integers(0, 2, (3, 4, 5)).astype(dtype.np_type))
+        X = X.ewise_mult(Z, binary.times).new()  # (with stored zeros)
+        assert 0 < X.select("==", 0).new().nvals < X.nvals
         M = X.permute_dims((0, 2, 1)).reshape(15, 4).to_matrix((0,))  # (axis 1 last)
-        for name in ["count_nonzero", "count_zero", "L0norm"]:
-            a = getattr(agg, name)
-            want = M.reduce_rowwise(a).new()
-            _assert_same_entries(X.reduce(a, axis=1).new(), want)
-    new = {
-        "nonzero": Aggregator(
-            "count_nonzero_int64", applybegin=lambda x: binary.ne(x, 0),
-            semiring=semiring.plus_first, semiring2=semiring.plus_first, any_dtype=dtypes.INT64,
-        ),
-        "zero": Aggregator(
-            "count_zero_int64", applybegin=lambda x: binary.eq(x, 0),
-            semiring=semiring.plus_first, semiring2=semiring.plus_first, any_dtype=dtypes.INT64,
-        ),
-    }  # fmt: skip
+        for a in aggs:
+            want = outcome(lambda a=a, M=M: M.reduce_rowwise(a).new())
+            got = outcome(lambda a=a, X=X: X.reduce(a, axis=1).new().reshape(15).to_vector())
+            assert type(got) is type(want), (a, dtype)
+            if isinstance(want, tuple):
+                assert got[0] == want[0], (a, dtype)
+                np.testing.assert_array_equal(got[1][0], want[1][0])
+                np.testing.assert_array_equal(got[1][1], want[1][1])
+            else:
+                assert got is want, (a, dtype)
+            want = outcome(lambda a=a, M=M: M.reduce_scalar(a).new())
+            assert outcome(lambda a=a, X=X: X.reduce_scalar(a).new()) == want, (a, dtype)
     fibers = [
-        np.ones(200, np.int8),  # (counted in INT8, 200 wraps to -56)
+        np.ones(200, np.int8),  # (counted in INT8, 200 would wrap to -56)
         np.array([0, 2, 0, 3], np.int8),
+        np.array([0, 2**63, 1], np.uint64),
         np.array([True, False, True]),
         np.array([np.nan, -0.0, 0.0, 1.5]),
         np.array([1j, 0j, 2 + 0j]),
     ]
     for v in fibers:
         T = Tensor.from_dense(v.reshape(1, -1))
-        for kind, a in new.items():
+        for kind, a in by_kind.items():
             got = T.reduce(a, axis=1).new()
             assert got.dtype == dtypes.INT64
             want = np.count_nonzero(v) if kind == "nonzero" else v.size - np.count_nonzero(v)
             assert got.to_dense().tolist() == [want], (kind, v.dtype)
+            assert T.reduce_scalar(a).new().value == want
+    udt = dtypes.register_anonymous(np.dtype([("x", np.int64)]))
+    with pytest.raises(KeyError, match="does not work"):
+        Tensor(udt, (2, 3)).reduce(by_kind["nonzero"])
     # hypot of large integers: their squares wrap in INT64
     v = np.array([-(2**40), 2**40, 5], np.int64)
     got = Tensor.from_dense(v.reshape(1, -1)).reduce(agg.hypot, axis=1).new()

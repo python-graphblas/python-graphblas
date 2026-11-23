@@ -31,12 +31,25 @@ def _reduce_aggregator(t, op, axis, keepdims):
     ``mean``, ``sum / count``), which Matrix's finalize functions build from infix operators
     that work on Tensors too. The ones of positions go to ``_reduce_positional``.
     """
+    from .operator import agg as agg_module
     from .operator.agg import TypedAggregator, _by_kind
 
     agg = op.parent if isinstance(op, TypedAggregator) else op
     if isinstance(agg._custom, partial) and agg._custom.func is _by_kind:
         aggs = agg._custom.keywords["aggs"]
         agg = aggs.get(t.dtype.np_type.kind, aggs["other"])
+    # (python-graphblas versions that count in INT64 or FP64 by the kind of the values)
+    count_by_kind = getattr(agg_module, "_count_by_kind", None)
+    if isinstance(agg._custom, partial) and agg._custom.func is count_by_kind:
+        # count_nonzero and count_zero: count with the aggregator for the kind of the values,
+        # in its type, and store the counts in the result type (INT64, or the caller's), as
+        # Matrix does
+        if (sub := agg._custom.keywords["aggs"].get(t.dtype.np_type.kind)) is None:
+            raise KeyError(f"{agg.name} does not work with {t.dtype}")
+        typed = get_typed_op(op, t.dtype, kind="binary|aggregator")  # (agg[INT64] untyped)
+        sub_agg, sub_type = sub
+        x = t if t.dtype == sub_type or t.dtype.np_type.kind == "c" else t.dup(sub_type)
+        return _aggregator_expr(t, typed, _reduce_aggregator(x, sub_agg, axis, keepdims), axis)
     if isinstance(agg._custom, partial) and (kind := _positional_kind(agg._custom)) is not None:
         return _reduce_positional(t, agg, kind, axis, keepdims)
     if agg._monoid is not None:
