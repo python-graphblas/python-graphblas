@@ -3468,6 +3468,14 @@ def test_broadcast_guard_counts_an_outer_product():
     assert _outer_plan(X, Y, (n, n, 1)) is None
     with pytest.raises(ValueError, match="would replicate 10737418240 entries to broadcast"):
         X.ewise_mult(Y)  # (the guard runs when the expression is built)
+    # Exactly 2^60 rows (2^30 x 2^30): GrB_kronecker refuses that too, so the guard counts the
+    # replication (5 x 2^30) and raises, rather than the kron failing with DimensionMismatch
+    m, idx30 = 2**30, np.arange(5) * 2**27
+    X30 = Tensor.from_coo((idx30, [0] * 5, [0] * 5), 1.0, shape=(m, 1, 1), layout=((0,), (1, 2)))
+    Y30 = Tensor.from_coo(([0] * 5, idx30, [0] * 5), 1.0, shape=(1, m, 1), layout=((1,), (0, 2)))
+    assert _outer_plan(X30, Y30, (m, m, 1)) is None
+    with pytest.raises(ValueError, match="would replicate 5368709120 entries to broadcast"):
+        X30.ewise_mult(Y30)
     # Y with its axis in the columns: the kron fits, and stores the 25 pairs
     Y = Y.dup(layout=((0,), (1, 2)))
     assert _outer_plan(X, Y, (n, n, 1)) is not None

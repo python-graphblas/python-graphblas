@@ -227,7 +227,7 @@ def _outer_plan(a, b, shape):
     """``(A, B, layout)`` when ``a.ewise_mult(b)`` (both of the result's rank) is an outer
     product taken as one kron (``_outer_mult``): the stored Matrices and the layout of
     ``kron(A, B)`` in the result's axes. None when the operands share an axis of size above 1
-    or a group of the kron would pass 2^60; then ``_bcast_mult`` replicates one side, and the
+    or a group of the kron would reach 2^60; then ``_bcast_mult`` replicates one side, and the
     guard (``_check_expansion``) counts that.
     """
     ta, out_a = _squeezed(a, shape)
@@ -240,9 +240,11 @@ def _outer_plan(a, b, shape):
     rows += tuple(out_b[x] for x in tb._layout.rows if out_b[x] not in out_a)
     cols = tuple(out_a[x] for x in ta._layout.cols)
     cols += tuple(out_b[x] for x in tb._layout.cols if out_b[x] not in out_a)
-    if sorted(rows + cols) != list(range(len(shape))) or not tl._valid_split(
-        shape, rows + cols, len(rows)
-    ):
+    if sorted(rows + cols) != list(range(len(shape))):
+        return None
+    # Strictly below 2^60: GrB_kronecker refuses a group of 2^60 ("Problem too large"), where
+    # _valid_split allows one
+    if tl.prod(shape, rows) >= tl.MAX_GROUP or tl.prod(shape, cols) >= tl.MAX_GROUP:
         return None
     return ta._M, tb._M, Layout(rows, cols)
 
