@@ -550,7 +550,8 @@ def einsum(subscripts, /, *operands, semiring=None):
     )
 
 
-# numpy's letters for the labels 0 to 51 of the sublist form (so they sort as the labels do)
+# Letters for the labels 0 to 51 of the sublist form, uppercase first, so that an implicit
+# output sorts them as numpy sorts the labels
 _SUBLIST_LETTERS = string.ascii_uppercase + string.ascii_lowercase
 
 
