@@ -164,8 +164,9 @@ def asarray(obj, /, *, dtype=None, device=None, copy=None, fill_value=None):
     ``obj`` may be an Array, a Python scalar, a (nested) sequence, or anything numpy converts,
     such as an ndarray or a buffer. As extensions, it may also be a ``graphblas`` Tensor,
     Matrix, Vector or Scalar, a scipy.sparse array, or a pydata/sparse array; the positions
-    these do not store get the fill. A scipy.sparse CSR or CSC array without repeated indices
-    costs one copy of its arrays; ``x.to_scipy_sparse()`` converts back.
+    these do not store get the fill. A scipy.sparse CSR or CSC array in canonical format
+    (sorted indices, none repeated) costs one copy of its arrays; ``x.to_scipy_sparse()``
+    converts back.
 
     ``fill_value`` (an extension) is the value of unstored positions, 0 of the dtype by
     default. An Array, a pydata/sparse array or a scipy.sparse array (whose fill is 0) keeps
