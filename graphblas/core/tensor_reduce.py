@@ -447,7 +447,7 @@ def _reduce_matrix(M, shape, layout, A, op, opts):
             V = None
             if not exact and tl.stored_format(M) in {"csr", "hypercsr"}:
                 V = tl.padded_view(M)
-                if V is None:  # pragma: no cover (2^31 columns)
+                if V is None:  # (2^31 columns)
                     V = M.dup()
                     V.resize(M._nrows, M._ncols + 1)
             sr = _selector_semiring(op, binary.second)

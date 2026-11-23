@@ -1772,7 +1772,9 @@ def _infix_rmatmul(self, other):
     return TensorMatMulExpr(other, self)
 
 
-for _cls in (Tensor, TensorExpression):
+# On infix expressions too, as for Matrix (`(X | Y) ^ A`): a Matrix's reflected operator hands a
+# Tensor operand back, so without them `(X | Y) op A` raised and `(X | Y) == A` was a bool
+for _cls in (Tensor, TensorExpression, _TensorInfixExpr):
     for _name, (_op, _kind) in _INFIX.items():
         _fwd, _ref, _inp = _make_infix(_op, _kind)
         setattr(_cls, f"__{_name}__", _fwd)

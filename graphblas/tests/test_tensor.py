@@ -2087,6 +2087,67 @@ def test_update_from_infix_expression():
     assert (A ^ Y).new().to_matrix().isequal((A ^ B).new())
 
 
+def test_infix_expression_operands():
+    """An infix expression (``X | Y``, ``X & Y``, ``X @ Y``) takes the Tensor's operators, as
+    a Matrix infix expression takes Matrix's, so ``(X | Y) op A`` and ``A op (X | Y)`` with a
+    Matrix ``A`` equal the computed form (they raised TypeError, and ``(X | Y) == A`` was a
+    bool): a Matrix's reflected operator hands a Tensor operand back. ``X @ Y`` has a shape;
+    private and unknown attributes raise AttributeError; ``X ^= obj`` raises TypeError for an
+    unsupported operand; ``X | Y`` of a UDT builds (with Numba ``first`` checks it, without it
+    does not exist); a thunk that is not 0-d raises TypeError.
+    """
+    import operator as op
+
+    A = Matrix.from_dense(np.array([[True, False], [True, True]]))
+    X = Tensor.from_dense(np.array([[True, False], [False, True]]))
+    Y = Tensor.from_dense(np.array([[False, False], [True, True]]))
+    TA = Tensor.from_matrix(A)
+    ops = [op.xor, op.or_, op.and_, op.add, op.sub, op.mul, op.eq, op.ne, op.lt, op.ge]
+    with gb.config.set(autocompute=True):  # (as Matrix's `(A | B) ^ C` needs)
+        for f in ops:
+            for infix in [X | Y, X & Y]:
+                computed = infix.new()
+                assert f(infix, A).new().isequal(f(computed, TA).new()), f
+                assert f(A, infix).new().isequal(f(TA, computed).new()), f
+        assert ((X | Y) @ A.dup(float)).new().isequal(((X | Y).new() @ TA.dup(float)).new())
+        assert type(-(X | Y)) is type(~(X | Y)) is TensorExpression
+    with gb.config.set(autocompute=False):
+        with pytest.raises(TypeError, match="autocompute"):
+            (X | Y) == A  # noqa: B015 (it was a bool)
+        with pytest.raises(TypeError, match="autocompute"):
+            (X | Y) ^ A
+    assert A.__rxor__(X) is NotImplemented  # (Python then calls X.__xor__)
+    C = X.dup()
+    with pytest.raises(TypeError, match="unsupported operand"):
+        C ^= object()
+    M = X.dup(float) @ Y.dup(float)
+    assert M.shape == (2, 2)
+    assert M.ndim == 2
+    for name in ["_private", "not_a_method"]:
+        with pytest.raises(AttributeError, match=name):
+            getattr(M, name)
+        with pytest.raises(AttributeError, match=name):
+            getattr(X | Y, name)
+    udt = dtypes.register_anonymous(np.dtype([("a", np.int64)]))
+    U = Tensor(udt, (2, 2))
+    assert (U | Tensor(dtypes.FP64, (2, 2))).shape == (2, 2)
+    with pytest.raises(TypeError, match="thunk"):
+        X.dup(float).select(">", Tensor.from_dense(np.ones(2)))
+
+
+def test_sampled_nonempty_rows():
+    """The estimate of distinct row keys from a sample: all distinct gives every entry's row,
+    and repeats give at least the distinct count in the sample, at most the entries.
+    """
+    from graphblas.core.tensor import _sampled_nonempty_rows
+
+    coords = (np.arange(40), np.zeros(40, np.int64))
+    assert _sampled_nonempty_rows(coords, (40, 1), (0,), 40, np.arange(10)) == 40
+    coords = (np.arange(40) // 4, np.arange(40) % 4)
+    est = _sampled_nonempty_rows(coords, (10, 4), (0,), 40, np.arange(0, 40, 2))
+    assert 10 <= est <= 40
+
+
 def test_infix_or_and_need_bool():
     """``X | Y`` and ``X & Y`` on their own (``.new()``, ``C << ...``, a region's value, an
     operand, an expression method) are lor and land of BOOL Tensors; other dtypes raise
@@ -5386,6 +5447,53 @@ def test_kernel_disk_cache_keeps_the_first_file(tmp_path, monkeypatch):
     after = path.stat()
     assert (after.st_ino, after.st_mtime_ns) == (before.st_ino, before.st_mtime_ns)
     assert [p.name for p in tmp_path.iterdir() if p.is_file()] == ["k_test.py"]  # (no .tmp)
+
+
+def test_reduce_padded_view(monkeypatch):
+    """The row-selector reduce multiplies by a view of the stored Matrix with one more column
+    (``tensor_layout.padded_view``). The view shares the hyper hash that a hypersparse Matrix
+    with thousands of non-empty rows has; at 2^31 - 1 columns, where the extra column would not
+    fit a 32-bit index, there is no view and the reduce pads a copy. Both reduce as numpy does,
+    and the stored Matrix keeps its entries.
+    """
+    from graphblas.core import NULL
+    from graphblas.core import tensor_layout as tl
+
+    def has_hash(M):
+        with tl._Unloaded(M) as cont:
+            return cont.Y != NULL
+
+    views = []
+    real = tl.padded_view
+
+    def padded_view(M):
+        V = real(M)
+        views.append((has_hash(M), V is not None and has_hash(V)))
+        return V
+
+    monkeypatch.setattr(tl, "padded_view", padded_view)
+    rng = np.random.default_rng(612)
+    n = 5000
+    i, j = rng.integers(0, 2**20, (2, n))
+    coords = (np.repeat(i, 7), np.repeat(j, 7), np.tile(np.arange(7), n))
+    values = rng.random(coords[0].size)
+    for ncols in [7, 2**31 - 1]:
+        shape = (2**20, 2**20, ncols)
+        T = Tensor.from_coo(coords, values, shape=shape, layout=((0, 1), (2,)))
+        assert tl.stored_format(T._M) == "hypercsr"
+        stored = T._M.to_coo()
+        views.clear()
+        R = T.reduce(monoid.plus, axis=0).new()
+        assert views == [(True, ncols == 7)]  # (the path taken: a view with the hash, or none)
+        keys, inverse = np.unique(coords[1] * ncols + coords[2], return_inverse=True)
+        (rj, rk), rv = R.to_coo()
+        np.testing.assert_array_equal(rj * ncols + rk, keys)
+        np.testing.assert_allclose(rv, np.bincount(inverse, values))
+        for a, b in zip(T._M.to_coo(), stored, strict=True):
+            np.testing.assert_array_equal(a, b)
+    M = Matrix(dtypes.FP64, 2, 2**31 - 1)
+    assert real(M) is None
+    assert real(Matrix(dtypes.FP64, 2, 2**31 - 2)).ncols == 2**31 - 1
 
 
 def test_kernel_disk_cache_writes_safely(tmp_path, monkeypatch):
