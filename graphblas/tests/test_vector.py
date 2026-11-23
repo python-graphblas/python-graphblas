@@ -22,6 +22,7 @@ from graphblas.exceptions import (
     IndexOutOfBound,
     InvalidObject,
     InvalidValue,
+    NullPointer,
     OutputNotEmpty,
     UdfParseError,
 )
@@ -204,6 +205,91 @@ def test_ss_export_full_of_a_vector_that_is_not_full(method):
     with pytest.raises(InvalidValue, match="1 of 3 entries is not full"):
         getattr(v.ss, method)("full")
     assert v.isequal(Vector.from_coo([1], [2.0], size=3))
+
+
+@pytest.mark.parametrize("dtype", ["BOOL", "INT8", "UINT8", "INT64", "UINT64", "FP32", "FP64"])
+@pytest.mark.parametrize("value", [True, False, 0, -1, 300, 2**40, 1.5, -0.0, float("nan")])
+@pytest.mark.parametrize("mask_kind", [None, "S", "V", "~S", "~V"])
+@pytest.mark.parametrize("replace", [False, True])
+def test_update_with_a_literal_matches_the_full_path(dtype, value, mask_kind, replace):
+    # w(mask, replace) << x with a Python bool, int or float skips most of the update
+    # path; an active Recorder sends the same update down the full path to compare with.
+    w = Vector.from_coo([0, 2, 4], [1, 0, 1], dtype=dtype, size=6)
+    m = Vector.from_coo([1, 2, 3, 5], [True, False, True, True], size=6)
+    mask = {None: None, "S": m.S, "V": m.V, "~S": ~m.S, "~V": ~m.V}[mask_kind]
+    if mask is None and replace:
+        return
+    fast = w.dup()
+    full = w.dup()
+    fast(mask=mask, replace=replace) << value
+    with gb.Recorder():
+        full(mask=mask, replace=replace) << value
+    assert fast.dtype == full.dtype
+    fast_indices, fast_values = fast.to_coo()
+    full_indices, full_values = full.to_coo()
+    np.testing.assert_array_equal(fast_indices, full_indices)
+    np.testing.assert_array_equal(fast_values, full_values)  # nan equals nan here
+    np.testing.assert_array_equal(np.signbit(fast_values), np.signbit(full_values))
+
+
+def test_update_with_a_literal_keeps_the_full_path_errors():
+    v = Vector(int, 3)
+    with pytest.raises(TypeError, match="Mask object must be type Vector"):
+        v(Matrix(bool, 3, 3).S) << 1
+    with pytest.raises(DimensionMismatch):
+        v(Vector(bool, 4).S) << 1
+    u = Vector(dtypes.UINT64, 2)
+    u << 2**64 - 1  # beyond INT64: typed as the target's dtype by the full path
+    assert u.get(0) == 2**64 - 1
+
+
+def test_update_with_a_literal_calls_the_assign_directly(monkeypatch):
+    # The tests above compare with the full path, so they pass whichever path runs;
+    # count the direct assigns to check which one does
+    import graphblas.core.base
+
+    calls = []
+    assign_literal = graphblas.core.base._assign_literal
+
+    def counting(output, value, mask, replace):
+        calls.append(value)
+        assign_literal(output, value, mask, replace)
+
+    monkeypatch.setattr(graphblas.core.base, "_assign_literal", counting)
+    # Pause the session's Recorder (``--record``), under which every update takes the
+    # full path so that it is recorded
+    token = graphblas.core.base._recorder.set(None)
+    try:
+        w = Vector(int, 3)
+        m = Vector.from_coo([0, 2], [True, False], size=3)
+        w << 1
+        w(m.S) << 2.5
+        w(~m.V, replace=True) << True
+        assert calls == [1, 2.5, True]
+        assert w.isequal(Vector.from_coo([1, 2], [1, 1], size=3), check_dtype=True)
+        calls.clear()
+        w(m.S, accum=binary.plus) << 1
+        with pytest.raises(TypeError, match="input_mask"):
+            w(input_mask=m.S) << 1
+        with gb.Recorder():
+            w(m.S) << 1
+        Vector(dtypes.UINT64, 3)(m.S) << 2**64 - 1
+        Scalar(int) << 1
+        assert calls == []
+    finally:
+        graphblas.core.base._recorder.reset(token)
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_update_with_a_literal_raises_graphblas_errors():
+    # export(give_ownership=True) leaves no GraphBLAS object behind, so the assign
+    # itself fails, and both paths raise the same error
+    v = Vector(int, 3)
+    v.ss.export(give_ownership=True)
+    with pytest.raises(NullPointer):
+        v(Vector(bool, 3).S) << 1
+    with pytest.raises(NullPointer), gb.Recorder():
+        v(Vector(bool, 3).S) << 1
 
 
 def test_from_coo_default_values():
