@@ -1309,24 +1309,58 @@ def test_lazy_op_under_ss_and_nested_names():
     """An op registered lazily under ``ss.``, or a select under any nested name, is built on
     first use. Regression: the ``ss`` modules did not read their delayed tables, so each such
     op raised AttributeError, and a lazy select under a nested name looked itself up by its
-    full name.
+    full name. Each ``ss`` module lists the names still delayed in ``dir()``.
     """
-    UnaryOp.register_new("ss.lazy_un", lambda x: x, lazy=True)  # pragma: no branch (numba)
-    assert isinstance(unary.ss.lazy_un, UnaryOp)
-    BinaryOp.register_new("ss.lazy_bin", lambda x, y: x + y, lazy=True)  # pragma: no branch
-    assert "lazy_bin" in dir(binary.ss)
-    assert isinstance(binary.ss.lazy_bin, BinaryOp)
-    assert op.ss.lazy_bin is binary.ss.lazy_bin
-    Monoid.register_new("ss.lazy_mon", binary.ss.lazy_bin, 0, lazy=True)
-    assert isinstance(monoid.ss.lazy_mon, Monoid)
-    Semiring.register_new("ss.lazy_sr", "ss.lazy_mon", "ss.lazy_bin", lazy=True)
-    assert isinstance(semiring.ss.lazy_sr, Semiring)
-    IndexUnaryOp.register_new("ss.lazy_iu", lambda x, i, j, t: x, lazy=True)
-    assert isinstance(indexunary.ss.lazy_iu, IndexUnaryOp)
-    SelectOp.register_new("ss.lazy_sel", lambda x, i, j, t: x > t, lazy=True)
-    assert isinstance(select.ss.lazy_sel, SelectOp)
-    SelectOp.register_new("misc.lazy_sel_nested", lambda x, i, j, t: x > t, lazy=True)
-    assert isinstance(select.misc.lazy_sel_nested, SelectOp)
+    from graphblas import indexbinary
+    from graphblas.core.operator import IndexBinaryOp
+    from graphblas.core.operator.indexbinary import _has_idxbinop
+
+    try:
+        UnaryOp.register_new("ss.lazy_un", lambda x: x, lazy=True)  # pragma: no branch (numba)
+        assert "lazy_un" in dir(unary.ss)
+        assert isinstance(unary.ss.lazy_un, UnaryOp)
+        BinaryOp.register_new("ss.lazy_bin", lambda x, y: x + y, lazy=True)  # pragma: no branch
+        assert "lazy_bin" in dir(binary.ss)
+        assert isinstance(binary.ss.lazy_bin, BinaryOp)
+        Monoid.register_new("ss.lazy_mon", binary.ss.lazy_bin, 0, lazy=True)
+        assert "lazy_mon" in dir(monoid.ss)
+        assert isinstance(monoid.ss.lazy_mon, Monoid)
+        Semiring.register_new("ss.lazy_sr", "ss.lazy_mon", "ss.lazy_bin", lazy=True)
+        assert "lazy_sr" in dir(semiring.ss)
+        assert isinstance(semiring.ss.lazy_sr, Semiring)
+        assert {"lazy_un", "lazy_bin", "lazy_mon", "lazy_sr"} <= set(dir(op.ss))
+        assert op.ss.lazy_bin is binary.ss.lazy_bin
+        IndexUnaryOp.register_new("ss.lazy_iu", lambda x, i, j, t: x, lazy=True)
+        assert "lazy_iu" in dir(indexunary.ss)
+        assert isinstance(indexunary.ss.lazy_iu, IndexUnaryOp)
+        IndexBinaryOp.register_new("ss.lazy_ib", lambda x, ix, jx, y, iy, jy, t: x, lazy=True)
+        assert "lazy_ib" in dir(indexbinary.ss)
+        if _has_idxbinop:  # (SuiteSparse:GraphBLAS 9.4+ builds it)
+            assert isinstance(indexbinary.ss.lazy_ib, IndexBinaryOp)
+        SelectOp.register_new("ss.lazy_sel", lambda x, i, j, t: x > t, lazy=True)
+        assert "lazy_sel" in dir(select.ss)
+        assert isinstance(select.ss.lazy_sel, SelectOp)
+        SelectOp.register_new("lazy_path.lazy_sel", lambda x, i, j, t: x > t, lazy=True)
+        assert isinstance(select.lazy_path.lazy_sel, SelectOp)
+    finally:
+        # Remove every name the registrations added, built or still delayed, since other
+        # tests enumerate these modules (test_dir). Pop ``__dict__`` and ``_delayed`` directly
+        # so that ``__getattr__`` does not build a name again.
+        for module, name in [
+            (unary.ss, "lazy_un"),
+            (binary.ss, "lazy_bin"),
+            (monoid.ss, "lazy_mon"),
+            (semiring.ss, "lazy_sr"),
+            *((op.ss, name) for name in ["lazy_un", "lazy_bin", "lazy_mon", "lazy_sr"]),
+            (indexunary.ss, "lazy_iu"),
+            (indexbinary.ss, "lazy_ib"),
+            (indexunary.ss, "lazy_sel"),
+            (select.ss, "lazy_sel"),
+            (indexunary, "lazy_path"),
+            (select, "lazy_path"),
+        ]:
+            vars(module).pop(name, None)
+            module._delayed.pop(name, None)
 
 
 @pytest.mark.skipif("not supports_udfs or not suitesparse")
@@ -6812,7 +6846,9 @@ def test_udt_op_pickle():
 
 
 def test_dir():
-    for mod in [unary, binary, monoid, semiring, op]:
+    from graphblas import indexbinary
+
+    for mod in [unary, binary, monoid, semiring, op, select, indexunary, indexbinary]:
         assert not set(mod._delayed) - set(dir(mod))
         assert hasattr(mod, "register_new") == ("register_new" in dir(mod))
         if suitesparse:
