@@ -1,4 +1,6 @@
 import itertools
+import math
+from fractions import Fraction
 
 import numpy as np
 
@@ -60,6 +62,29 @@ def _s_union_s(updater, left, right, left_default, right_default, op):
     new_right(**opts) << binary.second(left, right_default)
     new_right(**opts) << binary.first(right | new_right)
     updater << op(new_left & new_right)
+
+
+def _isclose_to_int(x, y, rel_tol, abs_tol):
+    """Apply isclose's rule to a Scalar's value x and a Python int y in exact arithmetic.
+
+    In floating point, ``x - y`` overflows for an int beyond the largest float and rounds a
+    smaller one. Both sides of the rule are squared, so the arithmetic stays rational for a
+    complex x.
+    """
+    if x == y:  # Python compares an int with a float or complex exactly
+        return True
+    re, im = (x.real, x.imag) if type(x) is complex else (x, 0)
+    if not (math.isfinite(re) and math.isfinite(im)):
+        return False  # An infinity is close only to itself, and nan to nothing
+    re, im = Fraction(re), Fraction(im)
+    dist2 = (re - y) ** 2 + im**2
+    # dist <= max(a, b) when dist <= a or dist <= b. As dist > 0 here, a negative or nan
+    # tolerance bounds nothing.
+    terms = [(float(rel_tol), max(re**2 + im**2, y**2)), (float(abs_tol), 1)]
+    return any(
+        tol >= 0 and (math.isinf(tol) or dist2 <= Fraction(tol) ** 2 * scale2)
+        for tol, scale2 in terms
+    )
 
 
 class Scalar(BaseType):
@@ -303,12 +328,7 @@ class Scalar(BaseType):
                 return self._is_empty
             if type(other) is int and not -(2**63) <= other < 2**63:
                 # INT64, a Python int's dtype, cannot hold it; compare in Python, as isequal does
-                if self._is_empty:
-                    return False
-                try:
-                    return _isclose(rel_tol, abs_tol)(self.value, other)
-                except OverflowError:  # An int too large to compare as a float
-                    return False
+                return not self._is_empty and _isclose_to_int(self.value, other, rel_tol, abs_tol)
             try:
                 other = Scalar.from_value(other, is_cscalar=None, name="s_isclose")
             except TypeError:

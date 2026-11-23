@@ -219,6 +219,32 @@ def test_isclose_infinity():
     assert Scalar.from_value(2.0**70).isclose(2**70)
 
 
+def test_isclose_int_beyond_64_bits_is_exact():
+    """Scalar.isclose applies its rule exactly to an int that INT64 cannot hold.
+
+    Fails if it computes in floating point, which overflows or rounds the int.
+    """
+    fmax = sys.float_info.max  # 2**1024 - 2**971: its relative distance to 2**1024 is 2**-53
+    assert Scalar.from_value(fmax).isclose(2**1024)
+    assert Scalar.from_value(-fmax).isclose(-(2**1024))
+    assert not Scalar.from_value(fmax).isclose(2**1024, rel_tol=2**-54)
+    assert Scalar.from_value(1.0).isclose(10**400, abs_tol=math.inf)
+    assert Scalar.from_value(1, dtype="INT8").isclose(10**400, rel_tol=1.0)
+    assert not Scalar.from_value(1, dtype="INT8").isclose(10**400, rel_tol=0.5)
+    assert not Scalar.from_value(math.nan).isclose(2**70, abs_tol=math.inf)
+    # float(2**70 + 1) is 2.0**70
+    for dtype in ["FP32", "FP64"] + (["FC32", "FC64"] if dtypes._supports_complex else []):
+        s = Scalar.from_value(2.0**70, dtype=dtype)
+        assert not s.isclose(2**70 + 1, rel_tol=0, abs_tol=0.5), dtype
+        assert s.isclose(2**70 + 1, rel_tol=0, abs_tol=1), dtype
+    assert not Scalar.from_value(2**64 - 1, dtype="UINT64").isclose(2**64, rel_tol=0, abs_tol=0.5)
+    if dtypes._supports_complex:
+        assert Scalar.from_value(fmax, dtype="FC64").isclose(2**1024)
+        # The imaginary part counts in the distance: |(2**70 + 3j) - (2**70 + 4)| is 5
+        assert Scalar.from_value(2.0**70 + 3j).isclose(2**70 + 4, rel_tol=0, abs_tol=5)
+        assert not Scalar.from_value(2.0**70 + 3j).isclose(2**70 + 4, rel_tol=0, abs_tol=4.9)
+
+
 def test_isclose_integers_do_not_wrap():
     # Regression: x - y or abs(x) wrapped in an integer type, and a UINT64 value above
     # INT64's maximum raised OverflowError with Numba; see test_vector.ISCLOSE_WRAPPING_CASES
