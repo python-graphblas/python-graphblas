@@ -210,7 +210,8 @@ class Array:
         otherwise. A ``coo_array`` of more than 2 dimensions needs scipy 1.15 or later.
         scipy.sparse leaves out zeros, so the fill must be 0; ``xp.refill(x, 0)`` returns a
         copy with fill 0 and the same values. The stored entries, explicit zeros included,
-        are the scipy array's entries. It costs a copy of the entries.
+        are the scipy array's entries, except in ``"dia"``, which scipy stores without explicit
+        zeros. It costs a copy of the entries.
         """
         if self.ndim == 0:
             raise ValueError("scipy.sparse has no 0-d arrays")
