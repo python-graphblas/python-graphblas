@@ -7,18 +7,17 @@ Contractions in the Array API Namespace
 ``vecdot``, and the extension ``einsum``. Each sums products of the operands' elements.
 An Array has a value at every position: its stored entries, and its fill value everywhere
 else. This page says how a contraction treats the fills, which is where its results can
-differ from numpy's.
+differ from numpy's. :ref:`array_api` introduces the namespace.
 
 The examples on this page use these arrays:
 
 .. code-block:: python
 
-    import numpy as np
-    import graphblas as gb
-    import graphblas.array_api as xp
-
-    A = xp.asarray([[1.0, 0.0], [0.0, 2.0]])  # stores 2 entries; fill 0.0
-    B = xp.asarray([[np.inf, 1.0], [3.0, np.inf]])  # stores 4 entries
+    >>> import numpy as np
+    >>> import graphblas as gb
+    >>> import graphblas.array_api as xp
+    >>> A = xp.asarray([[1.0, 0.0], [0.0, 2.0]])  # stores 2 entries; fill 0.0
+    >>> B = xp.asarray([[np.inf, 1.0], [3.0, np.inf]])  # stores 4 entries
 
 .. _tn_array_api_zero_fills:
 
@@ -41,8 +40,8 @@ is not NaN:
 The result has the fill 0 of its dtype, and its dtype is numpy's for the same operands.
 Booleans contract with logical or and logical and, as in numpy.
 
-A stored entry identical to its array's fill contributes no term either, when an operand
-stores an infinity or NaN: the contraction first drops those entries. So whether a zero is
+If an operand stores an infinity or NaN, the contraction first drops each stored entry equal
+to its array's fill, so such an entry contributes no term either. So whether a zero is
 stored does not change the result, except perhaps the sign of a zero: a stored ``0.0``
 times ``-1.0`` is ``-0.0``. ``-0.0`` is not identical to the fill ``0.0``, so a stored
 ``-0.0`` times ``inf`` is NaN.
@@ -66,9 +65,10 @@ Any other nonzero fill, such as ``inf`` or NaN, makes the contraction compute wi
 dense copies of the operands, so the result has NaN where numpy's has NaN.
 ``xp.full((2, 2), np.inf) @ A`` is NaN at every position, as in numpy.
 
-Both ways need memory for every position: of the operand that stores its fill, or of every
-operand and of the result. Past ``gb.config["array_api_densify_limit"]`` positions (10**8 by
-default) they raise ``xp.DensifyError``:
+Both ways need memory for every position. Storing the fill needs it for that operand, and
+computing with numpy needs it for every operand and for the result. Past
+``gb.config["array_api_densify_limit"]`` positions (10**8 by default), both raise
+``xp.DensifyError``:
 
 .. code-block:: python
 
@@ -76,8 +76,8 @@ default) they raise ``xp.DensifyError``:
     ...     xp.ones((2, 2)) @ A
     Traceback (most recent call last):
     ...
-    DensifyError: a contraction with a nonzero fill that does not store every position would
-    hold 4 elements densely, more than the limit of 3. ...
+    graphblas.array_api.DensifyError: a contraction with a nonzero fill that does not store
+    every position would hold 4 elements densely, more than the limit of 3. ...
 
 In ``einsum``, a 0-d operand with a finite nonzero value multiplies every term, so it is
 factored out of the sum. A 0-d operand whose value is infinite or NaN makes ``einsum``
@@ -131,8 +131,8 @@ NaN at a position the other operand does not store, such as ``-inf + inf`` in ``
 
 An operand with another fill makes the call raise ``ValueError``, unless the operand stores
 every position and its dtype can represent ``e``: then its fill is taken as ``e``. An
-integer array cannot represent ``inf``. The error names the fill to use; ``xp.refill(x,
-xp.inf)`` returns a copy of ``x`` with the fill ``inf`` and the same values:
+integer array cannot represent ``inf``. The error names the fill to use, and
+``xp.refill(x, xp.inf)`` returns a copy of ``x`` with the fill ``inf`` and the same values:
 
 .. code-block:: python
 
@@ -142,11 +142,12 @@ xp.inf)`` returns a copy of ``x`` with the fill ``inf`` and the same values:
     ValueError: matmul with the semiring min_plus needs operands whose fill is inf, ...
 
 A semiring whose identity does not annihilate its binary operator raises ``ValueError``
-whatever the fills are. ``min_plus`` on int64 is one: its identity is the largest int64,
-and adding a positive number to it wraps. Positional semirings raise too. For these, use
-the Tensors (``x.tensor``), which skip missing entries without fills. Whether ``e``
-annihilates the binary operator is checked on a few finite values of each operand type
-(both signs, zeros, and the extremes), once for each typed semiring.
+whatever the fills are. ``min_plus`` on int64 is one. Its identity is the largest int64, and
+adding a positive number to it wraps. Positional semirings raise too. For these, use the
+Tensors (``x.tensor``), which skip missing entries and have no fills.
+
+Whether ``e`` annihilates the binary operator is checked once for each typed semiring, on a
+few finite values of each operand type: both signs, zeros, and the extremes.
 
 With a float ``min`` or ``max`` monoid, a stored NaN makes NaN at each result position that
 has a term with it, as numpy's minimum and maximum propagate NaN. SuiteSparse's ``min`` and

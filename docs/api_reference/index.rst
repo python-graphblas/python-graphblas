@@ -8,6 +8,7 @@ API Reference
     :maxdepth: 2
 
     collections
+    array_api
     types
     operators
     io

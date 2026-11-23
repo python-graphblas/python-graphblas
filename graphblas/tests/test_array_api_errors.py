@@ -1,5 +1,7 @@
 """graphblas.array_api: argument checking, rare storage cases and extension paths."""
 
+import pickle
+
 import numpy as np
 import pytest
 
@@ -91,6 +93,17 @@ def test_sparse_input_errors():
     assert_array_equal(xp.asarray(s), np.array([[1.0, 0.0], [0.0, 3.0]]))
     with pytest.raises(ValueError, match="differs"):
         xp.asarray(s, fill_value=1.0)
+
+
+def test_densify_error_has_its_public_name():
+    """DensifyError shows as graphblas.array_api.DensifyError in tracebacks, and pickles."""
+    assert xp.DensifyError.__module__ == "graphblas.array_api"
+    assert f"{xp.DensifyError.__module__}.{xp.DensifyError.__qualname__}" == (
+        "graphblas.array_api.DensifyError"
+    )
+    err = pickle.loads(pickle.dumps(xp.DensifyError("too big")))
+    assert type(err) is xp.DensifyError
+    assert str(err) == "too big"
 
 
 def test_dtype_errors():

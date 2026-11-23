@@ -18,6 +18,9 @@ class DensifyError(ValueError):
     """
 
 
+DensifyError.__module__ = "graphblas.array_api"  # (its public name, in tracebacks too)
+
+
 def densify_limit():
     return config.get("array_api_densify_limit", 10**8)
 
