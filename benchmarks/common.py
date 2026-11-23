@@ -72,7 +72,7 @@ def make_vector(size=LARGE_N, nnz=LARGE_NNZ, seed=1, dtype="FP64"):
     return Vector.from_coo(idx, vals, size=size, dtype=dtype, dup_op=dup)
 
 
-def make_dense_vector(size, seed=2, dtype="FP64"):
+def make_dense_vector(size, seed=2):
     """Fully dense Vector (no missing entries), e.g. an mxv operand."""
     rng = np.random.default_rng(seed)
     return Vector.from_dense(rng.random(size))
