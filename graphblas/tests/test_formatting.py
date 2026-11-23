@@ -3468,6 +3468,24 @@ def test_sparse_vector_repr():
     )
 
 
+def test_matrix_repr_stored_by_column():
+    """A Matrix stored by column shows the table it shows by row; only its format differs.
+
+    The fixture above stores every other Matrix here by row.
+    """
+    for A in [
+        Matrix.from_coo([0, 1, 3], [1, 0, 2], [1, 2, 3], nrows=4, ncols=3, name="A"),
+        Matrix.from_coo(range(0, 4000, 40), range(100), 1, nrows=4000, ncols=4000, name="A"),
+    ]:
+        B = A.dup(name="A")
+        B.ss.config["format"] = "by_col"
+        assert A.ss.format.endswith("r")
+        assert B.ss.format.endswith("c")
+        by_row, by_col = repr(A).splitlines(), repr(B).splitlines()
+        assert by_col[1] == by_row[1].replace(A.ss.format, B.ss.format)
+        assert by_col[:1] + by_col[2:] == by_row[:1] + by_row[2:]
+
+
 def test_sparse_matrix_repr():
     A = Matrix.from_coo(
         [100 * i for i in range(100)], [10 * i for i in range(100)], list(range(100)), name="A"
