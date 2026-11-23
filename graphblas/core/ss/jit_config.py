@@ -368,7 +368,7 @@ def _auto_fix_jit_at_import():
     (:func:`_enable_jit_for_udt`).
     """
     cfg = _ss_config()
-    if "jit_c_control" not in cfg:
+    if "jit_c_control" not in cfg:  # pragma: no cover (safety)
         return
     if not jit_compiler_is_usable():
         _repair_jit_compiler(cfg)

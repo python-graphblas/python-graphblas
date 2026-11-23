@@ -268,14 +268,14 @@ class TypedOpBase:
         if getattr(self, "_gb_obj_owner", None) is not None:
             return
         gb_obj = getattr(self, "gb_obj", None)
-        if gb_obj is None or lib is None or ffi is None:
+        if gb_obj is None or lib is None or ffi is None:  # pragma: no cover (defensive)
             # Interpreter shutdown can clear ``lib`` and ``ffi`` before finalizers run
             return
         c_type_name = _GB_OBJ_C_TYPENAME.get(self.opclass)
         if c_type_name is None:  # pragma: no cover (defensive)
             return
         free_fn = getattr(lib, f"{c_type_name}_free", None)
-        if free_fn is None:
+        if free_fn is None:  # pragma: no cover (defensive)
             # No ``GxB_IndexBinaryOp_free`` before SuiteSparse 9.4, which cannot make one either
             return
         # ``<C type>_free`` takes a pointer to the handle

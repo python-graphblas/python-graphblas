@@ -101,7 +101,7 @@ class BaseConfig(MutableMapping):
         if ctype in self._int32_ctypes:
             ctype = "int32_t"
             get_function_name = f"{get_function_base}_INT32"
-        elif ctype.startswith("int64_t"):
+        elif ctype.startswith("int64_t"):  # pragma: no cover (unused)
             get_function_name = f"{get_function_base}_INT64"
         elif ctype.startswith("double"):
             get_function_name = f"{get_function_base}_FP64"
@@ -155,7 +155,7 @@ class BaseConfig(MutableMapping):
             set_function_name = f"{set_function_base}_INT32"
         elif ctype == "double":
             set_function_name = f"{set_function_base}_FP64"
-        elif ctype.startswith("int64_t["):
+        elif ctype.startswith("int64_t["):  # pragma: no cover (unused)
             set_function_name = f"{set_function_base}_INT64_ARRAY"
         elif ctype.startswith("double["):
             set_function_name = f"{set_function_base}_FP64_ARRAY"
