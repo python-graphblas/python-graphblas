@@ -4605,6 +4605,16 @@ def test_from_scalar():
             assert A.isequal(B, check_dtype=True)
 
 
+def test_from_dense_with_a_zero_dimension():
+    """An array with no rows or no columns gives an empty Matrix of its shape on both backends."""
+    for shape in [(3, 0), (0, 3), (0, 0)]:
+        A = Matrix.from_dense(np.zeros(shape))
+        assert A.shape == shape
+        assert A.nvals == 0
+        assert A.dtype == dtypes.FP64
+        assert A.to_dense().shape == shape
+
+
 def test_to_dense_from_dense():
     A = Matrix.from_dense(np.arange(6).reshape(2, 3))
     B = Matrix.from_coo([0, 0, 0, 1, 1, 1], [0, 1, 2, 0, 1, 2], np.arange(6))
