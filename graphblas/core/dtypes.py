@@ -102,6 +102,11 @@ class DataType:
     @staticmethod
     def _deserialize(name, dtype, is_anonymous):
         if is_anonymous:
+            # Vanilla has no complex types, so its pickles hold complex values in a UDT
+            # of the numpy dtype, which is built in under SuiteSparse (FC32 and FC64).
+            builtin = _registry.get(dtype)
+            if builtin is not None and not builtin._is_udt:
+                return builtin
             return register_anonymous(dtype, name)
         if name in _registry:
             return _registry[name]
@@ -533,6 +538,14 @@ _registry["float"] = FP64  # Choose 'float' to match numpy/Python; c_type 'float
 if _supports_complex:
     _registry[complex] = FC64
     _registry["complex"] = FC64
+else:
+
+    def __getattr__(name):
+        # A pickle made under SuiteSparse names FC32 or FC64 as a global of this module.
+        # Without complex types, a complex value has a UDT of its numpy dtype.
+        if name in {"FC32", "FC64"}:
+            return lookup_dtype(np.complex64 if name == "FC32" else np.complex128)
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def lookup_dtype(key, value=None):
