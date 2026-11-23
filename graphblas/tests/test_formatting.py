@@ -6835,3 +6835,36 @@ def test_vector_as_matrix():
         "</table>\n"
         "</div></details></div>"
     )
+
+
+@pytest.mark.skipif("not dtypes._supports_complex")
+@pytest.mark.parametrize(
+    ("dtype", "big_str", "small_str"),
+    [
+        ("FC32", "3.402823e+38+3.402823e+38j", "1.000000e-07+0.000000e+00j"),
+        ("FC64", "1.797693e+308+1.797693e+308j", "1.000000e-07+ 0.000000e+00j"),
+    ],
+)
+def test_chop_threshold_complex(dtype, big_str, small_str):
+    # The COO (long) form formats complex columns through the float column
+    # formatter, where display.chop_threshold compares each value's magnitude.
+    big = float(np.finfo(dtypes.lookup_dtype(dtype).np_type).max)
+    v = Vector.from_coo(
+        [10_000, 500_000], [complex(big, big), complex(1e-7, 0)], size=10**6, dtype=dtype
+    )
+    with display_options("display.chop_threshold", 1e-8):
+        # abs() of a Python complex raises for FC64 components near the float max;
+        # numpy's abs is inf, so nothing chops
+        r = repr(v)
+        assert big_str in r
+        assert small_str in r
+        v._repr_html_()
+        # A value below the threshold chops to a complex zero. pandas 3.0.3 raises
+        # IndexError here instead, since its chop puts a float zero into the column.
+        w = Vector.from_coo(
+            [10_000, 500_000], [complex(1.0, 1.0), complex(5e-9, 0)], size=10**6, dtype=dtype
+        )
+        r = repr(w)
+        assert "1.000000e+00+1.000000e+00j" in r
+        assert "0.000000e+00+0.000000e+00j" in r
+        w._repr_html_()
