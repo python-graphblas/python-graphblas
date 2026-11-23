@@ -1,7 +1,15 @@
-# This file imports pandas, so it should only be imported when formatting
+# The text and HTML reprs of a Matrix or Vector render their table here, matching
+# pandas' DataFrame output byte for byte without needing pandas. With pandas installed,
+# the renderer reads its display.* options, so pd.option_context applies; without it,
+# it uses pandas' defaults (_DISPLAY_DEFAULTS).
+import builtins
+import math
+import re
+import shutil
+
 import numpy as np
 
-from .. import backend, config, monoid, unary
+from .. import backend, config, unary
 from ..dtypes import BOOL
 from ..exceptions import OutOfMemory
 from .infix import _is_literal
@@ -14,6 +22,41 @@ try:
     has_pandas = True
 except ImportError:  # pragma: no cover (import)
     has_pandas = False
+
+
+def _in_terminal():
+    """Return whether Python runs in a terminal, not a Jupyter kernel.
+
+    This is how ``pandas.core.config_init.is_terminal`` decides it.
+    """
+    get_ipython = getattr(builtins, "get_ipython", None)
+    return get_ipython is None or not hasattr(get_ipython(), "kernel")
+
+
+# pandas' defaults for the display options the renderer reads, for when pandas is not
+# installed.
+_DISPLAY_DEFAULTS = {
+    "max_rows": 60,
+    "min_rows": 10,
+    "max_columns": 0 if _in_terminal() else 20,
+    "width": 80,
+    "expand_frame_repr": True,
+    "precision": 6,
+    "max_colwidth": 50,
+    "chop_threshold": None,
+    "colheader_justify": "right",
+    "float_format": None,
+    "html.border": 1,
+    "html.use_mathjax": True,
+}
+
+
+def _display_option(name):
+    """Return pandas' display.<name> option, or its default when pandas is not installed."""
+    if has_pandas:
+        return pd.get_option(f"display.{name}")
+    return _DISPLAY_DEFAULTS[name]
+
 
 # This was written by a complete novice at CSS.
 # If you can help make it better, please do!
@@ -139,22 +182,15 @@ def _update_matrix_array(arr, matrix, rows, row_offset, columns, column_offset, 
         if type(matrix) is TransposedMatrix:
             parent = matrix._matrix
             submatrix = Matrix(parent.dtype, parent._nrows, parent._ncols, name="")
-            if parent._nvals > 0:  # pragma: no branch
-                # Get val to support iso-valued matrices
-                val = parent.reduce_scalar(monoid.any, allow_empty=False).new(name="")
-                submatrix(parent.S)[columns, rows] = val
-                submatrix(submatrix.S)[...] = parent
+            submatrix[columns, rows] = parent[columns, rows].new(name="")
             if row_offset is not None or column_offset is not None:
                 submatrix = submatrix[column_offset:, row_offset:].new(name="")
             submatrix = submatrix.T
         else:
             if mask is None:
+                # Extract and assign need no operator, which a UDT lacks without Numba
                 submatrix = Matrix(matrix.dtype, matrix._nrows, matrix._ncols, name="")
-                # Get val to support iso-valued matrices
-                if matrix._nvals > 0:
-                    val = matrix.reduce_scalar(monoid.any).new(name="")
-                    submatrix(matrix.S)[rows, columns] = val
-                    submatrix(submatrix.S)[...] = matrix
+                submatrix[rows, columns] = matrix[rows, columns].new(name="")
             else:
                 submatrix = Matrix("UINT8", matrix._nrows, matrix._ncols, name="")
                 if mask.structure:
@@ -191,12 +227,9 @@ def _update_vector_array(arr, vector, columns, column_offset, *, mask=None):
                 subvector(vector.V)[...] = 0 if mask.complement else 1
     else:
         if mask is None:
+            # Extract and assign need no operator, which a UDT lacks without Numba
             subvector = Vector(vector.dtype, vector._size, name="")
-            # Get val to support iso-valued vectors
-            if vector._nvals > 0:
-                val = vector.reduce(monoid.any).new(name="")
-                subvector(vector.S)[columns] = val
-                subvector(subvector.S)[...] = vector
+            subvector[columns] = vector[columns].new(name="")
         else:
             subvector = Vector("UINT8", vector._size, name="")
             if mask.structure:
@@ -219,13 +252,52 @@ def _update_vector_array(arr, vector, columns, column_offset, *, mask=None):
         arr[0, cols[np.isnan(vals)]] = "nan"
 
 
-def _get_max_columns():
-    max_columns = pd.options.display.max_columns
-    if max_columns == 0:
-        # We are probably in a terminal and pandas will automatically size the data correctly.
-        # In this case, let's get a sufficiently large amount of data to show and defer to pandas.
-        max_columns = 150
-    return max_columns
+# The most rows or columns a repr reads when the display options set no limit: a max_columns
+# of 0 (as many as fit the terminal, which the renderer then cuts to its width) or None.
+# pandas takes None as no limit at all, but a repr cannot read all 2**60 rows of a Matrix.
+_NO_LIMIT = 150
+
+
+def _display_limits():
+    """Return display.max_rows, min_rows and max_columns as the renderer uses them.
+
+    A max_columns of None becomes ``_NO_LIMIT``. A max_rows of None becomes ``_NO_LIMIT + 1``,
+    with a min_rows of ``_NO_LIMIT`` whatever min_rows is, since pandas ignores min_rows then.
+    So a longer frame shows its first and last ``_NO_LIMIT // 2`` rows, and the COO form shows
+    ``_NO_LIMIT`` entries and the "..." row, which a max_rows of ``_NO_LIMIT`` would cut
+    again. A min_rows of None is max_rows, as in pandas.
+    """
+    max_rows = _display_option("max_rows")
+    min_rows = _display_option("min_rows")
+    max_columns = _display_option("max_columns")
+    if max_rows is None:
+        max_rows = _NO_LIMIT + 1
+        min_rows = _NO_LIMIT
+    elif min_rows is None:
+        min_rows = max_rows
+    if max_columns is None:
+        max_columns = _NO_LIMIT
+    return max_rows, min_rows, max_columns
+
+
+def _get_limits(max_rows, min_rows, max_columns):
+    """Return the row and column limits to read, taking the display options for any not given."""
+    display_max_rows, display_min_rows, display_max_columns = _display_limits()
+    if max_rows is None:  # pragma: no branch
+        max_rows = display_max_rows
+    if min_rows is None:  # pragma: no branch
+        min_rows = display_min_rows
+    if max_columns is None:  # pragma: no branch
+        max_columns = display_max_columns
+        if max_columns == 0:
+            # The renderer fits the columns to the terminal, so read enough to fill it
+            max_columns = _NO_LIMIT
+    return max_rows, min_rows, max_columns
+
+
+def _terminal_rows():
+    # rows available for data: terminal height minus dots + prompt + header
+    return shutil.get_terminal_size()[1] - 3
 
 
 def _get_chunk(length, min_length, max_length):
@@ -233,25 +305,626 @@ def _get_chunk(length, min_length, max_length):
         chunk = list(range(length))
         chunk_groups = [(None, None)]
     else:
-        half = min_length // 2
+        # The renderer cuts a frame longer than max_length to the first and last half of
+        # min(min_length, max_length) items, or of max_length when min_length is 0. Only
+        # those are read: the frame is one item longer than max_length, and the items
+        # between them are blank and cut.
+        shown = min(min_length, max_length) if min_length else max_length
+        half = shown // 2
+        chunk = list(range(max_length + 1))
+        if half == 0:
+            # With room for one item the renderer shows the first max_length items
+            # instead of a head and a tail.
+            return chunk, [(list(range(max_length)), None)]
         first_chunk = list(range(half))
         second_chunk = list(range(length - half, length))
-        chunk = list(range(max_length + 1))
         chunk[-half:] = second_chunk
         chunk_groups = [(first_chunk, None), (second_chunk, length - len(chunk))]
     return chunk, chunk_groups
 
 
+class _Column:
+    """One rendered column: a label, its raw cell values, and how to format them.
+
+    ``kind`` selects the pandas array formatter this column would have used:
+    "object" (GenericArrayFormatter), "float" (FloatArrayFormatter, also complex),
+    or "int" (IntArrayFormatter). ``numeric`` mirrors pandas ``is_numeric_dtype``
+    and controls whether the column header gets a leading space.
+    """
+
+    __slots__ = ("label", "values", "kind", "numeric")
+
+    def __init__(self, label, values, kind, numeric):
+        self.label = label
+        self.values = values
+        self.kind = kind
+        self.numeric = numeric
+
+
+class _GBFrame:
+    """A table of ``_Column``, standing in for a pandas DataFrame.
+
+    ``col_name`` is the name of the column labels (pandas ``df.columns.name``). When
+    set, it is shown in the top-left corner, as a dense Vector's repr uses it.
+    """
+
+    __slots__ = ("columns", "index", "col_name")
+
+    def __init__(self, columns, index, col_name=None):
+        self.columns = columns
+        self.index = index
+        self.col_name = col_name
+
+    @property
+    def ncols(self):
+        return len(self.columns)
+
+    @property
+    def nrows(self):
+        return len(self.index)
+
+    def slice_cols(self, idx):
+        return _GBFrame([self.columns[i] for i in idx], self.index, self.col_name)
+
+    def slice_rows(self, idx):
+        columns = [
+            _Column(c.label, [c.values[i] for i in idx], c.kind, c.numeric) for c in self.columns
+        ]
+        return _GBFrame(columns, [self.index[i] for i in idx], self.col_name)
+
+
+def _isna_cell(x):
+    # Gaps in the dense grid are float NaN; present values (including displayed
+    # "nan"/"inf") are never a bare float NaN, so this only flags the gaps.
+    return x is None or (isinstance(x, float) and math.isnan(x))
+
+
+def _count_present(arr):
+    return sum(1 for x in arr.flat if not _isna_cell(x))
+
+
+def _dtype_kind_numeric(dtype):
+    kind = dtype.kind
+    if kind in "fc":
+        return "float", True
+    if kind in "iu":
+        return "int", True
+    if kind == "b":
+        # bool renders via the generic formatter, but is_numeric_dtype(bool) is True
+        return "object", True
+    return "object", False
+
+
+def _make_dense_frame(arr, columns, index):
+    nrows = len(index)
+    out = []
+    for j, label in enumerate(columns):
+        vals = [("" if _isna_cell(arr[i, j]) else arr[i, j]) for i in range(nrows)]
+        out.append(_Column(label, vals, "object", False))
+    return _GBFrame(out, list(index))
+
+
+def _make_coo_frame(label_arrays, add_dots):
+    n = len(label_arrays[0][1])
+    index = list(range(n))
+    out = []
+    for label, values in label_arrays:
+        values = np.asarray(values)
+        if add_dots:
+            out.append(_Column(label, [*values.tolist(), "..."], "object", False))
+        elif values.ndim > 1:
+            # Array UDT values: a list per entry, as the dense grid shows them
+            out.append(_Column(label, values.tolist(), "object", False))
+        else:
+            kind, numeric = _dtype_kind_numeric(values.dtype)
+            out.append(_Column(label, values.tolist(), kind, numeric))
+    if add_dots:
+        index.append("...")
+    return _GBFrame(out, index)
+
+
+# --- cell formatting (reproduces pandas array formatters for object/int/float) ---
+
+_NUMBER_RE = re.compile(r"^\s*[\+-]?[0-9]+\.[0-9]*$")
+
+
+def _is_float_scalar(v):
+    # Matches pandas.lib.is_float: python/numpy floats, but not bool/int/complex.
+    return isinstance(v, (float, np.floating))
+
+
+def _pprint(v):
+    # Reproduces pandas printing.pprint_thing for our cell types (escape_chars for
+    # tab/cr/nl, quote_strings=False): scalars -> str, sequences recurse.
+    if isinstance(v, (list, tuple)):
+        body = ", ".join(_pprint(e) for e in v)
+        if isinstance(v, tuple) and len(v) == 1:
+            body += ","
+        return f"[{body}]" if isinstance(v, list) else f"({body})"
+    s = str(v)
+    return s.replace("\t", r"\t").replace("\r", r"\r").replace("\n", r"\n")
+
+
+def _trim_zeros_single_float(s):
+    s = s.rstrip("0")
+    if s.endswith("."):
+        s += "0"
+    return s
+
+
+def _trim_zeros_float(str_floats):
+    trimmed = list(str_floats)
+
+    def is_number_with_decimal(x):
+        return _NUMBER_RE.match(x) is not None
+
+    def should_trim(values):
+        numbers = [x for x in values if is_number_with_decimal(x)]
+        return len(numbers) > 0 and all(x.endswith("0") for x in numbers)
+
+    while should_trim(trimmed):
+        trimmed = [x[:-1] if is_number_with_decimal(x) else x for x in trimmed]
+    return [x + "0" if is_number_with_decimal(x) and x.endswith(".") else x for x in trimmed]
+
+
+def _trim_zeros_complex(str_complexes):
+    real_part, imag_part = [], []
+    for x in str_complexes:
+        trimmed = re.split(r"(?<!e)([j+-])", x)
+        real_part.append("".join(trimmed[:-4]))
+        imag_part.append("".join(trimmed[-4:-2]))
+    n = len(str_complexes)
+    padded_parts = _trim_zeros_float(real_part + imag_part)
+    if len(padded_parts) == 0:  # pragma: no cover (defensive)
+        # An empty column becomes a float array, so it never comes here
+        return []
+    padded_length = max(len(part) for part in padded_parts) - 1
+    return [
+        real_pt + imag_pt[0] + f"{imag_pt[1:]:>{padded_length}}" + "j"
+        for real_pt, imag_pt in zip(padded_parts[:n], padded_parts[n:], strict=True)
+    ]
+
+
+def _value_formatter(fmt_str, threshold):
+    def base(v):
+        return fmt_str.format(value=v)
+
+    if threshold is None:
+        return base
+
+    def formatter(v):
+        return base(v) if abs(v) > threshold else base(0.0)
+
+    return formatter
+
+
+def _format_reals_with_na(values, formatter, na_rep):
+    return [na_rep if (v != v) else formatter(v) for v in values]
+
+
+def _format_complex_with_na(values, formatter, na_rep):
+    out = []
+    for val in values:
+        re_v, im_v = val.real, val.imag
+        re_na, im_na = re_v != re_v, im_v != im_v
+        if not re_na and not im_na:
+            out.append(formatter(val))
+        elif not re_na:
+            out.append(f"{formatter(re_v)}+{na_rep}j")
+        elif not im_na:
+            imag_formatted = formatter(im_v).strip()
+            if imag_formatted.startswith("-"):
+                out.append(f"{na_rep}{imag_formatted}j")
+            else:
+                out.append(f"{na_rep}+{imag_formatted}j")
+        else:
+            out.append(f"{na_rep}+{na_rep}j")
+    return out
+
+
+def _format_float_column(values, digits):
+    # Reproduces FloatArrayFormatter for fixed_width, leading_space=True, na_rep="NaN".
+    arr = np.asarray(values)
+    is_complex = np.iscomplexobj(arr)
+    na_rep = "NaN"
+    if (float_format := _display_option("float_format")) is not None:
+        # With a display.float_format callable, FloatArrayFormatter drops fixed_width:
+        # each value, real or complex, is float_format(value), with no trimming of
+        # trailing zeros and no switch to scientific notation. The callable gets numpy
+        # scalars, not Python ones, as in pandas, so it casts a complex value the same way.
+        return [na_rep if (v != v) else float_format(v) for v in arr]
+    seq = arr.tolist()
+    threshold = _display_option("chop_threshold")
+
+    def format_with(fmt_str):
+        formatter = _value_formatter(fmt_str, threshold)
+        if is_complex:
+            return _trim_zeros_complex(_format_complex_with_na(seq, formatter, na_rep))
+        return _trim_zeros_float(_format_reals_with_na(seq, formatter, na_rep))
+
+    result = format_with(f"{{value: .{digits:d}f}}")
+    too_long = bool(result) and max(len(x) for x in result) > digits + 6
+    abs_vals = np.abs(arr)
+    has_large = bool((abs_vals > 1e6).any())
+    has_small = bool(((abs_vals < 10.0 ** (-digits)) & (abs_vals > 0)).any())
+    if has_small or (too_long and has_large):
+        result = format_with(f"{{value: .{digits:d}e}}")
+    return result
+
+
+def _justify(strings, width, mode="right"):
+    if mode == "left":
+        return [x.ljust(width) for x in strings]
+    if mode == "center":
+        return [x.center(width) for x in strings]
+    return [x.rjust(width) for x in strings]
+
+
+def _make_fixed_width(strings, justify="right", minimum=None):
+    if not strings:
+        return list(strings)
+    max_len = max(len(x) for x in strings)
+    if minimum is not None:
+        max_len = max(minimum, max_len)
+    conf_max = _display_option("max_colwidth")
+    if conf_max is not None and max_len > conf_max:
+        max_len = conf_max
+
+    def just(x):
+        if conf_max is not None and conf_max > 3 and len(x) > max_len:
+            x = x[: max_len - 3] + "..."
+        return x
+
+    return _justify([just(x) for x in strings], max_len, justify)
+
+
+def _format_labels(labels):
+    # Reproduces pandas Index._format_flat(include_name=False) for our label types.
+    # Integer labels get a sign column and are made one width, left-justified and cut
+    # short at display.max_colwidth, and then the leading spaces they all share are
+    # trimmed. String labels are left as they are.
+    if labels and all(isinstance(x, (int, np.integer)) and not isinstance(x, bool) for x in labels):
+        strs = _make_fixed_width([f"{x: d}" for x in labels], "left")
+        while all(s.startswith(" ") for s in strs):
+            strs = [s[1:] for s in strs]
+        return strs
+    return [str(x) for x in labels]
+
+
+def _adjoin(space, lists):
+    # Port of pandas printing.adjoin (ascii len/ljust); glues columns with `space`.
+    lengths = [max(map(len, x)) + space for x in lists[:-1]]
+    lengths.append(max(map(len, lists[-1])))
+    max_len = max(map(len, lists))
+    padded = []
+    for i, lst in enumerate(lists):
+        nl = [x.ljust(lengths[i]) for x in lst]
+        nl = [" " * lengths[i]] * (max_len - len(lst)) + nl
+        padded.append(nl)
+    return "\n".join("".join(parts) for parts in zip(*padded, strict=True))
+
+
+def _binify(cols, line_width):
+    adjoin_width = 1
+    bins = []
+    curr_width = 0
+    i_last = len(cols) - 1
+    for i, w in enumerate(cols):
+        w_adjoined = w + adjoin_width
+        curr_width += w_adjoined
+        if i_last == i:
+            wrap = curr_width + 1 > line_width and i > 0
+        else:
+            wrap = curr_width + 2 > line_width and i > 0
+        if wrap:
+            bins.append(i)
+            curr_width = w_adjoined
+    bins.append(len(cols))
+    return bins
+
+
+def _console_width():
+    # pandas repr sets the wrap width from console.get_console_size(); reuse it
+    # when present so the wrap decision is identical. Without pandas (or if that
+    # private module moved) fall back to display.width.
+    if has_pandas:
+        try:
+            from pandas.io.formats.console import get_console_size
+
+            return get_console_size()[0]
+        except Exception:  # pragma: no cover (defensive across pandas versions)
+            pass
+    return _display_option("width")
+
+
+class _TextFormatter:
+    """Reproduces pandas DataFrameFormatter and StringFormatter.
+
+    Both reprs truncate the frame with it, and the text repr renders with it.
+    """
+
+    def __init__(self, frame, max_rows, min_rows, max_cols):
+        self.frame = frame
+        self.max_rows = max_rows
+        self.min_rows = min_rows
+        self.max_cols = max_cols
+        self.justify = _display_option("colheader_justify")
+        self.tr_frame = frame
+        self.tr_col_num = None
+        self.tr_row_num = None
+        self.max_cols_fitted = self._calc_max_cols_fitted()
+        self.max_rows_fitted = self._calc_max_rows_fitted()
+        self.truncate()
+
+    def _calc_max_cols_fitted(self):
+        if self.max_cols == 0 and self.frame.ncols > (width := shutil.get_terminal_size()[0]):
+            return width
+        return self.max_cols
+
+    def _calc_max_rows_fitted(self):
+        if self.max_rows == 0:
+            return _terminal_rows()
+        max_rows = self.max_rows
+        if max_rows and self.frame.nrows > max_rows and self.min_rows:
+            max_rows = min(self.min_rows, max_rows)
+        return max_rows
+
+    @property
+    def is_truncated_horizontally(self):
+        return bool(self.max_cols_fitted and self.frame.ncols > self.max_cols_fitted)
+
+    @property
+    def is_truncated_vertically(self):
+        return bool(self.max_rows_fitted and self.frame.nrows > self.max_rows_fitted)
+
+    def truncate(self):
+        if self.is_truncated_horizontally:
+            self.tr_col_num, kept = _kept(self.max_cols_fitted, self.max_cols, self.tr_frame.ncols)
+            self.tr_frame = self.tr_frame.slice_cols(kept)
+        if self.is_truncated_vertically:
+            self.tr_row_num, kept = _kept(self.max_rows_fitted, self.max_rows, self.tr_frame.nrows)
+            self.tr_frame = self.tr_frame.slice_rows(kept)
+
+    def _format_col_raw(self, col):
+        if col.kind == "int":
+            return [f"{x: d}" for x in col.values]
+        if col.kind == "float":
+            return _format_float_column(col.values, _display_option("precision"))
+        precision = _display_option("precision")
+        float_format = _display_option("float_format")
+        out = []
+        for v in col.values:
+            # A float NaN is excluded from pandas' float-format branch (it uses
+            # is_float(v) & notna(v)) and rendered as the na_rep "NaN" instead, as is
+            # a complex value with a NaN part, for which pandas' isna is True too.
+            if _is_float_scalar(v) and not math.isnan(v):
+                if float_format is not None:
+                    # The result is used as is, without the sign space of the default format
+                    out.append(float_format(v))
+                else:
+                    out.append(_trim_zeros_single_float(f"{v: .{precision}f}"))
+            elif _is_float_scalar(v) or (isinstance(v, (complex, np.complexfloating)) and v != v):
+                out.append(" NaN")
+            else:
+                out.append(f" {_pprint(v)}")
+        return out
+
+    def _get_body_strcols(self):
+        # Column labels are formatted together (integer labels padded to a uniform
+        # width) the way pandas Index._format_flat does, not per column.
+        labels = _format_labels([col.label for col in self.tr_frame.columns])
+        strcols = []
+        for col, label in zip(self.tr_frame.columns, labels, strict=True):
+            header = f" {label}" if col.numeric else label
+            header_colwidth = len(header)
+            # pandas fixes width twice: format_array right-justifies to the cell
+            # content width, then the body pass re-justifies with colheader_justify
+            # (which only matters when the header is wider, or when it is "left").
+            fmt_values = _make_fixed_width(self._format_col_raw(col), "right")
+            fmt_values = _make_fixed_width(fmt_values, self.justify, minimum=header_colwidth)
+            max_len = max(max((len(x) for x in fmt_values), default=0), header_colwidth)
+            cheader = _justify([header], max_len, self.justify)
+            strcols.append(cheader + fmt_values)
+        return strcols
+
+    def _get_index_strcol(self):
+        idx = _make_fixed_width(_format_labels(self.tr_frame.index), justify="left")
+        width = max(map(len, idx), default=0)
+        idx = [s.ljust(width) for s in idx]
+        corner = "" if self.frame.col_name is None else str(self.frame.col_name)
+        return [corner, *idx]
+
+    def _get_strcols(self):
+        """Return the index and body columns as lists of lines, with dots where truncated."""
+        strcols = [self._get_index_strcol(), *self._get_body_strcols()]
+        dot_col = None
+        if self.is_truncated_horizontally:
+            dot_col = self.tr_col_num + 1  # after the index column
+            strcols.insert(dot_col, [" ..."] * (self.tr_frame.nrows + 1))
+        if self.is_truncated_vertically:
+            row_num = self.tr_row_num
+            for ix, col in enumerate(strcols):
+                cwidth = len(col[row_num])
+                dots = "..." if cwidth > 3 or ix == dot_col else ".."
+                if ix == dot_col:
+                    cwidth = 4
+                # The index column is left-justified; + 1 for the header row
+                col.insert(row_num + 1, dots.ljust(cwidth) if ix == 0 else dots.rjust(cwidth))
+        return strcols
+
+    def _fit_to_terminal(self, strcols):
+        lines = _adjoin(1, strcols).split("\n")
+        max_len = max(len(x) for x in lines)
+        width = shutil.get_terminal_size()[0]
+        adj_dif = max_len - width + 1  # +1 to avoid too-wide repr (pandas GH #17023)
+        col_lens = [max((len(x) for x in col), default=0) for col in strcols]
+        n_cols = len(col_lens)
+        while adj_dif > 0 and n_cols > 1:
+            mid = round(n_cols / 2)
+            adj_dif -= col_lens.pop(mid) + 1
+            n_cols = len(col_lens)
+        max_cols_fitted = max(n_cols - 1, 2)  # minus index column; show at least two
+        self.max_cols_fitted = max_cols_fitted
+        self.truncate()
+        return _adjoin(1, self._get_strcols())
+
+    def _join_multiline(self, strcols, line_width):
+        adjoin_width = 1
+        strcols = list(strcols)
+        idx = strcols.pop(0)
+        line_width -= max(len(x) for x in idx) + adjoin_width
+        col_widths = [max((len(x) for x in col), default=0) for col in strcols]
+        col_bins = _binify(col_widths, line_width)
+        nbins = len(col_bins)
+        blocks = []
+        start = 0
+        for i, end in enumerate(col_bins):
+            row = strcols[start:end]
+            row.insert(0, idx)
+            if nbins > 1:
+                nrows = len(row[-1])
+                if end <= len(strcols) and i < nbins - 1:
+                    row.append([" \\", *["  "] * (nrows - 1)])
+                else:
+                    row.append([" "] * nrows)
+            blocks.append(_adjoin(adjoin_width, row))
+            start = end
+        return "\n\n".join(blocks)
+
+    def to_string(self, line_width):
+        strcols = self._get_strcols()
+        if line_width is None:
+            return _adjoin(1, strcols)
+        if self.max_cols > 0:
+            return self._join_multiline(strcols, line_width)
+        return self._fit_to_terminal(strcols)
+
+
+def _kept(fitted, limit, length):
+    """Return the number of items before the dots, and the positions of the items shown.
+
+    With room for one item, the first ``limit`` items are shown instead.
+    """
+    if (num := fitted // 2) >= 1:
+        return num, [*range(num), *range(length - num, length)]
+    return limit, list(range(limit))
+
+
+def _render_text(frame):
+    line_width = _console_width() if _display_option("expand_frame_repr") else None
+    fmt = _TextFormatter(frame, *_display_limits())
+    return fmt.to_string(line_width)
+
+
+# The scoped style block pandas' NotebookFormatter emits ahead of the table.
+_HTML_STYLE = (
+    "<style scoped>\n"
+    "    .dataframe tbody tr th:only-of-type {\n"
+    "        vertical-align: middle;\n"
+    "    }\n"
+    "\n"
+    "    .dataframe tbody tr th {\n"
+    "        vertical-align: top;\n"
+    "    }\n"
+    "\n"
+    "    .dataframe thead th {\n"
+    "        text-align: right;\n"
+    "    }\n"
+    "</style>"
+)
+
+
+def _html_escape(s):
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+class _HtmlBuilder:
+    """Reproduces pandas NotebookFormatter (DataFrame._repr_html_) markup."""
+
+    indent_delta = 2
+
+    def __init__(self, fmt):
+        self.fmt = fmt
+        self.tr = fmt.tr_frame
+        self.ncols = self.tr.ncols
+        self.th = fmt.is_truncated_horizontally
+        self.tv = fmt.is_truncated_vertically
+        self.row_levels = 1  # single-level index, always shown
+        self.elements = []
+
+    def write(self, s, indent=0):
+        self.elements.append(" " * indent + s)
+
+    def _cell(self, s, kind, indent):
+        rs = _html_escape(str(s)).strip().replace("  ", "&nbsp;&nbsp;")
+        self.write(f"<{kind}>{rs}</{kind}>", indent)
+
+    def write_tr(self, line, indent, header=False, align=None, nindex_levels=0):
+        self.write("<tr>" if align is None else f'<tr style="text-align: {align};">', indent)
+        inner = indent + self.indent_delta
+        for i, s in enumerate(line):
+            self._cell(s, "th" if (header or i < nindex_levels) else "td", inner)
+        self.write("</tr>", indent)
+
+    def _col_header(self, indent):
+        row = ["" if self.tr.col_name is None else str(self.tr.col_name)]
+        row.extend(_format_labels([col.label for col in self.tr.columns]))
+        if self.th:
+            row.insert(self.row_levels + self.fmt.tr_col_num, "...")
+        self.write_tr(row, indent, header=True, align=self.fmt.justify)
+
+    def _body(self, indent):
+        index_labels = _format_labels(list(self.tr.index))
+        col_cells = [
+            _make_fixed_width(self.fmt._format_col_raw(col), "right") for col in self.tr.columns
+        ]
+        row = []
+        for i in range(self.tr.nrows):
+            if self.tv and i == self.fmt.tr_row_num:
+                self.write_tr(["..."] * len(row), indent, nindex_levels=self.row_levels)
+            row = [index_labels[i], *(col_cells[j][i] for j in range(self.ncols))]
+            if self.th:
+                row.insert(self.fmt.tr_col_num + self.row_levels, "...")
+            self.write_tr(row, indent, nindex_levels=self.row_levels)
+
+    def _table(self, indent=0):
+        classes = "dataframe"
+        if not _display_option("html.use_mathjax"):
+            classes = "dataframe tex2jax_ignore mathjax_ignore"
+        # pandas keeps the attribute for any non-None border, including 0.
+        border = _display_option("html.border")
+        border_attr = "" if border is None else f' border="{border}"'
+        self.write(f'<table{border_attr} class="{classes}">', indent)
+        self.write("<thead>", indent + self.indent_delta)
+        self._col_header(indent + 2 * self.indent_delta)
+        self.write("</thead>", indent + self.indent_delta)
+        self.write("<tbody>", indent + self.indent_delta)
+        self._body(indent + 2 * self.indent_delta)
+        self.write("</tbody>", indent + self.indent_delta)
+        self.write("</table>", indent)
+
+    def render(self):
+        self.write("<div>")
+        self.write(_HTML_STYLE)
+        self._table(0)
+        self.write("</div>")
+        return "\n".join(self.elements)
+
+
+def _render_html(frame):
+    fmt = _TextFormatter(frame, *_display_limits())
+    return _HtmlBuilder(fmt).render()
+
+
 def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None):
-    if not has_pandas:
-        return
-    if max_rows is None:  # pragma: no branch
-        max_rows = pd.options.display.max_rows
-    if min_rows is None:  # pragma: no branch
-        min_rows = pd.options.display.min_rows
-    if max_columns is None:  # pragma: no branch
-        max_columns = _get_max_columns()
-    rows, row_groups = _get_chunk(matrix._nrows, min_rows, max_rows)
+    max_rows, min_rows, max_columns = _get_limits(max_rows, min_rows, max_columns)
+    if max_rows == 0:
+        # The renderer fits the rows to the terminal; read at least the first row
+        fit_rows = max(_terminal_rows(), 1)
+        rows, row_groups = _get_chunk(matrix._nrows, fit_rows, fit_rows)
+    else:
+        fit_rows = max_rows
+        rows, row_groups = _get_chunk(matrix._nrows, min_rows, max_rows)
     columns, column_groups = _get_chunk(matrix._ncols, max_columns, max_columns)
     arr = np.full((len(rows), len(columns)), np.nan, dtype=object)
     for row_group, row_offset in row_groups:
@@ -265,12 +938,16 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
                 column_offset,
                 mask=mask,
             )
-    df = pd.DataFrame(arr, columns=columns, index=rows)
+    present = _count_present(arr)
+    truncated = (len(rows), len(columns)) != matrix.shape
+    # How many entries the COO form would show, since the renderer cuts it to the rows it
+    # shows, as it does the grid. The COO form is used when that is more than twice the
+    # entries the grid shows.
+    coo_rows = matrix._nvals if matrix._nvals <= max_rows else min(min_rows, fit_rows)
     if (
         (mask is None or mask.structure)
-        and df.shape != matrix.shape
-        and min(matrix._nvals, max_rows if matrix._nvals <= max_rows else min_rows)
-        > 2 * df.count().sum()
+        and truncated
+        and min(matrix._nvals, coo_rows) > 2 * present
     ):
         # The data is sparse and it's better to show in COO format.
         # SS, SuiteSparse-specific: head
@@ -284,47 +961,38 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
                 vals = np.zeros(vals.size, dtype=np.uint8)
             else:
                 vals = np.ones(vals.size, dtype=np.uint8)
-        df = pd.DataFrame({"row": rows, "col": cols, "val": vals})
-        if num_rows < matrix._nvals:
-            df.loc["..."] = ["..."] * 3
-        return df
-    if mask is not None and not mask.structure and df.shape != matrix.shape:
+        return _make_coo_frame(
+            [("row", rows), ("col", cols), ("val", vals)], num_rows < matrix._nvals
+        )
+    if mask is not None and not mask.structure and truncated:
         # This performs more calculation and uses more memory than I would prefer.
         # Perhaps we could use the efficient "constant vector or matrix" trick.
         nonzero = matrix.apply(unary.one["UINT8"]).new(mask=matrix.V, name="")
         num_rows = matrix._nvals if matrix._nvals <= max_rows else min_rows
-        if min(nonzero._nvals, num_rows) > 2 * df.count().sum():
+        if min(nonzero._nvals, coo_rows) > 2 * present:
             rows, cols, vals = nonzero.ss.head(num_rows, sort=True)
             if mask.complement:
                 if not vals.flags.writeable:  # pragma: no cover (safety)
                     vals = vals.copy()
                 vals[:] = 0
-            df = pd.DataFrame({"row": rows, "col": cols, "val": vals})
-            if num_rows < nonzero._nvals:
-                df.loc["..."] = ["..."] * 3
-            return df
-    return df.where(pd.notna(df), "")
+            return _make_coo_frame(
+                [("row", rows), ("col", cols), ("val", vals)], num_rows < nonzero._nvals
+            )
+    return _make_dense_frame(arr, columns, rows)
 
 
 def _get_vector_dataframe(vector, max_rows, min_rows, max_columns, *, mask=None):
-    if not has_pandas:
-        return
-    if max_rows is None:  # pragma: no branch
-        max_rows = pd.options.display.max_rows
-    if min_rows is None:  # pragma: no branch
-        min_rows = pd.options.display.min_rows
-    if max_columns is None:  # pragma: no branch
-        max_columns = _get_max_columns()
+    max_rows, min_rows, max_columns = _get_limits(max_rows, min_rows, max_columns)
     columns, column_groups = _get_chunk(vector._size, max_columns, max_columns)
     arr = np.full((1, len(columns)), np.nan, dtype=object)
     for column_group, column_offset in column_groups:
         _update_vector_array(arr, vector, column_group, column_offset, mask=mask)
-    df = pd.DataFrame(arr, columns=columns, index=[""])
+    present = _count_present(arr)
+    truncated = len(columns) != vector._size
     if (
         (mask is None or mask.structure)
-        and df.size != vector._size
-        and min(vector._nvals, max_rows if vector._nvals <= max_rows else min_rows)
-        > 2 * df.count().sum()
+        and truncated
+        and min(vector._nvals, max_rows if vector._nvals <= max_rows else min_rows) > 2 * present
     ):
         # The data is sparse and it's better to show in COO format.
         # SS, SuiteSparse-specific: head
@@ -335,26 +1003,20 @@ def _get_vector_dataframe(vector, max_rows, min_rows, max_columns, *, mask=None)
                 vals = np.zeros(vals.size, dtype=np.uint8)
             else:
                 vals = np.ones(vals.size, dtype=np.uint8)
-        df = pd.DataFrame({"index": indices, "val": vals})
-        if num_rows < vector._nvals:
-            df.loc["..."] = ["..."] * 2
-        return df
-    if mask is not None and not mask.structure and df.size != vector._size:
+        return _make_coo_frame([("index", indices), ("val", vals)], num_rows < vector._nvals)
+    if mask is not None and not mask.structure and truncated:
         # This performs more calculation and uses more memory than I would prefer.
         # Perhaps we could use the efficient "constant vector or matrix" trick.
         nonzero = vector.apply(unary.one["UINT8"]).new(mask=vector.V, name="")
         num_rows = vector._nvals if vector._nvals <= max_rows else min_rows
-        if min(nonzero._nvals, num_rows) > 2 * df.count().sum():
+        if min(nonzero._nvals, num_rows) > 2 * present:
             indices, vals = nonzero.ss.head(num_rows, sort=True)
             if mask.complement:
                 if not vals.flags.writeable:  # pragma: no cover (safety)
                     vals = vals.copy()
                 vals[:] = 0
-            df = pd.DataFrame({"index": indices, "val": vals})
-            if num_rows < nonzero._nvals:
-                df.loc["..."] = ["..."] * 2
-            return df
-    return df.where(pd.notna(df), "")
+            return _make_coo_frame([("index", indices), ("val", vals)], num_rows < nonzero._nvals)
+    return _make_dense_frame(arr, columns, [""])
 
 
 def get_format(x, is_transposed=False):
@@ -437,14 +1099,9 @@ def vector_expression_header_html(matrix, expr):
     return create_header_html(name, keys, vals)
 
 
-def _format_html(name, header, df, collapse):
-    if has_pandas:
-        state = "" if collapse else " open"
-        with pd.option_context("display.show_dimensions", False, "display.large_repr", "truncate"):
-            details = df._repr_html_()
-    else:
-        state = ""
-        details = "<em>(Install</em> <tt>pandas</tt> <em>to see a preview of the data)</em>"
+def _format_html(name, header, frame, collapse):
+    state = "" if collapse else " open"
+    details = _render_html(frame)
     return (
         "<div>"
         f"{CSS_STYLE}"
@@ -668,17 +1325,12 @@ def format_matrix(matrix, *, max_rows=None, min_rows=None, max_columns=None, mas
         name,
         keys,
         vals,
-        lower_border=has_pandas,
+        lower_border=True,
         name=matrix.name if mask is None else mask.name,
     )
-    if has_pandas:
-        df = _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, mask=mask)
-        if 0 not in matrix.shape:
-            with pd.option_context(
-                "display.show_dimensions", False, "display.large_repr", "truncate"
-            ):
-                df_repr = df.__repr__()
-            return f"{header}\n{df_repr}"
+    if 0 not in matrix.shape:
+        frame = _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, mask=mask)
+        return f"{header}\n{_render_text(frame)}"
     return header
 
 
@@ -688,20 +1340,16 @@ def format_vector(vector, *, max_rows=None, min_rows=None, max_columns=None, mas
         name,
         keys,
         vals,
-        lower_border=has_pandas,
+        lower_border=True,
         name=vector.name if mask is None else mask.name,
     )
-    if has_pandas:
-        df = _get_vector_dataframe(vector, max_rows, min_rows, max_columns, mask=mask)
-        if vector._size > 0:
-            if df.columns[0] != "index":
-                df.columns.name = "index"
-                df.index = ["value"]
-            with pd.option_context(
-                "display.show_dimensions", False, "display.large_repr", "truncate"
-            ):
-                df_repr = df.__repr__()
-            return f"{header}\n{df_repr}"
+    if vector._size > 0:
+        frame = _get_vector_dataframe(vector, max_rows, min_rows, max_columns, mask=mask)
+        if frame.columns[0].label != "index":
+            # Dense vectors label the corner "index" and the single row "value".
+            frame.col_name = "index"
+            frame.index = ["value"]
+        return f"{header}\n{_render_text(frame)}"
     return header
 
 
@@ -848,7 +1496,7 @@ def format_matrix_infix_expression_html(expr):
     expr_html = expr._format_expr_html()
     header = create_header_html(
         expr_html,
-        ["nrows", "ncols", "right_dtype", "left_dtype"],
+        ["nrows", "ncols", "left_dtype", "right_dtype"],
         [expr._nrows, expr._ncols, expr.left.dtype, expr.right.dtype],
     )
     return _format_infix_expression(expr, header, expr_html)
