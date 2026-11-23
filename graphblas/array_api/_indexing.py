@@ -548,7 +548,8 @@ def _scatter_setitem(x, items, value):
 
 def _selection_shape(shape, key):
     """The shape of numpy's selection by ``key`` (as ``_scatter_setitem`` builds it), from the
-    key alone in Python ints, or None when its index arrays do not broadcast.
+    key alone in Python ints, or None when its index arrays do not broadcast. ``key`` holds at
+    least one index array or 0-d boolean, which ``_scatter_setitem``, the only caller, ensures.
 
     numpy's layout: the index arrays, integers and 0-d booleans broadcast together; their
     axes take the place of the first of them when they are adjacent in the key, and go first
