@@ -535,8 +535,9 @@ def test_perm_cols_paths():
     for shape, density in cases:
         if density is None:
             coords = [rng.integers(0, n, 400) for n in shape]
-            lin = np.unique(np.ravel_multi_index(coords, shape))
-            coords = np.unravel_index(lin, shape)
+            # Distinct points, in C order (np.ravel_multi_index needs shapes below 2**31
+            # positions on 32-bit platforms)
+            coords = tuple(np.unique(np.array(coords), axis=1))
         else:
             coords = np.nonzero(rng.random(shape) < density)
         n = coords[0].size
@@ -592,9 +593,10 @@ def test_relayout_hypersparse():
     shape = (2**19,) * 3
     n = 2000
     coords = [rng.integers(0, 2**19, n) for _ in range(3)]
-    lin = np.unique(np.ravel_multi_index(coords, shape))
-    coords = np.unravel_index(lin, shape)
-    vals = rng.random(lin.size)
+    # Distinct points, in C order (np.ravel_multi_index needs shapes below 2**31
+    # positions on 32-bit platforms)
+    coords = tuple(np.unique(np.array(coords), axis=1))
+    vals = rng.random(coords[0].size)
     T = Tensor.from_coo(coords, vals, shape=shape)
     assert T.layout == Layout((0,), (1, 2))
     for dst in all_layouts(3):
@@ -5831,8 +5833,9 @@ def test_indexing_hypersparse_slab():
     shape = (2**19,) * 3
     coords = [rng.integers(0, 2**19, 2000) for _ in range(3)]
     coords[0][:50] = 7
-    lin = np.unique(np.ravel_multi_index(coords, shape))
-    coords = np.unravel_index(lin, shape)
+    # Distinct points, in C order (np.ravel_multi_index needs shapes below 2**31
+    # positions on 32-bit platforms)
+    coords = tuple(np.unique(np.array(coords), axis=1))
     T = Tensor.from_coo(coords, 1.0, shape=shape, layout=((0, 1), (2,)))
     R = T[7].new()
     assert R.shape == (2**19, 2**19)
@@ -5909,9 +5912,10 @@ def test_mttkrp_large_dims():
     rng = np.random.default_rng(57)
     shape = (3, 2**29, 5)
     coords = [rng.integers(0, n, 40) for n in shape]
-    lin = np.unique(np.ravel_multi_index(coords, shape))
-    coords = np.unravel_index(lin, shape)
-    vals = rng.random(lin.size)
+    # Distinct points, in C order (np.ravel_multi_index needs shapes below 2**31
+    # positions on 32-bit platforms)
+    coords = tuple(np.unique(np.array(coords), axis=1))
+    vals = rng.random(coords[0].size)
     X = Tensor.from_coo(coords, vals, shape=shape)
     # The same data with the used j relabeled 0..m-1, for numpy
     uj, jinv = np.unique(coords[1], return_inverse=True)
