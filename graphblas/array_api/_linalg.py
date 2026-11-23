@@ -266,7 +266,10 @@ def _dense(func, shape, *arrays):
     """
     from ._creation import _from_numpy
 
-    what = "a contraction with a nonzero fill that does not store every position"
+    if any(not _is_zero(x._fill) and x._T().nvals != x.size for x in arrays):
+        what = "a contraction with a nonzero fill that does not store every position"
+    else:  # (see _zero_fills)
+        what = "a contraction with inf or NaN and a zero stored by an operand whose fill is not 0"
     for x in arrays:
         _utils.check_dense(x.size, what)
     _utils.check_dense(math.prod(shape), what)

@@ -47,6 +47,10 @@ times ``-1.0`` is ``-0.0``. ``-0.0`` is not identical to the fill ``0.0``, so a 
 ``-0.0`` times ``inf`` is NaN.
 
 Sums may round differently from numpy's, because the terms are added in another order.
+``einsum`` may also sum over an index that only one operand has before it multiplies, so
+with an infinity stored, a result can be an infinity where numpy's term-by-term sum is NaN:
+``xp.einsum("i,j->", xp.asarray([1.0, -2.0]), xp.asarray([-2.0, np.inf]))`` is ``-inf``,
+and ``np.einsum`` of the same values is NaN.
 
 .. _tn_array_api_other_fills:
 
@@ -66,17 +70,8 @@ dense copies of the operands: ``matmul`` with ``np.matmul``, ``tensordot`` with
 ``np.tensordot``, and so on. ``xp.full((2, 2), np.inf) @ A`` is NaN at every position, as in
 numpy.
 
-A zero stored by an operand whose fill is not 0 is a value, not a fill. When an operand
-stores an infinity or NaN, the contraction computes with numpy too, so that zero's terms
-count: ``xp.asarray([[np.inf]]) @ xp.asarray([[0.0]], fill_value=1.0)`` is NaN.
-
-numpy's functions do not always agree with each other on infinities. ``np.tensordot`` goes
-through BLAS, whose products may skip a zero, so ``0 * inf`` there may give no NaN. And
-``np.einsum`` may give inf for some values where it gives NaN for the same values in another
-memory layout.
-
-Both ways need memory for every position. Storing the fill needs it for that operand, and
-computing with numpy needs it for every operand and for the result. Past
+Storing the fill and computing with numpy both need memory for every position: storing the
+fill for that operand, and numpy for every operand and for the result. Past
 ``gb.config["array_api_densify_limit"]`` positions (10**8 by default), both raise
 ``xp.DensifyError``:
 
@@ -88,6 +83,15 @@ computing with numpy needs it for every operand and for the result. Past
     ...
     graphblas.array_api.DensifyError: a contraction with a nonzero fill that does not store
     every position would hold 4 elements densely, more than the limit of 3. ...
+
+A zero stored by an operand whose fill is not 0 is a value, not a fill. When an operand
+stores an infinity or NaN, the contraction computes with numpy too, so that zero's terms
+count: ``xp.asarray([[np.inf]]) @ xp.asarray([[0.0]], fill_value=1.0)`` is NaN.
+
+A contraction computed with numpy gives the answer of the numpy function named above, and
+those functions do not always agree on ``0 * inf``. With numpy 2.3 and 2.4 on OpenBLAS
+0.3.33 (macOS), ``np.tensordot([[np.inf], [2.0]], [[0.0]], axes=1)`` is ``[[0.], [0.]]``: its BLAS product
+skips the zero. ``np.matmul`` and ``np.einsum`` of the same arrays give ``[[nan], [0.]]``.
 
 In ``einsum``, a 0-d operand with a finite nonzero value multiplies every term, so it is
 factored out of the sum. A 0-d operand whose value is infinite or NaN makes ``einsum``

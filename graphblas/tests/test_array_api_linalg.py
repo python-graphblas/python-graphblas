@@ -327,3 +327,11 @@ def test_stored_zeros_of_another_fill_keep_their_terms():
     x = xp.asarray(np.array([[0.0, 3.0]]), fill_value=1.0)
     y = xp.asarray(np.array([[2.0], [0.0]]))
     assert_array_equal(y @ x, np.array([[0.0, 6.0], [0.0, 0.0]]))
+    # Past the densify limit, the error says why this contraction needs numpy
+    x = xp.asarray(np.array([[0.0, 2.0], [3.0, 4.0]]), fill_value=1.0)  # (stores every position)
+    y = xp.asarray(np.array([[np.inf, 1.0], [1.0, 1.0]]))
+    with gb.config.set(array_api_densify_limit=3):
+        with pytest.raises(xp.DensifyError, match="inf or NaN and a zero stored by an operand"):
+            y @ x
+        with pytest.raises(xp.DensifyError, match="a nonzero fill that does not store every"):
+            xp.ones((2, 2)) @ y
