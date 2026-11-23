@@ -3354,6 +3354,98 @@ def test_einsum(sub, shapes):
         check(R, *np_einsum(sub, *models), approx=True)
 
 
+EINSUM_ELLIPSIS_AND_DIAGONAL_CASES = [
+    ("...ij,...jk->...ik", [(2, 3, 4), (2, 4, 5)]),
+    ("...ij,...jk->...ik", [(2, 3, 4), (1, 4, 5)]),  # a size-1 axis under ... broadcasts
+    ("...ij,jk->...ik", [(2, 3, 3, 4), (4, 5)]),  # two axes under ...
+    ("...ij,...jk", [(3, 2, 4), (3, 4, 2)]),  # implicit output: the ... axes first
+    ("i...,j...->ij...", [(2, 1, 4), (3, 5, 1)]),  # both operands broadcast
+    ("...i,...i->...", [(4, 3), (3,)]),  # fewer axes under ... in one operand
+    ("ij...->ji...", [(2, 3)]),  # ... covering no axis
+    ("...->...", [(2, 3)]),
+    ("ii->i", [(4, 4)]),  # a diagonal
+    ("ii", [(4, 4)]),  # a trace (implicit output)
+    ("ii->", [(4, 4)]),
+    ("iij->ij", [(3, 3, 5)]),
+    ("iji->j", [(3, 4, 3)]),
+    ("iii->i", [(3, 3, 3)]),
+    ("ijij->ji", [(2, 3, 2, 3)]),
+    ("ii,ij->j", [(3, 3), (3, 4)]),  # a diagonal inside a contraction
+    ("ijk,jj,kr->ir", [(3, 4, 5), (4, 4), (5, 2)]),
+    ("i...i->...", [(3, 2, 3)]),
+    ("...ii->...i", [(2, 3, 3)]),
+    ("i...i", [(3, 2, 3)]),
+]
+
+
+@pytest.mark.parametrize(("sub", "shapes"), EINSUM_ELLIPSIS_AND_DIAGONAL_CASES)
+def test_einsum_ellipsis_and_repeated_indices(sub, shapes):
+    """``einsum`` takes numpy's ``...`` (size-1 axes broadcast under it, and the implicit
+    output puts its axes first) and an index repeated within one operand (that operand's
+    diagonal), and gives numpy's result on values and presence, in several layouts.
+    """
+    rng = np.random.default_rng(49)
+    for trial in range(3):
+        models = []
+        for k, shape in enumerate(shapes):
+            layouts = all_layouts(len(shape))
+            layout = None
+            if trial == 1 and k == 0:
+                layout = layouts[-1]
+            elif trial == 2:
+                layout = layouts[len(layouts) // 2]
+            models.append(random_tensor(shape, rng, layout=layout, density=0.6))
+        R = gb.core.tensor.einsum(sub, *[m[0] for m in models]).new()
+        check(R, *np_einsum(sub, *models), approx=True)
+
+
+def test_einsum_ellipsis_and_repeated_indices_operands_and_errors():
+    """``...`` and a repeated index work with ndarray operands and other semirings, and
+    malformed subscripts raise numpy's errors.
+    """
+    einsum = gb.core.tensor.einsum
+    rng = np.random.default_rng(50)
+    X, xv, xp = random_tensor((3, 4, 4), rng, density=0.7)
+    # ndarrays (dense: every position present), with a diagonal and with a squeezed axis
+    D = np.round(rng.random((4, 4)) * 10, 1)
+    dense = (None, D, np.ones((4, 4), bool))
+    R = einsum("...ii,jj->...j", X, D).new()
+    check(R, *np_einsum("...ii,jj->...j", (X, xv, xp), dense), approx=True)
+    E = np.round(rng.random((1, 4, 2)) * 10, 1)
+    R = einsum("...ij,...jk->...ik", X, E).new()
+    check(R, *np_einsum("...ij,...jk->...ik", (X, xv, xp), (None, E, np.ones(E.shape, bool))),
+          approx=True)  # fmt: skip
+    # The minimum of each diagonal, under min_plus: a trace with another monoid
+    R = einsum("kii->k", X, op=gb.semiring.min_plus).new()
+    diag = np.where(np.einsum("kii->ki", xp), np.einsum("kii->ki", xv), np.inf)
+    want = diag.min(axis=1)
+    check(R, np.where(np.isfinite(want), want, 0), np.isfinite(want))
+    with pytest.raises(DimensionMismatch, match="sizes"):
+        einsum("iik->k", Tensor(float, 3, 2, 4))
+    with pytest.raises(DimensionMismatch, match="broadcast"):
+        einsum("...ij,...jk->...ik", Tensor(float, 2, 3, 4), Tensor(float, 3, 4, 5))
+    with pytest.raises(ValueError, match=r"'\.\.\.'"):
+        einsum("...k->k", X)  # (axes under ... and no ... in the output)
+    with pytest.raises(ValueError, match="ellipsis"):
+        einsum("i..j", Tensor(float, 2, 3))
+    with pytest.raises(ValueError, match="ellipsis"):
+        einsum("...i...", Tensor(float, 2, 3))
+    with pytest.raises(ValueError, match="more indices"):
+        einsum("ijk...->i", Tensor(float, 2, 3))
+    with pytest.raises(ValueError, match="output"):
+        einsum("ii->ii", Tensor(float, 2, 2))
+    with pytest.raises(ValueError, match="ellipsis"):
+        einsum("...i->..", Tensor(float, 2, 3))
+    with pytest.raises(ValueError, match="terms"):
+        einsum("ii,j->", Tensor(float, 2, 2))
+    with pytest.raises(ValueError, match="fewer indices"):
+        einsum("...i,ij->...j", X, X)
+    with pytest.raises(ValueError, match="unused letters"):
+        einsum(
+            "..." + "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX", Tensor(float, (1,) * 53)
+        )
+
+
 def test_einsum_operands_semirings_and_errors(monkeypatch):
     from graphblas.core import tensor as tensor_mod
 
@@ -3409,10 +3501,6 @@ def test_einsum_operands_semirings_and_errors(monkeypatch):
     )
     monkeypatch.undo()
     tensor_mod._einsum_plan.cache_clear()
-    with pytest.raises(NotImplementedError, match="diagonal"):
-        einsum("iik->k", Tensor(float, 3, 3, 4))
-    with pytest.raises(NotImplementedError, match=r"\.\.\."):
-        einsum("...k->k", X)
     with pytest.raises(ValueError, match="terms"):
         einsum("ijk,jr->ir", X)
     with pytest.raises(DimensionMismatch, match="sizes"):

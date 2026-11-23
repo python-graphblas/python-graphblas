@@ -194,6 +194,17 @@ the leading axes as batch axes; ``einsum`` takes numpy's subscripts and any semi
     array([[3., 3.],
            [3., 3.]])
 
+As in numpy, ``...`` stands for the axes the letters leave, and broadcasts; an index repeated
+within one operand takes its diagonal, which costs one pass over that operand's entries:
+
+.. code-block:: python
+
+    >>> einsum("...k,k->...", X, np.ones(4)).new().shape  # the leading axes, whatever they are
+    (2, 3)
+    >>> D = Tensor.from_dense(np.arange(9.0).reshape(3, 3))
+    >>> einsum("ii", D).new().to_scalar().value  # a trace: 0 + 4 + 8
+    12.0
+
 With three or more operands, ``einsum`` contracts them in pairs when the semiring's multiply
 distributes over its monoid, as with ``plus_times``, ``min_plus`` and ``max_plus``. The result
 is then exact up to floating-point rounding and integer overflow. When the multiply also
@@ -370,8 +381,7 @@ sums; only the speed differs.
 Limits
 ------
 
-- No ``...`` and no repeated index (diagonal) in ``einsum``; no Tensor or Vector as
-  indices.
+- No Tensor or Vector as indices.
 - No fill value: a missing entry has no value (as in all of python-graphblas).
 - Each group of the layout has at most 2\ :sup:`60` positions (a Matrix dimension).
 - The ``suitesparse`` backend with SuiteSparse:GraphBLAS 10 or later only.

@@ -25,8 +25,10 @@ def einsum(subscripts, *operands, op=semiring.plus_times, optimize="greedy"):
     The multiply of the semiring ``op`` combines the operands of each term left to right
     (``mult(mult(a, b), c)``), and its monoid sums the terms over the contracted indices. A
     result position has an entry when at least one term exists there. Operands may be
-    Tensors, Matrices, Vectors or ndarrays. Each index appears at most once per operand (no
-    diagonals), and ``...`` is not supported.
+    Tensors, Matrices, Vectors or ndarrays. As in numpy, ``...`` stands for the axes the
+    letters leave, which broadcast against each other (a size-1 axis against any size), and
+    an index repeated within one operand takes that operand's diagonal: ``"ii->i"`` is the
+    diagonal and ``"ii"`` the trace. A diagonal costs one pass over the operand's entries.
 
     When the multiply distributes over the monoid (``plus_times``, ``min_plus``,
     ``max_plus``, ``lor_land``, ``min_max``, any ``min``, ``max`` or ``any`` with ``first``,
@@ -57,6 +59,10 @@ def einsum(subscripts, *operands, op=semiring.plus_times, optimize="greedy"):
         else:
             pre.append(t)
     shapes = tuple(x.shape for x in pre)
+    if (rewritten := _einsum_rewrite(subscripts, shapes)) is not None:
+        subscripts, preps = rewritten
+        pre = [x if p is None else _prepare_operand(x, *p) for x, p in zip(pre, preps, strict=True)]
+        shapes = tuple(x.shape for x in pre)
     try:
         plan = _einsum_plan(subscripts, shapes, optimize)
     except TypeError:  # an unhashable ``optimize`` (an explicit path): plan without the cache
@@ -164,10 +170,9 @@ def _grouping(op):
 def _einsum_plan(subscripts, shapes, optimize):
     """What ``einsum`` needs from the subscripts and the operands' shapes alone, cached: the
     terms, the output letters and shape, the MTTKRP pattern (or None), the pairwise path, and
-    for one contraction already in the output's order its axes (or None).
+    for one contraction already in the output's order its axes (or None). The subscripts
+    have no ``...`` and no index twice in a term (``_einsum_rewrite``).
     """
-    if "." in subscripts:
-        raise NotImplementedError("einsum: `...` is not supported")
     subscripts = subscripts.replace(" ", "")
     if "->" in subscripts:
         inputs, output = subscripts.split("->")
@@ -179,8 +184,6 @@ def _einsum_plan(subscripts, shapes, optimize):
     for term, shape in zip(terms, shapes, strict=True):
         if len(term) != len(shape):
             raise ValueError(f"einsum: term {term!r} does not match an operand of shape {shape}")
-        if len(set(term)) != len(term):
-            raise NotImplementedError(f"einsum: repeated index in {term!r} (a diagonal)")
     sizes = {}
     for term, shape in zip(terms, shapes, strict=True):
         for c, n in zip(term, shape, strict=True):
@@ -200,6 +203,123 @@ def _einsum_plan(subscripts, shapes, optimize):
     path = tuple(_einsum_path(terms, output, shapes, optimize))
     direct = _direct_axes(*terms, output) if len(terms) == 2 else None
     return terms, output, shape, None, path, direct
+
+
+@functools.lru_cache(maxsize=1024)
+def _einsum_rewrite(subscripts, shapes):
+    """Rewrite numpy's ``...`` and repeated indices for operands of ``shapes``, cached.
+
+    Returns ``(subscripts, preps)``: the subscripts with a letter for each axis, no letter
+    twice in a term and an explicit output, and for each operand None or ``(squeeze,
+    groups)`` for ``_prepare_operand``. None when ``subscripts`` has neither.
+
+    ``...`` gets letters the subscripts do not use, right-aligned as numpy broadcasts. A
+    size-1 axis under it that meets a longer one is squeezed and its letter dropped from that
+    operand, which is how einsum broadcasts: the other operands' entries pair with every
+    position of a letter it lacks.
+    """
+    subscripts = subscripts.replace(" ", "")
+    inputs, arrow, output = subscripts.partition("->")
+    terms = inputs.split(",")
+    if "." not in subscripts and all(len(set(t)) == len(t) for t in terms):
+        return None
+    if len(terms) != len(shapes):
+        raise ValueError(f"einsum: {len(terms)} terms for {len(shapes)} operands")
+    free = [c for c in _LETTERS if c not in subscripts]
+    parts = []
+    for term, shape in zip(terms, shapes, strict=True):
+        head, dots, tail = term.partition("...")
+        if "." in head or "." in tail:
+            raise ValueError(f"einsum: a '.' in {term!r} is not part of an ellipsis ('...')")
+        if (n := len(shape) - len(head) - len(tail)) < 0 or not dots and n:
+            raise ValueError(
+                f"einsum: term {term!r} has {'more' if n < 0 else 'fewer'} indices than an "
+                f"operand of shape {shape}"
+            )
+        parts.append((head, tail, n))
+    nell = max(n for _, _, n in parts)
+    if nell > len(free):
+        raise ValueError(f"einsum: {nell} axes under '...' and {len(free)} unused letters")
+    ell = free[:nell]
+    sizes = dict.fromkeys(ell, 1)
+    for (head, _, n), shape in zip(parts, shapes, strict=True):
+        for c, m in zip(ell[nell - n :], shape[len(head) : len(head) + n], strict=True):
+            if m != 1 and sizes[c] not in {1, m}:
+                raise DimensionMismatch(
+                    f"einsum: axes of sizes {sizes[c]} and {m} under '...' do not broadcast"
+                )
+            sizes[c] = max(sizes[c], m)
+    if arrow:
+        out_head, out_dots, out_tail = output.partition("...")
+        if "." in out_head or "." in out_tail:
+            raise ValueError(f"einsum: a '.' in output {output!r} is not part of an ellipsis")
+        if nell and not out_dots:
+            raise ValueError(
+                f"einsum: the output {output!r} has no '...' for the {nell} axes under '...'"
+            )
+        output = out_head + "".join(ell) + out_tail
+    else:
+        # numpy's implicit output, counted on the given subscripts: the axes under ``...``,
+        # then the letters that appear once, sorted (so "ii" is a trace)
+        counts = {}
+        for c in inputs.replace("...", "").replace(",", ""):
+            counts[c] = counts.get(c, 0) + 1
+        output = "".join(ell) + "".join(sorted(c for c, k in counts.items() if k == 1))
+    new_terms, preps = [], []
+    for (head, tail, n), shape in zip(parts, shapes, strict=True):
+        letters, squeeze, kept = [*head], [], [*shape[: len(head)]]
+        for i, c in enumerate(ell[nell - n :]):
+            if shape[len(head) + i] == 1 and sizes[c] > 1:
+                squeeze.append(len(head) + i)
+            else:
+                letters.append(c)
+                kept.append(shape[len(head) + i])
+        letters += tail
+        kept += shape[len(shape) - len(tail) :]
+        unique = list(dict.fromkeys(letters))
+        groups = None
+        if len(unique) < len(letters):
+            groups = tuple(tuple(i for i, c in enumerate(letters) if c == u) for u in unique)
+            for u, g in zip(unique, groups, strict=True):
+                if len({kept[i] for i in g}) > 1:
+                    raise DimensionMismatch(
+                        f"einsum: index {u!r} has sizes {[kept[i] for i in g]} in term {term!r}"
+                    )
+        new_terms.append("".join(unique))
+        preps.append(None if not squeeze and groups is None else (tuple(squeeze), groups))
+    return ",".join(new_terms) + "->" + output, tuple(preps)
+
+
+_LETTERS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
+def _prepare_operand(x, squeeze, groups):
+    """``x`` (a Tensor or an ndarray) with the axes ``squeeze`` removed, then, if ``groups``
+    is given, its diagonal: an axis for each group of axes, with the entries whose
+    coordinates agree across each group.
+    """
+    if type(x) is np.ndarray:
+        if squeeze:
+            x = x.squeeze(axis=squeeze)
+        if groups is not None:
+            labels = [0] * x.ndim
+            for k, g in enumerate(groups):
+                for i in g:
+                    labels[i] = k
+            x = np.einsum(x, labels, list(range(len(groups))))
+        return x
+    if squeeze:
+        x = x.squeeze(squeeze)
+    if groups is None:
+        return x
+    # One pass over the entries in their stored order, then a build
+    coords, values = x.to_coo(sort=False)
+    keep = np.ones(values.shape[0], bool)
+    for g in groups:
+        for i in g[1:]:
+            keep &= coords[i] == coords[g[0]]
+    shape = tuple(x.shape[g[0]] for g in groups)
+    return Tensor.from_coo([coords[g[0]][keep] for g in groups], values[keep], x.dtype, shape=shape)
 
 
 def _direct_axes(ta, tb, output):

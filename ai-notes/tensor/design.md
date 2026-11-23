@@ -443,7 +443,15 @@ depends only on the subscripts, the shapes and `optimize`, so it is cached
   contracted, and a pair with no contracted index is an element-wise product with
   broadcasting. The last contraction runs on the target.
 
-Not supported: `...`, and an index repeated within one operand (diagonals).
+numpy's `...` and an index repeated within one operand are rewritten first
+(`_einsum_rewrite`, cached by the subscripts and the shapes), so the plan sees one letter per
+axis and no letter twice in a term. `...` gets letters the subscripts leave unused,
+right-aligned across operands as numpy broadcasts; a size-1 axis under it that meets a
+longer one is squeezed and its letter dropped from that operand, since an operand without a
+letter pairs with every position of it. A repeated index takes the operand's diagonal
+(`_prepare_operand`): one pass over its entries in stored order (`to_coo(sort=False)`) keeps
+those whose coordinates agree, and a build makes the Tensor with one axis per letter. The
+implicit output is counted on the given subscripts, so `"ii"` is a trace.
 
 ## Reshape
 

@@ -40,9 +40,10 @@ later (`verification.md`, "What this does not cover"). What remains:
 
 - `None` (new axis) and boolean indices; Vector or Tensor index arrays (undecided: see
   `decisions.md`).
-- `einsum` with `...` or a repeated index within one operand (diagonals).
 - The aggregators that pick an entry by its position (`agg.argmin`, `agg.first`,
   `agg.first_index`, ...) in `reduce`.
+- `einsum` broadcasts a size-1 axis only under `...`. numpy also broadcasts one that has a
+  letter (`"ij,ij->"` with shapes (2, 3) and (1, 3)); that raises `DimensionMismatch` here.
 - Index-based `select` (`rowindex`, `tril` and the like), which needs logical coordinates.
 - `pad`.
 - binsparse interchange; `graphblas.io` dispatching ndim > 2 to the Tensor methods.
@@ -166,7 +167,7 @@ later (`verification.md`, "What this does not cover"). What remains:
    non-stored modes (not by per-mode copies: `decisions.md`, 25); per-call overhead, in
    einsum and on tiny problems; keeping moved operands on the store; internal waits without
    the row hash (above).
-5. **API:** `pad`, the positional aggregators, index-based `select`, einsum diagonals, a `ttm` method
+5. **API:** `pad`, the positional aggregators, index-based `select`, a `ttm` method
    that keeps the axis in place (a proposal, above), and the open questions (Vector and
    Tensor index arrays, `graphblas.io` dispatch).
 6. **When SuiteSparse 10.5.2 is the oldest supported version:** drop the 10.5.1 reshape
