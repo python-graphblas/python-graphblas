@@ -412,16 +412,27 @@ class Tensor(BaseType):
         """
         if self.ndim == 1 and not isinstance(index, tuple):
             index = (index,)
+        return self[self._element_index(index, "contains")].new()._nvals == 1
+
+    def get(self, *index, default=None):
+        """The value stored at ``index`` as a Python scalar, or ``default`` where none is:
+        ``T.get(i, j, k)`` or ``T.get((i, j, k))``, as ``Matrix.get(row, col)``.
+        """
+        if len(index) == 1 and isinstance(index[0], tuple):
+            index = index[0]
+        return self[self._element_index(index, "get")].new().to_scalar().get(default)
+
+    def _element_index(self, index, name):
         if (
             not isinstance(index, tuple)
             or len(index) != self.ndim
             or not all(isinstance(i, (int, np.integer)) for i in index)
         ):
             raise TypeError(
-                f"Invalid index to Tensor contains: {index!r}. A tuple of {self.ndim} ints is "
+                f"Invalid index to Tensor {name}: {index!r}. A tuple of {self.ndim} ints is "
                 f"expected."
             )
-        return self[index].new()._nvals == 1
+        return index
 
     def __iter__(self):
         """The coordinates of the stored entries, as tuples of ints in C order, as iterating
@@ -1561,7 +1572,7 @@ for _name in (
     # conversions
     "to_dense", "to_matrix", "to_vector", "to_scalar", "to_matrices", "to_pydata_sparse",
     "to_scipy_sparse", "isclose",
-    "__contains__", "__iter__",
+    "__contains__", "__iter__", "get",
     # shape operations
     "permute_dims", "expand_dims", "squeeze", "reshape", "ravel", "flatten", "pad",
     # operations

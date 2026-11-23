@@ -7731,6 +7731,35 @@ def test_contains_and_iter():
         assert [tuple(int(i) for i in c) for c in X * X] == want
 
 
+def test_get():
+    """``T.get(i, j, k)`` (or ``T.get((i, j, k))``) returns the value stored there as a Python
+    scalar, or ``default`` where none is, as ``Matrix.get(row, col)``, ``Vector.get(index)``
+    and ``Scalar.get()`` do; in every layout. A bad index raises TypeError, one out of range
+    IndexError.
+    """
+    rng = np.random.default_rng(610)
+    X, xv, xp = random_tensor((2, 3, 4), rng, density=0.4)
+    for layout in all_layouts(3)[::4]:
+        Y = X.dup(layout=layout)
+        for idx in itertools.product(range(2), range(3), range(4)):
+            want = xv[idx] if xp[idx] else None
+            assert Y.get(*idx) == want
+            assert Y.get(idx, default=-1) == (want if xp[idx] else -1)
+    with pytest.raises(TypeError, match="3 ints"):
+        X.get(0, 1)
+    with pytest.raises(TypeError, match="3 ints"):
+        X.get(0, slice(None), 1)
+    with pytest.raises(IndexError):
+        X.get(0, 5, 1)
+    v = Tensor.from_coo([[1, 3]], [5.0, 6.0], shape=(5,))
+    assert v.get(1) == v.to_vector().get(1) == 5.0
+    assert v.get(2, default=0.0) == 0.0
+    assert Tensor.from_dense(np.array(2.0)).get() == 2.0
+    assert Tensor(dtypes.FP64, ()).get(default=7) == 7
+    with gb.config.set(autocompute=True):
+        assert (X * 2).get(*np.argwhere(xp)[0]) == 2 * xv[tuple(np.argwhere(xp)[0])]
+
+
 def test_isequal_matrix_vector_scalar():
     """``isequal`` / ``isclose`` compare a Tensor with a Matrix, Vector or Scalar of its shape
     by values; another shape is not equal.
