@@ -425,9 +425,10 @@ def _wrapped(value, dtype):
 # sizes 2**63 + 2**32, 2**64 + 2 and 2**70
 @pytest.mark.parametrize("shape", [(2**31 + 1, 2**32), (239075442, 77158673929), (2**40, 2**30)])
 def test_integer_prod_over_huge_fibers(dtype, shape):
-    """An integer product over 2**63 positions or more is exact. The count of unstored
-    positions does not wrap to a negative exponent, and an even fill gives 0 when the count
-    wraps modulo 2**64 (to 0 for size 2**64 + 2 and two entries).
+    """An integer product over 2**63 positions or more equals the repeated product wrapped to
+    the dtype, as numpy's does. The count of unstored positions does not wrap to a negative
+    exponent, and an even fill gives 0 when the count wraps modulo 2**64 (to 0 for size
+    2**64 + 2 and two entries).
     """
     L = shape[0] * shape[1]
     for fill in [2, 3, -3]:
@@ -473,3 +474,39 @@ def test_float_prod_sign_past_2_53_positions(dtype):
         out = xp.prod(x)  # (3 * 3 * 2 times the fill to the power 3 * L - 3, which is even)
         assert float(out) == 18.0 * even
         assert not np.signbit(float(out))
+
+
+def test_bool_sum_over_fibers_of_2_64_positions():
+    """A sum in bool (a logical or) of True fills is True however many positions there are:
+    the count of unstored positions does not wrap to 0 at 2**64.
+    """
+    x = xp.full((2**32, 2**32), True)
+    assert bool(xp.sum(x, dtype=xp.bool))
+    y = xp.full((3, 2**32, 2**32), True)
+    y[0, 0, 0] = False
+    assert_array_equal(xp.sum(y, axis=(1, 2), dtype=xp.bool), np.array([True, True, True]))
+    z = xp.full((274177, 67280421310721), True)  # (2**64 + 1 positions)
+    z[0, 0] = False  # (2**64 unstored)
+    assert bool(xp.sum(z, dtype=xp.bool))
+    assert not bool(xp.sum(xp.full((2**32, 2**32), False), dtype=xp.bool))
+
+
+@pytest.mark.parametrize("shape", [(2**31 + 1, 2**32), (239075442, 77158673929), (2**40, 2**30)])
+def test_var_and_std_over_huge_fibers(shape):
+    """The namespace's var and std count the unstored positions in float64, so they work over
+    a fiber of 2**63 positions or more.
+    """
+    L = shape[0] * shape[1]
+    x = xp.full(shape, 2.0)
+    x[0, 0] = 5.0
+    expected = 9.0 * (L - 1) / L**2  # (L - 1 values of 2.0 and one of 5.0)
+    assert float(xp.var(x)) == pytest.approx(expected, rel=1e-9)
+    assert float(xp.std(x)) == pytest.approx(expected**0.5, rel=1e-9)
+    assert float(xp.var(x, correction=1)) == pytest.approx(9.0 / L, rel=1e-9)
+    assert float(xp.var(x, correction=0)) == pytest.approx(expected, rel=1e-9)  # (an int)
+    y = xp.full((3, *shape), 2, dtype=xp.int64)
+    y[0, 0, 0] = 5
+    v = xp.var(y, axis=(1, 2)).todense()
+    assert v[0] == pytest.approx(expected, rel=1e-9)
+    assert v[1] == v[2] == 0.0
+    assert float(xp.mean(x)) == pytest.approx(2.0 + 3.0 / L, rel=1e-12)

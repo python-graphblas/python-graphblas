@@ -96,26 +96,25 @@ def _int_power(base, exponent, dtype):
 
 
 def _unstored(L, c, ct):
-    """``L - c``, the counts of unstored positions: uint64 for integer and bool results
-    (integer sums wrap anyway), and float64 otherwise, since a fiber may have 2**63 positions
-    or more.
+    """``L - c``, the counts of unstored positions: uint64 modulo 2**64 for integer results,
+    whose sums and products wrap anyway (``_int_powers``), and float64 otherwise, since a fiber
+    may have 2**63 positions or more. Bool results compare ``c < L`` instead: a count that
+    wraps to 0 would read as no unstored positions.
     """
-    if ct.kind in "iub":
+    if ct.kind in "iu":
         return np.uint64(L % (1 << 64)) - np.asarray(c).astype(np.uint64)
     return np.float64(L) - c
 
 
 def _scaled(k, fill, ct):
-    """``fill`` added ``k`` times (k >= 0), as repeated additions compute it: wrapping for
-    integers, logical or for bool, and part by part for complex (0 * inf in one part must not
-    make NaN in the other).
+    """``fill`` added ``k`` times (k >= 0) for a numeric ``ct``, as repeated additions compute
+    it: wrapping for integers, and part by part for complex (0 * inf in one part must not make
+    NaN in the other).
     """
     with np.errstate(all="ignore"):
         if ct.kind in "iu":
             f = np.asarray(fill).astype(np.int64 if ct.kind == "i" else np.uint64)
             return (np.asarray(k, dtype=np.uint64) * f.astype(np.uint64)).astype(ct)
-        if ct.kind == "b":
-            return np.logical_and(np.asarray(k) > 0, fill)
         if ct.kind == "c":
             out = np.empty(np.shape(k), ct)
             out.real = k * fill.real
@@ -134,7 +133,9 @@ class _Monoid:
     def repeat(self, fill, L, ct):
         """The monoid over ``L`` copies of ``fill``."""
         if self.name == "sum":
-            k = np.uint64(L % (1 << 64)) if ct.kind in "iub" else np.float64(L)
+            if ct.kind == "b":
+                return fill  # (a logical or, and L > 0 here)
+            k = np.uint64(L % (1 << 64)) if ct.kind in "iu" else np.float64(L)
             return _scaled(k, fill, ct)[()]
         if self.name == "prod":
             with np.errstate(all="ignore"):
@@ -151,6 +152,8 @@ class _Monoid:
         """
         name = self.name
         if name == "sum":
+            if ct.kind == "b":
+                return lambda r, c: np.where(c < L, r | fill, r)
             # (no fill term where every position is stored: 0 * inf would be NaN)
             return lambda r, c: np.where(c < L, r + _scaled(_unstored(L, c, ct), fill, ct), r)
         if name == "prod":
@@ -189,8 +192,9 @@ def _int_powers(base, L, c, dtype):
 def _signed(p, fill, L, c):
     """The powers ``p`` of the float ``fill`` with the sign of the exact ``fill ** (L - c)``.
 
-    ``p`` is computed with ``L - c`` in float64, which holds only even integers from 2**53 on.
-    Past that, a count may have lost its parity, and with it the sign of a negative ``fill``.
+    ``p`` is computed with ``L - c`` in float64, which represents only even integers from
+    2**53 on. Past that, a count may have lost its parity, and with it the sign of a negative
+    ``fill``.
     """
     if L <= 1 << 53 or np.iscomplexobj(p) or not np.signbit(fill):
         return p
@@ -407,7 +411,8 @@ def var(x, /, *, axis=None, correction=0.0, keepdims=False):
     else:
         S2 = Tensor(gb_dtype(real_dt), m.shape)
         C = Tensor(gb_dtype(np.int64), m.shape)
-    k = subtract(L, Array._new(C, 0))
+    # (in float64: a fiber may have 2**63 positions or more, and var is a float)
+    k = subtract(float(L), Array._new(C, 0))
     dev = subtract(Array._new(_utils.empty_0d(rdt), x._fill), m)
     # k unstored positions, each |fill - mean| ** 2 away; _times_count returns 0 for k == 0,
     # where the fill may be inf and 0 * inf would be NaN
