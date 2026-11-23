@@ -14,6 +14,7 @@ The rules for fills, semirings and deferred results are in the Technical Notes p
 """
 
 import collections
+import functools
 import math
 import string
 import weakref
@@ -588,20 +589,37 @@ def _from_sublists(args):
 def _explicit_einsum(subscripts, ops):
     """``(subscripts, operands)`` under numpy's einsum rules, as the Tensor's einsum takes
     them: each term names each axis of its operand once, the sizes of an index agree, and the
-    output is explicit.
-
-    ``...`` becomes letters of its own, aligned from the right. An axis of size 1 whose index
-    has another size elsewhere is squeezed out of its operand, and its letter out of the term:
-    an operand without an index is constant along it. An index repeated in one term takes the
-    operand's diagonal over those axes (``_einsum_diagonal``).
+    output is explicit (see ``_einsum_rewrite``).
     """
     from ._manipulation import squeeze
 
+    subscripts, steps = _einsum_rewrite(subscripts, tuple(x.shape for x in ops))
+    if steps:
+        ops = list(ops)
+        for i, term, drop in steps:
+            if term is not None:
+                ops[i] = _einsum_diagonal(term, ops[i])
+            if drop:
+                ops[i] = squeeze(ops[i], axis=drop)
+    return subscripts, ops
+
+
+@functools.lru_cache(maxsize=1024)
+def _einsum_rewrite(subscripts, shapes):
+    """``(explicit subscripts, steps)`` for operands of ``shapes``, cached. Each step
+    ``(i, term, drop)`` takes operand i's diagonal for ``term`` (when not None), then squeezes
+    out its axes ``drop``.
+
+    ``...`` becomes letters of its own, aligned from the right. An index repeated in one term
+    takes the operand's diagonal over those axes (``_einsum_diagonal``). An axis of size 1
+    whose index has another size elsewhere is squeezed out of its operand, and its letter out
+    of the term: an operand without an index is constant along it.
+    """
     s = subscripts.replace(" ", "")
     inputs, arrow, output = s.partition("->")
     terms = inputs.split(",")
-    if len(terms) != len(ops):
-        raise ValueError(f"einsum: {len(terms)} terms for {len(ops)} operands")
+    if len(terms) != len(shapes):
+        raise ValueError(f"einsum: {len(terms)} terms for {len(shapes)} operands")
     for t in terms + ([output] if arrow else []):
         rest = t.replace("...", "", 1)
         if any(c not in string.ascii_letters for c in rest):
@@ -610,11 +628,11 @@ def _explicit_einsum(subscripts, ops):
                 "one '...'"
             )
     widths = []
-    for t, x in zip(terms, ops, strict=True):
+    for t, shape in zip(terms, shapes, strict=True):
         named = len(t.replace("...", ""))
-        if (x.ndim < named) if "..." in t else (x.ndim != named):
-            raise ValueError(f"einsum: term {t!r} does not match an operand of shape {x.shape}")
-        widths.append(x.ndim - named)
+        if (len(shape) < named) if "..." in t else (len(shape) != named):
+            raise ValueError(f"einsum: term {t!r} does not match an operand of shape {shape}")
+        widths.append(len(shape) - named)
     fresh = [c for c in string.ascii_letters if c not in s]
     if max(widths) > len(fresh):
         raise ValueError(f"einsum: {subscripts!r} needs more than 52 indices")
@@ -635,36 +653,40 @@ def _explicit_einsum(subscripts, ops):
         raise ValueError(f"einsum: the output {output!r} repeats an index")
     if missing := set(output) - set("".join(terms)):
         raise ValueError(f"einsum: the output index {min(missing)!r} is in no operand")
-    ops = list(ops)
-    for i, (t, x) in enumerate(zip(terms, ops, strict=True)):
+    shapes = list(shapes)
+    diagonal = [None] * len(terms)
+    for i, (t, shape) in enumerate(zip(terms, shapes, strict=True)):
         if len(set(t)) != len(t):
-            terms[i], ops[i] = _einsum_diagonal(t, x)
+            diagonal[i] = t
+            terms[i] = "".join(dict.fromkeys(t))
+            for a, c in enumerate(t):
+                if shape[a] != shape[t.index(c)]:
+                    raise ValueError(
+                        f"einsum: the axes of index {c!r} in {t!r} differ in size "
+                        f"({shape[t.index(c)]} and {shape[a]})"
+                    )
+            shapes[i] = tuple(shape[t.index(c)] for c in terms[i])
     sizes = {}
-    for t, x in zip(terms, ops, strict=True):
-        for c, n in zip(t, x.shape, strict=True):
+    for t, shape in zip(terms, shapes, strict=True):
+        for c, n in zip(t, shape, strict=True):
             if n != 1 and sizes.setdefault(c, n) != n:
                 raise ValueError(f"einsum: index {c!r} has sizes {sizes[c]} and {n}")
-    for i, (t, x) in enumerate(zip(terms, ops, strict=True)):
-        drop = tuple(a for a, c in enumerate(t) if x.shape[a] == 1 and sizes.get(c, 1) != 1)
+    steps = []
+    for i, (t, shape) in enumerate(zip(terms, shapes, strict=True)):
+        drop = tuple(a for a, c in enumerate(t) if shape[a] == 1 and sizes.get(c, 1) != 1)
         if drop:
-            ops[i] = squeeze(x, axis=drop)
             terms[i] = "".join(c for a, c in enumerate(t) if a not in drop)
-    return ",".join(terms) + "->" + output, ops
+        if drop or diagonal[i] is not None:
+            steps.append((i, diagonal[i], drop))
+    return ",".join(terms) + "->" + output, tuple(steps)
 
 
 def _einsum_diagonal(term, x):
-    """``(letters, diagonal)``: ``x`` on the distinct letters of ``term``, in the order they
-    first appear, keeping the entries whose indices agree on the axes of a repeated letter.
-    It costs O(entries of ``x``); the fill stays.
+    """``x`` on the distinct letters of ``term``, in the order they first appear: the entries
+    whose indices agree on the axes of each repeated letter. It costs O(entries of ``x``), and
+    the fill stays.
     """
-    letters = "".join(dict.fromkeys(term))
-    first = [term.index(c) for c in letters]
-    for a, c in enumerate(term):
-        if x.shape[a] != x.shape[term.index(c)]:
-            raise ValueError(
-                f"einsum: the axes of index {c!r} in {term!r} differ in size "
-                f"({x.shape[term.index(c)]} and {x.shape[a]})"
-            )
+    first = [term.index(c) for c in dict.fromkeys(term)]
     shape = tuple(x.shape[a] for a in first)
     T = x._T()
     if T.nvals:
@@ -676,8 +698,8 @@ def _einsum_diagonal(term, x):
             D = Tensor.from_coo(
                 [coords[a][keep] for a in first], values[keep], T.dtype, shape=shape
             )
-            return letters, Array._new(D, x._fill)
-    return letters, Array._new(Tensor(T.dtype, shape), x._fill)
+            return Array._new(D, x._fill)
+    return Array._new(Tensor(T.dtype, shape), x._fill)
 
 
 # (monoid, multiply) pairs where the multiply distributes over the monoid, so that a term's
