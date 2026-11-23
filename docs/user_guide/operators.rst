@@ -322,15 +322,19 @@ Common Aggregators are:
 
 Aggregators are located in the ``graphblas.agg`` namespace.
 
-On integer and bool values, aggregators with a float result, such as ``mean`` and ``stds``,
-compute in that float type, as numpy does, so sums and squares do not wrap. On complex
-values, ``varp``, ``vars``, ``stdp`` and ``stds`` compute ``E[x**2] - E[x]**2`` in complex
-arithmetic, not numpy's real ``E[abs(x - E[x])**2]``: ``varp`` of ``[1+1j, 1-1j]`` is about
--1, where ``np.var`` gives 1.
-
 Calling an aggregator with a collection will perform a reduction to scalar operation.
 Specifying ``rowwise=True`` or ``columnwise=True`` allows performing Matrix to
 Vector reduction rather than a full reduction to scalar.
+
+On integer and bool values, aggregators with a float result, such as ``mean`` and ``stds``,
+compute in that float type, as numpy does, so sums and squares do not wrap. The variances
+use the one-pass formula ``E[x**2] - E[x]**2``, which loses precision when the values are
+large compared with their spread: ``varp`` of the FP64 values ``[1e9 + 1, 1e9 + 2, 1e9 + 3]``
+is 0, where ``np.var`` gives 0.667.
+
+On complex values, ``varp``, ``vars``, ``stdp`` and ``stds`` compute ``E[x**2] - E[x]**2``
+in complex arithmetic. numpy's ``np.var`` computes the real ``E[abs(x - E[x])**2]`` instead,
+so ``varp`` of ``[1+1j, 1-1j]`` is about -1, where ``np.var`` gives 1.
 
 Operator Type Specialization
 ----------------------------

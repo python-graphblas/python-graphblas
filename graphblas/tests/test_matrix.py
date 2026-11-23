@@ -1933,8 +1933,8 @@ def test_reduce_agg_composite_parts_do_not_wrap(dtype):
 
     Each reduction of 40000 entries, rowwise, columnwise, to a Scalar, or of a Vector,
     matches numpy in float64. The test fails if the count or a sum is computed in the
-    input type: in INT8 it wraps at 128, in INT16 at 32768, and in FP32 the variance of
-    equal values rounds to a small negative number, whose square root is NaN.
+    input type: in INT8 it wraps at 128, in INT16 at 32768, and in FP32, with an FP32
+    count, the sample variance of 40000 ones rounds below zero, so its std is NaN.
     """
     n = 40000
     values = np.stack([np.arange(n) % 3, np.ones(n)]).astype(dtypes.lookup_dtype(dtype).np_type)
@@ -1943,18 +1943,19 @@ def test_reduce_agg_composite_parts_do_not_wrap(dtype):
     names = ["mean", "varp", "vars", "stdp", "stds", "root_mean_square", "geometric_mean"]
     if dtype != "BOOL":
         names.append("harmonic_mean")
-    with np.errstate(divide="ignore"):
-        x = values.astype(np.float64)
-        expected = {
-            "mean": x.mean(axis=1),
-            "varp": x.var(axis=1),
-            "vars": x.var(axis=1, ddof=1),
-            "stdp": x.std(axis=1),
-            "stds": x.std(axis=1, ddof=1),
-            "root_mean_square": np.sqrt((x**2).mean(axis=1)),
-            "geometric_mean": np.exp(np.log(x).mean(axis=1)),
-            "harmonic_mean": n / (1 / x).sum(axis=1),
-        }
+    x = values.astype(np.float64)
+    models = {
+        "mean": lambda x, axis: x.mean(axis=axis),
+        "varp": lambda x, axis: x.var(axis=axis),
+        "vars": lambda x, axis: x.var(axis=axis, ddof=1),
+        "stdp": lambda x, axis: x.std(axis=axis),
+        "stds": lambda x, axis: x.std(axis=axis, ddof=1),
+        "root_mean_square": lambda x, axis: np.sqrt((x**2).mean(axis=axis)),
+        "geometric_mean": lambda x, axis: np.exp(np.log(x).mean(axis=axis)),
+        "harmonic_mean": lambda x, axis: (
+            (x.size if axis is None else x.shape[axis]) / (1 / x).sum(axis=axis)
+        ),
+    }
     for name in names:
         aggregator = getattr(agg, name)
         results = [
@@ -1962,11 +1963,12 @@ def test_reduce_agg_composite_parts_do_not_wrap(dtype):
             A.T.reduce_columnwise(aggregator).new().to_dense(),
             [Vector.from_dense(row).reduce(aggregator).new().value for row in values],
         ]
+        with np.errstate(divide="ignore"):
+            expected, whole = models[name](x, 1), models[name](x, None)
         for result in results:
-            np.testing.assert_allclose(result, expected[name], rtol=1e-5, atol=1e-6, err_msg=name)
-        if name == "mean":
-            result = A.reduce_scalar(aggregator).new().value
-            np.testing.assert_allclose(result, x.mean(), rtol=1e-5, err_msg=name)
+            np.testing.assert_allclose(result, expected, rtol=1e-5, atol=1e-6, err_msg=name)
+        result = A.reduce_scalar(aggregator).new().value
+        np.testing.assert_allclose(result, whole, rtol=1e-5, atol=1e-6, err_msg=name)
 
 
 def test_reduce_agg_variance_of_equal_floats_is_not_negative():

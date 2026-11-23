@@ -290,7 +290,7 @@ class TypedAggregator:
             mask = updater.kwargs.get("mask")
             for cur_agg in agg._composite:
                 # Count in INT64, as `agg.count` does, and compute the other parts in the
-                # result type: by the input type, an INT8 count or sum wraps at 128
+                # result type: typed by the input type, an INT8 count or sum would wrap at 128
                 cur_agg = get_typed_op(cur_agg, self.return_type)
                 arg = expr.construct_output(cur_agg.return_type)
                 results.append(cur_agg._new(arg(mask=mask, **opts), expr, in_composite=True))
