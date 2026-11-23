@@ -124,8 +124,9 @@ class Aggregator:
         # under a `max` monoid, or -0.0 under `plus`: a reduce of bitmap data to a Scalar
         # loses both (see the Matrix -> Scalar step there).
         self._vector_apply = vector_apply
-        # A custom function used instead of the semiring for real values, where the semiring
-        # overflows (``agg.logaddexp``); a Tensor reduce still uses the semiring
+        # A function that replaces the semiring path for Matrix, Vector and Scalar results,
+        # where the semiring alone can overflow (``agg.logaddexp``); a Tensor reduce, which
+        # reads ``_semiring``, does not use it
         self._stable = stable
         if types is None:
             if monoid is not None:
@@ -313,7 +314,7 @@ class TypedAggregator:
                 return parent._as_vector()
             return
 
-        if agg._stable is not None and self.type.np_type.kind in "iuf":
+        if agg._stable is not None:
             return agg._stable(self, updater, expr, opts, in_composite=in_composite)
 
         if agg._custom is not None:
@@ -489,10 +490,13 @@ agg.exists = Aggregator(
 def _logaddexp(agg, updater, expr, opts, *, in_composite, fast, exp, log, np_log, low):
     """Reduce with ``fast``, the sum of ``exp(x)`` then its log, and where a result is not
     finite or is below ``low``, reduce again as ``m + log(sum(exp(x - m)))``, with ``m`` the
-    largest value (0 when that is not finite), as numpy's ``logaddexp`` reduces. The sum
-    overflows to infinity past 709 (1023 for ``exp2``), and below -708 (-1022) it loses
-    precision until it rounds to 0.
+    largest value (0 when that is not finite), as ``scipy.special.logsumexp`` computes it, so
+    the results match ``np.logaddexp.reduce``. The sum overflows to infinity past 709 (1023 for
+    ``exp2``), and below -708 (-1022) it loses precision until it rounds to 0. Complex values,
+    which have no largest, keep ``fast``'s result.
     """
+    if agg.type.np_type.kind == "c":
+        return fast[agg.type]._new(updater, expr, in_composite=in_composite)
     dtype = agg.return_type
     result = fast[agg.type]._new(expr.construct_output(dtype)(**opts), expr, in_composite=True)
     # A NaN result comes only from a NaN value, as numpy's would, so it is not checked
