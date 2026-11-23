@@ -717,7 +717,7 @@ the engine functions) are read through the hub as `_t.NAME`, so setting them on
   default-split heuristics (`_rows_ok`, `_data_split_layout`, `_sampled_nonempty_rows`,
   `_settle_split`, `_healthy`); the shared strategy costs (`C_*`); the engine knobs
   (`_TTM_ENGINES`, `_MTTKRP_ENGINES`, `_TTM_UDT_MAX_R`, `*_KERNEL_MIN_NNZ`, `_MAX_LISTED`);
-  the repr; `_check_backend`.
+  the repr; `_check_backend`; `_refuse_positional`.
 - **`tensor_layout.py`**: `Layout`; raveling; by-row Matrix helpers and the Container calls
   (`_Unloaded`, `_VectorArray`, `flip_orientation`, `matrix_from_arrays`, `give_rows`,
   `nonempty_row_ids`); the planner (`plan`, `_neighbors`, the cost constants, `relayout`,
@@ -725,7 +725,7 @@ the engine functions) are read through the hub as `_t.NAME`, so setting them on
   `reshape_owned`; `selector`, `rows_selector`; `embed_block_diagonal`; `gather_operand`;
   the caches.
 - **`tensor_shape.py`**: reshape (`_reshape`, `_reshape_chunks`, `_reshape_layout`,
-  `_reshape_targets`).
+  `_reshape_targets`) and `_pad`.
 - **`tensor_ewise.py`**: `_ewise_expr`; broadcasting (`_bcast_mult`, `_expand`,
   `_check_expansion`, `_squeezed`, `_lift_rank`); the ewise, select and apply recipes.
 - **`tensor_reduce.py`**: `_reduce_expr`, `_reduce_aggregator`, `_reduce_positional`,
