@@ -422,12 +422,23 @@ class Tensor(BaseType):
         return TensorUpdater(self, opts=u.opts, **u.kwargs)
 
     def __contains__(self, index):
-        """Whether an entry is stored at ``index``, a tuple of ``ndim`` ints (or an int for a
-        1-d Tensor), as ``(i, j) in A`` for a Matrix.
+        """Whether an entry is stored at ``index``, a tuple of ``ndim`` ints, as ``(i, j) in A``
+        for a Matrix. A 1-d Tensor takes an int, as a Vector does, or a 1-tuple.
         """
         if self.ndim == 1 and not isinstance(index, tuple):
             index = (index,)
-        return self[self._element_index(index, "contains")].new()._nvals == 1
+        index = self._element_index(index, "contains")
+        shape = self._shape
+        if all(-n <= i < n for i, n in zip(index, shape, strict=True)):
+            # The stored Matrix's (row, col), whose `in` asks GraphBLAS for the one element
+            index = [int(i) % n for i, n in zip(index, shape, strict=True)]
+            row = col = 0
+            for a in self._layout.rows:
+                row = row * shape[a] + index[a]
+            for a in self._layout.cols:
+                col = col * shape[a] + index[a]
+            return (row, col) in self._M
+        return self[index].new()._nvals == 1  # (raises the IndexError)
 
     def get(self, *index, default=None):
         """The value stored at ``index`` as a Python scalar, or ``default`` where none is:
@@ -441,7 +452,7 @@ class Tensor(BaseType):
         if (
             not isinstance(index, tuple)
             or len(index) != self.ndim
-            or not all(isinstance(i, (int, np.integer)) for i in index)
+            or not all(isinstance(i, (int, np.integer)) and not isinstance(i, bool) for i in index)
         ):
             raise TypeError(
                 f"Invalid index to Tensor {name}: {index!r}. A tuple of {self.ndim} ints is "
@@ -451,7 +462,8 @@ class Tensor(BaseType):
 
     def __iter__(self):
         """The coordinates of the stored entries, as tuples of ints in C order, as iterating
-        over a Matrix gives the (row, col) of its entries.
+        over a Matrix gives the (row, col) of its entries. A 1-d Tensor gives 1-tuples, where a
+        Vector gives ints.
         """
         if self.ndim == 0:
             return iter([()] * self._M._nvals)

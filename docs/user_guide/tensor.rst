@@ -288,6 +288,9 @@ entries, in C order:
     >>> [tuple(int(i) for i in c) for c in X]
     [(0, 1, 3), (0, 2, 0), (1, 0, 2)]
 
+A 1-d Tensor takes ``i in T`` (as a Vector does) or ``(i,) in T``, and iterating over it gives
+1-tuples, where a Vector gives ints.
+
 Assignment by index
 -------------------
 

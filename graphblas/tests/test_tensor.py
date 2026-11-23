@@ -7878,11 +7878,37 @@ def test_contains_and_iter():
         (0, slice(None), 1) in X  # noqa: B015
     with pytest.raises(IndexError):
         (0, 5, 1) in X  # noqa: B015
+    with pytest.raises(IndexError):
+        (0, -4, 1) in X  # noqa: B015
+    for idx in [(True, 1, 0), (0, False, 1)]:  # (a bool is not an index, as for Matrix)
+        with pytest.raises(TypeError, match="tuple of 3 ints"):
+            idx in X  # noqa: B015
+        with pytest.raises(TypeError, match="tuple of 3 ints"):
+            X.get(idx)
+    with pytest.raises(TypeError):
+        (True, 1) in X.to_matrix((0,))  # noqa: B015
+    # Negative indices count from the end, in every layout
+    for layout in all_layouts(3)[1::4]:
+        Y = X.dup(layout=layout)
+        for idx in itertools.product(range(2), range(3), range(4)):
+            assert (tuple(i - n for i, n in zip(idx, (2, 3, 4), strict=True)) in Y) == bool(xp[idx])
+    # Huge shapes: the stored Matrix's (row, col) is past int32
+    H = Tensor.from_coo(([2**30 - 1], [2**29 - 2], [1]), [1.0], shape=(2**30, 2**29, 2))
+    for layout in [((0, 1), (2,)), ((2, 1, 0), ()), ((1,), (0, 2))]:
+        Y = H.dup(layout=layout)
+        assert (2**30 - 1, 2**29 - 2, 1) in Y
+        assert (-1, -2, -1) in Y
+        assert (2**30 - 1, 2**29 - 2, 0) not in Y
+        assert (2**30 - 2, 2**29 - 2, 1) not in Y
     v = Tensor.from_coo([[1, 3]], [5.0, 6.0], shape=(5,))
     assert 1 in v
     assert (3,) in v
+    assert np.int64(-2) in v
     assert 2 not in v
     assert [tuple(c) for c in v] == [(1,), (3,)]
+    for idx in [True, (True,), np.True_]:
+        with pytest.raises(TypeError, match="tuple of 1 ints"):
+            idx in v  # noqa: B015
     s = Tensor.from_dense(np.array(2.0))
     assert () in s
     assert list(s) == [()]
