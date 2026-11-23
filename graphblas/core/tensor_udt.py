@@ -21,7 +21,8 @@ It needs the JIT: without it the ops cannot be created (the product would run Su
 generic kernel, about 2x slower than the other engines). So once an engine has chosen to run
 (``jit_ready``), it raises the JIT control from SuiteSparse's default "run" to "on" as UDT
 auto-lift does; an engine that declines a case leaves the control alone (``jit_possible``).
-It is not used under an explicit "off". The type and ops of each R are made once per process.
+It is not used where auto-lift would not raise the control either, such as under an explicit
+"off". The type and ops of each R are made once per process.
 
 A compile can still fail with the control "on" (a compiler that stopped working, a full
 disk, an unwritable cache): SuiteSparse then returns ``GxB_JIT_ERROR`` rather than run the
@@ -70,10 +71,10 @@ def jit_possible():
 
 
 def jit_ready():
-    """Whether a kernel armed now will be JIT-compiled. As for UDT auto-lift
-    (``jit_config._enable_jit_for_udt``), SuiteSparse's default "run" is raised to "on" when
-    a compiler works; an explicit "off", "pause" or "load" is honored. False after a failed
-    compile (``run``).
+    """Whether a kernel armed now will be JIT-compiled. The control is raised exactly as for
+    UDT auto-lift, by the same function (``jit_config._enable_jit_for_udt``, which says which
+    settings it leaves alone): SuiteSparse's default "run" becomes "on" when a compiler
+    works. False after a failed compile (``run``).
     """
     from .ss.jit_config import _enable_jit_for_udt
 
