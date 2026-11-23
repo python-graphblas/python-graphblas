@@ -1460,6 +1460,25 @@ def test_index_helpers_find_a_lazily_registered_op():
             vars(ns).pop("rowlt", None)
 
 
+@pytest.mark.skipif("not supports_udfs")
+def test_index_helpers_build_a_lazy_op_in_their_own_namespace():
+    """``indexunary.row`` builds a lazily registered op from ``indexunary`` itself.
+
+    A Scalar bound has no Python number to pass, so the op gets the Scalar.
+    """
+    A = Matrix.from_coo([0, 1, 2, 3], [0, 0, 0, 0], [1, 1, 1, 1])
+    try:
+        indexunary.register_new("rowlt", lambda x, i, j, t: i == 0, lazy=True)
+        assert "rowlt" in indexunary._delayed
+        result = indexunary.row(A < Scalar.from_value(2.5)).new()
+        assert "rowlt" not in indexunary._delayed
+        assert result.to_coo()[2].tolist() == [True] + [False] * 3
+    finally:
+        for ns in [indexunary, select]:
+            ns._delayed.pop("rowlt", None)
+            vars(ns).pop("rowlt", None)
+
+
 @autocompute
 def test_select_by_a_transposed_comparison():
     """``A.select(A.T == x)`` keeps the entries where ``A.T == x``, as a computed mask does.
