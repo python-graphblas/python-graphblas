@@ -73,12 +73,12 @@ def _resolve_serialized_dtype(data_obj, data_nbytes, obj_kind):
         raise _error_code_lookup[info](f"{obj_kind} deserialize failed to get the name")
     try:
         return _string_to_dtype(ffi.string(dtype_char).decode())
-    except (ValueError, TypeError, SyntaxError):
+    except (ValueError, TypeError, SyntaxError) as exc:
         # serialize stores no name for an anonymous UDT whose dtype string is too long
         raise ValueError(
             f"{obj_kind} deserialize cannot tell the dtype of this user-defined type; "
             "pass it as `dtype=`"
-        ) from None
+        ) from exc
 
 
 def _jit_c_source(name, funcname, jit_c_definition, types=()):
