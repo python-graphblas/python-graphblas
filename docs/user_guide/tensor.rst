@@ -205,8 +205,9 @@ the leading axes as batch axes; ``einsum`` takes numpy's subscripts and any semi
     array([[3., 3.],
            [3., 3.]])
 
-As in numpy, ``...`` stands for the axes the letters leave, and broadcasts; an index repeated
-within one operand takes its diagonal, which costs one pass over that operand's entries:
+As in numpy, ``...`` stands for the axes the letters leave, a size-1 axis broadcasts against
+the same index's axis in another operand, and an index repeated within one operand takes its
+diagonal, which costs one pass over that operand's entries:
 
 .. code-block:: python
 
@@ -393,8 +394,6 @@ Limits
 ------
 
 - No Tensor or Vector as indices.
-- In ``einsum``, only the axes under ``...`` broadcast; axes with letters must have matching
-  sizes, where numpy also broadcasts a size-1 one.
 - For complex values, the variance and standard deviation aggregators are Matrix's, from the
   complex square, not numpy's real variance.
 - No fill value: a missing entry has no value (as in all of python-graphblas).

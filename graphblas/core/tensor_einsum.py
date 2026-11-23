@@ -26,11 +26,10 @@ def einsum(subscripts, *operands, op=semiring.plus_times, optimize="greedy"):
     (``mult(mult(a, b), c)``), and its monoid sums the terms over the contracted indices. A
     result position has an entry when at least one term exists there. Operands may be
     Tensors, Matrices, Vectors or ndarrays. As in numpy, ``...`` stands for the axes the
-    letters leave, which broadcast against each other (a size-1 axis against any size), and
-    an index repeated within one operand takes that operand's diagonal: ``"ii->i"`` is the
-    diagonal and ``"ii"`` the trace. A diagonal costs one pass over the operand's entries.
-    Axes with letters do not broadcast: their sizes must match (numpy also broadcasts a
-    size-1 one).
+    letters leave; an index's axes in different operands broadcast (a size-1 axis against
+    any size), under ``...`` or with a letter; and an index repeated within one operand
+    takes that operand's diagonal: ``"ii->i"`` is the diagonal and ``"ii"`` the trace. A
+    diagonal costs one pass over the operand's entries.
 
     When the multiply distributes over the monoid (``plus_times``, ``min_plus``,
     ``max_plus``, ``lor_land``, ``min_max``, any ``min``, ``max`` or ``any`` with ``first``,
@@ -214,21 +213,29 @@ def _einsum_plan(subscripts, shapes, optimize):
 
 @functools.lru_cache(maxsize=1024)
 def _einsum_rewrite(subscripts, shapes):
-    """Rewrite numpy's ``...`` and repeated indices for operands of ``shapes``, cached.
+    """Rewrite numpy's ``...``, repeated indices and size-1 broadcasting for operands of
+    ``shapes``, cached.
 
     Returns ``(subscripts, preps)``: the subscripts with a letter for each axis, no letter
-    twice in a term and an explicit output, and for each operand None or ``(squeeze,
-    groups)`` for ``_prepare_operand``. None when ``subscripts`` has neither.
+    twice in a term, no size-1 axis against a longer one and an explicit output, and for each
+    operand None or ``(squeeze, groups)`` for ``_prepare_operand``. None when ``subscripts``
+    needs none of that.
 
     ``...`` gets letters the subscripts do not use, right-aligned as numpy broadcasts. A
-    size-1 axis under it, where another operand's axis has another size (0 included), is
-    squeezed and its letter dropped from that operand, which is how einsum broadcasts: the
-    other operands' entries combine with every position of a letter this one lacks.
+    size-1 axis, under ``...`` or with a letter, where another operand's axis of that index
+    has another size (0 included), is squeezed and its letter dropped from that operand,
+    which is how einsum broadcasts: the other operands' entries combine with every position
+    of a letter this one lacks. Within one operand an index does not broadcast: its axes
+    must have one size, as in numpy.
     """
     subscripts = subscripts.replace(" ", "")
     inputs, arrow, output = subscripts.partition("->")
     terms = inputs.split(",")
-    if "." not in subscripts and all(len(set(t)) == len(t) for t in terms):
+    if (
+        "." not in subscripts
+        and all(len(set(t)) == len(t) for t in terms)
+        and not _size_1_broadcasts(terms, shapes)
+    ):
         return None
     if len(terms) != len(shapes):
         raise ValueError(f"einsum: {len(terms)} terms for {len(shapes)} operands")
@@ -273,29 +280,49 @@ def _einsum_rewrite(subscripts, shapes):
         for c in inputs.replace("...", "").replace(",", ""):
             counts[c] = counts.get(c, 0) + 1
         output = "".join(ell) + "".join(sorted(c for c, k in counts.items() if k == 1))
+    # Each operand's letters with the axes and sizes they stand for, "..." expanded
+    ops = []
+    for term, (head, tail, n), shape in zip(terms, parts, shapes, strict=True):
+        letters = [*head, *ell[nell - n :], *tail]
+        for u in set(letters):
+            if len({m for c, m in zip(letters, shape, strict=True) if c == u}) > 1:
+                raise DimensionMismatch(
+                    f"einsum: index {u!r} has sizes "
+                    f"{[m for c, m in zip(letters, shape, strict=True) if c == u]} in term {term!r}"
+                )
+        ops.append(letters)
+    # The size each index broadcasts to: its size in any operand where it is not 1
+    full = {}
+    for letters, shape in zip(ops, shapes, strict=True):
+        for c, m in zip(letters, shape, strict=True):
+            if m != 1:
+                full.setdefault(c, m)
     new_terms, preps = [], []
-    for (head, tail, n), shape in zip(parts, shapes, strict=True):
-        letters, squeeze, kept = [*head], [], [*shape[: len(head)]]
-        for i, c in enumerate(ell[nell - n :]):
-            if shape[len(head) + i] == 1 and sizes[c] != 1:
-                squeeze.append(len(head) + i)
-            else:
-                letters.append(c)
-                kept.append(shape[len(head) + i])
-        letters += tail
-        kept += shape[len(shape) - len(tail) :]
-        unique = list(dict.fromkeys(letters))
+    for letters, shape in zip(ops, shapes, strict=True):
+        squeeze = tuple(
+            i for i, (c, m) in enumerate(zip(letters, shape, strict=True)) if m == 1 and c in full
+        )
+        kept = [c for i, c in enumerate(letters) if i not in squeeze]
+        unique = list(dict.fromkeys(kept))
         groups = None
-        if len(unique) < len(letters):
-            groups = tuple(tuple(i for i, c in enumerate(letters) if c == u) for u in unique)
-            for u, g in zip(unique, groups, strict=True):
-                if len({kept[i] for i in g}) > 1:
-                    raise DimensionMismatch(
-                        f"einsum: index {u!r} has sizes {[kept[i] for i in g]} in term {term!r}"
-                    )
+        if len(unique) < len(kept):
+            groups = tuple(tuple(i for i, c in enumerate(kept) if c == u) for u in unique)
         new_terms.append("".join(unique))
-        preps.append(None if not squeeze and groups is None else (tuple(squeeze), groups))
+        preps.append(None if not squeeze and groups is None else (squeeze, groups))
     return ",".join(new_terms) + "->" + output, tuple(preps)
+
+
+def _size_1_broadcasts(terms, shapes):
+    """Whether an index has size 1 in one operand and another size in another (subscripts
+    with one letter per axis).
+    """
+    sizes = {}
+    for term, shape in zip(terms, shapes, strict=False):
+        if len(term) != len(shape):
+            return False  # (the plan raises)
+        for c, m in zip(term, shape, strict=True):
+            sizes.setdefault(c, set()).add(m)
+    return any(1 in s and len(s) > 1 for s in sizes.values())
 
 
 _LETTERS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"

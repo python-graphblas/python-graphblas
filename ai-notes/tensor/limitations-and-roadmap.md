@@ -44,8 +44,6 @@ later (`verification.md`, "What this does not cover"). What remains:
   `decisions.md`).
 - `agg.argmin`, `agg.argmax`, `agg.first_index` and `agg.last_index` over more than one axis
   (numpy's flat index for `axis=None`), by decision (`decisions.md`, 33).
-- `einsum` broadcasts a size-1 axis only under `...`. numpy also broadcasts one that has a
-  letter (`"ij,ij->"` with shapes (2, 3) and (1, 3)); that raises `DimensionMismatch` here.
 - Complex variances: `agg.varp`, `vars`, `stdp` and `stds` of complex values are Matrix's
   `E[x**2] - E[x]**2` with the complex square (for [1+1j, 1-1j], -1), not numpy's real
   `E[|x - mean|**2]` (1). A known difference, inherited from Matrix's aggregators, to change

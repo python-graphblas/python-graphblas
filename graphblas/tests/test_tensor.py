@@ -3399,6 +3399,62 @@ def test_einsum_ellipsis_and_repeated_indices(sub, shapes):
         check(R, *np_einsum(sub, *models), approx=True)
 
 
+EINSUM_SIZE1_BROADCAST_CASES = [
+    ("ij,ij->", [(2, 3), (1, 3)]),
+    ("ij,ij->ij", [(2, 3), (1, 3)]),
+    ("ij,ij->i", [(2, 3), (1, 3)]),
+    ("ij,jk->ik", [(2, 1), (3, 4)]),  # a contracted index of size 1 on one side
+    ("ij,jk->ik", [(2, 3), (1, 4)]),
+    ("i,i->i", [(1,), (3,)]),
+    ("i,i->", [(1,), (0,)]),  # against size 0: an empty sum
+    ("ii,i->i", [(1, 1), (3,)]),  # a 1 x 1 diagonal broadcasts
+    ("ii,i->i", [(3, 3), (1,)]),
+    ("ij,ij,ij->ij", [(1, 3), (2, 1), (2, 3)]),
+    ("ij,ij->ij", [(1, 1), (2, 3)]),
+    ("ij,j->i", [(2, 1), (3,)]),
+    ("ii,ij->j", [(1, 1), (3, 4)]),
+    ("...i,...i->...i", [(2, 1), (1, 3)]),
+    ("bij,bjk->bik", [(1, 3, 4), (2, 4, 5)]),  # a size-1 batch index
+]
+
+
+@pytest.mark.parametrize(("sub", "shapes"), EINSUM_SIZE1_BROADCAST_CASES)
+def test_einsum_broadcasts_size_1_indices(sub, shapes):
+    """A size-1 axis broadcasts against the same index's axis of any size in another
+    operand, as in numpy, whether it has a letter or is under ``...``; numpy's result on
+    values and presence, in several layouts.
+    """
+    rng = np.random.default_rng(52)
+    for trial in range(2):
+        models = []
+        for k, shape in enumerate(shapes):
+            layouts = all_layouts(len(shape))
+            layout = layouts[len(layouts) // 2] if trial and k == 0 else None
+            models.append(random_tensor(shape, rng, layout=layout, density=0.7))
+        R = gb.core.tensor.einsum(sub, *[m[0] for m in models]).new()
+        check(R, *np_einsum(sub, *models), approx=True)
+
+
+def test_einsum_size_1_broadcast_errors():
+    """Sizes that are neither equal nor 1 raise, and a repeated index within one operand
+    does not broadcast (numpy refuses "ii" on (1, 3) too).
+    """
+    einsum = gb.core.tensor.einsum
+    with pytest.raises(DimensionMismatch, match="sizes"):
+        einsum("ij,ij->", Tensor(float, 2, 3), Tensor(float, 3, 3))
+    with pytest.raises(DimensionMismatch, match="sizes"):
+        einsum("ii->i", Tensor(float, 1, 3))
+    with pytest.raises(DimensionMismatch, match="sizes"):
+        einsum("ii,i->i", Tensor(float, 1, 3), Tensor(float, 3))
+    with pytest.raises(DimensionMismatch, match="'iik'"):  # (the term with the mismatch)
+        einsum("iik,jj->k", Tensor(float, 3, 2, 4), Tensor(float, 2, 2))
+    # A size-1 operand and an ndarray operand that broadcasts
+    a = np.arange(3.0).reshape(1, 3) + 1
+    X, xv, xp = random_tensor((2, 3), np.random.default_rng(53), density=0.7)
+    R = einsum("ij,ij->ij", X, a).new()
+    check(R, *np_einsum("ij,ij->ij", (X, xv, xp), (None, a, np.ones(a.shape, bool))), approx=True)
+
+
 def test_einsum_ellipsis_and_repeated_indices_operands_and_errors():
     """``...`` and a repeated index work with ndarray operands and other semirings, and
     malformed subscripts raise numpy's errors.

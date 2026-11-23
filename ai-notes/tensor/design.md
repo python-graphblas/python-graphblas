@@ -449,13 +449,14 @@ depends only on the subscripts, the shapes and `optimize`, so it is cached
   contracted, and a pair with no contracted index is an element-wise product with
   broadcasting. The last contraction runs on the target.
 
-numpy's `...` and an index repeated within one operand are rewritten first
-(`_einsum_rewrite`, cached by the subscripts and the shapes), so the plan sees one letter per
-axis and no letter twice in a term. `...` gets letters the subscripts leave unused,
-right-aligned across operands as numpy broadcasts; a size-1 axis under it, where another
-operand's axis has another size (0 included), is squeezed and its letter dropped from that
-operand, since the other operands' entries combine with every position of a letter this one
-lacks. A repeated index takes the operand's diagonal
+numpy's `...`, an index repeated within one operand, and size-1 broadcasting are rewritten
+first (`_einsum_rewrite`, cached by the subscripts and the shapes), so the plan sees one
+letter per axis, no letter twice in a term and one size per letter. `...` gets letters the
+subscripts leave unused, right-aligned across operands as numpy broadcasts. A size-1 axis,
+under `...` or with a letter, where another operand's axis of that index has another size
+(0 included), is squeezed and its letter dropped from that operand, since the other
+operands' entries combine with every position of a letter this one lacks. Within one
+operand an index does not broadcast, as in numpy. A repeated index takes the operand's diagonal
 (`_prepare_operand`): one pass over its entries in stored order (`to_coo(sort=False)`) keeps
 those whose coordinates agree, and a build makes the Tensor with one axis per letter. The
 implicit output is counted on the given subscripts, so `"ii"` is a trace.
