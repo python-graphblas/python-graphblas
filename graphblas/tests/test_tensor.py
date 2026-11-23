@@ -3270,6 +3270,65 @@ def test_broadcast_mult_to_no_positions(xshape, yshape):
         assert R.nvals == 0
 
 
+def test_broadcast_mult_outer_product():
+    """``ewise_mult`` of operands that each vary only along axes the other has size 1 on is an
+    outer product of their entries, computed by one kron of the stored Matrices (no operand is
+    replicated): every layout, unit axes, operand order, a non-commutative operator, a monoid,
+    integer and BOOL values and an empty operand give numpy's values and presence. Operands
+    that share an axis still replicate one side.
+    """
+    from graphblas.core import tensor_census as census
+
+    rng = np.random.default_rng(615)
+    cases = [
+        ((5, 1), (1, 7)), ((1, 7), (5, 1)), ((4, 1, 3), (1, 6, 1)), ((1, 1, 3, 1), (2, 5, 1, 1)),
+        ((3, 1, 1), (1, 1, 4)), ((1, 4), (6, 1, 1)), ((2, 1, 3, 1), (1, 4, 1, 2)),
+    ]  # fmt: skip
+    for xshape, yshape in cases:
+        shape = np.broadcast_shapes(xshape, yshape)
+        for dtype, op, model in [
+            (dtypes.FP64, binary.times, np.multiply), (dtypes.FP64, binary.minus, np.subtract),
+            (dtypes.INT64, binary.first, lambda x, y: np.broadcast_arrays(x, y)[0]),
+            (dtypes.INT64, monoid.plus, np.add), (dtypes.BOOL, binary.lxor, np.logical_xor),
+        ]:  # fmt: skip
+            X, xv, xp = random_tensor(xshape, rng, density=0.6, dtype=dtype)
+            Y, yv, yp = random_tensor(yshape, rng, density=0.6, dtype=dtype)
+            want = model(xv, yv)
+            present = xp & yp
+            for lx, ly in [
+                (None, None),
+                *zip(all_layouts(len(xshape))[1::3], all_layouts(len(yshape))[::3], strict=False),
+            ]:
+                A = X if lx is None else X.dup(layout=lx)
+                B = Y if ly is None else Y.dup(layout=ly)
+                census.start()
+                try:
+                    R = A.ewise_mult(B, op).new()
+                    records = census.stop()
+                finally:
+                    census.stop()
+                    census.records.clear()
+                assert any("outer product" in r["choice"] for r in records if r["point"] == "bcast")
+                assert R.shape == shape
+                check(R, want, present)
+    # An empty operand: no entries
+    R = Tensor(dtypes.FP64, (5, 1)).ewise_mult(Tensor.from_dense(np.ones((1, 7)))).new()
+    assert R.shape == (5, 7)
+    assert R.nvals == 0
+    # A shared axis (3): one side is replicated, as before
+    X, xv, xp = random_tensor((4, 3, 1), rng, density=0.6)
+    Y, yv, yp = random_tensor((1, 3, 5), rng, density=0.6)
+    census.start()
+    try:
+        R = X.ewise_mult(Y).new()
+        records = census.stop()
+    finally:
+        census.stop()
+        census.records.clear()
+    assert not any("outer product" in r["choice"] for r in records if r["point"] == "bcast")
+    check(R, xv * yv, xp & yp)
+
+
 def test_broadcast_operands_and_dtypes():
     rng = np.random.default_rng(42)
     X, xv, xp = random_tensor((3, 4, 5), rng, dtype=dtypes.INT64)

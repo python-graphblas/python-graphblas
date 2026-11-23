@@ -209,9 +209,43 @@ def _bcast_recipe(updater, method, a, b, op, untyped_op, extra, shape):
 C_NONEMPTY_COLS = (70.0, 250.0)
 
 
+def _outer_mult(updater, a, b, op, shape):
+    """``a.ewise_mult(b)`` where each operand varies only along axes the other has size 1 on:
+    an outer product, which pairs every stored entry of ``a`` with every one of ``b``. That is
+    one kron of the stored Matrices, ``kron(A, B)[(ra, rb), (ca, cb)] = A[ra, ca] op B[rb, cb]``,
+    in the layout of a's rows then b's, and a's columns then b's: nnz(a) * nnz(b) entries,
+    where replicating ``a`` over b's axes stores at least nnz(b) copies of each of a's (a 1e6 x
+    1 column times a 1 x 1e5 row, 1000 entries each: 1e6 entries, against 1e8 replicated).
+    False, doing nothing, when the operands share an axis or a group would pass 2^60.
+    """
+    ta, out_a = _squeezed(a, shape)
+    tb, out_b = _squeezed(b, shape)
+    unit = {o for o, n in enumerate(shape) if n == 1}
+    if set(out_a) & set(out_b) - unit:
+        return False
+    # (b's unit axes are a's too; their size 1 leaves b's raveled indices as they are)
+    rows = tuple(out_a[x] for x in ta._layout.rows)
+    rows += tuple(out_b[x] for x in tb._layout.rows if out_b[x] not in out_a)
+    cols = tuple(out_a[x] for x in ta._layout.cols)
+    cols += tuple(out_b[x] for x in tb._layout.cols if out_b[x] not in out_a)
+    if sorted(rows + cols) != list(range(len(shape))) or not tl._valid_split(
+        shape, rows + cols, len(rows)
+    ):
+        return False
+    if census.on:
+        census.note("bcast", "both broadcast, no shared axis: outer product (kron)")
+    A, B = ta._M, tb._M
+    K = tl.new_matrix(op.return_type, A._nrows * B._nrows, A._ncols * B._ncols)
+    K << A.kronecker(B, op)
+    _store(updater, K, shape, Layout(rows, cols), fresh=True)
+    return True
+
+
 def _bcast_mult(updater, a, b, op, untyped_op, shape):
     fa = _broadcast_factor(a._shape, shape)
     fb = _broadcast_factor(b._shape, shape)
+    if fa > 1 and fb > 1 and _outer_mult(updater, a, b, op, shape):
+        return
     if fa > 1 and fb > 1:
         # Both broadcast (an outer product, for example): replicate the cheaper one
         if fa * a._M._nvals <= fb * b._M._nvals:
