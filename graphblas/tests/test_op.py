@@ -5160,6 +5160,30 @@ def test_numeric_sequence_literal_with_a_date_or_text_udt():
                     v.ewise_union(v, binary.first, literal, literal)
 
 
+def test_empty_array_literal_with_a_date_or_text_udt():
+    """An empty array, list or tuple literal with a date or bytes UDT raises numpy's error.
+
+    No UDT has an empty layout, so the literal converts into the UDT, and numpy says why it
+    cannot. Typing it as an array UDT of its own shape raises "Unknown dtype" instead.
+    """
+    days = dtypes.register_anonymous(np.dtype("M8[D]"), "_EmptyLitDays")
+    text = dtypes.register_anonymous(np.dtype("S2"), "_EmptyLitBytes")
+    for dtype, value in [(days, np.datetime64("1970-01-02")), (text, b"ab")]:
+        v = Vector(dtype, size=2)
+        v[0] = value
+        s = v[0].new()
+        for literal in [[], (), np.array([]), np.zeros((2, 0))]:
+            exprs = [lambda: s == literal, lambda: s.isequal(literal)]  # noqa: B023
+            if supports_udfs:
+                exprs += [
+                    lambda: v == literal,  # noqa: B023
+                    lambda: v.ewise_union(v, binary.first, literal, literal),  # noqa: B023
+                ]
+            for expr in exprs:
+                with pytest.raises(ValueError, match="could not broadcast input array"):
+                    expr()
+
+
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_typed_op_takes_a_literal_in_its_own_input_type():
     """A literal for a typed op is typed by the op's input type on its side, not by the UDT's.
