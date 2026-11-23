@@ -109,6 +109,17 @@ moves once. ``copy=False`` raises where the data would move, as in the Array API
 and ``flatten()`` are ``reshape(-1)`` and ``reshape(-1, copy=True)``. ``relayout(layout)``
 returns the Tensor stored in a layout of your choice.
 
+``pad(pad_width)`` grows axes as ``numpy.pad`` does, with ``(before, after)`` positions per
+axis. The entries keep their values and the new positions are missing:
+
+.. code-block:: python
+
+    >>> P = X.pad(((0, 0), (1, 0), (0, 2)))
+    >>> P.shape
+    (2, 4, 6)
+    >>> P.to_coo()[0]  # each entry moved by the leading pads: axis 1 by one
+    (array([0, 0, 1]), array([2, 3, 1]), array([3, 0, 2]))
+
 Element-wise operations and broadcasting
 ----------------------------------------
 

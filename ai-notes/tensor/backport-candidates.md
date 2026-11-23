@@ -68,7 +68,7 @@ otherwise. Every entry is a candidate: none is started.
     - Matrix and Vector: `_gbudt_N`, in registration order, so processes overwrite each
       other's cached JIT kernels.
     - Status: candidate, a name from a hash of the dtype.
-13. **numpy-style `reshape`, `ravel` and `flatten`.**
+13. **numpy-style `reshape`, `ravel`, `flatten` and `pad`.**
     - Tensor: `reshape(..., copy=None)`, a view where the layout allows.
     - Matrix and Vector: no such methods (checked), only `M.ss.reshape` and
       `M.ss.flatten`.

@@ -7,6 +7,8 @@ import itertools
 import math
 import operator
 
+import numpy as np
+
 from . import tensor_layout as tl
 from .tensor_layout import Layout
 
@@ -118,6 +120,46 @@ def _reshape(t, shape):
     # (never the shared Matrix in place)
     M = M.ss.reshape(nrows, ncols) if M is t._M else tl.reshape_owned(M, nrows, ncols)
     return Tensor._from_M(M, shape, layout)
+
+
+def _pad(t, pad_width, mode):
+    """``t.pad(pad_width, mode)``: the entries rebuilt in ``t``'s layout of the padded shape,
+    each coordinate moved by its axis's leading pad.
+
+    The move keeps the order of each group's raveled index, so the new keys arrive in storage
+    order and the build skips its sort.
+    """
+    if mode != "constant":
+        raise NotImplementedError(
+            f"pad: only mode='constant', whose new positions are missing; got mode={mode!r}"
+        )
+    widths = np.asarray(pad_width)
+    if widths.dtype.kind not in "iu":
+        raise TypeError(f"pad_width must be of integral type; got {pad_width!r}")
+    try:
+        widths = np.broadcast_to(widths, (t.ndim, 2)).astype(np.int64)
+    except ValueError:
+        raise ValueError(
+            f"pad_width {pad_width!r} does not broadcast to {t.ndim} (before, after) pairs"
+        ) from None
+    if (widths < 0).any():
+        raise ValueError(f"pad_width can't contain negative values; got {pad_width!r}")
+    shape = tuple(int(n + b + a) for n, (b, a) in zip(t._shape, widths, strict=True))
+    layout = tl.as_layout((t._layout.rows, t._layout.cols), shape)
+    if shape == t._shape:
+        return t.dup()
+    M = t._M
+    coords, values = tl.coords_of(M, t._shape, t._layout.state)
+    for a, (b, _) in enumerate(widths):
+        if b:
+            coords[a] = coords[a] + b
+    n = values.shape[0]
+    rows = tl.ravel(coords, shape, layout.rows, n)
+    cols = tl.ravel(coords, shape, layout.cols, n)
+    P = tl.from_coo(
+        rows, cols, values, t.dtype, tl.prod(shape, layout.rows), tl.prod(shape, layout.cols)
+    )
+    return Tensor._from_M(P, shape, layout)
 
 
 # isort: off

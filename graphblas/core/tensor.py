@@ -1055,6 +1055,18 @@ class Tensor(BaseType):
         """
         return self.reshape(-1, copy=True)
 
+    def pad(self, pad_width, mode="constant"):
+        """A copy with each axis grown by ``pad_width`` positions before and after its own, as
+        ``numpy.pad``; the entries keep their values and the new positions are missing.
+
+        ``pad_width`` is numpy's: ``((before_0, after_0), (before_1, after_1), ...)``, one
+        ``(before, after)`` pair for every axis, or one int for both sides of every axis. Only
+        ``mode="constant"`` is supported, and the constant is "missing", since a Tensor has no
+        fill value (pydata/sparse's ``pad`` likewise pads with its fill value only). The copy
+        keeps this Tensor's layout.
+        """
+        return _pad(self, pad_width, mode)
+
     # Element-wise operations
     def ewise_add(self, other, op=monoid.plus, *, allow_expansion=False):
         """Element-wise ``op`` on the union of entries.
@@ -1487,7 +1499,7 @@ for _name in (
     "to_dense", "to_matrix", "to_vector", "to_scalar", "to_matrices", "to_pydata_sparse",
     "to_scipy_sparse", "isclose",
     # shape operations
-    "permute_dims", "expand_dims", "squeeze", "reshape", "ravel", "flatten",
+    "permute_dims", "expand_dims", "squeeze", "reshape", "ravel", "flatten", "pad",
     # operations
     "ewise_add", "ewise_mult", "ewise_union", "apply", "select", "reduce", "reduce_scalar",
     "sum", "prod", "min", "max", "any", "all", "tensordot", "matmul", "mttkrp", "unfold",
@@ -2196,6 +2208,7 @@ def _format_tensor(T, mask=None, max_entries=10):
 # names, and the functions above call theirs at run time. The private names tests and
 # benchmarks use stay reachable here (graphblas.core.tensor._ttm_compacted, ...).
 from .tensor_shape import (  # noqa: E402 (also re-exports)
+    _pad,
     _reshape,
     _reshape_layout,
     _reshape_shape,

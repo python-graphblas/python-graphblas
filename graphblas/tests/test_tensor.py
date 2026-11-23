@@ -6565,6 +6565,62 @@ def test_reshape_errors():
     assert E.reshape(3, 0, copy=False).nvals == 0
 
 
+@pytest.mark.parametrize(
+    "pad_width",
+    [
+        1,
+        (1, 2),
+        ((1, 2), (0, 3), (2, 0)),
+        ((2,), (0,), (1,)),
+        [[0, 1]],
+        0,
+        ((0, 0), (0, 4), (0, 0)),
+    ],
+)
+def test_pad(pad_width):
+    """``pad`` grows each axis by ``pad_width`` positions before and after, as numpy.pad does,
+    with the new positions missing; in every layout, as a new Tensor in its source's layout
+    (the source unchanged).
+    """
+    rng = np.random.default_rng(54)
+    for layout in all_layouts(3)[::3]:
+        X, xv, xp = random_tensor((3, 4, 2), rng, density=0.5, layout=layout)
+        R = X.pad(pad_width)
+        check(R, np.pad(xv, pad_width), np.pad(xp, pad_width))
+        assert R.layout == X.layout
+        check(X, xv, xp)
+    # Other dtypes, iso values, a size-0 axis, and 0-d
+    types = [dtypes.BOOL, dtypes.INT8] + ([dtypes.FC64] if dtypes._supports_complex else [])
+    for dtype in types:
+        X, xv, xp = random_tensor((2, 3), rng, density=0.6, dtype=dtype)
+        check(X.pad(((1, 0), (2, 1))), np.pad(xv, ((1, 0), (2, 1))), np.pad(xp, ((1, 0), (2, 1))))
+    X, xv, xp = random_tensor((3, 4), rng, density=0.5, iso=True)
+    check(X.pad(1), np.pad(xv, 1), np.pad(xp, 1))
+    X, xv, xp = random_tensor((3, 0, 2), rng)
+    check(X.pad(1), np.pad(xv, 1), np.pad(xp, 1))
+    X = Tensor.from_dense(np.array(5.0))
+    assert X.pad(2).shape == ()
+    assert X.pad(2).to_scalar().value == 5.0
+
+
+def test_pad_errors():
+    """``pad`` takes numpy's pad widths and only the constant mode, whose new positions are
+    missing here: negative or non-integer widths, widths that do not broadcast to the axes,
+    another mode and a group past 2^60 positions raise.
+    """
+    X = Tensor.from_dense(np.ones((2, 3)))
+    with pytest.raises(ValueError, match="negative"):
+        X.pad(-1)
+    with pytest.raises(TypeError, match="integ"):
+        X.pad(1.5)
+    with pytest.raises(ValueError, match="broadcast"):
+        X.pad(((1, 2), (3, 4), (5, 6)))
+    with pytest.raises(NotImplementedError, match="constant"):
+        X.pad(1, mode="edge")
+    with pytest.raises(ValueError, match="2\\*\\*60"):
+        Tensor(dtypes.FP64, (2**40, 2**19), layout=((), (0, 1))).pad(((0, 0), (0, 2**20)))
+
+
 def test_user_guide_examples():
     """Every example on the docs' Tensors page (``docs/user_guide/tensor.rst``) runs and
     prints what the page shows.
@@ -6620,6 +6676,7 @@ def test_expression_methods():
         "reshape": ((12, 5), {}),
         "ravel": ((), {}),
         "flatten": ((), {}),
+        "pad": ((((0, 1), (2, 0), (1, 1)),), {}),
         "ewise_add": ((X,), {}),
         "ewise_mult": ((X,), {}),
         "ewise_union": ((X, binary.plus, 0, 0), {}),

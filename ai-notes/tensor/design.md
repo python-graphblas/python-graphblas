@@ -471,6 +471,11 @@ implicit output is counted on the given subscripts, so `"ii"` is a trace.
   (`_reshape_targets`), then a reshape.
 - `copy=False` raises where data would move; `copy=True` always copies.
 - `ravel` is `reshape(-1)` and `flatten` is `reshape(-1, copy=True)`.
+- `pad(pad_width)` (`_pad`) moves each coordinate by its axis's leading pad and rebuilds in the
+  same layout of the padded shape: the move keeps each group's raveled order, so the keys
+  arrive in storage order and the build skips its sort. The new positions are missing, as a
+  Tensor has no fill value (`decisions.md`, 1). A pad that changes no raveled index (after
+  the first axis of a group only) could resize the Matrix instead; not done.
 
 ## Extraction
 
