@@ -2,7 +2,8 @@
 
 What the experimental `gb.Tensor` does not do yet, what has not been tested, and the order in
 which the maintainers plan to work on it. Timings are written "8 / 1" for 8 and 1 threads,
-and the data sets are those named in `design.md`.
+and the data sets are those named in `design.md`. Every timing is from the machine
+`design.md` names (an Apple M5 Pro) and holds only there.
 
 Several findings come from the SAPS pilot (2026-10-28), which ported the HOOI and CP-ALS
 benchmarks of the Sparse Array Programming Suite ([SAPS](https://sparsearray.org/)) to the
@@ -17,8 +18,9 @@ later (`verification.md`, "What this does not cover"). What remains:
 - **Windows, in part.** CI's Windows jobs have run the unit tests and the oracles with
   Numba (2026-11-22), so the Numba kernels' `parallel=True` runs there. Not run:
   - **The array-UDT engine.** SuiteSparse compiles its JIT kernels through cmake on
-    Windows, where python-graphblas leaves the JIT control at "run", so the engine does not
-    run unless the user sets "on", and its tests skip in CI. With "on", whether the
+    Windows, where python-graphblas leaves the JIT control at "run" (a rule from #659, a
+    pull request below this one), so the engine does not run unless the user sets "on",
+    and its tests skip in CI. With "on", whether the
     compiler works there is unknown; if it does not, the engine warns once and turns itself
     off, and the Numba or GraphBLAS engines run: correct, slower.
   - **The kernel cache's file locking.** A rename onto a file another process holds open

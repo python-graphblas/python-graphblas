@@ -22,7 +22,8 @@ boolean array of which positions hold a value. Three things recur throughout:
   `docs/user_guide/tensor.rst` (69 of them).
 
 Numba kernels write arrays that are handed to SuiteSparse unchecked, so the kernel tests
-compile them with Numba bounds checks (the `numba_boundscheck` fixture).
+compile them with Numba bounds checks (the `numba_boundscheck` fixture): an out-of-bounds
+write there corrupts memory without an error.
 
 Run the tests under the configurations they are meant for:
 
@@ -35,7 +36,7 @@ pytest graphblas/tests/test_tensor.py --backend suitesparse-vanilla
 ```
 
 With warm caches each run takes about 35 s on an idle machine. With an empty SuiteSparse
-JIT cache, as in CI, the first took about 7 minutes, most of it compiling.
+JIT cache, as in CI, the first took 7 to 10 minutes, most of it compiling.
 
 **Without Numba.** Block it in the interpreter, so that every `import numba` fails. pydata/sparse
 needs Numba too, so its io tests skip as well (713 passed, 132 skipped):
@@ -204,7 +205,8 @@ downloads from the original sources.
   of 2026-11-22 they ran on Linux x86-64 (10.4 and 10.5), macOS arm64 and x86-64, and
   Windows (10.5.2), and skipped on Linux aarch64, which drew 9.4. On Windows the array-UDT
   engine's tests skip: SuiteSparse compiles through cmake there, and python-graphblas then
-  leaves the JIT control at "run" (`design.md`, "The SuiteSparse JIT"). The slow oracles
+  leaves the JIT control at "run" (a rule from #659, below this pull request; `design.md`,
+  "The SuiteSparse JIT"). The slow oracles
   ran in that run's Linux x86-64 and Windows jobs.
 - **SuiteSparse versions.** Locally, 10.5.1 and 10.3.1; in CI, whichever 10.x versions the
   jobs draw. Versions before 10 are refused by design.

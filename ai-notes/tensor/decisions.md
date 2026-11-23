@@ -5,9 +5,8 @@ says what was decided and why, and some say what would change it. "Maintainers" 
 python-graphblas maintainers. Status: everything here is experimental and may change before
 the API settles. `design.md` describes how the code implements these.
 
-The dated decisions (26 to 34) were made during development by the AI agents that wrote the
-Tensor, on the maintainer's instruction to decide and record a reason rather than wait. Like
-the rest, they are open to review.
+The dated decisions (26 to 34) were made while the Tensor was written, without waiting for
+review. Like the rest, they are open to review.
 
 ## Semantics
 
@@ -25,9 +24,9 @@ the rest, they are open to review.
    should not depend on its rank, which would break generic code.
 3. **`T[...]` is outer (orthogonal) indexing,** as in python-graphblas. Vectorized gathers are
    separate and explicit: `take`, `take_along_axis` and `T.vindex[...]`. _Why:_ one indexing
-   rule in `T[...]`, with no behavior change from Matrix. The Array API asks for vectorized
-   semantics when every key is an integer or an integer array; that belongs to an Array API
-   namespace over the Tensor (#667), not to `T[...]`.
+   rule in `T[...]`, with no behavior change from Matrix. The Array API (since its 2024.12
+   revision) asks for vectorized semantics when every key is an integer or an integer array;
+   that belongs to an Array API namespace over the Tensor (#667), not to `T[...]`.
 4. **Negative indices wrap once,** as in numpy and python-graphblas. `take`,
    `take_along_axis` and `T.vindex(...)` accept `wraparound=False`, which raises IndexError
    on a negative index instead. Out-of-range indices raise; `take` also has numpy's
@@ -83,16 +82,16 @@ the rest, they are open to review.
     tests pass with Numba unavailable (see `verification.md`).
 16. **The SuiteSparse JIT is assumed to be on for speed,** not for correctness. Every path is
     correct with the JIT off. The array-UDT TTM engine needs the JIT. When it runs, it raises
-    `jit_c_control` where python-graphblas's UDT auto-lift does, through the same function:
-    SuiteSparse's default "run" becomes "on", and every other setting, a "run" the user set,
-    and the default where SuiteSparse compiles through cmake (Windows) are left alone. A
-    case it declines leaves the control alone. If a compile fails, it leaves
-    the control at "load", where SuiteSparse puts it after a failed compile, warns once, and
-    turns itself off for the process. _Why not restore:_ it first put back the previous
-    setting, since it had raised it itself. But UDT auto-lift raises "run" to "on" again at
-    the next UDT operation (it leaves only "load", "off" and "pause" alone), which retried
-    the failed compile and raised JitError from an unrelated Matrix operation. Leaving "load"
-    is what auto-lift itself does after a failed compile.
+    `jit_c_control` where python-graphblas's UDT auto-lift does, through the same function
+    (`jit_config._enable_jit_for_udt`): SuiteSparse's default "run" becomes "on", and every
+    other setting and a "run" the user set are left alone. So is the default where
+    SuiteSparse compiles through cmake (Windows); that rule comes from #659, a pull request
+    below this one in the stack. A case it declines leaves the control alone. If a compile
+    fails, it leaves the control at "load", where SuiteSparse puts it after a failed
+    compile, warns once, and turns itself off for the process. _Why "load":_ auto-lift never
+    raises "load", so nothing in python-graphblas retries the failed compile; a control put
+    back to the default "run" would be raised to "on" again by the next UDT operation, which
+    would retry the compile and raise JitError from an unrelated Matrix operation.
 17. **Alternative engines are kept only where measurements justify them,** and every engine
     stays selectable so that tests and benchmarks can force each one. A census of every
     decision point, over the test suite, benchmark rows and real workloads, decides what
@@ -255,19 +254,19 @@ the rest, they are open to review.
     for `argmin(axis=None)`:_ it is an index into a dense array that a sparse Tensor does
     not have, Matrix refuses it, and `T.ravel().reduce(agg.argmin)` gives it. Decided
     2026-11-22. _Revisit_ if a user needs an index over several axes.
-34. **`unfold` takes `traversal_order=`, not `order=`.** Its "C" or "F" is the order in
-    which the columns traverse the other axes, numpy's `reshape(order=)` sense. In
-    python-graphblas `order=` names a Matrix's storage orientation, "rowwise" or
-    "columnwise", with "C" and "F" accepted as aliases (`Matrix.from_dicts`, `to_dicts`;
-    the matrix-orientation work, #495, adds it to `Matrix()`, `dup`, `from_coo`,
-    `from_dense` and other methods that make a Matrix). `unfold` returns a Matrix, so
-    `unfold(order="F")` would read as a columnwise result. _Roads not taken:_ `order=`, for that clash; `index_order=`, numpy's own
-    documentation term, but in a sparse library it suggests the order of stored indices;
-    `ravel_order=`, the Tensor's word for how a group's axes combine, a close second;
+34. **`unfold` takes `traversal_order=`, not `order=`.** Its "C" or "F" is the order in which
+    the columns traverse the other axes, numpy's `reshape(order=)` sense. In python-graphblas
+    `order=` names a Matrix's storage orientation, "rowwise" or "columnwise", with "C" and "F"
+    accepted as aliases (`Matrix.from_dicts`, `to_dicts`, `M.ss.reshape`, `M.ss.flatten`; the
+    matrix-orientation work, #495, adds it to `Matrix()`, `dup`, `from_coo`, `from_dense` and
+    other methods that make a Matrix). `unfold` returns a Matrix, so `unfold(order="F")` would
+    read as a columnwise result. _Roads not taken:_ `order=`, for that clash; `index_order=`,
+    numpy's own documentation term, but in a sparse library it suggests the order of stored
+    indices; `ravel_order=`, the Tensor's word for how a group's axes combine, a close second;
     `convention="tensorly"` or `"kolda"`, which names a source rather than the effect.
-    TensorLy's `unfold(tensor, mode)` has no such keyword (C order only), and pydata/sparse
-    has no `unfold`. Decided 2026-11-22: the maintainer kept `order=` for #495 and
-    suggested `traversal_order`.
+    TensorLy's `unfold(tensor, mode)` has no such keyword (C order only), and pydata/sparse has
+    no `unfold`. Decided 2026-11-22: the maintainer kept `order=` for #495 and suggested
+    `traversal_order`.
 
 ## Deferred, on purpose
 

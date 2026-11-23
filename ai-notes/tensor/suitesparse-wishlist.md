@@ -45,22 +45,22 @@ relayout planner").
 
 ## Summary
 
-| #   | item                                                                                                 | GxB or GrB          | exists today                                                             | expected gain                                                                      | effort |
-| --- | ---------------------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- | ------ |
-| P1  | **Axis-map reindex**: relayout, reshape, reduce dropped axes, embed or select diagonals, in one call | GxB                 | pieces: reshape (below 2^60 total), transpose, `P @ M`, selectors, build | 1-3x on uniform 3-d relayouts, 2-4x where the Tensor rebuilds; no 2^60 total limit | L      |
-| P2  | **Radix sort in the builder** (`GrB_Matrix_build`, `GrB_wait`, the builder-based transpose)          | GxB (internal)      | a parallel merge sort; sorted input skips it                             | unsorted builds are 9x (4 threads) to 21x (1 thread) slower than presorted ones    | M      |
-| P3  | **Transpose and column reductions into many rows** at 4-8 threads (a performance bug; an MRE exists) | GxB (internal)      | an atomic method chosen by a table tuned on a 4-core machine             | 2-7x at 8 threads; a two-pass radix bucket 2-3x more [inferred]                    | M      |
-| P4  | **Factory kernels for `ANY_FIRST` / `ANY_SECOND`**, off since v10.0 (a regression; an MRE exists)    | GxB (internal)      | `MIN_SECOND` / `MAX_SECOND` are factory kernels and keep iso values      | 2.8x on a permutation product without the JIT                                      | S      |
-| P5  | **`GxB_Matrix_reshape` past 2^60 total size**                                                        | GxB                 | refused with `GrB_OUT_OF_MEMORY`                                         | a split move at reshape speed instead of a rebuild (about 0.5 vs 6.5 ns per entry) | S      |
-| P6  | **Broadcast element-wise**: `A .* v` along rows or columns, and a gathered `v(g(i,j))`               | GrB (spec #72, #24) | `GrB_Matrix_diag` plus `GrB_mxm`, fast only for a full diagonal          | 7x for a sparse `v`; parity with torch where the Tensor is at 0.13-0.54x           | M      |
-| P7  | **Relabel by vector maps** with a dup operator: permute, contract, filter and renumber               | GxB; spec later     | one-to-one maps (`GrB_extract`, `GrB_assign`); many-to-one as `S A S'`   | 2-4x on graph contraction [inferred]                                               | M      |
-| P8  | **Zero-copy load and unload in the C API spec** (the Container)                                      | GrB (spec #31)      | the GxB Container, O(1); the spec's import and export copy               | O(1) instead of O(nnz) copies, in every binding                                    | M      |
-| P9  | **Array-valued entries**: works today; small follow-ups                                              | GxB                 | a fixed-size array UDT with JIT C definitions                            | the Tensor's fastest TTM without Numba already uses it                             | S      |
-| P10 | **No n-d object in the spec yet**                                                                    | GrB                 |                                                                          |                                                                                    |        |
+| #   | item                                                                                                       | GxB or GrB          | exists today                                                             | expected gain                                                                      | effort |
+| --- | ---------------------------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- | ------ |
+| P1  | **Axis-map reindex**: relayout, reshape, reduce dropped axes, embed or select diagonals, in one call       | GxB                 | pieces: reshape (below 2^60 total), transpose, `P @ M`, selectors, build | 1-3x on uniform 3-d relayouts, 2-4x where the Tensor rebuilds; no 2^60 total limit | L      |
+| P2  | **Radix sort in the builder** (`GrB_Matrix_build`, `GrB_wait`, the builder-based transpose)                | GxB (internal)      | a parallel merge sort; sorted input skips it                             | unsorted builds are 9x (4 threads) to 21x (1 thread) slower than presorted ones    | M      |
+| P3  | **Transpose and column reductions into many rows** at 4-8 threads (a performance bug; a reproducer exists) | GxB (internal)      | an atomic method chosen by a table tuned on a 4-core machine             | 2-7x at 8 threads; a two-pass radix bucket 2-3x more [inferred]                    | M      |
+| P4  | **Factory kernels for `ANY_FIRST` / `ANY_SECOND`**, off since v10.0 (a regression; a reproducer exists)    | GxB (internal)      | `MIN_SECOND` / `MAX_SECOND` are factory kernels and keep iso values      | 2.8x on a permutation product without the JIT                                      | S      |
+| P5  | **`GxB_Matrix_reshape` past 2^60 total size**                                                              | GxB                 | refused with `GrB_OUT_OF_MEMORY`                                         | a split move at reshape speed instead of a rebuild (about 0.5 vs 6.5 ns per entry) | S      |
+| P6  | **Broadcast element-wise**: `A .* v` along rows or columns, and a gathered `v(g(i,j))`                     | GrB (spec #72, #24) | `GrB_Matrix_diag` plus `GrB_mxm`, fast only for a full diagonal          | 7x for a sparse `v`; parity with torch where the Tensor is at 0.13-0.54x           | M      |
+| P7  | **Relabel by vector maps** with a dup operator: permute, contract, filter and renumber                     | GxB; spec later     | one-to-one maps (`GrB_extract`, `GrB_assign`); many-to-one as `S A S'`   | 2-4x on graph contraction [inferred]                                               | M      |
+| P8  | **Zero-copy load and unload in the C API spec** (the Container)                                            | GrB (spec #31)      | the GxB Container, O(1); the spec's import and export copy               | O(1) instead of O(nnz) copies, in every binding                                    | M      |
+| P9  | **Array-valued entries**: works today; small follow-ups                                                    | GxB                 | a fixed-size array UDT with JIT C definitions                            | the Tensor's fastest TTM without Numba already uses it                             | S      |
+| P10 | **No n-d object in the spec yet**                                                                          | GrB                 |                                                                          |                                                                                    |        |
 
 P1, P2, P3 and P7 can share one new internal kernel, described next. P3 and P4 are performance
-bugs or regressions in released versions, each with a minimal reproducer (an MRE) that the
-maintainers can provide.
+bugs or regressions in released versions, each with a minimal C reproducer that the
+python-graphblas maintainers keep outside this repository and can provide.
 
 ## A shared kernel: the stable digit pass
 
@@ -357,7 +357,7 @@ A materialized transpose, or a column sum, into 3e5 or more output rows is 2-7x 
 
 A diagnostic build of SuiteSparse that forces the non-atomic method is 3-7x faster at 8 threads
 on the slow cases, and the Tensor's radix chain (above) beats a direct transpose 3-5x at 8
-threads [measured]. A C reproducer (MRE) exists. The Tensor runs wide transposes and column
+threads [measured]. A reproducer exists (Summary). The Tensor runs wide transposes and column
 reductions at 2 threads, which pick the non-atomic method (`design.md`, "Fitted constants").
 
 ### Mechanism [source]
@@ -399,7 +399,7 @@ for the re-tune alone, once x86 numbers exist).
 ### Why
 
 Without the JIT (or at `"run"` before a kernel is compiled), `ANY_FIRST` and `ANY_SECOND`
-semirings run SuiteSparse's generic kernel. A C reproducer (MRE) exists. For `C = P*M`, P a
+semirings run SuiteSparse's generic kernel. A reproducer exists (Summary). For `C = P*M`, P a
 1e6 x 1e6 permutation and M 1e6 x 1000 FP64 with 10 entries per row, JIT off, 4 threads, on
 10.5.1 (10.3.1 is within 1%) [measured]:
 
@@ -442,11 +442,11 @@ Every permutation or selection product (relabeling vertices, extracting rows as 
 ANY is the natural monoid and libraries reach for it first; the comment in `GB_control.h` notes
 these semirings serve `GrB_reduce` to a vector too. Breadth-first search's `ANY_SECONDI` is
 positional and still has its kernels. The Tensor uses `min_second` for integer values, but
-`any_second` for float and complex ones, which must come back bit for bit: `MIN_SECOND` turns
-a NaN into +inf when the output column is full (`decisions.md`, 29). So without the JIT its
-float permutations run the generic kernel, up to 2x slower for FP64 on 10.5.1
-(`tensor_layout._perm_semiring`). conda-forge's 10.5.2 build adds the real types' `ANY_SECOND`
-kernels back; complex has none in any build. Gain 2.8x on the case above; effort S.
+`any_second` for float and complex ones, which must come back bit for bit: `MIN_SECOND` turns a NaN
+into +inf when the output column is full (`decisions.md`, 29). So without the JIT its float
+permutations run the generic kernel: 2.8x slower for FP64 in the case above, and 2x for 1e7 entries
+in 1e6 sparse rows (`tensor_layout._perm_semiring`). conda-forge's 10.5.2 build adds the real types'
+`ANY_SECOND` kernels back; complex has none in any build. Gain 2.8x on the case above; effort S.
 
 ## P5. `GxB_Matrix_reshape` past 2^60 total size (GxB)
 
@@ -713,7 +713,7 @@ Each of these was an ask until a combination of existing calls turned out to do 
    INT32, INT64, UINT32, UINT64, FP32 and FP64, and it keeps an iso operand iso; UINT32
    `plus_second` is generic (2.26 against 1.02 ms on 1e6 entries at 4 threads). BOOL has no
    factory SECOND semiring, but has `lor_land`, which gives the same where the permutation or
-   selector holds True. The Tensor uses both, `min_second` for integers only: for floats a
+   selector stores True. The Tensor uses both, `min_second` for integers only: for floats a
    full output column turns NaN into +inf (P4; `design.md`, "States and edges").
 2. **A column permutation through the Container** [measured]. Unload, gather the column
    indices through the map with `GxB_Vector_extract_Vector` (`GraphBLAS.h:5457`), set
@@ -748,7 +748,8 @@ Each of these was an ask until a combination of existing calls turned out to do 
   SuiteSparse issue 462) is fixed in 10.5.2: see `GB_reshape.c:126-127` and the width check at
   its line 258 [source]. The Tensor's workaround, `tensor_layout.reshape_owned`, copies only
   before 10.5.2 and is marked `TODO(SuiteSparse 10.5.2)` (`design.md`, "Executing a plan").
-- **Wrong values the Tensor works around**, each with a reproducer and not filed: a full
+- **Wrong values the Tensor works around**, each with a C reproducer kept with the others
+  (above) and not filed: a full
   output column of a saxpy product starts from the monoid's identity, so `MIN_SECOND` gives
   +inf for a NaN and `PLUS_SECOND` +0.0 for -0.0 (`decisions.md`, 29); a bitmap
   `GrB_reduce` to a scalar does the same (30); and the dot kernels fold `PLUS` from 0, which
@@ -782,5 +783,5 @@ For SuiteSparse:
 For the python-graphblas maintainers:
 
 6. Wrap the Container as a supported `ss` API (P8)?
-7. Which of these to raise first, and in what form: issues, MREs, or a branch SuiteSparse can
+7. Which of these to raise first, and in what form: issues, reproducers, or a branch SuiteSparse can
    run?

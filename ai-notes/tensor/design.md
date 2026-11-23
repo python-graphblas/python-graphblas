@@ -153,7 +153,7 @@ reshape: such rows are hypersparse with no hash of their row ids yet, so a follo
   `P` (`perm_rows`). Its semiring (`_perm_semiring`) must return each value bit for bit:
   `any_second` for floats and complex, which keeps NaN and -0.0 (`decisions.md`, 29);
   `min_second` for integers, a factory kernel that keeps an iso `M` iso; and `lor_land` for
-  BOOL, as `P` holds True.
+  BOOL, as `P` stores True.
 - **`PERM_C`** applies any permutation of the column axes: the column indices are rewritten
   in the Container through a cached map (`perm_cols`), and the rows are marked jumbled, so
   SuiteSparse sorts each only when something needs it. Values are untouched, so it takes any
@@ -663,8 +663,9 @@ Every path must stay correct with it off.
   complex permutations take `any_second`, which keeps NaN and -0.0 (`decisions.md`, 29), and
   pay for it where the JIT cannot compile: SuiteSparse 10's factory has no `ANY_SECOND`
   kernels for the real types (conda-forge's 10.5.2 build adds them back) and none for
-  complex, so SuiteSparse runs its generic kernel there (up to 2x slower for FP64 on 10.5.1;
-  `_perm_semiring` has the measurements).
+  complex, so SuiteSparse runs its generic kernel there: on 10.5.1, FP64 permutations were
+  2x slower for 1e7 entries in 1e6 sparse rows (`_perm_semiring`) and 2.8x for 10 entries
+  per row (`suitesparse-wishlist.md`, P4).
 - **The array-UDT engine** (`tensor_udt.py`) needs the JIT:
   - It makes its own type per R, with a fixed C name (`_gbtensor_fp64x16`), so every process
     finds compiled kernels again in the JIT cache. An anonymous UDT gets a per-process
@@ -674,14 +675,16 @@ Every path must stay correct with it off.
   - It raises `jit_c_control` exactly where UDT auto-lift does, through the same function
     (`jit_ready` calls `jit_config._enable_jit_for_udt`): SuiteSparse's default `"run"`
     becomes `"on"` when a compiler works, and `"off"`, `"pause"`, `"load"`, a `"run"` the
-    user set, and the default on builds that compile through cmake (Windows) are left alone.
+    user set, and the default on builds that compile through cmake (Windows; a rule from
+    #659, a pull request below this one) are left alone.
     It raises it only once it has decided to run: before that, `jit_possible` answers with
     no side effect, so a TTM it leaves to Numba leaves the control at `"run"`.
 - **A failed compile** returns `GxB_JIT_ERROR`, and SuiteSparse drops the control to
-  `"load"`. `tensor_udt.run` catches that: it leaves the control at `"load"`, as UDT
-  auto-lift does after a failed compile (putting back `"run"` made auto-lift raise it to
-  `"on"` at the next UDT operation, which retried the compile and raised), warns once
-  (`NoJITWarning`), and turns the engine off for the process. The next engine then runs.
+  `"load"`. `tensor_udt.run` catches that: it leaves the control at `"load"`, which
+  auto-lift never raises, so nothing retries the failed compile (a control put back to the
+  default `"run"` would be raised to `"on"` at the next UDT operation, which would retry the
+  compile and raise). It warns once (`NoJITWarning`) and turns the engine off for the
+  process. The next engine then runs.
 - The JIT C definitions of lifted operators between a scalar and an array or record UDT
   come from core (`operator/udt_codegen.py`, #652), where Matrix and Vector use them too.
 

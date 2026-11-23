@@ -52,8 +52,8 @@ otherwise. Every entry is a candidate: none is started.
    - Status: candidate, if other generated code appears.
 10. **Not retrying after a failed compile.**
     - Tensor: the array-UDT engine leaves SuiteSparse's `"load"`, warns once, and turns
-      itself off. (It used to restore the setting; with `"run"` back, auto-lift raised it to
-      `"on"` again and the next UDT operation retried the compile and raised.)
+      itself off. A control put back to the default `"run"` would be raised to `"on"` by
+      the next UDT operation, which would retry the compile and raise.
     - UDT auto-lift leaves `"load"` in place after a failure too.
     - Status: now the same policy in both; a warning from auto-lift as well is a
       candidate.
@@ -70,7 +70,8 @@ otherwise. Every entry is a candidate: none is started.
     - Status: candidate, a name from a hash of the dtype.
 13. **numpy-style `reshape`, `ravel` and `flatten`.**
     - Tensor: `reshape(..., copy=None)`, a view where the layout allows.
-    - Matrix and Vector: no such methods (checked), only `M.ss.reshape`.
+    - Matrix and Vector: no such methods (checked), only `M.ss.reshape` and
+      `M.ss.flatten`.
     - Status: candidate.
 14. **Doctests of the user-guide page.**
     - Tensor: `test_user_guide_examples` runs every example of `docs/user_guide/tensor.rst`.
