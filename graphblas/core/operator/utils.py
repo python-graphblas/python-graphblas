@@ -394,9 +394,7 @@ def _index_bound(literal, thunk, name):
     whole number beyond the INT64 range, which contains every index, is clamped to it.
     NaN compares False with every index, so it selects none.
 
-    An empty Scalar is passed to the op unchanged, which raises EmptyObject. So is a
-    thunk that is not a Scalar (from ``A.apply(binary.le, left=3)``), which raises the
-    op's TypeError.
+    An empty Scalar is passed to the op unchanged, which raises EmptyObject.
     """
     shift = name in {"lt", "ge"}
     if shift:
@@ -408,7 +406,8 @@ def _index_bound(literal, thunk, name):
         bound = literal
     elif getattr(thunk, "_is_scalar", False):
         bound = thunk.value
-    else:
+    else:  # pragma: no cover (defensive)
+        # _check_index_expr lets through only a comparison with a scalar on its right
         return thunk, name
     if not isinstance(bound, numbers.Real):
         return thunk, name
