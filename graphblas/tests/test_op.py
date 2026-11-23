@@ -1329,6 +1329,31 @@ def test_lazy_op_under_ss_and_nested_names():
     assert isinstance(select.misc.lazy_sel_nested, SelectOp)
 
 
+@pytest.mark.skipif("not supports_udfs or not suitesparse")
+def test_register_under_ss_before_the_ss_module_is_used():
+    """An op registered under ``ss.`` before its namespace's ``ss`` module is first used goes
+    into that module. Regression: a nested path named ``ss`` took the module's place, and
+    importing the module later put it back without the op.
+    """
+    import importlib
+
+    ss = importlib.import_module("graphblas.monoid.ss")
+    plus = BinaryOp.register_anonymous(lambda x, y: x + y)  # pragma: no branch (numba)
+    vars(monoid).pop("ss", None)  # (as before the first use of ``monoid.ss``)
+    try:
+        Monoid.register_new("ss.before_ss_used", plus, 0)
+        Monoid.register_new("ss.before_ss_used_lazy", plus, 0, lazy=True)
+        assert vars(monoid)["ss"] is ss
+        assert isinstance(ss.before_ss_used, Monoid)
+        assert isinstance(ss.before_ss_used_lazy, Monoid)
+    finally:
+        vars(monoid)["ss"] = ss
+        for module in [ss, op.ss]:
+            for name in ["before_ss_used", "before_ss_used_lazy"]:
+                vars(module).pop(name, None)
+                module._delayed.pop(name, None)
+
+
 def test_lazy_op_first_used_by_threads_at_once():
     """Threads that first get a lazily registered op at once all get it, built once.
 
