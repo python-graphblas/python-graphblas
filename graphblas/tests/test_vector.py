@@ -2,11 +2,13 @@ import cmath
 import inspect
 import itertools
 import math
+import os
 import pickle
 import sys
 import types
 import warnings
 import weakref
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -147,6 +149,65 @@ def test_from_coo_numpy_scalars_keep_dtype(np_type):
     expected = dtypes.lookup_dtype(np_type)
     assert Vector.from_coo([0, 1], [np_type(1), np_type(2)]).dtype == expected
     assert Vector.from_coo([0, 1], np.array([1, 2], np_type)).dtype == expected
+
+
+@pytest.mark.skipif("not supports_udfs and not suitesparse")  # (a text UDT's dup_op)
+def test_durations_into_short_text():
+    """An array of durations converts into a text UDT too short for it by being cut short, as
+    a number is, for values, an element and a literal.
+    """
+    text = dtypes.register_anonymous(np.dtype("U4"), "_ShortTextDurations")
+    data = dtypes.register_anonymous(np.dtype("S4"), "_ShortBytesDurations")
+    durations = np.array([1, 123456], "m8[D]")
+    v = Vector.from_coo([0, 1], durations, dtype=text)
+    assert [v[0].new().value, v[1].new().value] == ["1 da", "1234"]
+    b = Vector.from_coo([0, 1], durations, dtype=data)
+    assert [b[0].new().value, b[1].new().value] == [b"1 da", b"1234"]
+    v[0] = np.array([5], "m8[D]")
+    assert v[0].new().value == "5 da"
+    assert Scalar.from_value(np.array([5], "m8[D]"), text).value == "5 da"
+
+
+_SHORT_TEXT_PROBE = """
+import numpy as np
+from graphblas import Scalar, Vector, binary, dtypes
+text = dtypes.register_anonymous(np.dtype("U4"), "_ShortTextProbe")
+durations = np.array([1, 123456], "m8[D]")
+v = Vector.from_coo([0, 1], durations, dtype=text)
+v[0] = np.array([5], "m8[D]")
+Scalar.from_value(np.array([5], "m8[D]"), text)
+(v == np.array([5], "m8[D]")).new()
+v.ewise_union(v, binary.first, durations[:1], durations[:1]).new()
+print("done")
+"""
+
+
+@pytest.mark.slow
+@pytest.mark.skipif("not supports_udfs")  # (== and ewise_union on a text UDT)
+@pytest.mark.skipif(
+    sys.platform != "darwin" or not Path("/usr/lib/libgmalloc.dylib").exists(),
+    reason="needs macOS guard malloc",
+)
+def test_durations_into_short_text_stay_in_bounds():
+    """The conversions of test_durations_into_short_text write within each string.
+
+    numpy before 2.4 writes past the end of each string when it casts an array of durations
+    into text too short for it (a heap overflow), so python-graphblas makes them text of their
+    own width first. Under guard malloc, an overrun crashes the process.
+    """
+    import subprocess
+
+    env = dict(os.environ, DYLD_INSERT_LIBRARIES="/usr/lib/libgmalloc.dylib", PYTHONMALLOC="malloc")
+    result = subprocess.run(
+        [sys.executable, "-c", _SHORT_TEXT_PROBE],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=600,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert result.stdout.strip().endswith("done")
 
 
 def test_from_coo_scalar():
