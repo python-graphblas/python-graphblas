@@ -411,7 +411,7 @@ class SelectOp(OpBase):
     @classmethod
     def _get_delayed(cls, name):
         imodule, funcname = IndexUnaryOp._remove_nesting(name, strict=False)
-        iop = getattr(imodule, name)
+        iop = getattr(imodule, funcname)
         if not all(x == BOOL for x in iop.types.values()):
             raise ValueError("SelectOp must have BOOL return type")
         module, funcname = cls._remove_nesting(name, strict=False)
