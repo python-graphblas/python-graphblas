@@ -7997,7 +7997,8 @@ def test_get():
     """``T.get(i, j, k)`` (or ``T.get((i, j, k))``) returns the value stored there as a Python
     scalar, or ``default`` where none is, as ``Matrix.get(row, col)``, ``Vector.get(index)``
     and ``Scalar.get()`` do; in every layout. A bad index raises TypeError, one out of range
-    IndexError.
+    IndexError, and one that selects more than one element ValueError, as for Matrix.
+    ``default`` is keyword-only.
     """
     rng = np.random.default_rng(610)
     X, xv, xp = random_tensor((2, 3, 4), rng, density=0.4)
@@ -8009,10 +8010,18 @@ def test_get():
             assert Y.get(idx, default=-1) == (want if xp[idx] else -1)
     with pytest.raises(TypeError, match="3 ints"):
         X.get(0, 1)
-    with pytest.raises(TypeError, match="3 ints"):
-        X.get(0, slice(None), 1)
+    for i in [slice(None), [0, 1], np.array([0, 1])]:
+        with pytest.raises(ValueError, match="Bad index"):
+            X.get(0, i, 1)
+        with pytest.raises(ValueError, match="Bad row, col"):
+            X.to_matrix((0,)).get(0, i)
+    for i in [1.5, None, True]:
+        with pytest.raises(TypeError, match="3 ints"):
+            X.get(0, i, 1)
     with pytest.raises(IndexError):
         X.get(0, 5, 1)
+    with pytest.raises(TypeError, match="3 ints"):
+        X.get(0, 1, 2, -1)  # (default is keyword-only)
     v = Tensor.from_coo([[1, 3]], [5.0, 6.0], shape=(5,))
     assert v.get(1) == v.to_vector().get(1) == 5.0
     assert v.get(2, default=0.0) == 0.0

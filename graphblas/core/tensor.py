@@ -443,9 +443,19 @@ class Tensor(BaseType):
     def get(self, *index, default=None):
         """The value stored at ``index`` as a Python scalar, or ``default`` where none is:
         ``T.get(i, j, k)`` or ``T.get((i, j, k))``, as ``Matrix.get(row, col)``.
+
+        ``default`` is keyword-only (``T.get(i, j, default=0)``), since the index takes every
+        positional argument; ``Matrix.get(row, col, default)`` also takes it positionally. As
+        for Matrix, an index that selects more than one element (a slice, list or array)
+        raises ValueError; extract those with ``T[...]``.
         """
         if len(index) == 1 and isinstance(index[0], tuple):
             index = index[0]
+        if any(isinstance(i, (slice, list)) or np.ndim(i) > 0 for i in index):
+            raise ValueError(
+                "Bad index arguments in Tensor.get(...). The index should select a single "
+                "element, which is returned as a Python scalar; extract more with T[...]."
+            )
         return self[self._element_index(index, "get")].new().to_scalar().get(default)
 
     def _element_index(self, index, name):
