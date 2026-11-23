@@ -6483,6 +6483,17 @@ def test_bool_sequence_literal_with_a_date_or_text_udt():
             if supports_udfs:
                 with pytest.raises(ValueError, match="does not fit"):
                     v.ewise_union(v, binary.first, literal, literal)
+        # An empty one converts, as an empty numeric one does, and numpy says why it cannot
+        for literal in [np.array([], bool), np.zeros((2, 0), bool)]:
+            exprs = [lambda: s == literal, lambda: s.isequal(literal)]  # noqa: B023
+            if supports_udfs:
+                exprs += [
+                    lambda: v == literal,  # noqa: B023
+                    lambda: v.ewise_union(v, binary.first, literal, literal),  # noqa: B023
+                ]
+            for expr in exprs:
+                with pytest.raises(ValueError, match="could not broadcast input array"):
+                    expr()
 
 
 @pytest.mark.skipif("not supports_udfs")
