@@ -62,10 +62,19 @@ def _reduce_aggregator(t, op, axis, keepdims):
     # Type the semiring as Matrix aggregations do, by the values' type and the initial value's,
     # so the result type is the one Matrix returns (INT64 for count and exists). Integer powers
     # of INT64 values stay INT64 (logaddexp2 of -3 is log2(0)).
-    agg[t.dtype]  # (a KeyError for the types Matrix refuses, as sum_of_squares of BOOL)
-    sr = get_typed_op(agg._semiring, t.dtype, agg._initdtype)
-    if agg._applybegin is not None:  # Such as abs, for L1norm without Numba
-        t = t.apply(agg._applybegin).new()
+    typed = agg[t.dtype]  # (a KeyError for the types Matrix refuses, as sum_of_squares of BOOL)
+    # An aggregator with a type of its own (count's INT64) counts in it, so counts of INT8
+    # values do not wrap at 128; a float result of integer values (hypot) computes in that
+    # float type, since the square of a large integer wraps
+    any_dtype = agg._any_dtype
+    if any_dtype is None or any_dtype is True:
+        sr = get_typed_op(agg._semiring, t.dtype, agg._initdtype)
+        if typed.return_type.np_type.kind in "fc" and sr.return_type.np_type.kind in "biu":
+            sr = get_typed_op(agg._semiring, typed.return_type, agg._initdtype)
+    else:
+        sr = get_typed_op(agg._semiring, any_dtype, agg._initdtype)
+    if agg._applybegin is not None:  # Such as abs, for L1norm without Numba, or a function
+        t = agg._applybegin(t).new()
     if agg._switch:
         x = t.apply(sr.binaryop, left=agg._initval).new()
     else:

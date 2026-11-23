@@ -317,19 +317,21 @@ Selectors are 0/1 matrices: kron-structured and shape-only (`tensor_layout.selec
 or built from the nonempty rows of a hypersparse group (`rows_selector`). One mxm with
 `(monoid, second)` or `(monoid, first)` reduces any subset of a group's axes in place, with no
 relayout. UDT values always take the REBUILD path. `reduce` also takes aggregators made of one
-monoid or one semiring (`_reduce_aggregator`), typed as Matrix types them, and composite ones
-(`mean`, `varp`, ...): integer and BOOL values are first copied into the float result type,
-then each part is computed now as its own aggregator, and Matrix's finalize function combines
-them into the expression returned, which stores in the result type Matrix gives
-(`decisions.md`, 32). The aggregators of positions (`_reduce_positional`) start from an INT64
-Tensor of each entry's C-order index over the reduced axes (`_positions`: one pass over the
-stored indices, and a build from keys in storage order). `first_index` is its minimum; `first`
-keeps the entries whose index equals that minimum (`eq` against the broadcast reduction, then a
-value mask) and reduces them with `any`; `argmin` keeps the entries equal to their fiber's
-minimum and takes the least index among them (`decisions.md`, 33). `reduce_scalar` with an
-aggregator other than a monoid's returns its `reduce` over every axis
-(`_reduce_scalar_aggregator_recipe`): the stored Matrix's own `reduce_scalar` would take
-`first` and `last` in storage order, and sum integers in their own type.
+monoid or one semiring (`_reduce_aggregator`), typed as Matrix types them (a semiring
+aggregator with a type of its own, as `count`'s INT64, counts in it, and one with a float
+result of integer values, as `hypot`, computes in that float type), and composite ones (`mean`,
+`varp`, ...): integer and BOOL values are first copied into the float result type, then each
+part is computed now as its own aggregator, and Matrix's finalize function combines them into
+the expression returned, which stores in the result type Matrix gives (`decisions.md`, 32). The
+aggregators of positions (`_reduce_positional`) start from an INT64 Tensor of each entry's
+C-order index over the reduced axes (`_positions`: one pass over the stored indices, and a
+build from keys in storage order). `first_index` is its minimum; `first` keeps the entries
+whose index equals that minimum (`eq` against the broadcast reduction, then a value mask) and
+reduces them with `any`; `argmin` keeps the entries equal to their fiber's minimum and takes
+the least index among them (`decisions.md`, 33). `reduce_scalar` with an aggregator other than
+a monoid's returns its `reduce` over every axis (`_reduce_scalar_aggregator_recipe`): the
+stored Matrix's own `reduce_scalar` would take `first` and `last` in storage order, and sum
+integers in their own type.
 
 ## Contractions and batched products
 

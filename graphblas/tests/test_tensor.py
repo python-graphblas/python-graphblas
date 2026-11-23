@@ -7378,6 +7378,55 @@ def test_reduce_aggregators():
         X.reduce(mine, axis=1)
 
 
+def test_reduce_counting_aggregators_old_and_new():
+    """``reduce`` with ``agg.count_nonzero``, ``agg.count_zero`` and ``agg.L0norm`` returns
+    what Matrix returns with the definitions this python-graphblas has, and with the ones
+    that count in INT64 (an ``applybegin`` function comparing with 0, then ``plus_first``
+    typed by ``any_dtype``) it returns numpy's counts, NaN nonzero and -0.0 zero. ``hypot``
+    of integers squares them in its float result type.
+    """
+    from graphblas import agg, semiring
+    from graphblas.core.operator.agg import Aggregator
+
+    rng = np.random.default_rng(611)
+    for dtype in [dtypes.FP64, dtypes.INT64, dtypes.INT8]:
+        X = random_tensor((3, 4, 5), rng, density=0.6, dtype=dtype)[0]
+        M = X.permute_dims((0, 2, 1)).reshape(15, 4).to_matrix((0,))  # (axis 1 last)
+        for name in ["count_nonzero", "count_zero", "L0norm"]:
+            a = getattr(agg, name)
+            want = M.reduce_rowwise(a).new()
+            _assert_same_entries(X.reduce(a, axis=1).new(), want)
+    new = {
+        "nonzero": Aggregator(
+            "count_nonzero_int64", applybegin=lambda x: binary.ne(x, 0),
+            semiring=semiring.plus_first, semiring2=semiring.plus_first, any_dtype=dtypes.INT64,
+        ),
+        "zero": Aggregator(
+            "count_zero_int64", applybegin=lambda x: binary.eq(x, 0),
+            semiring=semiring.plus_first, semiring2=semiring.plus_first, any_dtype=dtypes.INT64,
+        ),
+    }  # fmt: skip
+    fibers = [
+        np.ones(200, np.int8),  # (counted in INT8, 200 wraps to -56)
+        np.array([0, 2, 0, 3], np.int8),
+        np.array([True, False, True]),
+        np.array([np.nan, -0.0, 0.0, 1.5]),
+        np.array([1j, 0j, 2 + 0j]),
+    ]
+    for v in fibers:
+        T = Tensor.from_dense(v.reshape(1, -1))
+        for kind, a in new.items():
+            got = T.reduce(a, axis=1).new()
+            assert got.dtype == dtypes.INT64
+            want = np.count_nonzero(v) if kind == "nonzero" else v.size - np.count_nonzero(v)
+            assert got.to_dense().tolist() == [want], (kind, v.dtype)
+    # hypot of large integers: their squares wrap in INT64
+    v = np.array([-(2**40), 2**40, 5], np.int64)
+    got = Tensor.from_dense(v.reshape(1, -1)).reduce(agg.hypot, axis=1).new()
+    assert got.dtype == dtypes.FP64
+    np.testing.assert_allclose(got.to_dense(), [np.sqrt(np.sum(v.astype(float) ** 2))])
+
+
 def _assert_same_entries(got, want):
     """``got`` (a Tensor) has the entries of ``want`` (a Vector or Scalar of its size), with
     the same dtype, and NaN where ``want`` has NaN. FP32 values may differ by FP32 rounding
