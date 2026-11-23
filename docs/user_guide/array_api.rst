@@ -17,9 +17,11 @@ need to. The results are numpy's on the same values, with a few exceptions. A co
 skips unstored positions, so ``0 * inf`` there is not NaN. The sign of a zero that the
 result does not store is unspecified, and sums and transcendental functions may round
 differently. An operation past the densify limit (below) raises instead of allocating. And
-as the standard says, ``x[key] = value`` needs a value that broadcasts to the selection's
-shape: numpy also accepts extra leading axes of length 1, such as a value of shape
-``(1, 2, 4)`` for ``x[0:2]`` of a 3 x 4 ``x``, and this namespace raises ``ValueError``.
+for ``x[key] = value``, the standard's `in-place semantics
+<https://data-apis.org/array-api/2025.12/API_specification/broadcasting.html#in-place-semantics>`_
+ask that the value broadcast to the selection's shape. numpy also accepts extra leading axes
+of length 1, such as a value of shape ``(1, 2, 4)`` for ``x[0:2]`` of a 3 x 4 ``x``, and this
+namespace raises ``ValueError``.
 
 .. code-block:: python
 
