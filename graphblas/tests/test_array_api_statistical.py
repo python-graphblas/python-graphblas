@@ -412,3 +412,64 @@ def test_reductions_of_fibers_past_2_63_positions():
     z[0, 0, 0] = 3
     assert int(xp.sum(z)) == 3 + (2**63 - 1) - 2**64  # (wraps, as integer sums do)
     assert int(xp.prod(z)) == 3
+
+
+def _wrapped(value, dtype):
+    """The Python int ``value`` wrapped to the integer ``dtype``, as numpy's products wrap."""
+    bits = np.dtype(dtype).itemsize * 8
+    value %= 1 << bits
+    return value - (1 << bits) if np.dtype(dtype).kind == "i" and value >> (bits - 1) else value
+
+
+@pytest.mark.parametrize("dtype", [xp.int64, xp.uint64, xp.int8])
+# sizes 2**63 + 2**32, 2**64 + 2 and 2**70
+@pytest.mark.parametrize("shape", [(2**31 + 1, 2**32), (239075442, 77158673929), (2**40, 2**30)])
+def test_integer_prod_over_huge_fibers(dtype, shape):
+    """An integer product over 2**63 positions or more is exact. The count of unstored
+    positions does not wrap to a negative exponent, and an even fill gives 0 when the count
+    wraps modulo 2**64 (to 0 for size 2**64 + 2 and two entries).
+    """
+    L = shape[0] * shape[1]
+    for fill in [2, 3, -3]:
+        if fill < 0 and dtype == xp.uint64:
+            continue
+        x = xp.full(shape, fill, dtype=dtype)
+        x[0, 0] = 5
+        x[0, 1] = 7
+        out = xp.prod(x, dtype=dtype)
+        assert int(out) == _wrapped(35 * pow(fill, L - 2, 1 << 64), dtype)
+        # by rows: row 0 has 2 entries, the others none
+        rows = xp.prod(x[:3], axis=1, dtype=dtype)
+        expected = [
+            _wrapped(35 * pow(fill, shape[1] - 2, 1 << 64), dtype),
+            _wrapped(pow(fill, shape[1], 1 << 64), dtype),
+        ]
+        assert [int(v) for v in rows.todense()] == [expected[0], expected[1], expected[1]]
+        cols = xp.prod(x[:, :2], axis=0, dtype=dtype)
+        assert [int(v) for v in cols.todense()] == [
+            _wrapped(5 * pow(fill, shape[0] - 1, 1 << 64), dtype),
+            _wrapped(7 * pow(fill, shape[0] - 1, 1 << 64), dtype),
+        ]
+
+
+@pytest.mark.parametrize("dtype", [xp.float64, xp.float32])
+def test_float_prod_sign_past_2_53_positions(dtype):
+    """A product of a negative fill over more than 2**53 positions has the sign of the exact
+    count's parity, which float64 cannot hold.
+    """
+    L = 2**54 + 1
+    for fill, odd, even in [(-1.0, -1.0, 1.0), (-0.0, -0.0, 0.0), (-np.inf, -np.inf, np.inf)]:
+        x = xp.full((3, L), fill, dtype=dtype)
+        x[0, 0] = 3.0  # L - 1 unstored: even
+        x[1, 0] = 3.0  # L - 2 unstored: odd
+        x[1, 1] = 2.0
+        expected = np.array([3.0 * even, 6.0 * odd, odd], dtype=dtype)
+        assert_array_equal(xp.prod(x, axis=1), expected)
+        assert np.array_equal(np.signbit(xp.prod(x, axis=1).todense()), np.signbit(expected))
+        out = xp.prod(xp.full((L,), fill, dtype=dtype))
+        assert out.dtype == dtype
+        assert np.signbit(float(out))
+        assert float(out) == odd
+        out = xp.prod(x)  # (3 * 3 * 2 times the fill to the power 3 * L - 3, which is even)
+        assert float(out) == 18.0 * even
+        assert not np.signbit(float(out))

@@ -142,7 +142,7 @@ class _Monoid:
                     return _int_power(fill, L, ct)
                 if ct.kind == "b":
                     return fill
-                return np.power(fill, np.float64(L), dtype=ct)
+                return _signed(np.power(fill, np.float64(L), dtype=ct), fill, L, 0)
         return fill
 
     def combine(self, L, fill, ct):
@@ -155,10 +155,12 @@ class _Monoid:
             return lambda r, c: np.where(c < L, r + _scaled(_unstored(L, c, ct), fill, ct), r)
         if name == "prod":
             if ct.kind in "iu":
-                return lambda r, c: r * _int_powers(fill, _unstored(L, c, ct), ct)
+                return lambda r, c: r * _int_powers(fill, L, c, ct)
             if ct.kind == "b":
                 return lambda r, c: np.where(c < L, r & fill, r)
-            return lambda r, c: np.where(c < L, r * np.power(fill, _unstored(L, c, ct)), r)
+            return lambda r, c: np.where(
+                c < L, r * _signed(np.power(fill, _unstored(L, c, ct)), fill, L, c), r
+            )
         func = {
             "min": np.minimum,
             "max": np.maximum,
@@ -168,11 +170,32 @@ class _Monoid:
         return lambda r, c: np.where(c < L, func(r, fill), r)
 
 
-def _int_powers(base, exponents, dtype):
-    """``base ** e`` for each count ``e`` (uint64), wrapped to the integer ``dtype``."""
-    big = np.dtype("uint64" if dtype.kind == "u" else "int64")
+def _int_powers(base, L, c, dtype):
+    """``base ** (L - c)`` for each count of entries ``c``, wrapped to the integer ``dtype`` as
+    repeated products wrap.
+
+    The powers are taken modulo 2**64 in uint64, where the signed and unsigned products agree.
+    Wrapping the exponent modulo 2**64 keeps the powers of an odd base, whose powers repeat
+    with a period that divides 2**62. An even base's power is 0 once the exponent reaches 64,
+    and it does whenever ``L >= 2**64``, since the counts are int64.
+    """
+    b = np.uint64(int(base) % (1 << 64))
+    if L >= 1 << 64 and b % 2 == 0:
+        return np.zeros(np.shape(c), dtype)
     with np.errstate(all="ignore"):
-        return np.power(big.type(base), exponents.astype(big)).astype(dtype)
+        return np.power(b, _unstored(L, c, dtype)).astype(dtype)
+
+
+def _signed(p, fill, L, c):
+    """The powers ``p`` of the float ``fill`` with the sign of the exact ``fill ** (L - c)``.
+
+    ``p`` is computed with ``L - c`` in float64, which holds only even integers from 2**53 on.
+    Past that, a count may have lost its parity, and with it the sign of a negative ``fill``.
+    """
+    if L <= 1 << 53 or np.iscomplexobj(p) or not np.signbit(fill):
+        return p
+    odd = np.asarray(c) % 2 != L % 2
+    return np.where(odd, -np.abs(p), np.abs(p)).astype(p.dtype)[()]
 
 
 def _min_identity(dt):
