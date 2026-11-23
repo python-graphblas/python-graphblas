@@ -838,10 +838,10 @@ def _array_literal_udt(dtype, value):
         and np_type.names is None
         and np_type.subdtype is None
     ):
-        # With a date or text UDT, a bool array has its own shape, as a numeric one does
-        # below, so it pairs with no op and fits no element (converted, True would be the
-        # date 1970-01-02 or b"True"). Numba cannot type an array of bool, so its type is
-        # the array of uint8 it holds.
+        # With a date or text UDT, a bool array is an array UDT of its own shape, so it pairs
+        # with no op and fits no element (converted, True would be the date 1970-01-02 or
+        # b"True"). Numba cannot type an array of bool, so its type is the array of uint8 it
+        # holds.
         return lookup_dtype(np.dtype((np.uint8, value.shape)))
     # A bool array converts as it is (a BOOL array UDT cannot be registered),
     # and bool casts safely into every numeric element.
