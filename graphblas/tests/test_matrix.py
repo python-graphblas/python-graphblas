@@ -3531,7 +3531,7 @@ def test_ss_reshape_past_2_31_positions():
 
 @pytest.mark.skipif("not suitesparse")
 def test_ss_reshape_shape_in_python_ints_as_numpy_gives_it(monkeypatch):
-    """Where numpy cannot hold a Matrix's size, the new shape follows numpy's rules anyway."""
+    """Where numpy cannot hold a Matrix's size, the new shape and the errors are numpy's anyway."""
     from graphblas.core.ss import matrix as ss_matrix
 
     cases = [
@@ -3544,13 +3544,11 @@ def test_ss_reshape_shape_in_python_ints_as_numpy_gives_it(monkeypatch):
         try:
             return ss_matrix._reshape_dims((8, 8), *args)
         except (TypeError, ValueError) as exc:
-            return type(exc)
+            return type(exc), str(exc)
 
     expected = [outcome(args) for args in cases]  # by numpy
     monkeypatch.setattr(ss_matrix, "_MAX_INTP", 0)  # as if numpy could not hold 64
     assert [outcome(args) for args in cases] == expected
-    with pytest.raises(ValueError, match="can only specify one unknown dimension"):
-        ss_matrix._reshape_dims((8, 8), -1, -1)
 
 
 def test_autocompute_argument_messages(A, v):

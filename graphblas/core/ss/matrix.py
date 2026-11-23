@@ -215,15 +215,18 @@ def _reshape_dims(shape, nrows, ncols=None):
             dims = [operator.index(nrows)]
         except TypeError:
             dims = list(nrows)
-    dims = [operator.index(dim) for dim in dims]
-    unknown = [i for i, dim in enumerate(dims) if dim < 0]
+    given = [operator.index(dim) for dim in dims]
+    unknown = [i for i, dim in enumerate(given) if dim < 0]
     if len(unknown) > 1:
         raise ValueError("can only specify one unknown dimension")
-    known = math.prod(dim for dim in dims if dim >= 0)
+    known = math.prod(dim for dim in given if dim >= 0)
+    dims = list(given)
     if unknown and known > 0:
         dims[unknown[0]] = size // known
     if math.prod(dims) != size:
-        raise ValueError(f"cannot reshape array of size {size} into shape {tuple(dims)}")
+        shown = ",".join("newaxis" if dim < 0 else str(dim) for dim in given)
+        shown += "," if len(given) == 1 else ""
+        raise ValueError(f"cannot reshape array of size {size} into shape ({shown})")
     return tuple(dims)
 
 
