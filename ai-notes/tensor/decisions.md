@@ -294,19 +294,19 @@ review. Like the rest, they are open to review.
     design.
 36. **`index in T`, `get` and iteration follow Matrix.** `(i, j, k) in T` says whether an entry
     is stored there (an int for a 1-d Tensor, as for a Vector, or a 1-tuple; an integer Scalar
-    is an index and a bool is not, as for Matrix), and `iter(T)` gives the stored entries'
-    coordinates in C order, as `iter(A)` gives a Matrix's (row, col); a 1-d Tensor gives
-    1-tuples, where a Vector gives ints, so every Tensor gives tuples of `ndim` ints. Without
-    them Python fell back to `__getitem__`, so `in` compared the sub-Tensors along axis 0 with
-    the index and said False for a stored entry, and iteration made one sub-Tensor per position
-    of axis 0, up to 2^60. _Road not taken:_ numpy's iteration over the first axis; it lists
-    every position, stored or not, which a sparse Tensor should not, and Matrix and Vector
-    iterate over their entries. `T.get(i, j, k, default=None)` returns a stored value as
-    `Matrix.get(row, col)` does, with one index argument per axis (or one tuple) and `default`
-    by keyword. `len(T)` stays undefined, as for Matrix. `in` ravels the index into the stored
-    Matrix's (row, col) and asks it: 1.3 to 1.6 us on a 3 x 4 or 2 x 3 x 4 Tensor, against 0.4
-    us for Matrix and 20 to 25 us through an extract (a loaded machine, interleaved runs).
-    Decided 2026-11-22.
+    is an index, and with autocompute a Scalar expression, and a bool is not, as for Matrix),
+    and `iter(T)` gives the stored entries' coordinates in C order, as `iter(A)` gives a
+    Matrix's (row, col); a 1-d Tensor gives 1-tuples, where a Vector gives ints, so every
+    Tensor gives tuples of `ndim` ints. Without them Python fell back to `__getitem__`, so `in`
+    compared the sub-Tensors along axis 0 with the index and said False for a stored entry, and
+    iteration made one sub-Tensor per position of axis 0, up to 2^60. _Road not taken:_ numpy's
+    iteration over the first axis; it lists every position, stored or not, which a sparse
+    Tensor should not, and Matrix and Vector iterate over their entries. `T.get(i, j, k,
+default=None)` returns a stored value as `Matrix.get(row, col)` does, with one index
+    argument per axis (or one tuple) and `default` by keyword. `len(T)` stays undefined, as for
+    Matrix. `in` ravels the index into the stored Matrix's (row, col) and asks it: 1.3 to 1.6
+    us on a 3 x 4 or 2 x 3 x 4 Tensor, against 0.4 us for Matrix and 20 to 25 us through an
+    extract (a loaded machine, interleaved runs). Decided 2026-11-22.
 
 ## Deferred, on purpose
 

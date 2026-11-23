@@ -19,6 +19,7 @@ import math
 
 import numpy as np
 
+from .. import config
 from ..dtypes import BOOL
 from ..exceptions import DimensionMismatch, IndexOutOfBound, InvalidIndex
 from . import tensor_census as census
@@ -26,6 +27,7 @@ from . import tensor_layout as tl
 from .expr import Updater
 from .scalar import Scalar
 from .tensor_layout import Layout
+from .utils import output_type
 
 
 def _resolve(t, keys, *, assign=False):
@@ -54,6 +56,7 @@ def _resolve_keys(t, keys, *, assign=False):
     if len(keys) > t.ndim:
         raise IndexError(f"too many indices for a Tensor of {t.ndim} dimensions")
     keys = keys + (slice(None),) * (t.ndim - len(keys))
+    keys = tuple(map(_computed_scalar, keys))
     scalars = [type(k) is Scalar for k in keys]
     keys = tuple(_scalar_index(k, a) for a, k in enumerate(keys))
     sel, problems = [], []
@@ -541,6 +544,21 @@ class VIndexer:
 
     def __getitem__(self, keys):
         return vindex(self.t, keys, wraparound=self.wraparound)
+
+
+def _computed_scalar(index):
+    """A Scalar expression (``A.reduce_scalar(agg.count)``) as the Scalar it computes, with
+    autocompute, as Matrix indexes with one; without it, TypeError, as for Matrix.
+    """
+    if type(index) is Scalar or output_type(index) is not Scalar:
+        return index
+    if not config.get("autocompute"):
+        raise TypeError(
+            f"An index of type {type(index)} needs computing; use `.new()` first.\n\nHint: use "
+            "`graphblas.config.set(autocompute=True)` to enable automatic computation of "
+            "expressions."
+        )
+    return index.new()
 
 
 def _scalar_index(index, axis):

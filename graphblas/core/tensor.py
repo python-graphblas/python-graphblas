@@ -444,7 +444,7 @@ class Tensor(BaseType):
             index = (index,)
         index = self._element_index(index, "contains")
         shape = self._shape
-        if not any(type(i) is Scalar for i in index) and all(
+        if not any(output_type(i) is Scalar for i in index) and all(
             -n <= i < n for i, n in zip(index, shape, strict=True)
         ):
             # The stored Matrix's (row, col), whose `in` asks GraphBLAS for the one element
@@ -464,7 +464,8 @@ class Tensor(BaseType):
 
         ``default`` is keyword-only (``T.get(i, j, default=0)``), since the index takes every
         positional argument; ``Matrix.get(row, col, default)`` also takes it positionally. As
-        for Matrix, an index may be an integer Scalar, and an index that selects more than one
+        for Matrix, an index may be an integer Scalar (or, with autocompute, a Scalar
+        expression), and an index that selects more than one
         element (a slice, list or array) raises ValueError; extract those with ``T[...]``.
         """
         if len(index) == 1 and isinstance(index[0], tuple):
@@ -481,7 +482,8 @@ class Tensor(BaseType):
             not isinstance(index, tuple)
             or len(index) != self.ndim
             or not all(
-                type(i) is Scalar or (isinstance(i, (int, np.integer)) and not isinstance(i, bool))
+                output_type(i) is Scalar
+                or (isinstance(i, (int, np.integer)) and not isinstance(i, bool))
                 for i in index
             )
         ):

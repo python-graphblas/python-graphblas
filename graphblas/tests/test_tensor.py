@@ -8379,7 +8379,9 @@ def test_get():
 def test_get_and_in_take_scalar_indices():
     """``get`` and ``in`` take an integer Scalar as an index, as Matrix and Vector do, with
     their results and exceptions: a negative one counts from the end, one out of range raises
-    IndexError or InvalidIndex, and a float, BOOL or empty Scalar raises TypeError.
+    IndexError or InvalidIndex, and a float, BOOL or empty Scalar raises TypeError. A Scalar
+    expression (``v.reduce(agg.count)``) indexes as its value with autocompute and raises
+    TypeError without it, for ``get``, ``in`` and ``T[...]``, as for Matrix.
     """
     A = Matrix.from_coo([0, 1], [1, 2], [5.0, 6.0], nrows=2, ncols=3)
     X = Tensor.from_matrix(A).dup(layout=((1,), (0,)))
@@ -8409,6 +8411,33 @@ def test_get_and_in_take_scalar_indices():
             assert outcome(got) == outcome(want), s
     assert X.get(1, Scalar.from_value(-1)) == 6.0
     assert (0, Scalar.from_value(1, dtypes.UINT8)) in X
+    from graphblas import agg
+
+    count = Vector.from_coo([0, 2], [1, 1], size=3)
+    expressions = [
+        lambda: count.reduce(agg.count), lambda: count.reduce(monoid.plus),
+        lambda: Vector.from_coo([0], [-1]).reduce(monoid.plus),
+        lambda: Vector.from_coo([0], [7]).reduce(monoid.plus),
+        lambda: Vector.from_coo([0], [1.5]).reduce(monoid.plus),
+        lambda: Vector(dtypes.INT64, 2).reduce(monoid.plus),
+        lambda: Scalar.from_value(1).ewise_add(Scalar.from_value(1)),
+    ]  # fmt: skip
+    for autocompute in [False, True]:
+        with gb.config.set(autocompute=autocompute):
+            for e in expressions:
+                pairs = [
+                    (lambda e=e: A.get(1, e()), lambda e=e: X.get(1, e())),
+                    (lambda e=e: (1, e()) in A, lambda e=e: (1, e()) in X),
+                    (lambda e=e: v.get(e()), lambda e=e: x.get(e())),
+                    (lambda e=e: e() in v, lambda e=e: e() in x),
+                    (lambda e=e: A[1, e()].new().value, lambda e=e: X[1, e()].new().get()),
+                ]
+                for want, got in pairs:
+                    assert outcome(got) == outcome(want), autocompute
+    with gb.config.set(autocompute=True):
+        assert X.get(1, count.reduce(agg.count)) == 6.0
+    with pytest.raises(TypeError, match="autocompute"):
+        X.get(1, count.reduce(agg.count))
 
 
 def test_isequal_matrix_vector_scalar():
