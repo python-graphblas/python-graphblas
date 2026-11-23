@@ -219,9 +219,9 @@ def _einsum_rewrite(subscripts, shapes):
     groups)`` for ``_prepare_operand``. None when ``subscripts`` has neither.
 
     ``...`` gets letters the subscripts do not use, right-aligned as numpy broadcasts. A
-    size-1 axis under it that meets a longer one is squeezed and its letter dropped from that
-    operand, which is how einsum broadcasts: the other operands' entries pair with every
-    position of a letter it lacks.
+    size-1 axis under it, where another operand's axis has another size (0 included), is
+    squeezed and its letter dropped from that operand, which is how einsum broadcasts: the
+    other operands' entries combine with every position of a letter this one lacks.
     """
     subscripts = subscripts.replace(" ", "")
     inputs, arrow, output = subscripts.partition("->")
@@ -249,11 +249,12 @@ def _einsum_rewrite(subscripts, shapes):
     sizes = dict.fromkeys(ell, 1)
     for (head, _, n), shape in zip(parts, shapes, strict=True):
         for c, m in zip(ell[nell - n :], shape[len(head) : len(head) + n], strict=True):
-            if m != 1 and sizes[c] not in {1, m}:
-                raise DimensionMismatch(
-                    f"einsum: axes of sizes {sizes[c]} and {m} under '...' do not broadcast"
-                )
-            sizes[c] = max(sizes[c], m)
+            if m != 1:  # (a size 0 broadcasts against 1, as in numpy: an empty batch)
+                if sizes[c] not in {1, m}:
+                    raise DimensionMismatch(
+                        f"einsum: axes of sizes {sizes[c]} and {m} under '...' do not broadcast"
+                    )
+                sizes[c] = m
     if arrow:
         out_head, out_dots, out_tail = output.partition("...")
         if "." in out_head or "." in out_tail:
@@ -274,7 +275,7 @@ def _einsum_rewrite(subscripts, shapes):
     for (head, tail, n), shape in zip(parts, shapes, strict=True):
         letters, squeeze, kept = [*head], [], [*shape[: len(head)]]
         for i, c in enumerate(ell[nell - n :]):
-            if shape[len(head) + i] == 1 and sizes[c] > 1:
+            if shape[len(head) + i] == 1 and sizes[c] != 1:
                 squeeze.append(len(head) + i)
             else:
                 letters.append(c)

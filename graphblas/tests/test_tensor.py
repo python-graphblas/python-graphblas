@@ -3424,6 +3424,16 @@ def test_einsum_ellipsis_and_repeated_indices_operands_and_errors():
         einsum("iik->k", Tensor(float, 3, 2, 4))
     with pytest.raises(DimensionMismatch, match="broadcast"):
         einsum("...ij,...jk->...ik", Tensor(float, 2, 3, 4), Tensor(float, 3, 4, 5))
+    # A size-0 axis under ... broadcasts against a size-1 one, as in numpy (an empty batch)
+    W = Tensor.from_dense(np.ones((1, 4, 5)))
+    R = einsum("...ij,...jk->...ik", Tensor(float, 0, 3, 4), W).new()
+    assert R.shape == np.einsum("...ij,...jk->...ik", np.ones((0, 3, 4)), np.ones((1, 4, 5))).shape
+    assert R.nvals == 0
+    assert einsum("...,...->...", Tensor(float, 0), Tensor.from_dense(np.ones(1))).new().shape == (
+        0,
+    )
+    with pytest.raises(DimensionMismatch, match="broadcast"):
+        einsum("...,...->...", Tensor(float, 0), Tensor(float, 2))
     with pytest.raises(ValueError, match=r"'\.\.\.'"):
         einsum("...k->k", X)  # (axes under ... and no ... in the output)
     with pytest.raises(ValueError, match="ellipsis"):
