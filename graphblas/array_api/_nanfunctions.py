@@ -14,7 +14,6 @@ import math
 import numpy as np
 
 from .. import agg, binary, monoid, select, unary
-from ..core.tensor import Tensor
 from . import _utils
 from ._array import Array
 from ._dtypes import as_dtype, astype
@@ -23,7 +22,6 @@ from ._statistical import (
     _check_array,
     _keepdims,
     _mean_dtype,
-    _out_shape,
     _reduce_tensor,
     _squared_magnitude,
     _times_count,
@@ -149,11 +147,9 @@ def nanvar(a, axis=None, dtype=None, out=None, ddof=0, keepdims=False, *, correc
     if not _has_nan(a):
         x = a if dtype is None or a.dtype == rdt else astype(a, rdt)
         return _var(x, axis=axis, correction=ddof, keepdims=keepdims)
+    # (an array with a NaN has no empty axis: the path above takes those)
     axes = _axes(a, axis)
     real_dt = np.dtype(rdt.char.lower()) if rdt.kind == "c" else rdt
-    if math.prod(a.shape[i] for i in axes) == 0:
-        shape = _out_shape(a.shape, axes, keepdims)
-        return Array._new(Tensor(gb_dtype(real_dt), shape), np.nan)
     x = a if a.dtype == rdt else astype(a, rdt)
     out = _nanvar_each(x, ddof) if not axes else _nanvar_over(x, axes, ddof)
     out = out if out.dtype == real_dt else astype(out, real_dt)
