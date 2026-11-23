@@ -406,7 +406,7 @@ def test_from_networkx_multigraph_is_scipy_free(monkeypatch):
 @pytest.mark.parametrize("graph_cls", [nx.MultiGraph, nx.MultiDiGraph] if nx else [])
 def test_from_networkx_equal_sums_of_parallel_edges_are_iso(graph_cls):
     # Parallel edges are summed, and the matrix is stored iso when every sum is the
-    # same, as from_scipy_sparse stores it
+    # same, as from_scipy_sparse stores it.
     G = graph_cls()
     G.add_weighted_edges_from([(0, 1, 2.5), (1, 2, 2.5)] * 2)
     M = gb.io.from_networkx(G)
