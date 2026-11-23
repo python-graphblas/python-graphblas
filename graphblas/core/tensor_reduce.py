@@ -465,6 +465,10 @@ def _reduce_scalar_recipe(updater, a, op, allow_empty):
     updater << a._M.reduce_scalar(op, allow_empty=allow_empty)
 
 
+def _reduce_scalar_aggregator_recipe(updater, a, op):
+    updater << a.reduce(op).new().to_scalar()
+
+
 # isort: off
 from .tensor import (  # noqa: E402
     Tensor,

@@ -1252,8 +1252,25 @@ class Tensor(BaseType):
         return M.dup() if M is self._M else M
 
     def reduce_scalar(self, op=monoid.plus, *, allow_empty=True):
-        """Reduce all entries to a Scalar."""
+        """Reduce all entries to a Scalar with the monoid ``op`` or an aggregator.
+
+        An aggregator gives the value ``reduce(op)`` has over every axis (``first`` and
+        ``last`` in C order) and, as for Matrix, needs ``allow_empty=True`` unless it is made
+        of a monoid alone.
+        """
         probe = self._M.reduce_scalar(op, allow_empty=allow_empty)
+        if probe.op.opclass == "Aggregator" and probe.op.parent._monoid is None:
+            # An aggregator as an expression's op would compute the expression itself, from
+            # the stored Matrix, so this one has none: its recipe reduces the Tensor
+            return ScalarExpression(
+                "reduce_scalar",
+                None,
+                [self, _reduce_scalar_aggregator_recipe, (self, probe.op)],
+                op=None,
+                dtype=probe.dtype,
+                expr_repr=f"{{0.name}}.reduce_scalar({probe.op})",
+                is_cscalar=False,  # (allow_empty=False raised above, as for Matrix)
+            )
         return ScalarExpression(
             "reduce_scalar",
             None,
@@ -2224,6 +2241,7 @@ from .tensor_reduce import (  # noqa: E402, F401 (also re-exports)
     _reduce_aggregator,
     _reduce_expr,
     _reduce_matrix,
+    _reduce_scalar_aggregator_recipe,
     _reduce_scalar_recipe,
 )
 from .tensor_contract import (  # noqa: E402, F401 (also re-exports)

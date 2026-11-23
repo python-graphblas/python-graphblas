@@ -7614,6 +7614,42 @@ def test_reduce_first_last_over_several_axes():
     check(C, np.where(mp & fp.any(-1), first, 0), mp & fp.any(-1))
 
 
+@pytest.mark.parametrize(
+    "name", ["count", "hypot", "mean", "varp", "stds", "geometric_mean", "first", "last", "sum"]
+)
+def test_reduce_scalar_aggregators(name):
+    """``reduce_scalar`` takes the aggregators ``reduce`` takes and returns the value
+    ``reduce(op)`` has over every axis: Matrix's ``reduce_scalar`` for a 2-d Tensor (C order,
+    which is row-major, for ``first`` and ``last``), whatever the layout, and numpy's mean for
+    INT8 values that Matrix would wrap. An accumulator applies as for any Scalar update;
+    ``allow_empty=False`` and ``argmin`` raise as for Matrix.
+    """
+    from graphblas import agg
+
+    a = getattr(agg, name)
+    rng = np.random.default_rng(607)
+    X = random_tensor((3, 4), rng, density=0.5)[0]
+    want = X.to_matrix().reduce_scalar(a).new()
+    for layout in all_layouts(2):
+        got = X.dup(layout=layout).reduce_scalar(a).new()
+        assert got.dtype == want.dtype
+        np.testing.assert_allclose(got.value, want.value, rtol=1e-12)
+    Y = random_tensor((2, 3, 4), rng, density=0.5, layout=((2, 0), (1,)))[0]
+    assert Y.reduce_scalar(a).new().isclose(Y.reduce(a).new().to_scalar())
+    assert Tensor(dtypes.FP64, (2, 3)).reduce_scalar(a).new().nvals == 0
+    s = gb.Scalar.from_value(100.0, dtype=want.dtype)
+    s(accum=binary.plus) << X.reduce_scalar(a)
+    np.testing.assert_allclose(s.value, 100 + want.value, rtol=1e-12)
+    if name != "sum":  # (a monoid's aggregator takes allow_empty=False, as for Matrix)
+        with pytest.raises(ValueError, match="allow_empty"):
+            X.reduce_scalar(a, allow_empty=False)
+    if name == "mean":
+        V = Tensor.from_dense(np.array([[100, 100], [100, 100]], np.int8))
+        assert V.reduce_scalar(a).new().value == 100.0
+    with pytest.raises(ValueError, match="argmin"):
+        X.reduce_scalar(agg.argmin)
+
+
 def test_isequal_matrix_vector_scalar():
     """``isequal`` / ``isclose`` compare a Tensor with a Matrix, Vector or Scalar of its shape
     by values; another shape is not equal.
