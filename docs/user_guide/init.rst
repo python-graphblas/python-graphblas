@@ -95,9 +95,10 @@ same; a ``"run"`` set there is not always kept.
 Where the JIT cannot work, a configured ``"on"`` becomes ``"run"``, with no error: for
 example, SuiteSparse built without the JIT (as in the PyPI wheels), or no working C
 compiler (in an activated conda environment, ``conda install c-compiler`` provides one).
-``gb.ss.fix_jit_config()`` repairs the compiler setting where it can and checks it. The
-exact rules, for ``"run"`` and for an ``"on"`` set after initialization too, are in
-:ref:`tn_jit_control`.
+``gb.ss.fix_jit_config()`` repairs the compiler setting where it can and checks it. On
+Windows, where conda-forge's SuiteSparse compiles kernels through cmake, ``"on"`` needs
+cmake (``conda install cmake``) and Visual Studio or its Build Tools. The exact rules, for
+``"run"`` and for an ``"on"`` set after initialization too, are in :ref:`tn_jit_control`.
 
 With the JIT on:
 
@@ -114,9 +115,10 @@ With the JIT on:
   slower, and registering types or operators from C source fails. To keep the kernels,
   give each process its own cache instead, by setting the ``GRAPHBLAS_CACHE_PATH``
   environment variable before graphblas initializes.
-- The first use of each new kernel compiles it, typically in 0.2 to 1 second. Kernels are
-  cached on disk, in ``gb.ss.config["jit_cache_path"]`` (by default under
-  ``~/.SuiteSparse`` on Linux and macOS), so later runs load them instead.
+- The first use of each new kernel compiles it, typically in 0.2 to 1 second (longer through
+  cmake; see :ref:`tn_jit_control`). Kernels are cached on disk, in
+  ``gb.ss.config["jit_cache_path"]`` (by default under ``~/.SuiteSparse`` on Linux and
+  macOS), so later runs load them instead.
 - The cache is keyed only on the SuiteSparse:GraphBLAS version, so two builds of one
   version (a conda build and a source build, say) can load each other's kernels, and get
   wrong results or errors if their internals differ. Give each build its own cache path.

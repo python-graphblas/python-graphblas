@@ -139,12 +139,14 @@ class GlobalConfig(BaseConfig):
         "on" : full JIT: able to compile, load, and run
         python-graphblas sets it at init from ``graphblas.config["jit_c_control"]``,
         or to "run" when that is not set, and raises that default "run" to "on" when
-        C source needs compiling. Setting None restores the default. The rules are
-        in the Technical Notes, "The JIT control"; the user guide's initialization
-        page covers the trade-offs, and when "on" is safe.
+        C source needs compiling, unless jit_use_cmake is True. Setting None restores
+        the default. The rules are in the Technical Notes, "The JIT control"; the user
+        guide's initialization page covers the trade-offs, and when "on" is safe.
     jit_use_cmake : bool
         Whether to use cmake to compile the JIT kernels.
-        Always True for SuiteSparse built with MSVC (on Windows).
+        Always True for SuiteSparse built with MSVC (on Windows), where a
+        configured "on" needs cmake and Visual Studio, not the configured
+        compiler. Where it is True, C source does not raise "run" to "on".
     jit_c_compiler_name : str
         C compiler for JIT kernels.
     jit_c_compiler_flags : str

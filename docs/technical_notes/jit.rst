@@ -50,6 +50,10 @@ cache. Where any step fails, the control is ``"run"``, with no error or warning:
   python-suitesparse-graphblas;
 - no C compiler, or one that fails the check (in a conda environment,
   ``conda install c-compiler`` provides one);
+- no cmake on the ``PATH``, where SuiteSparse compiles through cmake. SuiteSparse built
+  with MSVC, as conda-forge builds it for Windows, always compiles through cmake
+  (``gb.ss.config["jit_use_cmake"]`` is True). cmake finds the Visual Studio C compiler
+  itself, so the configured compiler is not checked there;
 - a cache directory it cannot write to.
 
 **Later.** ``gb.ss.config["jit_c_control"] = value`` sets the control for the rest of the
@@ -66,6 +70,9 @@ of these needs a kernel compiled:
 - ``gb.binary.ss.register_new``, and the ``register_new`` of ``gb.unary.ss``,
   ``gb.indexunary.ss``, ``gb.select.ss`` and ``gb.indexbinary.ss``, which register an
   operator from C source.
+
+Where SuiteSparse compiles through cmake, the default ``"run"`` is not raised: a new kernel
+took about 10 seconds there on Windows CI, so only an ``"on"`` you set compiles.
 
 Before it raises the control the first time, python-graphblas runs the same compiler check
 as for a configured ``"on"``, once per process. If the check fails, the control stays
