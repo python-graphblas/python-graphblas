@@ -437,13 +437,16 @@ class Tensor(BaseType):
 
     def __contains__(self, index):
         """Whether an entry is stored at ``index``, a tuple of ``ndim`` ints, as ``(i, j) in A``
-        for a Matrix. A 1-d Tensor takes an int, as a Vector does, or a 1-tuple.
+        for a Matrix. A 1-d Tensor takes an int, as a Vector does, or a 1-tuple. An index may
+        be an integer Scalar, as for Matrix.
         """
         if self.ndim == 1 and not isinstance(index, tuple):
             index = (index,)
         index = self._element_index(index, "contains")
         shape = self._shape
-        if all(-n <= i < n for i, n in zip(index, shape, strict=True)):
+        if not any(type(i) is Scalar for i in index) and all(
+            -n <= i < n for i, n in zip(index, shape, strict=True)
+        ):
             # The stored Matrix's (row, col), whose `in` asks GraphBLAS for the one element
             index = [int(i) % n for i, n in zip(index, shape, strict=True)]
             row = col = 0
@@ -452,7 +455,8 @@ class Tensor(BaseType):
             for a in self._layout.cols:
                 col = col * shape[a] + index[a]
             return (row, col) in self._M
-        return self[index].new()._nvals == 1  # (raises the IndexError)
+        # (Scalars, and the IndexError of an index out of range, as for Matrix)
+        return self[index].new()._nvals == 1
 
     def get(self, *index, default=None):
         """The value stored at ``index`` as a Python scalar, or ``default`` where none is:
@@ -460,8 +464,8 @@ class Tensor(BaseType):
 
         ``default`` is keyword-only (``T.get(i, j, default=0)``), since the index takes every
         positional argument; ``Matrix.get(row, col, default)`` also takes it positionally. As
-        for Matrix, an index that selects more than one element (a slice, list or array)
-        raises ValueError; extract those with ``T[...]``.
+        for Matrix, an index may be an integer Scalar, and an index that selects more than one
+        element (a slice, list or array) raises ValueError; extract those with ``T[...]``.
         """
         if len(index) == 1 and isinstance(index[0], tuple):
             index = index[0]
@@ -476,7 +480,10 @@ class Tensor(BaseType):
         if (
             not isinstance(index, tuple)
             or len(index) != self.ndim
-            or not all(isinstance(i, (int, np.integer)) and not isinstance(i, bool) for i in index)
+            or not all(
+                type(i) is Scalar or (isinstance(i, (int, np.integer)) and not isinstance(i, bool))
+                for i in index
+            )
         ):
             raise TypeError(
                 f"Invalid index to Tensor {name}: {index!r}. A tuple of {self.ndim} ints is "

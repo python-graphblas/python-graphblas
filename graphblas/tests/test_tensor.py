@@ -8214,6 +8214,41 @@ def test_get():
         assert (X * 2).get(*np.argwhere(xp)[0]) == 2 * xv[tuple(np.argwhere(xp)[0])]
 
 
+def test_get_and_in_take_scalar_indices():
+    """``get`` and ``in`` take an integer Scalar as an index, as Matrix and Vector do, with
+    their results and exceptions: a negative one counts from the end, one out of range raises
+    IndexError or InvalidIndex, and a float, BOOL or empty Scalar raises TypeError.
+    """
+    A = Matrix.from_coo([0, 1], [1, 2], [5.0, 6.0], nrows=2, ncols=3)
+    X = Tensor.from_matrix(A).dup(layout=((1,), (0,)))
+    v = Vector.from_coo([1], [5.0], size=3)
+    x = Tensor.from_vector(v)
+    scalars = [Scalar.from_value(i) for i in [1, -1, -4, 7]]
+    scalars += [Scalar.from_value(2, dtypes.UINT64), Scalar.from_value(2, dtypes.INT8)]
+    scalars += [Scalar.from_value(2, is_cscalar=True), Scalar.from_value(1.0)]
+    scalars += [Scalar.from_value(True), Scalar(dtypes.INT64)]
+
+    def outcome(f):
+        try:
+            return f()
+        except Exception as e:
+            return type(e)
+
+    for s in scalars:
+        pairs = [
+            (lambda s=s: A.get(1, s), lambda s=s: X.get(1, s)),
+            (lambda s=s: A.get(s, 2, default=0), lambda s=s: X.get(s, 2, default=0)),
+            (lambda s=s: (1, s) in A, lambda s=s: (1, s) in X),
+            (lambda s=s: (s, 2) in A, lambda s=s: (s, 2) in X),
+            (lambda s=s: v.get(s), lambda s=s: x.get(s)),
+            (lambda s=s: s in v, lambda s=s: s in x),
+        ]
+        for want, got in pairs:
+            assert outcome(got) == outcome(want), s
+    assert X.get(1, Scalar.from_value(-1)) == 6.0
+    assert (0, Scalar.from_value(1, dtypes.UINT8)) in X
+
+
 def test_isequal_matrix_vector_scalar():
     """``isequal`` / ``isclose`` compare a Tensor with a Matrix, Vector or Scalar of its shape
     by values; another shape is not equal.
