@@ -183,6 +183,33 @@ def test_ss_import_leaves_jit_c_control_alone(jit_c_control):
         assert lines["before"] == str(gb.core.lib.GxB_JIT_RUN), report
 
 
+# A pytest-xdist worker sets PYTEST_XDIST_WORKER before it imports conftest.py
+_XDIST_CACHE_PATH_PROBE = """
+import os
+
+os.environ.pop("GRAPHBLAS_CACHE_PATH", None)
+import graphblas as gb
+import graphblas.tests.conftest
+
+print("package: " + gb.__file__)
+print("cache: " + os.environ["GRAPHBLAS_CACHE_PATH"])
+"""
+
+
+def test_xdist_jit_cache_path_names_the_library_version(tmp_path):
+    """Under ``pytest -n``, each worker's JIT cache path names the SuiteSparse version.
+
+    SuiteSparse's default cache path does too (``~/.SuiteSparse/GrB10.5.3``). Without the
+    version, test sessions on different SuiteSparse versions share each worker's cache.
+    """
+    lines, report = _run_in_fresh_process(
+        _XDIST_CACHE_PATH_PROBE, PYTEST_XDIST_WORKER="gw7", HOME=str(tmp_path)
+    )
+    version = ".".join(map(str, gb.ss.about["library_version"]))
+    expected = tmp_path / ".SuiteSparse_xdist" / f"GrB{version}" / "gw7"
+    assert lines["cache"] == str(expected), report
+
+
 _BAD_JIT_C_CONTROL_PROBE = """
 import graphblas as gb
 import suitesparse_graphblas as ssgb

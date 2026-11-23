@@ -23,15 +23,27 @@ except ImportError:  # pragma: no cover (it is private, so it may go away)
 # reads ``GRAPHBLAS_CACHE_PATH`` when GraphBLAS initializes, and
 # ``import graphblas`` does not initialize it, so setting it here is in time.
 #
-# The path depends only on the worker id (``gw0``, ``gw1``, ...), so the cache
-# persists across runs and later runs load most kernels instead of compiling
-# them. Two ``pytest -n`` runs at once share these directories and can race on
-# a kernel; a directory per run would avoid that but compile every kernel anew.
+# The path depends only on the SuiteSparse version and the worker id, as in
+# ``~/.SuiteSparse_xdist/GrB10.5.3/gw0``, so the cache persists across runs and
+# later runs load most kernels instead of compiling them. The version keeps
+# environments on different SuiteSparse versions apart, as it does in
+# SuiteSparse's own default, ``~/.SuiteSparse/GrB10.5.3``. Two ``pytest -n``
+# runs at once share these directories and can race on a kernel; a directory
+# per run would avoid that but compile every kernel anew.
 if (
     _xdist_worker := os.environ.get("PYTEST_XDIST_WORKER")
 ) and "GRAPHBLAS_CACHE_PATH" not in os.environ:
+    # Importing suitesparse_graphblas does not initialize GraphBLAS either
+    from suitesparse_graphblas import lib as _lib
+
     _home = os.environ.get("HOME") or os.environ.get("LOCALAPPDATA") or str(Path.cwd())
-    os.environ["GRAPHBLAS_CACHE_PATH"] = str(Path(_home) / ".SuiteSparse_xdist" / _xdist_worker)
+    _version = (
+        f"GrB{_lib.GxB_IMPLEMENTATION_MAJOR}.{_lib.GxB_IMPLEMENTATION_MINOR}"
+        f".{_lib.GxB_IMPLEMENTATION_SUB}"
+    )
+    os.environ["GRAPHBLAS_CACHE_PATH"] = str(
+        Path(_home) / ".SuiteSparse_xdist" / _version / _xdist_worker
+    )
 
 # Matrix and Vector reprs come from pandas. With ``display.max_columns`` at 0
 # (its default in a terminal), pandas fits a repr to the terminal width, which
