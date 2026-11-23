@@ -304,3 +304,26 @@ def test_finite_fills_are_stored_in_full():
                      (3000, 2))  # fmt: skip
     for x in [A1, A2, xp.prune(A2)]:
         assert (x @ B).todense()[1, 0] == 0.0  # (an unstored zero times inf is no term)
+
+
+def test_stored_zeros_of_another_fill_keep_their_terms():
+    """A zero stored by an operand whose fill is not 0 is a value, not a fill, so the
+    contraction computes with it as numpy does, also when an operand stores inf.
+    """
+    inf = np.array([[np.inf], [2.0]])
+    for a, fill in [
+        (np.array([[0.0]]), 1.0),  # stores every position
+        (np.array([[0.0, 1.0]]), 1.0),  # stores the zero only
+        (np.array([[0.0, np.inf]]), np.inf),
+    ]:
+        x = xp.asarray(a, fill_value=fill)
+        y = xp.asarray(inf)
+        with np.errstate(invalid="ignore"):
+            assert_array_equal(y @ x, inf @ a)  # (NaN at 0 * inf)
+            # (numpy's tensordot goes through BLAS, whose product may skip a zero)
+            assert_array_equal(xp.tensordot(y, x, axes=1), np.tensordot(inf, a, axes=1))
+            assert_array_equal(xp.einsum("ij,jk->ik", y, x), np.einsum("ij,jk->ik", inf, a))
+    # Without inf or NaN, the zero is a term like any other
+    x = xp.asarray(np.array([[0.0, 3.0]]), fill_value=1.0)
+    y = xp.asarray(np.array([[2.0], [0.0]]))
+    assert_array_equal(y @ x, np.array([[0.0, 6.0], [0.0, 0.0]]))

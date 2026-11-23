@@ -556,3 +556,21 @@ def test_einsum_with_scalars_and_ones_stays_sparse():
     with np.errstate(invalid="ignore"):
         expected = np.einsum("ij,jk->ik", c, d)
     assert_close(xp.einsum("ij,jk->ik", make(c, np.inf), make(d, 0.0)), expected)
+
+
+def test_einsum_with_a_scalar_computes_densely_as_numpy_does():
+    """A finite 0-d operand is factored out of a sparse einsum, but when the einsum computes
+    densely, numpy gets every operand, so a sum of infinities of both signs comes out as in
+    numpy's einsum.
+    """
+    d = np.array([[0.0, 1.0]])
+    c = np.array([-np.inf, 0.0])
+    R = xp.einsum("da,,b->db", xp.asarray(d), xp.asarray(3.0), make(c, -np.inf))
+    with np.errstate(invalid="ignore"):
+        expected = np.einsum("da,,b->db", d, 3.0, c)
+    np.testing.assert_array_equal(R.todense(), expected)
+    # With zero fills, the 0-d factor still keeps the result sparse
+    a = _rand((3, 4), 0.0)
+    R = xp.einsum("ij,->ij", make(a, 0.0), xp.asarray(2.0))
+    assert R.nnz == np.count_nonzero(a)
+    assert_close(R, 2.0 * a)

@@ -62,8 +62,18 @@ An operand whose fill is not zero becomes one whose fill is zero, if it can:
   ones first, and returns ``[[1.0, 2.0], [1.0, 2.0]]``.
 
 Any other nonzero fill, such as ``inf`` or NaN, makes the contraction compute with numpy on
-dense copies of the operands, so the result has NaN where numpy's has NaN.
-``xp.full((2, 2), np.inf) @ A`` is NaN at every position, as in numpy.
+dense copies of the operands: ``matmul`` with ``np.matmul``, ``tensordot`` with
+``np.tensordot``, and so on. ``xp.full((2, 2), np.inf) @ A`` is NaN at every position, as in
+numpy.
+
+A zero stored by an operand whose fill is not 0 is a value, not a fill. When an operand
+stores an infinity or NaN, the contraction computes with numpy too, so that zero's terms
+count: ``xp.asarray([[np.inf]]) @ xp.asarray([[0.0]], fill_value=1.0)`` is NaN.
+
+numpy's functions do not always agree with each other on infinities. ``np.tensordot`` goes
+through BLAS, whose products may skip a zero, so ``0 * inf`` there may give no NaN. And
+``np.einsum`` may give inf for some values where it gives NaN for the same values in another
+memory layout.
 
 Both ways need memory for every position. Storing the fill needs it for that operand, and
 computing with numpy needs it for every operand and for the result. Past

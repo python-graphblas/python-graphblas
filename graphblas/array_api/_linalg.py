@@ -232,10 +232,23 @@ def _zero_fills(*arrays):
     unstored zero of another operand is 0, so skipping those terms changes nothing. With any
     other nonzero fill it returns None, and the caller computes with numpy densely: a
     non-finite fill times an unstored zero of another operand is NaN.
+
+    It returns None too when an operand whose fill is not 0 stores a zero and an operand
+    stores inf or NaN. That zero is a value, not a fill, but once the fill is 0 the
+    contraction would drop it as an explicit fill (``_lazy.contraction``), and lose its
+    ``0 * inf`` term.
     """
     out = []
+    nonfinite = None
     for x in arrays:
         if not _is_zero(x._fill):
+            if _utils.fact(x, "zero"):
+                if nonfinite is None:
+                    nonfinite = any(
+                        y.dtype.kind in "fc" and not _utils.fact(y, "finite") for y in arrays
+                    )
+                if nonfinite:
+                    return None
             T = x._T()
             if T.nvals != x.size:
                 small = x.size <= _utils.densify_limit()
@@ -523,15 +536,17 @@ def einsum(subscripts, /, *operands, semiring=None):
     shapes = tuple(x.shape for x in ops)
     shape = _einsum_plan(subscripts, shapes, "greedy")[2]
     scalars = [x._fill for x in ops if x.ndim == 0]
-    if default and any(map(bool, scalars)) and all(np.isfinite(scalars)):
-        # A finite 0-d operand is a factor of every term, so it factors out of the sum. A
-        # non-finite one makes the contraction compute densely with numpy, since inf times an
-        # unstored zero is NaN
-        return _einsum_scalars(subscripts, ops)
     if default:
-        if (zeroed := _zero_fills(*ops)) is None:
+        # Decided on all the operands first, so that a dense einsum groups the terms as numpy's
+        # does: a non-finite 0-d operand makes it dense, since inf times an unstored zero is NaN
+        zeroed = _zero_fills(*(x for x in ops if x.ndim)) if all(np.isfinite(scalars)) else None
+        if zeroed is None:
             return _dense(lambda *a: np.einsum(subscripts, *a), shape, *ops)
-        ops = zeroed
+        zeroed = iter(zeroed)
+        ops = [next(zeroed) if x.ndim else x for x in ops]
+        if any(map(bool, scalars)):
+            # A finite 0-d operand is a factor of every term, so it factors out of the sum
+            return _einsum_scalars(subscripts, ops)
         out_dt, fill = rdt, _utils.scalar(0, rdt)
     else:
         out_dt, fill, ops = _sound(typed, ops, "einsum", multiplies=len(ops) > 1)
