@@ -142,7 +142,7 @@ takes the assign in place, so no round waits. The cost is memory once the Vector
 a byte for each position as well as the values, and it cannot become the smaller full format.
 
 Set the option once the Vector has an entry, as above. A masked assign into an empty Vector replaces
-its ``sparsity_control`` with the mask's (SuiteSparse:GraphBLAS 10.5).
+its ``sparsity_control`` with the mask's.
 
 Collection Methods
 ------------------
