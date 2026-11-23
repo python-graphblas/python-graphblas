@@ -3513,20 +3513,22 @@ def test_ss_reshape_past_2_31_positions():
     numpy's sizes stop at 2**31 - 1 on 32-bit platforms such as WebAssembly, where working
     out the new shape with numpy raised ValueError.
     """
+    # 2**31 positions, not 2**32: before 10.5.2, SuiteSparse fails reshapes where a dimension
+    # crosses 2**32 (GraphBLAS issue 462), and 10.3.1 to 10.5.1 raise InvalidValue here.
     n = 2**16
-    A = Matrix(int, n, n)
+    A = Matrix(int, n, n // 2)
     A[1, 2] = 3
     B = A.ss.reshape(2 * n, -1)
-    assert B.shape == (2 * n, n // 2)
-    assert B[2, 2].new() == 3  # position 1 * n + 2
+    assert B.shape == (2 * n, n // 4)
+    assert B[2, 2].new() == 3  # position 1 * n // 2 + 2
     v = A.ss.flatten()
-    assert v.size == n * n
-    assert v[n + 2].new() == 3
-    assert v.ss.reshape(n, n).isequal(A)
-    assert A.ss.reshape((n // 2, 2 * n), inplace=True) is None
-    assert A.shape == (n // 2, 2 * n)
+    assert v.size == n * n // 2
+    assert v[n // 2 + 2].new() == 3
+    assert v.ss.reshape(n, n // 2).isequal(A)
+    assert A.ss.reshape((n // 2, n), inplace=True) is None
+    assert A.shape == (n // 2, n)
     with pytest.raises(ValueError, match="cannot reshape array"):
-        A.ss.reshape(n, n // 2)
+        A.ss.reshape(n, n)
 
 
 @pytest.mark.skipif("not suitesparse")
