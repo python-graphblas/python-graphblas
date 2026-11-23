@@ -228,6 +228,17 @@ def _get_max_columns():
     return max_columns
 
 
+def _with_ellipsis_row(df):
+    """Return ``df`` with a last row of "...", for more entries than it shows.
+
+    The columns become object first, as the "..." would make them: pandas 3.1 deprecates
+    setting a str into a new row of a numeric column (Pandas4Warning).
+    """
+    df = df.astype(object)
+    df.loc["..."] = ["..."] * df.shape[1]
+    return df
+
+
 def _get_chunk(length, min_length, max_length):
     if length <= max_length:
         chunk = list(range(length))
@@ -286,7 +297,7 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
                 vals = np.ones(vals.size, dtype=np.uint8)
         df = pd.DataFrame({"row": rows, "col": cols, "val": vals})
         if num_rows < matrix._nvals:
-            df.loc["..."] = ["..."] * 3
+            df = _with_ellipsis_row(df)
         return df
     if mask is not None and not mask.structure and df.shape != matrix.shape:
         # This performs more calculation and uses more memory than I would prefer.
@@ -301,7 +312,7 @@ def _get_matrix_dataframe(matrix, max_rows, min_rows, max_columns, *, mask=None)
                 vals[:] = 0
             df = pd.DataFrame({"row": rows, "col": cols, "val": vals})
             if num_rows < nonzero._nvals:
-                df.loc["..."] = ["..."] * 3
+                df = _with_ellipsis_row(df)
             return df
     return df.where(pd.notna(df), "")
 
@@ -337,7 +348,7 @@ def _get_vector_dataframe(vector, max_rows, min_rows, max_columns, *, mask=None)
                 vals = np.ones(vals.size, dtype=np.uint8)
         df = pd.DataFrame({"index": indices, "val": vals})
         if num_rows < vector._nvals:
-            df.loc["..."] = ["..."] * 2
+            df = _with_ellipsis_row(df)
         return df
     if mask is not None and not mask.structure and df.size != vector._size:
         # This performs more calculation and uses more memory than I would prefer.
@@ -352,7 +363,7 @@ def _get_vector_dataframe(vector, max_rows, min_rows, max_columns, *, mask=None)
                 vals[:] = 0
             df = pd.DataFrame({"index": indices, "val": vals})
             if num_rows < nonzero._nvals:
-                df.loc["..."] = ["..."] * 2
+                df = _with_ellipsis_row(df)
             return df
     return df.where(pd.notna(df), "")
 
