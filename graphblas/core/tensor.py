@@ -174,6 +174,22 @@ def _as_tensor(x, within):
     return None
 
 
+def _refuse_positional(op, within):
+    """Raise for an operator that reads an entry's indices (``indexunary.rowindex``,
+    ``binary.ss.firsti``, ``semiring.ss.min_secondi``, ...): on a Tensor it would read the
+    stored Matrix's, which depend on the layout, not the Tensor's coordinates. (diagindex
+    does not say it is positional; every index unary op not named value* reads indices.)
+    """
+    if getattr(op, "is_positional", False) or (
+        getattr(op, "opclass", None) in {"IndexUnaryOp", "SelectOp"}
+        and not op.name.startswith("value")
+    ):
+        raise NotImplementedError(
+            f"{within} does not take positional operators ({op.name}): they would read the "
+            f"stored Matrix's indices, not the Tensor's coordinates"
+        )
+
+
 def _as_scalar_operand(x):
     """A 0-d Tensor (a full reduction's result) as the Scalar that ``select`` and ``apply``
     accept; anything else unchanged.
@@ -387,6 +403,7 @@ class Tensor(BaseType):
         if mask is not None:
             mask = _mask_arg(mask)
         u = super().__call__(*args, mask=mask, accum=accum, replace=replace, **opts)
+        _refuse_positional(u.kwargs.get("accum"), "a Tensor's accumulator")
         return TensorUpdater(self, opts=u.opts, **u.kwargs)
 
     def __getitem__(self, keys):
@@ -1142,9 +1159,12 @@ class Tensor(BaseType):
         """Apply ``op`` to every stored value.
 
         A BinaryOp needs a scalar ``left`` or ``right``, which may be a 0-d Tensor.
+        Positional operators (``indexunary.rowindex``, ``binary.ss.firsti``, ...) raise
+        NotImplementedError, here and wherever a Tensor takes an operator.
         """
         right, left = _as_scalar_operand(right), _as_scalar_operand(left)
         probe = self._M.apply(op, right=right, left=left)
+        _refuse_positional(probe.op, "Tensor.apply")
         return TensorExpression(
             "apply",
             _apply_recipe,

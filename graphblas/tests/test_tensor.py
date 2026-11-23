@@ -7650,6 +7650,53 @@ def test_reduce_scalar_aggregators(name):
         X.reduce_scalar(agg.argmin)
 
 
+def test_positional_operators_raise():
+    """Operators that read an entry's indices (``indexunary.rowindex``, ``binary.ss.firsti``,
+    ``semiring.ss.min_secondi``, ...) raise wherever a Tensor takes an operator: they would
+    read the stored Matrix's indices, which depend on the layout, not the Tensor's
+    coordinates. Value operators still work.
+    """
+    from graphblas import indexunary, select, semiring
+
+    einsum = gb.core.tensor.einsum
+    rng = np.random.default_rng(608)
+    X, xv, xp = random_tensor((3, 4), rng, density=0.6, layout=((1,), (0,)))
+    Y = random_tensor((3, 4), rng, density=0.6)[0]
+    F = np.ones((4, 2))
+    calls = [
+        lambda: X.apply(indexunary.rowindex),
+        lambda: X.apply(indexunary.colindex),
+        lambda: X.dup(dtypes.INT64).apply(indexunary.diagindex),  # (typed for integers only)
+        lambda: indexunary.rowindex(X),
+        lambda: X.apply(binary.ss.firsti, right=1),
+        lambda: binary.ss.secondj(X, 1),
+        lambda: X.ewise_mult(Y, binary.ss.firsti),
+        lambda: X.ewise_add(Y, binary.ss.secondi),
+        lambda: X.ewise_union(Y, binary.ss.firstj, 0, 0),
+        lambda: binary.ss.firsti(X & Y),
+        lambda: X.tensordot(F, ([1], [0]), op=semiring.ss.min_secondi),
+        lambda: X.matmul(F, op=semiring.ss.any_firsti),
+        lambda: semiring.ss.min_secondi(X @ F),
+        lambda: einsum("ij,jr->ir", X, F, op=semiring.ss.min_firstj),
+        lambda: random_tensor((3, 4, 5), rng)[0].mttkrp(
+            [np.ones((3, 2)), np.ones((4, 2)), np.ones((5, 2))], 0, op=semiring.ss.max_secondi
+        ),
+        lambda: X.select(select.tril),
+        lambda: X.select(indexunary.rowle, 1),
+    ]
+    for call in calls:
+        with pytest.raises(NotImplementedError, match="positional|index-based"):
+            call()
+    C = X.dup()
+    with pytest.raises(NotImplementedError, match="positional"):
+        C(accum=binary.ss.firsti) << Y
+    with pytest.raises(NotImplementedError, match="positional"):
+        C[0, :](accum=binary.ss.secondj) << Y[1, :].new()
+    # Value operators work
+    check(X.apply(indexunary.valuegt, 0.5).new(), xv > 0.5, xp)
+    check(X.select(select.valuegt, 0.5).new(), xv, xp & (xv > 0.5))
+
+
 def test_isequal_matrix_vector_scalar():
     """``isequal`` / ``isclose`` compare a Tensor with a Matrix, Vector or Scalar of its shape
     by values; another shape is not equal.

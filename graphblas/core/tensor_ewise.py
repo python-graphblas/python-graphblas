@@ -55,6 +55,7 @@ def _ewise_expr(
     else:
         op = get_typed_op(op, self.dtype, other.dtype, kind="binary")
         self._expect_op(op, ("BinaryOp", "Monoid"), within=method, argname="op")
+    _refuse_positional(op, f"Tensor.{method}")
     expr_repr = "{0.name}.%s({1.name}, op={op})" % method  # noqa: UP031
     if shape == self._shape == other._shape:
         return TensorExpression(
@@ -477,6 +478,7 @@ from .tensor import (  # noqa: E402
     _choose_layout,
     _flipped,
     _in_layout,
+    _refuse_positional,
     _rs_cost,
     _store,
     _ti,

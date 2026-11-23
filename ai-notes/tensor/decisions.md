@@ -5,7 +5,7 @@ says what was decided and why, and some say what would change it. "Maintainers" 
 python-graphblas maintainers. Status: everything here is experimental and may change before
 the API settles. `design.md` describes how the code implements these.
 
-The dated decisions (26 to 34) were made while the Tensor was written, without waiting for
+The dated decisions (26 to 35) were made while the Tensor was written, without waiting for
 review. Like the rest, they are open to review.
 
 ## Semantics
@@ -275,6 +275,16 @@ review. Like the rest, they are open to review.
     names a source rather than the effect. TensorLy's `unfold(tensor, mode)` has no such
     keyword (C order only), and pydata/sparse has no `unfold`. Decided 2026-11-22: the
     maintainer kept `order=` for #495 and suggested `traversal_order`.
+35. **Positional operators raise wherever a Tensor takes an operator.** `apply`, `select`,
+    `ewise_add`, `ewise_mult`, `ewise_union`, `tensordot`, `matmul`, `mttkrp`, `einsum` and an
+    accumulator refuse an operator that reads an entry's indices (`indexunary.rowindex`,
+    `colindex`, `diagindex`, `select.tril` and the other index selectors, `binary.ss.firsti`
+    and the other positional binary ops, `semiring.ss.min_secondi` and the like) with
+    NotImplementedError. SuiteSparse would hand them the stored Matrix's indices, which depend
+    on the layout: in layout (1|0), `apply(indexunary.rowindex)` returned each entry's column.
+    _Road not taken:_ logical coordinates, as numpy's `tril` applies to the last two axes; that
+    needs a meaning for "row" and "column" of an n-d Tensor, for the maintainers to choose.
+    Decided 2026-11-22. _Revisit_ with that design.
 
 ## Deferred, on purpose
 

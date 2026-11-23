@@ -50,7 +50,9 @@ later (`verification.md`, "What this does not cover"). What remains:
   `E[x**2] - E[x]**2` with the complex square (for [1+1j, 1-1j], -1), not numpy's real
   `E[|x - mean|**2]` (1). A known difference, inherited from Matrix's aggregators, to change
   in both at once.
-- Index-based `select` (`rowindex`, `tril` and the like), which needs logical coordinates.
+- Positional operators (index-based `select` and `apply`, as `tril` and `rowindex`, and
+  `binary.ss.firsti`, `semiring.ss.min_secondi` and the like), which need logical
+  coordinates: they raise (`decisions.md`, 35).
 - binsparse interchange; `graphblas.io` dispatching ndim > 2 to the Tensor methods.
 - `Tensor.dtype` is a python-graphblas type, not a numpy dtype, so libraries that expect
   numpy dtypes (TensorLy, for example) need a small adapter.
@@ -172,7 +174,7 @@ later (`verification.md`, "What this does not cover"). What remains:
    non-stored modes (not by per-mode copies: `decisions.md`, 25); per-call overhead, in
    einsum and on tiny problems; keeping moved operands on the store; internal waits without
    the row hash (above).
-5. **API:** index-based `select`, a `ttm` method
+5. **API:** positional operators on logical coordinates, a `ttm` method
    that keeps the axis in place (a proposal, above), and the open questions (Vector and
    Tensor index arrays, `graphblas.io` dispatch).
 6. **When SuiteSparse 10.5.2 is the oldest supported version:** drop the 10.5.1 reshape

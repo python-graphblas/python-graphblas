@@ -405,6 +405,9 @@ Limits
 ------
 
 - No Tensor or Vector as indices.
+- No positional operators (``indexunary.rowindex``, ``select.tril``, ``binary.ss.firsti``,
+  ``semiring.ss.min_secondi``, ...) in ``apply``, ``select``, element-wise operations,
+  contractions or accumulators: they raise ``NotImplementedError``.
 - For complex values, the variance and standard deviation aggregators are Matrix's, from the
   complex square, not numpy's real variance.
 - No fill value: a missing entry has no value (as in all of python-graphblas).

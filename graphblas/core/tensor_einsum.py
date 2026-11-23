@@ -75,6 +75,7 @@ def einsum(subscripts, *operands, op=semiring.plus_times, optimize="greedy"):
     typed = get_typed_op(op, dtype, dtype, kind="semiring")
     if typed.opclass != "Semiring":
         raise TypeError(f"einsum needs a Semiring, not {typed.opclass}")
+    _refuse_positional(typed, "einsum")
     grouping = _grouping(typed)
     if census.on:
         if mt is not None and grouping == "any order":
@@ -578,6 +579,7 @@ from .tensor import (  # noqa: E402
     Tensor,
     TensorExpression,
     _as_tensor,
+    _refuse_positional,
     _store,
 )
 from .tensor_contract import _batched_contract_expr  # noqa: E402

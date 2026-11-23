@@ -51,6 +51,7 @@ def _tensordot_expr(self, other, axes, op):
             )
     op = get_typed_op(op, self.dtype, other.dtype, kind="semiring")
     self._expect_op(op, "Semiring", within="tensordot", argname="op")
+    _refuse_positional(op, "Tensor.tensordot")
     shape = tuple(n for x, n in enumerate(self._shape) if x not in a_axes) + tuple(
         n for y, n in enumerate(other._shape) if y not in b_axes
     )
@@ -179,6 +180,7 @@ def _matmul_expr(self, other, op):
         raise ValueError("matmul does not take 0-d operands; use ewise_mult or `*`")
     op = get_typed_op(op, self.dtype, other.dtype, kind="semiring")
     self._expect_op(op, "Semiring", within="matmul", argname="op")
+    _refuse_positional(op, "Tensor.matmul")
     x = self.expand_dims(0) if self.ndim == 1 else self
     y = other.expand_dims(1) if other.ndim == 1 else other
     if x._shape[-1] != y._shape[-2]:
@@ -465,6 +467,7 @@ from .tensor import (  # noqa: E402
     _materialize,
     _normalize_axis,
     _nthreads,
+    _refuse_positional,
     _renumber,
     _row_selector_cost,
     _rs_cost,

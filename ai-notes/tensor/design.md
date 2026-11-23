@@ -293,8 +293,10 @@ Broadcasting follows numpy's shape rules with GraphBLAS semantics:
   group when the rows would pass 2^60 positions; when neither fits, or the copies would pass
   2^60 entries, it raises.
 
-`apply` and value `select` run on `_M` in its layout. Index-based selectors are refused
-because they would need logical coordinates.
+`apply` and value `select` run on `_M` in its layout. Positional operators are refused
+wherever a Tensor takes an operator (`_refuse_positional`: `apply`, `select`, the element-wise
+operations, `tensordot`, `matmul`, `mttkrp`, `einsum`, and an accumulator), since they would
+read `_M`'s indices, not the Tensor's coordinates (`decisions.md`, 35).
 
 ## Reductions
 

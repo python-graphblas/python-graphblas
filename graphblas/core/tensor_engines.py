@@ -261,6 +261,7 @@ def _mttkrp_expr(self, factors, mode, op):
     R = ranks.pop()
     op = get_typed_op(op, self.dtype, mats[others[0]].dtype, kind="semiring")
     self._expect_op(op, "Semiring", within="mttkrp", argname="op")
+    _refuse_positional(op, "Tensor.mttkrp")
     return TensorExpression(
         "mttkrp",
         _t._mttkrp_recipe,
@@ -517,6 +518,7 @@ from .tensor import (  # noqa: E402
     _in_layout,
     _normalize_axis,
     _nthreads,
+    _refuse_positional,
     _sampled_nonempty_rows,
     _store,
 )
