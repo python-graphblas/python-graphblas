@@ -12,8 +12,9 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
         Graph to convert
     nodelist : list, optional
         List of nodes in the nx.Graph. If not provided, all nodes will be used.
-    dtype :
-        Data type
+    dtype : optional
+        A built-in data type (bool, int, float or complex). If not provided, it
+        is inferred from the weights.
     weight : str, default="weight"
         Weight attribute
     name : str, optional
@@ -29,7 +30,8 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
         If the graph has no nodes, or ``nodelist`` is empty, repeats a node, or
         names one the graph does not have (as ``nx.to_scipy_sparse_array`` does).
     ValueError
-        If a weight is not a bool, int (at most 64 bits), float or complex scalar.
+        If a weight is not a bool, int (at most 64 bits), float or complex scalar,
+        or ``dtype`` is a user-defined type.
 
     Notes
     -----
@@ -42,7 +44,14 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
     import networkx as nx
 
     if dtype is not None:
-        dtype = lookup_dtype(dtype).np_type
+        dtype = lookup_dtype(dtype)
+        if dtype._is_udt:
+            # numpy would read the weights as the fields or elements of one value of
+            # the type
+            raise ValueError(
+                f"dtype must be a built-in bool, int, float or complex type, not the UDT {dtype}"
+            )
+        dtype = dtype.np_type
 
     # The checks of the graph and nodelist below are nx.to_scipy_sparse_array's, so
     # the errors and the node order are the same. Building the coo arrays here, not
@@ -77,12 +86,7 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
             G = G.subgraph(nodelist)
 
     index = dict(zip(nodelist, range(nlen), strict=True))
-    if (
-        weight is None
-        and rows_agree
-        and not G.is_multigraph()
-        and (dtype is None or dtype.kind in "biufc")
-    ):
+    if weight is None and rows_agree and not G.is_multigraph():
         # Every entry is 1, so read only the coordinates: row by row in nodelist
         # order, from the adjacency. For an undirected graph it lists each edge in
         # both directions and each self-loop once. With no tuple and no value per
