@@ -156,7 +156,9 @@ A fiber with no entries stays missing (no initial value), as in GraphBLAS. ``sum
 ``min``, ``max``, ``any`` and ``all`` are shorthands for ``reduce`` with the matching monoid.
 
 ``reduce`` also accepts aggregators, including those made of several reductions, such as
-``agg.mean`` and ``agg.varp``, with the result types they have for Matrix:
+``agg.mean`` and ``agg.varp``, with the result types they have for Matrix. Integer and
+boolean values are summed in that floating-point type, as numpy does for a mean, so the sums
+do not wrap:
 
 .. code-block:: python
 

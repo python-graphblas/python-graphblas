@@ -7225,15 +7225,17 @@ def _assert_same_entries(got, want):
 )  # fmt: skip
 def test_reduce_composite_aggregators(name):
     """``reduce`` with an aggregator made of several reductions (``agg.mean``, ``agg.varp``,
-    ...) returns what Matrix returns over one axis and over all of them: values, dtypes, NaN
-    where Matrix gives NaN (``vars`` of one entry), and missing where a fiber is empty. A type
-    Matrix refuses raises the same error.
+    ...) over one axis and over all of them: for float and complex values it returns what
+    Matrix returns (values, dtypes, NaN for ``vars`` of one entry, missing for an empty
+    fiber); for integer and BOOL values, numpy's value over the present entries, in the type
+    Matrix declares, since the sums are taken in that float type. A type the aggregator
+    does not declare raises KeyError, as for Matrix.
     """
     from graphblas import agg
 
     a = getattr(agg, name)
     rng = np.random.default_rng(603)
-    types = [dtypes.FP64, dtypes.FP32, dtypes.INT64, dtypes.INT8, dtypes.BOOL]
+    types = [dtypes.FP64, dtypes.FP32]
     if dtypes._supports_complex:
         types += [dtypes.FC64, dtypes.FC32]
     for dtype in types:
@@ -7255,20 +7257,81 @@ def test_reduce_composite_aggregators(name):
         _assert_same_entries(
             E.reduce(a, axis=1).new(), Matrix(dtype, 15, 4).reduce_rowwise(a).new()
         )
-    # The count is INT64 whatever the values' type, as ``agg.count`` gives it (Matrix's
-    # composite aggregators count INT8 values in INT8, which wraps at 128 entries)
-    vals = np.zeros(200, np.int8)
-    vals[0] = 1
-    X = Tensor.from_dense(vals.reshape(1, 200, 1))
-    got = X.reduce(a, axis=1).new()
-    want = {
-        "mean": vals.mean(), "peak_to_peak": 1, "varp": vals.var(), "vars": vals.var(ddof=1),
-        "stdp": vals.std(), "stds": vals.std(ddof=1), "root_mean_square": np.sqrt(0.005),
-    }  # fmt: skip
-    if name in want:
-        np.testing.assert_allclose(got.to_dense(), [[want[name]]], rtol=1e-12)
-    elif name == "geometric_mean":
-        assert got.to_dense().item() == 0
+    for dtype in [dtypes.INT64, dtypes.INT8, dtypes.UINT8, dtypes.BOOL]:
+        X, xv, xp = random_tensor((3, 4, 5), rng, density=0.6, dtype=dtype)
+        try:
+            out_type = a[dtype].return_type
+        except KeyError:
+            with pytest.raises(KeyError):
+                X.reduce(a, axis=1)
+            continue
+        got = X.reduce(a, axis=1).new()
+        assert got.dtype == out_type
+        has = xp.any(axis=1)
+        want = np.zeros(has.shape, out_type.np_type)
+        for i, k in zip(*np.nonzero(has), strict=True):
+            want[i, k] = _composite_model(name, xv[i, xp[i, :, k], k])
+        coords, values = got.to_coo()
+        np.testing.assert_array_equal(np.array(coords), np.array(np.nonzero(has)))
+        np.testing.assert_allclose(values, want[has], rtol=1e-9, atol=1e-12, equal_nan=True)
+        assert Tensor(dtype, (3, 4, 5)).reduce(a, axis=1).new().nvals == 0
+
+
+def _composite_model(name, v):
+    """The value numpy gives the composite aggregator ``name`` over the values ``v`` of one
+    fiber, in float64 (peak_to_peak in the values' type).
+    """
+    if name == "peak_to_peak":  # (GraphBLAS's minus of BOOL is "not equal")
+        return v.max() != v.min() if v.dtype == bool else v.max() - v.min()
+    v = v.astype(np.float64)
+    n = v.size
+    with np.errstate(all="ignore"):
+        if name == "mean":
+            return v.mean()
+        if name in {"varp", "stdp"}:
+            var = v.var()
+        elif name in {"vars", "stds"}:
+            var = v.var(ddof=1) if n > 1 else np.nan
+        elif name == "geometric_mean":
+            return np.prod(v) ** (1 / n)
+        elif name == "harmonic_mean":
+            return n / np.sum(1 / v)
+        else:  # root_mean_square
+            return np.sqrt(np.mean(v * v))
+        return np.sqrt(var) if name.startswith("std") else var
+
+
+def test_reduce_composite_aggregators_sum_in_float():
+    """Integer and BOOL values are summed in the float result type, as numpy accumulates
+    means and variances in float64, so neither the count nor the sums wrap in the values'
+    type (Matrix's composite aggregators wrap both).
+    """
+    from graphblas import agg
+
+    ones_and_zeros = np.zeros(200, np.int8)
+    ones_and_zeros[0] = 1
+    cases = [
+        ("vars", np.array([3, 3, 3, 3], np.int8), 0.0),
+        ("stds", np.array([3, 3, 3, 3], np.int8), 0.0),
+        ("geometric_mean", np.array([3, 3, 3, 3, 3], np.int8), 3.0),
+        ("mean", np.array([100, 100], np.int8), 100.0),
+        ("varp", np.array([200, 200], np.uint8), 0.0),
+        ("mean", np.array([2**62, 2**62], np.int64), 2.0**62),
+        ("mean", np.ones(200, np.int8), 1.0),
+        ("mean", ones_and_zeros, 0.005),
+        ("vars", ones_and_zeros, ones_and_zeros.var(ddof=1)),
+        ("root_mean_square", ones_and_zeros, np.sqrt(0.005)),
+        ("mean", np.array([True, False, True]), 2 / 3),
+        ("stdp", np.array([True, False, True]), np.std([1.0, 0.0, 1.0])),
+    ]
+    for name, vals, want in cases:
+        got = Tensor.from_dense(vals.reshape(1, -1)).reduce(getattr(agg, name), axis=1).new()
+        assert got.dtype == dtypes.FP64, (name, vals.dtype)
+        np.testing.assert_allclose(got.to_dense(), [want], rtol=1e-12, atol=1e-12)
+    # peak_to_peak keeps the values' type, which its result has
+    got = Tensor.from_dense(np.array([[5, -3]], np.int8)).reduce(agg.peak_to_peak, axis=1)
+    assert got.new().dtype == dtypes.INT8
+    assert got.new().to_dense().tolist() == [8]
 
 
 def test_reduce_composite_aggregators_axes_and_masks():

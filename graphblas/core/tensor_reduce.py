@@ -43,7 +43,13 @@ def _reduce_aggregator(t, op, axis, keepdims):
         return _reduce_expr(t, agg._monoid, axis, keepdims)
     if agg._composite is not None:
         typed = agg[t.dtype]  # (a KeyError for the types Matrix refuses, as peak_to_peak of FC64)
-        parts = [_reduce_aggregator(t, part, axis, keepdims).new() for part in agg._composite]
+        x = t
+        if t.dtype.np_type.kind in "biu" and typed.return_type.np_type.kind in "fc":
+            # Sum integer and BOOL values in the float result type, as numpy accumulates
+            # means and variances in float64: in the values' type the sums, squares and
+            # products wrap (decisions.md, 32)
+            x = t.dup(typed.return_type)
+        parts = [_reduce_aggregator(x, part, axis, keepdims).new() for part in agg._composite]
         # Matrix stores the finalize expression into an output of the aggregator's return type,
         # which can be narrower than the expression's own (FP32 for the mean of FP32 values,
         # where sum / count gives FP64), so this does too.

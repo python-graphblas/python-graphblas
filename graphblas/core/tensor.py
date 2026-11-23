@@ -1152,7 +1152,8 @@ class Tensor(BaseType):
         of a monoid (``agg.sum``, ``agg.max``, ...), of a semiring (``agg.count``,
         ``agg.count_nonzero``, ``agg.sum_of_squares``, ``agg.hypot``, ...), or of several
         of those (``agg.mean``, ``agg.varp``, ``agg.stds``, ...); the result has the type
-        Matrix gives it. Aggregators of positions work along one axis as for the rows of a
+        Matrix gives it, and integer and BOOL values are summed in that float type, as numpy
+        sums them for a mean. Aggregators of positions work along one axis as for the rows of a
         Matrix: ``agg.argmin`` and ``agg.argmax`` give the index of the first minimum or
         maximum, ``agg.first_index`` and ``agg.last_index`` the index of the first or last
         entry, and ``agg.first`` and ``agg.last`` its value. ``first`` and ``last`` also take

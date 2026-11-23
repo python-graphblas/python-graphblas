@@ -231,17 +231,24 @@ review. Like the rest, they are open to review.
     2026-11-10. _Revisit_ if Matrix's exceptions change; a test compares
     28 keys under five operations (and on a Vector and a 3-d Tensor) against the same Matrix
     call.
-32. **Composite aggregators count in INT64 and keep Matrix's result type.**
-    `T.reduce(agg.mean)` (and `varp`, `stds`, `geometric_mean` and the rest) computes each
-    part with its own aggregator (`agg.count`, `agg.sum`, ...), as `T.reduce(agg.count)`
-    would, and combines them with Matrix's finalize function (`sum / count`), stored in the
-    type Matrix gives the result (for the mean, FP32 for FP32 values and FP64 for integers).
-    Matrix's composite reductions type each part by the values' type instead, so they count
-    INT8 values in INT8, which wraps at 128 entries: the mean of 200 INT8 entries, one 1 and
-    the rest 0, is -0.018 there and 0.005 here (and from `Vector.reduce`). _Why not follow
-    Matrix:_ that is a wrong value, and its fix belongs in Matrix. _Cost:_ FP32 results can
-    differ from Matrix's by FP32 rounding, since Matrix also divides and squares in FP32 (the
-    variance of one value is 0 here, about 1e-7 there). Decided 2026-11-22. _Revisit_ when
+32. **Composite aggregators sum integer and BOOL values in their float result type.**
+    `T.reduce(agg.mean)` (and `varp`, `stds`, `geometric_mean` and the rest) copies integer and
+    BOOL values into the type Matrix gives the result (FP64 for the mean of integers), then
+    computes each part with its own aggregator (`agg.count`, `agg.sum`, ...), as
+    `T.reduce(agg.count)` would, and combines them with Matrix's finalize function
+    (`sum/count`), stored in that type. So the count is INT64 and the sums, squares and
+    products are FP64, as numpy accumulates a mean or a variance. Matrix's composite reductions
+    type each part by the values' type instead, so INT8 values are counted, summed and squared
+    in INT8, which wraps: the mean of [100, 100] is -28 there and the sample variance of [3, 3,
+    3, 3] is 1.42, and 100 and 0 here. BOOL means and variances work here (numpy's 2/3 for the
+    mean of [True, False, True]) where Matrix's raise KeyError from the inner sum;
+    `harmonic_mean` does not declare BOOL and raises, as for Matrix. `peak_to_peak` keeps the
+    values' type, which its result has. _Why not follow Matrix:_ those are wrong values, and
+    their fix belongs in Matrix (recorded for it). _Cost:_ a copy of integer values in FP64;
+    and FP32 results can differ from Matrix's by FP32 rounding, since Matrix also counts,
+    divides and squares in FP32 (the variance of one value is 0 here, about 1e-7 there). For
+    complex values the variances are Matrix's E[x^2] - E[x]^2 with the complex square, not
+    numpy's real variance (limitations-and-roadmap.md). Decided 2026-11-22. _Revisit_ when
     Matrix's composite aggregators change.
 33. **Aggregators of positions follow Matrix's rows, along one axis.** `agg.argmin`,
     `agg.argmax`, `agg.first_index` and `agg.last_index` reduce one axis, as
