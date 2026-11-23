@@ -4987,6 +4987,39 @@ def test_subarray_dtype_values_shape():
 
 
 @pytest.mark.skipif("not suitesparse")
+def test_ss_coo_indptr_without_numba_sums_the_counts_in_place(monkeypatch):
+    """Without Numba, coor and cooc imports sum the row counts into indptr with no copy.
+
+    The counts are read unsigned as they are. Cast to the uint64 of indptr instead, they
+    would take two more arrays of their size (16 bytes per row) and twice the time.
+    """
+    from graphblas.core.ss import matrix as ss_matrix
+
+    monkeypatch.setattr(ss_matrix, "_has_numba", False)
+    size = 2**20
+    rows = np.repeat(np.arange(0, size, 2, dtype=np.uint64), 3)  # 3 entries in each even row
+    counts = np.zeros(size, np.uint64)
+    counts[::2] = 3
+    expected = np.concatenate([[0], np.cumsum(counts)]).astype(np.uint64)
+    started = not tracemalloc.is_tracing()
+    if started:  # pragma: no branch (safety)
+        tracemalloc.start()
+    try:
+        tracemalloc.reset_peak()
+        before = tracemalloc.get_traced_memory()[0]
+        indptr = ss_matrix._coo_indptr(rows, size, "rows", "nrows")
+        peak = tracemalloc.get_traced_memory()[1] - before
+    finally:
+        if started:  # pragma: no branch (safety)
+            tracemalloc.stop()
+    assert indptr.dtype == np.uint64
+    assert_array_equal(indptr, expected)
+    if np.dtype(np.intp).itemsize == 8:  # (on 32-bit platforms the uint64 sum casts them)
+        # indptr and the counts, 8 bytes per row each, and no other array of their size
+        assert peak < 20 * size
+
+
+@pytest.mark.skipif("not suitesparse")
 def test_ss_import_coo_with_empty_rows_and_columns():
     # Regression: an empty row in the middle moved entries to another row, and an empty
     # last row lost every entry.
