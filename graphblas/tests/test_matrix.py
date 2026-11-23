@@ -2034,6 +2034,15 @@ def test_reduce_agg_composite_of_integers_matches_numpy():
             assert result == pytest.approx(expected, rel=1e-12, abs=1e-12), (dtype, values, name)
 
 
+def test_reduce_agg_count_nonzero_refuses_a_udt():
+    """count_nonzero and count_zero of a UDT raise KeyError naming the aggregator."""
+    udt = dtypes.register_anonymous(np.dtype([("cnzu_a", np.int8), ("cnzu_b", np.float64)]))
+    v = Vector(udt, size=3)
+    for aggregator in [agg.count_nonzero, agg.count_zero]:
+        with pytest.raises(KeyError, match=f"{aggregator.name} does not work with"):
+            v.reduce(aggregator).new()
+
+
 def test_reduce_agg_hypot_of_large_integers():
     """``agg.hypot`` of integers squares them in FP64, its result type, as numpy does.
 
@@ -2087,6 +2096,8 @@ def test_reduce_agg_count_nonzero_is_int64(dtype):
                 assert result.to_dense().tolist() == expected.tolist()
             else:
                 assert result.value == expected.sum()
+        # A type the caller names is the result type, as for agg.count
+        assert v.reduce(aggregator[dtypes.INT16]).new().dtype == dtypes.INT16
 
 
 @pytest.mark.skipif("not supports_udfs")

@@ -4,7 +4,7 @@ from operator import getitem
 import numpy as np
 
 from ... import agg, backend, binary, indexunary, monoid, select, semiring, unary
-from ...dtypes import BOOL, INT64, lookup_dtype
+from ...dtypes import BOOL, FP64, INT64, lookup_dtype
 from ...exceptions import UdfParseError
 from .. import _supports_udfs
 from ..utils import output_type
@@ -354,8 +354,9 @@ class TypedAggregator:
                 # SuiteSparse computes `v @ init` below as one dot product, on one thread.  For
                 # an expensive multiplier, such as `pow`, an apply and a reduce on every
                 # thread are faster: 8 ms instead of 83 ms for `sum_of_squares` on 1e7
-                # entries.  For a cheap one, such as `isne`, the one pass of `v @ init` is as
-                # fast.
+                # entries.  For a cheap one, such as `isne`, they are faster unless the JIT
+                # is on: `count_nonzero` of 5e6 entries took 1.5 ms instead of 14 ms with the
+                # JIT at "run" or "off", and 1.2 ms instead of 0.15 to 1.1 ms with it on.
                 binop = semiring.binaryop
                 x = binop(agg._initval, v) if agg._switch else binop(v, agg._initval)
                 step1 = x.new(**opts).reduce(semiring.monoid).new(**opts)._as_vector()
@@ -440,23 +441,45 @@ agg.count = Aggregator(
     any_dtype=INT64,
     from_nvals=lambda n: n,
 )
-# These compare in the input type and count in INT64, as `agg.count` does. `plus_isne` would
-# count in the input type, which wraps at 128 for INT8, and comparing after a cast to INT64
-# would count 0.5 as zero.
-agg.count_nonzero = Aggregator(
-    "count_nonzero",
-    applybegin=lambda x: binary.ne(x, 0),
-    semiring=semiring.plus_first,
-    semiring2=semiring.plus_first,
-    any_dtype=INT64,
-)
-agg.count_zero = Aggregator(
-    "count_zero",
-    applybegin=lambda x: binary.eq(x, 0),
-    semiring=semiring.plus_first,
-    semiring2=semiring.plus_first,
-    any_dtype=INT64,
-)
+
+
+def _count_by_kind(agg, updater, expr, opts, *, in_composite, aggs):
+    """Count with the Aggregator that ``aggs`` gives for the kind of the values.
+
+    ``aggs`` maps an ``np.dtype.kind`` character to ``(aggregator, type)``. ``plus_isne`` and
+    ``plus_iseq`` compare and count in INT64 for bool and integer values, which keeps the
+    zero-ness of each, and in FP64 for floats, which keeps 0.5 nonzero and counts exactly
+    up to 2**53. Typed by the values instead, they would count INT8 values in INT8, which
+    wraps at 128. Complex types have no ISNE or ISEQ, so complex values are compared first
+    and then counted in INT64. The result is INT64, as for ``agg.count``.
+    """
+    dtype = expr.args[0].dtype
+    if (sub := aggs.get(dtype.np_type.kind)) is None:
+        raise KeyError(f"{agg.name} does not work with {dtype}")
+    sub_agg, sub_type = sub
+    return sub_agg[sub_type]._new(updater, expr, in_composite=in_composite)
+
+
+def _counter(name, sr, compare):
+    by_value = Aggregator(name, semiring=sr, semiring2=semiring.plus_first, vector_apply=True)
+    compared = Aggregator(
+        name,
+        applybegin=compare,
+        semiring=semiring.plus_first,
+        semiring2=semiring.plus_first,
+        any_dtype=INT64,
+        vector_apply=True,
+    )
+    aggs = dict.fromkeys("biu", (by_value, INT64))
+    aggs["f"] = (by_value, FP64)
+    aggs["c"] = (compared, INT64)
+    # Untyped, the result is INT64; typed by the user (count_nonzero[FP32]), it is that type
+    custom = partial(_count_by_kind, aggs=aggs)
+    return Aggregator(name, custom=custom, types=[semiring.plus_first], any_dtype=INT64)
+
+
+agg.count_nonzero = _counter("count_nonzero", semiring.plus_isne, lambda x: binary.ne(x, 0))
+agg.count_zero = _counter("count_zero", semiring.plus_iseq, lambda x: binary.eq(x, 0))
 agg.sum_of_squares = Aggregator(
     "sum_of_squares",
     initval=2,
