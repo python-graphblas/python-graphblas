@@ -2771,6 +2771,7 @@ def test_context_importable():
     assert gb.ss.global_context is global_context
 
 
+@pytest.mark.skipif(sys.platform == "emscripten", reason="Pyodide (WebAssembly): no subprocesses")
 @pytest.mark.parametrize("kind", ["binary", "unary"])
 def test_ss_op_module_can_be_the_first_import(kind):
     """``graphblas.core.ss.binary`` (or ``unary``) imports as a process's first graphblas import.
