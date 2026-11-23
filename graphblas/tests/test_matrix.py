@@ -4284,6 +4284,34 @@ def test_ss_serialize(A):
         Matrix.ss.deserialize(a[:-5])
 
 
+@pytest.mark.skipif("not suitesparse or not supports_udfs")
+def test_ss_serialize_udt_with_a_long_name():
+    """A UDT whose GraphBLAS name is too long for the blob still round-trips.
+
+    A named UDT is stored by its short name. An anonymous one cannot be, so deserialize
+    needs ``dtype=`` and raises ValueError saying so.
+    """
+    named = dtypes.register_new(
+        "LongNamedSerUDT", np.dtype([(f"lnsu_{i:02d}_{'x' * 20}", np.int16) for i in range(10)])
+    )
+    anon = dtypes.register_anonymous(
+        np.dtype([(f"lasu_{i:02d}_{'y' * 20}", np.int32) for i in range(10)])
+    )
+    for dtype in [named, anon]:
+        A = Matrix(dtype, 2, 2)
+        A[0, 1] = tuple(range(10))
+        v = Vector(dtype, 3)
+        v[2] = tuple(range(10, 20))
+        for x in [A, v]:
+            blob = x.ss.serialize()
+            assert type(x).ss.deserialize(blob, dtype=dtype).isequal(x, check_dtype=True)
+            if dtype is named:
+                assert type(x).ss.deserialize(blob).isequal(x, check_dtype=True)
+            else:
+                with pytest.raises(ValueError, match="pass it as `dtype=`"):
+                    type(x).ss.deserialize(blob)
+
+
 @pytest.mark.skipif("not suitesparse")
 def test_ss_config(A):
     d = {}

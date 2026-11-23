@@ -71,7 +71,14 @@ def _resolve_serialized_dtype(data_obj, data_nbytes, obj_kind):
     info = lib.GxB_Serialized_get_String(data_obj, dtype_char, lib.GrB_NAME, data_nbytes)
     if info != lib.GrB_SUCCESS:  # pragma: no cover (safety)
         raise _error_code_lookup[info](f"{obj_kind} deserialize failed to get the name")
-    return _string_to_dtype(ffi.string(dtype_char).decode())
+    try:
+        return _string_to_dtype(ffi.string(dtype_char).decode())
+    except (ValueError, TypeError, SyntaxError):
+        # serialize stores no name for an anonymous UDT whose dtype string is too long
+        raise ValueError(
+            f"{obj_kind} deserialize cannot tell the dtype of this user-defined type; "
+            "pass it as `dtype=`"
+        ) from None
 
 
 def _jit_c_source(name, funcname, jit_c_definition, types=()):
