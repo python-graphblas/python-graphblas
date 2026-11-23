@@ -406,6 +406,32 @@ class Tensor(BaseType):
         _refuse_positional(u.kwargs.get("accum"), "a Tensor's accumulator")
         return TensorUpdater(self, opts=u.opts, **u.kwargs)
 
+    def __contains__(self, index):
+        """Whether an entry is stored at ``index``, a tuple of ``ndim`` ints (or an int for a
+        1-d Tensor), as ``(i, j) in A`` for a Matrix.
+        """
+        if self.ndim == 1 and not isinstance(index, tuple):
+            index = (index,)
+        if (
+            not isinstance(index, tuple)
+            or len(index) != self.ndim
+            or not all(isinstance(i, (int, np.integer)) for i in index)
+        ):
+            raise TypeError(
+                f"Invalid index to Tensor contains: {index!r}. A tuple of {self.ndim} ints is "
+                f"expected."
+            )
+        return self[index].new()._nvals == 1
+
+    def __iter__(self):
+        """The coordinates of the stored entries, as tuples of ints in C order, as iterating
+        over a Matrix gives the (row, col) of its entries.
+        """
+        if self.ndim == 0:
+            return iter([()] * self._M._nvals)
+        coords, _ = self.to_coo(values=False)
+        return zip(*coords, strict=True)
+
     def __getitem__(self, keys):
         """Extract with outer (orthogonal) indexing, as GraphBLAS extract does.
 
@@ -1535,6 +1561,7 @@ for _name in (
     # conversions
     "to_dense", "to_matrix", "to_vector", "to_scalar", "to_matrices", "to_pydata_sparse",
     "to_scipy_sparse", "isclose",
+    "__contains__", "__iter__",
     # shape operations
     "permute_dims", "expand_dims", "squeeze", "reshape", "ravel", "flatten", "pad",
     # operations

@@ -275,6 +275,16 @@ A repeated index repeats its slice, as with ``np.ix_``: ``X[:, [1, 1]]`` is 2 x 
 negative index counts from the end. An index out of range raises the exception Matrix raises
 for the same key (``IndexError``, ``IndexOutOfBound`` or ``InvalidIndex``).
 
+As for Matrix, ``index in T`` tests whether an entry is stored there, and iterating over a
+Tensor gives the coordinates of its entries, in C order:
+
+.. code-block:: python
+
+    >>> (0, 1, 3) in X, (0, 0, 0) in X
+    (True, False)
+    >>> [tuple(int(i) for i in c) for c in X]
+    [(0, 1, 3), (0, 2, 0), (1, 0, 2)]
+
 Assignment by index
 -------------------
 

@@ -7697,6 +7697,40 @@ def test_positional_operators_raise():
     check(X.select(select.valuegt, 0.5).new(), xv, xp & (xv > 0.5))
 
 
+def test_contains_and_iter():
+    """``index in T`` says whether an entry is stored at ``index`` (a tuple of ints, or an int
+    for a 1-d Tensor), as for Matrix and Vector, and iterating gives the stored entries'
+    coordinates in C order, whatever the layout. A bad index raises TypeError, one out of
+    range IndexError, as for Matrix.
+    """
+    rng = np.random.default_rng(609)
+    X, _, xp = random_tensor((2, 3, 4), rng, density=0.4)
+    want = [tuple(int(i) for i in c) for c in zip(*np.nonzero(xp), strict=True)]
+    for layout in all_layouts(3)[::4]:
+        Y = X.dup(layout=layout)
+        for idx in itertools.product(range(2), range(3), range(4)):
+            assert (idx in Y) == bool(xp[idx])
+        assert [tuple(int(i) for i in c) for c in Y] == want
+    with pytest.raises(TypeError, match="tuple of 3 ints"):
+        (0, 1) in X  # noqa: B015
+    with pytest.raises(TypeError, match="tuple of 3 ints"):
+        (0, slice(None), 1) in X  # noqa: B015
+    with pytest.raises(IndexError):
+        (0, 5, 1) in X  # noqa: B015
+    v = Tensor.from_coo([[1, 3]], [5.0, 6.0], shape=(5,))
+    assert 1 in v
+    assert (3,) in v
+    assert 2 not in v
+    assert [tuple(c) for c in v] == [(1,), (3,)]
+    s = Tensor.from_dense(np.array(2.0))
+    assert () in s
+    assert list(s) == [()]
+    assert list(Tensor(dtypes.FP64, ())) == []
+    with gb.config.set(autocompute=True):
+        assert want[0] in X * X
+        assert [tuple(int(i) for i in c) for c in X * X] == want
+
+
 def test_isequal_matrix_vector_scalar():
     """``isequal`` / ``isclose`` compare a Tensor with a Matrix, Vector or Scalar of its shape
     by values; another shape is not equal.

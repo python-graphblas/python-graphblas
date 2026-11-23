@@ -5,7 +5,7 @@ says what was decided and why, and some say what would change it. "Maintainers" 
 python-graphblas maintainers. Status: everything here is experimental and may change before
 the API settles. `design.md` describes how the code implements these.
 
-The dated decisions (26 to 35) were made while the Tensor was written, without waiting for
+The dated decisions (26 to 36) were made while the Tensor was written, without waiting for
 review. Like the rest, they are open to review.
 
 ## Semantics
@@ -285,6 +285,14 @@ review. Like the rest, they are open to review.
     _Road not taken:_ logical coordinates, as numpy's `tril` applies to the last two axes; that
     needs a meaning for "row" and "column" of an n-d Tensor, for the maintainers to choose.
     Decided 2026-11-22. _Revisit_ with that design.
+36. **`index in T` and iteration follow Matrix.** `(i, j, k) in T` says whether an entry is
+    stored there (an int for a 1-d Tensor, as for a Vector), and `iter(T)` gives the stored
+    entries' coordinates in C order, as `iter(A)` gives a Matrix's (row, col). Without them
+    Python fell back to `__getitem__`, so `in` compared the sub-Tensors along axis 0 with the
+    index and said False for a stored entry, and iteration made one sub-Tensor per position of
+    axis 0, up to 2^60. _Road not taken:_ numpy's iteration over the first axis; it lists every
+    position, stored or not, which a sparse Tensor should not, and Matrix and Vector iterate
+    over their entries. `len(T)` stays undefined, as for Matrix. Decided 2026-11-22.
 
 ## Deferred, on purpose
 
