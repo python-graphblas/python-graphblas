@@ -39,10 +39,10 @@ So, in Pyodide or JupyterLite (jupyterlite-pyodide-kernel 0.8 uses Pyodide 314):
 Older versions of Pyodide don't recognize these wheels: micropip says it can't find a pure
 Python 3 wheel. What differs in Pyodide:
 
-  - NumPy's default integer is int32, so integer values given to ``from_coo``, ``from_dense``
-    and similar constructors without a dtype, as Python ints or as NumPy arrays of the default
-    integer, make INT32 Matrix and Vector objects, which wrap past 2**31 - 1. Give
-    ``dtype=int`` (INT64) where values or results can be larger.
+  - NumPy's default integer is int32, so a NumPy array of integers made without a dtype, such
+    as ``np.arange(5)``, makes INT32 Matrix and Vector objects, which wrap past 2**31 - 1.
+    Python ints make INT64, as on other platforms. Give ``dtype=int`` (INT64) where values or
+    results can be larger.
   - GraphBLAS runs single-threaded, since Pyodide has no threads.
   - A computation that asks for 4 GiB of memory or more at once crashes Pyodide instead of
     raising ``OutOfMemory``, because of a bug in SuiteSparse:GraphBLAS on 32-bit platforms.

@@ -181,6 +181,18 @@ def _get_subdtype(dtype):
     return dtype
 
 
+# NumPy's default integer, which it gives Python ints, is int32 on 32-bit platforms such as
+# WebAssembly
+_NUMPY_INT_IS_32_BITS = np.dtype(int).itemsize == 4
+
+
+def _has_python_int(values):
+    """Whether ``values`` (a scalar, or lists and tuples of them) holds a Python int."""
+    if isinstance(values, (list, tuple)):
+        return any(map(_has_python_int, values))
+    return isinstance(values, (int, range)) and not isinstance(values, bool)
+
+
 def values_to_numpy_buffer(
     array, dtype=None, *, copy=False, ownable=False, order="C", subarray_after=None
 ):
@@ -213,8 +225,18 @@ def values_to_numpy_buffer(
             array = _view_if_same_layout(array, lookup_dtype(array.dtype).np_type)
             array = _ownable_array(array, array.dtype, copy=copy, order=order)
         else:
+            given = array
             # https://numpy.org/doc/stable/release/2.0.0-notes.html#new-copy-keyword-meaning-for-array-and-asarray-constructors
             array = np.array(array, copy=copy or None, order=order)
+            if (
+                _NUMPY_INT_IS_32_BITS
+                and not is_input_np
+                and array.dtype == np.int32
+                and _has_python_int(given)
+            ):
+                # Python ints make INT64 on every platform, as in lookup_dtype(int) and
+                # Scalar.from_value, not NumPy's default integer
+                array = array.astype(np.int64)
         if array.dtype.hasobject:
             raise ValueError("object dtype for values is not allowed")
         dtype = lookup_dtype(array.dtype)

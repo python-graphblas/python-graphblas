@@ -93,17 +93,12 @@ def _stable_repr_width(monkeypatch):
 
 @pytest.fixture
 def A():
-    # INT64 on every platform, as the expected reprs show; see default_int in conftest.py
-    return Matrix.from_coo(
-        [0, 0, 0], [0, 2, 4], [0, 1, 2], nrows=1, ncols=5, dtype=dtypes.INT64, name="A_1"
-    )
+    return Matrix.from_coo([0, 0, 0], [0, 2, 4], [0, 1, 2], nrows=1, ncols=5, name="A_1")
 
 
 @pytest.fixture
 def B():
-    return Matrix.from_coo(
-        [0, 2, 4], [0, 0, 0], [10, 20, 30], nrows=5, ncols=1, dtype=dtypes.INT64, name="B_1"
-    )
+    return Matrix.from_coo([0, 2, 4], [0, 0, 0], [10, 20, 30], nrows=5, ncols=1, name="B_1")
 
 
 @pytest.fixture
@@ -114,7 +109,6 @@ def C():
         [0, 2, 3, 4, 5, 6, 7, 8],
         nrows=70,
         ncols=77,
-        dtype=dtypes.INT64,
         name="C",
     )
 
@@ -137,7 +131,7 @@ def v():
 
 @pytest.fixture
 def w():
-    return Vector.from_coo([0, 5, 64, 69], [1, 2, 3, 4], size=77, dtype=dtypes.INT64, name="w")
+    return Vector.from_coo([0, 5, 64, 69], [1, 2, 3, 4], size=77, name="w")
 
 
 @pytest.fixture
@@ -3414,9 +3408,7 @@ def test_vector_huge_html():
 
 @pytest.mark.skipif("not pd")
 def test_sparse_vector_repr():
-    v = Vector.from_coo(
-        [100 * i for i in range(100)], [10 * i for i in range(100)], dtype=dtypes.INT64, name="v"
-    )
+    v = Vector.from_coo([100 * i for i in range(100)], [10 * i for i in range(100)], name="v")
     repr_printer(v, "v")
     assert repr(v) == (
         '"v"        nvals  size  dtype  format\n'
@@ -3571,11 +3563,7 @@ def test_sparse_vector_repr():
 @pytest.mark.skipif("not pd")
 def test_sparse_matrix_repr():
     A = Matrix.from_coo(
-        [100 * i for i in range(100)],
-        [10 * i for i in range(100)],
-        list(range(100)),
-        dtype=dtypes.INT64,
-        name="A",
+        [100 * i for i in range(100)], [10 * i for i in range(100)], list(range(100)), name="A"
     )
     repr_printer(A, "A")
     assert repr(A) == (

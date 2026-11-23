@@ -27,7 +27,7 @@ from graphblas.exceptions import (
     OutputNotEmpty,
 )
 
-from .conftest import autocompute, compute, default_int, op_items, pypy, shouldhave
+from .conftest import autocompute, compute, op_items, pypy, shouldhave
 
 from graphblas import Matrix, Scalar, Vector  # isort:skip (for dask-graphblas)
 
@@ -49,13 +49,13 @@ def A():
         [0, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5, 6],
         [3, 2, 3, 1, 5, 3, 7, 8, 3, 1, 7, 4],
     ]
-    return Matrix.from_coo(*data, dtype=dtypes.INT64)  # not default_int; see conftest.py
+    return Matrix.from_coo(*data)
 
 
 @pytest.fixture
 def v():
     data = [[1, 3, 4, 6], [1, 1, 2, 0]]
-    return Vector.from_coo(*data, dtype=dtypes.INT64)  # not default_int; see conftest.py
+    return Vector.from_coo(*data)
 
 
 def test_new():
@@ -114,7 +114,7 @@ def test_from_coo():
     assert C3.nrows == 10
     assert C3.ncols == 3
     assert C3.nvals == 2  # duplicates were combined
-    assert C3.dtype == default_int
+    assert C3.dtype == int
     assert C3[1, 1].new() == 6  # 2*3
     C3monoid = Matrix.from_coo([0, 1, 1], [2, 1, 1], [1, 2, 3], nrows=10, dup_op=monoid.times)
     assert C3.isequal(C3monoid)
@@ -156,7 +156,7 @@ def test_from_coo_scalar():
     assert C.nrows == 4
     assert C.ncols == 3
     assert C.nvals == 3
-    assert C.dtype == default_int
+    assert C.dtype == dtypes.INT64
     if suitesparse:
         assert C.ss.is_iso
         assert C.ss.iso_value == 7
@@ -167,7 +167,7 @@ def test_from_coo_scalar():
     assert C.nrows == 4
     assert C.ncols == 3
     assert C.nvals == 3
-    assert C.dtype == default_int
+    assert C.dtype == dtypes.INT64
     if suitesparse:
         assert C.ss.is_iso
         assert C.ss.iso_value == 7
@@ -1709,10 +1709,10 @@ def test_reduce_agg_argminmax_empty_rows():
         (agg.argmin, [1, 1, 0], [3, 0, 0]),
         (agg.argmax, [0, 1, 3], [0, 2, 3]),
     ]:
-        expected = Vector.from_coo([0, 2, 3], rows, size=4, dtype=dtypes.INT64)
+        expected = Vector.from_coo([0, 2, 3], rows, size=4)
         assert A.reduce_rowwise(aggr).new().isequal(expected, check_dtype=True)
         assert A.T.reduce_columnwise(aggr).new().isequal(expected, check_dtype=True)
-        expected = Vector.from_coo([0, 1, 3], cols, size=4, dtype=dtypes.INT64)
+        expected = Vector.from_coo([0, 1, 3], cols, size=4)
         assert A.reduce_columnwise(aggr).new().isequal(expected, check_dtype=True)
         assert A.T.reduce_rowwise(aggr).new().isequal(expected, check_dtype=True)
 
@@ -4823,8 +4823,7 @@ def test_subarray_dtype_ss_column_order(shape):
     # imported. Column order with the element's own axes slowest would scramble the
     # numbers both ways, and an unpack then pack round trip alone would hide it, since
     # the two scrambles cancel.
-    # The dtype that expected.tolist() below infers
-    expected = np.arange(2 * 3 * 4, dtype=default_int).reshape(2, 3, *shape)
+    expected = np.arange(2 * 3 * 4, dtype=np.int64).reshape(2, 3, *shape)
     A = Matrix.from_dense(expected)
     assert A.dtype.np_type.shape == shape
     bitmap = np.ones((2, 3), dtype=bool)

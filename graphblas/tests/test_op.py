@@ -1077,8 +1077,8 @@ def test_binaryop_superset_monoids():
 
 def test_div_semirings():
     assert not hasattr(semiring, "plus_div")
-    A1 = Matrix.from_coo([0, 1], [0, 0], [-1, -3], dtype=dtypes.INT64)
-    A2 = Matrix.from_coo([0, 1], [0, 0], [2, 2], dtype=dtypes.INT64)
+    A1 = Matrix.from_coo([0, 1], [0, 0], [-1, -3])
+    A2 = Matrix.from_coo([0, 1], [0, 0], [2, 2])
     result = A1.T.mxm(A2, semiring.plus_cdiv).new()
     assert result[0, 0].new() == -1
     assert result.dtype == dtypes.INT64

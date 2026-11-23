@@ -126,7 +126,7 @@ def test_matrix_to_from_numpy():
 
 @pytest.mark.skipif("not nx or not ss")
 def test_matrix_to_from_networkx():
-    M = gb.Matrix.from_coo([0, 1, 1], [0, 0, 1], [1, 2, 3], dtype=int)
+    M = gb.Matrix.from_coo([0, 1, 1], [0, 0, 1], [1, 2, 3])
     G = gb.io.to_networkx(M)
     a = np.array([[1, 0], [2, 3]])
     G2 = nx.from_numpy_array(a, create_using=nx.DiGraph)
