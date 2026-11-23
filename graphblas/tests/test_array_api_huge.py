@@ -60,3 +60,20 @@ def test_index_helpers_in_int64_give_numpys_results(monkeypatch):
         for k in [slice(a, b, c) for a in values for b in values for c in [None, -3, -1, 1, 2]]:
             assert _utils.slice_length(k, n) == len(range(*k.indices(n))), (k, n)
     assert _utils.slice_length(slice(None), 2**60) == 2**60
+
+
+def test_scatter_from_selected_coordinates_as_numpy(monkeypatch):
+    """Assignment through index arrays where numpy cannot hold the array's size (forced here)
+    builds its selection from each axis's selected coordinates, and assigns as numpy does.
+    """
+    from .test_array_api_elementwise import make
+    from .test_array_api_indexing import SET_CASES, A
+
+    monkeypatch.setattr(_utils, "_MAX_INTP", 0)
+    for key, value in SET_CASES:
+        dense = np.where(A % 3 == 0, 0.0, A.astype(float))
+        expected = dense.copy()
+        expected[key] = value
+        y = make(dense, 0.0)
+        y[key] = value
+        assert_array_equal(y, expected)

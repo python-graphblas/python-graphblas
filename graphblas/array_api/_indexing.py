@@ -497,30 +497,14 @@ def _scatter_setitem(x, items, value):
         for k in items
     )  # fmt: skip
     coords = []
-    # The grid holds only each axis's selected coordinates, and each item of the key becomes
-    # positions among them: a grid over x.shape stops at numpy's largest size, 2**31 - 1
-    # positions on 32-bit platforms such as WebAssembly
-    picked, small = [], []
-    for k in key:
-        if k is None or k is Ellipsis:
-            small.append(k)
-            continue
-        n = x.shape[len(picked)]
-        if isinstance(k, slice):
-            picked.append(np.arange(*k.indices(n), dtype=np.int64))
-            small.append(slice(None))
-        elif isinstance(k, np.ndarray):
-            sel, at = np.unique(k.reshape(-1), return_inverse=True)
-            picked.append(sel)
-            small.append(at.reshape(k.shape))
-        else:
-            picked.append(np.array([k], np.int64))
-            small.append(0)
-    small = tuple(small)
-    small_shape = tuple(p.size for p in picked)
-    for a, p in enumerate(picked):
-        grid = p.reshape([p.size if b == a else 1 for b in range(x.ndim)])
-        coords.append(np.asarray(np.broadcast_to(grid, small_shape)[small]))
+    # numpy builds the int64 grid over x.shape only below its largest size in bytes: always
+    # on 64-bit platforms below 2**60 positions, and below 2**28 on 32-bit ones
+    if math.prod(x.shape) <= _utils._MAX_INTP // 8:
+        for a, n in enumerate(x.shape):
+            grid = np.arange(n, dtype=np.int64).reshape([n if b == a else 1 for b in range(x.ndim)])
+            coords.append(np.asarray(np.broadcast_to(grid, x.shape)[key]))
+    else:
+        coords = _selected_coords(x.shape, key)
     shape = coords[0].shape
     size = math.prod(shape)
     if isinstance(value, Array):
@@ -551,7 +535,40 @@ def _scatter_setitem(x, items, value):
         T(D.S) << Tensor(gbdt, x.shape)
 
 
+def _selected_coords(shape, key):
+    """Each axis's coordinates of the positions ``key`` selects, laid out as numpy lays out
+    the selection, from a grid of each axis's selected coordinates only. A grid over
+    ``shape`` stops at numpy's largest size, 2**31 - 1 positions on 32-bit platforms such as
+    WebAssembly. Each item of the key becomes positions among its axis's coordinates.
+    """
+    picked, small = [], []
+    for k in key:
+        if k is None or k is Ellipsis:
+            small.append(k)
+            continue
+        n = shape[len(picked)]
+        if isinstance(k, slice):
+            picked.append(np.arange(*k.indices(n), dtype=np.int64))
+            small.append(slice(None))
+        elif isinstance(k, np.ndarray):
+            sel, at = np.unique(k.reshape(-1), return_inverse=True)
+            picked.append(sel)
+            small.append(at.reshape(k.shape))
+        else:
+            picked.append(np.array([k], np.int64))
+            small.append(0)
+    small = tuple(small)
+    small_shape = tuple(p.size for p in picked)
+    coords = []
+    for a, p in enumerate(picked):
+        grid = p.reshape([p.size if b == a else 1 for b in range(len(shape))])
+        coords.append(np.asarray(np.broadcast_to(grid, small_shape)[small]))
+    return coords
+
+
 # take, take_along_axis
+
+
 def _index_operand(indices, name):
     if isinstance(indices, Array):
         if indices.dtype.kind not in "iu":
