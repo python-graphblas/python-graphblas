@@ -2000,6 +2000,42 @@ def test_reduce_agg_composite_of_integers_matches_numpy():
             assert result == pytest.approx(expected, rel=1e-12, abs=1e-12), (dtype, values, name)
 
 
+@pytest.mark.parametrize("dtype", ["BOOL", "INT8", "UINT8", "INT16", "FP32", "FP64"])
+def test_reduce_agg_count_nonzero_is_int64(dtype):
+    """count_nonzero and count_zero count in INT64, comparing each value in its own type.
+
+    Rowwise, columnwise, to a Scalar and for a Vector, they match numpy on 40000 entries.
+    The test fails if they count in the input type, which wraps at 128 for INT8, or
+    compare after a cast to an integer, which makes 0.5 zero.
+    """
+    np_type = dtypes.lookup_dtype(dtype).np_type
+    if np_type.kind == "f":
+        pattern = [0.5, -0.0, np.nan, 0.0, 2.0]
+    elif np_type.kind == "b":
+        pattern = [True, False, True]
+    else:
+        pattern = [0, 1, 2]
+    values = np.resize(np.array(pattern, np_type), (2, 20000))
+    A = Matrix.from_dense(values)
+    v = Vector.from_dense(values.ravel())
+    for name, expected in [
+        ("count_nonzero", np.count_nonzero(values, axis=1)),
+        ("count_zero", values.shape[1] - np.count_nonzero(values, axis=1)),
+    ]:
+        aggregator = getattr(agg, name)
+        for result in [
+            A.reduce_rowwise(aggregator).new(),
+            A.T.reduce_columnwise(aggregator).new(),
+            A.reduce_scalar(aggregator).new(),
+            v.reduce(aggregator).new(),
+        ]:
+            assert result.dtype == dtypes.INT64
+            if result.ndim == 1:
+                assert result.to_dense().tolist() == expected.tolist()
+            else:
+                assert result.value == expected.sum()
+
+
 @pytest.mark.skipif("not supports_udfs")
 def test_reduce_row_udf(A):
     result = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])

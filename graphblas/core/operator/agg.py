@@ -436,11 +436,22 @@ agg.count = Aggregator(
     any_dtype=INT64,
     from_nvals=lambda n: n,
 )
+# These compare in the input type and count in INT64, as `agg.count` does. `plus_isne` would
+# count in the input type, which wraps at 128 for INT8, and comparing after a cast to INT64
+# would count 0.5 as zero.
 agg.count_nonzero = Aggregator(
-    "count_nonzero", semiring=semiring.plus_isne, semiring2=semiring.plus_first
+    "count_nonzero",
+    applybegin=lambda x: binary.ne(x, 0),
+    semiring=semiring.plus_first,
+    semiring2=semiring.plus_first,
+    any_dtype=INT64,
 )
 agg.count_zero = Aggregator(
-    "count_zero", semiring=semiring.plus_iseq, semiring2=semiring.plus_first
+    "count_zero",
+    applybegin=lambda x: binary.eq(x, 0),
+    semiring=semiring.plus_first,
+    semiring2=semiring.plus_first,
+    any_dtype=INT64,
 )
 agg.sum_of_squares = Aggregator(
     "sum_of_squares",
