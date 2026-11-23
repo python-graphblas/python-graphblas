@@ -1131,3 +1131,33 @@ def test_pow_special_cases():
             e = make(np.array(exponents, dt), dt(0.5))
             expected = np.array([_spec_pow(v, float(k)) for k in e.todense()], dt)
             assert_array_equal(np_call(xp.pow, xp.asarray(dt(v)), e), expected)
+
+
+def test_size_1_operand_broadcasts_as_one_value(monkeypatch):
+    """An operand of size 1 that broadcasts against the other (x - xp.max(x, keepdims=True))
+    gives numpy's result, and is applied as one value: no broadcast of the Tensors, which
+    cost O(size of x) (0.36 s for 1e9 positions with 1e6 stored).
+    """
+    a = np.array([[0.0, 2.0, 0.0], [-1.0, 0.0, 4.0]])
+    x = make(a, 0.0)
+    for b in [np.array([3.0]), np.array([[3.0]]), np.array([[-0.0]]), np.array([[np.nan]])]:
+        for left in [False, True]:
+            y = make(b, 0.0)
+            got = xp.subtract(y, x) if left else xp.subtract(x, y)
+            expected = np.subtract(b, a) if left else np.subtract(a, b)
+            assert_array_equal(got, expected)
+    assert_array_equal(xp.multiply(make(np.array([[2.0]]), 0.0), x), 2.0 * a)
+    assert_array_equal(xp.equal(x, make(np.array([2.0]), 0.0)), a == 2.0)
+    # (a size-1 operand with more dimensions makes the result have them: not one value)
+    assert_array_equal(xp.add(make(np.array([1.0]), 0.0), make(np.array([[[5.0]]]), 0.0)),
+                       np.array([[[6.0]]]))  # fmt: skip
+    from graphblas.core import tensor_ewise
+
+    def broadcast(*args, **kwargs):
+        raise AssertionError("a size-1 operand was broadcast")
+
+    monkeypatch.setattr(tensor_ewise, "_check_expansion", broadcast)
+    big = xp.from_coo(([3, 2**39],), [1.0, -2.0], (2**40,))
+    r = big - xp.max(big, keepdims=True)
+    assert r.nnz == 2
+    assert float(r.fill_value) == -1.0

@@ -522,6 +522,13 @@ def _binary(spec, x1, x2):
         from ._creation import asarray
 
         a = asarray(a)
+    if isinstance(a, Array) and isinstance(b, Array) and a.ndim and b.ndim:
+        # An operand of size 1 that broadcasts against the other is one value, as a 0-d one
+        # is: x - xp.max(x, keepdims=True) costs O(entries of x), not O(size of x)
+        if b.size == 1 and b.ndim <= a.ndim:
+            b = _to_0d(b)
+        elif a.size == 1 and a.ndim <= b.ndim:
+            a = _to_0d(a)
     with np.errstate(all="ignore"):
         rdt = ufunc(_probe(a), _probe(b)).dtype
         fill = _fill_of(ufunc, rdt, (a, b))
@@ -557,6 +564,13 @@ def _binary(spec, x1, x2):
     else:
         R = _utils.map_values(lambda v: ufunc(v, s), [T], rdt)
     return _result(R, fill)
+
+
+def _to_0d(x):
+    """The one value of the size-1 Array ``x`` as a 0-d Array."""
+    T = x._T()
+    value = T.to_coo()[1][0] if T.nvals else x._fill
+    return Array._new(_utils.empty_0d(x.dtype), value)
 
 
 def _dtype_name(x):
