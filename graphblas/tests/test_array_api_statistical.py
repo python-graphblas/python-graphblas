@@ -12,9 +12,11 @@ from .test_array_api_elementwise import (
     DTYPES,
     assert_array_equal,
     check_invariants,
+    fills_for,
     inputs,
     make,
     np_call,
+    random_values,
 )
 
 REDUCTIONS = [
@@ -96,6 +98,168 @@ def test_reductions(name, func, shape, axes, keepdims):
                     raise AssertionError(
                         f"{name} of {dtype} fill {x.fill_value!r} axis={axis}: {exc}"
                     ) from None
+
+
+NAN_REDUCTIONS = ["nansum", "nanprod", "nanmax", "nanmin", "nanmean", "nanvar", "nanstd"]
+
+
+def nan_inputs(dtype, shape, seed=0):
+    """(dense, Array) pairs, one per fill of the dtype: floats get NaN stored at random, a
+    slice along the last axis of NaN only, and (for fill NaN) NaN at unstored positions.
+    """
+    rng = np.random.default_rng(seed)
+    for i, fill in enumerate(fills_for(dtype)):
+        dense = random_values(rng, dtype, shape)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            fillv = np.asarray(fill).astype(dtype)[()]
+        if dense.ndim:
+            dense = np.where(rng.random(shape) < 0.4, fillv, dense).astype(dtype)
+            if dtype.kind in "fc":
+                dense = np.where(rng.random(shape) < 0.2, np.nan, dense).astype(dtype)
+                if dense.size and dense.ndim > 1:
+                    dense[(0,) * (dense.ndim - 1)] = np.nan
+        yield dense, make(dense, fillv, rng if i % 2 else None)
+
+
+@pytest.mark.parametrize("name", NAN_REDUCTIONS)
+@pytest.mark.parametrize(("shape", "axes"), SHAPES_AXES, ids=str)
+@pytest.mark.parametrize("keepdims", [False, True])
+def test_nan_reductions(name, shape, axes, keepdims):
+    # numpy's nan-functions skip NaN, stored or as the fill; a slice of NaN only gives 0, 1
+    # or NaN as numpy's do
+    func = getattr(np, name)
+    for dtype in DTYPES:
+        for dense, x in nan_inputs(dtype, shape, seed=13):
+            for axis in axes:
+                for extra in (
+                    [{}, {"ddof": 1}, {"ddof": 2}] if name in {"nanvar", "nanstd"} else [{}]
+                ):
+                    kwargs = {"axis": axis, "keepdims": keepdims, **extra}
+                    if name in {"nanmax", "nanmin"} and dtype.kind == "c":
+                        with pytest.raises(TypeError, match="real-valued"):
+                            getattr(xp, name)(x, **kwargs)
+                        continue
+                    try:
+                        expected = np_call(func, dense, **kwargs)
+                    except (TypeError, ValueError) as exc:
+                        with pytest.raises(type(exc)):
+                            getattr(xp, name)(x, **kwargs)
+                        continue
+                    if np.asarray(expected).dtype not in set(DTYPES):
+                        continue
+                    out = getattr(xp, name)(x, **kwargs)
+                    values = dense[~np.isnan(dense)] if dense.dtype.kind in "fc" else dense
+                    try:
+                        if name in {"nanmax", "nanmin"} or (
+                            dtype.kind in "biu" and name in {"nansum", "nanprod"}
+                        ):
+                            assert_array_equal(out, np.asarray(expected), zero_signs=False)
+                        elif name == "nanprod" and _order_matters(values):
+                            pass  # (infinities, or overflow, and zeros: NaN or not by order)
+                        else:
+                            finite = (
+                                values[np.isfinite(values)] if values.dtype.kind in "fc" else values
+                            )
+                            scale = float(np.abs(finite.astype(np.complex128)).max(initial=1.0))
+                            if name in {"nanvar", "nanstd"}:
+                                # (squares; capped so the tolerance fits float32)
+                                single = dense.dtype in (np.float32, np.complex64)
+                                scale = min(scale * scale, 1e30 if single else 1e300)
+                            _assert_close_parts(out, expected, scale * max(dense.size, 1))
+                    except AssertionError as exc:
+                        raise AssertionError(
+                            f"{name} of {dtype} fill {x.fill_value!r} {kwargs}: {exc}"
+                        ) from None
+
+
+def _order_matters(values):
+    """Whether a product of ``values`` may be NaN or not by the order of its factors: it has a
+    zero and an infinity, or factors whose product overflows.
+    """
+    if not values.size or not (values == 0).any():
+        return False
+    with np.errstate(all="ignore"):
+        big = np.prod(np.abs(values[values != 0]).astype(np.float64))
+    return not np.isfinite(values).all() or big > np.finfo(values.real.dtype).max
+
+
+def _assert_close_parts(out, expected, scale):
+    """``assert_close``, part by part for complex results (a complex infinity minus itself is
+    NaN, which ``assert_allclose`` would report).
+    """
+    if out.dtype.kind != "c":
+        assert_close(out, expected, scale)
+        return
+    expected = np.asarray(expected)
+    assert out.dtype == expected.dtype
+    assert_close(xp.real(out), expected.real, scale)
+    assert_close(xp.imag(out), expected.imag, scale)
+
+
+def test_nan_reductions_keywords():
+    rng = np.random.default_rng(17)
+    dense = np.where(rng.random((4, 5)) < 0.3, np.nan, rng.normal(size=(4, 5))).astype(np.float32)
+    x = make(dense, np.nan, rng)
+    # dtype: the sums' dtype (numpy rounds var's deviations to the input's dtype, float32
+    # here, which these compute in dtype: so a float32 tolerance)
+    for name in ["nansum", "nanprod", "nanmean", "nanvar", "nanstd"]:
+        expected = np_call(getattr(np, name), dense, axis=1, dtype=np.float64)
+        out = getattr(xp, name)(x, axis=1, dtype=xp.float64)
+        assert out.dtype == expected.dtype
+        np.testing.assert_allclose(out.todense(), expected, rtol=1e-6, equal_nan=True)
+    ints = np.arange(12, dtype=np.int32).reshape(3, 4)
+    assert_close(
+        xp.nanmean(make(ints, 0), axis=0, dtype=xp.float32),
+        np.nanmean(ints, axis=0, dtype=np.float32),
+    )
+    # ddof and its Array API spelling, correction
+    assert_close(
+        xp.nanvar(x, axis=0, correction=1), np_call(np.nanvar, dense, axis=0, ddof=1), 10.0
+    )
+    with pytest.raises(ValueError, match="ddof and correction"):
+        xp.nanvar(x, ddof=1, correction=1)
+    with pytest.raises(TypeError, match="out="):
+        xp.nansum(x, out=np.empty(5))
+    with pytest.raises(TypeError, match="needs an Array"):
+        xp.nanmean(dense)
+    # empty axes, as numpy gives them (nanmax and nanmin of none raise)
+    for shape in [(0, 3), (3, 0)]:
+        e = make(np.zeros(shape), 0.0)
+        for name in NAN_REDUCTIONS:
+            for axis in [0, 1, None]:
+                try:
+                    expected = np_call(getattr(np, name), np.zeros(shape), axis=axis)
+                except ValueError:
+                    with pytest.raises(ValueError, match="empty axis"):
+                        getattr(xp, name)(e, axis=axis)
+                    continue
+                assert_close(getattr(xp, name)(e, axis=axis), expected)
+
+
+def test_nan_reductions_stay_sparse():
+    # A 1e5 x 1e5 array with 1000 entries (50 of them NaN), filled with NaN or 0: every
+    # nan-function, over each axis, under a densify limit below the result's size
+    rng = np.random.default_rng(19)
+    n, k = 10**5, 1000
+    flat = rng.choice(n * 10, k, replace=False)
+    rows, cols = flat // 10, flat % 10  # (ten columns, so that columns hold many entries)
+    values = rng.normal(size=k)
+    values[:50] = np.nan
+    for fill in [np.nan, 0.0]:
+        x = xp.from_coo((rows, cols), values, (n, n), fill_value=fill)
+        with gb.config.set(array_api_densify_limit=10**4):
+            for name in NAN_REDUCTIONS:
+                for axis in [None, 0, 1]:
+                    out = getattr(xp, name)(x, axis=axis)
+                    assert out.nnz <= k
+        # each column's values, against numpy on that column alone
+        for name in NAN_REDUCTIONS:
+            out = getattr(xp, name)(x, axis=0)
+            for col in range(3):
+                dense = np.full(n, fill)
+                dense[rows[cols == col]] = values[cols == col]
+                assert_close(out[col], np_call(getattr(np, name), dense), 10.0 * n)
 
 
 @pytest.mark.parametrize("name", ["sum", "prod"])

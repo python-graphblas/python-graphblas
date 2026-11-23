@@ -32,6 +32,27 @@ Creating and changing fills
 
 .. autofunction:: graphblas.array_api.prune
 
+Reductions that skip NaN
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+numpy's ``nan`` reductions, with numpy's keywords. A library that looks for them on the
+array's namespace, as xarray does for its float reductions (which skip NaN by default), uses
+these instead of converting the Array to numpy.
+
+.. autofunction:: graphblas.array_api.nansum
+
+.. autofunction:: graphblas.array_api.nanprod
+
+.. autofunction:: graphblas.array_api.nanmax
+
+.. autofunction:: graphblas.array_api.nanmin
+
+.. autofunction:: graphblas.array_api.nanmean
+
+.. autofunction:: graphblas.array_api.nanvar
+
+.. autofunction:: graphblas.array_api.nanstd
+
 Contractions
 ~~~~~~~~~~~~
 

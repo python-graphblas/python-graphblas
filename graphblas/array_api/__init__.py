@@ -28,6 +28,7 @@ from . import (
     _info,
     _linalg,
     _manipulation,
+    _nanfunctions,
     _searching,
     _set,
     _sorting,
@@ -44,6 +45,7 @@ from ._indexing import *  # noqa: F403
 from ._info import *  # noqa: F403
 from ._linalg import *  # noqa: F403
 from ._manipulation import *  # noqa: F403
+from ._nanfunctions import *  # noqa: F403
 from ._searching import *  # noqa: F403
 from ._set import *  # noqa: F403
 from ._sorting import *  # noqa: F403
@@ -92,6 +94,7 @@ __all__ += _indexing.__all__
 __all__ += _info.__all__
 __all__ += _linalg.__all__
 __all__ += _manipulation.__all__
+__all__ += _nanfunctions.__all__
 __all__ += _searching.__all__
 __all__ += _set.__all__
 __all__ += _sorting.__all__
