@@ -6,7 +6,7 @@ and how to run them.
 
 ## Unit tests
 
-`graphblas/tests/test_tensor.py` and `graphblas/tests/test_tensor_io.py` (806 tests) check
+`graphblas/tests/test_tensor.py` and `graphblas/tests/test_tensor_io.py` (845 tests) check
 every operation against a dense numpy oracle. That means the values plus _presence_, a
 boolean array of which positions hold a value. Three things recur throughout:
 
@@ -27,18 +27,18 @@ compile them with Numba bounds checks (the `numba_boundscheck` fixture).
 Run the tests under the configurations they are meant for:
 
 ```bash
-# blocking and non-blocking mode (806 passed each)
+# blocking and non-blocking mode (845 passed each)
 pytest graphblas/tests/test_tensor.py graphblas/tests/test_tensor_io.py --backend suitesparse --blocking
 pytest graphblas/tests/test_tensor.py graphblas/tests/test_tensor_io.py --backend suitesparse --no-blocking
 # another backend: the modules skip cleanly
 pytest graphblas/tests/test_tensor.py --backend suitesparse-vanilla
 ```
 
-With warm caches each run takes about 35 s. With an empty SuiteSparse JIT cache, as in CI,
-the first took about 7 minutes, most of it compiling.
+With warm caches each run takes about 35 s on an idle machine. With an empty SuiteSparse
+JIT cache, as in CI, the first took about 7 minutes, most of it compiling.
 
 **Without Numba.** Block it in the interpreter, so that every `import numba` fails. pydata/sparse
-needs Numba too, so its io tests skip as well (674 passed, 132 skipped):
+needs Numba too, so its io tests skip as well (713 passed, 132 skipped):
 
 ```python
 # run_without_numba.py
@@ -55,7 +55,7 @@ python run_without_numba.py graphblas/tests/test_tensor.py graphblas/tests/test_
 ```
 
 **With the JIT off.** A plugin turns it off before every test. The array-UDT engine's tests
-skip (789 passed, 17 skipped):
+skip (828 passed, 17 skipped):
 
 ```python
 # jit_off_plugin.py (put it on PYTHONPATH)
@@ -82,7 +82,7 @@ pydata/sparse 0.19.
 global format is (`design.md`, "Data model"), so the modules also run with the global set to
 by column before every test, by a plugin that sets `GrB_STORAGE_ORIENTATION_HINT` to
 `GrB_COLMAJOR` in `pytest_runtest_setup`. All three modules, oracles included, passed that
-way on 2026-11-22 (833 tests, SuiteSparse 10.5.2).
+way on 2026-11-22 (872 tests, SuiteSparse 10.5.2).
 
 `graphblas/tests/test_core.py` checks the SuiteSparse floor in subprocesses. With the Tensor
 module's `lib` replaced by one without the Container API, every constructor raises the same
@@ -136,8 +136,8 @@ pytest graphblas/tests/test_tensor_oracles.py --runslow --backend suitesparse
 ```
 
 The default case counts are sized for CI: about 2,200 checks, plus the runs that force each
-engine (2026-10-21). On 2026-11-22 the 27 tests took 80 s with the caches warm from the unit
-tests. Much of a run is compiling the JIT kernels its seed's cases need, so the time varies
+engine (2026-10-21). On 2026-11-22 the 27 tests took 72-80 s with the caches warm from the
+unit tests. Much of a run is compiling the JIT kernels its seed's cases need, so the time varies
 by seed. Three runs at 10 times the counts (`-k "not teeth"`) took about 4 minutes each
 (2026-10-21). For a thorough run, multiply the counts:
 
