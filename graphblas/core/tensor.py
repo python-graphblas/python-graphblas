@@ -46,6 +46,8 @@ from .base import BaseExpression, BaseType
 from .expr import InfixExprBase, Updater
 from .mask import StructuralMask, ValueMask
 from .matrix import Matrix, TransposedMatrix
+from .operator.indexunary import TypedBuiltinIndexUnaryOp
+from .operator.select import TypedBuiltinSelectOp
 from .scalar import Scalar, ScalarExpression
 from .tensor_layout import Layout
 from .utils import output_type
@@ -174,15 +176,28 @@ def _as_tensor(x, within):
     return None
 
 
+# The built-in index unary and select ops that read an entry's value alone
+_VALUE_OPS = frozenset({"valueeq", "valuene", "valuegt", "valuege", "valuelt", "valuele"})
+
+
+def _is_value_op(op):
+    """Whether the typed index unary or select op ``op`` reads an entry's value alone: one of
+    the built-in value* ops. A user's op gets the entry's indices, whatever its name.
+    """
+    return op.name in _VALUE_OPS and isinstance(
+        op, (TypedBuiltinIndexUnaryOp, TypedBuiltinSelectOp)
+    )
+
+
 def _refuse_positional(op, within):
     """Raise for an operator that reads an entry's indices (``indexunary.rowindex``,
     ``binary.ss.firsti``, ``semiring.ss.min_secondi``, ...): on a Tensor it would read the
     stored Matrix's, which depend on the layout, not the Tensor's coordinates. (diagindex
-    does not say it is positional; every index unary op not named value* reads indices.)
+    does not say it is positional; every index unary op but the built-in value* ops reads
+    indices.)
     """
     if getattr(op, "is_positional", False) or (
-        getattr(op, "opclass", None) in {"IndexUnaryOp", "SelectOp"}
-        and not op.name.startswith("value")
+        getattr(op, "opclass", None) in {"IndexUnaryOp", "SelectOp"} and not _is_value_op(op)
     ):
         raise NotImplementedError(
             f"{within} does not take positional operators ({op.name}): they would read the "
@@ -1169,17 +1184,17 @@ class Tensor(BaseType):
     def select(self, op, thunk=None):
         """Keep the entries whose values pass ``op``.
 
-        ``op`` is a value selector, as an operator (``select.valuegt``) or a string as for
-        Matrix (``">"``, ``"valuegt"``). Index-based selectors raise NotImplementedError.
-        ``thunk`` may be a 0-d Tensor.
+        ``op`` is a built-in value selector, as an operator (``select.valuegt``) or a string
+        as for Matrix (``">"``, ``"valuegt"``). Index-based selectors and user-defined ones
+        (which get the indices) raise NotImplementedError. ``thunk`` may be a 0-d Tensor.
         """
         # Matrix.select resolves the op, strings included; its expression is never computed
         thunk = _as_scalar_operand(thunk)
         probe = self._M.select(op, thunk)
-        if not probe.op.name.startswith("value"):
+        if not _is_value_op(probe.op):
             raise NotImplementedError(
-                "Tensor.select supports value selectors (select.value*) only; index-based "
-                "selectors would need logical coordinates"
+                "Tensor.select supports the built-in value selectors (select.value*) only; "
+                "index-based selectors would need logical coordinates"
             )
         return TensorExpression(
             "select",

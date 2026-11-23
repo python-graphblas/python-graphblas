@@ -282,9 +282,12 @@ review. Like the rest, they are open to review.
     and the other positional binary ops, `semiring.ss.min_secondi` and the like) with
     NotImplementedError. SuiteSparse would hand them the stored Matrix's indices, which depend
     on the layout: in layout (1|0), `apply(indexunary.rowindex)` returned each entry's column.
-    _Road not taken:_ logical coordinates, as numpy's `tril` applies to the last two axes; that
-    needs a meaning for "row" and "column" of an n-d Tensor, for the maintainers to choose.
-    Decided 2026-11-22. _Revisit_ with that design.
+    Only the built-in value ops (`valueeq`, ..., `valuele`) pass: a user's index unary or
+    select op gets the indices whatever its name, so it is refused too, even one that reads
+    only the value, since nothing tells the two apart. _Road not taken:_ logical coordinates,
+    as numpy's `tril` applies to the last two axes; that needs a meaning for "row" and "column"
+    of an n-d Tensor, for the maintainers to choose. Decided 2026-11-22. _Revisit_ with that
+    design.
 36. **`index in T`, `get` and iteration follow Matrix.** `(i, j, k) in T` says whether an entry
     is stored there (an int for a 1-d Tensor, as for a Vector), and `iter(T)` gives the stored
     entries' coordinates in C order, as `iter(A)` gives a Matrix's (row, col). Without them

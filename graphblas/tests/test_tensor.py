@@ -7774,6 +7774,7 @@ def test_positional_operators_raise():
     coordinates. Value operators still work.
     """
     from graphblas import indexunary, select, semiring
+    from graphblas.core.operator import IndexUnaryOp, SelectOp
 
     einsum = gb.core.tensor.einsum
     rng = np.random.default_rng(608)
@@ -7801,6 +7802,18 @@ def test_positional_operators_raise():
         lambda: X.select(select.tril),
         lambda: X.select(indexunary.rowle, 1),
     ]
+    if gb.core._has_numba:
+        # A user's index unary op reads indices whatever its name
+
+        def value_rows(x, i, j, thunk):  # pragma: no cover (numba)
+            return i == thunk
+
+        udf = IndexUnaryOp.register_anonymous(value_rows)
+        calls += [
+            lambda: X.apply(udf, 0),
+            lambda: X.select(udf, 0),
+            lambda: X.select(SelectOp.register_anonymous(value_rows), 0),
+        ]
     for call in calls:
         with pytest.raises(NotImplementedError, match="positional|index-based"):
             call()
@@ -7812,6 +7825,8 @@ def test_positional_operators_raise():
     # Value operators work
     check(X.apply(indexunary.valuegt, 0.5).new(), xv > 0.5, xp)
     check(X.select(select.valuegt, 0.5).new(), xv, xp & (xv > 0.5))
+    check(X.select("valuegt", 0.5).new(), xv, xp & (xv > 0.5))
+    check(X.select("<=", 0.5).new(), xv, xp & (xv <= 0.5))
 
 
 def test_contains_and_iter():
