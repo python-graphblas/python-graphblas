@@ -107,11 +107,10 @@ def _imports_whole(A):
     Not when every value equals the first but zeros of both signs are present: the import
     then stores one value (``graphblas.io.from_scipy_sparse`` compares with ``==``).
     """
-    if A.format not in {"csr", "csc"} or A.ndim != 2 or not A.has_canonical_format:
+    supported = np.dtype(A.dtype) in DTYPES.values()
+    if A.format not in {"csr", "csc"} or not supported or not A.has_canonical_format:
         return False
     data = A.data
-    if np.dtype(data.dtype) not in DTYPES.values():
-        return False
     if data.size and data.dtype.kind in "fc" and data[0] == 0 and (data == data[0]).all():
         return not _utils.differs(data, data[0]).any()
     return True

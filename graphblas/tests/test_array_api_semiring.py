@@ -247,10 +247,6 @@ def test_einsum_operands_and_errors():
         xp.einsum("ij")
     with pytest.raises(TypeError, match="Arrays"):
         xp.einsum("ij->ij", [[1.0]])
-    with pytest.raises(NotImplementedError, match="not supported"):
-        xp.einsum("...ij->...ji", x)
-    with pytest.raises(NotImplementedError, match="diagonal"):
-        xp.einsum("ii->i", make(np.eye(3), 0.0))
     with pytest.raises(ValueError, match="fill is inf"):
         xp.einsum("ij,jk->ik", x, x.T, semiring="min_plus")
     with pytest.raises(ValueError, match="operand 1"):
@@ -261,6 +257,116 @@ def test_einsum_operands_and_errors():
     assert_close(R, np.max(b, axis=1), -np.inf)
     with gb.config.set(array_api_densify_limit=5), pytest.raises(xp.DensifyError):
         xp.einsum("ij,jk->ik", make(a, 1.0), x.T)
+
+
+# numpy's subscript rules: "...", repeated indices, size-1 broadcasting, implicit output
+NUMPY_EINSUMS = [
+    ("...j,...j->...", [(2, 1, 4), (3, 4)]),
+    ("...j,...j", [(2, 1, 4), (3, 4)]),
+    ("ij...,jk...->ik...", [(2, 3, 5), (3, 4, 1)]),
+    ("ij...,jk...->...ik", [(2, 3, 5), (3, 4, 1)]),
+    ("...ij,...jk", [(2, 3), (7, 3, 4)]),
+    ("...a,...a", [(2, 3), (1, 3)]),
+    ("ij->ji...", [(2, 3)]),
+    ("...", [(3,)]),
+    ("...,...", [(), (3,)]),
+    ("ii", [(3, 3)]),
+    ("ii->i", [(3, 3)]),
+    ("iij->ij", [(3, 3, 2)]),
+    ("iji->ij", [(3, 2, 3)]),
+    ("iii->i", [(3, 3, 3)]),
+    ("ijji", [(2, 3, 3, 2)]),
+    ("ii...->...i", [(3, 3, 2)]),
+    ("ij,jj->i", [(2, 3), (3, 3)]),
+    ("ii,jj->ij", [(3, 3), (2, 2)]),
+    ("i,i", [(3,), (1,)]),
+    ("ij,ij->ij", [(3, 1), (3, 4)]),
+    ("ij,j->ij", [(3, 1), (1,)]),
+    ("i,i->i", [(0,), (1,)]),
+    ("Ab,bC", [(2, 3), (3, 4)]),
+]
+
+
+@pytest.mark.parametrize(("subscripts", "shapes"), NUMPY_EINSUMS, ids=[s for s, _ in NUMPY_EINSUMS])
+def test_einsum_numpy_subscripts(subscripts, shapes):
+    """The namespace's einsum follows numpy's subscripts: "...", an index repeated in one
+    operand (a diagonal, or a trace when summed), an index of size 1 against another size,
+    and implicit output.
+    """
+    for dtype in [np.float64, np.int64, np.bool_]:
+        for fill in [0, 1]:
+            fill = np.dtype(dtype).type(fill)
+            arrays = [_rand(shape, fill, dtype) for shape in shapes]
+            expected = np.einsum(subscripts, *arrays)
+            R = xp.einsum(subscripts, *[make(a, fill) for a in arrays])
+            assert_close(R, expected)
+    # A pending result of "..." slices and multiplies as any contraction's does
+    a, b = _rand((2, 3, 4), 0.0), _rand((2, 4, 5), 0.0)
+    R = xp.einsum("...ij,...jk->...ik", make(a, 0.0), make(b, 0.0))
+    assert_close(R[1, :, 2:], np.matmul(a, b)[1, :, 2:])
+    assert_close(R, np.matmul(a, b))
+
+
+def test_einsum_semirings_with_numpy_subscripts():
+    """A semiring works with "..." and with diagonals, as with explicit indices."""
+    a = make(_rand((2, 3, 4), np.inf), np.inf)
+    b = make(_rand((2, 4, 5), np.inf), np.inf)
+    R = xp.einsum("...ij,...jk->...ik", a, b, semiring="min_plus")
+    assert_close(R, xp.matmul(a, b, semiring="min_plus").todense(), np.inf)
+    d = _rand((4, 4), np.inf)
+    R = xp.einsum("ii->i", make(d, np.inf), semiring="min_plus")
+    assert_close(R, np.diagonal(d), np.inf)
+    v = _rand((4,), np.inf)
+    R = xp.einsum("ii,i->", make(d, np.inf), make(v, np.inf), semiring="min_plus")
+    assert_close(R, np.min(np.diagonal(d) + v))
+
+
+def test_einsum_sublists_and_subscript_errors():
+    """The sublist form gives numpy's results, and invalid subscripts raise ValueError where
+    numpy's einsum does.
+    """
+    a, b, c = _rand((2, 3), 0.0), _rand((3, 4), 0.0), _rand((3, 3), 0.0)
+    x, y, z = make(a, 0.0), make(b, 0.0), make(c, 0.0)
+    for args, xargs in [
+        ((a, [0, 1], b, [1, 2], [0, 2]), (x, [0, 1], y, [1, 2], [0, 2])),
+        ((a, [0, 1], b, [1, 2]), (x, [0, 1], y, [1, 2])),
+        ((a, [1, 0]), (x, [1, 0])),
+        ((a, [27, 0]), (x, [27, 0])),  # (labels order the implicit output as ints)
+        ((a, [Ellipsis, 0], b[:, 0], [0]), (x, [Ellipsis, 0], y[:, 0], [0])),
+        ((c, (5, 5)), (z, (5, 5))),
+        ((c, [np.int64(0), 0], [0]), (z, [np.int64(0), 0], [0])),
+    ]:
+        assert_close(xp.einsum(*xargs), np.einsum(*args))
+    for args in [(x, [52]), (x, [-1, 0])]:
+        with pytest.raises(ValueError, match="not in"):
+            xp.einsum(*args)
+    with pytest.raises(TypeError, match="sublist label"):
+        xp.einsum(x, [0, "a"])
+    with pytest.raises(TypeError, match="subscripts"):
+        xp.einsum(x)
+    for subscripts, shapes in [
+        ("...j,...j->j", [(2, 1, 4), (3, 4)]),
+        ("ij...->ji", [(2, 3, 1)]),
+        ("ii->i", [(3, 4)]),
+        ("ij->iz", [(2, 3)]),
+        ("ij->ii", [(2, 3)]),
+        ("i.j", [(2, 3)]),
+        ("i..j", [(2, 3)]),
+        ("......", [(2,)]),
+        ("ij", [(2, 3, 4)]),
+        ("i...", [()]),
+        ("i,i", [(3,), (2,)]),
+        ("ij,jk", [(2, 3)]),
+    ]:
+        arrays = [np.ones(shape) for shape in shapes]
+        with pytest.raises(ValueError):  # noqa: PT011 (numpy's messages vary by version)
+            np.einsum(subscripts, *arrays)
+        with pytest.raises(ValueError, match="einsum"):
+            xp.einsum(subscripts, *[xp.asarray(a) for a in arrays])
+    # numpy's "..." may stand for more axes than there are letters; here it may not
+    assert xp.einsum("ab...", xp.zeros((1,) * 52)).shape == (1,) * 52
+    with pytest.raises(ValueError, match="more than 52"):
+        xp.einsum("...", xp.zeros((1,) * 53))
 
 
 def test_semiring_errors():

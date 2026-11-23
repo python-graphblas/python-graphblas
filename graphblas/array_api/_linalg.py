@@ -13,7 +13,9 @@ The rules for fills, semirings and deferred results are in the Technical Notes p
   or NaN, handles NaN under a float min or max monoid, and defers the result.
 """
 
+import collections
 import math
+import string
 import weakref
 
 import numpy as np
@@ -482,11 +484,15 @@ def _vecdot(a, b, axis, shape, out_shape, typed, out_dt, fill):
 
 
 def einsum(subscripts, /, *operands, semiring=None):
-    """Einstein summation (an extension), with numpy's subscripts: ``einsum("ij,jk->ik", a,
-    b)`` is ``a @ b``.
+    """Einstein summation (an extension), as numpy's einsum: ``einsum("ij,jk->ik", a, b)`` is
+    ``a @ b``.
 
-    An index may appear at most once in each operand (no diagonals), and ``...`` is not
-    supported.
+    The subscripts follow numpy's rules: the output may be left implicit, ``...`` stands for
+    the axes no letter names, an index of size 1 broadcasts, and an index repeated in one
+    operand takes its diagonal (``"ii->i"``), or its trace when summed (``"ii"``). numpy's
+    sublist form works too: ``einsum(a, [0, 1], b, [1, 2], [0, 2])``. A diagonal costs
+    O(entries of its operand). Unlike numpy's, the indices, those of ``...`` included, are at
+    most 52.
 
     ``semiring`` is a graphblas Semiring or its name; the default is plus_times, or lor_land
     for bool. Its multiply combines the operands of each term, and its monoid sums the terms
@@ -496,13 +502,15 @@ def einsum(subscripts, /, *operands, semiring=None):
     from ..core.tensor_einsum import _einsum_plan
     from ..core.tensor_einsum import einsum as tensor_einsum
 
-    if not isinstance(subscripts, str):
-        raise TypeError(f"einsum's subscripts must be a str, not {type(subscripts).__name__}")
-    if not operands:
-        raise ValueError("einsum needs at least one operand")
+    if isinstance(subscripts, str):
+        if not operands:
+            raise ValueError("einsum needs at least one operand")
+    else:
+        subscripts, operands = _from_sublists((subscripts, *operands))
     ops = [_operand(x) for x in operands]
     for x in ops:
         _check(x, "einsum")
+    subscripts, ops = _explicit_einsum(subscripts, ops)
     rdt = check_supported(np.result_type(*(x.dtype for x in ops)), "einsum")
     typed, default = _resolve(semiring, rdt, "einsum")
     shapes = tuple(x.shape for x in ops)
@@ -539,6 +547,137 @@ def einsum(subscripts, /, *operands, semiring=None):
     return _lazy.contraction(
         ops, build, shape, out_dt, fill, (terms, output, typed), nterms, product, typed
     )
+
+
+# numpy's letters for the labels 0 to 51 of the sublist form (so they sort as the labels do)
+_SUBLIST_LETTERS = string.ascii_uppercase + string.ascii_lowercase
+
+
+def _from_sublists(args):
+    """``(subscripts, operands)`` of numpy's sublist form: operands, each followed by its
+    sublist of labels (ints in [0, 52), or ``...``), and an optional output sublist.
+    """
+
+    def term(sublist):
+        if not isinstance(sublist, (list, tuple)):
+            raise TypeError(
+                "einsum takes subscripts (a str), or operands each followed by a sublist (a "
+                f"list of ints); got a {type(sublist).__name__} for a sublist"
+            )
+        out = []
+        for k in sublist:
+            if k is Ellipsis:
+                out.append("...")
+            elif isinstance(k, (int, np.integer)) and not isinstance(k, (bool, np.bool_)):
+                if not 0 <= k < len(_SUBLIST_LETTERS):
+                    raise ValueError(f"einsum: sublist label {k} is not in [0, 52)")
+                out.append(_SUBLIST_LETTERS[k])
+            else:
+                raise TypeError(f"einsum: a sublist label must be an int or ..., not {k!r}")
+        return "".join(out)
+
+    if len(args) < 2:
+        raise TypeError("einsum takes subscripts (a str), or operands each followed by a sublist")
+    if len(args) % 2:
+        operands, sublists, output = args[0:-1:2], args[1::2], "->" + term(args[-1])
+    else:
+        operands, sublists, output = args[0::2], args[1::2], ""
+    return ",".join(term(s) for s in sublists) + output, operands
+
+
+def _explicit_einsum(subscripts, ops):
+    """``(subscripts, operands)`` under numpy's einsum rules, as the Tensor's einsum takes
+    them: each term names each axis of its operand once, the sizes of an index agree, and the
+    output is explicit.
+
+    ``...`` becomes letters of its own, aligned from the right. An axis of size 1 whose index
+    has another size elsewhere is squeezed out of its operand, and its letter out of the term:
+    an operand without an index is constant along it. An index repeated in one term takes the
+    operand's diagonal over those axes (``_einsum_diagonal``).
+    """
+    from ._manipulation import squeeze
+
+    s = subscripts.replace(" ", "")
+    inputs, arrow, output = s.partition("->")
+    terms = inputs.split(",")
+    if len(terms) != len(ops):
+        raise ValueError(f"einsum: {len(terms)} terms for {len(ops)} operands")
+    for t in terms + ([output] if arrow else []):
+        rest = t.replace("...", "", 1)
+        if any(c not in string.ascii_letters for c in rest):
+            raise ValueError(
+                f"einsum: invalid subscripts {subscripts!r}: each term is letters and at most "
+                "one '...'"
+            )
+    widths = []
+    for t, x in zip(terms, ops, strict=True):
+        named = len(t.replace("...", ""))
+        if (x.ndim < named) if "..." in t else (x.ndim != named):
+            raise ValueError(f"einsum: term {t!r} does not match an operand of shape {x.shape}")
+        widths.append(x.ndim - named)
+    fresh = [c for c in string.ascii_letters if c not in s]
+    if max(widths) > len(fresh):
+        raise ValueError(f"einsum: {subscripts!r} needs more than 52 indices")
+    ell = "".join(fresh[: max(widths)])
+    terms = [t.replace("...", ell[len(ell) - w :]) for t, w in zip(terms, widths, strict=True)]
+    if not arrow:
+        # numpy's implicit output: the axes of "...", then the indices that appear once, sorted
+        counts = collections.Counter("".join(terms))
+        output = ell + "".join(sorted(c for c, k in counts.items() if k == 1 and c not in ell))
+    elif "..." in output:
+        output = output.replace("...", ell)
+    elif ell:
+        raise ValueError(
+            f"einsum: {subscripts!r} has no '...' in the output for the axes that '...' "
+            "stands for in the operands"
+        )
+    if len(set(output)) != len(output):
+        raise ValueError(f"einsum: the output {output!r} repeats an index")
+    if missing := set(output) - set("".join(terms)):
+        raise ValueError(f"einsum: the output index {min(missing)!r} is in no operand")
+    ops = list(ops)
+    for i, (t, x) in enumerate(zip(terms, ops, strict=True)):
+        if len(set(t)) != len(t):
+            terms[i], ops[i] = _einsum_diagonal(t, x)
+    sizes = {}
+    for t, x in zip(terms, ops, strict=True):
+        for c, n in zip(t, x.shape, strict=True):
+            if n != 1 and sizes.setdefault(c, n) != n:
+                raise ValueError(f"einsum: index {c!r} has sizes {sizes[c]} and {n}")
+    for i, (t, x) in enumerate(zip(terms, ops, strict=True)):
+        drop = tuple(a for a, c in enumerate(t) if x.shape[a] == 1 and sizes.get(c, 1) != 1)
+        if drop:
+            ops[i] = squeeze(x, axis=drop)
+            terms[i] = "".join(c for a, c in enumerate(t) if a not in drop)
+    return ",".join(terms) + "->" + output, ops
+
+
+def _einsum_diagonal(term, x):
+    """``(letters, diagonal)``: ``x`` on the distinct letters of ``term``, in the order they
+    first appear, keeping the entries whose indices agree on the axes of a repeated letter.
+    It costs O(entries of ``x``); the fill stays.
+    """
+    letters = "".join(dict.fromkeys(term))
+    first = [term.index(c) for c in letters]
+    for a, c in enumerate(term):
+        if x.shape[a] != x.shape[term.index(c)]:
+            raise ValueError(
+                f"einsum: the axes of index {c!r} in {term!r} differ in size "
+                f"({x.shape[term.index(c)]} and {x.shape[a]})"
+            )
+    shape = tuple(x.shape[a] for a in first)
+    T = x._T()
+    if T.nvals:
+        coords, values = T.to_coo()
+        keep = np.ones(values.size, bool)
+        for a, c in enumerate(term):
+            keep &= coords[a] == coords[term.index(c)]
+        if keep.any():
+            D = Tensor.from_coo(
+                [coords[a][keep] for a in first], values[keep], T.dtype, shape=shape
+            )
+            return letters, Array._new(D, x._fill)
+    return letters, Array._new(Tensor(T.dtype, shape), x._fill)
 
 
 # (monoid, multiply) pairs where the multiply distributes over the monoid, so that a term's
@@ -604,11 +743,11 @@ def _masked_three(terms, output, ops, typed, out_dt, fill):
 
 def _einsum_scalars(subscripts, ops):
     """Einsum with the 0-d operands taken out as a product of scalars: the einsum of the
-    others, times that product.
+    others, times that product. ``subscripts`` has an explicit output (``_explicit_einsum``).
     """
     from ._elementwise import multiply
 
-    inputs, arrow, output = subscripts.replace(" ", "").partition("->")
+    inputs, arrow, output = subscripts.partition("->")
     terms = inputs.split(",")
     keep = [i for i, x in enumerate(ops) if x.ndim > 0]
     factor = None
@@ -618,8 +757,4 @@ def _einsum_scalars(subscripts, ops):
     if not keep:
         return _dense(lambda *a: np.einsum(subscripts, *a), (), *ops)
     rest = ",".join(terms[i] for i in keep) + arrow + output
-    if not arrow:
-        # (implicit output: the letters that appear once, sorted, as numpy orders them)
-        counts = {c: "".join(terms).count(c) for c in "".join(terms)}
-        rest += "->" + "".join(sorted(c for c, k in counts.items() if k == 1))
     return multiply(einsum(rest, *(ops[i] for i in keep)), factor)
