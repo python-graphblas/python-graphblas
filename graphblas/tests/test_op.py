@@ -1304,6 +1304,31 @@ def test_lazy_op():
     assert op.from_string("numpy.lazy") is unary.numpy.lazy
 
 
+@pytest.mark.skipif("not supports_udfs or not suitesparse")
+def test_lazy_op_under_ss_and_nested_names():
+    """An op registered lazily under ``ss.``, or a select under any nested name, is built on
+    first use. Regression: the ``ss`` modules did not read their delayed tables, so each such
+    op raised AttributeError, and a lazy select under a nested name looked itself up by its
+    full name.
+    """
+    UnaryOp.register_new("ss.lazy_un", lambda x: x, lazy=True)  # pragma: no branch (numba)
+    assert isinstance(unary.ss.lazy_un, UnaryOp)
+    BinaryOp.register_new("ss.lazy_bin", lambda x, y: x + y, lazy=True)  # pragma: no branch
+    assert "lazy_bin" in dir(binary.ss)
+    assert isinstance(binary.ss.lazy_bin, BinaryOp)
+    assert op.ss.lazy_bin is binary.ss.lazy_bin
+    Monoid.register_new("ss.lazy_mon", binary.ss.lazy_bin, 0, lazy=True)
+    assert isinstance(monoid.ss.lazy_mon, Monoid)
+    Semiring.register_new("ss.lazy_sr", "ss.lazy_mon", "ss.lazy_bin", lazy=True)
+    assert isinstance(semiring.ss.lazy_sr, Semiring)
+    IndexUnaryOp.register_new("ss.lazy_iu", lambda x, i, j, t: x, lazy=True)
+    assert isinstance(indexunary.ss.lazy_iu, IndexUnaryOp)
+    SelectOp.register_new("ss.lazy_sel", lambda x, i, j, t: x > t, lazy=True)
+    assert isinstance(select.ss.lazy_sel, SelectOp)
+    SelectOp.register_new("misc.lazy_sel_nested", lambda x, i, j, t: x > t, lazy=True)
+    assert isinstance(select.misc.lazy_sel_nested, SelectOp)
+
+
 def test_lazy_op_first_used_by_threads_at_once():
     """Threads that first get a lazily registered op at once all get it, built once.
 
