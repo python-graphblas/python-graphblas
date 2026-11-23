@@ -296,11 +296,13 @@ def test_from_networkx_undirected_selfloop_dtype():
 
 @pytest.mark.skipif("not nx")
 @pytest.mark.parametrize("graph_cls", [nx.Graph, nx.DiGraph, nx.MultiDiGraph] if nx else [])
-def test_from_networkx_rejects_weights_without_a_graphblas_type(graph_cls):
+def test_from_networkx_rejects_weights_without_a_graphblas_type(graph_cls, monkeypatch):
     # float16 has no GraphBLAS type, so the Matrix would be a UDT. Refusing it
-    # registers no UDT either.
+    # registers no UDT either. An earlier test may have registered float16 already,
+    # and a lookup would then register nothing, so the check starts without it.
     from graphblas.core.dtypes import _registry
 
+    monkeypatch.delitem(_registry, np.dtype(np.float16), raising=False)
     G = graph_cls()
     G.add_weighted_edges_from([(0, 1, np.float16(1.5)), (1, 2, np.float16(2.5))])
     registered = set(_registry)
