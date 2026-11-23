@@ -1,9 +1,9 @@
 # ai-notes
 
 Curated notes for contributors, reviewers and developers of python-graphblas. They were written
-with AI assistance and edited by the maintainers. They explain why the code is the way it is:
-design, decisions, how it is verified and measured, and what is known to be missing. They are
-not user documentation; that is in `docs/`.
+with AI assistance and are reviewed with the code they describe. They explain why the code is
+the way it is: design, decisions, how it is verified and measured, and what is known to be
+missing. They are not user documentation; that is in `docs/`.
 
 Each topic has its own directory. Each page is meant to be readable on its own, without access
 to anything outside this repository.

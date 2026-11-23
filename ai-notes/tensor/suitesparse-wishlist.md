@@ -19,8 +19,9 @@ relayout planner").
   [measured] was timed; [inferred] is an estimate or a reading, not checked.
 - **Machine and library.** Every measurement was made on an Apple M5 Pro (6 performance and
   12 efficiency cores; 8 threads span 6 P and 2 E cores) with conda-forge SuiteSparse:GraphBLAS
-  10.5.1, best of several runs. Times are written "8 / 1" for 8 and 1 threads; other thread
-  counts are named. The JIT was at SuiteSparse's default `"run"` unless noted.
+  10.5.1, best of several runs, between 2026-10-20 and 2026-10-27. Times are written "8 / 1"
+  for 8 and 1 threads; other thread counts are named. The JIT was at SuiteSparse's default
+  `"run"` unless noted.
 - **Sources.** Paths are in the GraphBLAS repository (`Source/...`, `Include/GraphBLAS.h`, the
   User Guide in `Doc/UserGuide/`). Line numbers are from the v10.5.2 sources (v10.5.2-beta2);
   they are the same in 10.5.1 except in `Source/reshape/GB_reshape.c`, as noted where it is
@@ -440,8 +441,12 @@ The factory sources (`FactoryKernels/GB_AxB__any_second_fp64.c` and the rest) ar
 Every permutation or selection product (relabeling vertices, extracting rows as `P*A`), where
 ANY is the natural monoid and libraries reach for it first; the comment in `GB_control.h` notes
 these semirings serve `GrB_reduce` to a vector too. Breadth-first search's `ANY_SECONDI` is
-positional and still has its kernels. The Tensor uses `min_second` (`design.md`, "The
-SuiteSparse JIT"). Gain 2.8x on the case above; effort S.
+positional and still has its kernels. The Tensor uses `min_second` for integer values, but
+`any_second` for float and complex ones, which must come back bit for bit: `MIN_SECOND` turns
+a NaN into +inf when the output column is full (`decisions.md`, 29). So without the JIT its
+float permutations run the generic kernel, up to 2x slower for FP64 on 10.5.1
+(`tensor_layout._perm_semiring`). conda-forge's 10.5.2 build adds the real types' `ANY_SECOND`
+kernels back; complex has none in any build. Gain 2.8x on the case above; effort S.
 
 ## P5. `GxB_Matrix_reshape` past 2^60 total size (GxB)
 
@@ -708,7 +713,8 @@ Each of these was an ask until a combination of existing calls turned out to do 
    INT32, INT64, UINT32, UINT64, FP32 and FP64, and it keeps an iso operand iso; UINT32
    `plus_second` is generic (2.26 against 1.02 ms on 1e6 entries at 4 threads). BOOL has no
    factory SECOND semiring, but has `lor_land`, which gives the same where the permutation or
-   selector holds True. The Tensor uses both (`design.md`, "States and edges").
+   selector holds True. The Tensor uses both, `min_second` for integers only: for floats a
+   full output column turns NaN into +inf (P4; `design.md`, "States and edges").
 2. **A column permutation through the Container** [measured]. Unload, gather the column
    indices through the map with `GxB_Vector_extract_Vector` (`GraphBLAS.h:5457`), set
    `jumbled`, load; SuiteSparse sorts each row only when something needs it. On a 1e6 x 1e3
@@ -740,8 +746,13 @@ Each of these was an ask until a combination of existing calls turned out to do 
 
 - **The in-place reshape bug** (`GxB_Matrix_reshape` keeping 32-bit indices past 2^32,
   SuiteSparse issue 462) is fixed in 10.5.2: see `GB_reshape.c:126-127` and the width check at
-  its line 258 [source]. The Tensor's workaround, `tensor_layout.reshape_owned`, is marked
-  `TODO(SuiteSparse 10.5.2)` (`design.md`, "Executing a plan").
+  its line 258 [source]. The Tensor's workaround, `tensor_layout.reshape_owned`, copies only
+  before 10.5.2 and is marked `TODO(SuiteSparse 10.5.2)` (`design.md`, "Executing a plan").
+- **Wrong values the Tensor works around**, each with a reproducer and not filed: a full
+  output column of a saxpy product starts from the monoid's identity, so `MIN_SECOND` gives
+  +inf for a NaN and `PLUS_SECOND` +0.0 for -0.0 (`decisions.md`, 29); a bitmap
+  `GrB_reduce` to a scalar does the same (30); and the dot kernels fold `PLUS` from 0, which
+  turns a sum of -0.0 into +0.0 (29).
 - **The reshape error code**: "too large" is reported as `GrB_OUT_OF_MEMORY`
   (`GB_reshape.c:88-93`) [source]; `GrB_INVALID_VALUE` would say what happened.
 - **Editing `h` through the Container**: `GxB_load_Matrix_from_Container` checks only sizes, in

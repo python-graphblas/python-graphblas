@@ -64,6 +64,11 @@ keeps, unlike a commit id):
 The commits after F split `tensor.py` into modules and edited text only; an AST comparison
 with the docstrings removed found no code change.
 
+The last of these runs is from 2026-10-28, and nothing below was rerun on the code as it is
+now. Later changes include exact NaN and -0.0 against a monoid's identity (`decisions.md`,
+29 and 30), whose cost was measured on its own and is given in the code comments where the
+changes were made, and the FP64 TTM and MTTKRP kernels taking bool, integer and FP32 values.
+
 ## Correctness: fingerprints
 
 Every timed result carries a fingerprint of its output: the shape, the entry count, an
@@ -325,7 +330,8 @@ It loses, with the cause:
 - **Export to COO** (a copy; free for COO libraries), and **sums over all axes** against torch
   (0.45 against 0.43 ms on u7).
 - **Small 4-d MTTKRP calls at 8 threads** (1.3-1.7x behind SPLATT, above).
-- **einsum's per-call overhead**: about 45 us for one contraction and 97 us for an MTTKRP.
+- **einsum's per-call overhead**: about 45 us for one contraction and 97 us for an MTTKRP
+  (2026-10-21).
 
 The comparisons also found problems in other libraries:
 

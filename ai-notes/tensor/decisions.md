@@ -5,6 +5,10 @@ says what was decided and why, and some say what would change it. "Maintainers" 
 python-graphblas maintainers. Status: everything here is experimental and may change before
 the API settles. `design.md` describes how the code implements these.
 
+The dated decisions (26 to 31) were made during development by the AI agents that wrote the
+Tensor, on the maintainer's instruction to decide and record a reason rather than wait. Like
+the rest, they are open to review.
+
 ## Semantics
 
 1. **GraphBLAS semantics, numpy shapes.** Values are partial: a position either holds a value
@@ -21,9 +25,9 @@ the API settles. `design.md` describes how the code implements these.
    should not depend on its rank, which would break generic code.
 3. **`T[...]` is outer (orthogonal) indexing,** as in python-graphblas. Vectorized gathers are
    separate and explicit: `take`, `take_along_axis` and `T.vindex[...]`. _Why:_ one indexing
-   rule in `T[...]`, with no behavior change from Matrix. The Array API 2024.12 asks for
-   vectorized semantics when every key is an integer or an integer array; we will revisit
-   that with an Array API namespace.
+   rule in `T[...]`, with no behavior change from Matrix. The Array API asks for vectorized
+   semantics when every key is an integer or an integer array; that belongs to an Array API
+   namespace over the Tensor (#667), not to `T[...]`.
 4. **Negative indices wrap once,** as in numpy and python-graphblas. `take`,
    `take_along_axis` and `T.vindex(...)` accept `wraparound=False`, which raises IndexError
    on a negative index instead. Out-of-range indices raise; `take` also has numpy's
@@ -71,7 +75,7 @@ the API settles. `design.md` describes how the code implements these.
 ## Engines and dependencies
 
 14. **SuiteSparse:GraphBLAS 10 or later** is required, for the Container API, which gives
-    O(1) zero-copy load and unload. The rest of python-graphblas keeps its older floor. Every
+    O(1) zero-copy load and unload. The rest of python-graphblas keeps its floor (9.3.1). Every
     way to make a Tensor raises one clear error on an older SuiteSparse or another backend,
     and the Tensor test modules skip there.
 15. **Numba where it pays, never required.** MTTKRP, TTM and point gathers have Numba kernels
@@ -79,8 +83,10 @@ the API settles. `design.md` describes how the code implements these.
     tests pass with Numba unavailable (see `verification.md`).
 16. **The SuiteSparse JIT is assumed to be on for speed,** not for correctness. Every path is
     correct with the JIT off. The array-UDT TTM engine needs the JIT. When it runs, it raises
-    `jit_c_control` from SuiteSparse's default "run" to "on", as python-graphblas's UDT
-    auto-lift does; a case it declines leaves the control alone. If a compile fails, it leaves
+    `jit_c_control` where python-graphblas's UDT auto-lift does, through the same function:
+    SuiteSparse's default "run" becomes "on", and every other setting, a "run" the user set,
+    and the default where SuiteSparse compiles through cmake (Windows) are left alone. A
+    case it declines leaves the control alone. If a compile fails, it leaves
     the control at "load", where SuiteSparse puts it after a failed compile, warns once, and
     turns itself off for the process. _Why not restore:_ it first put back the previous
     setting, since it had raised it itself. But UDT auto-lift raises "run" to "on" again at
@@ -111,8 +117,9 @@ the API settles. `design.md` describes how the code implements these.
 22. **Tensor may go beyond Matrix and Vector.** It is a new type and can adopt better behavior.
     Features that Matrix and Vector could also have are listed in `backport-candidates.md`.
 23. **Core changes come in their own commits,** when they are justified and easy to review:
-    the interop hooks, the mixed scalar x array-UDT JIT C definitions, and the Windows
-    compiler search in `jit_config`.
+    the interop hooks. Two that the Tensor needs went to main in their own pull request
+    (#652): the JIT C definitions of lifted ops between a scalar and an array or record UDT,
+    and the Windows compiler search in `jit_config`.
 24. **`Tensor.wait()` materializes, as `Matrix.wait()` does,** including the hash SuiteSparse
     builds of a hypersparse Matrix's rows (when its hyperlist is longer than the
     `GxB_HYPER_HASH` setting, 1024 by default). _Why:_ the Tensor's own row lookups
@@ -138,10 +145,10 @@ the API settles. `design.md` describes how the code implements these.
     NELL-2's TTM along modes 0 and 1 takes 445 and 548 ms at 1 thread (TACO: 263 and 262
     from its own copy), plus the output's hash in `wait()` (`benchmarks.md`). _Checked_
     on such sweeps by the SAPS pilot (2026-10-28: HOOI and CP-ALS on FROSTT's Uber, Chicago
-    and NIPS; `runs/2026-10-28-saps-pilot/report.md`, section 5, in the grblas-ai repo), and
-    kept. Copies built once saved 1-19% on HOOI: only Uber's first-axis TTM chain gained
-    much (173 to 156 ms per sweep; the 45 ms build repaid in about 1.3 sweeps; a full SAPS
-    run 8.97 to 7.26 s), and at 1 thread Chicago and NIPS gained 1.4% and 1.1%. They made
+    and NIPS; `limitations-and-roadmap.md` says what it was), and kept. Copies built once
+    saved 1-19% on HOOI: only Uber's first-axis TTM chain gained much (173 to 156 ms per
+    sweep; the 45 ms build repaid in about 1.3 sweeps; a full SAPS run 8.97 to 7.26 s), and
+    at 1 thread Chicago and NIPS gained 1.4% and 1.1%. They made
     CP-ALS 1.6-6x slower per sweep, because the Numba MTTKRP runs in the stored layout for
     every mode (Uber 7.2 to 11.6 ms, Chicago 7.7 to 48.9, NIPS 9.7 to 41.1). Where copies
     help, `relayout()` already gives them (six lines in the pilot's HOOI). _Revisit_ if a
@@ -155,8 +162,8 @@ the API settles. `design.md` describes how the code implements these.
     a kron on both sides and a layout choice in `_expand`, for a rare case. It takes 2^60
     positions or more in total, a replication that `tensor_max_expansion` lets through (or
     `allow_expansion=True`), and an operand whose own groups crowd both sides. An
-    intersection never replicates and has no such limit. Decided 2026-10-28, on Erik's
-    instruction to decide and document. _Revisit_ when a workload meets the error.
+    intersection never replicates and has no such limit. Decided 2026-10-28. _Revisit_ when a
+    workload meets the error.
 27. **`X | Y` and `X & Y` on their own follow Matrix:** lor and land of BOOL Tensors, and a
     TypeError ("Bad dtypes for `x | y`", Matrix's message) for other dtypes, whichever way
     the expression is used: `.new()`, `C << (X | Y)`, a region's value, an operand,
@@ -166,8 +173,8 @@ the API settles. `design.md` describes how the code implements these.
     numpy, `|` on integers is bitwise or and on floats raises, so quietly computing plus
     would surprise numpy users; `+` and `*` already give plus and times; and nothing
     recorded a reason for the old default. A behavior change to the experimental API,
-    toward the parity it claims. Decided 2026-10-28 by the coordinator, on Erik's
-    instruction to decide and document. _Revisit_ if users ask for a default operator.
+    toward the parity it claims. Decided 2026-10-28. _Revisit_ if users ask for a default
+    operator.
 28. **`select` and `apply` take a 0-d Tensor as their scalar operand** (`thunk`, `left`,
     `right`), converted with `to_scalar()` when the expression is built. _Why:_ 0-d is the
     Tensor's scalar (2), a full `reduce` returns one, and `ewise_mult` already broadcasts
@@ -177,7 +184,7 @@ the API settles. `design.md` describes how the code implements these.
     The value is read when the expression is built, where a Scalar operand is read when it
     computes; only a 0-d Tensor changed between the two would show it. The narrower
     alternative was to leave the signature alone and make the refusal name `Tensor.select`
-    and say `.to_scalar()`. Decided 2026-11-08 by the coordinator. _Revisit_ if a Tensor
+    and say `.to_scalar()`. Decided 2026-11-08. _Revisit_ if a Tensor
     operand of another rank is proposed here (it stays refused).
 29. **A float fiber's NaN or -0.0 is not replaced by a monoid's identity,** except where a
     reduction hands the work to a Matrix method, which it then matches. SuiteSparse 10.5.1
@@ -200,7 +207,7 @@ the API settles. `design.md` describes how the code implements these.
     more -0.0 sums to +0.0 there (on sparse, hypersparse and full data; bitmap keeps -0.0),
     as it does for Matrix. _Why not that too:_ a copy and a format conversion on every dense
     sum over row axes, for the sign of a zero, and a Tensor that disagreed with Matrix there
-    would be a second surprise. Decided 2026-11-10 by the coordinator. _Revisit_ if
+    would be a second surprise. Decided 2026-11-10. _Revisit_ if
     SuiteSparse's dot kernels or Matrix change.
 30. **A reduction over every axis returns what `Matrix.reduce_scalar` returns,** including
     on bitmap data, where SuiteSparse 10.5.1 and 10.5.2 start from the monoid's identity
@@ -208,7 +215,7 @@ the API settles. `design.md` describes how the code implements these.
     and all -0.0 to +0.0 under plus. Sparse, hypersparse and full data keep the NaN. _Why
     not work around it in the Tensor:_ the behavior is Matrix's, and a fix belongs in Matrix
     or SuiteSparse, where it fixes both; a Tensor-only fix would make `T.reduce()` and
-    `T.to_matrix().reduce_scalar()` disagree. Decided 2026-11-10 by the coordinator.
+    `T.to_matrix().reduce_scalar()` disagree. Decided 2026-11-10.
     _Revisit_ when Matrix or SuiteSparse changes.
 31. **An index out of range raises what the same Matrix call raises,** with the Tensor's own
     message naming the axis and its size. An int out of range, or any index below minus the
@@ -222,14 +229,14 @@ the API settles. `design.md` describes how the code implements these.
     should work on a Tensor. Matrix's choice depends on the call (one element or a region,
     get or set); following it call by call leaves one rule to learn. Going beyond Matrix (22)
     is for better behavior, and a second set of names for the same mistakes is not. Decided
-    2026-11-10 by the coordinator. _Revisit_ if Matrix's exceptions change; a test compares
+    2026-11-10. _Revisit_ if Matrix's exceptions change; a test compares
     28 keys under five operations (and on a Vector and a 3-d Tensor) against the same Matrix
     call.
 
 ## Deferred, on purpose
 
-- An Array API namespace: later, as a separate namespace, perhaps with implicit-zero
-  semantics.
+- An Array API namespace: a separate namespace, `graphblas.array_api`, with fill values as
+  in pydata/sparse, in its own pull request (#667).
 - [binsparse](https://github.com/GraphBLAS/binsparse-specification) interchange: when the
   `__binsparse__` protocol settles.
 - `graphblas.io` returning a Tensor for ndim > 2: depends on how else the Tensor integrates.

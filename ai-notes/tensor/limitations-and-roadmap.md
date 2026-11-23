@@ -4,30 +4,34 @@ What the experimental `gb.Tensor` does not do yet, what has not been tested, and
 which the maintainers plan to work on it. Timings are written "8 / 1" for 8 and 1 threads,
 and the data sets are those named in `design.md`.
 
+Several findings come from the SAPS pilot (2026-10-28), which ported the HOOI and CP-ALS
+benchmarks of the Sparse Array Programming Suite ([SAPS](https://sparsearray.org/)) to the
+Tensor and ran them on SAPS's synthetic data and on FROSTT's Uber, Chicago and NIPS tensors.
+The port is not in this repository.
+
 ## Not tested
 
-- **Windows.** Nothing has run on Windows. Specifically:
+CI runs the Tensor tests on Linux, macOS and Windows wherever a job draws SuiteSparse 10 or
+later (`verification.md`, "What this does not cover"). What remains:
+
+- **Windows, in part.** CI's Windows jobs have run the unit tests and the oracles with
+  Numba (2026-11-22), so the Numba kernels' `parallel=True` runs there. Not run:
+  - **The array-UDT engine.** SuiteSparse compiles its JIT kernels through cmake on
+    Windows, where python-graphblas leaves the JIT control at "run", so the engine does not
+    run unless the user sets "on", and its tests skip in CI. With "on", whether the
+    compiler works there is unknown; if it does not, the engine warns once and turns itself
+    off, and the Numba or GraphBLAS engines run: correct, slower.
   - **The kernel cache's file locking.** A rename onto a file another process holds open
     raises there; the cache then uses that process's file if it holds the same source, or
     compiles in memory. That was tested by simulating the failure, not on Windows.
-  - **The JIT compiler flags.** `fix_jit_config` now finds conda's compilers under
-    `Library\bin` and with `.exe` names. But the flags it repairs are POSIX-minded
-    (`-isysroot`, `-arch`), and whether conda-forge's Windows SuiteSparse JIT compiles that
-    way is unknown. If it does not, the array-UDT engine warns once and turns itself off,
-    and the Numba or GraphBLAS engines run: correct, slower.
-  - **Numba's `parallel=True`.** It should work with its workqueue or TBB layer (the kernels
-    use only `prange` and plain arrays), but it has not run.
-  - **numpy 1.x's 32-bit default integer.** Coordinates are converted to int64 explicitly,
-    and no arithmetic on a default-int array that could pass 2^31 was found by reading. Not
-    run.
 - **x86 planner constants.** The cost model was fitted on one machine, an Apple M5 Pro
   (`design.md`, "Fitted constants"). Atomics are slow there, which is why wide transposes
   and column reductions prefer 2 threads. That rule, and the rest of the ranking, may differ
-  on x86.
-- **Linux, and SuiteSparse other than 10.5.1.** The branch has not run in CI.
-- **NELL-2 and Enron were not fully re-censused.** The census of decision points covered the
-  test suite, u7, skew, hyper, Zipf, Uber, NIPS and part of Enron. Its later re-measurement
-  finished only u7, because machine load spoiled the rest. For NELL-2, the TTM and MTTKRP
+  on x86. CI's x86 runs check correctness, not the choices.
+- **NELL-2 and Enron were not fully re-censused** (2026-10-21). The census of decision
+  points covered the test suite, u7, skew, hyper, Zipf, Uber, NIPS and part of Enron. Its
+  later re-measurement finished only u7, because machine load spoiled the rest. For NELL-2,
+  the TTM and MTTKRP
   engine choices rest on earlier forced-engine measurements, and only its slices were rerun
   after the last changes. Uber's and NIPS's contraction and slice rows were not run by the census
   (Uber's slices were measured later, with the benchmark kit: see "Known performance gaps").
@@ -37,12 +41,11 @@ and the data sets are those named in `design.md`.
 - `None` (new axis) and boolean indices; Vector or Tensor index arrays (undecided: see
   `decisions.md`).
 - `einsum` with `...` or a repeated index within one operand (diagonals).
-- Composite aggregators (`agg.mean`, `agg.varp`) and positional ones (`agg.ss.argmin`) in
-  `reduce`.
+- Composite aggregators (`agg.mean`, `agg.varp`, ...) and the ones that pick an entry by
+  its position (`agg.argmin`, `agg.first`, `agg.first_index`, ...) in `reduce`.
 - Index-based `select` (`rowindex`, `tril` and the like), which needs logical coordinates.
 - `pad`.
 - binsparse interchange; `graphblas.io` dispatching ndim > 2 to the Tensor methods.
-- An Array API namespace.
 - `Tensor.dtype` is a python-graphblas type, not a numpy dtype, so libraries that expect
   numpy dtypes (TensorLy, for example) need a small adapter.
 - Broadcast unions (`ewise_add`, `ewise_union`) past 2^60 positions whose broadcast axes
@@ -50,9 +53,8 @@ and the data sets are those named in `design.md`.
   (`decisions.md`, 26). Revisit if a workload needs them.
 - A `ttm(U, mode)` method that keeps the contracted axis in place (Kolda and Bader's
   `X x_n U`), and a `ttmc(factors, skip=mode)` for the chain. `tensordot(U, ([a], [0]))`
-  appends the rank axis last (numpy's rule), so Tucker code tracks axis positions by hand
-  (the SAPS pilot's HOOI port, friction 4 in `runs/2026-10-28-saps-pilot/report.md` in the
-  grblas-ai repo). An API proposal for Erik, not done.
+  appends the rank axis last (numpy's rule), so Tucker code tracks axis positions by hand,
+  as the SAPS pilot's HOOI port had to. A proposal for the maintainers, not done.
 
 ## Known performance gaps
 
@@ -81,14 +83,12 @@ and the data sets are those named in `design.md`.
   Per-mode copies are not kept (`decisions.md`, 25); an explicit `relayout()` before a loop
   gives one. With it, done outside the timing, NELL-2 modes 0 and 1 take 445 and 548 ms at
   1 thread without the hash, against TACO's 263 and 262 from its own copy, and 1127 and
-  1433 with it (`benchmarks.md`). The SAPS pilot's HOOI on FROSTT data (2026-10-28) found
-  copies worth it only on Uber's first-axis chain, so decision 25 stands; moving a chain's
-  intermediates costs more (next point).
+  1433 with it (`benchmarks.md`). The SAPS pilot's HOOI on FROSTT data found copies worth it
+  only on Uber's first-axis chain, so decision 25 stands; moving a chain's intermediates
+  costs more (next point).
 
 - **A chain of TTMs (the projection of HOOI and Tucker) has no route or kernel of its own.**
-  From the SAPS pilot (2026-10-28; friction 2 and 3 and section 5 of
-  `runs/2026-10-28-saps-pilot/report.md` in the grblas-ai repo), HOOI on FROSTT data at 18
-  threads:
+  From the SAPS pilot's HOOI on FROSTT data at 18 threads:
   - Each mode's projection is n - 1 TTMs, and each TTM's output is relaid out for the next.
     On Chicago's first-axis chain one 13e6-entry intermediate (6186 x 77 x 32 x 5) costs
     187 ms per sweep. At 1 thread the projection is 85-97% of a sweep.
@@ -109,17 +109,16 @@ and the data sets are those named in `design.md`.
   column range of a sparse row group was filtered from the stored arrays (`benchmarks.md`,
   "Performance work after K").
 - **einsum's per-call overhead** shows at millisecond scale: about 45 us for one contraction,
-  97 us for an MTTKRP through einsum, and 128 us for three operands.
-- **Per-call overhead dominates tiny problems.** SAPS's CP-ALS on its dense 20^3 data set
-  (300 MTTKRPs) took 48.7 ms on the Tensor against NumPy's 17.2, about 0.1 ms more per
-  call. On 20^4 and 200^3 the Tensor was 5.1x and 3.8x faster (191 against 977 ms; 2719
-  against 10253). Friction 7 in `runs/2026-10-28-saps-pilot/report.md` in the grblas-ai
-  repo.
-- **Planning a 5-d MTTKRP** takes about 12 ms on the first call for a shape, even for a tiny
-  tensor: choosing the products' axis order prices a relayout for each of 24 candidate orders
-  (`_mttkrp_order`), from one planner search over the 5-d states (`tensor_layout.plan_each`;
-  one search per order took about 160 ms). Later calls hit the plan cache (0.3 ms); 4-d first
-  calls take about 2 ms and 3-d ones 0.4.
+  97 us for an MTTKRP through einsum, and 128 us for three operands (2026-10-21).
+- **Per-call overhead dominates tiny problems.** In the SAPS pilot, CP-ALS on SAPS's dense
+  20^3 data set (300 MTTKRPs) took 48.7 ms on the Tensor against NumPy's 17.2, about 0.1 ms
+  more per call. On 20^4 and 200^3 the Tensor was 5.1x and 3.8x faster (191 against 977 ms;
+  2719 against 10253).
+- **Planning a 5-d MTTKRP** took about 12 ms on the first call for a shape (2026-10-27),
+  even for a tiny tensor: choosing the products' axis order prices a relayout for each of 24
+  candidate orders (`_mttkrp_order`), from one planner search over the 5-d states
+  (`tensor_layout.plan_each`; one search per order took about 160 ms). Later calls hit the
+  plan cache (0.3 ms); 4-d first calls took about 2 ms and 3-d ones 0.4.
 - **Moved operands are not kept.** A relayout made for one operation is dropped afterwards, so
   repeated contractions of the same operand repay it. Keeping it on the store needs a memory
   policy.
@@ -159,9 +158,8 @@ and the data sets are those named in `design.md`.
 1. **Maintainer review** of the API (`decisions.md`) and of the riskier code: copy-on-write,
    the Container calls that hand arrays to SuiteSparse unchecked, the planner's pricing, and
    the engine rules.
-2. **CI on every platform** python-graphblas supports, with a SuiteSparse 10 job on each.
-   This closes the Windows questions above, and runs the suite without Numba and with the JIT
-   off there too.
+2. **Windows with the JIT:** the array-UDT engine with `jit_c_control` set to "on", and the
+   kernel cache's file locking under two processes (above).
 3. **Refit the cost constants** on x86, and with a script driven by the census instead of by
    hand. Then fix the mispricings listed above, and finish the census on NELL-2 and Enron.
 4. **Performance:** a TTM-chain route in einsum and a TTMc kernel (above); TTM along
@@ -174,4 +172,5 @@ and the data sets are those named in `design.md`.
 6. **When SuiteSparse 10.5.2 is the oldest supported version:** drop the 10.5.1 reshape
    workaround (`tensor_layout.reshape_owned`, marked `TODO(SuiteSparse 10.5.2)`).
 7. **Backports** to Matrix and Vector (`backport-candidates.md`).
-8. **Later:** binsparse, when its protocol settles; an Array API namespace.
+8. **Later:** binsparse, when its protocol settles. An Array API namespace over the Tensor,
+   with fill values, is its own pull request (#667).

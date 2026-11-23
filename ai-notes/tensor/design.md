@@ -9,7 +9,9 @@ Code comments may refer to the sections below by their headings, so keep the hea
 stable. If you rename one, update the references (`grep -rn "ai-notes" graphblas/`).
 
 Timings quoted here were measured on an Apple M5 Pro (6 performance and 12 efficiency cores)
-with SuiteSparse:GraphBLAS 10.5.1, written "8 / 1" for 8 and 1 threads. The data sets they
+with SuiteSparse:GraphBLAS 10.5.1, between 2026-10-20 and 2026-11-10 unless a date is given,
+written "8 / 1" for 8 and 1 threads. They show the sizes involved and why a choice was made;
+the code has changed since some of them. The data sets they
 name (u7, skew, hyper, Zipf, NELL-2, Uber, NIPS, Enron) are defined in the module docstring of
 `graphblas/core/tensor.py`. The FROSTT tensors are at [frostt.io](http://frostt.io/).
 
@@ -148,8 +150,10 @@ reshape: such rows are hypersparse with no hash of their row ids yet, so a follo
   rows it is also offered at 2 threads, which runs SuiteSparse's non-atomic method, faster
   than 4 or 8 threads on the measuring machine.
 - **`PERM_R`** applies any permutation of the row axes: one `P @ M` with a permutation matrix
-  `P` (`perm_rows`), with a factory-kernel semiring (`_perm_semiring`: `min_second`, or
-  `lor_land` for BOOL, as `P` holds True).
+  `P` (`perm_rows`). Its semiring (`_perm_semiring`) must return each value bit for bit:
+  `any_second` for floats and complex, which keeps NaN and -0.0 (`decisions.md`, 29);
+  `min_second` for integers, a factory kernel that keeps an iso `M` iso; and `lor_land` for
+  BOOL, as `P` holds True.
 - **`PERM_C`** applies any permutation of the column axes: the column indices are rewritten
   in the Container through a cached map (`perm_cols`), and the rows are marked jumbled, so
   SuiteSparse sorts each only when something needs it. Values are untouched, so it takes any
@@ -194,8 +198,9 @@ and can be further off on clustered data (see "Fitted constants").
 - **Plans** are cached in an LRU of 4096 (`_plan_cache`). The key is the shape, the source,
   the target set, 1 thread or more, the one-entry-per-row flag, `allow_perm`, and the bit
   lengths of the entry count and of the sampled column count. A 3-d plan costs about 35 us
-  to search and 0.13 us from the cache. A choice among many layouts by their cost to reach
-  (`_mttkrp_order`) prices them all from one search (`plan_each`): searches from one source
+  to search and 0.13 us from the cache (2026-10-21). A choice among many layouts by their
+  cost to reach (`_mttkrp_order`) prices them all from one search (`plan_each`): searches
+  from one source
   settle the same nodes in the same order up to each target, as long as the target is within
   its own REBUILD cost (past it, both give the REBUILD), so each gets the plan its own search
   would, and is cached as such.
@@ -236,8 +241,9 @@ the census is a planned step.
 
 `execute` runs the edges in order and never changes the source Matrix. Intermediates are
 owned, so later reshapes happen in place, which skips a copy of the values. Past 2^31 rows or
-columns, `reshape_owned` copies instead, because SuiteSparse 10.5.1's in-place reshape keeps
-32-bit indices (SuiteSparse issue 462, fixed in 10.5.2; marked `TODO(SuiteSparse 10.5.2)`).
+columns before SuiteSparse 10.5.2, `reshape_owned` copies instead, because the in-place
+reshape of earlier versions keeps 32-bit indices (SuiteSparse issue 462, fixed in 10.5.2;
+marked `TODO(SuiteSparse 10.5.2)`).
 Reshapes always run in storage order, which also avoids 10.5.1's other reshape bug (order
 different from orientation). A final reshape's output gets SuiteSparse's global hyper switch
 back when at least half its rows are nonempty (`_restore_hyper_switch`). Otherwise it would
@@ -359,8 +365,8 @@ full FP64 factor under `plus_times[FP64]` (an FP64 result), values of a real bui
 (`_TTM_KERNEL_MIN_NNZ`), because they compile per R on first use. They read the values in
 their own type and convert them as SuiteSparse's typecast does (C's `(double)`), with the
 products' results. FROSTT's count tensors load as INT64 or BOOL; when the engines took FP64
-values only, CP-ALS on them ran 13-18x slower per sweep (the SAPS pilot's friction 1,
-`runs/2026-10-28-saps-pilot/report.md` in the grblas-ai repo).
+values only, CP-ALS on them ran 13-18x slower per sweep (the SAPS pilot, 2026-10-28; see
+`limitations-and-roadmap.md`).
 
 - **`udt`** (`_ttm_udt`, `tensor_udt.ttm`): one `GrB_mxv` whose values are arrays of R
   doubles. The factor's rows become a full Vector of FP64[R]. The product gives, for each
@@ -600,8 +606,8 @@ it kept, one line each ("margin" is the forced alternative's time over the choic
   slices); keep all three.
 - **Planner edges**: RS and T, keep (a forced REBUILD is 2.5x slower median, up to 36x).
   PERM_R, keep (up to 19x). PERM_C, keep (1.71x median). REBUILD is the fallback.
-- **Plan cache and kernel disk cache**: keep (the Tensor tests take 10-12 s warm against
-  45-51 s cold).
+- **Plan cache and kernel disk cache**: keep (on 2026-10-21 the Tensor tests took 10-12 s
+  warm against 45-51 s cold).
 - **einsum**: the direct route, the MTTKRP pattern and the pairwise route; keep.
 - **Batched products**: block-diagonal embedding; keep.
 - **Default-layout heuristics**: keep, with the three "4 entries per row" rules merged into
@@ -615,7 +621,8 @@ the kind of write) and compiles it with `njit(parallel=True)`. The kernels read 
 Matrix's arrays in place through the Container (`tensor_layout._Unloaded` and `_VectorArray`)
 and hand their output arrays back the same way, unchecked. That is why the tests compile them
 with Numba bounds checks (the `numba_boundscheck` fixture in `test_tensor.py`), and why the
-TTM checks validate every result with `GxB_Matrix_fprint`.
+TTM and MTTKRP oracles validate every result with `GxB_Matrix_fprint` (`valid` in
+`test_tensor_oracles.py`).
 
 Compiling costs 0.2-0.6 s per kernel, so kernels are cached:
 
@@ -634,28 +641,33 @@ Compiling costs 0.2-0.6 s per kernel, so kernels are cached:
 The maintainers treat the SuiteSparse JIT as on by default: performance is judged with it on.
 Every path must stay correct with it off.
 
-- Internal products choose semirings with factory kernels where the JIT may be off. For
-  example, `min_second` for permutations: SuiteSparse 10's factory has no `any_second`, which
-  runs SuiteSparse's generic kernel when the JIT cannot compile it (1.3-2.3x slower, measured
-  with the JIT at `"run"`).
+- Internal products choose semirings with factory kernels where the JIT may be off, as long
+  as the result stays exact: `min_second` for integer permutations, `lor_land` for BOOL
+  selectors, and a selector of the data's type with `plus_times` for unsigned sums. Float and
+  complex permutations take `any_second`, which keeps NaN and -0.0 (`decisions.md`, 29), and
+  pay for it where the JIT cannot compile: SuiteSparse 10's factory has no `ANY_SECOND`
+  kernels for the real types (conda-forge's 10.5.2 build adds them back) and none for
+  complex, so SuiteSparse runs its generic kernel there (up to 2x slower for FP64 on 10.5.1;
+  `_perm_semiring` has the measurements).
 - **The array-UDT engine** (`tensor_udt.py`) needs the JIT:
   - It makes its own type per R, with a fixed C name (`_gbtensor_fp64x16`), so every process
     finds compiled kernels again in the JIT cache. An anonymous UDT gets a per-process
     `_gbudt_N` name instead.
   - Its operators have a NULL function pointer and the C definitions that
     `operator/udt_codegen.py` generates (`GxB_BinaryOp_new`), so no Numba is involved.
-  - Like UDT auto-lift, it raises `jit_c_control` from SuiteSparse's default `"run"` to
-    `"on"` when a compiler works (`jit_ready`), and honors an explicit `"off"`, `"pause"` or
-    `"load"`. It raises it only once it has decided to run: before that, `jit_possible`
-    answers with no side effect, so a TTM it leaves to Numba leaves the control at `"run"`.
+  - It raises `jit_c_control` exactly where UDT auto-lift does, through the same function
+    (`jit_ready` calls `jit_config._enable_jit_for_udt`): SuiteSparse's default `"run"`
+    becomes `"on"` when a compiler works, and `"off"`, `"pause"`, `"load"`, a `"run"` the
+    user set, and the default on builds that compile through cmake (Windows) are left alone.
+    It raises it only once it has decided to run: before that, `jit_possible` answers with
+    no side effect, so a TTM it leaves to Numba leaves the control at `"run"`.
 - **A failed compile** returns `GxB_JIT_ERROR`, and SuiteSparse drops the control to
   `"load"`. `tensor_udt.run` catches that: it leaves the control at `"load"`, as UDT
   auto-lift does after a failed compile (putting back `"run"` made auto-lift raise it to
   `"on"` at the next UDT operation, which retried the compile and raised), warns once
   (`NoJITWarning`), and turns the engine off for the process. The next engine then runs.
-- Lifted operators between a scalar and an array or record UDT get JIT C definitions in core
-  (`operator/udt_codegen.py`, `operator/binary.py`). This is a separate change on this
-  branch, also usable by Matrix and Vector.
+- The JIT C definitions of lifted operators between a scalar and an array or record UDT
+  come from core (`operator/udt_codegen.py`, #652), where Matrix and Vector use them too.
 
 ## Module map
 
@@ -703,8 +715,12 @@ Outside these modules, the Tensor touches:
 
 - `graphblas/__init__.py`: the lazy `gb.Tensor` and `gb.einsum` exports;
 - `graphblas.yaml`: the `tensor_max_expansion` setting;
-- the interop hooks listed in "Interop with Matrix, Vector and Scalar";
-- `core/ss/jit_config.py`: finding conda compilers on Windows;
+- the interop hooks listed in "Interop with Matrix, Vector and Scalar" (`base.py`,
+  `mask.py`, `infix.py`, `infixmethods.py`, `utils.py`, `matrix.py` and `vector.py` for
+  `isequal` and `isclose`, and `operator/base.py`, `operator/unary.py`, `operator/agg.py`);
 - the docs: `docs/user_guide/tensor.rst` and `docs/api_reference/collections.rst`;
-- the tests: `graphblas/tests/test_tensor.py`, `test_tensor_io.py`, and the Tensor checks in
-  `test_core.py` and `test_ssjit.py`.
+- the tests: `graphblas/tests/test_tensor.py`, `test_tensor_io.py`, `test_tensor_oracles.py`,
+  the Tensor checks in `test_core.py`, and the operators that Tensor tests create, which
+  `test_operator_types.py` ignores;
+- the asv benchmarks (`benchmarks/tensor_ops.py`), the comparison kit
+  (`scripts/tensor_bench/`), the two Tensor notebooks, and CI's notebook job.

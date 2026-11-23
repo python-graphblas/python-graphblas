@@ -6,7 +6,7 @@ and how to run them.
 
 ## Unit tests
 
-`graphblas/tests/test_tensor.py` and `graphblas/tests/test_tensor_io.py` (508 tests) check
+`graphblas/tests/test_tensor.py` and `graphblas/tests/test_tensor_io.py` (806 tests) check
 every operation against a dense numpy oracle. That means the values plus _presence_, a
 boolean array of which positions hold a value. Three things recur throughout:
 
@@ -22,21 +22,23 @@ boolean array of which positions hold a value. Three things recur throughout:
   `docs/user_guide/tensor.rst` (69 of them).
 
 Numba kernels write arrays that are handed to SuiteSparse unchecked, so the kernel tests
-compile them with Numba bounds checks (the `numba_boundscheck` fixture). This was added after
-an early kernel wrote past an array's end.
+compile them with Numba bounds checks (the `numba_boundscheck` fixture).
 
 Run the tests under the configurations they are meant for:
 
 ```bash
-# blocking and non-blocking mode (508 passed each, about 30 s)
+# blocking and non-blocking mode (806 passed each)
 pytest graphblas/tests/test_tensor.py graphblas/tests/test_tensor_io.py --backend suitesparse --blocking
 pytest graphblas/tests/test_tensor.py graphblas/tests/test_tensor_io.py --backend suitesparse --no-blocking
 # another backend: the modules skip cleanly
 pytest graphblas/tests/test_tensor.py --backend suitesparse-vanilla
 ```
 
+With warm caches each run takes about 35 s. With an empty SuiteSparse JIT cache, as in CI,
+the first took about 7 minutes, most of it compiling.
+
 **Without Numba.** Block it in the interpreter, so that every `import numba` fails. pydata/sparse
-needs Numba too, so its io tests skip as well (396 passed, 112 skipped):
+needs Numba too, so its io tests skip as well (674 passed, 132 skipped):
 
 ```python
 # run_without_numba.py
@@ -53,7 +55,7 @@ python run_without_numba.py graphblas/tests/test_tensor.py graphblas/tests/test_
 ```
 
 **With the JIT off.** A plugin turns it off before every test. The array-UDT engine's tests
-skip (495 passed, 13 skipped):
+skip (789 passed, 17 skipped):
 
 ```python
 # jit_off_plugin.py (put it on PYTHONPATH)
@@ -72,9 +74,15 @@ def _jit_off():
 PYTHONPATH=. pytest graphblas/tests/test_tensor.py graphblas/tests/test_tensor_io.py --backend suitesparse -p jit_off_plugin
 ```
 
-The counts above were checked on macOS with SuiteSparse:GraphBLAS 10.5.1 and Python 3.14.
-The same tests also passed on Python 3.11 with numpy 1.24 (491 passed, 17 skipped: that
-environment had no C compiler, so the JIT tests skipped).
+The counts and times above were measured on 2026-11-22 on macOS (Apple M5 Pro) with
+SuiteSparse:GraphBLAS 10.5.1, Python 3.14, numpy 2.5.4, Numba 0.68, scipy 1.18 and
+pydata/sparse 0.19.
+
+**With a by-column global format.** The Tensor keeps its Matrix by row whatever SuiteSparse's
+global format is (`design.md`, "Data model"), so the modules also run with the global set to
+by column before every test, by a plugin that sets `GrB_STORAGE_ORIENTATION_HINT` to
+`GrB_COLMAJOR` in `pytest_runtest_setup`. All three modules, oracles included, passed that
+way on 2026-11-22 (833 tests, SuiteSparse 10.5.2).
 
 `graphblas/tests/test_core.py` checks the SuiteSparse floor in subprocesses. With the Tensor
 module's `lib` replaced by one without the Container API, every constructor raises the same
@@ -121,17 +129,17 @@ the operands of a non-commutative operator swapped, the wrong mode or factor axi
 C order, `replace` ignored (in the Matrix validation too), the mask dropped, a gather one
 position off, and an entry dropped.
 
-They are slow tests, so they run with `--runslow`, as in CI's slow job:
+They are slow tests, so they run with `--runslow`, as in CI's slow jobs:
 
 ```bash
 pytest graphblas/tests/test_tensor_oracles.py --runslow --backend suitesparse
 ```
 
 The default case counts are sized for CI: about 2,200 checks, plus the runs that force each
-engine. With empty SuiteSparse JIT and Numba kernel caches, as in CI, that takes about 90 s,
-most of it compiling; with warm caches, 13-65 s, depending on how many new JIT kernels the
-seed's cases need. Three runs at 10 times the counts (`-k "not teeth"`) took about 4 minutes
-each. For a thorough run, multiply the counts:
+engine (2026-10-21). On 2026-11-22 the 27 tests took 80 s with the caches warm from the unit
+tests. Much of a run is compiling the JIT kernels its seed's cases need, so the time varies
+by seed. Three runs at 10 times the counts (`-k "not teeth"`) took about 4 minutes each
+(2026-10-21). For a thorough run, multiply the counts:
 
 ```bash
 GRAPHBLAS_TENSOR_ORACLE_SCALE=20 pytest graphblas/tests/test_tensor_oracles.py --runslow --backend suitesparse -k "not teeth"
@@ -139,9 +147,7 @@ GRAPHBLAS_TENSOR_ORACLE_SCALE=20 pytest graphblas/tests/test_tensor_oracles.py -
 
 Each run draws new cases: the seed is the session's `GRAPHBLAS_TEST_SEED`, which
 `conftest.py` prints. A failure names its seed; `GRAPHBLAS_TENSOR_ORACLE_SEED=<seed>` reruns
-it. Set `NUMBA_BOUNDSCHECK=1` to compile the kernels with bounds checks. Porting the oracles
-into the repository found one bug: the array-UDT TTM engine raised on a product SuiteSparse
-marks iso (a one-entry tensor contracted over an axis of size 1); it now declines.
+it. Set `NUMBA_BOUNDSCHECK=1` to compile the kernels with bounds checks.
 
 ## Notebooks
 
@@ -193,11 +199,15 @@ downloads from the original sources.
 
 ## What this does not cover
 
-- **Platforms.** Everything above ran on macOS on Apple silicon. python-graphblas's CI matrix
-  includes Linux (x86-64 and aarch64), macOS (x86-64 and arm64) and Windows, but this branch
-  has not run in CI. CI picks SuiteSparse versions at random, and the Tensor tests skip on
-  any below 10. Windows in particular is untested; see `limitations-and-roadmap.md`.
-- **SuiteSparse versions.** Only 10.5.1 was run. Versions before 10 are refused by design.
+- **Platforms.** Everything above ran on macOS on Apple silicon. CI runs the Tensor test
+  modules wherever it draws SuiteSparse 10 or later, at random per job: on the branch's run
+  of 2026-11-22 they ran on Linux x86-64 (10.4 and 10.5), macOS arm64 and x86-64, and
+  Windows (10.5.2), and skipped on Linux aarch64, which drew 9.4. On Windows the array-UDT
+  engine's tests skip: SuiteSparse compiles through cmake there, and python-graphblas then
+  leaves the JIT control at "run" (`design.md`, "The SuiteSparse JIT"). The slow oracles
+  ran in that run's Linux x86-64 and Windows jobs.
+- **SuiteSparse versions.** Locally, 10.5.1 and 10.3.1; in CI, whichever 10.x versions the
+  jobs draw. Versions before 10 are refused by design.
 - **The cost model.** The planner's constants were fitted on one machine, and its choices are
   checked by measurement only there (`design.md`, "Fitted constants").
 - **Size.** The largest inputs were FROSTT tensors: NELL-2 has 77M entries and Enron 54M.
