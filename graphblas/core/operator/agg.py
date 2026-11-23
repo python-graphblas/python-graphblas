@@ -101,6 +101,7 @@ class Aggregator:
         any_dtype=None,
         from_nvals=None,
         vector_apply=False,
+        stable=None,
     ):
         self.name = name
         self._initval_orig = initval
@@ -123,6 +124,9 @@ class Aggregator:
         # under a `max` monoid, or -0.0 under `plus`: a reduce of bitmap data to a Scalar
         # loses both (see the Matrix -> Scalar step there).
         self._vector_apply = vector_apply
+        # A custom function used instead of the semiring for real values, where the semiring
+        # overflows (``agg.logaddexp``); a Tensor reduce still uses the semiring
+        self._stable = stable
         if types is None:
             if monoid is not None:
                 types = [monoid]
@@ -309,6 +313,9 @@ class TypedAggregator:
                 return parent._as_vector()
             return
 
+        if agg._stable is not None and self.type.np_type.kind in "iuf":
+            return agg._stable(self, updater, expr, opts, in_composite=in_composite)
+
         if agg._custom is not None:
             return agg._custom(self, updater, expr, opts, in_composite=in_composite)
 
@@ -478,6 +485,56 @@ agg.exists = Aggregator(
     from_nvals=lambda n: 1,
 )
 
+
+def _logaddexp(agg, updater, expr, opts, *, in_composite, fast, exp, log, np_log, low):
+    """Reduce with ``fast``, the sum of ``exp(x)`` then its log, and where a result is not
+    finite or is below ``low``, reduce again as ``m + log(sum(exp(x - m)))``, with ``m`` the
+    largest value (0 when that is not finite), as numpy's ``logaddexp`` reduces. The sum
+    overflows to infinity past 709 (1023 for ``exp2``), and below -708 (-1022) it loses
+    precision until it rounds to 0.
+    """
+    dtype = agg.return_type
+    result = fast[agg.type]._new(expr.construct_output(dtype)(**opts), expr, in_composite=True)
+    values = result.to_coo(indices=False)[1]
+    if np.isposinf(values).any() or (values < low).any():
+        result = _logaddexp_shifted(expr, dtype, opts, exp, log, np_log)
+    if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
+        updater << result
+        return updater.parent if in_composite else None
+    if in_composite:
+        return result
+    _store_element(updater, result[0], opts)
+    return None
+
+
+def _logaddexp_shifted(expr, dtype, opts, exp, log, np_log):
+    """``m + log(sum(exp(x - m)))`` of each group of values, as a Vector (of size 1 for a
+    Vector or a whole Matrix), with ``m`` the group's largest value (0 when not finite).
+    """
+    x = expr.args[0]
+    if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
+        rowwise = expr.method_name == "reduce_rowwise"
+        reduce = x.reduce_rowwise if rowwise else x.reduce_columnwise
+        shift = reduce(monoid.max).new(dtype, **opts)
+        finite = unary.isfinite(shift).new(**opts)
+        shift(mask=~finite.V, **opts) << 0.0  # (an empty group stays empty below)
+        D = _scaling_diag(expr, unary.ainv(shift).new(**opts), opts)
+        y = semiring.any_plus(D @ x if rowwise else x @ D).new(dtype, **opts)
+        y << exp(y)
+        total = (y.reduce_rowwise if rowwise else y.reduce_columnwise)(monoid.plus)
+        return binary.plus(log(total.new(**opts)).new(**opts) & shift).new(**opts)
+    whole = x.reduce if expr.cfunc_name.startswith("GrB_Vector_reduce") else x.reduce_scalar
+    m = whole(monoid.max).new(dtype).value
+    m = m if np.isfinite(m) else 0.0
+    y = x.apply(binary.minus, right=m).new(dtype, **opts)
+    y << exp(y)
+    total = (y.reduce if y.ndim == 1 else y.reduce_scalar)(monoid.plus).new().value
+    result = expr._new_vector(dtype, size=1)
+    with np.errstate(divide="ignore"):  # (the log of 0 is -inf, as numpy's is)
+        result[0] = np_log(total) + m
+    return result
+
+
 # Semiring and finalize
 agg.hypot = Aggregator(
     "hypot",
@@ -487,24 +544,28 @@ agg.hypot = Aggregator(
     finalize=unary.sqrt,
     vector_apply=True,
 )
-agg.logaddexp = Aggregator(
-    "logaddexp",
-    initval=np.e,
-    semiring=semiring.plus_pow,
-    switch=True,
-    semiring2=semiring.plus_first,
-    finalize=unary.log,
-    vector_apply=True,
+
+
+def _logaddexp_aggregator(name, base, log, **stable):
+    """``log(sum(base ** x))``: the semiring computes it, and ``_logaddexp`` checks it."""
+    kwargs = {
+        "initval": base,
+        "semiring": semiring.plus_pow,
+        "switch": True,
+        "semiring2": semiring.plus_first,
+        "finalize": log,
+        "vector_apply": True,
+    }
+    fast = Aggregator(name, **kwargs)
+    return Aggregator(name, **kwargs, stable=partial(_logaddexp, fast=fast, log=log, **stable))
+
+
+agg.logaddexp = _logaddexp_aggregator(
+    "logaddexp", np.e, unary.log, exp=unary.exp, np_log=np.log, low=-700.0
 )
 # 2.0, not 2, so that `pow` is FP64 on integers too: `pow(2, -1)` in INT64 is 0
-agg.logaddexp2 = Aggregator(
-    "logaddexp2",
-    initval=2.0,
-    semiring=semiring.plus_pow,
-    switch=True,
-    semiring2=semiring.plus_first,
-    finalize=unary.log2,
-    vector_apply=True,
+agg.logaddexp2 = _logaddexp_aggregator(
+    "logaddexp2", 2.0, unary.log2, exp=unary.exp2, np_log=np.log2, low=-1000.0
 )
 # Alternatives
 # logaddexp = Aggregator('logaddexp', monoid=semiring.numpy.logaddexp)
