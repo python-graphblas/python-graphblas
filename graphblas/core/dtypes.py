@@ -688,7 +688,16 @@ def _nats_in_leaf_units(values, np_type):
     NaT scalar is converted that way first. ``values`` holds elements of
     ``np_type``: a list is a sequence of them, and a tuple is a record's fields
     (or, for any other dtype, a sequence too).
+
+    numpy before 2.4 also writes past the end of each string when it casts an
+    array of durations into text too short for them, so such an array is made
+    text of its own width first, which numpy then cuts short as it does a number.
     """
+    leaf = np_type
+    while leaf.subdtype is not None:
+        leaf = leaf.subdtype[0]
+    if leaf.kind in "SU" and isinstance(values, np.ndarray) and values.dtype.kind == "m":
+        return values.astype(leaf.kind)
     if not _has_duration_leaf(np_type):
         return values
     while np_type.subdtype is not None:
