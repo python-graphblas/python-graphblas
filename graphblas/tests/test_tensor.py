@@ -8136,7 +8136,8 @@ def test_get():
     """``T.get(i, j, k)`` (or ``T.get((i, j, k))``) returns the value stored there as a Python
     scalar, or ``default`` where none is, as ``Matrix.get(row, col)``, ``Vector.get(index)``
     and ``Scalar.get()`` do; in every layout. A bad index raises TypeError, one out of range
-    IndexError, and one that selects more than one element ValueError, as for Matrix.
+    IndexError, and one that selects several positions (a slice, a range, a 1-d list or array
+    of integers) ValueError, as for Matrix: each bad index raises what Matrix.get raises.
     ``default`` is keyword-only.
     """
     rng = np.random.default_rng(610)
@@ -8154,9 +8155,26 @@ def test_get():
             X.get(0, i, 1)
         with pytest.raises(ValueError, match="Bad row, col"):
             X.to_matrix((0,)).get(0, i)
-    for i in [1.5, None, True]:
+    for i in [1.5, None, True, (1, 2), np.array([[0, 1]]), []]:
         with pytest.raises(TypeError, match="3 ints"):
             X.get(0, i, 1)
+    # Each bad index raises the exception Matrix.get raises for it
+    X2 = Tensor.from_dense(np.ones((2, 3)))
+    A = X2.to_matrix((0,))
+    bad = [(1, 2), (1,), (), np.array([[0, 1]]), np.zeros((1, 0), int), [], [0, 1], [1], range(2)]
+    bad += [np.array([0, 1]), np.array([], int), slice(None), np.array(1), 1.5, np.float64(1)]
+    bad += [True, np.True_, "a", None, [1.5], [[0, 1]], [(0, 1)], [True], np.array([1.5])]
+    bad += [np.array([1], np.uint8), [np.int64(1)], ["a"], [[0], [1, 2]]]
+
+    def raises(f):
+        try:
+            f()
+        except (TypeError, ValueError) as e:
+            return type(e)
+        raise AssertionError("no error")  # pragma: no cover (a failure)
+
+    for i in bad:
+        assert raises(lambda i=i: X2.get(0, i)) is raises(lambda i=i: A.get(0, i)), i
     with pytest.raises(IndexError):
         X.get(0, 5, 1)
     with pytest.raises(TypeError, match="3 ints"):

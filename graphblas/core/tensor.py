@@ -176,6 +176,20 @@ def _as_tensor(x, within):
     return None
 
 
+def _selects_several(i):
+    """Whether ``i`` indexes an axis by several positions (a slice, a range, or a 1-d list or
+    array of integers, an empty array included), which ``get`` refuses with ValueError, as
+    Matrix.get does; Matrix raises TypeError for other bad indices (a nested tuple, a 2-d
+    array, an empty list, whose numpy dtype is float), and so does ``get``.
+    """
+    if isinstance(i, (slice, range)):
+        return True
+    if not isinstance(i, (list, np.ndarray)):
+        return False
+    a = np.asarray(i)  # (a ragged list raises numpy's ValueError, as in Matrix.get)
+    return a.ndim == 1 and a.dtype.kind in "iu"
+
+
 # The built-in index unary and select ops that read an entry's value alone
 _VALUE_OPS = frozenset({"valueeq", "valuene", "valuegt", "valuege", "valuelt", "valuele"})
 
@@ -451,7 +465,7 @@ class Tensor(BaseType):
         """
         if len(index) == 1 and isinstance(index[0], tuple):
             index = index[0]
-        if any(isinstance(i, (slice, list)) or np.ndim(i) > 0 for i in index):
+        if any(_selects_several(i) for i in index):
             raise ValueError(
                 "Bad index arguments in Tensor.get(...). The index should select a single "
                 "element, which is returned as a Python scalar; extract more with T[...]."
