@@ -1236,9 +1236,9 @@ class BinaryOp(OpBase):
         # one dtype, since UINT64 and BOOL read the results for INT64 and INT8.
         if not self._defer_builds or type_ not in self.types:
             return None
-        # Under the lock, threads that first use one dtype at once build it once. A second
-        # build would replace the first op in ``_typed_ops``, and the first is freed once
-        # nothing refers to it, though a Monoid built from it meanwhile may point at it.
+        # Threads that first use one dtype at once build it once. A second build would
+        # replace the first op in ``_typed_ops`` and free it, while a Monoid built from it
+        # in between would still point at it.
         with _deferred_build_lock:
             op = self._typed_ops.get(type_)
             if op is None:
