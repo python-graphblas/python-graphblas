@@ -4659,7 +4659,7 @@ def test_ss_pack_hyperhash(A):
     assert A.ss.unpack_hyperhash() is None
 
     C = Matrix(int, 20000, 200000)
-    C.ss.config["format"] = "by_row"  # (the hash is over the rows)
+    C.ss.config["format"] = "by_row"  # (the hash is of the hyperlist: rows when stored by row)
     C.ss.config["sparsity_control"] = "hypersparse"
     # More rows than the 1024 below which SuiteSparse 10 skips the hash
     rows = np.arange(1025) * 3
