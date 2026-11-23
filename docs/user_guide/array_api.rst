@@ -16,7 +16,10 @@ standard can run on these arrays unchanged, and the arrays store only the positi
 need to. The results are numpy's on the same values, with a few exceptions. A contraction
 skips unstored positions, so ``0 * inf`` there is not NaN. The sign of a zero that the
 result does not store is unspecified, and sums and transcendental functions may round
-differently. An operation past the densify limit (below) raises instead of allocating.
+differently. An operation past the densify limit (below) raises instead of allocating. And
+as the standard says, ``x[key] = value`` needs a value that broadcasts to the selection's
+shape: numpy also accepts extra leading axes of length 1, such as a value of shape
+``(1, 2, 4)`` for ``x[0:2]`` of a 3 x 4 ``x``, and this namespace raises ``ValueError``.
 
 .. code-block:: python
 
