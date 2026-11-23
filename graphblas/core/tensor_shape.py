@@ -122,6 +122,13 @@ def _reshape(t, shape):
     return Tensor._from_M(M, shape, layout)
 
 
+# numpy.pad's modes; all but "constant" raise NotImplementedError, other names ValueError
+_NUMPY_PAD_MODES = frozenset(
+    {"constant", "edge", "linear_ramp", "maximum", "mean", "median", "minimum", "reflect"}
+    | {"symmetric", "wrap", "empty"}
+)
+
+
 def _pad(t, pad_width, mode):
     """``t.pad(pad_width, mode)``: the entries rebuilt in ``t``'s layout of the padded shape,
     each coordinate moved by its axis's leading pad.
@@ -130,21 +137,24 @@ def _pad(t, pad_width, mode):
     order and the build skips its sort.
     """
     if mode != "constant":
+        if not callable(mode) and mode not in _NUMPY_PAD_MODES:
+            raise ValueError(f"pad: mode {mode!r} is not supported")
         raise NotImplementedError(
             f"pad: only mode='constant', whose new positions are missing; got mode={mode!r}"
         )
     widths = np.asarray(pad_width)
-    if widths.dtype.kind not in "iu":
+    if widths.dtype.kind != "i":  # (unsigned too, as numpy)
         raise TypeError(f"pad_width must be of integral type; got {pad_width!r}")
+    if (widths < 0).any():  # (before broadcasting: a 0-d Tensor has no pairs to check)
+        raise ValueError(f"pad_width can't contain negative values; got {pad_width!r}")
     try:
-        widths = np.broadcast_to(widths, (t.ndim, 2)).astype(np.int64)
+        widths = np.broadcast_to(widths, (t.ndim, 2)).tolist()
     except ValueError:
         raise ValueError(
             f"pad_width {pad_width!r} does not broadcast to {t.ndim} (before, after) pairs"
         ) from None
-    if (widths < 0).any():
-        raise ValueError(f"pad_width can't contain negative values; got {pad_width!r}")
-    shape = tuple(int(n + b + a) for n, (b, a) in zip(t._shape, widths, strict=True))
+    # (Python ints: a sum of int64 widths could wrap before the 2**60 check)
+    shape = tuple(n + b + a for n, (b, a) in zip(t._shape, widths, strict=True))
     layout = tl.as_layout((t._layout.rows, t._layout.cols), shape)
     if shape == t._shape:
         return t.dup()

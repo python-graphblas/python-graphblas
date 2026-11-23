@@ -1131,8 +1131,9 @@ class Tensor(BaseType):
         ``pad_width`` is numpy's: ``((before_0, after_0), (before_1, after_1), ...)``, one
         ``(before, after)`` pair for every axis, or one int for both sides of every axis. Only
         ``mode="constant"`` is supported, and the constant is "missing", since a Tensor has no
-        fill value (pydata/sparse's ``pad`` likewise pads with its fill value only). The copy
-        keeps this Tensor's layout.
+        fill value (pydata/sparse's ``pad`` likewise pads with its fill value only); numpy's
+        other modes raise NotImplementedError, and a mode numpy does not have ValueError. The
+        copy keeps this Tensor's layout.
         """
         return _pad(self, pad_width, mode)
 

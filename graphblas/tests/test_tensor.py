@@ -6673,20 +6673,41 @@ def test_pad(pad_width):
 
 def test_pad_errors():
     """``pad`` takes numpy's pad widths and only the constant mode, whose new positions are
-    missing here: negative or non-integer widths, widths that do not broadcast to the axes,
-    another mode and a group past 2^60 positions raise.
+    missing here: negative or non-integer widths (as numpy, unsigned ones too), widths that do
+    not broadcast to the axes, another of numpy's modes (NotImplementedError), a mode numpy
+    does not have (ValueError, as numpy) and a group past 2^60 positions raise. Widths whose
+    sum does not fit in int64 raise the same 2^60 error.
     """
     X = Tensor.from_dense(np.ones((2, 3)))
     with pytest.raises(ValueError, match="negative"):
         X.pad(-1)
+    with pytest.raises(ValueError, match="negative"):
+        Tensor.from_dense(np.array(5.0)).pad(-1)  # (no pairs to broadcast to)
+    with pytest.raises(ValueError, match="negative"):
+        np.pad(np.array(5.0), -1)
+    assert Tensor.from_dense(np.array(5.0)).pad(3).to_dense() == np.pad(np.array(5.0), 3)
     with pytest.raises(TypeError, match="integ"):
         X.pad(1.5)
+    for width in [np.uint8(2), np.array([2], np.uint64), 2**63]:
+        with pytest.raises(TypeError, match="integ"):
+            X.pad(width)
+        with pytest.raises(TypeError, match="integ"):
+            np.pad(np.ones((2, 3)), width)
     with pytest.raises(ValueError, match="broadcast"):
         X.pad(((1, 2), (3, 4), (5, 6)))
-    with pytest.raises(NotImplementedError, match="constant"):
-        X.pad(1, mode="edge")
+    for mode in ["edge", "reflect", "empty", lambda *args: None]:
+        with pytest.raises(NotImplementedError, match="constant"):
+            X.pad(1, mode=mode)
+    with pytest.raises(ValueError, match="'foo' is not supported"):
+        X.pad(1, mode="foo")
+    with pytest.raises(ValueError, match="'foo' is not supported"):
+        np.pad(np.ones((2, 3)), 1, mode="foo")
     with pytest.raises(ValueError, match="2\\*\\*60"):
         Tensor(dtypes.FP64, (2**40, 2**19), layout=((), (0, 1))).pad(((0, 0), (0, 2**20)))
+    Y = Tensor.from_coo(([0, 2], [1, 3]), [1.0, 2.0], shape=(3, 4))
+    for width in [(2**62, 2**62), ((2**63 - 1, 5), (0, 0))]:
+        with pytest.raises(ValueError, match="2\\*\\*60"):
+            Y.pad(width)
 
 
 def test_user_guide_examples():
