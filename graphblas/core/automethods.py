@@ -371,10 +371,19 @@ def __ixor__(self, other):
 
 
 # End auto-generated code
-def _main():
+def _main(base_dir=None, callblack=True):
+    # ``scripts/autogenerate.py --check`` passes the scratch directory of its copies as
+    # base_dir, and callblack=False so that the output does not depend on black
+    import functools
     from pathlib import Path
 
     from .utils import _autogenerate_code
+
+    if not callblack:
+        _autogenerate_code = functools.partial(_autogenerate_code, callblack=False)
+
+    if base_dir is None:
+        base_dir = Path(__file__).parent
 
     common = {
         "_name_html",
@@ -493,7 +502,7 @@ def _main():
             f'    raise TypeError(f"{name!r} not supported for {{type(self).__name__}}")\n\n'
         )
 
-    _autogenerate_code(Path(__file__), "\n".join(lines))
+    _autogenerate_code(base_dir / "automethods.py", "\n".join(lines))
 
     # Copy to scalar.py and infix.py
     lines = []
@@ -514,7 +523,7 @@ def _main():
             continue
         lines.append(f"    {name} = automethods.{name}")
 
-    thisdir = Path(__file__).parent
+    thisdir = base_dir
     infix_exclude = {"_get_value"}
 
     def get_name(line):

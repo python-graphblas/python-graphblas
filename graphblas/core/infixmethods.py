@@ -329,7 +329,9 @@ for name in [
 # End auto-generated code
 
 
-def _main():
+def _main(base_dir=None, callblack=True):
+    # ``scripts/autogenerate.py --check`` passes the scratch directory of its copies as
+    # base_dir, and callblack=False so that the output does not depend on black
     # Run via `python -m graphblas.core.infixmethods`
     comparisons = {
         "lt": "lt",
@@ -435,11 +437,17 @@ def _main():
         "        setattr(VectorIndexExpr, name, val)\n"
         "        setattr(MatrixIndexExpr, name, val)\n"
     )
+    import functools
     from pathlib import Path
 
     from .utils import _autogenerate_code
 
-    _autogenerate_code(Path(__file__), "\n".join(lines))
+    if not callblack:
+        _autogenerate_code = functools.partial(_autogenerate_code, callblack=False)
+
+    if base_dir is None:
+        base_dir = Path(__file__).parent
+    _autogenerate_code(base_dir / "infixmethods.py", "\n".join(lines))
 
 
 if __name__ == "__main__":
