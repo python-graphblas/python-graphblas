@@ -7858,7 +7858,7 @@ def test_reduce_scalar_aggregators(name):
             got = Z.dup(layout=layout).reduce_scalar(a).new().value
             assert got == (3.0 if name == "first" else 2.0), layout
     assert Tensor(dtypes.FP64, (2, 3)).reduce_scalar(a).new().nvals == 0
-    s = gb.Scalar.from_value(100.0, dtype=want.dtype)
+    s = gb.Scalar.from_value(100, dtype=want.dtype)
     s(accum=binary.plus) << X.reduce_scalar(a)
     np.testing.assert_allclose(s.value, 100 + want.value, rtol=1e-12)
     if name != "sum":  # (a monoid's aggregator takes allow_empty=False, as for Matrix)
