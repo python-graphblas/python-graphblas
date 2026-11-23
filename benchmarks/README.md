@@ -34,7 +34,8 @@ asv publish && asv preview    # build and serve the HTML report
 asv run --bench scalar_access # run the benchmarks that match a regex
 ```
 
-To check that every benchmark runs, without asv:
+To check, without asv, that every benchmark runs and no `time_` benchmark changes its
+own data from one call to the next:
 
 ```bash
 python benchmarks/_verify.py

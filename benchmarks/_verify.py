@@ -6,6 +6,10 @@ each benchmark class runs setup() and calls each benchmark method once for every
 combination of its parameters. A timeraw_* method returns code, which runs in a fresh
 process. Prints PASS or FAIL and the time of each benchmark, so a slow one shows.
 
+asv calls a time_* method many times between two runs of setup, unless the class sets
+``number = 1``. Such a method is run twice, and fails if the second call changes a
+graphblas object that setup made: its later calls would time other data.
+
 Usage:  python benchmarks/_verify.py
 """
 
@@ -42,6 +46,19 @@ def param_combos(cls):
     return [(p,) for p in params]
 
 
+def check_repeatable(obj, method, combo):
+    """Call method again, and raise if that changes a graphblas object that setup made."""
+    before = {
+        name: value.dup()
+        for name, value in vars(obj).items()
+        if callable(getattr(value, "dup", None)) and callable(getattr(value, "isequal", None))
+    }
+    method(*combo)
+    changed = [name for name, value in before.items() if not getattr(obj, name).isequal(value)]
+    if changed:
+        raise RuntimeError(f"each call changes {', '.join(changed)}")
+
+
 def run_one(cls, combo):
     results = []
     obj = cls()
@@ -68,6 +85,8 @@ def run_one(cls, combo):
             else:
                 method(*combo)
             dt = time.perf_counter() - t0
+            if name.startswith("time_") and getattr(obj, "number", 0) != 1:
+                check_repeatable(obj, method, combo)
             results.append((label, dt, None))
         except Exception as exc:
             dt = time.perf_counter() - t0

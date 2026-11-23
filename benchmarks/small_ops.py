@@ -22,6 +22,9 @@ class SmallVector:
         # Dense vectors so every op touches ``size`` elements.
         self.v = common.make_dense_vector(size, seed=20)
         self.u = common.make_dense_vector(size, seed=21)
+        # The target of time_assign_into. It starts as the result, so every call writes
+        # the same values; assigning into v would feed back, and v would decay toward 0.
+        self.w = self.v.ewise_mult(self.u, binary.times).new()
 
     def time_build_ewise_mult(self, size):
         # Expression only, not evaluated: pure construction overhead.
@@ -44,7 +47,7 @@ class SmallVector:
 
     def time_assign_into(self, size):
         # The `<<` update path: evaluate into an existing object with no mask/accum.
-        self.v << self.v.ewise_mult(self.u, binary.times)
+        self.w << self.v.ewise_mult(self.u, binary.times)
 
 
 class SmallMatrix:
