@@ -3,7 +3,7 @@
 What the experimental `gb.Tensor` does not do yet, what has not been tested, and the order in
 which the maintainers plan to work on it. Timings are written "8 / 1" for 8 and 1 threads,
 and the data sets are those named in `design.md`. Every timing is from the machine
-`design.md` names (an Apple M5 Pro) and holds only there.
+`design.md` names (an Apple M5 Pro) and applies only there.
 
 Several findings come from the SAPS pilot (2026-10-28), which ported the HOOI and CP-ALS
 benchmarks of the Sparse Array Programming Suite ([SAPS](https://sparsearray.org/)) to the
@@ -46,6 +46,10 @@ later (`verification.md`, "What this does not cover"). What remains:
   (numpy's flat index for `axis=None`), by decision (`decisions.md`, 33).
 - `einsum` broadcasts a size-1 axis only under `...`. numpy also broadcasts one that has a
   letter (`"ij,ij->"` with shapes (2, 3) and (1, 3)); that raises `DimensionMismatch` here.
+- Complex variances: `agg.varp`, `vars`, `stdp` and `stds` of complex values are Matrix's
+  `E[x**2] - E[x]**2` with the complex square (for [1+1j, 1-1j], -1), not numpy's real
+  `E[|x - mean|**2]` (1). A known difference, inherited from Matrix's aggregators, to change
+  in both at once.
 - Index-based `select` (`rowindex`, `tril` and the like), which needs logical coordinates.
 - `pad`.
 - binsparse interchange; `graphblas.io` dispatching ndim > 2 to the Tensor methods.

@@ -393,6 +393,10 @@ Limits
 ------
 
 - No Tensor or Vector as indices.
+- In ``einsum``, only the axes under ``...`` broadcast; axes with letters must have matching
+  sizes, where numpy also broadcasts a size-1 one.
+- For complex values, the variance and standard deviation aggregators are Matrix's, from the
+  complex square, not numpy's real variance.
 - No fill value: a missing entry has no value (as in all of python-graphblas).
 - Each group of the layout has at most 2\ :sup:`60` positions (a Matrix dimension).
 - The ``suitesparse`` backend with SuiteSparse:GraphBLAS 10 or later only.

@@ -7209,7 +7209,7 @@ def test_reduce_aggregators():
 
 
 def _assert_same_entries(got, want):
-    """``got`` (a Tensor) holds the entries of ``want`` (a Vector or Scalar of its size), with
+    """``got`` (a Tensor) has the entries of ``want`` (a Vector or Scalar of its size), with
     the same dtype, and NaN where ``want`` has NaN. FP32 values may differ by FP32 rounding
     of values up to 25, and by its square root: Matrix computes ``sum / count`` and its square
     in FP32 there, so its variance of one value is about 1e-7, not 0, and its std about 4e-4.

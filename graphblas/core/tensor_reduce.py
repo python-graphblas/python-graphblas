@@ -116,7 +116,7 @@ def _reduce_positional(t, agg, kind, axis, keepdims):
     ``reduce_scalar``) do: ``first_index`` is the least position, and ``argmin`` the least
     position among the entries equal to their fiber's minimum (``eq``, so a NaN never
     matches). ``first`` and ``last`` take any axes: the value at the least or greatest
-    position, so over every axis they give what ``reduce_scalar`` gives for a Matrix.
+    position, so over every axis they return what ``reduce_scalar`` returns for a Matrix.
     """
     what, last = kind
     axes = _normalize_axes(axis, t.ndim)
@@ -144,14 +144,14 @@ def _reduce_positional(t, agg, kind, axis, keepdims):
 
 
 def _positions(t, axes):
-    """An INT64 Tensor with ``t``'s pattern and layout whose entries hold their C-order
+    """An INT64 Tensor with ``t``'s pattern and layout whose values are their entries' C-order
     index over ``axes``: one pass over the stored indices, and a build from keys already in
     storage order.
     """
     if math.prod(t._shape[a] for a in axes) >= 2**63:
         raise ValueError(
             f"the axes {axes} have {math.prod(t._shape[a] for a in axes)} positions, more "
-            f"than an INT64 index holds"
+            f"than an INT64 index can count"
         )
     M = t._M
     seq, p = t._layout.state

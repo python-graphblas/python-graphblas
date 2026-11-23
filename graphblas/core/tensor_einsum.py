@@ -29,6 +29,8 @@ def einsum(subscripts, *operands, op=semiring.plus_times, optimize="greedy"):
     letters leave, which broadcast against each other (a size-1 axis against any size), and
     an index repeated within one operand takes that operand's diagonal: ``"ii->i"`` is the
     diagonal and ``"ii"`` the trace. A diagonal costs one pass over the operand's entries.
+    Axes with letters do not broadcast: their sizes must match (numpy also broadcasts a
+    size-1 one).
 
     When the multiply distributes over the monoid (``plus_times``, ``min_plus``,
     ``max_plus``, ``lor_land``, ``min_max``, any ``min``, ``max`` or ``any`` with ``first``,
@@ -175,7 +177,7 @@ def _einsum_plan(subscripts, shapes, optimize):
     that rewrite gets NotImplementedError for them.
     """
     if "." in subscripts:
-        raise NotImplementedError("einsum: `...` is not supported here")
+        raise NotImplementedError("einsum: `...` is not supported")
     subscripts = subscripts.replace(" ", "")
     if "->" in subscripts:
         inputs, output = subscripts.split("->")
@@ -188,7 +190,7 @@ def _einsum_plan(subscripts, shapes, optimize):
         if len(term) != len(shape):
             raise ValueError(f"einsum: term {term!r} does not match an operand of shape {shape}")
         if len(set(term)) != len(term):
-            raise NotImplementedError(f"einsum: repeated index in {term!r} (a diagonal) here")
+            raise NotImplementedError(f"einsum: repeated index in {term!r} (a diagonal)")
     sizes = {}
     for term, shape in zip(terms, shapes, strict=True):
         for c, n in zip(term, shape, strict=True):

@@ -1148,16 +1148,21 @@ class Tensor(BaseType):
     def reduce(self, op=monoid.plus, axis=None, *, keepdims=False):
         """Reduce over ``axis`` with the monoid ``op`` or an aggregator.
 
-        ``axis=None`` reduces over all axes and gives a 0-d Tensor. An aggregator may be made
-        of a monoid (``agg.sum``, ``agg.max``, ...), of a semiring (``agg.count``,
-        ``agg.count_nonzero``, ``agg.sum_of_squares``, ``agg.hypot``, ...), or of several
-        of those (``agg.mean``, ``agg.varp``, ``agg.stds``, ...); the result has the type
-        Matrix gives it, and integer and BOOL values are summed in that float type, as numpy
-        sums them for a mean. Aggregators of positions work along one axis as for the rows of a
-        Matrix: ``agg.argmin`` and ``agg.argmax`` give the index of the first minimum or
-        maximum, ``agg.first_index`` and ``agg.last_index`` the index of the first or last
-        entry, and ``agg.first`` and ``agg.last`` its value. ``first`` and ``last`` also take
-        several axes, in C order over them.
+        ``axis=None`` reduces over all axes and returns a 0-d Tensor. An aggregator may be
+        made of a monoid (``agg.sum``, ``agg.max``, ...), of a semiring (``agg.count``,
+        ``agg.count_nonzero``, ``agg.sum_of_squares``, ``agg.hypot``, ...), or of several of
+        those (``agg.mean``, ``agg.varp``, ``agg.stds``, ...); the result has the type Matrix
+        gives it, and integer and BOOL values are summed in that float type, as numpy sums
+        them for a mean. For complex values the variances and standard deviations are
+        Matrix's, from the complex square (``E[x**2] - E[x]**2``), not numpy's real variance.
+
+        Aggregators of positions work along one axis as for the rows of a Matrix:
+        ``agg.argmin`` and ``agg.argmax`` return the index of the first minimum or maximum,
+        ``agg.first_index`` and ``agg.last_index`` the index of the first or last entry, and
+        ``agg.first`` and ``agg.last`` its value. ``first`` and ``last`` also take several
+        axes, in C order over them. ``argmin`` and ``argmax`` skip NaN, unlike numpy's: the
+        index is that of the first value equal to the fiber's minimum, which a NaN never
+        equals, and a fiber of NaN only stays missing.
 
         A position whose fiber has no entries stays missing (it is not 0).
         """
