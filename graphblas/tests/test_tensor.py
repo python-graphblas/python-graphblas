@@ -5426,10 +5426,12 @@ def test_unfold():
         np.testing.assert_allclose(
             M.to_dense(0.0), np.moveaxis(xv, mode, 0).reshape(xv.shape[mode], -1)
         )
-        M = X.unfold(mode, traversal_order="F")
-        np.testing.assert_allclose(
-            M.to_dense(0.0), np.moveaxis(xv, mode, 0).reshape(xv.shape[mode], -1, order="F")
-        )
+        for spelling in ["F", "f", "fortran"]:
+            M = X.unfold(mode, traversal_order=spelling)
+            np.testing.assert_allclose(
+                M.to_dense(0.0), np.moveaxis(xv, mode, 0).reshape(xv.shape[mode], -1, order="F")
+            )
+        assert X.unfold(mode, traversal_order="c").isequal(X.unfold(mode))
     assert X.unfold(2) is not X.ss.matrix
     with pytest.raises(ValueError, match="traversal_order"):
         X.unfold(0, traversal_order="X")

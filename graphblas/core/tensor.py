@@ -1227,7 +1227,7 @@ class Tensor(BaseType):
         ``traversal_order`` is the order in which the columns traverse the other axes. With
         "C" (as in numpy and TensorLy) the last of them varies fastest, as
         ``np.moveaxis(X, mode, 0).reshape(I_mode, -1)``. With "F" (as in Kolda and Bader) the
-        first of them varies fastest.
+        first of them varies fastest. "c", "f" and "fortran" are accepted too.
         """
         mode = _normalize_axis(mode, self.ndim)
         others = tuple(a for a in range(self.ndim) if a != mode)
