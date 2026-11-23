@@ -3,6 +3,7 @@ functions, against numpy.
 """
 
 import copy
+import itertools
 import math
 import pickle
 
@@ -348,11 +349,24 @@ def test_result_type():
     assert xp.result_type(xp.int8, xp.uint8) == xp.int16
     assert xp.result_type(xp.asarray([1], dtype=xp.float32), 1.5) == xp.float32
     assert xp.result_type(xp.int8, 1) == xp.int8
-    assert xp.result_type(xp.float32, xp.int8, xp.uint8) == np.result_type(
-        np.result_type(np.float32, np.int8), np.uint8
-    )
+    assert xp.result_type(xp.float32, xp.int8, xp.uint8) == xp.float32
     with pytest.raises(ValueError, match="at least one"):
         xp.result_type(1, 2.0)
+
+
+def test_result_type_of_mixed_kinds_is_numpys():
+    """For mixed kinds, which the standard leaves unspecified, result_type is numpy's and does
+    not depend on the order, and concat promotes as np.concatenate does.
+    """
+    args = (xp.int8, xp.uint16, xp.float32, 1.0)
+    for perm in itertools.permutations(args):
+        assert xp.result_type(*perm) == np.result_type(*perm) == xp.float32
+    for perm in itertools.permutations([xp.bool, xp.uint64, xp.int16, 1]):
+        assert xp.result_type(*perm) == np.result_type(*perm) == xp.float64
+    parts = [np.ones(2, np.int8), np.ones(2, np.uint16), np.ones(2, np.float32)]
+    for perm in itertools.permutations(parts):
+        out = xp.concat([xp.asarray(p) for p in perm])
+        assert out.dtype == np.concatenate(perm).dtype == xp.float32
 
 
 def test_info():

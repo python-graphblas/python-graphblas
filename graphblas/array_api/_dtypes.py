@@ -104,18 +104,11 @@ def result_type(*arrays_and_dtypes):
             has_typed = True
     if not has_typed:
         raise ValueError("result_type needs at least one array or data type, not only scalars")
-    # Promote pairwise, left to right, with the Python scalars last. For dtypes of one kind this
-    # follows the Array API's promotion table, whose result does not depend on the order. With
-    # mixed kinds, which the standard leaves unspecified, it can: (int8, uint16, float32) returns
-    # float64, and (int8, float32, uint16) returns float32.
-    rt = None
-    for arg in args:
-        if isinstance(arg, np.dtype):
-            rt = arg if rt is None else np.result_type(rt, arg)
-    for arg in args:
-        if not isinstance(arg, np.dtype):
-            rt = np.result_type(rt, arg)
-    return check_supported(rt, "result_type")
+    # numpy promotes all the arguments at once. For dtypes of one kind this follows the Array
+    # API's promotion table. For mixed kinds, which the standard leaves unspecified, it does not
+    # depend on the order, as promoting pairwise would: (int8, uint16, float32) is float32 here
+    # and in np.concatenate, where pairwise it would be float64.
+    return check_supported(np.result_type(*args), "result_type")
 
 
 def can_cast(from_, to, /):
