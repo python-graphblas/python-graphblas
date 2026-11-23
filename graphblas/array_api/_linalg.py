@@ -486,9 +486,7 @@ def _vecdot(a, b, axis, shape, out_shape, typed, out_dt, fill):
     Ta, Tb = a._T(), b._T()
     if Ta.nvals == 0 or Tb.nvals == 0 or math.prod(shape) == 0:
         return Array._new(Tensor(gb_dtype(out_dt), out_shape), fill)
-    if _both_broadcast(Ta.shape, Tb.shape, shape):
-        # (an outer product: ewise_mult replicates one operand)
-        _utils.expansion_check(Ta, Tb, shape)
+    _utils.mult_expansion_check(Ta, Tb, shape)
     axis += len(shape)
 
     def build(Ta, Tb, op=typed):
@@ -497,12 +495,6 @@ def _vecdot(a, b, axis, shape, out_shape, typed, out_dt, fill):
     return _lazy.contraction(
         (a, b), build, out_shape, out_dt, fill, nterms=shape[axis], typed=typed
     )
-
-
-def _both_broadcast(sa, sb, shape):
-    from ..core.tensor_ewise import _broadcast_factor
-
-    return _broadcast_factor(sa, shape) > 1 and _broadcast_factor(sb, shape) > 1
 
 
 def einsum(subscripts, /, *operands, semiring=None):

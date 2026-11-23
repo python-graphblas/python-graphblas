@@ -329,6 +329,20 @@ def test_edge_cases_of_keys_contractions_and_sorting():
     assert_array_equal(xp.vecdot(u, v), np.vecdot(u.todense(), v.todense()))
     with gb.config.set(array_api_densify_limit=4), pytest.raises(xp.DensifyError):
         xp.vecdot(u, v)
+    # vecdot's product replicates the cheaper operand, as multiply's does, so both raise at
+    # the same limit (here B's 8 entries 100 times, or A's 400 entries twice)
+    A = xp.asarray(np.arange(1.0, 401.0).reshape(100, 1, 4))
+    B = xp.asarray(np.arange(1.0, 9.0).reshape(1, 2, 4))
+    for limit in [799, 800]:
+        with gb.config.set(array_api_densify_limit=limit):
+            if limit < 800:
+                with pytest.raises(xp.DensifyError, match="outer product"):
+                    xp.multiply(A, B)
+                with pytest.raises(xp.DensifyError, match="outer product"):
+                    xp.vecdot(A, B)
+            else:
+                xp.multiply(A, B)
+                assert_array_equal(xp.vecdot(A, B), np.vecdot(A.todense(), B.todense()))
     # numpy operands
     c = np.array([True, False, True])
     assert_array_equal(xp.where(c, np.array([1, 2, 3]), 0), np.where(c, [1, 2, 3], 0))
