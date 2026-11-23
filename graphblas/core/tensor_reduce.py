@@ -44,16 +44,10 @@ def _reduce_aggregator(t, op, axis, keepdims):
     if agg._composite is not None:
         typed = agg[t.dtype]  # (a KeyError for the types Matrix refuses, as peak_to_peak of FC64)
         parts = [_reduce_aggregator(t, part, axis, keepdims).new() for part in agg._composite]
-        inner = agg._finalize(*parts, {})
         # Matrix stores the finalize expression into an output of the aggregator's return type,
         # which can be narrower than the expression's own (FP32 for the mean of FP32 values,
         # where sum / count gives FP64), so this does too.
-        axis_repr = "None" if axis is None else repr(axis)
-        return TensorExpression(
-            "reduce", _composite_recipe, [t], (inner,), dtype=typed.return_type,
-            shape=inner.shape, op=typed,
-            expr_repr=f"{{0.name}}.reduce({{op}}, axis={axis_repr})",
-        )  # fmt: skip
+        return _aggregator_expr(t, typed, agg._finalize(*parts, {}), axis)
     if agg._semiring is None or agg._custom is not None:
         raise NotImplementedError(
             f"Tensor.reduce supports aggregators made of a monoid or a semiring; not "
@@ -76,7 +70,18 @@ def _reduce_aggregator(t, op, axis, keepdims):
     return rv
 
 
-def _composite_recipe(updater, inner):
+def _aggregator_expr(t, typed, inner, axis):
+    """``inner``, an expression that computes ``t.reduce(typed, axis)``, as one named for the
+    typed aggregator and of its result type.
+    """
+    axis_repr = "None" if axis is None else repr(axis)
+    return TensorExpression(
+        "reduce", _delegate_recipe, [t], (inner,), dtype=typed.return_type, shape=inner.shape,
+        op=typed, expr_repr=f"{{0.name}}.reduce({{op}}, axis={axis_repr})",
+    )  # fmt: skip
+
+
+def _delegate_recipe(updater, inner):
     inner.args[-2](updater, *inner.args[-1])
 
 
@@ -109,7 +114,7 @@ def _reduce_positional(t, agg, kind, axis, keepdims):
     """
     what, last = kind
     axes = _normalize_axes(axis, t.ndim)
-    agg[t.dtype]  # (a KeyError for the types Matrix refuses, as argmin of FC64)
+    typed = agg[t.dtype]  # (a KeyError for the types Matrix refuses, as argmin of FC64)
     if what != "value" and len(axes) != 1:
         raise ValueError(
             f"Tensor.reduce with agg.{agg.name} takes one axis, as numpy's argmin does; got "
@@ -118,7 +123,7 @@ def _reduce_positional(t, agg, kind, axis, keepdims):
     end = monoid.max if last else monoid.min
     pos = _positions(t, axes)
     if what == "index":
-        return _reduce_expr(pos, end, axes, keepdims)
+        return _aggregator_expr(t, typed, _reduce_expr(pos, end, axes, keepdims), axis)
     if what == "value":
         hit = pos.ewise_mult(_reduce_expr(pos, end, axes, True).new(), binary.eq).new()
         picked = t
@@ -128,7 +133,8 @@ def _reduce_positional(t, agg, kind, axis, keepdims):
         picked = pos
     sub = Tensor(picked.dtype, picked._shape)
     sub(hit.V) << picked  # the entries at the hits: one per fiber for first and last
-    return _reduce_expr(sub, monoid.any if what == "value" else monoid.min, axes, keepdims)
+    inner = _reduce_expr(sub, monoid.any if what == "value" else monoid.min, axes, keepdims)
+    return _aggregator_expr(t, typed, inner, axis)
 
 
 def _positions(t, axes):

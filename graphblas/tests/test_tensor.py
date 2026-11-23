@@ -7226,7 +7226,9 @@ def test_reduce_composite_aggregators(name):
             with pytest.raises(type(exc)):
                 X.reduce(a, axis=1)
             continue
-        _assert_same_entries(X.reduce(a, axis=1).new(), want)
+        expr = X.reduce(a, axis=1)
+        assert f"agg.{name}[" in repr(expr)
+        _assert_same_entries(expr.new(), want)
         _assert_same_entries(X.reduce(a[dtype], axis=1).new(), want)
         _assert_same_entries(X.reduce(a).new(), M.reduce_scalar(a).new())
         # An empty Tensor: every fiber is missing
@@ -7323,6 +7325,7 @@ def test_reduce_positional_aggregators_match_matrix(name):
             _assert_same_entries(got, want)
         if refused:
             continue
+        assert f"agg.{name}[" in repr(X.reduce(a, axis=0))
         if name in {"first", "last"}:
             M = X.reshape(3, 20).to_matrix((0,))
             _assert_same_entries(X.reduce(a).new(), M.reduce_scalar(a).new())
