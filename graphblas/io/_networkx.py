@@ -56,6 +56,10 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
     if len(G) == 0:
         raise nx.NetworkXError("Graph has no nodes or edges")
 
+    # A view's rows need not agree: in an undirected view, an edge filter may show u -> v
+    # and hide v -> u. So weight=None reads the rows directly only for a graph, and for
+    # the subgraph of one that nodelist makes, whose rows agree too.
+    rows_agree = type(getattr(G, "_adj", None)) is dict
     if nodelist is None:
         nodelist = list(G)
         nlen = len(G)
@@ -73,7 +77,12 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
             G = G.subgraph(nodelist)
 
     index = dict(zip(nodelist, range(nlen), strict=True))
-    if weight is None and not G.is_multigraph() and (dtype is None or dtype.kind in "biufc"):
+    if (
+        weight is None
+        and rows_agree
+        and not G.is_multigraph()
+        and (dtype is None or dtype.kind in "biufc")
+    ):
         # Every entry is 1, so read only the coordinates: row by row in nodelist
         # order, from the adjacency. For an undirected graph it lists each edge in
         # both directions and each self-loop once. With no tuple and no value per

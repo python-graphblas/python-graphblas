@@ -290,6 +290,21 @@ def test_from_networkx_structure_matches_the_general_path(graph_cls, dtype):
 
 
 @pytest.mark.skipif("not nx")
+@pytest.mark.parametrize("weight", [None, "weight"])
+def test_from_networkx_undirected_view_with_a_one_sided_edge_filter(weight):
+    # The filter shows the edge 1 - 2 from node 1 only. The edge is still in the
+    # view's edges, so it is stored in both directions, as nx.to_scipy_sparse_array
+    # stores it.
+    G = nx.path_graph(3)
+    V = nx.subgraph_view(G, filter_edge=lambda u, v: u < v)
+    assert list(V.edges()) == [(0, 1), (1, 2)]
+    assert 0 not in V[1]
+    M = gb.io.from_networkx(V, weight=weight)
+    expected = gb.Matrix.from_coo([0, 1, 1, 2], [1, 0, 2, 1], 1, nrows=3, ncols=3)
+    assert M.isequal(expected, check_dtype=True)
+
+
+@pytest.mark.skipif("not nx")
 @pytest.mark.parametrize("wt", [np.inf, -np.inf, 1e308])
 def test_from_networkx_undirected_selfloop_keeps_its_weight(wt):
     # Summing wt + wt - wt on the diagonal, as nx.to_scipy_sparse_array does,
