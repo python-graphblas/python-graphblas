@@ -698,8 +698,8 @@ class BaseExpression:
         else:
             self.dtype = dtype
         # The literal right operand of a comparison, as the caller gave it, before it
-        # was typed to match the values. select._resolve_expr bounds indices with it,
-        # since the typed value can differ (see select._index_bound).
+        # was typed to match the values. operator.utils._resolve_index_expr bounds indices
+        # with it, since the typed value can differ (see _index_bound).
         self._right_literal = None
         self._value = None
 

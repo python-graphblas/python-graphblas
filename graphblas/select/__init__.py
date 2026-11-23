@@ -3,9 +3,6 @@
 # identical to IndexUnaryOp under the hood, except they must return
 # boolean and they default to `select` when called, rather than
 # `apply`).
-import math
-import numbers
-
 _delayed = {}
 _binary_to_select = {}
 
@@ -38,76 +35,9 @@ def __getattr__(key):
 
 
 def _resolve_expr(expr, callname, opname):
-    from ..core.base import BaseExpression
+    from ..core.operator.utils import _resolve_index_expr
 
-    if not isinstance(expr, BaseExpression):
-        raise TypeError(
-            f"Expected ScalarExpression, VectorExpression, or MatrixExpression; "
-            f"found {type(expr)}\nTypical usage: select.{callname}(x <= 5)"
-        )
-    tensor = expr.args[0]
-    thunk = expr.args[1]
-    if expr._is_scalar:
-        # Handle ScalarExpressions that change their arguments to Vector
-        if tensor._parent is not None:  # e.g., suitesparse
-            tensor = tensor._parent
-            thunk = thunk._parent
-        else:  # e.g., suitesparse-vanilla
-            tensor = tensor[0].new()
-            thunk = thunk[0].new()
-    name = expr.op.name
-    if opname != "value":
-        if name in {"lt", "ge"} and f"{opname}{name}" in globals():
-            # A user registered this op (``rowlt``, say): pass the caller's number unchanged
-            if expr._right_literal is not None:
-                thunk = expr._right_literal
-        else:
-            thunk, name = _index_bound(expr._right_literal, thunk, name)
-    method = f"{opname}{name}"
-    if method not in globals():  # pragma: no cover (sanity)
-        raise ValueError(f"Unknown or unregistered select method: {method}")
-    return globals()[method](tensor, thunk)
-
-
-def _index_bound(literal, thunk, name):
-    """Return the thunk and op name that select the indices ``i`` for which ``i <name> bound``.
-
-    ``name`` is lt, le, gt or ge. The bound is the number the caller gave (``literal``),
-    or else the value of the thunk Scalar. The number is used because the comparison
-    typed its thunk to match the values, which is wrong for an index: with INT8 values,
-    300 becomes infinity, and with FP32 values, 2**24 + 1 rounds.
-
-    Only le and gt ops exist (rowle, rowgt, colle, colgt, indexle, indexgt), and indices
-    are whole numbers. So ``i < t`` becomes ``i <= ceil(t) - 1``, ``i >= t`` becomes
-    ``i > ceil(t) - 1``, and ``i <= t`` and ``i > t`` use ``floor(t)``. GraphBLAS would
-    truncate a float thunk toward zero instead, so ``i > -0.5`` would drop index 0. A
-    whole number beyond the INT64 range, which contains every index, is clamped to it.
-    NaN compares False with every index, so it selects none.
-
-    An empty Scalar is passed to the op unchanged, which raises EmptyObject. So is a
-    thunk that is not a Scalar (from ``A.apply(binary.le, left=3)``), which raises the
-    op's TypeError.
-    """
-    shift = name in {"lt", "ge"}
-    if shift:
-        name = "le" if name == "lt" else "gt"
-    # A Scalar expression (``w[0]``), a 0-d array or ``np.True_`` is not a
-    # ``numbers.Real``. For any of these, the thunk kept its own type, so its value is the
-    # bound.
-    if isinstance(literal, numbers.Real):
-        bound = literal
-    elif getattr(thunk, "_is_scalar", False):
-        bound = thunk.value
-    else:
-        return thunk, name
-    if not isinstance(bound, numbers.Real):
-        return thunk, name
-    if math.isnan(bound):
-        return (-1 if name == "le" else 2**63 - 1), name  # no index is <= -1 or > INT64_MAX
-    if math.isfinite(bound):
-        bound = math.ceil(bound) - 1 if shift else math.floor(bound)
-        bound = min(max(bound, -(2**63)), 2**63 - 1)
-    return bound, name
+    return _resolve_index_expr(globals(), "select", expr, callname, opname)
 
 
 def _match_expr(parent, expr):

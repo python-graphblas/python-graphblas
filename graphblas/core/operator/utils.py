@@ -1,3 +1,5 @@
+import math
+import numbers
 from types import BuiltinFunctionType, FunctionType, ModuleType
 
 from ... import (
@@ -65,6 +67,20 @@ except Exception:  # pragma: no cover (debug)
     raise
 
 
+# agg.py imports get_typed_op from this module, so this module cannot import the
+# Aggregator classes when it loads. agg.py registers them here at the end of its own
+# import, which importing ``core.operator`` runs. No Aggregator reaches get_typed_op
+# before then, so until then get_typed_op skips its check.
+_Aggregator = None
+_TypedAggregator = None
+
+
+def _register_aggregator_types(aggregator, typed_aggregator):
+    global _Aggregator, _TypedAggregator
+    _Aggregator = aggregator
+    _TypedAggregator = typed_aggregator
+
+
 def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scalar=False, kind=None):
     if isinstance(op, OpBase):
         # UDTs always get compiled
@@ -119,15 +135,14 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
     if isinstance(op, TypedOpBase):
         return op
 
-    from .agg import Aggregator, TypedAggregator
-
-    if isinstance(op, Aggregator):
-        # agg._any_dtype basically serves the same purpose as op._custom_dtype
-        if op._any_dtype is not None and op._any_dtype is not True:
-            return op[op._any_dtype]
-        return op[dtype]
-    if isinstance(op, TypedAggregator):
-        return op
+    if _Aggregator is not None:  # pragma: no branch (safety)
+        if isinstance(op, _Aggregator):
+            # agg._any_dtype basically serves the same purpose as op._custom_dtype
+            if op._any_dtype is not None and op._any_dtype is not True:
+                return op[op._any_dtype]
+            return op[dtype]
+        if isinstance(op, _TypedAggregator):
+            return op
     if isinstance(op, str):
         if kind == "unary":
             op = unary_from_string(op)
@@ -174,6 +189,14 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
             kind=kind,
         )
     if isinstance(op, FunctionType):
+        if op.__module__ in {"graphblas.indexunary", "graphblas.select"}:
+            # Not a UDF: a helper such as ``indexunary.value`` or a module function
+            modname = op.__module__.rpartition(".")[2]
+            raise TypeError(
+                f"{modname}.{op.__name__} is a helper, not an operator: it takes a comparison "
+                f"and returns its expression, as in {modname}.value(A > 3). To apply an op, "
+                f"give one such as {modname}.valuegt."
+            )
         if kind == "unary":
             op = UnaryOp.register_anonymous(op, is_udt=True)
             return op._compile_udt(dtype, dtype2)
@@ -309,6 +332,139 @@ def get_semiring(monoid, binaryop, name=None):
     if monoid_type is not None:
         return rv[monoid_type]
     return rv
+
+
+def _resolve_index_expr(ns, modname, expr, callname, opname):
+    """Return the select or apply that a comparison expression describes.
+
+    The ``value``, ``row`` and ``column`` helpers of ``select`` and ``indexunary``, and
+    ``select.index``, call this. ``ns`` is the namespace module's ``globals()`` and
+    ``modname`` its short name, for error messages. The same comparison gives a select
+    in ``select``, whose ``valuegt`` is a SelectOp, and an apply in ``indexunary``, whose
+    ``valuegt`` is an IndexUnaryOp.
+    """
+    from ..base import BaseExpression
+
+    if not isinstance(expr, BaseExpression):
+        raise TypeError(
+            f"Expected ScalarExpression, VectorExpression, or MatrixExpression; "
+            f"found {type(expr)}\nTypical usage: {modname}.{callname}(x <= 5)"
+        )
+    _check_index_expr(modname, expr, callname, opname)
+    tensor = expr.args[0]
+    thunk = expr.args[1]
+    if expr._is_scalar:
+        # Handle ScalarExpressions that change their arguments to Vector, before the
+        # bound below reads the thunk's value. A comparison (an ewise_mult) has both
+        # as Vectors of size 1; an apply keeps its thunk a Scalar.
+        if tensor._parent is not None:  # e.g., suitesparse
+            tensor = tensor._parent
+            if not thunk._is_scalar:
+                thunk = thunk._parent
+        else:  # e.g., suitesparse-vanilla
+            tensor = tensor[0].new()
+            if not thunk._is_scalar:
+                thunk = thunk[0].new()
+    name = expr.op.name
+    if opname != "value":
+        if name in {"lt", "ge"} and _namespace_op(ns, f"{opname}{name}") is not None:
+            # A user registered this op (``rowlt``, say): pass the caller's number unchanged
+            if expr._right_literal is not None:
+                thunk = expr._right_literal
+        else:
+            thunk, name = _index_bound(expr._right_literal, thunk, name)
+    method = f"{opname}{name}"
+    if _namespace_op(ns, method) is None:  # pragma: no cover (sanity)
+        raise ValueError(f"Unknown or unregistered {modname} method: {method}")
+    return _namespace_op(ns, method)(tensor, thunk)
+
+
+def _index_bound(literal, thunk, name):
+    """Return the thunk and op name that select the indices ``i`` for which ``i <name> bound``.
+
+    ``name`` is lt, le, gt or ge. The bound is the number the caller gave (``literal``),
+    or else the value of the thunk Scalar. The number is used because the comparison
+    typed its thunk to match the values, which is wrong for an index: with INT8 values,
+    300 becomes infinity, and with FP32 values, 2**24 + 1 rounds.
+
+    Only le and gt ops exist (rowle, rowgt, colle, colgt, indexle, indexgt), and indices
+    are whole numbers. So ``i < t`` becomes ``i <= ceil(t) - 1``, ``i >= t`` becomes
+    ``i > ceil(t) - 1``, and ``i <= t`` and ``i > t`` use ``floor(t)``. GraphBLAS would
+    truncate a float thunk toward zero instead, so ``i > -0.5`` would drop index 0. A
+    whole number beyond the INT64 range, which contains every index, is clamped to it.
+    NaN compares False with every index, so it selects none.
+
+    An empty Scalar is passed to the op unchanged, which raises EmptyObject.
+    """
+    shift = name in {"lt", "ge"}
+    if shift:
+        name = "le" if name == "lt" else "gt"
+    # A Scalar expression (``w[0]``), a 0-d array or ``np.True_`` is not a
+    # ``numbers.Real``. For any of these, the thunk kept its own type, so its value is the
+    # bound.
+    if isinstance(literal, numbers.Real):
+        bound = literal
+    elif getattr(thunk, "_is_scalar", False):
+        bound = thunk.value
+    else:  # pragma: no cover (defensive)
+        # _check_index_expr lets through only a comparison with a scalar on its right
+        return thunk, name
+    if not isinstance(bound, numbers.Real):
+        return thunk, name
+    if math.isnan(bound):
+        return (-1 if name == "le" else 2**63 - 1), name  # no index is <= -1 or > INT64_MAX
+    if math.isfinite(bound):
+        bound = math.ceil(bound) - 1 if shift else math.floor(bound)
+        bound = min(max(bound, -(2**63)), 2**63 - 1)
+    return bound, name
+
+
+def _namespace_op(ns, name):
+    """Return the op ``name`` in the namespace globals ``ns``, or None.
+
+    An op registered with ``lazy=True`` is in the namespace's ``_delayed`` until the
+    module's ``__getattr__`` builds it, so this builds it. A lazily registered IndexUnaryOp
+    makes its SelectOp only when it is built, so for ``select`` this builds it from
+    ``indexunary``.
+    """
+    if name not in ns:
+        if name in ns.get("_delayed", ()):
+            ns["__getattr__"](name)
+        elif ns is vars(select) and name in indexunary._delayed:
+            getattr(indexunary, name)
+    return ns.get(name)
+
+
+# What each helper compares: indices only by order, values by order or equality.
+_INDEX_COMPARISONS = {"lt": "<", "le": "<=", "gt": ">", "ge": ">="}
+_VALUE_COMPARISONS = {**_INDEX_COMPARISONS, "eq": "==", "ne": "!="}
+
+
+def _check_index_expr(modname, expr, callname, opname):
+    """Raise unless ``expr`` is a comparison the ``callname`` helper can resolve.
+
+    That is ``x OP k``: a built-in comparison applied to a Vector, Matrix or
+    Scalar ``x`` with a scalar ``k`` on its right, with OP one of ``<``, ``<=``,
+    ``>``, ``>=`` (and ``==``, ``!=`` for ``value``). A Scalar compares as the
+    ewise_mult of two Vectors of size 1.
+    """
+    name = getattr(expr.op, "name", None)
+    if (
+        expr.method_name not in ({"apply", "ewise_mult"} if expr._is_scalar else {"apply"})
+        or len(expr.args) != 2
+        or name not in _VALUE_COMPARISONS
+        or getattr(expr.op, "parent", None) is not getattr(binary, name)
+        or "left=" in expr.expr_repr
+    ):
+        raise TypeError(
+            f"{modname}.{callname} takes a comparison of a Vector, Matrix or Scalar with a "
+            f"scalar on its right, as in {modname}.{callname}(x <= 5); got {expr._format_expr()}"
+        )
+    if opname != "value" and name not in _INDEX_COMPARISONS:
+        raise ValueError(
+            f"{modname}.{callname} compares indices with <, <=, > or >=, not "
+            f"{_VALUE_COMPARISONS[name]}"
+        )
 
 
 unary.register_new = UnaryOp.register_new
@@ -451,38 +607,219 @@ def _from_string(string, module, mapping, example):
                 cur = None
                 break
         op = getattr(cur, attr, None)
-        if op is None:
-            name = module.__name__.split(".")[-1]
-            hint = _ss_hint(module, string) or f"Example usage: {example!r}"
-            raise ValueError(f"Unknown {name} string: {string!r}.  {hint}")
+    if not _is_operator(op):
+        # A namespace also has functions (``indexunary.value``), methods and modules
+        name = module.__name__.split(".")[-1]
+        hint = _ss_hint(module, string) or f"Example usage: {example!r}"
+        raise ValueError(f"Unknown {name} string: {string!r}.  {hint}")
     if dtype:
         op = op[dtype]
     return op
 
 
+def _is_operator(obj):
+    return isinstance(obj, (OpBase, TypedOpBase, ParameterizedUdf)) or (
+        _Aggregator is not None and isinstance(obj, (_Aggregator, _TypedAggregator))
+    )
+
+
 def unary_from_string(string):
+    """Look up a UnaryOp by name or symbol, optionally typed with ``"[dtype]"``.
+
+    Backs ``gb.unary.from_string`` and the string coercion used wherever a
+    UnaryOp is accepted, such as ``v.apply("abs")``.
+
+    Parameters
+    ----------
+    string : str
+        A name in the ``gb.unary`` namespace (``"abs"``, or a dotted path such
+        as ``"numpy.negative"``) or a symbolic shorthand (``"-"`` for ``ainv``,
+        ``"~"`` for ``lnot``). Append ``"[dtype]"`` to type the operator, as in
+        ``"abs[int]"``.
+
+    Returns
+    -------
+    UnaryOp
+
+    See Also
+    --------
+    unary.register_new
+    op.from_string
+
+    Examples
+    --------
+    >>> import graphblas as gb
+    >>> gb.unary.from_string("abs") is gb.unary.abs
+    True
+    >>> gb.unary.from_string("abs[int]") is gb.unary.abs[int]
+    True
+
+    """
     return _from_string(string, unary, _str_to_unary, "abs[int]")
 
 
 def indexunary_from_string(string):
+    """Look up an IndexUnaryOp by name, optionally typed with ``"[dtype]"``.
+
+    Parameters
+    ----------
+    string : str
+        A name in the ``gb.indexunary`` namespace, such as ``"rowindex"``,
+        ``"diag"``, or ``"tril"``. Append ``"[dtype]"`` to type the operator,
+        as in ``"rowindex[int]"``.
+
+    Returns
+    -------
+    IndexUnaryOp
+
+    See Also
+    --------
+    indexunary.register_new
+    select.from_string
+
+    Examples
+    --------
+    >>> import graphblas as gb
+    >>> gb.indexunary.from_string("rowindex") is gb.indexunary.rowindex
+    True
+
+    """
     # "select" is a variant of IndexUnary, so the string abbreviations in
     # _str_to_select are appropriate to reuse here
-    return _from_string(string, indexunary, _str_to_select, "row_index")
+    return _from_string(string, indexunary, _str_to_select, "rowindex")
 
 
 def select_from_string(string):
+    """Look up a SelectOp by name or comparison symbol.
+
+    Parameters
+    ----------
+    string : str
+        A name in the ``gb.select`` namespace (``"tril"``, ``"triu"``,
+        ``"offdiag"``, ``"valuegt"``, ...) or a comparison shorthand such as
+        ``">="`` (``valuege``), ``"=="`` (``valueeq``), or ``"row>"``
+        (``rowgt``).
+
+    Returns
+    -------
+    SelectOp
+
+    See Also
+    --------
+    select.register_new
+    indexunary.from_string
+
+    Examples
+    --------
+    >>> import graphblas as gb
+    >>> gb.select.from_string("tril") is gb.select.tril
+    True
+    >>> gb.select.from_string(">=") is gb.select.valuege
+    True
+
+    """
     return _from_string(string, select, _str_to_select, "tril")
 
 
 def binary_from_string(string):
+    """Look up a BinaryOp by name or symbol, optionally typed with ``"[dtype]"``.
+
+    Backs ``gb.binary.from_string`` and the string coercion used wherever a
+    BinaryOp is accepted, such as ``A.ewise_mult(B, "+")``.
+
+    Parameters
+    ----------
+    string : str
+        A name in the ``gb.binary`` namespace (``"plus"``, or a dotted path such
+        as ``"numpy.mod"``) or an arithmetic/comparison shorthand such as ``"+"``
+        (``plus``), ``"*"`` (``times``), or ``">="`` (``ge``). Append
+        ``"[dtype]"`` to type the operator, as in ``"plus[int]"``.
+
+    Returns
+    -------
+    BinaryOp
+
+    See Also
+    --------
+    binary.register_new
+    op.from_string
+
+    Examples
+    --------
+    >>> import graphblas as gb
+    >>> gb.binary.from_string("+") is gb.binary.plus
+    True
+    >>> gb.binary.from_string("minus[int]") is gb.binary.minus[int]
+    True
+
+    """
     return _from_string(string, binary, _str_to_binary, "+[int]")
 
 
 def monoid_from_string(string):
+    """Look up a Monoid by name or symbol, optionally typed with ``"[dtype]"``.
+
+    Parameters
+    ----------
+    string : str
+        A name in the ``gb.monoid`` namespace (``"plus"``, ``"times"``, ...) or a
+        symbolic shorthand such as ``"+"`` (``plus``), ``"*"`` (``times``), or
+        ``"|"`` (``lor``). Append ``"[dtype]"`` to type the monoid, as in
+        ``"plus[float]"``.
+
+    Returns
+    -------
+    Monoid
+
+    See Also
+    --------
+    monoid.register_new
+    semiring.from_string
+
+    Examples
+    --------
+    >>> import graphblas as gb
+    >>> gb.monoid.from_string("+[float]") is gb.monoid.plus[float]
+    True
+
+    """
     return _from_string(string, monoid, _str_to_monoid, "+[int]")
 
 
 def semiring_from_string(string):
+    """Look up a Semiring by name, optionally typed with ``"[dtype]"``.
+
+    Name it as in the ``gb.semiring`` namespace (``"plus_times"``), or as
+    ``"monoid.binaryop"`` with names or symbols that ``monoid.from_string`` and
+    ``binary.from_string`` take (``"min.+"``). With the suitesparse backend, a
+    SuiteSparse-specific semiring is named like ``"ss.min_secondi"`` or
+    ``"min.ss.secondi"``.
+
+    Parameters
+    ----------
+    string : str
+        The semiring, such as ``"plus_times"`` or ``"min.+"``. Append ``"[dtype]"`` to
+        type it, as in ``"min.+[int]"``.
+
+    Returns
+    -------
+    Semiring
+
+    See Also
+    --------
+    semiring.register_new
+    semiring.get_semiring
+    op.from_string
+
+    Examples
+    --------
+    >>> import graphblas as gb
+    >>> gb.semiring.from_string("min.+") is gb.semiring.min_plus
+    True
+    >>> gb.semiring.from_string("min_plus") is gb.semiring.min_plus
+    True
+
+    """
     split = string.split(".")
     # A semiring name, such as "plus_times" or "ss.min_secondi"
     if len(split) == 1 or (len(split) == 2 and split[0].strip().lower() == "ss"):
@@ -506,6 +843,39 @@ def semiring_from_string(string):
 
 
 def op_from_string(string):
+    """Look up an operator of any kind by string.
+
+    Each operator type is tried in turn (unary, binary, monoid, semiring,
+    indexunary, select, then aggregator) and the first match is returned, so an
+    unqualified name resolves to whichever kind defines it first. Use a
+    type-specific ``from_string`` (e.g. ``gb.binary.from_string``) when the kind
+    is known and matters.
+
+    Parameters
+    ----------
+    string : str
+        An operator name or symbol accepted by any of the type-specific
+        ``from_string`` functions, optionally typed with ``"[dtype]"``.
+
+    Returns
+    -------
+    UnaryOp, BinaryOp, Monoid, Semiring, IndexUnaryOp, SelectOp, or Aggregator
+
+    See Also
+    --------
+    unary.from_string
+    binary.from_string
+    semiring.from_string
+
+    Examples
+    --------
+    >>> import graphblas as gb
+    >>> gb.op.from_string("+") is gb.binary.plus
+    True
+    >>> gb.op.from_string("min.plus") is gb.semiring.min_plus
+    True
+
+    """
     for func in [
         # Note: order matters here
         unary_from_string,
@@ -540,6 +910,33 @@ _str_to_agg = {
 
 
 def aggregator_from_string(string):
+    """Look up an Aggregator by name or symbol, optionally typed with ``"[dtype]"``.
+
+    Parameters
+    ----------
+    string : str
+        A name in the ``gb.agg`` namespace (``"sum"``, ``"count"``, ``"any"``,
+        ...) or a symbolic shorthand such as ``"+"`` (``sum``), ``"*"``
+        (``prod``), ``"&"`` (``all``), or ``"|"`` (``any``). Append ``"[dtype]"``
+        to type the aggregator, as in ``"sum[int]"``.
+
+    Returns
+    -------
+    Aggregator
+
+    See Also
+    --------
+    op.from_string
+
+    Examples
+    --------
+    >>> import graphblas as gb
+    >>> gb.agg.from_string("sum[int]") is gb.agg.sum[int]
+    True
+    >>> gb.agg.from_string("|") is gb.agg.any
+    True
+
+    """
     return _from_string(string, agg, _str_to_agg, "sum[int]")
 
 
