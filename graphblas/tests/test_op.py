@@ -6399,6 +6399,31 @@ def test_udt_eq_compares_a_udt_that_is_neither_record_nor_array():
             expr()
 
 
+def test_bool_sequence_literal_with_a_date_or_text_udt():
+    """A bool array, list or tuple literal with a date or bytes UDT keeps its own shape, as a
+    numeric one does, so ``==`` raises KeyError, ``isequal`` is False and it does not fit as
+    an element. Converted into the UDT, ``[True]`` was the date 1970-01-02 or b"True", and
+    compared equal to it.
+    """
+    days = dtypes.register_anonymous(np.dtype("M8[D]"), "_BoolLitDays")
+    text = dtypes.register_anonymous(np.dtype("S4"), "_BoolLitBytes")
+    for dtype, value in [(days, np.datetime64("1970-01-02")), (text, b"True")]:
+        v = Vector(dtype, size=2)
+        v[0] = value
+        s = v[0].new()
+        for literal in [np.array([True]), [True], (True,), np.array([True, False])]:
+            assert not s.isequal(literal)
+            comparisons = [lambda: s == literal]  # noqa: B023
+            if supports_udfs:
+                comparisons += [lambda: v == literal, lambda: literal != v]  # noqa: B023
+            for expr in comparisons:
+                with pytest.raises(KeyError, match="pairs only with its own type"):
+                    expr()
+            if supports_udfs:
+                with pytest.raises(ValueError, match="does not fit"):
+                    v.ewise_union(v, binary.first, literal, literal)
+
+
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_numba_error_summary_is_never_empty():
     """A Numba error's one-line summary falls back to its first line, then to a sentence.
