@@ -3034,10 +3034,9 @@ def test_broadcast(xshape, yshape):
     ("xshape", "yshape"), [((2, 1), (1, 0)), ((1, 0), (2, 1)), ((0, 1), (1, 3)), ((2, 0, 1), (4,))]
 )
 def test_broadcast_to_no_positions(xshape, yshape):
-    """A broadcast ``ewise_mult`` or ``ewise_add`` into a shape with no positions returns an
-    empty Tensor of that shape, where the diagonal scaling of ``ewise_mult`` would multiply
-    matrices of mismatched shapes (GrB_DIMENSION_MISMATCH).
-    """
+    # A broadcast with no positions has the broadcast shape and no entries. Fails if
+    # ewise_mult takes its diagonal-scaling path there, which multiplies mismatched shapes
+    # (GrB_DIMENSION_MISMATCH).
     X = Tensor.from_dense(np.ones(xshape))
     Y = Tensor.from_dense(np.ones(yshape))
     shape = np.broadcast_shapes(xshape, yshape)
