@@ -6850,7 +6850,7 @@ def test_parameterized_is_udt_pickle_roundtrip(module_name):
 
 
 def test_ops_have_ss():
-    modules = [unary, binary, monoid, semiring, indexunary, select, op]
+    modules = [unary, binary, monoid, semiring, indexunary, select, op, gb.indexbinary]
     if suitesparse:
         for mod in modules:
             assert mod.ss is not None

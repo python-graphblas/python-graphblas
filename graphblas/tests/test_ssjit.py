@@ -1295,6 +1295,9 @@ def test_udt_jit_c_source_introspection():
     # agg.sum reports its Monoid's; agg.count is not built on one and has none.
     assert gb.agg.sum[udt].jit_c_source == plus_binop_src
     assert gb.agg.count[udt].jit_c_source is None
+    assert gb.agg.sum[udt].jit_c_name == gb.monoid.plus[udt].jit_c_name is not None
+    assert gb.agg.count[udt].jit_c_name is None
+    assert gb.agg.sum[float].jit_c_name is None
 
 
 @pytest.mark.skipif("not supports_udfs")

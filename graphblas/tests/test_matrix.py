@@ -4284,6 +4284,16 @@ def test_ss_serialize(A):
         Matrix.ss.deserialize(a[:-5])
 
 
+@pytest.mark.skipif("not suitesparse")
+def test_ss_import_hypercsr_scalar_value_is_iso():
+    """A 0-d value for ``import_hypercsr`` makes an iso Matrix, as for the other imports."""
+    A = Matrix.ss.import_hypercsr(
+        rows=[0, 2], indptr=[0, 1, 2], col_indices=[1, 0], values=np.array(5.0), nrows=3, ncols=2
+    )
+    assert A.ss.is_iso
+    assert A.isequal(Matrix.from_coo([0, 2], [1, 0], 5.0, nrows=3, ncols=2), check_dtype=True)
+
+
 @pytest.mark.skipif("not suitesparse or not supports_udfs")
 def test_ss_serialize_udt_with_a_long_name():
     """A UDT whose GraphBLAS name is too long for the blob still round-trips.
@@ -4461,6 +4471,28 @@ def test_ss_pack_hyperhash(A):
         C.ss.pack_hyperhash(Y)
         assert Y.gb_obj[0] == gb.core.NULL
         assert C.ss.unpack_hyperhash() is not None  # May or may not be computed
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_ss_pack_hyperhash_round_trip():
+    """A hyper_hash unpacked from a hypersparse Matrix packs back, and the Matrix keeps its values.
+
+    SuiteSparse builds a hyper_hash only for many non-empty vectors, so this uses 5000 rows.
+    """
+    n = 5000
+    rows, cols = np.arange(n) * 1000, np.arange(n)
+    C = Matrix.from_coo(rows, cols, np.arange(n), nrows=2**40, ncols=2**40)
+    C.ss.config["sparsity_control"] = "hypersparse"
+    expected = C.dup()
+    Y = C.ss.unpack_hyperhash(compute=True)
+    assert Y is not None
+    assert type(Y.nrows) is int
+    assert Y.nrows == C.nrows
+    assert C.ss.unpack_hyperhash() is None
+    C.ss.pack_hyperhash(Y)
+    assert Y.gb_obj[0] == gb.core.NULL
+    assert C.ss.unpack_hyperhash() is not None
+    assert C.isequal(expected, check_dtype=True)
 
 
 def test_to_dicts_from_dicts(A):

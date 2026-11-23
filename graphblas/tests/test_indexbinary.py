@@ -71,6 +71,22 @@ def test_typed_call():
     assert list(C.to_coo()[2]) == [18, 19]  # 3+5+10, 7+2+10
 
 
+def test_typed_call_without_theta():
+    """A typed IndexBinaryOp called with no theta binds False, and keeps the user's function."""
+
+    def add_theta(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+        return x + y + theta
+
+    op = indexbinary.register_anonymous(add_theta)
+    typed = op[int]
+    assert typed.orig_func is add_theta
+    assert typed._numba_func is op._numba_func
+    A = Matrix.from_coo([0, 1], [1, 0], [3, 7])
+    B = Matrix.from_coo([0, 1], [1, 0], [5, 2])
+    C = A.ewise_mult(B, typed()).new()
+    assert list(C.to_coo()[2]) == [8, 9]  # 3+5+0, 7+2+0
+
+
 def test_untyped_call():
     def add_theta(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
         return x + y + theta

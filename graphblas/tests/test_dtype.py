@@ -672,6 +672,19 @@ def test_has_ss_attribute():
             dtypes.ss
 
 
+@pytest.mark.skipif("not suitesparse")
+def test_ss_register_new_checks_its_arguments():
+    """``dtypes.ss.register_new`` refuses a bad name or C definition before calling GraphBLAS."""
+    for name, definition, match in [
+        ("not a name", "typedef struct { int a ; } x ;", "valid Python identifier"),
+        ("CheckedName", "typedef struct { int a ; } Other ;", "same name as the typedef"),
+        ("CheckedEnum", "typedef int CheckedEnum ;", "Only struct typedefs"),
+    ]:
+        with pytest.raises(ValueError, match=match):
+            dtypes.ss.register_new(name, definition)
+        assert not hasattr(dtypes.ss, name)
+
+
 def test_dir():
     must_have = {"DataType", "lookup_dtype", "register_anonymous", "register_new", "ss", "unify"}
     must_have.update({"FP32", "FP64", "INT8", "INT16", "INT32", "INT64"})
