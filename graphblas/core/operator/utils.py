@@ -649,6 +649,7 @@ def unary_from_string(string):
 
     Examples
     --------
+    >>> import graphblas as gb
     >>> gb.unary.from_string("abs") is gb.unary.abs
     True
     >>> gb.unary.from_string("abs[int]") is gb.unary.abs[int]
@@ -679,6 +680,7 @@ def indexunary_from_string(string):
 
     Examples
     --------
+    >>> import graphblas as gb
     >>> gb.indexunary.from_string("rowindex") is gb.indexunary.rowindex
     True
 
@@ -710,6 +712,7 @@ def select_from_string(string):
 
     Examples
     --------
+    >>> import graphblas as gb
     >>> gb.select.from_string("tril") is gb.select.tril
     True
     >>> gb.select.from_string(">=") is gb.select.valuege
@@ -744,6 +747,7 @@ def binary_from_string(string):
 
     Examples
     --------
+    >>> import graphblas as gb
     >>> gb.binary.from_string("+") is gb.binary.plus
     True
     >>> gb.binary.from_string("minus[int]") is gb.binary.minus[int]
@@ -775,6 +779,7 @@ def monoid_from_string(string):
 
     Examples
     --------
+    >>> import graphblas as gb
     >>> gb.monoid.from_string("+[float]") is gb.monoid.plus[float]
     True
 
@@ -809,6 +814,7 @@ def semiring_from_string(string):
 
     Examples
     --------
+    >>> import graphblas as gb
     >>> gb.semiring.from_string("min.+") is gb.semiring.min_plus
     True
     >>> gb.semiring.from_string("min_plus") is gb.semiring.min_plus
@@ -864,6 +870,7 @@ def op_from_string(string):
 
     Examples
     --------
+    >>> import graphblas as gb
     >>> gb.op.from_string("+") is gb.binary.plus
     True
     >>> gb.op.from_string("min.plus") is gb.semiring.min_plus
@@ -924,6 +931,7 @@ def aggregator_from_string(string):
 
     Examples
     --------
+    >>> import graphblas as gb
     >>> gb.agg.from_string("sum[int]") is gb.agg.sum[int]
     True
     >>> gb.agg.from_string("|") is gb.agg.any
