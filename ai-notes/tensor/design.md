@@ -734,9 +734,11 @@ the engine functions) are read through the hub as `_t.NAME`, so setting them on
   `_reshape_targets`) and `_pad`.
 - **`tensor_ewise.py`**: `_ewise_expr`; broadcasting (`_bcast_mult`, `_expand`,
   `_check_expansion`, `_squeezed`, `_lift_rank`); the ewise, select and apply recipes.
-- **`tensor_reduce.py`**: `_reduce_expr`, `_reduce_aggregator`, `_reduce_positional`,
-  `_positions`, `_reduce_matrix`, `_reduce_rebuild`, `_reduce_scalar_recipe`.
-- **`tensor_contract.py`**: `tensordot`, `_contract`, `matmul`, batched products, `_ttv`.
+- **`tensor_reduce.py`**: `_reduce_expr`, `_reduce_aggregator`, `_aggregator_expr`,
+  `_reduce_positional`, `_positions`, `_reduce_matrix`, `_reduce_rebuild`,
+  `_reduce_scalar_recipe`, `_reduce_scalar_aggregator_recipe`.
+- **`tensor_contract.py`**: `_tensordot_expr` and `_matmul_expr` (for `Tensor.tensordot` and
+  `Tensor.matmul`), `_contract`, batched products (`_batched_contract_expr`), `_ttv`.
 - **`tensor_engines.py`**: the TTM engines (`_ttm_engines`, `_ttm_udt`, `_ttm_numba`,
   `_ttm_compacted`) and MTTKRP (`_mttkrp_recipe`, `_mttkrp_numba`, `_mttkrp_order`,
   `_sampled_fibers`, `_krp_embedding`).

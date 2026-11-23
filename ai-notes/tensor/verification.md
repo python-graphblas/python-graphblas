@@ -6,7 +6,7 @@ and how to run them.
 
 ## Unit tests
 
-`graphblas/tests/test_tensor.py` and `graphblas/tests/test_tensor_io.py` (882 tests) check
+`graphblas/tests/test_tensor.py` and `graphblas/tests/test_tensor_io.py` (894 tests) check
 every operation against a dense numpy oracle. That means the values plus _presence_, a
 boolean array of which positions hold a value. Three things recur throughout:
 
@@ -19,7 +19,7 @@ boolean array of which positions hold a value. Three things recur throughout:
   array-UDT JIT engine, pure GraphBLAS products), tests force each in turn through the engine
   lists (`_TTM_ENGINES`, `_MTTKRP_ENGINES`, `_GATHER_ENGINES`). A spy checks which path ran.
 - **The user guide.** `test_user_guide_examples` runs every example in
-  `docs/user_guide/tensor.rst` (69 of them).
+  `docs/user_guide/tensor.rst` (81 of them).
 
 Numba kernels write arrays that are handed to SuiteSparse unchecked, so the kernel tests
 compile them with Numba bounds checks (the `numba_boundscheck` fixture): an out-of-bounds
@@ -28,7 +28,7 @@ write there corrupts memory without an error.
 Run the tests under the configurations they are meant for:
 
 ```bash
-# blocking and non-blocking mode (882 passed each)
+# blocking and non-blocking mode (894 passed each)
 pytest graphblas/tests/test_tensor.py graphblas/tests/test_tensor_io.py --backend suitesparse --blocking
 pytest graphblas/tests/test_tensor.py graphblas/tests/test_tensor_io.py --backend suitesparse --no-blocking
 # another backend: the modules skip cleanly
@@ -39,7 +39,7 @@ With warm caches each run takes about 35 s on an idle machine. With an empty Sui
 JIT cache, as in CI, the first took 7 to 10 minutes, most of it compiling.
 
 **Without Numba.** Block it in the interpreter, so that every `import numba` fails. pydata/sparse
-needs Numba too, so its io tests skip as well (749 passed, 133 skipped):
+needs Numba too, so its io tests skip as well (760 passed, 134 skipped):
 
 ```python
 # run_without_numba.py
@@ -56,7 +56,7 @@ python run_without_numba.py graphblas/tests/test_tensor.py graphblas/tests/test_
 ```
 
 **With the JIT off.** A plugin turns it off before every test. The array-UDT engine's tests
-skip (865 passed, 17 skipped):
+skip (877 passed, 17 skipped):
 
 ```python
 # jit_off_plugin.py (put it on PYTHONPATH)
@@ -75,15 +75,15 @@ def _jit_off():
 PYTHONPATH=. pytest graphblas/tests/test_tensor.py graphblas/tests/test_tensor_io.py --backend suitesparse -p jit_off_plugin
 ```
 
-The counts and times above were measured on 2026-11-22 on macOS (Apple M5 Pro) with
-SuiteSparse:GraphBLAS 10.5.1, Python 3.14, numpy 2.5.4, Numba 0.68, scipy 1.18 and
-pydata/sparse 0.19.
+The counts above were measured on 2026-11-23 and the times on 2026-11-22, on macOS (Apple
+M5 Pro) with SuiteSparse:GraphBLAS 10.5.1, Python 3.14, numpy 2.5.4, Numba 0.68, scipy 1.18
+and pydata/sparse 0.19.
 
 **With a by-column global format.** The Tensor keeps its Matrix by row whatever SuiteSparse's
 global format is (`design.md`, "Data model"), so the modules also run with the global set to
 by column before every test, by a plugin that sets `GrB_STORAGE_ORIENTATION_HINT` to
-`GrB_COLMAJOR` in `pytest_runtest_setup`. All three modules, oracles included, passed that
-way on 2026-11-22 (909 tests, SuiteSparse 10.5.2).
+`GrB_COLMAJOR` in `pytest_runtest_setup`. All three modules passed that way on 2026-11-23
+(894 tests, and the 27 oracles with `--runslow`; SuiteSparse 10.5.2).
 
 `graphblas/tests/test_core.py` checks the SuiteSparse floor in subprocesses. With the Tensor
 module's `lib` replaced by one without the Container API, every constructor raises the same
