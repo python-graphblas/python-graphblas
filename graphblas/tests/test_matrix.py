@@ -4477,7 +4477,8 @@ def test_ss_pack_hyperhash(A):
 def test_ss_pack_hyperhash_round_trip():
     """A hyper_hash unpacked from a hypersparse Matrix packs back, and the Matrix keeps its values.
 
-    SuiteSparse builds a hyper_hash only for many non-empty vectors, so this uses 5000 rows.
+    SuiteSparse builds a hyper_hash only for more than 1024 non-empty vectors (its default
+    GxB_HYPER_HASH; checked on 9.3.1, 10.3.1, 10.5.1 and 10.5.3), so this uses 5000 rows.
     """
     n = 5000
     rows, cols = np.arange(n) * 1000, np.arange(n)
@@ -4486,7 +4487,9 @@ def test_ss_pack_hyperhash_round_trip():
     expected = C.dup()
     Y = C.ss.unpack_hyperhash(compute=True)
     assert Y is not None
-    assert type(Y.nrows) is int
+    # .shape reads the dimensions unpack_hyperhash stores; .nrows asks GraphBLAS
+    assert [type(x) for x in Y.shape] == [int, int]
+    assert Y.shape == (Y.nrows, Y.ncols)
     assert Y.nrows == C.nrows
     assert C.ss.unpack_hyperhash() is None
     C.ss.pack_hyperhash(Y)
