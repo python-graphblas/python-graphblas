@@ -3,7 +3,7 @@ from operator import getitem
 
 import numpy as np
 
-from ... import agg, backend, binary, indexunary, monoid, semiring, unary
+from ... import agg, backend, binary, indexunary, monoid, select, semiring, unary
 from ...dtypes import BOOL, INT64, lookup_dtype
 from ...exceptions import UdfParseError
 from .. import _supports_udfs
@@ -596,12 +596,22 @@ def _ptp_finalize(max, min, opts):
     return binary.minus(max & min)
 
 
+def _clamped(expr, opts):
+    # E[x**2] - E[x]**2 can round below 0, and its sqrt would be NaN. A masked assign, not
+    # binary.max, which is fmax and would turn a NaN variance into 0. A complex variance has
+    # no order to clamp by.
+    val = expr.new(**opts)
+    if val.dtype.np_type.kind != "c":
+        val(select.valuelt(val, 0).new(**opts).S, **opts) << 0
+    return unary.identity(val)
+
+
 def _varp_finalize(c, x, x2, opts):
     # <x2> / n - (<x> / n)**2
     left = binary.truediv(x2 & c).new(**opts)
     right = binary.truediv(x & c).new(**opts)
     right(**opts) << binary.pow(right, 2)
-    return binary.minus(left & right)
+    return _clamped(binary.minus(left & right), opts)
 
 
 def _vars_finalize(c, x, x2, opts):
@@ -611,7 +621,7 @@ def _vars_finalize(c, x, x2, opts):
     c(**opts) << binary.minus(c, 1)
     right(**opts) << binary.truediv(right & c)
     left = binary.truediv(x2 & c).new(**opts)
-    return binary.minus(left & right)
+    return _clamped(binary.minus(left & right), opts)
 
 
 def _stdp_finalize(c, x, x2, opts):

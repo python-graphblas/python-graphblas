@@ -1969,6 +1969,40 @@ def test_reduce_agg_composite_parts_do_not_wrap(dtype):
             np.testing.assert_allclose(result, x.mean(), rtol=1e-5, err_msg=name)
 
 
+def test_reduce_agg_variance_of_equal_floats_is_not_negative():
+    """The variance of equal values that floats hold inexactly is >= 0, and its std not NaN.
+
+    E[x**2] - E[x]**2 can round below 0 for values such as 0.1, and its square root is then
+    NaN. A NaN in the values still gives NaN, and the sample variance of one value NaN.
+    """
+    names = ["varp", "vars", "stdp", "stds"]
+    for dtype, value, n in [
+        (np.float32, 0.1, 300),
+        (np.float32, 7.3, 300),
+        (np.float64, 0.1, 3),
+        (np.float64, 0.3, 5),
+        (np.float64, 0.1, 40000),
+    ]:
+        values = np.full(n, value, dtype)
+        A = Matrix.from_dense(values.reshape(1, -1))
+        for name in names:
+            aggregator = getattr(agg, name)
+            for result in [
+                A.reduce_rowwise(aggregator).new()[0].new().value,
+                A.T.reduce_columnwise(aggregator).new()[0].new().value,
+                A.reduce_scalar(aggregator).new().value,
+                Vector.from_dense(values).reduce(aggregator).new().value,
+            ]:
+                # FP32 sums in FP32, so a whole-Matrix or Vector std is off by about 1e-3
+                assert 0 <= result <= 2e-3 * value, (dtype, value, n, name)
+    v = Vector.from_dense([np.nan, 1.0])
+    for name in names:
+        assert np.isnan(v.reduce(getattr(agg, name)).new().value)
+    one = Vector.from_dense([5.0])
+    assert one.reduce(agg.varp).new().value == 0
+    assert np.isnan(one.reduce(agg.stds).new().value)
+
+
 def test_reduce_agg_composite_of_integers_matches_numpy():
     """Means and variances of a few integers match numpy, which computes them in float64.
 
