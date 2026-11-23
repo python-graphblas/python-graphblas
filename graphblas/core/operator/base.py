@@ -5,7 +5,7 @@ from types import BuiltinFunctionType, ModuleType
 from ... import _STANDARD_OPERATOR_NAMES, backend, op
 from ...dtypes import BOOL, UINT64, _supports_complex, lookup_dtype
 from ...exceptions import UdfParseError
-from .. import _has_numba, _supports_udfs, ffi, lib
+from .. import _build_delayed, _has_numba, _supports_udfs, ffi, lib
 from ..expr import InfixExprBase
 from ..utils import output_type
 
@@ -97,9 +97,8 @@ class OpPath:
         self._delayed_commutes_to = {}
 
     def __getattr__(self, key):
-        if key in self._delayed:
-            func, kwargs = self._delayed.pop(key)
-            return func(**kwargs)
+        if (rv := _build_delayed(self.__dict__, self._delayed, key)) is not None:
+            return rv
         self.__getattribute__(key)  # raises
 
 

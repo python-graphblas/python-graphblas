@@ -170,14 +170,17 @@ def __dir__():
 
 
 def __getattr__(name):
-    if name in _delayed:
-        func, kwargs = _delayed.pop(name)
-        if isinstance(kwargs["binaryop"], str):
-            from ..binary import from_string
+    from ..core import _lazy_lock
 
-            kwargs["binaryop"] = from_string(kwargs["binaryop"])
-        rv = func(**kwargs)
-        globals()[name] = rv
+    with _lazy_lock:  # (so that threads that first get a name at once build it once)
+        return _getattr(name)
+
+
+def _getattr(name):
+    from ..core import _build_delayed
+    from . import _build
+
+    if (rv := _build_delayed(globals(), _delayed, name, _build)) is not None:
         return rv
     if name not in _monoid_identities:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

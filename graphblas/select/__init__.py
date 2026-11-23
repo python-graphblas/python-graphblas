@@ -6,6 +6,8 @@
 import math
 import numbers
 
+from ..core import _build_delayed
+
 _delayed = {}
 _binary_to_select = {}
 
@@ -15,10 +17,7 @@ def __dir__():
 
 
 def __getattr__(key):
-    if key in _delayed:
-        func, kwargs = _delayed.pop(key)
-        rv = func(**kwargs)
-        globals()[key] = rv
+    if (rv := _build_delayed(globals(), _delayed, key)) is not None:
         return rv
     if key == "ss":
         from .. import backend

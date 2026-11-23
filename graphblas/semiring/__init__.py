@@ -1,6 +1,6 @@
 # All items are dynamically added by classes in operator.py
 # This module acts as a container of Semiring instances
-from ..core import _supports_udfs
+from ..core import _build_delayed, _supports_udfs
 
 _delayed = {}
 _udfs = {
@@ -29,19 +29,21 @@ def __dir__():
     return globals().keys() | _delayed.keys() | {"ss"}
 
 
+def _build(key, delayed):
+    func, kwargs = delayed
+    if isinstance(kwargs["binaryop"], str):
+        from ..binary import from_string
+
+        kwargs["binaryop"] = from_string(kwargs["binaryop"])
+    if isinstance(kwargs["monoid"], str):
+        from ..monoid import from_string
+
+        kwargs["monoid"] = from_string(kwargs["monoid"])
+    return func(**kwargs)
+
+
 def __getattr__(key):
-    if key in _delayed:
-        func, kwargs = _delayed.pop(key)
-        if isinstance(kwargs["binaryop"], str):
-            from ..binary import from_string
-
-            kwargs["binaryop"] = from_string(kwargs["binaryop"])
-        if isinstance(kwargs["monoid"], str):
-            from ..monoid import from_string
-
-            kwargs["monoid"] = from_string(kwargs["monoid"])
-        rv = func(**kwargs)
-        globals()[key] = rv
+    if (rv := _build_delayed(globals(), _delayed, key, _build)) is not None:
         return rv
     if key == "ss":
         from .. import backend
