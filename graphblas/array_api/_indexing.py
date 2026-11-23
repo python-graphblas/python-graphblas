@@ -310,7 +310,12 @@ def setitem(x, key, value):
     axes_key = [k for k in items if not isinstance(k, (_NewAxis, _Gap))]
     if any(isinstance(k, _NewAxis) and k.length == 0 for k in items):
         return  # (a False index selects nothing)
-    if isinstance(value, Array) and not _has_adv(items):
+    adv = [k for k in axes_key if isinstance(k, _Adv)]
+    # With one 1-d index array among slices, outer (GraphBLAS) and vectorized indexing agree
+    scatter = adv and (
+        len(adv) > 1 or adv[0].index.ndim != 1 or any(isinstance(k, int) for k in axes_key)
+    )
+    if isinstance(value, Array) and not scatter:
         value = _without_new_axes(value, items)
         if value.ndim == 0:
             value = _scalar_value(value._fill, x.dtype)
@@ -318,30 +323,19 @@ def setitem(x, key, value):
         if isinstance(value, Array):
             raise ValueError(f"cannot assign an array of shape {value.shape} to a 0-d array")
         x._fill = value
+    elif scatter:
+        _scatter_setitem(x, items, value)
     else:
-        adv = [k for k in axes_key if isinstance(k, _Adv)]
-        if (
-            len(adv) == 1
-            and adv[0].index.ndim == 1
-            and not any(isinstance(k, int) for k in axes_key)
-        ):
-            # One 1-d index array among slices: outer (GraphBLAS) and vectorized indexing agree
-            _region_setitem(
-                x, tuple(k.index if isinstance(k, _Adv) else k for k in axes_key), value
-            )
-        elif adv:
-            _scatter_setitem(x, [k for k in items if not isinstance(k, _NewAxis)], value)
-        else:
-            _region_setitem(x, tuple(axes_key), value)
+        _region_setitem(x, tuple(k.index if isinstance(k, _Adv) else k for k in axes_key), value)
     x._facts = None
 
 
 def _without_new_axes(value, items):
-    """Drop the axes of ``value`` that line up with the new axes (``None``) of a basic key.
-    numpy broadcasts the value against the selection, which has those axes with length 1,
-    but the region assigned to does not have them.
+    """Drop the axes of ``value`` that line up with the new axes (``None``) of a key that
+    selects a region. numpy broadcasts the value against the selection, which has those axes
+    with length 1, but the region assigned to does not have them.
     """
-    kinds = [k for k in items if isinstance(k, (_NewAxis, slice))]
+    kinds = [k for k in items if isinstance(k, (_NewAxis, slice, _Adv))]
     offset = len(kinds) - value.ndim
     drop = [p - offset for p, k in enumerate(kinds) if isinstance(k, _NewAxis) and p - offset >= 0]
     if not drop:
@@ -410,16 +404,20 @@ def _region_setitem(x, key, value):
     T[key] = _utils.with_fill(value, x._fill)._T()
 
 
-def _scatter_setitem(x, axes_key, value):
+def _scatter_setitem(x, items, value):
     """Assign through index arrays where numpy's vectorized indexing and GraphBLAS's outer
     indexing differ (see ``setitem``): write each selected position.
     """
     # numpy lays out the selection: index a broadcast grid of each axis's coordinates with the
-    # key. A ``...`` that covers no axis stays in the key, since it decides where the advanced
-    # axes go.
+    # key. A ``...`` that covers no axis and the new axes stay in the key, since they decide
+    # where the advanced axes go, and the value broadcasts against the new axes too.
     key = tuple(
-        k.index if isinstance(k, _Adv) else Ellipsis if isinstance(k, _Gap) else k for k in axes_key
-    )
+        k.index if isinstance(k, _Adv)
+        else Ellipsis if isinstance(k, _Gap)
+        else None if isinstance(k, _NewAxis)
+        else k
+        for k in items
+    )  # fmt: skip
     coords = []
     for a, n in enumerate(x.shape):
         grid = np.arange(n, dtype=np.int64).reshape([n if b == a else 1 for b in range(x.ndim)])

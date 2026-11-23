@@ -242,7 +242,7 @@ def _index_patterns():
 def test_mixed_keys_order_axes_as_numpy():
     # As in numpy, the advanced axes go first when the advanced indices are apart (also when a
     # "..." that covers no axis separates them), and stay in place when they are adjacent
-    count = 0
+    checked = []
     for a, key in itertools.chain(
         ((np.arange(36.0).reshape(3, 4, 3) + 1, k) for k in _index_patterns()),
         ((np.arange(108.0).reshape(3, 4, 3, 3) + 1, k) for k in _index_patterns()),
@@ -252,17 +252,20 @@ def test_mixed_keys_order_axes_as_numpy():
             expected = a[key]
         except IndexError:
             continue
-        count += 1
+        checked.append(key)
         assert_array_equal(x[key], expected)
+        vshapes = [expected.shape]
         if any(k is None for k in key):
-            continue  # (with an advanced key, setitem rejects a value that has the new axes)
-        b = a.copy()
-        value = np.arange(expected.size, dtype=np.float64).reshape(expected.shape) - 50
-        b[key] = value
-        y = make(a, 0.0)
-        y[key] = make(value, 0.0) if value.ndim else xp.asarray(value)
-        assert_array_equal(y, b)
-    assert count > 2000
+            # The value may have the new axes, as numpy's selection does, or leave them out
+            vshapes += [expected.shape[1:], (1,) * expected.ndim]
+        for vshape in vshapes:
+            b = a.copy()
+            value = np.arange(math.prod(vshape), dtype=np.float64).reshape(vshape) - 50
+            b[key] = value
+            y = make(a, 0.0)
+            y[key] = make(value, 0.0) if value.ndim else xp.asarray(value)
+            assert_array_equal(y, b)
+    assert len(checked) > 2000
     x = make(np.arange(24.0).reshape(2, 3, 4), 0.0)
     expected = np.array([[4.0, 16.0], [6.0, 18.0]])
     for index in [[0, 2], np.array([0, 2]), xp.asarray([0, 2])]:
@@ -303,3 +306,14 @@ def test_setitem_with_new_axes():
     x = make(np.ones((3, 4)), 0.0)
     with pytest.raises(ValueError, match="new axes"):
         x[None] = xp.ones((2, 3, 4))
+    # A new axis of an advanced key also has length 1 (the selections are (1, 2, 4), (2, 1)
+    # and (1, 2, 1, 4))
+    for key, vshape in [
+        ((None, [0, 2]), (2, 2, 4)),
+        (([0, 2], None, 1), (2, 2)),
+        ((None, [[0], [2]], slice(None)), (2, 2, 1, 4)),
+    ]:
+        with pytest.raises(ValueError, match="broadcast"):
+            np.ones((3, 4))[key] = np.ones(vshape)
+        with pytest.raises(ValueError, match="cannot assign an array of shape"):
+            x[key] = xp.ones(vshape)
