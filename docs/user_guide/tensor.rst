@@ -167,7 +167,16 @@ A fiber with no entries stays missing (no initial value), as in GraphBLAS. ``sum
     >>> X.reduce(gb.agg.mean, axis=(1, 2)).new().to_dense()  # (1 + 2) / 2 and 3 / 1
     array([1.5, 3. ])
 
-Aggregators of positions (``agg.argmin``, ``agg.first``, ...) raise ``NotImplementedError``.
+Aggregators of positions work along one axis, as along the rows of a Matrix; ``agg.first``
+and ``agg.last`` also take several axes, in C order over them:
+
+.. code-block:: python
+
+    >>> X.reduce(gb.agg.argmax, axis=2).new().to_dense(fill_value=-1)
+    array([[-1,  3,  0],
+           [ 2, -1, -1]])
+    >>> X.reduce(gb.agg.first, axis=(1, 2)).new().to_dense()  # X[0, 1, 3] and X[1, 0, 2]
+    array([1., 3.])
 
 Contractions
 ------------

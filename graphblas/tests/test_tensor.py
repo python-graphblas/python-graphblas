@@ -7144,7 +7144,7 @@ def test_extract_repeated_indices(ndim, max_listed, monkeypatch):
 
 def test_reduce_aggregators():
     """``reduce`` with aggregators made of a monoid or a semiring returns what Matrix returns
-    (values and dtypes); the ones that need positions raise.
+    (values and dtypes).
     """
     from graphblas import agg
 
@@ -7169,8 +7169,14 @@ def test_reduce_aggregators():
             assert got.dtype == want.dtype, (dtype, name)
             assert got.reshape(15).isclose(want, rel_tol=1e-12), (dtype, name)
             assert X.reduce(a[dtype], axis=1).new().isclose(got)
-    with pytest.raises(NotImplementedError, match="agg.argmin"):
-        X.reduce(agg.argmin, axis=0)
+    # An aggregator with a recipe of its own, not one of python-graphblas's, is refused
+    from functools import partial
+
+    from graphblas.core.operator.agg import Aggregator
+
+    mine = Aggregator("mine", custom=partial(print), types=[binary.plus])
+    with pytest.raises(NotImplementedError, match="agg.mine"):
+        X.reduce(mine, axis=1)
 
 
 def _assert_same_entries(got, want):
@@ -7269,6 +7275,101 @@ def test_reduce_composite_aggregators_axes_and_masks():
     C(mask_t.S, accum=binary.plus) << X.reduce(agg.mean, axis=axes)
     want = np.where(mp & (count[0, :, 0] > 0), 100 + mean[0, :, 0], 100.0)
     check(C, want, np.ones((3, 2), bool), approx=True)
+
+
+POSITIONAL_AGGREGATORS = ["argmin", "argmax", "first", "last", "first_index", "last_index"]
+
+
+@pytest.mark.parametrize("name", POSITIONAL_AGGREGATORS)
+def test_reduce_positional_aggregators_match_matrix(name):
+    """``reduce`` over one axis with an aggregator of positions (``agg.argmin``,
+    ``agg.first``, ``agg.first_index``, ...) returns what Matrix's ``reduce_rowwise`` returns
+    along that axis, in every layout: values (the first of tied minima for ``argmin``),
+    dtypes, NaN, and missing where a fiber is empty. ``first`` and ``last`` over every axis
+    give what ``reduce_scalar`` gives (C order).
+    """
+    from graphblas import agg
+
+    a = getattr(agg, name)
+    rng = np.random.default_rng(605)
+    types = [dtypes.FP64, dtypes.FP32, dtypes.INT64, dtypes.INT8, dtypes.BOOL]
+    if dtypes._supports_complex:
+        types.append(dtypes.FC64)
+    for dtype in types:
+        X, xv, xp = random_tensor((3, 4, 5), rng, density=0.4, dtype=dtype)
+        if dtype == dtypes.FP64:  # a NaN, and a fiber of NaN only
+            xv[0, 1, 2], xp[0, 1, 2] = np.nan, True
+            xv[2, :, 4], xp[2, :, 4] = np.nan, [True, False, True, False]
+            X = Tensor.from_coo(np.nonzero(xp), xv[xp], dtype, shape=xp.shape)
+        refused = False
+        for axis in range(3):
+            # Matrix's rows: the fibers along ``axis``, in C order of the other axes
+            rest = tuple(x for x in range(3) if x != axis)
+            n = X.shape[axis]
+            M = X.permute_dims((*rest, axis)).reshape(-1, n).to_matrix((0,))
+            try:
+                want = M.reduce_rowwise(a).new()
+            except Exception as exc:  # (a type that Matrix refuses: the Tensor refuses it too)
+                with pytest.raises(type(exc)):
+                    X.reduce(a, axis=axis)
+                refused = True
+                continue
+            for layout in all_layouts(3)[::5]:
+                got = X.dup(layout=layout).reduce(a, axis=axis).new()
+                assert got.shape == tuple(X.shape[x] for x in rest)
+                _assert_same_entries(got, want)
+            got = X.reduce(a[dtype], axis=axis, keepdims=True).new()
+            assert got.shape == tuple(1 if x == axis else X.shape[x] for x in range(3))
+            _assert_same_entries(got, want)
+        if refused:
+            continue
+        if name in {"first", "last"}:
+            M = X.reshape(3, 20).to_matrix((0,))
+            _assert_same_entries(X.reduce(a).new(), M.reduce_scalar(a).new())
+        else:
+            with pytest.raises(ValueError, match="one axis"):
+                X.reduce(a)
+            with pytest.raises(ValueError, match="one axis"):
+                X.reduce(a, axis=(0, 1))
+    # A 1-d Tensor reduces as a Vector does
+    v, _, _ = random_tensor((7,), rng, density=0.5)
+    _assert_same_entries(v.reduce(a).new(), v.to_vector().reduce(a).new())
+    # An empty Tensor: every fiber is missing
+    E = Tensor(dtypes.FP64, (3, 4, 5))
+    assert E.reduce(a, axis=1).new().nvals == 0
+
+
+def test_reduce_first_last_over_several_axes():
+    """``first`` and ``last`` over several axes take the entry first (or last) in C order of
+    those axes, as a numpy model says, with ``keepdims`` and under a mask.
+    """
+    from graphblas import agg
+
+    rng = np.random.default_rng(606)
+    X, xv, xp = random_tensor((3, 4, 2, 5), rng, density=0.3, layout=((3, 1), (0, 2)))
+    for axes in [(1, 3), (0, 2), (0, 1, 3), (0, 1, 2, 3)]:
+        rest = tuple(x for x in range(4) if x not in axes)
+        flat_shape = (*(X.shape[x] for x in rest), -1)
+        fv = xv.transpose(*rest, *axes).reshape(flat_shape)
+        fp = xp.transpose(*rest, *axes).reshape(flat_shape)
+        has = fp.any(axis=-1)
+        first = np.take_along_axis(fv, fp.argmax(axis=-1)[..., None], -1)[..., 0]
+        last_i = fp.shape[-1] - 1 - fp[..., ::-1].argmax(axis=-1)
+        last = np.take_along_axis(fv, last_i[..., None], -1)[..., 0]
+        for op, model in [(agg.first, first), (agg.last, last)]:
+            got = X.reduce(op, axis=axes).new()
+            check(got, np.where(has, model, 0), has)
+            kept = X.reduce(op, axis=axes, keepdims=True).new()
+            assert kept.shape == tuple(1 if x in axes else n for x, n in enumerate(X.shape))
+    with pytest.raises(ValueError, match="INT64"):
+        Tensor(dtypes.FP64, (2**40, 2**40)).reduce(agg.first)
+    mask, _, mp = random_tensor((3, 2), rng, density=0.5)
+    C = Tensor(dtypes.FP64, (3, 2))
+    C(mask.S) << X.reduce(agg.first, axis=(1, 3))
+    fp = xp.transpose(0, 2, 1, 3).reshape(3, 2, -1)
+    fv = xv.transpose(0, 2, 1, 3).reshape(3, 2, -1)
+    first = np.take_along_axis(fv, fp.argmax(axis=-1)[..., None], -1)[..., 0]
+    check(C, np.where(mp & fp.any(-1), first, 0), mp & fp.any(-1))
 
 
 def test_isequal_matrix_vector_scalar():

@@ -318,8 +318,13 @@ with no relayout. UDT values always take the REBUILD path. `reduce` also takes
 aggregators made of one monoid or one semiring (`_reduce_aggregator`), typed as Matrix types
 them, and composite ones (`mean`, `varp`, ...): each part is computed now as its own
 aggregator, and Matrix's finalize function combines them into the expression returned,
-which stores in the result type Matrix gives (`decisions.md`, 32). The aggregators that need
-positions (`argmin`, `first`, ...) raise `NotImplementedError`.
+which stores in the result type Matrix gives (`decisions.md`, 32). The aggregators of
+positions (`_reduce_positional`) start from an INT64 Tensor of each entry's C-order index
+over the reduced axes (`_positions`: one pass over the stored indices, and a build from keys
+in storage order). `first_index` is its minimum; `first` keeps the entries whose index equals
+that minimum (`eq` against the broadcast reduction, then a value mask) and reduces them with
+`any`; `argmin` keeps the entries equal to their fiber's minimum and takes the least index
+among them (`decisions.md`, 33).
 
 ## Contractions and batched products
 

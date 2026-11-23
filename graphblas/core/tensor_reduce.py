@@ -6,8 +6,10 @@ Private: part of ``graphblas.core.tensor``, which imports it at its end.
 import math
 from functools import partial
 
+import numpy as np
+
 from .. import binary, monoid, semiring
-from ..dtypes import BOOL, UINT32, UINT64
+from ..dtypes import BOOL, INT64, UINT32, UINT64
 from . import tensor_census as census
 from . import tensor_layout as tl
 from .operator import get_semiring, get_typed_op
@@ -27,7 +29,7 @@ def _reduce_aggregator(t, op, axis, keepdims):
     applybegin op, if any, is applied first. A composite one (``agg.mean``) computes each of
     its aggregations now and returns its finalize function's expression of them (for
     ``mean``, ``sum / count``), which Matrix's finalize functions build from infix operators
-    that work on Tensors too.
+    that work on Tensors too. The ones of positions go to ``_reduce_positional``.
     """
     from .operator.agg import TypedAggregator, _by_kind
 
@@ -35,6 +37,8 @@ def _reduce_aggregator(t, op, axis, keepdims):
     if isinstance(agg._custom, partial) and agg._custom.func is _by_kind:
         aggs = agg._custom.keywords["aggs"]
         agg = aggs.get(t.dtype.np_type.kind, aggs["other"])
+    if isinstance(agg._custom, partial) and (kind := _positional_kind(agg._custom)) is not None:
+        return _reduce_positional(t, agg, kind, axis, keepdims)
     if agg._monoid is not None:
         return _reduce_expr(t, agg._monoid, axis, keepdims)
     if agg._composite is not None:
@@ -74,6 +78,80 @@ def _reduce_aggregator(t, op, axis, keepdims):
 
 def _composite_recipe(updater, inner):
     inner.args[-2](updater, *inner.args[-1])
+
+
+def _positional_kind(custom):
+    """``(what, last)`` for an aggregator of positions, from its recipe in ``operator.agg``:
+    ``what`` is "argmin", "argmax", "value" (``first``, ``last``) or "index"
+    (``first_index``, ``last_index``). None for any other recipe.
+    """
+    from .operator.agg import _argminmax, _first_last, _first_last_index
+
+    if custom.func is _argminmax:
+        return ("argmin" if custom.keywords["monoid"] is monoid.min else "argmax"), False
+    if custom.func is _first_last:
+        return "value", custom.keywords["last"]
+    if custom.func is _first_last_index:
+        return "index", custom.keywords["last"]
+    return None
+
+
+def _reduce_positional(t, agg, kind, axis, keepdims):
+    """``reduce`` with ``argmin``, ``argmax``, ``first``, ``last``, ``first_index`` or
+    ``last_index``, as Matrix's ``reduce_rowwise`` computes them along a row.
+
+    Each entry's position is its C-order index over the reduced axes (``_positions``). The
+    index aggregators take one axis, as numpy's ``argmin`` and Matrix's (which refuses
+    ``reduce_scalar``) do: ``first_index`` is the least position, and ``argmin`` the least
+    position among the entries equal to their fiber's minimum (``eq``, so a NaN never
+    matches). ``first`` and ``last`` take any axes: the value at the least or greatest
+    position, so over every axis they give what ``reduce_scalar`` gives for a Matrix.
+    """
+    what, last = kind
+    axes = _normalize_axes(axis, t.ndim)
+    agg[t.dtype]  # (a KeyError for the types Matrix refuses, as argmin of FC64)
+    if what != "value" and len(axes) != 1:
+        raise ValueError(
+            f"Tensor.reduce with agg.{agg.name} takes one axis, as numpy's argmin does; got "
+            f"axis={axis!r} for a {t.ndim}-d Tensor"
+        )
+    end = monoid.max if last else monoid.min
+    pos = _positions(t, axes)
+    if what == "index":
+        return _reduce_expr(pos, end, axes, keepdims)
+    if what == "value":
+        hit = pos.ewise_mult(_reduce_expr(pos, end, axes, True).new(), binary.eq).new()
+        picked = t
+    else:
+        extreme = monoid.min if what == "argmin" else monoid.max
+        hit = t.ewise_mult(_reduce_expr(t, extreme, axes, True).new(), binary.eq).new()
+        picked = pos
+    sub = Tensor(picked.dtype, picked._shape)
+    sub(hit.V) << picked  # the entries at the hits: one per fiber for first and last
+    return _reduce_expr(sub, monoid.any if what == "value" else monoid.min, axes, keepdims)
+
+
+def _positions(t, axes):
+    """An INT64 Tensor with ``t``'s pattern and layout whose entries hold their C-order
+    index over ``axes``: one pass over the stored indices, and a build from keys already in
+    storage order.
+    """
+    if math.prod(t._shape[a] for a in axes) >= 2**63:
+        raise ValueError(
+            f"the axes {axes} have {math.prod(t._shape[a] for a in axes)} positions, more "
+            f"than an INT64 index holds"
+        )
+    M = t._M
+    seq, p = t._layout.state
+    rows, cols, _ = M.to_coo(values=False, sort=False)
+    coords = [None] * t.ndim
+    tl.unravel(rows.view(np.int64), t._shape, seq[:p], coords)
+    tl.unravel(cols.view(np.int64), t._shape, seq[p:], coords)
+    pos = np.zeros(rows.size, np.int64)
+    for a in axes:
+        pos = pos * t._shape[a] + coords[a]
+    P = tl.from_coo(rows, cols, pos, INT64, M._nrows, M._ncols)
+    return Tensor._from_M(P, t._shape, t._layout)
 
 
 def _reduce_expr(self, op, axis, keepdims, *, name="reduce", cast=None):
@@ -377,6 +455,7 @@ def _reduce_scalar_recipe(updater, a, op, allow_empty):
 
 # isort: off
 from .tensor import (  # noqa: E402
+    Tensor,
     TensorExpression,
     _fixed_layout,
     _healthy,

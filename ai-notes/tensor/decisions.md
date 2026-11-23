@@ -5,7 +5,7 @@ says what was decided and why, and some say what would change it. "Maintainers" 
 python-graphblas maintainers. Status: everything here is experimental and may change before
 the API settles. `design.md` describes how the code implements these.
 
-The dated decisions (26 to 32) were made during development by the AI agents that wrote the
+The dated decisions (26 to 33) were made during development by the AI agents that wrote the
 Tensor, on the maintainer's instruction to decide and record a reason rather than wait. Like
 the rest, they are open to review.
 
@@ -244,6 +244,17 @@ the rest, they are open to review.
     differ from Matrix's by FP32 rounding, since Matrix also divides and squares in FP32 (the
     variance of one value is 0 here, about 1e-7 there). Decided 2026-11-22. _Revisit_ when
     Matrix's composite aggregators change.
+33. **Aggregators of positions follow Matrix's rows, along one axis.** `agg.argmin`,
+    `agg.argmax`, `agg.first_index` and `agg.last_index` reduce one axis, as
+    `reduce_rowwise` reduces a row and numpy's `argmin` an axis, and give an index along it
+    (INT64); more axes, or `axis=None` on more than one axis, raise ValueError, as
+    `Matrix.reduce_scalar` does for them. `argmin` is the first index whose value equals the
+    fiber's minimum by `eq`, so a fiber whose minimum is NaN has no entry, as for Matrix.
+    `agg.first` and `agg.last` take any axes, in C order over them, which is Matrix's
+    `reduce_scalar` (row-major) for every axis of a 2-d Tensor. _Why not numpy's flat index
+    for `argmin(axis=None)`:_ it is an index into a dense array that a sparse Tensor does
+    not have, Matrix refuses it, and `T.ravel().reduce(agg.argmin)` gives it. Decided
+    2026-11-22. _Revisit_ if a user needs an index over several axes.
 
 ## Deferred, on purpose
 
