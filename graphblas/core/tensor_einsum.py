@@ -170,9 +170,12 @@ def _grouping(op):
 def _einsum_plan(subscripts, shapes, optimize):
     """What ``einsum`` needs from the subscripts and the operands' shapes alone, cached: the
     terms, the output letters and shape, the MTTKRP pattern (or None), the pairwise path, and
-    for one contraction already in the output's order its axes (or None). The subscripts
-    have no ``...`` and no index twice in a term (``_einsum_rewrite``).
+    for one contraction already in the output's order its axes (or None). ``einsum`` rewrites
+    ``...`` and repeated indices first (``_einsum_rewrite``); a caller that plans without
+    that rewrite gets NotImplementedError for them.
     """
+    if "." in subscripts:
+        raise NotImplementedError("einsum: `...` is not supported here")
     subscripts = subscripts.replace(" ", "")
     if "->" in subscripts:
         inputs, output = subscripts.split("->")
@@ -184,6 +187,8 @@ def _einsum_plan(subscripts, shapes, optimize):
     for term, shape in zip(terms, shapes, strict=True):
         if len(term) != len(shape):
             raise ValueError(f"einsum: term {term!r} does not match an operand of shape {shape}")
+        if len(set(term)) != len(term):
+            raise NotImplementedError(f"einsum: repeated index in {term!r} (a diagonal) here")
     sizes = {}
     for term, shape in zip(terms, shapes, strict=True):
         for c, n in zip(term, shape, strict=True):

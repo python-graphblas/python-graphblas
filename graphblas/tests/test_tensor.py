@@ -3446,6 +3446,18 @@ def test_einsum_ellipsis_and_repeated_indices_operands_and_errors():
         )
 
 
+def test_einsum_plan_refuses_subscripts_not_rewritten():
+    """``_einsum_plan`` refuses ``...`` and a repeated index, which ``einsum`` rewrites before
+    planning, so a caller that plans without the rewrite cannot get a plan for them.
+    """
+    from graphblas.core.tensor_einsum import _einsum_plan
+
+    with pytest.raises(NotImplementedError, match="not supported"):
+        _einsum_plan("...k->k", ((2, 3),), "greedy")
+    with pytest.raises(NotImplementedError, match="diagonal"):
+        _einsum_plan("ii->i", ((3, 3),), "greedy")
+
+
 def test_einsum_operands_semirings_and_errors(monkeypatch):
     from graphblas.core import tensor as tensor_mod
 
