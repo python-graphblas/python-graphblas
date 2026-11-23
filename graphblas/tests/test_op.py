@@ -2570,6 +2570,20 @@ def test_udt_auto_monoid_time_fields():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_udt_min_max_identity_of_a_bool_field():
+    """``min`` and ``max`` lifted to a record give a bool field the identities of and and or."""
+    udt = dtypes.register_anonymous(np.dtype([("mbi_flag", np.bool_), ("mbi_n", np.int32)]))
+    int32 = np.iinfo(np.int32)
+    assert monoid.min[udt].identity.value.tolist() == (True, int32.max)
+    assert monoid.max[udt].identity.value.tolist() == (False, int32.min)
+    v = Vector(udt, size=3)
+    v[0] = (True, 5)
+    v[2] = (False, 7)
+    assert v.reduce(monoid.min).new().value.tolist() == (False, 5)
+    assert v.reduce(monoid.max).new().value.tolist() == (True, 7)
+
+
+@pytest.mark.skipif("not supports_udfs")
 @pytest.mark.slow
 def test_udt_monoid_named_like_builtin_gets_no_identity():
     """Only the built-in monoids generate a UDT identity, not a user monoid of the same name.
