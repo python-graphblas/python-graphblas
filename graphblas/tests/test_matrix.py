@@ -4210,6 +4210,18 @@ def test_to_coo_sort():
     assert_array_equal(cols, expected_rows)
 
 
+@pytest.mark.skipif("not suitesparse")
+def test_to_coo_sort_columnwise():
+    """On suitesparse, a Matrix stored by column sorts by column, then by row."""
+    A = Matrix.from_csc([0, 2, 3, 4], [0, 2, 1, 0], [1, 2, 3, 4], nrows=3)
+    assert A.ss.orientation == "columnwise"
+    rows, cols, values = A.to_coo()
+    assert cols.tolist() == [0, 0, 1, 2]
+    assert rows.tolist() == [0, 2, 1, 0]
+    assert values.tolist() == [1, 2, 3, 4]
+    assert A.to_edgelist()[0].tolist() == [[0, 0], [2, 0], [1, 1], [0, 2]]
+
+
 def test_to_coo_subset(A):
     rows, cols, vals = A.to_coo()
     for do_rows, do_cols, do_vals in itertools.product([True, False], [True, False], [True, False]):
