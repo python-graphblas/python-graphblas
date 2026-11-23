@@ -164,16 +164,20 @@ review. Like the rest, they are open to review.
     intersection never replicates and has no such limit. Decided 2026-10-28. _Revisit_ when a
     workload meets the error.
 27. **`X | Y` and `X & Y` on their own follow Matrix:** lor and land of BOOL Tensors, and a
-    TypeError ("Bad dtypes for `x | y`", Matrix's message) for other dtypes, whichever way
-    the expression is used: `.new()`, `C << (X | Y)`, a region's value, an operand,
-    autocompute. With an operator (`binary.plus(X | Y)`, `monoid.max(X & Y)`) every dtype
-    works, as for Matrix. They used to compute the default operator, plus or times, for
-    other dtypes. _Why:_ the user guide says infix operators work "as for Matrix"; with
-    numpy, `|` on integers is bitwise or and on floats raises, so quietly computing plus
-    would surprise numpy users; `+` and `*` already give plus and times; and nothing
-    recorded a reason for the old default. A behavior change to the experimental API,
-    toward the parity it claims. Decided 2026-10-28. _Revisit_ if users ask for a default
-    operator.
+    TypeError ("Bad dtypes for `x | y`", Matrix's message) for other dtypes, whichever way the
+    expression is used: `.new()`, `C << (X | Y)`, a region's value, an operand, autocompute.
+    With an operator (`binary.plus(X | Y)`, `monoid.max(X & Y)`) every dtype works, as for
+    Matrix. They used to compute the default operator, plus or times, for other dtypes. _Why:_
+    the user guide says infix operators work "as for Matrix"; with numpy, `|` on integers is
+    bitwise or and on floats raises, so quietly computing plus would surprise numpy users; `+`
+    and `*` already give plus and times; and nothing recorded a reason for the old default. A
+    behavior change to the experimental API, toward the parity it claims. Decided 2026-10-28.
+    _Revisit_ if users ask for a default operator. Chains and in-place operators (2026-11-23):
+    as for Matrix, `X | Y | Z` is one chain that an operator folds left to right, mixing `|`
+    and `&` raises, and `X |= Y`, `X &= Y` and `X ^= Y` update X (`|=`, `^=` and `+=`
+    accumulate an operand of X's shape, so an expression needs no autocompute). Before, the
+    inner `X | Y` was computed with lor first, which changed what `monoid.min(X | Y | Z)`
+    returned, and `|=` and `&=` rebound X to an expression.
 28. **`select` and `apply` take a 0-d Tensor as their scalar operand** (`thunk`, `left`,
     `right`), converted with `to_scalar()` when the expression is built. _Why:_ 0-d is the
     Tensor's scalar (2), a full `reduce` returns one, and `ewise_mult` already broadcasts

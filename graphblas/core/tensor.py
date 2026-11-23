@@ -1474,6 +1474,8 @@ def _make_infix(name, kind):
         return _ewise_infix(other, self, _binary_op(name), kind)
 
     def inplace(self, other):
+        if name == "plus" and _accumulate(self, other, binary.plus):
+            return self
         expr = _ewise_infix(self, other, _binary_op(name), kind)
         if expr is NotImplemented:
             raise TypeError(f"unsupported operand type for in-place op: {type(other)}")
@@ -1481,6 +1483,34 @@ def _make_infix(name, kind):
         return self
 
     return forward, reflected, inplace
+
+
+def _accumulate(self, other, op, name=None):
+    """``self(op) << other``, as Matrix's ``+=``, ``|=`` and ``^=`` update with an operand of
+    its kind, so an expression operand (an infix one too) needs no autocompute; ``name`` (the
+    method) makes it BOOL only. False for an operand that is not a Tensor value of this
+    Tensor's shape (a Matrix, a scalar, a shape that broadcasts), which the caller computes.
+    """
+    if output_type(other) is not Tensor or other.shape != self._shape:
+        return False
+    if name is not None:
+        _require_bool(other.dtype, name)
+    self(op) << other
+    return True
+
+
+def _require_bool(dtype, name):
+    # Matrix's messages for `^=`, `|=` and `&=` of other dtypes
+    sym, how = {
+        "__ixor__": ("^=", "ewise_add, the union"),
+        "__ior__": ("|=", "ewise_add, the union"),
+        "__iand__": ("&=", "ewise_mult, the intersection"),
+    }[name]
+    if dtype != BOOL:
+        raise TypeError(
+            f"The {name} infix operator, `x {sym} y`, is not supported for {dtype.name} dtype.  "
+            f"It is only supported for BOOL dtype (and it uses {how})."
+        )
 
 
 # As for Matrix: `+` is the union, `-` the union with 0 for a missing side, and the others
@@ -1658,13 +1688,16 @@ class _TensorInfixExpr(InfixExprBase):
 
     def __init__(self, left, right):
         # A Matrix, Vector or ndarray operand of a Tensor follows Tensor rules
-        left = _as_tensor(left, self._infix)
-        right = _as_tensor(right, self._infix)
+        left = self._operand(left)
+        right = self._operand(right)
         if left is None or right is None:
             raise TypeError(f"Bad types for `{self._infix}`: {type(left)}, {type(right)}")
         super().__init__(left, right)
         # Mismatched shapes raise here, as for Matrix
         self._validate()
+
+    def _operand(self, x):
+        return _as_tensor(x, self._infix)
 
     def _validate(self):
         self._to_expr()
@@ -1691,9 +1724,63 @@ class _TensorInfixExpr(InfixExprBase):
 
 
 class _TensorEwiseInfixExpr(_TensorInfixExpr):
+    """``X | Y`` or ``X & Y``. As for Matrix, an operand of the same kind makes a chain,
+    ``X | Y | Z``, which an operator folds left to right (``monoid.min(X | Y | Z)``), and the
+    other kind raises (``X | Y & Z``, which Python groups as ``X | (Y & Z)``).
+    """
+
     __slots__ = ()
 
+    def _operand(self, x):
+        if isinstance(x, _TensorEwiseInfixExpr):
+            if x.method_name != self.method_name:
+                raise TypeError(
+                    f"Cannot mix `{self._infix}` ({self.method_name}) into an `{x._infix}` "
+                    f"({x.method_name}) infix chain due to Python operator precedence. Use "
+                    "explicit method calls instead."
+                )
+            return x
+        return _as_tensor(x, self._infix)
+
+    def _chained(self):
+        return isinstance(self.left, _TensorInfixExpr) or isinstance(self.right, _TensorInfixExpr)
+
+    def _call_left(self, method_name, *args, **kwargs):
+        # op(X | Y | Z): op(op(X | Y).new() | Z), as Matrix folds a chain
+        left, right = self.left, self.right
+        if isinstance(left, _TensorInfixExpr):
+            left = left._call_left(method_name, *args, **kwargs).new()
+        if isinstance(right, _TensorInfixExpr):
+            right = right._call_left(method_name, *args, **kwargs).new()
+        return getattr(left, method_name)(right, *args, **kwargs)
+
+    def _leaf_dtypes(self):
+        for x in (self.left, self.right):
+            yield from x._leaf_dtypes() if isinstance(x, _TensorInfixExpr) else (x.dtype,)
+
+    def _format_expr(self):
+        def name(x):
+            return x._format_expr() if isinstance(x, _TensorInfixExpr) else x.name
+
+        return f"{name(self.left)} {self._infix} {name(self.right)}"
+
+    def _format_expr_html(self):
+        def name(x):
+            return x._format_expr_html() if isinstance(x, _TensorInfixExpr) else x._name_html
+
+        return f"{name(self.left)} {self._infix} {name(self.right)}"
+
     def _validate(self):
+        if self._chained():
+            # (the operator, when given, checks the dtypes)
+            try:
+                self.shape  # noqa: B018
+            except ValueError:
+                raise DimensionMismatch(
+                    f"Tensor shapes {self.left.shape} and {self.right.shape} do not broadcast "
+                    f"in {self.method_name}"
+                ) from None
+            return
         # Check shapes and dtypes with `first`, which exists for nearly every dtype pair. The
         # default operator may not exist for these dtypes, and the caller may bring its own,
         # as `monoid.any(X | Y)` does to build a mask union
@@ -1705,11 +1792,12 @@ class _TensorEwiseInfixExpr(_TensorInfixExpr):
     @property
     def shape(self):
         # Without building the expression, which | and & refuse for dtypes other than BOOL
-        return _broadcast_shapes(self.left._shape, self.right._shape)
+        return _broadcast_shapes(self.left.shape, self.right.shape)
 
     def _to_expr(self):
         if self._expr is None:
-            if self.left.dtype != BOOL or self.right.dtype != BOOL:
+            dtypes = list(self._leaf_dtypes())
+            if any(dtype != BOOL for dtype in dtypes):
                 # As for Matrix (`infix._ewise_add_to_expr`): an operator is needed
                 if self._infix == "|":
                     what, how, example = "ewise_add (union)", "LOR", "monoid.plus"
@@ -1718,13 +1806,13 @@ class _TensorEwiseInfixExpr(_TensorInfixExpr):
                 raise TypeError(
                     f"Bad dtypes for `x {self._infix} y`!  Automatic computation of "
                     f"`x {self._infix} y` infix expressions is only valid for BOOL dtypes.  "
-                    f"The argument dtypes are {self.left.dtype} and {self.right.dtype}.\n\n"
+                    f"The argument dtypes are {' and '.join(map(str, dtypes))}.\n\n"
                     f"When auto-computed for boolean dtypes, `x {self._infix} y` performs "
                     f"{what} using {how}.\n\nTypical usage is to create an "
                     f"{self.method_name} expression such as `{example}(x {self._infix} y)`."
                 )
             op = binary.lor if self.method_name == "ewise_add" else binary.land
-            self._expr = getattr(self.left, self.method_name)(self.right, op)
+            self._expr = self._call_left(self.method_name, op)
         return self._expr
 
 
@@ -1784,12 +1872,20 @@ def _infix_rxor(self, other):
     return _xor_bool(_ewise_infix(other, self, binary.lxor, "add"))
 
 
-def _infix_ixor(self, other):
-    expr = _infix_xor(self, other)
-    if expr is NotImplemented:
-        raise TypeError(f"unsupported operand type for in-place op: {type(other)}")
-    self << expr
-    return self
+def _infix_in_place(op, kind, name):
+    # As for Matrix, `X |= Y`, `X &= Y` and `X ^= Y` update X (BOOL only); `|=` and `^=` with a
+    # Tensor value of X's shape accumulate it
+    def in_place(self, other):
+        if kind == "add" and _accumulate(self, other, op, name):
+            return self
+        expr = _ewise_infix(self, other, op, kind)
+        if expr is NotImplemented:
+            raise TypeError(f"unsupported operand type for in-place op: {type(other)}")
+        _require_bool(expr.dtype, name)
+        self << expr
+        return self
+
+    return in_place
 
 
 def _infix_rmatmul(self, other):
@@ -1824,7 +1920,9 @@ for _cls in (Tensor, TensorExpression, _TensorInfixExpr):
     _cls.__array_ufunc__ = None
 del _name, _op, _kind, _fwd, _ref, _inp, _cls
 
-Tensor.__ixor__ = _infix_ixor
+Tensor.__ixor__ = _infix_in_place(binary.lxor, "add", "__ixor__")
+Tensor.__ior__ = _infix_in_place(binary.lor, "add", "__ior__")
+Tensor.__iand__ = _infix_in_place(binary.land, "mult", "__iand__")
 utils._output_types[Tensor] = Tensor
 utils._output_types[TensorExpression] = Tensor
 utils._output_types[TensorIndexExpr] = Tensor  # (so op(T[i]) and -T[i] apply, as for Matrix)

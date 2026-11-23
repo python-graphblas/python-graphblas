@@ -128,7 +128,8 @@ Element-wise operations follow the Matrix and Vector ones, with numpy broadcasti
 ``ewise_union`` on the union with a default for a missing side. Infix operators are
 available as for Matrix: ``*`` and ``&`` intersect, ``+``, ``|`` and ``^`` unite. On their
 own, ``X | Y``, ``X & Y`` and ``X ^ Y`` are lor, land and lxor of BOOL Tensors, and other
-dtypes raise; give ``|`` and ``&`` an operator instead, as in ``binary.plus(X | Y)``.
+dtypes raise; give ``|`` and ``&`` an operator instead, as in ``binary.plus(X | Y)``, or
+``binary.plus(X | Y | Z)`` for a chain.
 Operations are lazy: ``.new()`` computes them.
 
 .. code-block:: python

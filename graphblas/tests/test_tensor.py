@@ -2106,6 +2106,9 @@ def test_infix_expression_operands():
     with gb.config.set(autocompute=True):  # (as Matrix's `(A | B) ^ C` needs)
         for f in ops:
             for infix in [X | Y, X & Y]:
+                if {f, infix._infix} in [{op.or_, "&"}, {op.and_, "|"}]:
+                    # (a chain mixing | and &, which Matrix refuses: test_infix_chains)
+                    continue
                 computed = infix.new()
                 assert f(infix, A).new().isequal(f(computed, TA).new()), f
                 assert f(A, infix).new().isequal(f(TA, computed).new()), f
@@ -2135,6 +2138,94 @@ def test_infix_expression_operands():
         X.dup(float).select(">", Tensor.from_dense(np.ones(2)))
 
 
+def test_infix_chains():
+    """As for Matrix, ``X | Y | Z`` (or ``X & Y & Z``) is one chain: an operator folds it left
+    to right (``op(op(X | Y) | Z)``) and ``.new()`` uses lor (land) for BOOL; a chain does not
+    need autocompute. Mixing ``|`` and ``&`` raises TypeError, as for Matrix. Before, the inner
+    expression was computed with lor (land) first, so ``monoid.min(X | Y | Z)`` differed.
+    """
+    rng = np.random.default_rng(613)
+
+    def bool_matrix():
+        v, p = rng.random((3, 4)) < 0.5, rng.random((3, 4)) < 0.6
+        return Matrix.from_coo(*np.nonzero(p), v[p], nrows=3, ncols=4)
+
+    ops = [monoid.min, monoid.max, monoid.lxor, binary.first, binary.second]
+    for _ in range(20):
+        Ms = [bool_matrix() for _ in range(3)]
+        A, B, C = Ms
+        X, Y, Z = (Tensor.from_matrix(M).dup(layout=((1,), (0,))) for M in Ms)
+        for f in ops:
+            assert f(X | Y | Z).new().to_matrix((0,)).isequal(f(A | B | C).new())
+            assert f(X | (Y | Z)).new().to_matrix((0,)).isequal(f(A | (B | C)).new())
+            assert f(X & Y & Z).new().to_matrix((0,)).isequal(f(A & B & C).new())
+        with gb.config.set(autocompute=True):  # (Matrix's chain .new() needs it)
+            assert (X | Y | Z).new().to_matrix((0,)).isequal((A | B | C).new())
+            assert (X & Y & Z).new().to_matrix((0,)).isequal((A & B & C).new())
+    # The example where computing X | Y first differed: min over the three is False
+    X = Tensor.from_coo(([0], [0]), [False], shape=(1, 2))
+    Y = Tensor.from_coo(([0, 0], [0, 1]), [True, True], shape=(1, 2))
+    Z = Tensor.from_coo(([0], [1]), [False], shape=(1, 2))
+    assert monoid.min(X | Y | Z).new().to_coo()[1].tolist() == [False, False]
+    assert repr(X | Y | Z).splitlines()[1] == f"{X.name} | {Y.name} | {Z.name}"
+    F = [Tensor.from_dense(rng.random((2, 3))) for _ in range(3)]
+    want = F[0].to_dense() + F[1].to_dense() + F[2].to_dense()
+    np.testing.assert_allclose(monoid.plus(F[0] | F[1] | F[2]).new().to_dense(), want)
+    with pytest.raises(TypeError, match="BOOL"):
+        (F[0] | F[1] | F[2]).new()
+    with pytest.raises(gb.exceptions.DimensionMismatch, match="broadcast"):
+        X | Y | Tensor(dtypes.BOOL, (3, 3))
+    for chain in [
+        lambda: (X | Y) & Z, lambda: Z & (X | Y), lambda: (X & Y) | Z, lambda: (X | Y) & (X | Z),
+        lambda: (X | Y) & Z.to_matrix((0,)), lambda: Z.to_matrix((0,)) & (X | Y),
+    ]:  # fmt: skip
+        with pytest.raises(TypeError, match="Cannot mix"):
+            chain()
+
+
+def test_in_place_or_and_xor():
+    """``X |= Y``, ``X &= Y`` and ``X ^= Y`` update X in place, as for Matrix (``|=`` and
+    ``&=`` rebound X to an infix expression), BOOL only. As for Matrix, ``|=``, ``^=`` and
+    ``+=`` with a Tensor value of X's shape accumulate it, so an expression operand, an infix
+    one included, needs no autocompute; ``&=`` and the others compute it, so they need it.
+    """
+    rng = np.random.default_rng(614)
+
+    def bool_matrix(dtype=bool):
+        v, p = (rng.random((2, 3)) < 0.5).astype(dtype), rng.random((2, 3)) < 0.7
+        return Matrix.from_coo(*np.nonzero(p), v[p], nrows=2, ncols=3)
+
+    A, B, C = bool_matrix(), bool_matrix(), bool_matrix()
+    X, Y, Z = (Tensor.from_matrix(M) for M in (A, B, C))
+    operands = [(B, Y), (B | C, Y | Z), (B & C, Y & Z), (B.ewise_add(C, binary.lor), Y | Z)]
+    names = ["__ior__", "__iand__", "__ixor__", "__iadd__", "__isub__", "__imul__"]
+    for name in names:
+        for autocompute in [False, True]:
+            with gb.config.set(autocompute=autocompute):
+                for b, y in operands:
+                    a, t = A.dup(), X.dup()
+                    try:
+                        getattr(a, name)(b)
+                    except TypeError:
+                        with pytest.raises(TypeError):
+                            getattr(t, name)(y)
+                        continue
+                    assert getattr(t, name)(y) is t  # (in place)
+                    assert t.to_matrix((0,)).isequal(a), (name, autocompute)
+    with gb.config.set(autocompute=False):
+        t = X.dup()
+        t |= Y | Z  # (Matrix's `A |= B | C` works too)
+        assert t.to_matrix((0,)).isequal(
+            A.ewise_add(B.ewise_add(C, binary.lor).new(), binary.lor).new()
+        )
+    F = Tensor.from_dense(np.ones((2, 3)))
+    for name in ["__ior__", "__iand__", "__ixor__"]:
+        with pytest.raises(TypeError, match="only supported for BOOL"):
+            getattr(F.dup(), name)(F)
+        with pytest.raises(TypeError, match="unsupported operand"):
+            getattr(X.dup(), name)(object())
+
+
 def test_bool_of_an_expression_raises():
     """``bool`` of a Tensor expression raises TypeError, as for a Tensor and for Matrix
     expressions, so ``assert X == Y`` and ``if (X | Y) == A:`` raise rather than pass on an
@@ -2162,16 +2253,26 @@ def test_bool_of_an_expression_raises():
 
 
 def test_sampled_nonempty_rows():
-    """The estimate of distinct row keys from a sample: all distinct gives every entry's row,
-    and repeats give at least the distinct count in the sample, at most the entries.
+    """The estimate of distinct row keys D from a sample of s entries with d distinct keys:
+    the root of D * (1 - exp(-s / D)) = d, at most the n entries; all distinct gives n.
     """
     from graphblas.core.tensor import _sampled_nonempty_rows
 
+    def solves(est, s, d):
+        return est * -math.expm1(-s / est) == pytest.approx(d, rel=1e-9)
+
     coords = (np.arange(40), np.zeros(40, np.int64))
     assert _sampled_nonempty_rows(coords, (40, 1), (0,), 40, np.arange(10)) == 40
+    # 10 rows of 4 entries; every other entry sampled: s = 20, d = 10, the root is about 12.5
     coords = (np.arange(40) // 4, np.arange(40) % 4)
     est = _sampled_nonempty_rows(coords, (10, 4), (0,), 40, np.arange(0, 40, 2))
-    assert 10 <= est <= 40
+    assert 12 < est < 13
+    assert solves(est, 20, 10)
+    # s = 20, d = 19: the root, about 190, is past n = 40, so the estimate is n
+    coords = (np.r_[0, np.arange(39)], np.zeros(40, np.int64))
+    est = _sampled_nonempty_rows(coords, (40, 1), (0,), 40, np.arange(20))
+    assert est == pytest.approx(40, rel=1e-9)
+    assert not solves(40, 20, 19)
 
 
 def test_infix_or_and_need_bool():
@@ -5482,19 +5583,32 @@ def test_reduce_padded_view(monkeypatch):
     fit a 32-bit index, there is no view and the reduce pads a copy. Both reduce as numpy does,
     and the stored Matrix keeps its entries.
     """
-    from graphblas.core import NULL
+    from graphblas.core import NULL, ffi, lib
     from graphblas.core import tensor_layout as tl
 
-    def has_hash(M):
+    def hash_arrays(M):
+        """The array pointers of M's hyper hash, or None without one."""
         with tl._Unloaded(M) as cont:
-            return cont.Y != NULL
+            if cont.Y == NULL:
+                return None
+            Cp = ffi.new("GxB_Container*")
+            assert lib.GxB_Container_new(Cp) == 0
+            try:
+                assert lib.GxB_unload_Matrix_into_Container(cont.Y, Cp[0], NULL) == 0
+                arrays = tl._read_container(Cp[0])[1]
+                assert lib.GxB_load_Matrix_from_Container(cont.Y, Cp[0], NULL) == 0
+            finally:
+                lib.GxB_Container_free(Cp)
+        return {k: int(ffi.cast("uintptr_t", v[0])) for k, v in arrays.items()}
 
     views = []
     real = tl.padded_view
 
     def padded_view(M):
         V = real(M)
-        views.append((has_hash(M), V is not None and has_hash(V)))
+        Y = hash_arrays(M)
+        # (the view's hash reads the same arrays as M's: shared, not built again)
+        views.append((Y is not None, V is not None and hash_arrays(V) == Y))
         return V
 
     monkeypatch.setattr(tl, "padded_view", padded_view)
@@ -5520,6 +5634,54 @@ def test_reduce_padded_view(monkeypatch):
     M = Matrix(dtypes.FP64, 2, 2**31 - 1)
     assert real(M) is None
     assert real(Matrix(dtypes.FP64, 2, 2**31 - 2)).ncols == 2**31 - 1
+
+
+def test_reduce_row_selector_without_a_view(monkeypatch):
+    """Where the padded view does not fit (2^31 - 1 columns, test_reduce_padded_view), the row
+    selector multiplies by a copy with the padding column. Forced here on a small Tensor whose
+    product rows are full, where the padding matters: a fiber of NaNs stays NaN under min and
+    one of -0.0 stays -0.0 under plus (without the padding, +inf and +0.0), and every other
+    fiber reduces as numpy does.
+    """
+    from graphblas.core import tensor_census as census
+
+    calls = []
+    monkeypatch.setattr(tl, "padded_view", lambda M: calls.append(M.ncols))
+    rng = np.random.default_rng(1113)
+    shape = (300, 15, 8)
+    xp = rng.random(shape) < 0.03
+    xv = np.where(xp, rng.random(shape) + 0.5, 0.0)
+    specials = {(1, 2): np.nan, (3, 4): np.nan, (5, 6): -0.0, (7, 0): -0.0}
+    for (j, k), value in specials.items():
+        xp[:, j, k] = False
+        xp[rng.choice(300, 3, replace=False), j, k] = True
+        xv[:, j, k] = np.where(xp[:, j, k], value, 0.0)
+    X = Tensor.from_coo(np.nonzero(xp), xv[xp], shape=shape, layout=((0, 1), (2,)))
+    for mon, model in [(monoid.min, np.min), (monoid.plus, np.sum)]:
+        calls.clear()
+        census.start()
+        try:
+            census.force["reduce"] = "row selector"
+            R = X.reduce(mon, axis=0).new()
+        finally:
+            census.stop()
+            census.force.clear()
+            census.records.clear()
+        assert calls == [8]  # (the view was asked for, and the copy used)
+        got = R.to_dense(fill_value=7.0)
+        for j, k in itertools.product(range(15), range(8)):
+            fiber = xv[:, j, k][xp[:, j, k]]
+            if (j, k) in specials:
+                value = specials[j, k]
+                if np.isnan(value) and mon is monoid.min:
+                    assert np.isnan(got[j, k]), (j, k)
+                elif value == 0 and mon is monoid.plus:
+                    assert got[j, k] == 0, (j, k)
+                    assert np.signbit(got[j, k]), (j, k)
+            elif fiber.size:
+                assert got[j, k] == pytest.approx(model(fiber)), (j, k)
+            else:
+                assert got[j, k] == 7.0
 
 
 def test_kernel_disk_cache_writes_safely(tmp_path, monkeypatch):
