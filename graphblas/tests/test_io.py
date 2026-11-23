@@ -369,6 +369,23 @@ def test_from_networkx_rejects_weights_a_matrix_cannot_hold(
         gb.io.from_networkx(G)
 
 
+@pytest.mark.skipif("not nx")
+def test_from_networkx_converts_weights_to_dtype_first():
+    # With dtype, numpy converts the weights before from_networkx checks them (see its
+    # Notes). A None weight is refused without dtype, becomes nan with a float dtype,
+    # and raises numpy's TypeError with an int dtype.
+    G = nx.DiGraph()
+    G.add_edge(0, 1, weight=None)
+    G.add_edge(1, 0, weight="3")
+    with pytest.raises(ValueError, match="attribute 'weight' gives dtype object"):
+        gb.io.from_networkx(G)
+    M = gb.io.from_networkx(G, dtype="float64")
+    assert np.isnan(M[0, 1].new().value)
+    assert M[1, 0].new().value == 3.0
+    with pytest.raises(TypeError):
+        gb.io.from_networkx(G, dtype="int64")
+
+
 @pytest.mark.skipif("not nx or not ss")
 @pytest.mark.parametrize(
     "graph_cls", [nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph] if nx else []

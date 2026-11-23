@@ -31,6 +31,13 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
     ValueError
         If a weight is not a bool, int (at most 64 bits), float or complex scalar.
 
+    Notes
+    -----
+    When ``dtype`` is given, numpy converts the weights to it first, as
+    ``np.array(weights, dtype=dtype)`` does. A weight it cannot convert raises
+    numpy's TypeError, ValueError or OverflowError, and some weights convert without
+    an error: None becomes nan in a float dtype, and the string ``"3"`` becomes 3.0.
+
     """
     import networkx as nx
 
