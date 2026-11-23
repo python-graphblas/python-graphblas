@@ -28,8 +28,9 @@ A compile can still fail with the control "on" (a compiler that stopped working,
 disk, an unwritable cache): SuiteSparse then returns ``GxB_JIT_ERROR`` rather than run the
 generic kernel, and drops the control to "load" (``GB_jitifyer.c``). ``run`` catches that.
 The control stays at "load", as after a failed compile anywhere in python-graphblas: UDT
-auto-lift raises "run" to "on" again but leaves "load" alone, so restoring "run" would make
-the next UDT operation retry the compile and raise. A ``NoJITWarning`` says what happened,
+auto-lift never raises "load", so nothing retries the compile, while a control put back to
+the default "run" would be raised to "on" by the next UDT operation, which would retry the
+compile and raise. A ``NoJITWarning`` says what happened,
 the engine stays off for the rest of the process, and the caller takes another engine.
 """
 
