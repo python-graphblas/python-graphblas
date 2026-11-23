@@ -54,7 +54,8 @@ def _scalar_identity(monoid_name, scalar_dtype):
         return scalar_dtype.type(0)
     if monoid_name == "times":
         return scalar_dtype.type(1)
-    if monoid_name not in {"min", "max"}:
+    if monoid_name not in {"min", "max"}:  # pragma: no cover (safety)
+        # Callers pass only _BUILTIN_UDT_MONOIDS; another name must not get min's identity
         return None
     # Not ``np.issubdtype(scalar_dtype, np.integer)``: numpy files timedelta64
     # under ``np.integer``, and ``np.iinfo`` rejects it.
