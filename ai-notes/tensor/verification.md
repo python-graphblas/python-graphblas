@@ -6,7 +6,7 @@ and how to run them.
 
 ## Unit tests
 
-`graphblas/tests/test_tensor.py` and `graphblas/tests/test_tensor_io.py` (845 tests) check
+`graphblas/tests/test_tensor.py` and `graphblas/tests/test_tensor_io.py` (871 tests) check
 every operation against a dense numpy oracle. That means the values plus _presence_, a
 boolean array of which positions hold a value. Three things recur throughout:
 
@@ -28,7 +28,7 @@ write there corrupts memory without an error.
 Run the tests under the configurations they are meant for:
 
 ```bash
-# blocking and non-blocking mode (845 passed each)
+# blocking and non-blocking mode (871 passed each)
 pytest graphblas/tests/test_tensor.py graphblas/tests/test_tensor_io.py --backend suitesparse --blocking
 pytest graphblas/tests/test_tensor.py graphblas/tests/test_tensor_io.py --backend suitesparse --no-blocking
 # another backend: the modules skip cleanly
@@ -39,7 +39,7 @@ With warm caches each run takes about 35 s on an idle machine. With an empty Sui
 JIT cache, as in CI, the first took 7 to 10 minutes, most of it compiling.
 
 **Without Numba.** Block it in the interpreter, so that every `import numba` fails. pydata/sparse
-needs Numba too, so its io tests skip as well (713 passed, 132 skipped):
+needs Numba too, so its io tests skip as well (738 passed, 133 skipped):
 
 ```python
 # run_without_numba.py
@@ -56,7 +56,7 @@ python run_without_numba.py graphblas/tests/test_tensor.py graphblas/tests/test_
 ```
 
 **With the JIT off.** A plugin turns it off before every test. The array-UDT engine's tests
-skip (828 passed, 17 skipped):
+skip (854 passed, 17 skipped):
 
 ```python
 # jit_off_plugin.py (put it on PYTHONPATH)
@@ -83,7 +83,7 @@ pydata/sparse 0.19.
 global format is (`design.md`, "Data model"), so the modules also run with the global set to
 by column before every test, by a plugin that sets `GrB_STORAGE_ORIENTATION_HINT` to
 `GrB_COLMAJOR` in `pytest_runtest_setup`. All three modules, oracles included, passed that
-way on 2026-11-22 (872 tests, SuiteSparse 10.5.2).
+way on 2026-11-22 (898 tests, SuiteSparse 10.5.2).
 
 `graphblas/tests/test_core.py` checks the SuiteSparse floor in subprocesses. With the Tensor
 module's `lib` replaced by one without the Container API, every constructor raises the same
