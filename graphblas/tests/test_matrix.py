@@ -1927,6 +1927,79 @@ def test_reduce_agg_logaddexp2_integers():
     assert A.reduce_scalar(agg.logaddexp2).new().isclose(np.logaddexp2.reduce([-1, -1, 70]))
 
 
+@pytest.mark.parametrize("dtype", ["BOOL", "INT8", "UINT8", "INT16", "UINT16", "FP32"])
+def test_reduce_agg_composite_parts_do_not_wrap(dtype):
+    """mean, var, std and the other composite aggregators match numpy on narrow types.
+
+    Each reduction of 40000 entries, rowwise, columnwise, to a Scalar, or of a Vector,
+    matches numpy in float64. The test fails if the count or a sum is computed in the
+    input type: in INT8 it wraps at 128, in INT16 at 32768, and in FP32 the variance of
+    equal values rounds to a small negative number, whose square root is NaN.
+    """
+    n = 40000
+    values = np.stack([np.arange(n) % 3, np.ones(n)]).astype(dtypes.lookup_dtype(dtype).np_type)
+    rows, cols = np.nonzero(np.ones(values.shape, bool))
+    A = Matrix.from_coo(rows, cols, values.ravel())
+    names = ["mean", "varp", "vars", "stdp", "stds", "root_mean_square", "geometric_mean"]
+    if dtype != "BOOL":
+        names.append("harmonic_mean")
+    with np.errstate(divide="ignore"):
+        x = values.astype(np.float64)
+        expected = {
+            "mean": x.mean(axis=1),
+            "varp": x.var(axis=1),
+            "vars": x.var(axis=1, ddof=1),
+            "stdp": x.std(axis=1),
+            "stds": x.std(axis=1, ddof=1),
+            "root_mean_square": np.sqrt((x**2).mean(axis=1)),
+            "geometric_mean": np.exp(np.log(x).mean(axis=1)),
+            "harmonic_mean": n / (1 / x).sum(axis=1),
+        }
+    for name in names:
+        aggregator = getattr(agg, name)
+        results = [
+            A.reduce_rowwise(aggregator).new().to_dense(),
+            A.T.reduce_columnwise(aggregator).new().to_dense(),
+            [Vector.from_dense(row).reduce(aggregator).new().value for row in values],
+        ]
+        for result in results:
+            np.testing.assert_allclose(result, expected[name], rtol=1e-5, atol=1e-6, err_msg=name)
+        if name == "mean":
+            result = A.reduce_scalar(aggregator).new().value
+            np.testing.assert_allclose(result, x.mean(), rtol=1e-5, err_msg=name)
+
+
+def test_reduce_agg_composite_of_integers_matches_numpy():
+    """Means and variances of a few integers match numpy, which computes them in float64.
+
+    The test fails if a sum, a square or a product is computed in the values' type:
+    100 + 100 wraps in INT8, 3 ** 5 = 243 in INT8, and 2**62 + 2**62 in INT64.
+    """
+    cases = [
+        ("INT8", [100, 100], "mean", np.mean),
+        ("INT8", [3, 3, 3, 3], "vars", lambda x: np.var(x, ddof=1)),
+        ("INT8", [3, 3, 3, 3], "stds", lambda x: np.std(x, ddof=1)),
+        ("INT8", [3, 3, 3, 3, 3], "geometric_mean", lambda x: np.exp(np.log(x).mean())),
+        ("UINT8", [200, 200], "varp", np.var),
+        ("INT64", [2**62, 2**62], "mean", np.mean),
+        ("INT16", [300, 300, 300], "root_mean_square", lambda x: np.sqrt((x**2).mean())),
+        ("BOOL", [True, False, True], "mean", np.mean),
+        ("BOOL", [True, False, True], "varp", np.var),
+    ]
+    for dtype, values, name, model in cases:
+        values = np.array(values, dtypes.lookup_dtype(dtype).np_type)
+        expected = model(values.astype(np.float64))
+        aggregator = getattr(agg, name)
+        A = Matrix.from_dense(values.reshape(1, -1))
+        for result in [
+            A.reduce_rowwise(aggregator).new()[0].new().value,
+            A.T.reduce_columnwise(aggregator).new()[0].new().value,
+            A.reduce_scalar(aggregator).new().value,
+            Vector.from_dense(values).reduce(aggregator).new().value,
+        ]:
+            assert result == pytest.approx(expected, rel=1e-12, abs=1e-12), (dtype, values, name)
+
+
 @pytest.mark.skipif("not supports_udfs")
 def test_reduce_row_udf(A):
     result = Vector.from_coo([0, 1, 2, 3, 4, 5, 6], [5, 12, 1, 6, 7, 1, 15])
