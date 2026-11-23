@@ -2,10 +2,12 @@
 
 matmul, tensordot, vecdot and einsum return a pending Array, whose Tensor is not computed yet,
 when they skip the operands' unstored positions (see ``_linalg``) and the result has a
-dimension. A pending Array stores O(1) copy-on-write snapshots (``Tensor.dup``) of its
-operands' Tensors. Changing an operand afterwards does not change the result: the operand
-copies its data then, and the snapshots keep the old data until the result is computed. The
-Tensor is computed on the first read (``Array._T``), once.
+dimension, except for NaN under a float min or max monoid (``_with_nan_terms``) and for
+einsum's ``_einsum_scalars`` and ``_masked_three``. A pending Array stores O(1)
+copy-on-write snapshots (``Tensor.dup``) of its operands' Tensors. Changing an operand
+afterwards does not change the result: the operand copies its data then, and the snapshots
+keep the old data until the result is computed. The Tensor is computed on the first read
+(``Array._T``), once.
 
 Two consumers use a pending product P without computing it whole:
 

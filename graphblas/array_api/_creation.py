@@ -149,7 +149,11 @@ def _from_sparse(obj, dtype, fill_value):
         coords = tuple(np.asarray(c) for c in obj.coords)
         data, shape, fill = np.asarray(obj.data), obj.shape, obj.fill_value
         if fill_value is not None and not _utils.same_value(fill_value, fill):
-            raise ValueError(f"fill_value={fill_value!r} differs from the sparse array's {fill!r}")
+            raise ValueError(
+                f"fill_value={fill_value!r} differs from the sparse array's fill value "
+                f"{fill!r}; xp.refill(xp.asarray(a), fill_value) returns a copy with that fill "
+                "and the same values"
+            )
     return from_coo(coords, data, shape, fill_value=fill, dtype=dtype)
 
 

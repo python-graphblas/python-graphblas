@@ -5,7 +5,8 @@ The rules for fills, semirings and deferred results are in the Technical Notes p
 ``docs/technical_notes/array_api_contractions.rst``. Where they live in the code:
 
 - a fill of zero is a structural zero: the default semiring's contractions skip unstored
-  positions; ``_zero_fills`` relabels or stores the other finite fills, and ``_dense``
+  positions; ``_zero_fills`` relabels a fully stored operand's fill or stores another finite
+  fill, and ``_dense``
   computes with numpy when it cannot;
 - ``_sound`` checks the fills for another semiring, and ``_annihilates`` whether its
   monoid's identity annihilates its multiply;
@@ -54,9 +55,10 @@ def compute(x, /):
     """Compute ``x`` now if it is deferred, and return it (an extension).
 
     matmul, tensordot, vecdot and einsum may return an Array whose value is computed on first
-    use, or only in part when a consumer needs only part of it
-    (:ref:`tn_array_api_deferred`). ``compute`` computes all of it at once, for timing or
-    before handing it on. Any other Array is returned unchanged.
+    use, or only in part when a consumer needs only part of it (see the Technical Notes page
+    "Contractions in the Array API Namespace", :ref:`tn_array_api_deferred`). ``compute``
+    computes all of it at once, for timing or before handing it on. Any other Array is
+    returned unchanged.
     """
     _check(x, "compute")
     x._T()
@@ -275,8 +277,9 @@ def matmul(x1, x2, /, *, semiring=None):
 
     ``semiring`` (an extension) is a graphblas Semiring or its name, such as ``"min_plus"``.
     The unstored positions of an operand whose fill is 0 contribute no terms, so ``0 * inf``
-    there is not NaN, unlike numpy. :ref:`tn_array_api_contractions` gives the rules for
-    other fills, for semirings, and for results computed on first use.
+    there is not NaN, unlike numpy. The Technical Notes page "Contractions in the Array API
+    Namespace" (:ref:`tn_array_api_contractions`) gives the rules for other fills, for
+    semirings, and for results computed on first use.
     """
     x1, x2 = _operand(x1), _operand(x2)
     _check(x1, "matmul")
@@ -394,7 +397,8 @@ def tensordot(x1, x2, /, *, axes=2, semiring=None):
     """The tensor dot product, as numpy's tensordot.
 
     ``semiring`` (an extension) is a graphblas Semiring or its name. Fills follow the rules
-    for ``matmul`` (:ref:`tn_array_api_contractions`).
+    for ``matmul`` (see the Technical Notes page "Contractions in the Array API Namespace",
+    :ref:`tn_array_api_contractions`).
     """
     _check(x1, "tensordot")
     _check(x2, "tensordot")
@@ -437,7 +441,8 @@ def vecdot(x1, x2, /, *, axis=-1, semiring=None):
     ``semiring`` (an extension) is a graphblas Semiring or its name, whose monoid reduces
     ``mult(x1, x2)`` over ``axis``. The default semiring, plus_times (lor_land for bool),
     conjugates ``x1`` whether it is given or not; other semirings do not. Fills follow the
-    rules for ``matmul`` (:ref:`tn_array_api_contractions`).
+    rules for ``matmul`` (see the Technical Notes page "Contractions in the Array API
+    Namespace", :ref:`tn_array_api_contractions`).
     """
     from ._elementwise import conj
 
@@ -498,7 +503,8 @@ def einsum(subscripts, /, *operands, semiring=None):
     ``semiring`` is a graphblas Semiring or its name; the default is plus_times, or lor_land
     for bool. Its multiply combines the operands of each term, and its monoid sums the terms
     over the indices not in the output. Fills follow the rules for ``matmul``
-    (:ref:`tn_array_api_contractions`).
+    (see the Technical Notes page "Contractions in the Array API Namespace",
+    :ref:`tn_array_api_contractions`).
     """
     from ..core.tensor_einsum import _einsum_plan
     from ..core.tensor_einsum import einsum as tensor_einsum

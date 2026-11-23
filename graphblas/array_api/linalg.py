@@ -3,8 +3,8 @@
 These functions work on the stored entries: matmul, matrix_transpose, tensordot, vecdot,
 diagonal, trace, vector_norm, outer, cross, matrix_norm of order "fro", 1, -1, inf or -inf,
 and matrix_power with ``n >= 0``. A contraction with an operand whose fill is not 0 may
-store that operand in full, or compute with numpy on dense copies
-(:ref:`tn_array_api_contractions`).
+store that operand in full, or compute with numpy on dense copies (see the Technical Notes
+page "Contractions in the Array API Namespace", :ref:`tn_array_api_contractions`).
 
 The decompositions and solvers are dense algebra. They compute with numpy on dense copies,
 under the densify limit (``graphblas.config["array_api_densify_limit"]``): cholesky, det,

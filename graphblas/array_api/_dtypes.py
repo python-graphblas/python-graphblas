@@ -105,9 +105,9 @@ def result_type(*arrays_and_dtypes):
     if not has_typed:
         raise ValueError("result_type needs at least one array or data type, not only scalars")
     # numpy promotes all the arguments at once. For dtypes of one kind this follows the Array
-    # API's promotion table. For mixed kinds, which the standard leaves unspecified, it does not
-    # depend on the order, as promoting pairwise would: (int8, uint16, float32) is float32 here
-    # and in np.concatenate, where pairwise it would be float64.
+    # API's promotion table. For mixed kinds, which the standard leaves unspecified, it does
+    # not depend on the order, unlike promoting pairwise: (int8, uint16, float32) is float32
+    # here and in np.concatenate, and float64 pairwise.
     return check_supported(np.result_type(*args), "result_type")
 
 

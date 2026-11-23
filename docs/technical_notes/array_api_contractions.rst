@@ -43,8 +43,9 @@ Booleans contract with logical or and logical and, as in numpy.
 
 A stored entry identical to its array's fill contributes no term either, when an operand
 stores an infinity or NaN: the contraction first drops those entries. So whether a zero is
-stored does not change the result. ``-0.0`` is not identical to the fill ``0.0``, so a
-stored ``-0.0`` times ``inf`` is NaN.
+stored does not change the result, except perhaps the sign of a zero: a stored ``0.0``
+times ``-1.0`` is ``-0.0``. ``-0.0`` is not identical to the fill ``0.0``, so a stored
+``-0.0`` times ``inf`` is NaN.
 
 Sums may round differently from numpy's, because the terms are added in another order.
 
@@ -160,8 +161,11 @@ Deferred results
 ----------------
 
 A contraction that skips the unstored positions, and whose result has a dimension, returns
-an Array whose value is not computed yet. It is computed the first time its data is read,
-and only in part when a consumer needs only part of it:
+an Array whose value is not computed yet. Three cases compute at once instead: NaN under a
+float ``min`` or ``max`` monoid (above), and two kinds of ``einsum``, one with a finite
+nonzero 0-d operand, and one of three operands whose third masks the product of the other
+two. A deferred result is computed the first time its data is read, and only in part when
+a consumer needs only part of it:
 
 - ``xp.multiply(S, P)`` or ``xp.multiply(P, S)``, where ``P`` is a deferred result and ``S``
   an array of the same shape, both with fill 0, computes ``P`` only at the positions ``S``
