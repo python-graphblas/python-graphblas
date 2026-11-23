@@ -101,6 +101,22 @@ def display_options(*args):
 
 
 @pytest.fixture(autouse=True)
+def _rowwise_matrices():
+    """Store new matrices by row, as the expected reprs assume, whatever the session sets."""
+    import graphblas as gb
+
+    if backend != "suitesparse":
+        yield
+        return
+    prev = gb.ss.config["format"]
+    gb.ss.config["format"] = "by_row"
+    try:
+        yield
+    finally:
+        gb.ss.config["format"] = prev
+
+
+@pytest.fixture(autouse=True)
 def _stable_repr_width(monkeypatch):
     """Set the terminal width to the 80 columns that the expected reprs assume.
 
