@@ -661,12 +661,13 @@ Compiling costs 0.2-0.6 s per kernel, so kernels are cached:
   under `$GRAPHBLAS_KERNEL_CACHE`. The default is `python-graphblas/tensor-kernels` under
   `$XDG_CACHE_HOME`, or under `$HOME/.cache`. An empty value turns the cache off.
 - A cached file runs only if its bytes equal the generated source; otherwise the kernel
-  compiles in memory and the file is left alone. Writes go through a temporary file of a unique
-  name (`mkstemp`), synced, and a hard link (`_publish`), which leaves in place a file another
-  process wrote first: a rename would replace it and change its stamp under that process's
-  Numba cache index, and the next process would compile again. Where the file system has no
-  hard links, a rename; a failed rename onto a file another process just wrote with the same
-  source uses that file (the Windows race).
+  compiles in memory and the file is left alone. Writes go through a temporary file of a random
+  name, created exclusively with the umask's permissions (mkstemp's would be 0600), synced, and
+  a hard link (`_publish`), which leaves in place a file another process wrote first: a rename
+  would replace it and change its stamp under that process's Numba cache index, and the next
+  process would compile again. Where the file system has no hard links, a rename; a failed
+  rename onto a file another process just wrote with the same source uses that file (the
+  Windows race).
 - Numba's own `cache=True` then caches the compiled code beside it.
 
 ## The SuiteSparse JIT

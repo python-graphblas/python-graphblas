@@ -5366,7 +5366,7 @@ def test_kernel_disk_cache_writes_safely(tmp_path, monkeypatch):
     published: another writer with this process's pid (in another container or host sharing
     the cache) cannot truncate the published file through its temporary name. A temporary
     name that cannot be removed (on Windows, while another process reads the file) still
-    lets the published file load.
+    lets the published file load. The file's permissions follow the umask.
     """
     if not gb.core._has_numba:
         pytest.skip("needs numba")
@@ -5405,6 +5405,17 @@ def test_kernel_disk_cache_writes_safely(tmp_path, monkeypatch):
         kernel = tensor_numba._load_cached(path, "_graphblas_kernel_safe_2", text)
     assert kernel(3) == 3
     assert path.read_text() == text
+    if sys.platform == "win32":  # pragma: no cover (no permission bits)
+        return
+    # The file gets the permissions the umask gives, as a plain write's
+    for umask, mode in [(0o077, 0o600), (0o022, 0o644)]:
+        old_umask = os.umask(umask)
+        try:
+            path = tmp_path / f"k_mode_{umask:o}.py"
+            tensor_numba._load_cached(path, f"_graphblas_kernel_mode_{umask:o}", text)
+        finally:
+            os.umask(old_umask)
+        assert path.stat().st_mode & 0o777 == mode
 
 
 def test_kernel_disk_cache_guards(tmp_path, monkeypatch):

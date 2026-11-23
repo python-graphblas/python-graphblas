@@ -25,8 +25,8 @@ import contextlib
 import hashlib
 import os
 import sys
-import tempfile
 import types
+import uuid
 from pathlib import Path
 
 import numba
@@ -70,16 +70,15 @@ def _load_cached(path, name, text):
     data = text.encode()
     if not path.exists():
         # A name no other writer has (a pid is not enough: containers and hosts sharing one
-        # cache reuse pids), so nobody else can open the published inode through it
-        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f"{path.name}.", suffix=".tmp")
-        tmp = Path(tmp)
+        # cache reuse pids), so nobody else can open the published inode through it. As
+        # mkstemp's, but with the permissions the umask gives (mkstemp's are 0600).
+        tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
         try:
-            with os.fdopen(fd, "wb") as f:
+            with os.fdopen(os.open(tmp, flags, 0o666), "wb") as f:
                 f.write(data)
                 f.flush()
                 os.fsync(f.fileno())  # (a crash must not leave a short file published)
-            with contextlib.suppress(OSError):
-                tmp.chmod(0o644)  # (mkstemp's 0600 would hide it from a shared cache's users)
             _publish(tmp, path)
         except OSError:
             # Another process may have written the file meanwhile: on Windows a rename onto it
