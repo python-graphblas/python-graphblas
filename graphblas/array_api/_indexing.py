@@ -352,7 +352,10 @@ def setitem(x, key, value):
     adv = [k for k in axes_key if isinstance(k, _Adv)]
     booleans = _indexes_boolean_scalars(items)
     if not booleans and any(isinstance(k, _NewAxis) and k.length == 0 for k in items):
-        return  # (a False index selects nothing)
+        # A False index selects nothing, but the value must still fit the empty selection
+        if isinstance(value, Array):
+            _check_fits(value.shape, _empty_selection_shape(x, items))
+        return
     # With one 1-d index array among slices, outer (GraphBLAS) and vectorized indexing agree
     scatter = booleans or (
         adv
@@ -391,6 +394,33 @@ def _without_new_axes(value, items):
     from ._manipulation import squeeze
 
     return squeeze(value, axis=tuple(drop))
+
+
+def _check_fits(vshape, shape):
+    """Raise ValueError unless a value of shape ``vshape`` broadcasts to the selection's
+    ``shape``, also when the selection is empty.
+    """
+    try:
+        ok = np.broadcast_shapes(vshape, shape) == tuple(shape)
+    except ValueError:
+        ok = False
+    if not ok:
+        raise ValueError(
+            f"cannot assign an array of shape {vshape} to a selection of shape {shape}"
+        )
+
+
+def _empty_selection_shape(x, items):
+    """The shape of numpy's selection for a key of basic items with a False index (empty),
+    from a broadcast view, so nothing of ``x``'s size is allocated.
+    """
+    key = tuple(
+        Ellipsis if isinstance(k, _Gap)
+        else (bool(k.length) if k.boolean else None) if isinstance(k, _NewAxis)
+        else k
+        for k in items
+    )  # fmt: skip
+    return np.broadcast_to(np.empty((), bool), x.shape)[key].shape
 
 
 def _setitem_value(x, value):
@@ -468,16 +498,13 @@ def _scatter_setitem(x, items, value):
         coords.append(np.asarray(np.broadcast_to(grid, x.shape)[key]))
     shape = coords[0].shape
     size = math.prod(shape)
+    if isinstance(value, Array):
+        _check_fits(value.shape, shape)
     if size == 0:
         return
     _utils.check_dense(size, "assigning to the selected positions")
     if isinstance(value, Array):
-        try:
-            values = np.broadcast_to(value.todense(), shape)
-        except ValueError:
-            raise ValueError(
-                f"cannot assign an array of shape {value.shape} to a selection of shape {shape}"
-            ) from None
+        values = np.broadcast_to(value.todense(), shape)
     else:
         values = np.broadcast_to(np.asarray(value, dtype=x.dtype), shape)
     coords = [c.reshape(-1) for c in coords]

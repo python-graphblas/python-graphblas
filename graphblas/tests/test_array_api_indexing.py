@@ -318,6 +318,36 @@ def test_boolean_scalars_with_index_arrays_as_numpy():
         x[[0, 2], [0, 1, 2]]
 
 
+def test_assigning_to_an_empty_selection_checks_the_value():
+    """A value must broadcast to the selection even when the selection is empty, as in
+    numpy: through index arrays, a boolean mask with no True, or a False index.
+    """
+    a = np.arange(12.0).reshape(3, 4)
+    for key in [
+        ([], [0]),
+        (np.zeros((3, 4), bool),),
+        (False,),
+        (slice(None), False),
+        (None, False, 1),
+        (np.array([], int),),
+        (slice(0, 0), [0, 1]),
+    ]:
+        shape = a[key].shape
+        assert math.prod(shape) == 0
+        for vshape in [shape, (1,) * len(shape), shape[1:], (2,), (5,), (2, 3, 4)]:
+            value = np.ones(vshape)
+            b = a.copy()
+            x = make(a, 0.0)
+            try:
+                b[key] = value
+            except (ValueError, TypeError):  # (TypeError for a mask and a 3-d value)
+                with pytest.raises(ValueError, match="cannot assign"):
+                    x[key] = xp.asarray(value)
+            else:
+                x[key] = xp.asarray(value)
+                assert_array_equal(x, a)
+
+
 def test_setitem_with_new_axes():
     # The value for a basic key with None may be shaped like numpy's selection, new axes
     # included
