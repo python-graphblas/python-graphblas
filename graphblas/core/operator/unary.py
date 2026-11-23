@@ -123,6 +123,7 @@ def _one(x):
 
 if _has_numba:
     from ..udt import BUILTIN_UDT_UNARY_OPS as _BUILTIN_UDT_UNARY_OPS
+    from ..udt import _unary_op_type
     from .udt_codegen import (
         _has_jit_set,
         _maybe_warn_jit_skipped,
@@ -284,8 +285,11 @@ class UnaryOp(OpBase):
         if self._numba_func is None and _has_numba and self.name in _BUILTIN_UDT_UNARY_OPS:
             # Lift ``ainv`` or ``abs`` to the UDT
             py_op = _BUILTIN_UDT_UNARY_OPS[self.name]
+            # ``abs`` on a complex leaf gives a real one, written as it computes.
+            out = _unary_op_type(self.name, dtype)
+            out = None if out is dtype else out
             unary_wrapper, wrapper_sig, ret_type = compile_udt_unary_wrapper(
-                self.name, py_op, dtype
+                self.name, py_op, dtype, out=out
             )
             op = _finalize_udt_op(
                 self, dtype, None, ret_type, unary_wrapper, wrapper_sig, TypedUserUnaryOp
@@ -293,7 +297,7 @@ class UnaryOp(OpBase):
             # ``_has_jit_set`` is False on the vanilla backend.
             if _has_jit_set:
                 op._jit_c_info = set_jit_c_on_op(
-                    op.gb_obj, self.name, py_op, dtype, lib.GrB_UnaryOp_set_String, arity=1
+                    op.gb_obj, self.name, py_op, dtype, lib.GrB_UnaryOp_set_String, 1, out
                 )
                 _maybe_warn_jit_skipped(op._jit_c_info, self.name, dtype.name)
             return op

@@ -87,6 +87,45 @@ def test_untyped_call():
     assert list(C.to_coo()[2]) == [18, 19]
 
 
+def test_int_theta_beyond_its_type():
+    """An int theta its type cannot hold raises an OverflowError that names the int and the type.
+
+    cffi's own message, ``int too big to convert``, names neither; ``apply`` names both.
+    """
+
+    def add_theta(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+        return x + y + theta
+
+    op = indexbinary.register_anonymous(add_theta)
+    for theta in [2**63, -(2**63) - 1, 2**70]:
+        with pytest.raises(
+            OverflowError, match=f"^Python integer {theta} out of bounds for int64,"
+        ):
+            op(theta)
+    with pytest.raises(OverflowError, match=f"^Python integer {2**64} out of bounds for uint64$"):
+        op(2**64, dtype="UINT64")
+    v = Vector.from_coo([0], [1], dtype="UINT64")
+    assert v.ewise_mult(v, op(2**63, dtype="UINT64")).new()[0].new() == 2**63 + 2
+    assert v.ewise_mult(v, op(2**70, dtype="FP64")).new()[0].new() == 2.0**70
+
+
+def test_index_with_too_many_types():
+    """``op[a, b, c, d]`` raises a TypeError that says how many types the op takes."""
+
+    def add_theta(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
+        return x + y + theta
+
+    op = indexbinary.register_anonymous(add_theta)
+    types = ("INT64",) * 4
+    for parent in [op, op(1)]:
+        with pytest.raises(
+            TypeError, match=r"takes a dtype, or a tuple of two \(x and y\) .* of 4"
+        ):
+            parent[types]
+    assert types not in op
+    assert types[:3] in op
+
+
 def test_untyped_call_is_typed_when_it_runs():
     """``op(theta)`` takes its type from both inputs and theta each time it runs.
 

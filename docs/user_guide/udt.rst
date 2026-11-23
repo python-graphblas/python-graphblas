@@ -125,6 +125,8 @@ each element of an array, as they would to that field's built-in type.
   ``max``; ``eq`` and ``ne``, which compare whole elements and give BOOL; and ``first``,
   ``second``, ``any`` and ``pair``.
 - UnaryOps ``ainv`` and ``abs``.
+- ``select`` with ``valueeq`` or ``valuene`` (``v.select("==", x)``), which keeps the
+  elements that ``==`` or ``!=`` finds.
 - Monoids ``plus``, ``times``, ``min``, ``max`` and ``any``, and the semirings made from
   them and the BinaryOps above, such as ``plus_times`` and ``min_plus``.
 - Aggregators ``sum``, ``prod``, ``min``, ``max``, ``any_value`` and ``count``, and

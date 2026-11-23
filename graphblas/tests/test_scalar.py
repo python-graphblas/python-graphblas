@@ -171,6 +171,14 @@ def test_isequal(s):
     assert s.isequal(t)
     assert not s.isequal(t, check_dtype=True)
     assert Scalar.from_value(None, dtype="INT8").isequal(Scalar.from_value(None, dtype="INT16"))
+    # An int that INT64 cannot hold compares exactly, as with ``==``.
+    for big in [2**63, 2**64, -(2**63) - 1]:
+        assert not s.isequal(big)
+        assert not t.isequal(big)
+        assert not Scalar(dtypes.INT8).isequal(big)
+    assert Scalar.from_value(2**63, dtype="UINT64").isequal(2**63)
+    assert Scalar.from_value(2.0**64).isequal(2**64)
+    assert not Scalar.from_value(2.0**64).isequal(2**64 - 1)  # exactly, as isequal compares
 
 
 @pytest.mark.slow
@@ -187,6 +195,12 @@ def test_isclose():
     assert not s.isclose(Scalar.from_value(5), check_dtype=True)
     assert not s.isclose(Scalar.from_value(None, dtype=s.dtype))
     assert Scalar.from_value(None, dtype="FP64").isclose(Scalar.from_value(None, dtype="FP32"))
+    # An int that INT64 cannot hold compares in Python, as in isequal, without OverflowError
+    assert not Scalar.from_value(1, dtype="INT8").isclose(2**63)
+    assert Scalar.from_value(2.0**64).isclose(2**64 + 1)
+    assert Scalar.from_value(2**63, dtype="UINT64").isclose(2**63)
+    assert not Scalar.from_value(1.0).isclose(10**400)
+    assert not Scalar(dtype="INT8").isclose(2**63)
 
 
 def test_isclose_infinity():
@@ -199,6 +213,36 @@ def test_isclose_infinity():
             assert Scalar.from_value(x).isclose(y, abs_tol=abs_tol) is expected, (x, y)
             other = Scalar.from_value(y)
             assert Scalar.from_value(x).isclose(other, abs_tol=abs_tol) is expected, (x, y)
+    # An int that INT64 cannot hold compares in Python, with the same rule
+    assert not Scalar.from_value(math.inf).isclose(2**70)
+    assert not Scalar.from_value(-math.inf).isclose(-(2**70))
+    assert Scalar.from_value(2.0**70).isclose(2**70)
+
+
+def test_isclose_int_beyond_64_bits_is_exact():
+    """Scalar.isclose applies its rule exactly to an int that INT64 cannot hold.
+
+    Fails if it computes in floating point, which overflows or rounds the int.
+    """
+    fmax = sys.float_info.max  # 2**1024 - 2**971: its relative distance to 2**1024 is 2**-53
+    assert Scalar.from_value(fmax).isclose(2**1024)
+    assert Scalar.from_value(-fmax).isclose(-(2**1024))
+    assert not Scalar.from_value(fmax).isclose(2**1024, rel_tol=2**-54)
+    assert Scalar.from_value(1.0).isclose(10**400, abs_tol=math.inf)
+    assert Scalar.from_value(1, dtype="INT8").isclose(10**400, rel_tol=1.0)
+    assert not Scalar.from_value(1, dtype="INT8").isclose(10**400, rel_tol=0.5)
+    assert not Scalar.from_value(math.nan).isclose(2**70, abs_tol=math.inf)
+    # float(2**70 + 1) is 2.0**70
+    for dtype in ["FP32", "FP64"] + (["FC32", "FC64"] if dtypes._supports_complex else []):
+        s = Scalar.from_value(2.0**70, dtype=dtype)
+        assert not s.isclose(2**70 + 1, rel_tol=0, abs_tol=0.5), dtype
+        assert s.isclose(2**70 + 1, rel_tol=0, abs_tol=1), dtype
+    assert not Scalar.from_value(2**64 - 1, dtype="UINT64").isclose(2**64, rel_tol=0, abs_tol=0.5)
+    if dtypes._supports_complex:
+        assert Scalar.from_value(fmax, dtype="FC64").isclose(2**1024)
+        # The imaginary part counts in the distance: |(2**70 + 3j) - (2**70 + 4)| is 5
+        assert Scalar.from_value(2.0**70 + 3j).isclose(2**70 + 4, rel_tol=0, abs_tol=5)
+        assert not Scalar.from_value(2.0**70 + 3j).isclose(2**70 + 4, rel_tol=0, abs_tol=4.9)
 
 
 def test_isclose_integers_do_not_wrap():
@@ -212,6 +256,7 @@ def test_isclose_integers_do_not_wrap():
             left = Scalar.from_value(lv, dtype=lt)
             right = Scalar.from_value(rv, dtype=rt)
             assert left.isclose(right, rel_tol=rel_tol) is expected, (lt, lv, rt, rv)
+    assert Scalar.from_value(2**64 - 1, dtype="UINT64").isclose(2**64 - 1)
 
 
 def test_isclose_in_the_type_the_dtypes_unify_to():

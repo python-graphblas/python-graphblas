@@ -4353,7 +4353,7 @@ def test_ss_serialize_udt_with_a_long_name():
     A[1, 2] = (1, 5.6)
     assert_same(A, Matrix.ss.deserialize(A.ss.serialize(), dtype=long_udt))
     # An anonymous one needs dtype= (see test_vector.py's test_udt for the errors)
-    with pytest.raises(SyntaxError):
+    with pytest.raises(ValueError, match="pass it as dtype="):
         Matrix.ss.deserialize(A.ss.serialize())
     # A named one is found by its name
     named_long_dtype = np.dtype([("x", np.bool_), ("z" * 1000, np.float64)], align=False)
@@ -4967,6 +4967,7 @@ def test_subarray_dtypes():
     assert A.isequal(B, check_dtype=True)
     for method in ["coo", "csr", "csc", "dcsr", "dcsc", "edgelist"]:
         B = getattr(A, f"from_{method}")(*getattr(A, f"to_{method}")())
+        assert A.isequal(B, check_dtype=True)
     B = Matrix.from_dicts(A.to_dicts())
     assert A.isequal(B, check_dtype=True)
     B = Matrix.from_dicts(A.to_dicts(), A.dtype)
@@ -4989,7 +4990,7 @@ def test_subarray_dtypes():
     Full2 = Matrix.from_dense(b2)
     assert Full1.isequal(Full2, check_dtype=True)
     Full2 = Matrix.from_dense(Full1.to_dense())
-    assert Full2.isequal(Full2, check_dtype=True)
+    assert Full1.isequal(Full2, check_dtype=True)
     if suitesparse:
         Full2 = Matrix.ss.import_fullr(b2)
         assert Full1.isequal(Full2, check_dtype=True)
@@ -5191,6 +5192,33 @@ def test_ss_import_column_order_copies_once():
 
 # Without SuiteSparse, building a UDT uses dup_op=binary.any, which needs Numba.
 @pytest.mark.skipif("not suitesparse and not supports_udfs")
+def test_subarray_dtype_values_in_another_array_dtype():
+    # Asked for another array dtype of the same shape, the values convert number by
+    # number, for an iso Matrix too. (astype to the array dtype would repeat each
+    # number into an element: shape (n, 4, 4).)
+    dense = np.arange(2 * 3 * 4, dtype=np.int64).reshape(2, 3, 4)
+    A = Matrix.from_dense(dense)
+    iso = Matrix("INT64[4]", nrows=2, ncols=3)
+    iso[:, :] = [0, 1, 2, 3]
+    for M, expected in [(A, dense), (iso, np.broadcast_to([0, 1, 2, 3], (2, 3, 4)))]:
+        got = M.to_dense(dtype="FP64[4]")
+        assert got.dtype == np.float64
+        np.testing.assert_array_equal(got, expected)
+        np.testing.assert_array_equal(M.to_dense(dtype="FP32[1, 4]"), expected[:, :, None, :])
+        with pytest.raises(DomainMismatch, match="must have the same shape"):
+            M.to_dense(dtype="FP64[2]")
+        rows, cols, vals = M.to_coo(dtype="FP64[4]")  # (in storage order)
+        np.testing.assert_array_equal(vals, expected[rows, cols])
+        values = expected.reshape(6, 4)
+        for method in ["csr", "dcsr"]:
+            np.testing.assert_array_equal(getattr(M, f"to_{method}")(dtype="FP64[4]")[-1], values)
+        values = expected.swapaxes(0, 1).reshape(6, 4)
+        for method in ["csc", "dcsc"]:
+            np.testing.assert_array_equal(getattr(M, f"to_{method}")(dtype="FP64[4]")[-1], values)
+
+
+# Without SuiteSparse, building a UDT uses dup_op=binary.any, which needs Numba.
+@pytest.mark.skipif("not suitesparse and not supports_udfs")
 def test_subarray_dtype_values_shape():
     # Each of these has one entry per index but not two numbers per entry. Regression:
     # building from too few numbers read past the end of the array. (The dtype's name is
@@ -5261,6 +5289,30 @@ def test_ss_import_coo_with_empty_rows_and_columns():
     cols = np.array([[0], [0], [1]], np.uint64)
     B = Matrix.ss.import_cooc(rows=[0, 2, 1], cols=cols, values=[1, 2, 3], nrows=3, ncols=2)
     assert entries(B) == entries(Matrix.from_coo([0, 2, 1], cols.ravel(), [1, 2, 3]))
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_ss_export_coo_of_an_iso_udt():
+    # An iso Matrix exports as "coo" with one value. For a UDT the export calls
+    # GrB_Matrix_extractTuples_UDT (there is no _<name> form) and reads the value
+    # without a reduce, which a UDT can do only with Numba.
+    arr = dtypes.register_anonymous(np.dtype((np.int64, (4,))), "_IsoCooArr")
+    rec = dtypes.register_anonymous(np.dtype([("a", np.int64), ("b", np.float64)]), "_IsoCooRec")
+    A = Matrix.ss.import_fullr(values=[[1, 2, 3, 4]], nrows=2, ncols=3, dtype=arr, is_iso=True)
+    R = Matrix.ss.import_fullr(
+        values=np.array([(1, 2.5)], rec.np_type), nrows=2, ncols=3, is_iso=True
+    )
+    F = Matrix.ss.import_fullr(values=[2.5], nrows=2, ncols=3, is_iso=True)
+    for M, value in [(A, [[1, 2, 3, 4]]), (R, [(1, 2.5)]), (F, [2.5])]:
+        assert M.ss.is_iso
+        info = M.ss.export("coo")
+        assert info["is_iso"]
+        assert info["values"].tolist() == value  # one value, (1, 4) for the array UDT
+        B = Matrix.ss.import_any(**info)
+        B.ss.config["format"] = "by_row"  # (to_coo lists in storage order)
+        assert B.dtype == M.dtype
+        for got, want in zip(B.to_coo(), M.to_coo(), strict=True):
+            np.testing.assert_array_equal(got, want)
 
 
 @pytest.mark.skipif("not suitesparse")

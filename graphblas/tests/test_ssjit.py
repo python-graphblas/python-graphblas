@@ -57,18 +57,23 @@ def _jit_works_here():
         return _enable_jit_for_udt()
 
 
-@pytest.fixture(scope="module", autouse=True)
-def _setup_jit():
-    """Set up the SuiteSparse:GraphBLAS JIT.
+def _configure_jit_for_tests(cfg, fix_jit_config):
+    """Let this module's tests compile JIT kernels where that is cheap; see ``_setup_jit``.
 
-    ``fix_jit_config`` points the JIT at the conda compiler, or else at the one
-    in ``sysconfig``, and probes it. It returns True if the JIT works, False if
-    the probe failed (``jit_c_control`` is left where SuiteSparse put it), and
-    None if it found no compiler.
+    Where SuiteSparse compiles through cmake (``jit_use_cmake``, always True when it is
+    built with MSVC), it does nothing: as for UDT work (``_enable_jit_for_udt``), only an
+    ``'on'`` set before the tests, such as ``GRAPHBLAS_JIT_C_CONTROL=on``, compiles there.
+    Each kernel took about 10 s through cmake on Windows CI, and this module compiles
+    about 260.
+
+    Elsewhere ``fix_jit_config`` points the JIT at the conda compiler, or else at the one
+    in ``sysconfig``, and probes it. It returns True if the JIT works, False if the probe
+    failed (``jit_c_control`` is left where SuiteSparse put it), and None if it found no
+    compiler.
     """
-    prev = gb.ss.config["jit_c_control"]
-
-    result = gb.ss.fix_jit_config()
+    if cfg["jit_use_cmake"]:
+        return
+    result = fix_jit_config()
     # On False, do not try sysconfig: if the conda compiler cannot build GraphBLAS
     # JIT kernels, Python's sysconfig compiler will not either.
     if result is None:
@@ -78,12 +83,18 @@ def _setup_jit():
         include = sysconfig.get_path("include")
         libs = sysconfig.get_config_var("LIBS")
         if cc and cflags and include:
-            gb.ss.config["jit_c_control"] = "on"
-            gb.ss.config["jit_c_compiler_name"] = cc
-            gb.ss.config["jit_c_compiler_flags"] = f"{cflags} -I{include}"
+            cfg["jit_c_control"] = "on"
+            cfg["jit_c_compiler_name"] = cc
+            cfg["jit_c_compiler_flags"] = f"{cflags} -I{include}"
             if libs:
-                gb.ss.config["jit_c_libraries"] = libs
+                cfg["jit_c_libraries"] = libs
 
+
+@pytest.fixture(scope="module", autouse=True)
+def _setup_jit():
+    """Set up the SuiteSparse:GraphBLAS JIT (``_configure_jit_for_tests``) and restore it."""
+    prev = gb.ss.config["jit_c_control"]
+    _configure_jit_for_tests(gb.ss.config, gb.ss.fix_jit_config)
     try:
         yield
     finally:
@@ -763,6 +774,37 @@ def test_enable_jit_for_udt_re_raises_a_lowered_control(monkeypatch):
     assert fake["jit_c_control"] == "run"
 
 
+def test_setup_jit_leaves_the_control_alone_where_suitesparse_uses_cmake(monkeypatch):
+    """The setup of this module does not set ``'on'`` where SuiteSparse compiles through cmake.
+
+    ``fix_jit_config()`` sets ``'on'`` whenever it finds a compiler to repair
+    from (on Windows, conda's ``clang.exe`` or the build machine's ``cl.exe``),
+    so calling it there would compile every kernel of this module through cmake,
+    which UDT work does not do (``_enable_jit_for_udt``). Driven through a
+    stand-in config, so it runs on every host, whether SuiteSparse was built with
+    MSVC or not.
+    """
+    calls = []
+
+    def fix_jit_config():
+        calls.append(cfg["jit_use_cmake"])
+        cfg["jit_c_control"] = "on"
+        return True
+
+    def no_env():
+        calls.append(cfg["jit_use_cmake"])
+
+    monkeypatch.setattr(sysconfig, "get_config_var", lambda name: f"<{name}>")
+    for fix in [fix_jit_config, no_env]:
+        cfg = {"jit_use_cmake": True, "jit_c_control": "run"}
+        _configure_jit_for_tests(cfg, fix)
+        assert cfg == {"jit_use_cmake": True, "jit_c_control": "run"}
+        cfg["jit_use_cmake"] = False
+        _configure_jit_for_tests(cfg, fix)
+        assert cfg["jit_c_control"] == "on"
+    assert calls == [False, False]
+
+
 def test_enable_jit_for_udt_leaves_run_alone_where_suitesparse_uses_cmake(monkeypatch):
     """UDT work does not raise the default ``'run'`` where SuiteSparse compiles through cmake.
 
@@ -1175,6 +1217,35 @@ def test_jit_udt_name_and_typedef_are_checked():
         dtypes.ss.register_new("chk_scalar", "typedef int64_t chk_scalar ;")
     assert not hasattr(dtypes.ss, "chk_named")
     assert not hasattr(dtypes.ss, "chk_scalar")
+
+
+def test_jit_udt_deserializes_without_dtype(monkeypatch):
+    """A type from C source is found by its C name, which the blob keeps.
+
+    Such a type has no numpy repr in GrB_NAME, the fallback for a name that does not
+    resolve, so without the C name, deserializing without ``dtype=`` would fail.
+    """
+    _require_jit_on()
+    name = "_jit_ser_pair"
+    np_type = np.dtype([("a", np.int64), ("b", np.float64)])
+    dtype = dtypes.ss.register_new(
+        name, f"typedef struct {{ int64_t a ; double b ; }} {name} ;", np_type=np_type
+    )
+    A = gb.Matrix(dtype, 2, 3)
+    A[0, 1] = (1, 2.5)
+    v = Vector(dtype, 3)
+    v[2] = (3, 4.5)
+    for obj in [A, v]:
+        blob = obj.ss.serialize()
+        got = type(obj).ss.deserialize(blob)
+        assert got.dtype is dtype
+        assert got.to_coo()[-1].tolist() == obj.to_coo()[-1].tolist()
+        # A process that has not registered the type is told to pass it
+        with monkeypatch.context() as m:
+            m.delattr(dtypes.ss, name)
+            with pytest.raises(ValueError, match=f"type name '{name}'; pass it as dtype="):
+                type(obj).ss.deserialize(blob)
+        assert type(obj).ss.deserialize(blob, dtype=dtype).dtype is dtype
 
 
 def test_jit_unary(v):
@@ -2698,6 +2769,26 @@ def test_context_importable():
     from graphblas.core.ss.context import global_context
 
     assert gb.ss.global_context is global_context
+
+
+@pytest.mark.skipif(sys.platform == "emscripten", reason="Pyodide (WebAssembly): no subprocesses")
+@pytest.mark.parametrize("kind", ["binary", "unary"])
+def test_ss_op_module_can_be_the_first_import(kind):
+    """``graphblas.core.ss.binary`` (or ``unary``) imports as a process's first graphblas import.
+
+    Importing the operator package initializes the operators, which imports
+    ``graphblas.binary.ss``, which takes ``register_new`` from this module. With
+    the operator imports at its top, that would raise ImportError ("partially
+    initialized module").
+    """
+    script = (
+        f"import graphblas.core.ss.{kind} as mod\n"
+        "import graphblas as gb\n"
+        "print('package: ' + gb.__file__)\n"
+        f"print('same: ' + str(gb.{kind}.ss.register_new is mod.register_new))\n"
+    )
+    lines, report = _run_in_fresh_process(script)
+    assert lines["same"] == "True", report
 
 
 def test_fix_from_conda_finds_windows_compilers(tmp_path):
