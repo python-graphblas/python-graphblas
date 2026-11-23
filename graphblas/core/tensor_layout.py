@@ -1456,7 +1456,8 @@ def gather_operand(M, shape, layout, axes, values, dtype):
         coords = {}
         if need_rows:
             with _VectorArray(cont.p) as pv:
-                counts = np.diff(pv.array.astype(np.int64))
+                # intp: np.repeat refuses int64 counts on 32-bit platforms such as WebAssembly
+                counts = np.diff(pv.array.astype(np.intp))
             if cont.format == lib.GxB_HYPERSPARSE:
                 with _VectorArray(cont.h) as hv:
                     ids = hv.array.astype(np.int64)
@@ -1505,7 +1506,7 @@ def embed_block_diagonal(M, rows_per_block, nblocks):
             if new_ncols > (2**31 if i_arr.array.dtype.itemsize == 4 else 2**60):
                 return False
             with _VectorArray(cont.p) as p_arr:
-                counts = np.diff(p_arr.array.astype(np.int64))
+                counts = np.diff(p_arr.array.astype(np.intp))  # (intp for np.repeat)
             if hyper:
                 with _VectorArray(cont.h) as h_arr:
                     rows = h_arr.array.astype(np.int64)

@@ -369,7 +369,9 @@ def _lookup_graphblas(t, rows, cols):
         rv, cv = np.unique(rows), np.unique(cols)
 
         def encode(r, c):
-            return np.searchsorted(rv, r) * cv.size + np.searchsorted(cv, c)
+            # int64: searchsorted gives intp, which would wrap on 32-bit platforms
+            rank = np.searchsorted(rv, r).astype(np.int64, copy=False)
+            return rank * cv.size + np.searchsorted(cv, c)
 
         ukey, inverse = np.unique(encode(rows, cols), return_inverse=True)
         urows, ucols = rv[ukey // cv.size], cv[ukey % cv.size]

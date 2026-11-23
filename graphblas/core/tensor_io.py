@@ -120,10 +120,10 @@ def _unravel_into(idx, shape, axes, out):
 
 
 def _rows_of(indptr):
-    """The row of each entry of a CSR ``indptr``. pydata may store it as uint64, which
-    ``np.repeat`` does not take as counts.
+    """The row of each entry of a CSR ``indptr``. ``np.repeat`` takes its counts as intp
+    only, and pydata may store ``indptr`` as uint64.
     """
-    counts = np.diff(indptr).astype(np.int64, copy=False)
+    counts = np.diff(indptr).astype(np.intp, copy=False)
     return np.repeat(np.arange(counts.size, dtype=np.int64), counts)
 
 
