@@ -3401,10 +3401,13 @@ def test_broadcast_guard():
                 np.multiply,
             ),
         )
-    # both broadcasting: the cheaper side (b, 2 entries x 3) is replicated
+    # both broadcasting, no shared axis: an outer product of 3 x 2 entries
     a = Tensor.from_coo(([0, 1, 2], [0, 0, 0]), 1.0, shape=(3, 1))
     b = Tensor.from_coo(([0, 0], [1, 3]), 1.0, shape=(1, 5))
-    with gb.config.set(tensor_max_expansion=5), pytest.raises(ValueError, match="replicate 6"):
+    with (
+        gb.config.set(tensor_max_expansion=5),
+        pytest.raises(ValueError, match="outer product of 6 entries"),
+    ):
         a * b
     R = (a * b).new()
     assert R.shape == (3, 5)
@@ -3425,6 +3428,60 @@ def test_broadcast_guard_hint_for_ewise_mult():
     v = Tensor.from_coo(([0, 2],), [1.0, 2.0], shape=(5,))
     with gb.config.set(tensor_max_expansion=1), pytest.raises(ValueError, match="allow_expansion"):
         a.ewise_add(v)
+
+
+def test_broadcast_guard_counts_an_outer_product():
+    """When two broadcast operands share no axis of size above 1 and the kron's groups fit,
+    ``ewise_mult`` is one kron of their entries, so the guard counts its nnz(a) * nnz(b)
+    entries rather than the replication it no longer does: (1e6, 1) times (1, 1e6) with 1001
+    entries each would replicate 1.001e9 entries, past the default limit of 1e9, and stores
+    1.002e6. An outer product past the limit still raises. Where the kron declines (a group
+    past 2^60, or a shared axis), one side is replicated, and the guard counts that: (2^31, 1,
+    1) times (1, 2^31, 1), 5 entries each, with both axes in the rows, would replicate about
+    1e10 entries and raises before any is made.
+    """
+    rng = np.random.default_rng(616)
+    i, j = (np.sort(rng.choice(10**6, 1001, replace=False)) for _ in range(2))
+    X = Tensor.from_coo((i, np.zeros(1001, np.int64)), rng.random(1001), shape=(10**6, 1))
+    Y = Tensor.from_coo((np.zeros(1001, np.int64), j), rng.random(1001), shape=(1, 10**6))
+    assert gb.config.get("tensor_max_expansion", 10**9) == 10**9
+    R = X.ewise_mult(Y).new()
+    assert R.nvals == 1001 * 1001
+    with (
+        gb.config.set(tensor_max_expansion=1001 * 1001 - 1),
+        pytest.raises(
+            ValueError, match=r"is an outer product of 1002001 entries \(the limit is 1002000\)"
+        ),
+    ):
+        X.ewise_mult(Y)
+    # 3-d, the operands in either order, with a unit axis
+    A = Tensor.from_coo(([0, 1], [0, 0], [0, 0]), 1.0, shape=(4, 1, 1))
+    B = Tensor.from_coo(([0, 0, 0], [0, 2, 5], [0, 0, 0]), 1.0, shape=(1, 6, 1))
+    with gb.config.set(tensor_max_expansion=6):  # (replicating either side is 12)
+        assert (A * B).new().nvals == (B * A).new().nvals == 6
+    # The kron's row group would be 2^62: it declines, and the replication (5 x 2^31) counts
+    from graphblas.core.tensor_ewise import _outer_plan
+
+    n, idx = 2**31, np.arange(5) * 2**28
+    X = Tensor.from_coo((idx, [0] * 5, [0] * 5), 1.0, shape=(n, 1, 1), layout=((0,), (1, 2)))
+    Y = Tensor.from_coo(([0] * 5, idx, [0] * 5), 1.0, shape=(1, n, 1), layout=((1,), (0, 2)))
+    assert _outer_plan(X, Y, (n, n, 1)) is None
+    with pytest.raises(ValueError, match="would replicate 10737418240 entries to broadcast"):
+        X.ewise_mult(Y)  # (the guard runs when the expression is built)
+    # Y with its axis in the columns: the kron fits, and stores the 25 pairs
+    Y = Y.dup(layout=((0,), (1, 2)))
+    assert _outer_plan(X, Y, (n, n, 1)) is not None
+    assert X.ewise_mult(Y).new().nvals == 25
+    # A shared axis (of size 3): the replication counts, and its message stays
+    A = Tensor.from_coo(([0, 1], [0, 1], [0, 0]), 1.0, shape=(2, 3, 1))
+    B = Tensor.from_coo(([0, 0], [0, 1], [0, 3]), 1.0, shape=(1, 3, 4))
+    with (
+        gb.config.set(tensor_max_expansion=3),
+        pytest.raises(ValueError, match="would replicate 4 entries to broadcast"),
+    ):
+        A * B  # (B's 2 entries, twice)
+    with gb.config.set(tensor_max_expansion=4):
+        assert (A * B).new().nvals == 2
 
 
 def test_select_and_apply_take_a_0d_tensor():

@@ -93,13 +93,27 @@ def _broadcast_factor(tshape, shape):
 
 def _check_expansion(method, operands, shape, allow):
     sizes = [(_broadcast_factor(t._shape, shape), t._M._nvals) for t in operands]
+    limit = config.get("tensor_max_expansion", 10**9)
     if method == "ewise_mult":
         if any(f == 1 for f, _ in sizes):
             return  # one operand covers the result: diagonal scaling, no replication
+        a, b = (_lift_rank(t, len(shape)) for t in operands)
+        if _outer_plan(a, b, shape) is not None:
+            # _outer_mult will take one kron of the stored entries: nnz(a) * nnz(b) of them.
+            # Where it declines (a shared axis, or a group past 2^60), one side is replicated
+            n = a._M._nvals * b._M._nvals
+            if n > limit:
+                raise ValueError(
+                    f"ewise_mult of shapes {operands[0]._shape} and {operands[1]._shape} is an "
+                    f"outer product of {n} "
+                    f"entries (the limit is {limit}); raise `graphblas.config` option "
+                    "tensor_max_expansion (`with gb.config.set(tensor_max_expansion=...)`) to "
+                    "allow it."
+                )
+            return
         replicated = min(f * n for f, n in sizes)
     else:
         replicated = sum(f * n for f, n in sizes if f > 1)
-    limit = config.get("tensor_max_expansion", 10**9)
     if replicated > limit and not allow:
         if method == "ewise_mult":
             # ewise_mult takes no allow_expansion, and suggesting itself would not help
@@ -209,20 +223,18 @@ def _bcast_recipe(updater, method, a, b, op, untyped_op, extra, shape):
 C_NONEMPTY_COLS = (70.0, 250.0)
 
 
-def _outer_mult(updater, a, b, op, shape):
-    """``a.ewise_mult(b)`` where each operand varies only along axes the other has size 1 on:
-    an outer product, which pairs every stored entry of ``a`` with every one of ``b``. That is
-    one kron of the stored Matrices, ``kron(A, B)[(ra, rb), (ca, cb)] = A[ra, ca] op B[rb, cb]``,
-    in the layout of a's rows then b's, and a's columns then b's: nnz(a) * nnz(b) entries,
-    where replicating ``a`` over b's axes stores at least nnz(b) copies of each of a's (a 1e6 x
-    1 column times a 1 x 1e5 row, 1000 entries each: 1e6 entries, against 1e8 replicated).
-    False, doing nothing, when the operands share an axis or a group would pass 2^60.
+def _outer_plan(a, b, shape):
+    """``(A, B, layout)`` when ``a.ewise_mult(b)`` (both of the result's rank) is an outer
+    product taken as one kron (``_outer_mult``): the stored Matrices and the layout of
+    ``kron(A, B)`` in the result's axes. None when the operands share an axis of size above 1
+    or a group of the kron would pass 2^60; then ``_bcast_mult`` replicates one side, and the
+    guard (``_check_expansion``) counts that.
     """
     ta, out_a = _squeezed(a, shape)
     tb, out_b = _squeezed(b, shape)
     unit = {o for o, n in enumerate(shape) if n == 1}
     if set(out_a) & set(out_b) - unit:
-        return False
+        return None
     # (b's unit axes are a's too; their size 1 leaves b's raveled indices as they are)
     rows = tuple(out_a[x] for x in ta._layout.rows)
     rows += tuple(out_b[x] for x in tb._layout.rows if out_b[x] not in out_a)
@@ -231,13 +243,28 @@ def _outer_mult(updater, a, b, op, shape):
     if sorted(rows + cols) != list(range(len(shape))) or not tl._valid_split(
         shape, rows + cols, len(rows)
     ):
+        return None
+    return ta._M, tb._M, Layout(rows, cols)
+
+
+def _outer_mult(updater, a, b, op, shape):
+    """``a.ewise_mult(b)`` where each operand varies only along axes the other has size 1 on:
+    an outer product, which pairs every stored entry of ``a`` with every one of ``b``. That is
+    one kron of the stored Matrices, ``kron(A, B)[(ra, rb), (ca, cb)] = A[ra, ca] op B[rb, cb]``,
+    in the layout of a's rows then b's, and a's columns then b's: nnz(a) * nnz(b) entries,
+    where replicating ``a`` over b's axes stores at least nnz(b) copies of each of a's (a 1e6 x
+    1 column times a 1 x 1e5 row, 1000 entries each: 1e6 entries, against 1e8 replicated).
+    False, doing nothing, when ``_outer_plan`` declines.
+    """
+    plan = _outer_plan(a, b, shape)
+    if plan is None:
         return False
+    A, B, layout = plan
     if census.on:
         census.note("bcast", "both broadcast, no shared axis: outer product (kron)")
-    A, B = ta._M, tb._M
     K = tl.new_matrix(op.return_type, A._nrows * B._nrows, A._ncols * B._ncols)
     K << A.kronecker(B, op)
-    _store(updater, K, shape, Layout(rows, cols), fresh=True)
+    _store(updater, K, shape, layout, fresh=True)
     return True
 
 
