@@ -74,7 +74,8 @@ def _unique(x, *, index=False, inverse=False, counts=False):
     result = {"values": _vector(uvalues)}
     if k:
         fill_slot = uinverse[at]
-        ucounts = ucounts.copy()
+        # (int64: np.unique counts in intp, int32 on 32-bit platforms, and k may be larger)
+        ucounts = ucounts.astype(np.int64)
         ucounts[fill_slot] += k - 1
     if index:
         result["indices"] = _vector(flat[uindex].astype(np.int64))
