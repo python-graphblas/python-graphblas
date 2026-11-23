@@ -2000,6 +2000,25 @@ def test_reduce_agg_composite_of_integers_matches_numpy():
             assert result == pytest.approx(expected, rel=1e-12, abs=1e-12), (dtype, values, name)
 
 
+def test_reduce_agg_hypot_of_large_integers():
+    """``agg.hypot`` of integers squares them in FP64, its result type, as numpy does.
+
+    The test fails if they are squared in INT64, which cannot hold (2**40)**2.
+    """
+    for values, dtype in [([-(2**40), 2**40, 5], "INT64"), ([4_000_000_000] * 2, "UINT32")]:
+        values = np.array(values, dtypes.lookup_dtype(dtype).np_type)
+        expected = np.sqrt((values.astype(np.float64) ** 2).sum())
+        A = Matrix.from_dense(values.reshape(1, -1))
+        v = Vector.from_dense(values)
+        for aggregator in [agg.hypot, agg.L2norm]:
+            for result in [
+                A.reduce_rowwise(aggregator).new()[0].new().value,
+                A.reduce_scalar(aggregator).new().value,
+                v.reduce(aggregator).new().value,
+            ]:
+                assert result == pytest.approx(expected, rel=1e-12)
+
+
 @pytest.mark.parametrize("dtype", ["BOOL", "INT8", "UINT8", "INT16", "FP32", "FP64"])
 def test_reduce_agg_count_nonzero_is_int64(dtype):
     """count_nonzero and count_zero count in INT64, comparing each value in its own type.

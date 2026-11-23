@@ -315,6 +315,10 @@ class TypedAggregator:
             return agg._custom(self, updater, expr, opts, in_composite=in_composite)
 
         semiring = get_typed_op(agg._semiring, self.type, agg._initdtype)
+        if self.return_type.np_type.kind in "fc" and semiring.return_type.np_type.kind in "biu":
+            # A float result of integer values (hypot): compute in the result type, as numpy
+            # does, since the square of a large integer wraps
+            semiring = get_typed_op(agg._semiring, self.return_type, agg._initdtype)
         if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
             # Matrix -> Vector
             A = expr.args[0]
