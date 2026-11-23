@@ -824,11 +824,10 @@ def _array_literal_udt(dtype, value):
     ``np.array([1])`` does with ``INT8[3]``; a literal that must become an
     element needs that. Otherwise the shape is the array's own, when the two
     shapes broadcast together, so that an op's result has the shape numpy's
-    would: ``INT8[3]`` and a 2-by-3 array give ``[2, 3]``. A UDT that is
-    neither a record nor an array, such as a date, has the shape ``()``, so
-    with one the shape is always the array's own. A 0-d structured array or
-    ``np.void`` is typed as its record dtype. ``None``, for anything else,
-    such as a numeric array with a record, means it is converted into the UDT.
+    would: ``INT8[3]`` and a 2-by-3 array give ``[2, 3]``. A 0-d structured
+    array or ``np.void`` is typed as its record dtype. ``None``, for anything
+    else, such as a numeric array with a record, means it is converted into
+    the UDT.
     """
     np_type = dtype.np_type
     if value.dtype.names is not None:
@@ -838,6 +837,8 @@ def _array_literal_udt(dtype, value):
     if np_type.names is not None or value.dtype.kind not in "iufc" or value.size == 0:
         # An empty array's layout cannot be a UDT, so numpy says why it does not fit.
         return None
+    # A UDT that is neither a record nor an array, such as a date, has the shape (),
+    # so with one the shape is always the array's own.
     shape = np_type.shape
     if _strip_leading_ones(value.shape) == _strip_leading_ones(shape):
         shape = value.shape
