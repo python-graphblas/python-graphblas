@@ -106,9 +106,13 @@ def _from_sparse(obj, dtype, fill_value):
         coo = obj.tocoo()
         coords = tuple(np.asarray(c) for c in coo.coords)
         data, shape, fill = np.asarray(coo.data), coo.shape, None
-        if fill_value is not None:
+        if fill_value is not None and not _utils.same_value(fill_value, 0):
             # scipy.sparse's missing entries are zeros
-            raise ValueError("a scipy.sparse array has fill value 0; convert it first")
+            raise ValueError(
+                f"fill_value={fill_value!r} differs from the scipy.sparse array's fill value 0; "
+                "xp.refill(xp.asarray(a), fill_value) returns a copy with that fill and the "
+                "same values"
+            )
         if not getattr(coo, "has_canonical_format", True):
             # tocoo() returns a COO input itself, so sum the caller's duplicates in a copy
             coo = coo.copy() if coo is obj else coo
@@ -138,9 +142,9 @@ def asarray(obj, /, *, dtype=None, device=None, copy=None, fill_value=None):
     these do not store get the fill.
 
     ``fill_value`` (an extension) is the value of unstored positions, 0 of the dtype by
-    default. An Array or a pydata/sparse array keeps its own fill value, and another
-    ``fill_value`` raises ValueError (``xp.refill`` returns a copy with a new fill). A
-    scipy.sparse array has fill 0 and accepts no ``fill_value``.
+    default. An Array, a pydata/sparse array or a scipy.sparse array (whose fill is 0) keeps
+    its own fill value, and another ``fill_value`` raises ValueError (``xp.refill`` returns a
+    copy with a new fill).
     """
     check_device(device)
     if isinstance(obj, Array):

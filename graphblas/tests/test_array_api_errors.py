@@ -74,6 +74,18 @@ def test_sparse_input_errors():
     assert_array_equal(xp.asarray(A), np.array([[0.0, 3.0], [0.0, 0.0]]))  # duplicates summed
     with pytest.raises(ValueError, match="fill value 0"):
         xp.asarray(A, fill_value=1.0)
+    with pytest.raises(ValueError, match="fill value 0"):
+        xp.asarray(A, fill_value=-0.0)  # (as for an Array, the sign of a zero fill counts)
+    # The fill a scipy.sparse array has, 0, is accepted, as an Array's own fill is
+    for fill in [0, 0.0, False]:
+        x = xp.asarray(A, fill_value=fill)
+        assert x.fill_value == 0.0
+        assert not np.signbit(x.fill_value)
+        assert_array_equal(x, np.array([[0.0, 3.0], [0.0, 0.0]]))
+    x = xp.asarray(sp.csr_array(np.eye(2, dtype=np.int8)), fill_value=0, dtype=xp.int16)
+    assert x.dtype == xp.int16
+    assert x.nnz == 2
+    assert_array_equal(x, np.eye(2, dtype=np.int16))
     sparse = pytest.importorskip("sparse")
     s = sparse.GCXS.from_numpy(np.array([[1.0, 0.0], [0.0, 3.0]]))
     assert_array_equal(xp.asarray(s), np.array([[1.0, 0.0], [0.0, 3.0]]))
