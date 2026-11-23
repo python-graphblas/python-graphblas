@@ -237,7 +237,7 @@ def sliced(x, axes_key):
     if not out or not all(new_terms):
         return None  # (a 0-d result or operand: computed whole, then indexed)
     shape = tuple(
-        len(range(*k.indices(n)))
+        _utils.slice_length(k, n)
         for k, n in zip(axes_key, x.shape, strict=True)
         if isinstance(k, slice)
     )

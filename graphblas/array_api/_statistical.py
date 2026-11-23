@@ -516,7 +516,7 @@ def _cumulative_sparse(npfunc, x, axis, ct, fill, include_initial):
     coords, values = permute_dims(x, perm)._T().to_coo()
     with np.errstate(all="ignore"):
         values = values.astype(ct)
-    fiber = np.ravel_multi_index(coords[:-1], shape) if shape else np.zeros(len(values), np.int64)
+    fiber = _utils.ravel(coords[:-1], shape) if shape else np.zeros(len(values), np.int64)
     pos = coords[-1]
     first = np.r_[True, fiber[1:] != fiber[:-1]]
     last = np.r_[fiber[1:] != fiber[:-1], True]
@@ -548,7 +548,7 @@ def _cumulative_sparse(npfunc, x, axis, ct, fill, include_initial):
         out_fib.append(np.repeat(fiber[tail], lengths))
     out_pos = np.concatenate(out_pos) + (1 if include_initial else 0)
     _utils.check_dense(len(out_pos), "a cumulative sum or product (the positions after an entry)")
-    idx = list(np.unravel_index(np.concatenate(out_fib), shape)) if shape else []
+    idx = list(_utils.unravel(np.concatenate(out_fib), shape)) if shape else []
     idx.append(out_pos)
     R = Tensor.from_coo(idx, np.concatenate(out_val), gb_dtype(ct), shape=out_shape)
     return permute_dims(Array._new(R, fill), tuple(int(i) for i in np.argsort(perm)))

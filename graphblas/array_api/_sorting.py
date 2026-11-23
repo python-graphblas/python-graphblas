@@ -41,7 +41,7 @@ def sort(x, /, *, axis=-1, descending=False, stable=True):
     perm = (*others, axis)
     coords, values = permute_dims(x, perm)._T().to_coo()  # (by fiber, then position)
     fshape = tuple(x.shape[a] for a in others)
-    fiber = np.ravel_multi_index(coords[:-1], fshape) if fshape else np.zeros(len(values), np.int64)
+    fiber = _utils.ravel(coords[:-1], fshape) if fshape else np.zeros(len(values), np.int64)
     pos = coords[-1]
     fill = x._fill
     with np.errstate(invalid="ignore"):
@@ -87,7 +87,7 @@ def sort(x, /, *, axis=-1, descending=False, stable=True):
     keep = (g_o != 1) | _utils.differs(vals, fill)
     if not keep.any():
         return Array._new(Tensor(T.dtype, x.shape), fill)
-    out_coords = list(np.unravel_index(f_o[keep], fshape)) if fshape else []
+    out_coords = list(_utils.unravel(f_o[keep], fshape)) if fshape else []
     out_coords.append(new_pos[keep])
     R = Tensor.from_coo(out_coords, vals[keep], T.dtype, shape=tuple(x.shape[a] for a in perm))
     inverse = tuple(int(i) for i in np.argsort(perm))

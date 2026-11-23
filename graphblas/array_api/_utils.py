@@ -277,3 +277,44 @@ def map_values(func, tensors, dtype):
     ``Tensor._map_values``).
     """
     return tensors[0]._map_values(func, tensors[1:], gb_dtype(dtype))
+
+
+# numpy's largest array size: 2**63 - 1 on 64-bit platforms, but 2**31 - 1 on 32-bit ones such
+# as WebAssembly, where an Array may have more positions. Past 2**63 - 1, numpy raises on every
+# platform, so these helpers leave it to numpy there.
+_MAX_INTP = np.iinfo(np.intp).max
+
+
+def _numpy_holds(shape):
+    size = math.prod(shape)
+    return size <= _MAX_INTP or size > 2**63 - 1
+
+
+def ravel(coords, shape):
+    """``np.ravel_multi_index(coords, shape)`` (int64), also past numpy's largest size."""
+    if _numpy_holds(shape):
+        return np.ravel_multi_index(coords, shape)
+    flat = np.zeros(np.broadcast_shapes(*(np.shape(c) for c in coords)), np.int64)
+    for c, n in zip(coords, shape, strict=True):
+        flat *= n
+        flat += c
+    return flat
+
+
+def unravel(flat, shape):
+    """``np.unravel_index(flat, shape)`` (int64), also past numpy's largest size."""
+    if _numpy_holds(shape):
+        return np.unravel_index(flat, shape)
+    out = []
+    for n in reversed(shape):
+        flat, rest = np.divmod(flat, n)
+        out.append(rest)
+    return tuple(reversed(out))
+
+
+def slice_length(k, n):
+    """``len(range(*k.indices(n)))``, which overflows past ``sys.maxsize`` (2**31 - 1 on 32-bit
+    platforms) though an axis may be longer.
+    """
+    start, stop, step = k.indices(n)
+    return max(0, (stop - start + step - (1 if step > 0 else -1)) // step)

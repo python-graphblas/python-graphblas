@@ -56,7 +56,7 @@ def _unique(x, *, index=False, inverse=False, counts=False):
         return _unique_dense(x, index, inverse, counts)
     if T.nvals:
         coords, values = T.to_coo()
-        flat = np.ravel_multi_index(coords, x.shape)
+        flat = _utils.ravel(coords, x.shape)
     else:
         coords = tuple(np.empty(0, np.int64) for _ in range(x.ndim))
         values, flat = np.empty(0, x.dtype), np.empty(0, np.int64)

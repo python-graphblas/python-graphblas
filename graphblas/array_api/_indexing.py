@@ -272,7 +272,7 @@ def _finish(out, items, nadv):
 
 def _basic_shape(shape, axes_key):
     return tuple(
-        len(range(*k.indices(n)))
+        _utils.slice_length(k, n)
         for k, n in zip(axes_key, shape, strict=True)
         if isinstance(k, slice)
     )
@@ -335,7 +335,7 @@ def _advanced_extract(x, axes_key):
         return Array._new(T.vindex[tuple(indices)], x._fill), len(S2)
     Tp = T.permute_dims(tuple(adv_axes) + tuple(rest))
     if len(adv_axes) > 1:
-        flat = np.ravel_multi_index(tuple(indices), adv_shape)
+        flat = _utils.ravel(tuple(indices), adv_shape)
         Tp = Tp.reshape((math.prod(adv_shape), *rest_shape))
     else:
         flat = indices[0]
@@ -453,7 +453,7 @@ def _region_setitem(x, key, value):
     """Assign to the region an outer index selects (GraphBLAS assign)."""
     T = x._T()
     region = tuple(
-        len(range(*k.indices(n))) if isinstance(k, slice) else len(k)
+        _utils.slice_length(k, n) if isinstance(k, slice) else len(k)
         for k, n in zip(key, x.shape, strict=True)
         if not isinstance(k, int)
     )
@@ -497,9 +497,30 @@ def _scatter_setitem(x, items, value):
         for k in items
     )  # fmt: skip
     coords = []
-    for a, n in enumerate(x.shape):
-        grid = np.arange(n, dtype=np.int64).reshape([n if b == a else 1 for b in range(x.ndim)])
-        coords.append(np.asarray(np.broadcast_to(grid, x.shape)[key]))
+    # The grid holds only each axis's selected coordinates, and each item of the key becomes
+    # positions among them: a grid over x.shape stops at numpy's largest size, 2**31 - 1
+    # positions on 32-bit platforms such as WebAssembly
+    picked, small = [], []
+    for k in key:
+        if k is None or k is Ellipsis:
+            small.append(k)
+            continue
+        n = x.shape[len(picked)]
+        if isinstance(k, slice):
+            picked.append(np.arange(*k.indices(n), dtype=np.int64))
+            small.append(slice(None))
+        elif isinstance(k, np.ndarray):
+            sel, at = np.unique(k.reshape(-1), return_inverse=True)
+            picked.append(sel)
+            small.append(at.reshape(k.shape))
+        else:
+            picked.append(np.array([k], np.int64))
+            small.append(0)
+    small = tuple(small)
+    small_shape = tuple(p.size for p in picked)
+    for a, p in enumerate(picked):
+        grid = p.reshape([p.size if b == a else 1 for b in range(x.ndim)])
+        coords.append(np.asarray(np.broadcast_to(grid, small_shape)[small]))
     shape = coords[0].shape
     size = math.prod(shape)
     if isinstance(value, Array):
@@ -514,7 +535,7 @@ def _scatter_setitem(x, items, value):
     coords = [c.reshape(-1) for c in coords]
     values = values.reshape(-1)
     # The last of repeated positions wins, as in numpy
-    flat = np.ravel_multi_index(coords, x.shape)
+    flat = _utils.ravel(coords, x.shape)
     _, last = np.unique(flat[::-1], return_index=True)
     keep = np.sort(flat.size - 1 - last)
     coords = [c[keep] for c in coords]
