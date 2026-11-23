@@ -521,14 +521,9 @@ def _scatter_setitem(x, items, value):
             coords.append(np.asarray(np.broadcast_to(grid, x.shape)[key]))
     else:
         coords = _selected_coords(x.shape, key)
-    shape = coords[0].shape
-    size = math.prod(shape)
+    shape = coords[0].shape  # (sel_shape, as numpy lays it out)
     if isinstance(value, Array):
         _check_fits(value.shape, shape)
-    if size == 0:
-        return
-    _utils.check_dense(size, "assigning to the selected positions")
-    if isinstance(value, Array):
         values = np.broadcast_to(value.todense(), shape)
     else:
         values = np.broadcast_to(np.asarray(value, dtype=x.dtype), shape)
@@ -581,8 +576,6 @@ def _selection_shape(shape, key):
         adv = tuple(np.broadcast_shapes(*arrays))
     except ValueError:
         return None
-    if not where:
-        return tuple(out)
     dims = [n for n in out if n is not None]
     if where == list(range(where[0], where[-1] + 1)):
         first = out.index(None)
