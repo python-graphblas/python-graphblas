@@ -50,7 +50,13 @@ def random_tensor(shape, rng, *, density=0.3, dtype=dtypes.FP64, layout=None, is
         values = np.round(rng.random(shape) * 10 - 5, 1)
     if iso:
         values = np.full(shape, values.flat[0] if values.size else 1, dtype=values.dtype)
-    values = np.where(present, values, 0).astype(dtype.np_type)
+    values = np.where(present, values, 0)
+    if values.dtype.kind == "f" and dtype.np_type.kind in "iu":
+        # Truncate to int64 first: a negative float cast to an unsigned type is undefined in C;
+        # numpy wraps it on x86-64 and macOS arm64, but saturates it with a RuntimeWarning on
+        # Linux aarch64. The integer cast wraps everywhere (-4.3 is 252 as UINT8).
+        values = values.astype(np.int64)
+    values = values.astype(dtype.np_type)
     coords = np.nonzero(present)
     vals = values[present]
     if iso:
