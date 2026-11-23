@@ -66,6 +66,8 @@ def test_asarray_stores_what_differs_from_the_fill():
         ([True, False], "bool"),
         ([[1, 0], [0, 3]], "int64"),
         ([np.int32(1), np.int32(2)], "int32"),
+        (range(3), "int64"),
+        ([range(2)], "int64"),
         ([], "float64"),
         (np.float32(1.5), "float32"),
         (np.arange(4, dtype=np.uint16), "uint16"),

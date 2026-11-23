@@ -243,10 +243,10 @@ def _stack_arrays(obj):
 
 
 def _has_python_int(obj):
-    """Whether ``obj`` (a value, or lists and tuples of them) holds a Python int."""
+    """Whether ``obj`` (a value or range, or lists and tuples of them) holds a Python int."""
     if isinstance(obj, (list, tuple)):
         return any(map(_has_python_int, obj))
-    return isinstance(obj, int) and not isinstance(obj, builtins.bool)
+    return isinstance(obj, (int, range)) and not isinstance(obj, builtins.bool)
 
 
 def _unwrap_nested(obj):
