@@ -1,5 +1,6 @@
 import inspect
 import re
+import threading
 from functools import lru_cache, reduce
 from operator import mul
 from types import FunctionType
@@ -476,6 +477,9 @@ def _adjust_ret_type(type_, ret_type, return_types):
     if type_ == BOOL and ret_type == INT64 and return_types.get(INT8) == INT8:
         return INT8
     return ret_type
+
+
+_deferred_build_lock = threading.Lock()  # see BinaryOp._build_deferred
 
 
 def _finalize_typed_binaryop(parent, binary_udf, name, type_, ret_type):
@@ -1232,7 +1236,16 @@ class BinaryOp(OpBase):
         # one dtype, since UINT64 and BOOL read the results for INT64 and INT8.
         if not self._defer_builds or type_ not in self.types:
             return None
-        return _finalize_typed_binaryop(self, self._numba_func, self.name, type_, self.types[type_])
+        # Under the lock, threads that first use one dtype at once build it once. A second
+        # build would replace the first op in ``_typed_ops``, and the first is freed once
+        # nothing refers to it, though a Monoid built from it meanwhile may point at it.
+        with _deferred_build_lock:
+            op = self._typed_ops.get(type_)
+            if op is None:
+                op = _finalize_typed_binaryop(
+                    self, self._numba_func, self.name, type_, self.types[type_]
+                )
+        return op
 
     __call__ = TypedBuiltinBinaryOp.__call__
     is_commutative = TypedBuiltinBinaryOp.is_commutative

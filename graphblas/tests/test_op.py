@@ -7075,6 +7075,41 @@ def test_builtin_udf_builds_one_dtype_when_indexed():
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_builtin_udf_builds_a_dtype_once_across_threads(monkeypatch):
+    """Threads that first use one dtype of a built-in UDF at once get one typed op.
+
+    Fails if each thread builds its own (see ``BinaryOp._build_deferred``).
+    """
+    import threading
+
+    floordiv = BinaryOp._build("floordiv", operator.binary._floordiv, anonymous=True, cache=True)
+    builds = []
+    finalize = operator.binary._finalize_typed_binaryop
+
+    def counting_finalize(*args):
+        builds.append(args[3])
+        return finalize(*args)
+
+    monkeypatch.setattr(operator.binary, "_finalize_typed_binaryop", counting_finalize)
+    nthreads = 4
+    barrier = threading.Barrier(nthreads)
+    results = []
+
+    def first_use():
+        barrier.wait()
+        results.append(floordiv[INT16])
+
+    threads = [threading.Thread(target=first_use) for _ in range(nthreads)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert builds == [INT16]
+    assert len(results) == nthreads
+    assert all(typed is floordiv._typed_ops[INT16] for typed in results)
+
+
+@pytest.mark.skipif("not supports_udfs")
 def test_builtin_udf_deletes_a_dtype_it_has_not_built():
     floordiv = BinaryOp._build("floordiv", operator.binary._floordiv, anonymous=True, cache=True)
     del floordiv[INT64]
