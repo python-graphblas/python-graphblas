@@ -206,7 +206,8 @@ types the first time it is used with them, or when it is indexed with them
 reads as ``x["name"]`` or ``x.name``, and an array operand as a numpy array view of the
 element, in the UDT's shape: an ``FP64[2, 4]`` operand is indexed ``x[i, j]``.
 
-The result type depends on what the function returns:
+The result type is ``ret_dtype`` when the operator was registered with one. Otherwise it
+depends on what the function returns:
 
 - **A number**: the built-in type Numba infers for it.
 - **A record**, such as one of the operands: that record's type.
@@ -226,6 +227,17 @@ An array field of a record takes an array the same way. It also takes a tuple or
 but only when the field is one-dimensional and the tuple has exactly its length; a tuple
 does not broadcast.
 
+With ``ret_dtype``, the function must return something that can be written as that type:
+
+- **A record type**: a tuple with one value per field, flat over nested records as above,
+  or a record of that type.
+- **An array UDT**: an array that fills the element, or a number, which fills every value.
+- **A date, duration or text UDT**: a value of that type.
+- **A built-in type**: a number.
+
+A complex value cannot be written as a real type or into a real array element, but it can
+be written as BOOL.
+
 These raise ``UdfParseError`` when the operator is compiled for the types, not while it
 runs:
 
@@ -235,8 +247,14 @@ runs:
 - a field that can be ``None`` on some path (``v if cond else None``), since a record
   cannot hold ``None``;
 - an array, tuple or list for a field that holds one number;
-- an array that cannot fill the element, such as ``x[:2]`` from a 3-element UDT.
+- an array that cannot fill the element, such as ``x[:2]`` from a 3-element UDT;
+- a return that cannot be written as ``ret_dtype``, such as a complex value for a real type.
 
 Numba knows the length of a tuple but not the shape of an array the function builds, so
-for an array result the check calls the function once on sample values. A function that
-raises on those values is not checked.
+for an array result the check calls the function on sample values. A function that raises
+on those values is not checked, since it may raise only for some values.
+
+An exception the function raises while the operator runs is printed, and the operation
+goes on, since Numba cannot pass the exception to GraphBLAS. The element it raised for is
+0 (``False`` for a select, which then drops the entry) when the result type is built-in.
+An element of a UDT result is kept but not written, so its value is undefined.

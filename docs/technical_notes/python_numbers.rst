@@ -140,3 +140,25 @@ or ``np.int64(1)`` above, still converts, with a ``DeprecationWarning``; it will
 ``ValueError`` in version 2027.7.0 or later. Any other value that does not fit raises
 ``ValueError``. A ``float`` too large for a float32 field raises ``OverflowError`` instead
 of becoming infinity.
+
+A user-defined operator may not work with the literal as an element: it does not compile
+for the element, or it raises on the sample values it is checked with
+(:ref:`tn_udt_udf_returns`). A Python or numpy number is then typed as itself, as a
+``Scalar`` of it would be. Below, ``x[:2] * t`` cannot multiply by a 6-element ``t``, so the
+thunk ``3.0`` is typed FP64:
+
+.. code-block:: python
+
+    import numpy as np
+
+    from graphblas import Vector, dtypes, indexunary
+
+    Six = dtypes.register_anonymous(np.dtype((np.float64, (6,))), "Six")
+    Two = dtypes.register_anonymous(np.dtype((np.float64, (2,))), "Two")
+
+    scaled_head = indexunary.register_anonymous(
+        lambda x, row, col, t: x[:2] * t, "scaled_head", is_udt=True, ret_dtype=Two
+    )
+    v = Vector(Six, 3)
+    v[0] = np.arange(6.0)
+    v.apply(scaled_head, 3.0).op  # indexunary.scaled_head[Six, FP64]

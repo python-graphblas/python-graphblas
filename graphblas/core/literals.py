@@ -24,6 +24,7 @@ import numpy as np
 
 from .. import _STANDARD_OPERATOR_NAMES
 from ..dtypes import FP64, lookup_dtype
+from ..exceptions import UdfParseError
 from . import utils
 from .dtypes import _nats_in_leaf_units, _view_if_same_layout
 from .operator import IndexUnaryOp, ParameterizedUdf, SelectOp, TypedOpBase, binary_from_string
@@ -111,8 +112,51 @@ def _literal_operand(dtype, value, op, *, left=False):
             literal_type = _literal_type(dtype, value, exact=exact)
             if literal_type is not None:
                 return value, literal_type
+    if (own := _own_scalar_type_for_user_op(dtype, value, op, left)) is not None:
+        return value, own
     _check_literal_fits(dtype, value)
     return value, dtype
+
+
+def _own_scalar_type_for_user_op(dtype, value, op, left):
+    """Return a number's own type, for a user's op that cannot take it as an element, or None.
+
+    With a user's untyped ``is_udt`` op (a BinaryOp, IndexUnaryOp or
+    SelectOp), a literal becomes an element of the UDT. A Python or numpy
+    number is typed as itself instead, as a ``Scalar`` of it would be, when
+    the op cannot be typed with the element but can be with the number's
+    type. The op cannot be typed with the element when typing raises
+    ``UdfParseError``, or when the UDF raised on every set of stand-in
+    operands (:data:`udf._RAISES_ON_SAMPLES`): ``x[:2] * t`` with a
+    6-element ``t``. Otherwise the number stays an element, and the op
+    reports why it cannot take it.
+    """
+    if (
+        not getattr(op, "_is_udt", False)
+        or isinstance(op, (TypedOpBase, Monoid))
+        or not (
+            type(value) in {bool, int, float, complex} or isinstance(value, (np.number, np.bool_))
+        )
+        # lookup_dtype types any int as INT64, which this one overflows
+        or (type(value) is int and not -(2**63) <= value < 2**63)
+        or (own := lookup_dtype(type(value), value))._is_udt
+    ):
+        return None
+
+    from .operator.udf import _RAISES_ON_SAMPLES
+
+    def typed_for(dtype2):
+        try:
+            return op[(dtype2, dtype) if left else (dtype, dtype2)]
+        except UdfParseError:
+            return None
+
+    # With the number's own type, whether the UDF raised on the stand-ins says
+    # nothing: the stand-in is a fixed sample value, not the number.
+    element = typed_for(dtype)
+    if (element is not None and element not in _RAISES_ON_SAMPLES) or typed_for(own) is None:
+        return None
+    return own
 
 
 # Built-in ops that compare their operands, and so keep no result type.

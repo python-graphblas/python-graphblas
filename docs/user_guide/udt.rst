@@ -282,6 +282,35 @@ index the operator with it (``unary.unit[Point]``). If it does not compile, or r
 something that cannot fill the result's element, that raises ``UdfParseError``. The full
 rules are in :ref:`tn_udt_udf_returns`.
 
+Naming the output type
+~~~~~~~~~~~~~~~~~~~~~~
+
+The result type is worked out from what the function returns, matched against the operand
+types, so it can only be an operand's type or a built-in type. A function that returns a
+smaller array, such as ``x[:3]`` on a 9-element UDT, fills no operand's element and raises
+``UdfParseError``. Pass ``ret_dtype`` to name the result type. It takes anything
+``dtypes.lookup_dtype`` accepts and requires ``is_udt=True``:
+
+.. code-block:: python
+
+    import numpy as np
+
+    from graphblas import dtypes, unary
+
+    Nine = dtypes.register_anonymous(np.dtype((np.float64, (9,))), "Nine")
+    Three = dtypes.register_anonymous(np.dtype((np.float64, (3,))), "Three")
+
+    head = unary.register_anonymous(lambda x: x[:3], "head", is_udt=True, ret_dtype=Three)
+    head[Nine].return_type  # Three
+
+``register_anonymous`` and ``register_new`` of ``unary``, ``binary``, ``indexunary`` and
+``indexbinary`` take ``ret_dtype``; ``select`` operators always return BOOL and do not.
+It is the result type for every operand type, so an operator whose result type should
+depend on its operands needs one registration for each result type. The function must
+return something that can be written as ``ret_dtype`` (:ref:`tn_udt_udf_returns`), or
+compiling the operator for a type, with ``op[dtype]`` or on first use, raises
+``UdfParseError``.
+
 Example: shortest paths with parents
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

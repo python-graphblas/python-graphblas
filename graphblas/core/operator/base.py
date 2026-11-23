@@ -89,6 +89,32 @@ def _hasop(module, name):
     return name in module.__dict__ or name in module._delayed
 
 
+def _validate_ret_dtype(ret_dtype, opclass, *, is_udt, parameterized):
+    """Return a user's ``ret_dtype`` as a DataType (None stays None), or raise ValueError."""
+    if ret_dtype is None:
+        return None
+    if not is_udt:
+        raise ValueError(
+            f"{opclass}: ret_dtype requires is_udt=True. The return type for built-in "
+            f"dtypes comes from compiling the function for each input type, so a single "
+            f"fixed type cannot describe it."
+        )
+    if parameterized:
+        raise ValueError(
+            f"{opclass}: ret_dtype does not work with parameterized=True. "
+            f"A parameterized operator registers the function it builds when called, "
+            f"without a ret_dtype. To declare one, register the built function without "
+            f"parameterized=True."
+        )
+    try:
+        return lookup_dtype(ret_dtype)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(
+            f"{opclass}: ret_dtype={ret_dtype!r} is not a recognized dtype. "
+            f"Pass a DataType, a numpy dtype, or a name such as 'FP64'."
+        ) from exc
+
+
 class OpPath:
     def __init__(self, parent, name):
         self._parent = parent
@@ -540,16 +566,22 @@ class OpBase:
         return cls.register_new(name, *args)
 
     @classmethod
-    def _deserialize_udf(cls, name, orig_func, is_udt):
-        """Register a UDF when unpickled, or return the one already registered as ``name``."""
+    def _deserialize_udf(cls, name, orig_func, is_udt, ret_dtype=None):
+        """Register a UDF when unpickled, or return the one already registered as ``name``.
+
+        ``ret_dtype`` is passed on only when set, since SelectOp shares this path and its
+        registration takes no ``ret_dtype``.
+        """
         if (rv := cls._find(name)) is not None:
             return rv
-        return cls.register_new(name, orig_func, is_udt=is_udt)
+        kwargs = {} if ret_dtype is None else {"ret_dtype": ret_dtype}
+        return cls.register_new(name, orig_func, is_udt=is_udt, **kwargs)
 
     @classmethod
-    def _deserialize_anon_udf(cls, func, name, is_udt):
+    def _deserialize_anon_udf(cls, func, name, is_udt, ret_dtype=None):
         """Register an anonymous UDF when unpickled."""
-        return cls.register_anonymous(func, name, is_udt=is_udt)
+        kwargs = {} if ret_dtype is None else {"ret_dtype": ret_dtype}
+        return cls.register_anonymous(func, name, is_udt=is_udt, **kwargs)
 
     def __reduce__(self):
         """Pickle a standard op by name, and an op made from a UDF by its function.
@@ -557,13 +589,19 @@ class OpBase:
         For the op classes that have ``orig_func`` and ``_is_udt``. Monoid and Semiring
         define their own.
         """
+        # Add ``ret_dtype`` only when set, so versions without ``ret_dtype`` can read the
+        # pickle of an op that has none.
+        ret = () if (ret_dtype := getattr(self, "_ret_dtype", None)) is None else (ret_dtype,)
         if self._anonymous:
             if hasattr(self.orig_func, "_parameterized_info"):
                 return (_deserialize_parameterized, self.orig_func._parameterized_info)
-            return (type(self)._deserialize_anon_udf, (self.orig_func, self.name, self._is_udt))
+            return (
+                type(self)._deserialize_anon_udf,
+                (self.orig_func, self.name, self._is_udt, *ret),
+            )
         if (name := f"{self._modname}.{self.name}") in _STANDARD_OPERATOR_NAMES:
             return name
-        return (type(self)._deserialize_udf, (self.name, self.orig_func, self._is_udt))
+        return (type(self)._deserialize_udf, (self.name, self.orig_func, self._is_udt, *ret))
 
     @classmethod
     def _check_supports_udf(cls, method_name):
