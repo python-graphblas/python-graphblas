@@ -422,6 +422,40 @@ def test_from_scipy_sparse_compressed_duplicates(format):
     np.testing.assert_array_equal(B.to_dense(fill_value=0), b.toarray())
 
 
+def _stored_by_col(A):
+    ptr = gb.core.ffi.new("int32_t*")
+    lib = gb.core.lib
+    assert lib.GrB_Matrix_get_INT32(A.gb_obj[0], ptr, lib.GrB_STORAGE_ORIENTATION_HINT) == 0
+    return ptr[0] == lib.GrB_COLMAJOR
+
+
+@pytest.mark.skipif("not ss")
+@pytest.mark.parametrize("global_format", [None, "by_col"])
+def test_from_scipy_sparse_empty_compressed_orientation(global_format):
+    """A csr array gives a Matrix stored by row, and a csc array by column, empty or not.
+
+    That holds for arrays in scipy's canonical format, as these are; others are built from
+    coo. The test fails if an empty array gives ``Matrix(dtype, nrows, ncols)``, which is
+    stored in the global format: by row by default, so wrong for csc, and by column under a
+    by-column global format, so wrong for csr.
+    """
+    if global_format is not None:
+        if gb.backend != "suitesparse":
+            pytest.skip("the global format is in gb.ss")
+        prev = gb.ss.config["format"]
+        gb.ss.config["format"] = global_format
+    try:
+        for cls, by_col in [(ss.csr_array, False), (ss.csc_array, True)]:
+            for a in [cls((3, 4)), cls((0, 0)), cls(np.eye(3, 4))]:
+                A = gb.io.from_scipy_sparse(a)
+                assert A.shape == a.shape
+                assert A.nvals == a.nnz
+                assert _stored_by_col(A) is by_col
+    finally:
+        if global_format is not None:
+            gb.ss.config["format"] = prev
+
+
 @pytest.mark.skipif("not ss")
 @pytest.mark.parametrize("engine", ["auto", "scipy", "fast_matrix_market"])
 def test_matrix_market_sparse_duplicates(engine):

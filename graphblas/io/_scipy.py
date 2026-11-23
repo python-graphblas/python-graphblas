@@ -27,8 +27,6 @@ def from_scipy_sparse(A, *, dup_op=None, name=None):
     """
     nrows, ncols = A.shape
     dtype = lookup_dtype(A.dtype)
-    if A.nnz == 0:
-        return Matrix(dtype, nrows=nrows, ncols=ncols, name=name)
     if A.format in {"csr", "csc"} and not A.has_canonical_format:
         # An index may repeat within a row (column), and an import takes the indices
         # unchecked: a repeat would make an invalid Matrix. Build from coo instead, where
@@ -36,7 +34,7 @@ def from_scipy_sparse(A, *, dup_op=None, name=None):
         A = A.tocoo()
     if backend == "suitesparse" and A.format in {"csr", "csc"}:
         data = A.data
-        is_iso = (data[[0]] == data).all()
+        is_iso = data.size > 0 and (data[[0]] == data).all()
         if is_iso:
             data = data[[0]]
         if A.format == "csr":
