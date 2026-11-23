@@ -29,6 +29,122 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
 
     if dtype is not None:
         dtype = lookup_dtype(dtype).np_type
+
+    # The checks of the graph and nodelist below are nx.to_scipy_sparse_array's, so
+    # the errors and the node order are the same. Building the coo arrays here, not
+    # through scipy, skips scipy's coo -> csr conversion and the scipy.sparse import
+    # (about 100 ms on its own).
+    from .. import backend
+    from ..binary import plus
+    from ..core.matrix import Matrix
+    from ..core.udt import _builtin_dtype
+
+    if len(G) == 0:
+        raise nx.NetworkXError("Graph has no nodes or edges")
+
+    if nodelist is None:
+        nodelist = list(G)
+        nlen = len(G)
+    else:
+        nlen = len(nodelist)
+        if nlen == 0:
+            raise nx.NetworkXError("nodelist has no nodes")
+        nodeset = set(G.nbunch_iter(nodelist))
+        if nlen != len(nodeset):
+            for n in nodelist:
+                if n not in G:
+                    raise nx.NetworkXError(f"Node {n} in nodelist is not in G")
+            raise nx.NetworkXError("nodelist contains duplicates.")
+        if nlen < len(G):
+            G = G.subgraph(nodelist)
+
+    index = dict(zip(nodelist, range(nlen), strict=True))
+    coefficients = zip(
+        *((index[u], index[v], wt) for u, v, wt in G.edges(data=weight, default=1)),
+        strict=True,
+    )
+    try:
+        row, col, data = coefficients
+    except ValueError:
+        # there is no edge in the (sub)graph
+        row, col, data = (), (), ()
+
+    values = np.array(data, dtype=dtype)
+    if values.ndim != 1 or values.dtype.kind not in "biufc":
+        # Defer to scipy so the error matches the previous behavior exactly.
+        # Two kinds of weight land here: non-numeric attributes (object arrays,
+        # but also e.g. all-string weights, which infer a <U dtype rather than
+        # object), and sequence-valued attributes of uniform length, which infer
+        # a 2-D numeric array that from_coo would otherwise accept as a UDT.
+        try:
+            return _from_networkx_via_scipy(G, nodelist, dtype, weight, name)
+        except (nx.NetworkXError, TypeError) as err:
+            # Since scipy 1.15 an unsupported dtype is rejected while the coo array
+            # is built, and that ValueError reaches us unchanged. Older scipy builds
+            # the array and fails in the coo -> csr conversion instead: scipy raises
+            # TypeError ("no supported conversion for types"), which networkx 3.4+
+            # wraps in a NetworkXError that blames the sparse format while
+            # networkx <= 3.3 lets the TypeError propagate.
+            # Restate it so every supported stack reports the same error for the
+            # same graph. The graph and nodelist checks above are the ones
+            # nx.to_scipy_sparse_array makes, so a NetworkXError or TypeError from
+            # the fallback can only be that dtype complaint.
+            raise ValueError(
+                f"scipy.sparse does not support dtype {values.dtype}; "
+                "edge weights must be numeric scalars"
+            ) from err
+    if values.size == 0:
+        # With no edges there is no weight to infer a dtype from, and the values are
+        # float64 when dtype is not given, as nx.to_scipy_sparse_array gives them.
+        return Matrix(lookup_dtype(values.dtype), nrows=nlen, ncols=nlen, name=name)
+    if _builtin_dtype(values.dtype) is None:
+        # A numpy type that GraphBLAS has no type for, such as float16, would make the
+        # Matrix a UDT. lookup_dtype would register one, so check without it.
+        raise ValueError(
+            f"edge weights must have a GraphBLAS type; attribute {weight!r} gives dtype "
+            f"{values.dtype}"
+        )
+
+    rows = np.array(row, dtype=np.uint64)
+    cols = np.array(col, dtype=np.uint64)
+    if not G.is_directed():
+        # Mirror each edge into the other triangle. A self-loop is its own
+        # mirror, so it is stored once with its own weight. (nx.to_scipy_sparse_array
+        # mirrors every entry and sums ``wt + wt - wt`` on the diagonal instead,
+        # which turns an infinite self-loop into nan, overflows a large finite one,
+        # and cannot be written in an unsigned dtype.)
+        offdiag = rows != cols
+        rows, cols = np.concatenate([rows, cols[offdiag]]), np.concatenate([cols, rows[offdiag]])
+        values = np.concatenate([values, values[offdiag]])
+    if G.is_multigraph():
+        # Parallel edges share a coordinate; summing them with ``plus`` matches
+        # scipy's coo -> csr accumulation.
+        A = Matrix.from_coo(rows, cols, values, nrows=nlen, ncols=nlen, dup_op=plus, name=name)
+        if backend == "suitesparse":
+            # The sums can all be the same, as when no edge is parallel to another. Then
+            # store that value once (iso), as ``from_scipy_sparse`` does.
+            sums = A.to_coo(rows=False, columns=False, sort=False)[2]
+            if (sums[[0]] == sums).all():
+                A(A.S) << sums[0]
+        return A
+    if backend == "suitesparse" and (values[[0]] == values).all():
+        # Every edge has the same weight, as in an unweighted graph, so store the value
+        # once (iso), as ``from_scipy_sparse`` does. SuiteSparse 10.5.0 and later do not
+        # find that out after a build.
+        A = Matrix(lookup_dtype(values.dtype), nrows=nlen, ncols=nlen, name=name)
+        A.ss.build_scalar(rows, cols, values[0])
+        return A
+    # A simple graph has no repeated coordinate, so it needs no accumulator
+    return Matrix.from_coo(rows, cols, values, nrows=nlen, ncols=nlen, name=name)
+
+
+def _from_networkx_via_scipy(G, nodelist, dtype, weight, name):
+    """Fallback path: convert through a scipy sparse array.
+
+    ``dtype`` is already normalized to a numpy type (or None) by the caller.
+    """
+    import networkx as nx
+
     A = nx.to_scipy_sparse_array(G, nodelist=nodelist, dtype=dtype, weight=weight)
     return from_scipy_sparse(A, name=name)
 
