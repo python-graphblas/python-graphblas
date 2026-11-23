@@ -1,4 +1,5 @@
 import pathlib
+import sys
 import tomllib
 
 import pytest
@@ -9,6 +10,11 @@ try:
     import setuptools
 except ImportError:  # pragma: no cover (import)
     setuptools = None
+
+# Pyodide (WebAssembly) cannot start a process
+needs_subprocess = pytest.mark.skipif(
+    sys.platform == "emscripten", reason="Pyodide (WebAssembly): no subprocesses"
+)
 
 
 def test_import_special_attrs():
@@ -50,6 +56,7 @@ for call in (lambda: gb.Tensor(gb.dtypes.FP64, (2, 3)), lambda: gb.einsum("ij->j
 """
 
 
+@needs_subprocess
 @pytest.mark.parametrize("backend", ["suitesparse", "vanilla"])
 def test_tensor_exports(backend):
     """``gb.Tensor`` and ``gb.einsum`` (experimental) load lazily, like Matrix: ``import
@@ -153,6 +160,7 @@ else:
 """
 
 
+@needs_subprocess
 @pytest.mark.skipif(gb.backend != "suitesparse", reason="SuiteSparse only")
 def test_tensor_old_suitesparse():
     """With a SuiteSparse that has no Container API (before 10), every public way to make a

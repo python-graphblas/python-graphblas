@@ -25,6 +25,11 @@ if backend != "suitesparse":
 if not tensor_has_container():
     pytest.skip("Tensor needs SuiteSparse:GraphBLAS 10 or later", allow_module_level=True)
 
+# Pyodide (WebAssembly) cannot start a process
+needs_subprocess = pytest.mark.skipif(
+    sys.platform == "emscripten", reason="Pyodide (WebAssembly): no subprocesses"
+)
+
 
 def all_layouts(ndim):
     return [
@@ -4780,6 +4785,7 @@ if _has_numba:
 """
 
 
+@needs_subprocess
 @pytest.mark.parametrize(("control", "numba"), [("run", "numba"), ("on", "nonumba")])
 def test_ttm_udt_jit_failure(control, numba, tmp_path):
     """A compile that fails with the JIT on (a compiler gone missing after the probe, an
@@ -5076,6 +5082,7 @@ print("warnings:", sum("array-UDT engine" in str(w.message) for w in caught))
 """
 
 
+@needs_subprocess
 @pytest.mark.parametrize("case", ["ttm", "mttkrp"])
 def test_udt_engine_new_kernel_jit_failure(case, tmp_path):
     """The engine's ops for an R compile, then the compiler breaks, and a case needs a new
@@ -5313,6 +5320,7 @@ def _kernel_cache_lines(proc):
     return lines
 
 
+@needs_subprocess
 def test_kernel_disk_cache(tmp_path):
     """Generated kernels go to files in the cache directory, so a second process loads the
     compiled code from Numba's cache; two processes may fill one cache at once; a read-only or
@@ -5559,6 +5567,7 @@ def test_mttkrp_products_udt_first(shape, monkeypatch):
     assert calls == []
 
 
+@needs_subprocess
 def test_mttkrp_without_numba():
     """With Numba blocked, the Tensor imports and MTTKRP runs the GraphBLAS products."""
     script = """
@@ -6074,6 +6083,7 @@ def test_nonempty_row_ids_and_perm_pricing():
     )
 
 
+@needs_subprocess
 def test_pending_work_before_container_surgery():
     """Container code tests the stored format only once the Matrix is finished. In
     non-blocking mode, pending tuples make a hypersparse Matrix sparse when it is finished,
