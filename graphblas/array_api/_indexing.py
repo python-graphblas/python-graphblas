@@ -411,16 +411,20 @@ def _check_fits(vshape, shape):
 
 
 def _empty_selection_shape(x, items):
-    """The shape of numpy's selection for a key of basic items with a False index (empty),
-    from a broadcast view, so nothing of ``x``'s size is allocated.
+    """The shape of numpy's selection for a key of slices, new axes and one False index.
+
+    It is computed from the items, since numpy refuses an array (even a broadcast view) of
+    2**63 positions or more, which an Array may have.
     """
-    key = tuple(
-        Ellipsis if isinstance(k, _Gap)
-        else (bool(k.length) if k.boolean else None) if isinstance(k, _NewAxis)
-        else k
-        for k in items
-    )  # fmt: skip
-    return np.broadcast_to(np.empty((), bool), x.shape)[key].shape
+    shape = []
+    dims = iter(x.shape)
+    for k in items:
+        if isinstance(k, _NewAxis):
+            shape.append(k.length)  # (None or True: 1, False: 0)
+        elif isinstance(k, slice):
+            shape.append(len(range(*k.indices(next(dims)))))
+        # (a _Gap covers no axis)
+    return tuple(shape)
 
 
 def _setitem_value(x, value):

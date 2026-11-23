@@ -346,6 +346,14 @@ def test_assigning_to_an_empty_selection_checks_the_value():
             else:
                 x[key] = xp.asarray(value)
                 assert_array_equal(x, a)
+    # The empty selection's shape does not need numpy to make an array of x's shape, which
+    # numpy refuses for 2**63 positions or more
+    x = xp.full((2**31, 2**32), 0.0)
+    x[False] = xp.ones((1, 2**32))
+    x[:, None, False] = xp.ones((2**31, 1, 0, 2**32))
+    assert x.nnz == 0
+    with pytest.raises(ValueError, match="cannot assign"):
+        x[False] = xp.ones(3)
 
 
 def test_setitem_with_new_axes():
