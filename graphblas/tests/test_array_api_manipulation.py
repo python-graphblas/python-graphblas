@@ -172,7 +172,7 @@ def test_refill():
     assert_array_equal(xp.matmul(G, G, semiring="min_plus"), np.min(g[:, :, None] + g[None], 1))
     # an array that stores every position (relabeled, then pruned), other dtypes, and a 0-d
     # array, which keeps its value
-    full = xp.asarray(np.array([1, 2, 2, 3]))
+    full = xp.asarray(np.array([1, 2, 2, 3], np.int64))
     out = xp.refill(full, 2)
     assert_array_equal(out, np.array([1, 2, 2, 3]))
     assert (out.nnz, out.fill_value) == (2, 2)

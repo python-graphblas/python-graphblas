@@ -54,7 +54,7 @@ def test_where_stores_the_condition_and_the_selected_operand():
     rng = np.random.default_rng(7)
     n = 60
     c = rng.random((n, n)) < 0.05
-    labels = np.arange(n)
+    labels = np.arange(n, dtype=np.int64)  # as xp.arange; big would wrap in int32 on 32-bit
     big = np.iinfo(np.int64).max
     G = make(c, False, rng)  # (with explicit False entries)
     W = xp.where(G, xp.arange(n), big)

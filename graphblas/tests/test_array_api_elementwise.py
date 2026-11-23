@@ -130,6 +130,10 @@ def assert_array_equal(x, expected, *, zero_signs=True):
     """
     expected = np.asarray(expected)
     check_invariants(x)
+    if x.dtype == np.int64 and expected.dtype == np.dtype(int) != np.int64:
+        # numpy gives Python ints its default integer, int32 on 32-bit platforms such as
+        # WebAssembly, where ours is int64 (64-bit runs still compare these dtypes)
+        expected = expected.astype(np.int64)
     assert x.dtype == expected.dtype, (x.dtype, expected.dtype)
     assert x.shape == expected.shape, (x.shape, expected.shape)
     dense = x.todense()
