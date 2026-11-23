@@ -95,6 +95,9 @@ def _nan_extreme(name, func, identity, a, axis, out, keepdims):
 def nanmax(a, axis=None, out=None, keepdims=False):
     """The maximum over ``axis``, skipping NaN (numpy's ``nanmax``); NaN where a slice has
     nothing else. An extension.
+
+    A complex array raises TypeError, as ``max`` does, where numpy orders complex values
+    lexicographically.
     """
     return _nan_extreme("nanmax", _max, -np.inf, a, axis, out, keepdims)
 
@@ -102,6 +105,9 @@ def nanmax(a, axis=None, out=None, keepdims=False):
 def nanmin(a, axis=None, out=None, keepdims=False):
     """The minimum over ``axis``, skipping NaN (numpy's ``nanmin``); NaN where a slice has
     nothing else. An extension.
+
+    A complex array raises TypeError, as ``min`` does, where numpy orders complex values
+    lexicographically.
     """
     return _nan_extreme("nanmin", _min, np.inf, a, axis, out, keepdims)
 
@@ -137,6 +143,11 @@ def nanvar(a, axis=None, dtype=None, out=None, ddof=0, keepdims=False, *, correc
     it. The stored values' deviations are summed by GraphBLAS; the fill's, when it is not
     NaN, is computed once per slice and multiplied by the slice's count of unstored
     positions.
+
+    Two differences from numpy. The deviations are computed in ``dtype``: with
+    ``dtype=float64`` on float32 data numpy rounds them to float32, so this result is the
+    more exact one. And the result is real: float64 for ``dtype=complex128`` on real data,
+    where numpy returns complex128.
     """
     _start(a, "nanvar", out)
     if correction is not None:
@@ -230,6 +241,10 @@ def _nanvar_over(x, axes, ddof):
 def nanstd(a, axis=None, dtype=None, out=None, ddof=0, keepdims=False, *, correction=None):
     """The standard deviation over ``axis`` of the values other than NaN (numpy's
     ``nanstd``): the square root of ``nanvar``. An extension.
+
+    It differs from numpy as ``nanvar`` does: the deviations are computed in ``dtype`` (numpy
+    rounds them to float32 for ``dtype=float64`` on float32 data), and the result is real
+    (float64 for ``dtype=complex128`` on real data, where numpy returns complex128).
     """
     from ._elementwise import sqrt
 
