@@ -647,16 +647,23 @@ def _binary_arrays(spec, a, b, op, ct, rdt, fill):
     return _result(_utils.map_values(spec.ufunc, [A, B], rdt), fill)
 
 
+_NAN_ABSORBS = {"add", "subtract", "multiply", "divide", "maximum", "minimum"}
+
+
 def _absorbing_values(name, ct):
     """The values ``e`` with ``op(e, y) == op(y, e) == e`` for the binary ``name`` working in
-    ``ct``, for every y but those ``_absorbing`` excludes (NaN, the opposite infinity).
+    ``ct``, for every y but those ``_absorbing`` excludes (for an infinite ``e``: NaN, and the
+    opposite infinity).
     """
     if name in {"add", "maximum", "logical_or"} and ct.kind == "b":
         return (True,)
     if name == "minimum" and ct.kind == "b":
         return (False,)
     if ct.kind == "f":
-        return {"add": (np.inf, -np.inf), "maximum": (np.inf,), "minimum": (-np.inf,)}.get(name, ())
+        infinite = {"add": (np.inf, -np.inf), "maximum": (np.inf,), "minimum": (-np.inf,)}
+        # numpy propagates NaN through these for every y, inf and NaN included
+        nan = (np.nan,) if name in _NAN_ABSORBS else ()
+        return infinite.get(name, ()) + nan
     if ct.kind in "iu":
         info = np.iinfo(ct)
         return {"maximum": (info.max,), "minimum": (info.min,)}.get(name, ())
@@ -667,11 +674,12 @@ def _absorbing(spec, a, b, fa, fb, ct):
     """The fill ``e`` of both operands when ``e`` absorbs the op, else None.
 
     ``e`` absorbs the op when ``op(e, y)`` and ``op(y, e)`` are ``e`` (``_absorbing_values``):
-    inf for add and maximum, -inf for add and minimum, True for logical_or, or an integer
-    extreme. The result is then the intersection of the entries, with fill ``e``. An operand
-    that stores every position never shows its fill, so it counts as having fill ``e``, but
-    not both operands may. For floats, no operand may store NaN (numpy propagates it) nor,
-    for add, the opposite infinity (inf + -inf is NaN), checked by the cached facts.
+    inf for add and maximum, -inf for add and minimum, NaN for add, subtract, multiply,
+    divide, maximum and minimum, True for logical_or, or an integer extreme. The result is
+    then the intersection of the entries, with fill ``e``. An operand that stores every
+    position never shows its fill, so it counts as having fill ``e``, but not both operands
+    may. For an infinite ``e``, no operand may store NaN (numpy propagates it) nor, for add,
+    the opposite infinity (inf + -inf is NaN), checked by the cached facts.
     """
     full_a, full_b = _stores_all(a), _stores_all(b)
     if full_a and full_b:
@@ -680,7 +688,7 @@ def _absorbing(spec, a, b, fa, fb, ct):
         e = _utils.scalar(e, ct)
         if not (full_a or _utils.same_value(fa, e)) or not (full_b or _utils.same_value(fb, e)):
             continue
-        if ct.kind == "f":
+        if ct.kind == "f" and not np.isnan(e):
             opposite = "neginf" if e > 0 else "posinf"
             for x in (a, b):
                 if _utils.fact(x, "nan") or (spec.name == "add" and _utils.fact(x, opposite)):

@@ -800,6 +800,63 @@ def test_absorbing_fills_intersect():
         assert_array_equal(xp.subtract(make(d, np.inf), make(d, np.inf)), d - d)
 
 
+def test_nan_fills_absorb_arithmetic():
+    # NaN + y, NaN - y, NaN * y and NaN / y are NaN for every y, inf and NaN included, so two
+    # NaN-filled operands give the intersection of their entries with fill NaN, and a
+    # broadcast operand is not replicated. (NaN-filled data such as MESSAGEix parameters
+    # raised DensifyError here: the union of a column and a row is their outer product.)
+    rng = np.random.default_rng(37)
+    n = 40
+    g = np.where(rng.random((n, n)) < 0.1, rng.normal(size=(n, n)), np.nan)
+    d = np.where(rng.random(n) < 0.5, rng.normal(size=n), np.nan)
+    g[0, :3] = [np.inf, -np.inf, 0.0]
+    d[:3] = [np.inf, -np.inf, 0.0]
+    G, D = make(g, np.nan, rng), make(d, np.nan, rng)
+    full = rng.normal(size=n)  # (stores every position, so it counts as NaN-filled)
+    F = xp.expand_dims(make(full, 0.0), 1)
+    assert F.nnz == n
+    for func, nf in [(xp.add, np.add), (xp.subtract, np.subtract),
+                     (xp.multiply, np.multiply), (xp.divide, np.divide)]:  # fmt: skip
+        for x, y, ex, ey in [
+            (xp.expand_dims(D, 1), G, d[:, None], g),
+            (G, xp.expand_dims(D, 0), g, d[None, :]),
+            (F, G, full[:, None], g),
+            (G, F, g, full[:, None]),
+        ]:
+            R = func(x, y)
+            with np.errstate(all="ignore"):
+                assert_array_equal(R, nf(ex, ey))
+            assert R.nnz <= G.nnz
+            assert np.isnan(R.fill_value)
+    # A column against a row: the outer product of their entries, not of their shapes
+    k = 100
+    col = xp.from_coo((rng.choice(10**4, k, replace=False), np.zeros(k, int)), rng.normal(size=k),
+                      (10**4, 1), fill_value=np.nan)  # fmt: skip
+    row = xp.from_coo((np.zeros(k, int), rng.choice(1000, k, replace=False)), rng.normal(size=k),
+                      (1, 1000), fill_value=np.nan)  # fmt: skip
+    with gb.config.set(array_api_densify_limit=10**5):
+        for func in [xp.add, xp.subtract, xp.multiply, xp.divide]:
+            R = func(col, row)
+            assert (R.shape, R.nnz) == ((10**4, 1000), k * k)
+            assert np.isnan(R.fill_value)
+    # One NaN fill is not enough: the other operand's fill shows where only it is unstored
+    assert_array_equal(xp.add(make(d, np.nan), make(d, 0.0)), d + d)
+
+
+def test_reductions_of_nan_filled_arrays():
+    # A fiber with an unstored position reduces to NaN; a fully stored one to its value
+    rng = np.random.default_rng(41)
+    a = np.where(rng.random((6, 5)) < 0.3, rng.normal(size=(6, 5)), np.nan)
+    a[2] = rng.normal(size=5)
+    a[:, 3] = rng.normal(size=6)
+    A = make(a, np.nan, rng)
+    for name in ["sum", "prod", "max", "min", "mean", "var", "std"]:
+        for axis in [None, 0, 1]:
+            with np.errstate(all="ignore"):
+                expected = getattr(np, name)(a, axis=axis)
+            assert_array_equal(getattr(xp, name)(A, axis=axis), expected)
+
+
 def test_fully_stored_bool_results_take_fill_false():
     # A bool result that stores every position never shows its fill, so it gets fill False.
     # Its False entries are dropped when at most a quarter of its entries are True, so
