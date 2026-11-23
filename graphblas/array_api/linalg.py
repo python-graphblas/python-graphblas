@@ -285,14 +285,23 @@ def eigvalsh(x, /):
     return _dense_call("eigvalsh", np.linalg.eigvalsh, _float(x))
 
 
+def _complex(a):
+    """``a`` in the complex dtype of its precision: the standard's eig and eigvals return complex
+    values for real input, where numpy's return real ones when every eigenvalue is real.
+    """
+    return a.astype(np.result_type(a.dtype, np.complex64), copy=False)
+
+
 def eig(x, /):
     _check(x, "eig")
-    return EigResult(*_dense_call("eig", lambda a: tuple(np.linalg.eig(a)), _float(x)))
+    return EigResult(
+        *_dense_call("eig", lambda a: tuple(map(_complex, np.linalg.eig(a))), _float(x))
+    )
 
 
 def eigvals(x, /):
     _check(x, "eigvals")
-    return _dense_call("eigvals", np.linalg.eigvals, _float(x))
+    return _dense_call("eigvals", lambda a: _complex(np.linalg.eigvals(a)), _float(x))
 
 
 def inv(x, /):

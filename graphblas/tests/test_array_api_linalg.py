@@ -219,8 +219,14 @@ def test_dense_algebra():
     w, _ = xp.linalg.eigh(x)
     assert_close(w, la.eigh(a).eigenvalues)
     assert_close(xp.linalg.eigvalsh(x), la.eigvalsh(a))
-    assert_close(xp.linalg.eigvals(x), la.eigvals(a))
+    # (the standard's eig and eigvals are complex for real input; numpy's are real when it can)
+    assert_close(xp.linalg.eigvals(x), la.eigvals(a).astype(np.complex128))
     assert xp.linalg.eig(x).eigenvectors.shape == (3, 3)
+    assert (
+        xp.linalg.eig(x).eigenvalues.dtype == xp.linalg.eig(x).eigenvectors.dtype == xp.complex128
+    )
+    x32 = xp.asarray(np.asarray(a, np.float32))
+    assert xp.linalg.eigvals(x32).dtype == xp.linalg.eig(x32).eigenvectors.dtype == xp.complex64
     assert_close(xp.linalg.inv(x), la.inv(a))
     assert_close(xp.linalg.pinv(x), la.pinv(a))
     assert_close(xp.linalg.matrix_rank(x), la.matrix_rank(a))
