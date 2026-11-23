@@ -5207,8 +5207,10 @@ def test_subarray_dtype_values_in_another_array_dtype():
         np.testing.assert_array_equal(M.to_dense(dtype="FP32[1, 4]"), expected[:, :, None, :])
         with pytest.raises(DomainMismatch, match="must have the same shape"):
             M.to_dense(dtype="FP64[2]")
+        rows, cols, vals = M.to_coo(dtype="FP64[4]")  # (in storage order)
+        np.testing.assert_array_equal(vals, expected[rows, cols])
         values = expected.reshape(6, 4)
-        for method in ["coo", "csr", "dcsr"]:
+        for method in ["csr", "dcsr"]:
             np.testing.assert_array_equal(getattr(M, f"to_{method}")(dtype="FP64[4]")[-1], values)
         values = expected.swapaxes(0, 1).reshape(6, 4)
         for method in ["csc", "dcsc"]:
@@ -5307,6 +5309,7 @@ def test_ss_export_coo_of_an_iso_udt():
         assert info["is_iso"]
         assert info["values"].tolist() == value  # one value, (1, 4) for the array UDT
         B = Matrix.ss.import_any(**info)
+        B.ss.config["format"] = "by_row"  # (to_coo lists in storage order)
         assert B.dtype == M.dtype
         for got, want in zip(B.to_coo(), M.to_coo(), strict=True):
             np.testing.assert_array_equal(got, want)
