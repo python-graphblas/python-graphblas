@@ -1,7 +1,6 @@
 import numpy as np
 
 from ..dtypes import lookup_dtype
-from ._scipy import from_scipy_sparse
 
 
 def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
@@ -23,6 +22,21 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
     Returns
     -------
     :class:`~graphblas.Matrix`
+
+    Raises
+    ------
+    networkx.NetworkXError
+        If the graph has no nodes, or ``nodelist`` is empty, repeats a node, or
+        names one the graph does not have (as ``nx.to_scipy_sparse_array`` does).
+    ValueError
+        If a weight is not a bool, int (at most 64 bits), float or complex scalar.
+
+    Notes
+    -----
+    When ``dtype`` is given, numpy converts the weights to it first, as
+    ``np.array(weights, dtype=dtype)`` does. A weight it cannot convert raises
+    numpy's TypeError, ValueError or OverflowError, and some weights convert without
+    an error: None becomes nan in a float dtype, and the string ``"3"`` becomes 3.0.
 
     """
     import networkx as nx
@@ -71,28 +85,16 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
 
     values = np.array(data, dtype=dtype)
     if values.ndim != 1 or values.dtype.kind not in "biufc":
-        # Defer to scipy so the error matches the previous behavior exactly.
-        # Two kinds of weight land here: non-numeric attributes (object arrays,
-        # but also e.g. all-string weights, which infer a <U dtype rather than
-        # object), and sequence-valued attributes of uniform length, which infer
-        # a 2-D numeric array that from_coo would otherwise accept as a UDT.
-        try:
-            return _from_networkx_via_scipy(G, nodelist, dtype, weight, name)
-        except (nx.NetworkXError, TypeError) as err:
-            # Since scipy 1.15 an unsupported dtype is rejected while the coo array
-            # is built, and that ValueError reaches us unchanged. Older scipy builds
-            # the array and fails in the coo -> csr conversion instead: scipy raises
-            # TypeError ("no supported conversion for types"), which networkx 3.4+
-            # wraps in a NetworkXError that blames the sparse format while
-            # networkx <= 3.3 lets the TypeError propagate.
-            # Restate it so every supported stack reports the same error for the
-            # same graph. The graph and nodelist checks above are the ones
-            # nx.to_scipy_sparse_array makes, so a NetworkXError or TypeError from
-            # the fallback can only be that dtype complaint.
-            raise ValueError(
-                f"scipy.sparse does not support dtype {values.dtype}; "
-                "edge weights must be numeric scalars"
-            ) from err
+        # Weights a Matrix cannot hold: objects (ints beyond 64 bits give an object
+        # array too), strings (a <U array), and sequences that all have the same
+        # length, which give a 2-D array that from_coo would read as a UDT.
+        # nx.to_scipy_sparse_array rejects them too, but its error depends on the scipy
+        # version, and without scipy it raises ImportError.
+        got = f"dtype {values.dtype}" if values.ndim == 1 else f"arrays of shape {values.shape[1:]}"
+        raise ValueError(
+            "edge weights must be bool, int (at most 64 bits), float or complex scalars; "
+            f"attribute {weight!r} gives {got}"
+        )
     if values.size == 0:
         # With no edges there is no weight to infer a dtype from, and the values are
         # float64 when dtype is not given, as nx.to_scipy_sparse_array gives them.
@@ -136,17 +138,6 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
         return A
     # A simple graph has no repeated coordinate, so it needs no accumulator
     return Matrix.from_coo(rows, cols, values, nrows=nlen, ncols=nlen, name=name)
-
-
-def _from_networkx_via_scipy(G, nodelist, dtype, weight, name):
-    """Fallback path: convert through a scipy sparse array.
-
-    ``dtype`` is already normalized to a numpy type (or None) by the caller.
-    """
-    import networkx as nx
-
-    A = nx.to_scipy_sparse_array(G, nodelist=nodelist, dtype=dtype, weight=weight)
-    return from_scipy_sparse(A, name=name)
 
 
 # A DiGraph spends about 350 bytes on each node, so a graph with this many nodes would
