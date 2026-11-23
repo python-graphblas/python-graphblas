@@ -29,11 +29,15 @@ def _build_delayed(namespace, delayed, key, build=None):
             return None
         # (out of ``delayed`` before the build, which refuses a name already registered)
         item = delayed.pop(key)
-        if build is None:
-            func, kwargs = item
-            rv = func(**kwargs)
-        else:
-            rv = build(key, item)
+        try:
+            if build is None:
+                func, kwargs = item
+                rv = func(**kwargs)
+            else:
+                rv = build(key, item)
+        except BaseException:
+            delayed[key] = item  # (so the next lookup builds it again, and says why it fails)
+            raise
         namespace[key] = rv
         return rv
 
