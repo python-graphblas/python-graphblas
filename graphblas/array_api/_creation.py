@@ -16,7 +16,7 @@ from .. import binary
 from ..core.tensor import Tensor
 from . import _utils
 from ._array import Array, check_device
-from ._dtypes import as_dtype, check_supported
+from ._dtypes import DTYPES, as_dtype, check_supported
 from ._utils import gb_dtype
 
 __all__ = [
@@ -100,12 +100,26 @@ def _from_graphblas(obj, dtype, fill_value):
     return out
 
 
+def _imports_whole(A):
+    """Whether ``Tensor.from_scipy_sparse`` imports the arrays of the scipy.sparse array ``A``
+    as they are: CSR or CSC in canonical format, of a supported dtype.
+
+    Not when every value equals the first but zeros of both signs are present: the import
+    then stores one value (``graphblas.io.from_scipy_sparse`` compares with ``==``).
+    """
+    if A.format not in {"csr", "csc"} or A.ndim != 2 or not A.has_canonical_format:
+        return False
+    data = A.data
+    if np.dtype(data.dtype) not in DTYPES.values():
+        return False
+    if data.size and data.dtype.kind in "fc" and data[0] == 0 and (data == data[0]).all():
+        return not _utils.differs(data, data[0]).any()
+    return True
+
+
 def _from_sparse(obj, dtype, fill_value):
-    """A scipy.sparse array or matrix, or a pydata/sparse array, as an Array (by its COO form)."""
+    """A scipy.sparse array or matrix, or a pydata/sparse array, as an Array."""
     if hasattr(obj, "tocoo") and hasattr(obj, "format") and not hasattr(obj, "fill_value"):
-        coo = obj.tocoo()
-        coords = tuple(np.asarray(c) for c in coo.coords)
-        data, shape, fill = np.asarray(coo.data), coo.shape, None
         if fill_value is not None and not _utils.same_value(fill_value, 0):
             # scipy.sparse's missing entries are zeros
             raise ValueError(
@@ -113,6 +127,18 @@ def _from_sparse(obj, dtype, fill_value):
                 "xp.refill(xp.asarray(a), fill_value) returns a copy with that fill and the "
                 "same values"
             )
+        if _imports_whole(obj):
+            # One copy of the CSR or CSC arrays. Through the COO form, the build would sort the
+            # entries again, and the COO form of CSC is in column order
+            out = Array._new(Tensor.from_scipy_sparse(obj), _default_fill(np.dtype(obj.dtype)))
+            if dtype is not None and as_dtype(dtype) != out.dtype:
+                from ._elementwise import cast
+
+                out = cast(out, as_dtype(dtype))
+            return out
+        coo = obj.tocoo()
+        coords = tuple(np.asarray(c) for c in coo.coords)
+        data, shape, fill = np.asarray(coo.data), coo.shape, None
         if not getattr(coo, "has_canonical_format", True):
             # tocoo() returns a COO input itself, so sum the caller's duplicates in a copy
             coo = coo.copy() if coo is obj else coo
@@ -139,7 +165,8 @@ def asarray(obj, /, *, dtype=None, device=None, copy=None, fill_value=None):
     ``obj`` may be an Array, a Python scalar, a (nested) sequence, or anything numpy converts,
     such as an ndarray or a buffer. As extensions, it may also be a ``graphblas`` Tensor,
     Matrix, Vector or Scalar, a scipy.sparse array, or a pydata/sparse array; the positions
-    these do not store get the fill.
+    these do not store get the fill. A scipy.sparse CSR or CSC array without repeated indices
+    costs one copy of its arrays; ``x.to_scipy_sparse()`` converts back.
 
     ``fill_value`` (an extension) is the value of unstored positions, 0 of the dtype by
     default. An Array, a pydata/sparse array or a scipy.sparse array (whose fill is 0) keeps

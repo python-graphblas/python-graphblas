@@ -150,6 +150,108 @@ def test_asarray_scipy_and_pydata_sparse():
     assert_array_equal(x, np.array([[1.0, 2.0], [2.0, 3.0]]))
 
 
+@pytest.mark.parametrize("dtype", [bool, np.int8, np.uint64, np.float32, np.float64, np.complex128])
+def test_asarray_of_scipy_formats(dtype):
+    """The Array that asarray makes of a CSR or CSC array (imported as it is) or of another
+    format (through COO) has the scipy array's values, entries (explicit zeros included) and
+    dtype, and its own copy of the data.
+    """
+    sp = pytest.importorskip("scipy.sparse")
+    rows, cols = np.array([0, 0, 2, 3, 3]), np.array([1, 4, 0, 2, 4])
+    data = np.array([1, 0, 3, 1, 2]).astype(dtype)  # (an explicit zero)
+    coo = sp.coo_array((data, (rows, cols)), shape=(4, 5))
+    dense = coo.toarray()
+    wide = np.result_type(dtype, np.float64)  # (dtype= casts, after the import)
+    x = xp.asarray(coo.tocsc(), dtype=wide)
+    assert x.dtype == wide
+    assert_array_equal(x, dense.astype(wide))
+    v = np.arange(5).astype(dtype)
+    for A in [coo.tocsr(), coo.tocsc(), coo, coo.tobsr(), sp.csr_matrix(coo), sp.csc_matrix(coo)]:
+        x = xp.asarray(A)
+        assert x.dtype == np.dtype(dtype)
+        assert x.nnz == 5
+        assert x.fill_value == 0
+        assert_array_equal(x, dense)
+        assert_array_equal(xp.sum(x, axis=0), np.sum(dense, axis=0))
+        assert_array_equal(x @ xp.asarray(v), dense @ v)
+        if dtype is not np.complex128:
+            assert_array_equal(xp.max(x, axis=1), np.max(dense, axis=1))
+        A.data[...] = 0  # the Array has its own copy
+        assert_array_equal(x, dense)
+
+
+def test_asarray_of_scipy_csr_keeps_signed_zeros():
+    """A CSR array whose values compare equal but are zeros of both signs keeps each sign (a
+    whole import would store one value for all of them).
+    """
+    sp = pytest.importorskip("scipy.sparse")
+    for data in [[0.0, -0.0, 0.0], [-0.0, 0.0, -0.0], [0j, complex(0, -0.0), 0j]]:
+        A = sp.csr_array((np.array(data), ([0, 1, 2], [2, 0, 1])), shape=(3, 3))
+        x = xp.asarray(A)
+        assert x.nnz == 3
+        values = x.to_coo()[1]
+        expected = np.array(data)[[0, 1, 2]]  # (one entry per row, rows in order)
+        assert np.array_equal(np.signbit(values.real), np.signbit(expected.real))
+        assert np.array_equal(np.signbit(values.imag), np.signbit(expected.imag))
+    # Unsorted indices and repeats in a row, as scipy allows, are summed
+    A = sp.csr_array(
+        (np.array([1.0, 2.0, 3.0]), np.array([2, 0, 2]), np.array([0, 3, 3])), shape=(2, 3)
+    )
+    assert not A.has_canonical_format
+    x = xp.asarray(A)
+    assert_array_equal(x, np.array([[2.0, 0.0, 4.0], [0.0, 0.0, 0.0]]))
+    assert x.nnz == 2
+    assert A.nnz == 3  # (the caller's array keeps its repeats)
+    empty = xp.asarray(sp.csc_array((0, 3)))
+    assert empty.shape == (0, 3)
+    assert empty.nnz == 0
+
+
+def test_to_scipy_sparse():
+    """to_scipy_sparse returns the stored entries (explicit zeros included) as a scipy.sparse
+    array in any format for 2 dimensions and COO otherwise, and needs a zero fill.
+    """
+    pytest.importorskip("scipy.sparse")
+    a = np.array([[0.0, 1.5, 0.0], [-0.0, 0.0, 2.0]])
+    x = xp.asarray(a)  # (stores 1.5, -0.0 and 2.0)
+    for fmt in ["coo", "csr", "csc", "lil", "dok", "bsr", "dia"]:
+        A = x.to_scipy_sparse(fmt)
+        assert A.format == fmt
+        assert A.nnz == 3
+        assert np.array_equal(A.toarray(), a)
+        assert_array_equal(xp.asarray(A.tocoo()), a)
+    A = x.to_scipy_sparse("csr")
+    assert np.array_equal(A.data, [1.5, -0.0, 2.0])
+    assert np.array_equal(np.signbit(A.data), [False, True, False])
+    A.data[...] = 9.0  # (a copy)
+    assert_array_equal(x, a)
+    assert x.to_scipy_sparse().format == "coo"
+    v = xp.asarray(np.array([0, 3, 0, 4], np.int8))
+    B = v.to_scipy_sparse()
+    assert B.shape == (4,)
+    assert B.dtype == np.int8
+    assert np.array_equal(B.toarray(), [0, 3, 0, 4])
+    t = xp.asarray(np.arange(8.0).reshape(2, 2, 2))
+    scipy_version = tuple(int(p) for p in __import__("scipy").__version__.split(".")[:2])
+    if scipy_version >= (1, 15):
+        assert np.array_equal(t.to_scipy_sparse().toarray(), np.arange(8.0).reshape(2, 2, 2))
+    else:
+        with pytest.raises(NotImplementedError, match="scipy 1.15"):
+            t.to_scipy_sparse()
+    with pytest.raises(ValueError, match="'coo' only"):
+        v.to_scipy_sparse("csr")
+    # A pending product, and a fill of -0.0, which scipy leaves out as it does 0.0
+    P = x @ x.T
+    assert np.array_equal(P.to_scipy_sparse("csr").toarray(), a @ a.T)
+    assert xp.full((2, 2), -0.0).to_scipy_sparse().nnz == 0
+    with pytest.raises(ValueError, match="fill value is 0"):
+        xp.ones((2, 2)).to_scipy_sparse()
+    with pytest.raises(ValueError, match="fill value is 0"):
+        xp.asarray(a, fill_value=np.nan).to_scipy_sparse()
+    with pytest.raises(ValueError, match="0-d"):
+        xp.asarray(0.0).to_scipy_sparse()
+
+
 def test_from_coo():
     x = xp.from_coo(([0, 2], [1, 0]), [1.0, 2.0], (3, 2), fill_value=5.0)
     assert_array_equal(x, np.array([[5.0, 1.0], [5.0, 5.0], [2.0, 5.0]]))

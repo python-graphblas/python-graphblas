@@ -203,6 +203,25 @@ class Array:
         """
         return self._T().to_coo()
 
+    def to_scipy_sparse(self, format="coo"):
+        """The array as a scipy.sparse array, by default a ``coo_array`` (an extension).
+
+        ``format`` may be any scipy.sparse format for a 2-d array, and must be ``"coo"``
+        otherwise. A ``coo_array`` of more than 2 dimensions needs scipy 1.15 or later.
+        scipy.sparse leaves out zeros, so the fill must be 0; ``xp.refill(x, 0)`` returns a
+        copy with fill 0 and the same values. The stored entries, explicit zeros included,
+        are the scipy array's entries. It costs a copy of the entries.
+        """
+        if self.ndim == 0:
+            raise ValueError("scipy.sparse has no 0-d arrays")
+        if self._fill != 0:
+            raise ValueError(
+                f"to_scipy_sparse needs an array whose fill value is 0, which scipy.sparse "
+                f"leaves out; this one's is {self._fill.item()!r}. xp.refill(x, 0) returns "
+                "a copy with fill 0 and the same values"
+            )
+        return self._T().to_scipy_sparse(format)
+
     def __repr__(self):
         fill = self._fill.item()
         if self.ndim == 0:
