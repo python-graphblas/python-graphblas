@@ -1,5 +1,6 @@
 import inspect
 import re
+import threading
 from functools import lru_cache, reduce
 from operator import mul
 from types import FunctionType
@@ -49,6 +50,23 @@ if _has_numba:
         _get_udt_wrapper,
         _resolve_udt_return_type,
     )
+
+    try:
+        # ``_infer_ret_types_typing_only`` learns the built-in UDFs' result types from
+        # Numba's typing pass alone, so ``.types`` is complete before any dtype compiles.
+        # Numba has no public API for a return type without a compile, so this uses
+        # ``numba.core`` internals, which can change in any Numba release. If the import
+        # fails, or the call returns something unexpected, the function returns None and
+        # ``BinaryOp._build`` compiles every dtype up front.
+        from numba.core import compiler as _numba_compiler
+        from numba.core import typed_passes as _numba_typed_passes
+        from numba.core.registry import cpu_target as _numba_cpu_target
+
+        _HAS_TYPING_ONLY = True
+    except Exception:  # pragma: no cover (numba internals moved)
+        _HAS_TYPING_ONLY = False
+else:
+    _HAS_TYPING_ONLY = False
 if _supports_complex:
     from ...dtypes import FC32, FC64
 
@@ -211,13 +229,13 @@ class TypedBuiltinBinaryOp(TypedOpBase):
     @property
     def commutes_to(self):
         commutes_to = self.parent.commutes_to
-        if commutes_to is not None and (self.type in commutes_to._typed_ops or self.type._is_udt):
+        if commutes_to is not None and (self.type in commutes_to.types or self.type._is_udt):
             return commutes_to[self.type]
 
     @property
     def _semiring_commutes_to(self):
         commutes_to = self.parent._semiring_commutes_to
-        if commutes_to is not None and (self.type in commutes_to._typed_ops or self.type._is_udt):
+        if commutes_to is not None and (self.type in commutes_to.types or self.type._is_udt):
             return commutes_to[self.type]
 
     @property
@@ -437,6 +455,126 @@ def _pair_dtype(op, dtype, dtype2):
     return op[INT64]
 
 
+def _adjust_ret_type(type_, ret_type, return_types):
+    """Return the result type of a UDF on ``type_``, given the type Numba inferred for it.
+
+    An integer result for integer input is the input type, and so is a float result for
+    float input and a complex result for complex input. A UINT64 input with an FP64 result
+    gets UINT64 if INT64 kept its type, and a BOOL input with an INT64 result gets INT8 if
+    INT8 kept its type. ``return_types`` holds the results for the sample dtypes done so
+    far, which include INT64 and INT8. The eager loop and the typing-only inference both
+    call this, so they give the same ``.types``.
+    """
+    if ret_type != type_ and (
+        ("INT" in ret_type.name and "INT" in type_.name)
+        or ("FP" in ret_type.name and "FP" in type_.name)
+        or ("FC" in ret_type.name and "FC" in type_.name)
+        or (type_ == UINT64 and ret_type == FP64 and return_types.get(INT64) == INT64)
+    ):
+        # This is what users want most of the time, but we can't make a perfect
+        # rule. There should be a way for users to be explicit.
+        return type_
+    if type_ == BOOL and ret_type == INT64 and return_types.get(INT8) == INT8:
+        return INT8
+    return ret_type
+
+
+_deferred_build_lock = threading.Lock()  # see BinaryOp._build_deferred
+
+
+def _finalize_typed_binaryop(parent, binary_udf, name, type_, ret_type):
+    """Compile ``binary_udf`` for ``type_`` in a cfunc wrapper; add the typed op to ``parent``.
+
+    Return the typed op. ``ret_type`` is the result type from ``_adjust_ret_type``. The
+    eager loop in ``BinaryOp._build`` calls this for every dtype. For a built-in UDF,
+    ``BinaryOp._build_deferred`` calls it when a dtype is first used, so that is when the
+    dtype compiles.
+    """
+    nt = numba.types
+    input_type = _bool_to_int8(type_)
+    return_type = _bool_to_int8(ret_type)
+
+    # Build wrapper because GraphBLAS wants pointers and void return
+    wrapper_sig = nt.void(
+        nt.CPointer(return_type.numba_type),
+        nt.CPointer(input_type.numba_type),
+        nt.CPointer(input_type.numba_type),
+    )
+
+    if type_ == BOOL:
+        if ret_type == BOOL:
+
+            def binary_wrapper(z, x, y):  # pragma: no cover (numba)
+                z[0] = bool(binary_udf(bool(x[0]), bool(y[0])))
+
+        else:
+
+            def binary_wrapper(z, x, y):  # pragma: no cover (numba)
+                z[0] = binary_udf(bool(x[0]), bool(y[0]))
+
+    elif ret_type == BOOL:
+
+        def binary_wrapper(z, x, y):  # pragma: no cover (numba)
+            z[0] = bool(binary_udf(x[0], y[0]))
+
+    else:
+
+        def binary_wrapper(z, x, y):  # pragma: no cover (numba)
+            z[0] = binary_udf(x[0], y[0])
+
+    binary_wrapper = numba.cfunc(wrapper_sig, nopython=True, error_model="numpy")(binary_wrapper)
+    new_binary = ffi_new("GrB_BinaryOp*")
+    check_status_carg(
+        lib.GrB_BinaryOp_new(
+            new_binary,
+            binary_wrapper.cffi,
+            ret_type.gb_obj,
+            type_.gb_obj,
+            type_.gb_obj,
+        ),
+        "BinaryOp",
+        new_binary[0],
+    )
+    op = TypedUserBinaryOp(parent, name, type_, ret_type, new_binary[0])
+    parent._add(op)
+    return op
+
+
+def _infer_ret_types_typing_only(func):
+    """Return ``{DataType: result DataType}`` for the sample dtypes from typing alone, or None.
+
+    ``func`` is not compiled. None means that typing raised something other than a
+    TypingError for some dtype, or that Numba's internals have moved, and the caller then
+    compiles every dtype. This is only for the built-in UDFs: typing alone can accept a dtype
+    that does not compile, which only compiling would catch. For the built-ins,
+    test_builtin_udf_types_without_typing_only checks that compiling gives the same types.
+    """
+    if not _HAS_TYPING_ONLY:
+        return None
+    try:
+        typingctx = _numba_cpu_target.typing_context
+        targetctx = _numba_cpu_target.target_context
+        typingctx.refresh()
+        targetctx.refresh()
+        return_types = {}
+        for type_ in _sample_values:
+            try:
+                interp = _numba_compiler.run_frontend(func)
+                result = _numba_typed_passes.type_inference_stage(
+                    typingctx, targetctx, interp, [type_.numba_type, type_.numba_type], None
+                )
+                numba_ret_type = result.return_type
+            except numba.TypingError:
+                # This dtype does not type-check; skip it, as the eager loop does.
+                continue
+            ret_type = _adjust_ret_type(type_, lookup_dtype(numba_ret_type), return_types)
+            return_types[type_] = ret_type
+    except Exception:  # pragma: no cover (numba internals moved)
+        return None
+    else:
+        return return_types
+
+
 if _has_numba:
     from .udt_codegen import (
         _compile_codegen,
@@ -464,6 +602,7 @@ class BinaryOp(OpBase):
         "_is_udt",
         "_numba_func",
         "_custom_dtype",
+        "_defer_builds",
     )
     _module = binary
     _modname = "binary"
@@ -575,13 +714,13 @@ class BinaryOp(OpBase):
         if name is None:
             name = getattr(func, "__name__", "<anonymous_binary>")
         success = False
-        # The error model has to be set here, not only on the cfunc wrapper below.
-        # ``.compile(sig)`` further down builds the specialization the wrapper then
-        # reuses, and a Dispatcher keeps one compilation per signature, so the first
-        # compile fixes the model. Set only on the wrapper, ``x // 0`` raises
-        # ZeroDivisionError inside the cfunc, where Numba prints the traceback and
-        # returns, handing GraphBLAS an element it never wrote. The other op classes'
-        # ``_build`` point here.
+        # The error model has to be set here, not only on the cfunc wrapper in
+        # ``_finalize_typed_binaryop``. The eager loop's ``.compile(sig)`` below builds
+        # the specialization the wrapper then reuses, and a Dispatcher keeps one
+        # compilation per signature, so the first compile fixes the model. Set only on
+        # the wrapper, ``x // 0`` raises ZeroDivisionError inside the cfunc, where Numba
+        # prints the traceback and returns, handing GraphBLAS an element it never wrote.
+        # The other op classes' ``_build`` point here.
         #
         # ``cache`` is True only for the built-in UDFs, which are module-level
         # functions; Numba cannot cache a lambda or an interactively defined function
@@ -597,76 +736,27 @@ class BinaryOp(OpBase):
             binary_udf = numba.njit(func, error_model="numpy")
         new_type_obj = cls(name, func, anonymous=anonymous, is_udt=is_udt, numba_func=binary_udf)
         return_types = {}
-        nt = numba.types
         if not is_udt:
-            for type_ in _sample_values:
-                sig = (type_.numba_type, type_.numba_type)
-                if not _compile_for_dtype(binary_udf, sig):
-                    continue
-                ret_type = lookup_dtype(binary_udf.overloads[sig].signature.return_type)
-                if ret_type != type_ and (
-                    ("INT" in ret_type.name and "INT" in type_.name)
-                    or ("FP" in ret_type.name and "FP" in type_.name)
-                    or ("FC" in ret_type.name and "FC" in type_.name)
-                    or (type_ == UINT64 and ret_type == FP64 and return_types.get(INT64) == INT64)
-                ):
-                    # Downcast `ret_type` to `type_`.
-                    # This is what users want most of the time, but we can't make a perfect rule.
-                    # There should be a way for users to be explicit.
-                    ret_type = type_
-                elif type_ == BOOL and ret_type == INT64 and return_types.get(INT8) == INT8:
-                    ret_type = INT8
-
-                input_type = _bool_to_int8(type_)
-                return_type = _bool_to_int8(ret_type)
-
-                # Build wrapper because GraphBLAS wants pointers and void return
-                wrapper_sig = nt.void(
-                    nt.CPointer(return_type.numba_type),
-                    nt.CPointer(input_type.numba_type),
-                    nt.CPointer(input_type.numba_type),
-                )
-
-                if type_ == BOOL:
-                    if ret_type == BOOL:
-
-                        def binary_wrapper(z, x, y):  # pragma: no cover (numba)
-                            z[0] = bool(binary_udf(bool(x[0]), bool(y[0])))
-
-                    else:
-
-                        def binary_wrapper(z, x, y):  # pragma: no cover (numba)
-                            z[0] = binary_udf(bool(x[0]), bool(y[0]))
-
-                elif ret_type == BOOL:
-
-                    def binary_wrapper(z, x, y):  # pragma: no cover (numba)
-                        z[0] = bool(binary_udf(x[0], y[0]))
-
-                else:
-
-                    def binary_wrapper(z, x, y):  # pragma: no cover (numba)
-                        z[0] = binary_udf(x[0], y[0])
-
-                binary_wrapper = numba.cfunc(wrapper_sig, nopython=True, error_model="numpy")(
-                    binary_wrapper
-                )
-                new_binary = ffi_new("GrB_BinaryOp*")
-                check_status_carg(
-                    lib.GrB_BinaryOp_new(
-                        new_binary,
-                        binary_wrapper.cffi,
-                        ret_type.gb_obj,
-                        type_.gb_obj,
-                        type_.gb_obj,
-                    ),
-                    "BinaryOp",
-                    new_binary[0],
-                )
-                op = TypedUserBinaryOp(new_type_obj, name, type_, ret_type, new_binary[0])
-                new_type_obj._add(op)
-                success = True
-                return_types[type_] = ret_type
+            # A built-in UDF (``cache=True``) gets its result types from typing alone,
+            # and compiles each dtype when it is first used (``_build_deferred``). A
+            # user's function compiles every sample dtype here, which also checks that
+            # each one compiles. So does a built-in when the typing returns None.
+            inferred = _infer_ret_types_typing_only(func) if cache else None
+            if inferred is not None:
+                new_type_obj.types.update(inferred)
+                return_types.update(inferred)
+                new_type_obj._defer_builds = True
+                success = bool(inferred)
+            else:
+                for type_ in _sample_values:
+                    sig = (type_.numba_type, type_.numba_type)
+                    if not _compile_for_dtype(binary_udf, sig):
+                        continue
+                    ret_type = lookup_dtype(binary_udf.overloads[sig].signature.return_type)
+                    ret_type = _adjust_ret_type(type_, ret_type, return_types)
+                    _finalize_typed_binaryop(new_type_obj, binary_udf, name, type_, ret_type)
+                    success = True
+                    return_types[type_] = ret_type
         if success or is_udt:
             return new_type_obj
         raise UdfParseError("Unable to parse function using Numba")
@@ -1126,6 +1216,8 @@ class BinaryOp(OpBase):
         self._is_udt = is_udt
         self.is_positional = is_positional
         self._custom_dtype = None
+        # True for a built-in UDF whose ``.types`` came from typing alone (see ``_build``)
+        self._defer_builds = False
         if is_udt:
             self._udt_types = {}  # {(dtype, dtype): DataType}
             self._udt_ops = {}  # {(dtype, dtype): TypedUserBinaryOp}
@@ -1138,6 +1230,27 @@ class BinaryOp(OpBase):
             self._udt_types = {}
             self._udt_ops = {}
             self._custom_dtype = _udt_dtype
+
+    def _build_deferred(self, type_):
+        # The result type comes from ``.types``. ``_adjust_ret_type`` cannot be redone for
+        # one dtype, since UINT64 and BOOL read the results for INT64 and INT8.
+        if not self._defer_builds or type_ not in self.types:
+            return None
+        # Threads that first use one dtype at once build it once. A second build would
+        # replace the first op in ``_typed_ops`` and free it, while a Monoid built from it
+        # in between would still point at it.
+        with _deferred_build_lock:
+            op = self._typed_ops.get(type_)
+            if op is None and type_ in self.types:  # unless another thread deleted it
+                op = _finalize_typed_binaryop(
+                    self, self._numba_func, self.name, type_, self.types[type_]
+                )
+        return op
+
+    def __delitem__(self, type_):
+        # Under the lock, so a first build of the dtype in another thread cannot add it back
+        with _deferred_build_lock:
+            super().__delitem__(type_)
 
     __call__ = TypedBuiltinBinaryOp.__call__
     is_commutative = TypedBuiltinBinaryOp.is_commutative

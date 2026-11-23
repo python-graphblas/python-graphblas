@@ -237,6 +237,9 @@ class Semiring(OpBase):
         new_type_obj = cls(name, monoid, binaryop, anonymous=anonymous)
         if binaryop._is_udt:
             return new_type_obj
+        # A built-in UDF such as floordiv compiles each dtype when it is first used, so
+        # build them all before the loop below reads ``_typed_ops``
+        binaryop._materialize_deferred()
         for binary_in, binary_func in binaryop._typed_ops.items():
             binary_out = binary_func.return_type
             # Unfortunately, we can't have user-defined monoids over bools yet

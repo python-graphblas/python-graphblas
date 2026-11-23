@@ -346,6 +346,23 @@ class OpBase:
     def __repr__(self):
         return f"{self._modname}.{self.name}"
 
+    def _build_deferred(self, type_):
+        """Build and return the typed op for ``type_`` if its build was deferred, else None.
+
+        ``BinaryOp`` overrides this for the built-in UDFs, which compile each dtype when it
+        is first used.
+        """
+        return
+
+    def _materialize_deferred(self):
+        """Build every typed op in ``.types`` whose build was deferred.
+
+        Call this before reading ``_typed_ops`` directly, as ``Semiring._build`` does.
+        """
+        for type_ in list(self.types):
+            if type_ not in self._typed_ops:
+                self._build_deferred(type_)
+
     def __getitem__(self, type_):
         if type(type_) is tuple:
             from .utils import get_typed_op
@@ -357,6 +374,9 @@ class OpBase:
         if not self._is_udt:
             type_ = lookup_dtype(type_)
             if type_ not in self._typed_ops:
+                op = self._build_deferred(type_)
+                if op is not None:
+                    return op
                 if self._udt_types is None:
                     if self.is_positional:
                         return self._typed_ops[UINT64]
@@ -382,7 +402,7 @@ class OpBase:
 
     def __delitem__(self, type_):
         type_ = lookup_dtype(type_)
-        del self._typed_ops[type_]
+        self._typed_ops.pop(type_, None)  # a deferred build is in ``.types`` only
         del self.types[type_]
 
     def __contains__(self, type_):

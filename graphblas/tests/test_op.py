@@ -7020,3 +7020,176 @@ def test_builtin_udf_compiles_uncached_where_numba_cannot_cache(monkeypatch):
     assert isinstance(op._numba_func._cache, caching.NullCache)
     v = Vector.from_coo([0, 1], [-3, 4])
     assert v.ewise_mult(v, op).new().isequal(Vector.from_coo([0, 1], [1, 1]))
+
+
+# A built-in UDF lists every dtype in ``.types`` but compiles none until one is used.
+# conftest builds every dtype before the tests run, so this runs in a fresh process.
+_DEFERRED_BUILD_PROBE = """
+import graphblas as gb
+
+op = gb.binary.floordiv
+print("package: " + gb.__file__)
+print("types: %d" % len(op.types))
+print("compiled before: %d" % len(op._typed_ops))
+op[gb.dtypes.INT64]
+print("compiled after: %d" % len(op._typed_ops))
+"""
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_builtin_udf_types_precede_compilation():
+    repo_root = Path(__file__).resolve().parents[2]
+    env = dict(os.environ, PYTHONPATH=str(repo_root))
+    result = subprocess.run(
+        [sys.executable, "-c", _DEFERRED_BUILD_PROBE],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert result.returncode == 0, report
+
+    lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
+    assert lines.get("package") == str(repo_root / "graphblas" / "__init__.py"), report
+
+    assert int(lines["types"]) == len(binary.floordiv.types), report
+    assert int(lines["compiled before"]) == 0, report
+    assert int(lines["compiled after"]) == 1, report
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_builtin_udf_builds_one_dtype_when_indexed():
+    # conftest builds every dtype of binary.floordiv before the tests run, so
+    # build a new op from the same function, as _initialize does
+    floordiv = BinaryOp._build("floordiv", operator.binary._floordiv, anonymous=True, cache=True)
+    assert floordiv.types[INT64] == INT64
+    assert floordiv.types[BOOL] == INT8
+    assert not floordiv._typed_ops
+    typed = floordiv[INT64]
+    assert floordiv._typed_ops == {INT64: typed}
+    assert floordiv[INT64] is typed
+    v = Vector.from_coo([0, 1, 2], [7, -7, 7])
+    w = Vector.from_coo([0, 1, 2], [2, 2, -2])
+    assert v.ewise_mult(w, typed).new().isequal(Vector.from_coo([0, 1, 2], [3, -4, -4]))
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_builtin_udf_builds_a_dtype_once_across_threads(monkeypatch):
+    """Threads that first use one dtype of a built-in UDF at once get one typed op.
+
+    Fails if each thread builds its own (see ``BinaryOp._build_deferred``).
+    """
+    import threading
+
+    floordiv = BinaryOp._build("floordiv", operator.binary._floordiv, anonymous=True, cache=True)
+    builds = []
+    finalize = operator.binary._finalize_typed_binaryop
+
+    def counting_finalize(*args):
+        builds.append(args[3])
+        return finalize(*args)
+
+    monkeypatch.setattr(operator.binary, "_finalize_typed_binaryop", counting_finalize)
+    nthreads = 4
+    barrier = threading.Barrier(nthreads)
+    results = []
+
+    def first_use():
+        barrier.wait()
+        results.append(floordiv[INT16])
+
+    threads = [threading.Thread(target=first_use) for _ in range(nthreads)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert builds == [INT16]
+    assert len(results) == nthreads
+    assert all(typed is floordiv._typed_ops[INT16] for typed in results)
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_builtin_udf_delete_waits_for_a_first_build(monkeypatch):
+    """A delete of a dtype that another thread is building takes effect after the build.
+
+    Fails if the delete runs during the build, which then adds the dtype back.
+    """
+    import threading
+
+    floordiv = BinaryOp._build("floordiv", operator.binary._floordiv, anonymous=True, cache=True)
+    deleter = threading.Thread(target=floordiv.__delitem__, args=(INT16,))
+    finalize = operator.binary._finalize_typed_binaryop
+
+    def finalize_beside_a_delete(*args):
+        deleter.start()
+        deleter.join(0.2)  # long enough for a delete that does not wait
+        return finalize(*args)
+
+    monkeypatch.setattr(operator.binary, "_finalize_typed_binaryop", finalize_beside_a_delete)
+    floordiv[INT16]
+    deleter.join()
+    assert INT16 not in floordiv.types
+    assert INT16 not in floordiv._typed_ops
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_builtin_udf_deletes_a_dtype_it_has_not_built():
+    floordiv = BinaryOp._build("floordiv", operator.binary._floordiv, anonymous=True, cache=True)
+    del floordiv[INT64]
+    assert INT64 not in floordiv.types
+    assert INT64 not in floordiv
+    floordiv[INT32]
+    del floordiv[INT32]
+    assert INT32 not in floordiv.types
+    assert INT32 not in floordiv._typed_ops
+    with pytest.raises(KeyError):
+        del floordiv[INT64]
+    assert floordiv[INT8].return_type == INT8
+
+
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.parametrize("name", ["floordiv", "rfloordiv", "absfirst", "abssecond", "rpow"])
+def test_builtin_udf_types_without_typing_only(name, monkeypatch):
+    # Without the typing-only path (a Numba whose internals moved), every dtype
+    # compiles up front, and ``.types`` is the same
+    func = getattr(operator.binary, f"_{name}")
+    deferred = BinaryOp._build(name, func, anonymous=True, cache=True)
+    assert deferred._defer_builds
+    monkeypatch.setattr(operator.binary, "_HAS_TYPING_ONLY", False)
+    eager = BinaryOp._build(name, func, anonymous=True, cache=True)
+    assert eager.types == deferred.types
+    assert eager._typed_ops.keys() == eager.types.keys()
+
+
+_DEFERRED_COMMUTES_PROBE = """
+import graphblas as gb
+
+print("package: " + gb.__file__)
+ct = gb.binary.floordiv[gb.dtypes.INT64].commutes_to
+print("floordiv_ok: " + str(ct is gb.binary.rfloordiv[gb.dtypes.INT64]))
+ct = gb.binary.absfirst[gb.dtypes.INT64].commutes_to
+print("absfirst_ok: " + str(ct is gb.binary.abssecond[gb.dtypes.INT64]))
+"""
+
+
+@pytest.mark.skipif("not supports_udfs")
+def test_deferred_commutes_to():
+    # commutes_to finds the partner op for a dtype it has not compiled yet, so the
+    # answer does not depend on which op was used first. It runs in a fresh process,
+    # since conftest builds every dtype of the partners in this one.
+    repo_root = Path(__file__).resolve().parents[2]
+    env = dict(os.environ, PYTHONPATH=str(repo_root))
+    result = subprocess.run(
+        [sys.executable, "-c", _DEFERRED_COMMUTES_PROBE],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert result.returncode == 0, report
+    lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
+    assert lines.get("package") == str(repo_root / "graphblas" / "__init__.py"), report
+    assert lines.get("floordiv_ok") == "True", report
+    assert lines.get("absfirst_ok") == "True", report
