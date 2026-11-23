@@ -537,12 +537,12 @@ def _cumulative_sparse(npfunc, x, axis, ct, fill, include_initial):
     out_pos, out_val, out_fib = [pos], [acc[entry_at]], [fiber]
     inner = gap & ~first
     if inner.any():
-        lengths = (pos - prev - 1)[inner]
+        lengths = (pos - prev - 1)[inner].astype(np.intp, copy=False)  # (for np.repeat)
         out_pos.append(_runs(prev[inner] + 1, lengths))
         out_val.append(np.repeat(acc[seq_index[inner]], lengths))
         out_fib.append(np.repeat(fiber[inner], lengths))
     if tail.any():
-        lengths = (L - 1 - pos)[tail]
+        lengths = (L - 1 - pos)[tail].astype(np.intp, copy=False)
         out_pos.append(_runs(pos[tail] + 1, lengths))
         out_val.append(np.repeat(acc[entry_at[tail] + 1], lengths))
         out_fib.append(np.repeat(fiber[tail], lengths))

@@ -301,7 +301,7 @@ def repeat(x, repeats, /, *, axis=None):
     shape = list(x.shape)
     shape[axis] = int(starts[-1])
     coords, values = _entries(x)
-    k = counts[coords[axis]]
+    k = counts[coords[axis]].astype(np.intp, copy=False)  # (intp for np.repeat)
     which = np.repeat(np.arange(len(values)), k)
     within = np.arange(which.size) - np.repeat(np.cumsum(k) - k, k)
     coords = [c[which] for c in coords]
