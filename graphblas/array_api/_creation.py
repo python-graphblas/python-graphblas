@@ -211,6 +211,10 @@ def asarray(obj, /, *, dtype=None, device=None, copy=None, fill_value=None):
     elif dt is None and isinstance(obj, int) and not isinstance(obj, np.generic):
         dt = np.dtype("int64")
     a = np.asarray(obj, dtype=dt)
+    if dt is None and a.dtype == np.int32 and _has_python_int(obj):
+        # numpy gives Python ints its default integer, int32 on 32-bit platforms such as
+        # WebAssembly; they take ours, int64, on every platform
+        a = a.astype(np.int64)
     if not a.dtype.isnative:
         a = a.astype(a.dtype.newbyteorder("="))
     if dt is None and a.dtype.kind == "f" and a.dtype.itemsize < 4:
@@ -236,6 +240,13 @@ def _stack_arrays(obj):
     if len({p.shape for p in parts}) != 1:
         return None
     return stack(parts)
+
+
+def _has_python_int(obj):
+    """Whether ``obj`` (a value, or lists and tuples of them) holds a Python int."""
+    if isinstance(obj, (list, tuple)):
+        return any(map(_has_python_int, obj))
+    return isinstance(obj, int) and not isinstance(obj, builtins.bool)
 
 
 def _unwrap_nested(obj):
