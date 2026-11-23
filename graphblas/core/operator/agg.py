@@ -152,6 +152,13 @@ class Aggregator:
 
     def __getitem__(self, dtype):
         dtype = lookup_dtype(dtype)
+        if (
+            dtype._is_udt
+            and isinstance(self._custom, partial)
+            and self._custom.func is _count_by_kind
+        ):
+            # count_nonzero and count_zero compare with 0, and a UDT has no 0 to compare with
+            raise KeyError(f"{self.name} does not work with {dtype}")
         if not self._any_dtype and dtype not in self.types:
             # An aggregator made of a monoid alone works on a UDT when the monoid
             # lifts to it (``agg.sum``, ``agg.min``). The others (``agg.hypot``,
@@ -355,7 +362,7 @@ class TypedAggregator:
                 # an expensive multiplier, such as `pow`, an apply and a reduce on every
                 # thread are faster: 8 ms instead of 83 ms for `sum_of_squares` on 1e7
                 # entries.  For a cheap one, such as `isne`, they are faster unless the JIT
-                # is on: `count_nonzero` of 5e6 entries took 1.5 ms instead of 14 ms with the
+                # is on: `count_nonzero` of 5e6 entries takes 1.5 ms instead of 14 ms with the
                 # JIT at "run" or "off", and 1.2 ms instead of 0.15 to 1.1 ms with it on.
                 binop = semiring.binaryop
                 x = binop(agg._initval, v) if agg._switch else binop(v, agg._initval)

@@ -1976,6 +1976,7 @@ def test_reduce_agg_variance_of_equal_floats_is_not_negative():
 
     E[x**2] - E[x]**2 can round below 0 for values such as 0.1, and its square root is then
     NaN. A NaN in the values still gives NaN, and the sample variance of one value NaN.
+    A complex variance has no order to clamp by, and is left as it is.
     """
     names = ["varp", "vars", "stdp", "stds"]
     for dtype, value, n in [
@@ -2000,6 +2001,17 @@ def test_reduce_agg_variance_of_equal_floats_is_not_negative():
     v = Vector.from_dense([np.nan, 1.0])
     for name in names:
         assert np.isnan(v.reduce(getattr(agg, name)).new().value)
+    if dtypes._supports_complex:
+        # A complex variance is E[x**2] - E[x]**2 in complex arithmetic, not clamped
+        A = Matrix.from_dense([[1 + 1j, 1 - 1j]])
+        for result in [
+            A.reduce_rowwise(agg.varp).new()[0].new().value,
+            A.reduce_scalar(agg.varp).new().value,
+            A[0, :].new().reduce(agg.varp).new().value,
+        ]:
+            assert result == pytest.approx(-1)
+        for name in names:
+            assert A.reduce_rowwise(getattr(agg, name)).new().dtype == "FC64"
     one = Vector.from_dense([5.0])
     assert one.reduce(agg.varp).new().value == 0
     assert np.isnan(one.reduce(agg.stds).new().value)
@@ -2041,6 +2053,7 @@ def test_reduce_agg_count_nonzero_refuses_a_udt():
     udt = dtypes.register_anonymous(np.dtype([("cnzu_a", np.int8), ("cnzu_b", np.float64)]))
     v = Vector(udt, size=3)
     for aggregator in [agg.count_nonzero, agg.count_zero]:
+        assert udt not in aggregator
         with pytest.raises(KeyError, match=f"{aggregator.name} does not work with"):
             v.reduce(aggregator).new()
 
