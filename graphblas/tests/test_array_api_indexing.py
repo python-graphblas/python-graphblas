@@ -329,6 +329,7 @@ def test_assigning_to_an_empty_selection_checks_the_value():
         (False,),
         (slice(None), False),
         (None, False, 1),
+        (slice(None), slice(None), Ellipsis, False),  # (a "..." that covers no axis)
         (np.array([], int),),
         (slice(0, 0), [0, 1]),
     ]:
