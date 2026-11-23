@@ -15,6 +15,8 @@ from graphblas.core import _supports_udfs as supports_udfs
 from graphblas.core.utils import _distinct_buffers, values_to_numpy_buffer
 from graphblas.exceptions import InvalidValue
 
+from .conftest import skip_on_emscripten
+
 if backend != "suitesparse":
     pytest.skip("gb.ss and A.ss only available with suitesparse backend", allow_module_level=True)
 
@@ -245,6 +247,7 @@ def test_about():
     assert "library_name" in repr(about)
 
 
+@skip_on_emscripten("no threads, so no OpenMP")
 def test_openmp_enabled():
     # A SuiteSparse:GraphBLAS built without OpenMP runs single-threaded, and
     # nothing else reports it. Keep this a hard failure: it caught the conda-forge
@@ -651,6 +654,7 @@ def _run_probe(source, **env):
 
 @pytest.mark.slow
 @pytest.mark.skipif("empty is None")
+@skip_on_emscripten("no subprocesses")
 def test_import_with_libc_allocator():
     # With ``memory_manager="c"`` GraphBLAS frees with libc's ``free``, so not
     # even the copy that ``take_ownership=False`` makes may come from NumPy
@@ -701,6 +705,7 @@ print("done")
 """
 
 
+@skip_on_emscripten("no subprocesses")
 def test_take_ownership_of_one_array_twice():
     # GraphBLAS frees every buffer it takes, so an array given as two arguments
     # has to be copied for one of them. Regression: an index array given twice was
@@ -788,6 +793,7 @@ print("done")
 """
 
 
+@skip_on_emscripten("no subprocesses")
 def test_failed_secure_import_frees_once():
     # GraphBLAS moves the arrays into the object before a secure check, and
     # frees them with the object when the check fails, so they must be unclaimed

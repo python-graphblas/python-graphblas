@@ -19,7 +19,9 @@ if backend == "suitesparse":
 
 def slice_to_index(index, size):
     start, stop, step = index.indices(size)
-    length = len(range(start, stop, step))
+    # Not len(range(...)): it raises OverflowError past sys.maxsize, which is 2**31 - 1 on
+    # 32-bit platforms such as WebAssembly, and a dimension may be up to 2**60
+    length = max(0, (stop - start + step - (1 if step > 0 else -1)) // step)
     if length == size and step == 1:
         # [:] means all indices; use special GrB_ALL indicator
         return AxisIndex(size, _ALL_INDICES, _as_scalar(size, _INDEX, is_cscalar=True), size)

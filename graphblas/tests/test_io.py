@@ -10,6 +10,8 @@ import graphblas as gb
 from graphblas import Matrix, Vector, dtypes
 from graphblas.exceptions import GraphblasException
 
+from .conftest import emscripten
+
 try:
     import networkx as nx
 except ImportError:  # pragma: no cover (import)
@@ -39,6 +41,23 @@ except ImportError:  # pragma: no cover (import)
     fmm = None
 
 suitesparse = gb.backend == "suitesparse"
+
+
+@pytest.fixture
+def _scipy_mm_in_one_thread():
+    """Under Pyodide, run scipy's Matrix Market reader and writer in one thread.
+
+    By default they start threads, which Pyodide lacks; the installation guide says to do this.
+    scipy.io registers them with threadpoolctl when it is imported, so import it first: a
+    limit set before then does not reach them.
+    """
+    if not emscripten:
+        yield
+        return
+    threadpoolctl = pytest.importorskip("threadpoolctl")
+    pytest.importorskip("scipy.io")
+    with threadpoolctl.threadpool_limits(1):
+        yield
 
 
 @pytest.mark.skipif("not ss")
@@ -210,6 +229,7 @@ def test_to_networkx_limits(monkeypatch):
 
 
 @pytest.mark.skipif("not ss")
+@pytest.mark.usefixtures("_scipy_mm_in_one_thread")
 @pytest.mark.parametrize("engine", ["auto", "scipy", "fmm"])
 def test_mmread_mmwrite(engine):
     if engine == "fmm" and fmm is None:  # pragma: no cover (import)
@@ -350,6 +370,7 @@ def test_mmread_mmwrite(engine):
 
 
 @pytest.mark.skipif("not ss")
+@pytest.mark.usefixtures("_scipy_mm_in_one_thread")
 def test_mmread_asks_scipy_for_a_sparse_array(monkeypatch):
     """``mmread`` passes ``spmatrix=False`` to scipy unless the caller passes it.
 
@@ -423,6 +444,7 @@ def test_from_scipy_sparse_compressed_duplicates(format):
 
 
 @pytest.mark.skipif("not ss")
+@pytest.mark.usefixtures("_scipy_mm_in_one_thread")
 @pytest.mark.parametrize("engine", ["auto", "scipy", "fast_matrix_market"])
 def test_matrix_market_sparse_duplicates(engine):
     if engine == "fast_matrix_market" and fmm is None:  # pragma: no cover (import)
@@ -443,6 +465,7 @@ def test_matrix_market_sparse_duplicates(engine):
 
 
 @pytest.mark.skipif("not ss")
+@pytest.mark.usefixtures("_scipy_mm_in_one_thread")
 def test_matrix_market_bad_engine():
     A = gb.Matrix.from_coo([0, 0, 3, 5], [1, 4, 0, 2], [1, 0, 2, -1], nrows=7, ncols=6)
     with pytest.raises(ValueError, match="Bad engine value"):

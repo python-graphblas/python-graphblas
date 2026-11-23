@@ -149,6 +149,42 @@ def test_from_coo_numpy_scalars_keep_dtype(np_type):
     assert Vector.from_coo([0, 1], np.array([1, 2], np_type)).dtype == expected
 
 
+def test_python_ints_are_int64_on_every_platform():
+    """Python ints given as values make INT64, as ``dtype=int`` and ``from_scalar`` do.
+
+    NumPy gives them its default integer, int32 on 32-bit platforms such as WebAssembly,
+    where these were INT32 and sums past 2**31 - 1 wrapped.
+    """
+    made = [
+        Vector.from_coo([0, 1], 1),
+        Vector.from_coo([0, 1], [1, 2]),
+        Vector.from_coo([0, 1], (1, np.int32(2))),
+        Vector.from_dense([1, 2]),
+        Vector.from_dict({0: 1}),
+        Vector.from_pairs([(0, 1)]),
+        Matrix.from_coo([0], [0], [1]),
+        Matrix.from_dense([[1, 2]]),
+        Matrix.from_edgelist([(0, 1)], [1]),
+    ]
+    for x in made:
+        assert x.dtype == dtypes.INT64
+    n = 70000
+    assert Vector.from_coo(range(n), n).reduce().new() == n * n
+    assert Vector.from_coo(range(n), range(n)).reduce().new() == n * (n - 1) // 2
+    # NumPy arrays and NumPy scalars keep their dtype
+    assert Vector.from_coo([0, 1], np.array([1, 2], np.int32)).dtype == dtypes.INT32
+    assert Vector.from_coo([0], [np.int32(1)]).dtype == dtypes.INT32
+
+
+def test_has_python_int():
+    from graphblas.core.utils import _has_python_int
+
+    for values in [1, [1, 2], (np.int32(1), 2), [[np.int32(1)], [2]], range(3), [[], [5]]]:
+        assert _has_python_int(values), values
+    for values in [True, [True, False], np.int32(1), [np.int32(1)], [], [[]], 1.5, "1"]:
+        assert not _has_python_int(values), values
+
+
 def test_from_coo_scalar():
     u = Vector.from_coo([0, 1, 3], 7)
     assert u.size == 4

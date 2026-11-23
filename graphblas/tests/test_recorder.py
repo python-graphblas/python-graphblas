@@ -4,6 +4,8 @@ import graphblas as gb
 from graphblas.core.formatting import CSS_STYLE
 from graphblas.exceptions import OutOfMemory
 
+from .conftest import skip_on_emscripten
+
 suitesparse = gb.backend == "suitesparse"
 
 
@@ -226,6 +228,10 @@ def test_record_repr_html():
         assert isinstance(rec._repr_html_(), str)
 
 
+@skip_on_emscripten(
+    "GraphBLAS truncates the size of a 4 GiB or larger request to 32 bits and crashes, "
+    "instead of raising OutOfMemory"
+)
 def test_record_failed_call():
     BIG = gb.Vector(int, size=2**55)
     small = gb.Vector(int, size=2**55)

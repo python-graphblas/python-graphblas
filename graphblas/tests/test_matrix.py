@@ -3506,6 +3506,53 @@ def test_ss_reshape(A):
     assert rv.isequal(expected)
 
 
+@pytest.mark.skipif("not suitesparse")
+def test_ss_reshape_past_2_31_positions():
+    """A Matrix of 2**31 positions or more reshapes and flattens on every platform.
+
+    numpy's sizes stop at 2**31 - 1 on 32-bit platforms such as WebAssembly, where working
+    out the new shape with numpy raised ValueError.
+    """
+    # 2**31 positions, not 2**32: before 10.5.2, SuiteSparse fails reshapes where a dimension
+    # crosses 2**32 (GraphBLAS issue 462), and 10.3.1 to 10.5.1 raise InvalidValue here.
+    n = 2**16
+    A = Matrix(int, n, n // 2)
+    A[1, 2] = 3
+    B = A.ss.reshape(2 * n, -1)
+    assert B.shape == (2 * n, n // 4)
+    assert B[2, 2].new() == 3  # position 1 * n // 2 + 2
+    v = A.ss.flatten()
+    assert v.size == n * n // 2
+    assert v[n // 2 + 2].new() == 3
+    assert v.ss.reshape(n, n // 2).isequal(A)
+    assert A.ss.reshape((n // 2, n), inplace=True) is None
+    assert A.shape == (n // 2, n)
+    with pytest.raises(ValueError, match="cannot reshape array"):
+        A.ss.reshape(n, n)
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_ss_reshape_shape_in_python_ints_as_numpy_gives_it(monkeypatch):
+    """Where numpy cannot hold a Matrix's size, the new shape and the errors are numpy's anyway."""
+    from graphblas.core.ss import matrix as ss_matrix
+
+    cases = [
+        *[(4, 16), (4, -1), (-1, 1), (-2, 32), (np.int64(4), 16), (64,)],
+        *[((4, 16),), ((-1, 16),), ([4, 16],), (np.array([4, 16]),), ((4, 4, 4),)],
+        *[(5, 5), (4,), ((4,),), ((4, 5),), (-1, -1), (3, -1), (0, -1), (4.0, 16), ("4", 16)],
+    ]
+
+    def outcome(args):
+        try:
+            return ss_matrix._reshape_dims((8, 8), *args)
+        except (TypeError, ValueError) as exc:
+            return type(exc), str(exc)
+
+    expected = [outcome(args) for args in cases]  # by numpy
+    monkeypatch.setattr(ss_matrix, "_MAX_INTP", 0)  # as if numpy could not hold 64
+    assert [outcome(args) for args in cases] == expected
+
+
 def test_autocompute_argument_messages(A, v):
     with pytest.raises(TypeError, match="autocompute"):
         A.ewise_mult(A & A)
@@ -4983,6 +5030,39 @@ def test_subarray_dtype_values_shape():
     # The lengths compared are numbers of elements, not of numbers (which would be 6)
     with pytest.raises(ValueError, match="lengths must match: 2, 2, 3$"):
         Matrix.from_coo([0, 1], [0, 1], np.ones((3, 2)), "FP64[2]")
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_ss_coo_indptr_without_numba_sums_the_counts_in_place(monkeypatch):
+    """Without Numba, coor and cooc imports sum the row counts into indptr with no copy.
+
+    The counts are read unsigned as they are. Cast to the uint64 of indptr instead, they
+    would take two more arrays of their size (16 bytes per row) and twice the time.
+    """
+    from graphblas.core.ss import matrix as ss_matrix
+
+    monkeypatch.setattr(ss_matrix, "_has_numba", False)
+    size = 2**20
+    rows = np.repeat(np.arange(0, size, 2, dtype=np.uint64), 3)  # 3 entries in each even row
+    counts = np.zeros(size, np.uint64)
+    counts[::2] = 3
+    expected = np.concatenate([[0], np.cumsum(counts)]).astype(np.uint64)
+    started = not tracemalloc.is_tracing()
+    if started:  # pragma: no branch (safety)
+        tracemalloc.start()
+    try:
+        tracemalloc.reset_peak()
+        before = tracemalloc.get_traced_memory()[0]
+        indptr = ss_matrix._coo_indptr(rows, size, "rows", "nrows")
+        peak = tracemalloc.get_traced_memory()[1] - before
+    finally:
+        if started:  # pragma: no branch (safety)
+            tracemalloc.stop()
+    assert indptr.dtype == np.uint64
+    assert_array_equal(indptr, expected)
+    if np.dtype(np.intp).itemsize == 8:  # (on 32-bit platforms the uint64 sum casts them)
+        # indptr and the counts, 8 bytes per row each, and no other array of their size
+        assert peak < 20 * size
 
 
 @pytest.mark.skipif("not suitesparse")

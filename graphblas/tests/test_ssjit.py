@@ -28,7 +28,7 @@ from graphblas.core.operator.indexbinary import _has_idxbinop
 from graphblas.core.ss.jit_config import _enable_jit_for_udt
 from graphblas.exceptions import EmptyObject
 
-from .conftest import autocompute, burble
+from .conftest import autocompute, burble, skip_on_emscripten
 
 from graphblas import Vector  # isort:skip (for dask-graphblas)
 
@@ -159,6 +159,7 @@ print("after: " + str(control()))
 """
 
 
+@skip_on_emscripten("no subprocesses")
 @pytest.mark.parametrize("jit_c_control", [None, "run", "on", "pause"])
 def test_ss_import_leaves_jit_c_control_alone(jit_c_control):
     """Reading from ``gb.ss`` does not change ``jit_c_control``.
@@ -196,6 +197,7 @@ print("initialized: " + str(ssgb.is_initialized()))
 """
 
 
+@skip_on_emscripten("no subprocesses")
 def test_bad_jit_c_control_config_fails_init_before_it_starts():
     """A bad ``GRAPHBLAS_JIT_C_CONTROL`` says so, and leaves SuiteSparse uninitialized."""
     lines, report = _run_in_fresh_process(_BAD_JIT_C_CONTROL_PROBE, "of")
@@ -279,6 +281,7 @@ print("second: " + str(gb.ss.fix_jit_config()))
 """
 
 
+@skip_on_emscripten("no subprocesses")
 def test_fix_jit_config_first_call_agrees_with_the_second():
     """``fix_jit_config()`` gives the same answer on its first call as on later ones.
 
@@ -341,6 +344,7 @@ for kind, register in registrars.items():
 """
 
 
+@skip_on_emscripten("no subprocesses")
 def test_ss_register_new_enables_the_jit():
     """Registering an op from C source raises the default ``'run'``.
 
@@ -484,6 +488,7 @@ if numba is not None:
 """
 
 
+@skip_on_emscripten("no subprocesses")
 @pytest.mark.parametrize(
     ("form", "env_control", "kept"),
     [

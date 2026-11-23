@@ -71,6 +71,17 @@ def getop(module, name):
 
 pypy = platform.python_implementation() == "PyPy"
 
+# Pyodide (WebAssembly, wasm32) has no subprocesses and no threads, so tests that need them
+# skip there (``skip_on_emscripten``), as do tests that hit a limit of wasm32 or a bug there.
+# NumPy's default integer is int32 there, so a test that builds a NumPy array of integers
+# for its values gives the array a dtype (Python ints make INT64 on every platform).
+emscripten = sys.platform == "emscripten"
+
+
+def skip_on_emscripten(reason):
+    """Skip a test under Pyodide (WebAssembly); ``reason`` says why it cannot run there."""
+    return pytest.mark.skipif(emscripten, reason=f"Pyodide (WebAssembly): {reason}")
+
 
 def pytest_configure(config):
     # Under ``pytest -n`` (xdist), each worker runs ``pytest_configure``. The
