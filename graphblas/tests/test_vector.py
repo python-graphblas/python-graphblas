@@ -156,6 +156,9 @@ def test_durations_into_short_text():
     """An array of durations converts into a text UDT too short for it by being cut short, as
     a number is, for values, an element and a literal. So does a list of such arrays, and each
     array or scalar in a list keeps its own unit.
+
+    This checks the values only, which numpy before 2.4 also gets after writing past the end
+    of each string; test_durations_into_short_text_stay_in_bounds checks that it does not.
     """
     text = dtypes.register_anonymous(np.dtype("U4"), "_ShortTextDurations")
     data = dtypes.register_anonymous(np.dtype("S4"), "_ShortBytesDurations")
