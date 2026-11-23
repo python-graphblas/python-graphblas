@@ -255,18 +255,19 @@ review. Like the rest, they are open to review.
     not have, Matrix refuses it, and `T.ravel().reduce(agg.argmin)` gives it. Decided
     2026-11-22. _Revisit_ if a user needs an index over several axes.
 34. **`unfold` takes `traversal_order=`, not `order=`.** Its "C" or "F" is the order in which
-    the columns traverse the other axes, numpy's `reshape(order=)` sense. In python-graphblas
-    `order=` names a Matrix's storage orientation, "rowwise" or "columnwise", with "C" and "F"
-    accepted as aliases (`Matrix.from_dicts`, `to_dicts`, `M.ss.reshape`, `M.ss.flatten`; the
-    matrix-orientation work, #495, adds it to `Matrix()`, `dup`, `from_coo`, `from_dense` and
-    other methods that make a Matrix). `unfold` returns a Matrix, so `unfold(order="F")` would
-    read as a columnwise result. _Roads not taken:_ `order=`, for that clash; `index_order=`,
-    numpy's own documentation term, but in a sparse library it suggests the order of stored
-    indices; `ravel_order=`, the Tensor's word for how a group's axes combine, a close second;
-    `convention="tensorly"` or `"kolda"`, which names a source rather than the effect.
-    TensorLy's `unfold(tensor, mode)` has no such keyword (C order only), and pydata/sparse has
-    no `unfold`. Decided 2026-11-22: the maintainer kept `order=` for #495 and suggested
-    `traversal_order`.
+    the columns traverse the other axes, numpy's `reshape(order=)` sense. python-graphblas
+    reads "C" and "F" as aliases of "rowwise" and "columnwise" wherever it takes `order=`
+    (`utils.get_order`): the orientation of `Matrix.from_dicts` and `to_dicts`, and the
+    traversal of `M.ss.reshape` and `M.ss.flatten`. The matrix-orientation work (#495) adds
+    `order=` for the storage orientation of a new Matrix to `Matrix()`, `dup`, `from_coo`,
+    `from_dense` and other methods that make one. `unfold` returns a Matrix, so
+    `unfold(order="F")` would read as a columnwise result. _Roads not taken:_ `order=`, for
+    that clash; `index_order=`, numpy's own documentation term, but in a sparse library it
+    suggests the order of stored indices; `ravel_order=`, the Tensor's word for how a group's
+    axes combine, a close second; `convention="tensorly"` or `"kolda"`, which names a source
+    rather than the effect. TensorLy's `unfold(tensor, mode)` has no such keyword (C order
+    only), and pydata/sparse has no `unfold`. Decided 2026-11-22: the maintainer kept `order=`
+    for #495 and suggested `traversal_order`.
 
 ## Deferred, on purpose
 
