@@ -843,6 +843,48 @@ def test_nan_fills_absorb_arithmetic():
     assert_array_equal(xp.add(make(d, np.nan), make(d, 0.0)), d + d)
 
 
+def test_nan_fills_absorb_maximum_minimum_and_comparisons():
+    # numpy's maximum and minimum propagate NaN (GraphBLAS's skip it, so these go through
+    # numpy on the intersection), and a comparison with NaN is False (True for not_equal)
+    # whatever the other value: with NaN fills, the intersection of the entries again
+    rng = np.random.default_rng(43)
+    n = 40
+    g = np.where(rng.random((n, n)) < 0.1, rng.normal(size=(n, n)), np.nan)
+    d = np.where(rng.random(n) < 0.5, rng.normal(size=n), np.nan)
+    g[0, :2] = [np.inf, -np.inf]
+    d[:2] = [np.inf, -np.inf]
+    G, D = make(g, np.nan, rng), make(d, np.nan, rng)  # (some NaN values stored too)
+    full = rng.normal(size=n)
+    F = xp.expand_dims(make(full, 0.0), 1)
+    funcs = [(xp.maximum, np.maximum, np.nan), (xp.minimum, np.minimum, np.nan)] + [
+        (getattr(xp, name), getattr(np, name), name == "not_equal")
+        for name in ["less", "less_equal", "greater", "greater_equal", "equal", "not_equal"]
+    ]
+    for func, nf, fill in funcs:
+        for x, y, ex, ey in [
+            (xp.expand_dims(D, 1), G, d[:, None], g),
+            (G, xp.expand_dims(D, 0), g, d[None, :]),
+            (F, G, full[:, None], g),
+            (G, F, g, full[:, None]),
+        ]:
+            R = func(x, y)
+            assert_array_equal(R, nf(ex, ey), zero_signs=False)
+            assert R.nnz <= G.nnz
+            assert same_value(R.fill_value, fill)
+    k = 100
+    col = xp.from_coo((rng.choice(10**4, k, replace=False), np.zeros(k, int)), rng.normal(size=k),
+                      (10**4, 1), fill_value=np.nan)  # fmt: skip
+    row = xp.from_coo((np.zeros(k, int), rng.choice(1000, k, replace=False)), rng.normal(size=k),
+                      (1, 1000), fill_value=np.nan)  # fmt: skip
+    with gb.config.set(array_api_densify_limit=10**5):
+        for func, _, _ in funcs:
+            R = func(col, row)
+            assert (R.shape, R.nnz) == ((10**4, 1000), k * k)
+    # One NaN fill is not enough
+    assert_array_equal(xp.maximum(make(d, np.nan), make(d, 0.0)), np.maximum(d, d))
+    assert_array_equal(xp.less(make(d, np.nan), make(d, 0.0)), np.less(d, d))
+
+
 def test_reductions_of_nan_filled_arrays():
     # A fiber with an unstored position reduces to NaN; a fully stored one to its value
     rng = np.random.default_rng(41)

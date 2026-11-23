@@ -633,9 +633,18 @@ def _binary_arrays(spec, a, b, op, ct, rdt, fill):
         _utils.expansion_check(Ta, Tb, shape)
         expr = Ta.ewise_union(Tb, op, gb_scalar(fa, ct), gb_scalar(fb, ct), allow_expansion=True)
         return _result(expr.new(dtype=gb_dtype(rdt)), fill)
+    da, db = a.dtype, b.dtype
+    if spec.name in {"maximum", "minimum"} and ct.kind == "f":
+        # GraphBLAS's max and min skip NaN, so NaN fills come here: numpy over the values on
+        # the intersection of entries, when both fills are NaN (``_absorbing``)
+        fa, fb = _utils.scalar(a._fill, ct), _utils.scalar(b._fill, ct)
+        if (e := _absorbing(spec, a, b, fa, fb, ct)) is not None and np.isnan(e):
+            _utils.mult_expansion_check(Ta, Tb, shape)
+            A = Ta.ewise_mult(Tb, binary.first[gb_dtype(da)]).new()
+            B = Ta.ewise_mult(Tb, binary.second[gb_dtype(db)]).new()
+            return _result(_utils.map_values(spec.ufunc, [A, B], rdt), _utils.scalar(e, rdt))
     # numpy over the values: both operands' values on the union of entries, aligned
     _utils.expansion_check(Ta, Tb, shape)
-    da, db = a.dtype, b.dtype
     A = Ta.ewise_union(
         Tb, binary.first[gb_dtype(da)], gb_scalar(a._fill, da), gb_scalar(0, da),
         allow_expansion=True,
@@ -733,6 +742,21 @@ def _stores_all(x):
 def _both_fills_zero(a, b, fa, fb, ct):
     zero = _zero(ct)
     return _utils.same_value(fa, zero) and _utils.same_value(fb, zero)
+
+
+def _nan_fills_compare(a, b, fa, fb, ct):
+    """Whether a comparison stores only the intersection of entries: each operand's fill is
+    NaN or never shows (it stores every position). A comparison with NaN is False (True for
+    not_equal) whatever the other value, so it is the result's fill wherever either operand
+    is unstored. Real floats only: a broadcast intersection of complex operands needs a
+    semiring of eq or ne, which SuiteSparse builds only through Numba.
+    """
+    if ct.kind != "f":
+        return False
+    full_a, full_b = _stores_all(a), _stores_all(b)
+    if full_a and full_b:
+        return False
+    return (full_a or bool(np.isnan(fa))) and (full_b or bool(np.isnan(fb)))
 
 
 def _multiply_intersects(a, b, fa, fb, ct):
@@ -868,19 +892,47 @@ _SPECS = {
         annihilator=_multiply_intersects,
     ),
     "divide": _Binary("divide", np.divide, gb=_typed_for({"f": binary.truediv})),
-    "equal": _Binary("equal", np.equal, "cmp", gb=_typed_for(dict.fromkeys("biufc", binary.eq))),
-    "not_equal": _Binary(
-        "not_equal", np.not_equal, "cmp", gb=_typed_for(dict.fromkeys("biufc", binary.ne))
+    "equal": _Binary(
+        "equal",
+        np.equal,
+        "cmp",
+        gb=_typed_for(dict.fromkeys("biufc", binary.eq)),
+        annihilator=_nan_fills_compare,
     ),
-    "less": _Binary("less", np.less, "cmp", gb=_typed_for(dict.fromkeys("biuf", binary.lt))),
+    "not_equal": _Binary(
+        "not_equal",
+        np.not_equal,
+        "cmp",
+        gb=_typed_for(dict.fromkeys("biufc", binary.ne)),
+        annihilator=_nan_fills_compare,
+    ),
+    "less": _Binary(
+        "less",
+        np.less,
+        "cmp",
+        gb=_typed_for(dict.fromkeys("biuf", binary.lt)),
+        annihilator=_nan_fills_compare,
+    ),
     "less_equal": _Binary(
-        "less_equal", np.less_equal, "cmp", gb=_typed_for(dict.fromkeys("biuf", binary.le))
+        "less_equal",
+        np.less_equal,
+        "cmp",
+        gb=_typed_for(dict.fromkeys("biuf", binary.le)),
+        annihilator=_nan_fills_compare,
     ),
     "greater": _Binary(
-        "greater", np.greater, "cmp", gb=_typed_for(dict.fromkeys("biuf", binary.gt))
+        "greater",
+        np.greater,
+        "cmp",
+        gb=_typed_for(dict.fromkeys("biuf", binary.gt)),
+        annihilator=_nan_fills_compare,
     ),
     "greater_equal": _Binary(
-        "greater_equal", np.greater_equal, "cmp", gb=_typed_for(dict.fromkeys("biuf", binary.ge))
+        "greater_equal",
+        np.greater_equal,
+        "cmp",
+        gb=_typed_for(dict.fromkeys("biuf", binary.ge)),
+        annihilator=_nan_fills_compare,
     ),
     "logical_and": _Binary(
         "logical_and",
