@@ -70,7 +70,13 @@ def test_scatter_from_selected_coordinates_as_numpy(monkeypatch):
     from .test_array_api_indexing import SET_CASES, A
 
     monkeypatch.setattr(_utils, "_MAX_INTP", 0)
-    for key, value in SET_CASES:
+    cases = [
+        *SET_CASES,
+        ((slice(None, None, -1), [0, 1], [1, 2]), np.arange(1.0, 7.0).reshape(3, 2)),
+        # A "..." that covers no axis puts the advanced axis first: a (2, 3) selection
+        ((slice(None), [0, 1], Ellipsis, [1, 2]), np.arange(1.0, 7.0).reshape(2, 3)),
+    ]
+    for key, value in cases:
         dense = np.where(A % 3 == 0, 0.0, A.astype(float))
         expected = dense.copy()
         expected[key] = value
