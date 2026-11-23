@@ -1304,6 +1304,67 @@ def test_lazy_op():
     assert op.from_string("numpy.lazy") is unary.numpy.lazy
 
 
+def test_lazy_op_first_used_by_threads_at_once():
+    """Threads that first get a lazily registered op at once all get it, built once.
+
+    Regression: the first thread took the name out of the delayed table before building the
+    op, and every thread that came meanwhile found it in neither place (AttributeError).
+    """
+    import threading
+    import time
+
+    from graphblas import indexbinary
+
+    calls = []
+
+    def build(**kwargs):
+        calls.append(None)
+        time.sleep(0.05)  # (threads arrive during the build)
+        return object()
+
+    def first_use_by_threads(namespace, name):
+        barrier = threading.Barrier(8)
+        got = []
+
+        def get():
+            barrier.wait()
+            got.append(getattr(namespace, name, None))
+
+        threads = [threading.Thread(target=get) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        return got
+
+    kwargs = {"binaryop": binary.plus, "monoid": monoid.plus}
+    path = operator.OpPath(binary, "_race_path")
+    namespaces = [binary, unary, monoid, semiring, select, indexunary, indexbinary, path]
+    namespaces += [binary.numpy, unary.numpy, monoid.numpy, semiring.numpy]
+    for namespace in [*namespaces, op, op.numpy]:
+        name = "_race_probe"
+        if namespace is op or namespace is op.numpy:
+            mod = binary if namespace is op else binary.numpy
+            mod._delayed[name] = (build, {})
+            namespace._delayed[name] = mod
+        elif namespace in {monoid, monoid.numpy}:
+            namespace._delayed[name] = (build, {"binaryop": binary.plus})
+        elif namespace in {semiring, semiring.numpy}:
+            namespace._delayed[name] = (build, dict(kwargs))
+        else:
+            namespace._delayed[name] = (build, {})
+        calls.clear()
+        try:
+            got = first_use_by_threads(namespace, name)
+        finally:
+            for ns in [namespace, binary, binary.numpy]:
+                ns._delayed.pop(name, None)
+                vars(ns).pop(name, None)
+        assert len(calls) == 1, namespace
+        assert got[0] is not None, namespace
+        assert all(x is got[0] for x in got), namespace
+
+
 def test_positional():
     assert not unary.exp.is_positional
     assert not unary.abs[bool].is_positional

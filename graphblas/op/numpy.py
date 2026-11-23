@@ -1,5 +1,5 @@
 from ..binary import numpy as _np_binary
-from ..core import _supports_udfs
+from ..core import _build_delayed, _supports_udfs
 from ..semiring import numpy as _np_semiring
 from ..unary import numpy as _np_unary
 
@@ -18,10 +18,9 @@ def __dir__():
 
 
 def __getattr__(name):
-    if name in _delayed:
-        module = _delayed.pop(name)
-        rv = getattr(module, name)
-        globals()[name] = rv
+    from . import _build
+
+    if (rv := _build_delayed(globals(), _delayed, name, _build)) is not None:
         return rv
     try:
         rv = getattr(_op_to_mod[name], name)
