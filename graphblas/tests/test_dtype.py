@@ -638,6 +638,28 @@ def test_dtype_to_from_string():
             assert dtype == dtype2
 
 
+def test_udt_of_a_numpy_extension_dtype():
+    """A numpy extension dtype that is not a record or an array, such as bfloat16, is a UDT.
+
+    Its ``.str`` (``'<V2'``) does not rebuild it, so ``_dtype_to_string`` reaches the last
+    case of ``_dtype_to_explicit_dict``, which returns that ``.str``. Numba cannot type
+    bfloat16, so ``register_anonymous`` refuses it when Numba is installed.
+    """
+    ml_dtypes = pytest.importorskip("ml_dtypes")
+    bfloat16 = np.dtype(ml_dtypes.bfloat16)
+    assert core.dtypes._dtype_to_string(bfloat16) == repr(bfloat16.str)
+    if supports_udfs:
+        return
+    udt = dtypes.register_anonymous(bfloat16, "_ExtBFloat16")
+    assert udt.np_type == bfloat16
+    v = gb.Vector(udt, size=2)
+    v[0] = ml_dtypes.bfloat16(1.5)
+    indices, values = v.to_coo()
+    assert indices.tolist() == [0]
+    assert values.dtype == bfloat16
+    assert values.tolist() == [1.5]
+
+
 def test_dtype_to_string_aligned_outer_packed_inner():
     """An aligned record with a packed record field round-trips through ``_dtype_to_string``.
 
