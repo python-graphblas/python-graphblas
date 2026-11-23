@@ -155,8 +155,8 @@ Reductions
 A fiber with no entries stays missing (no initial value), as in GraphBLAS. ``sum``, ``prod``,
 ``min``, ``max``, ``any`` and ``all`` are shorthands for ``reduce`` with the matching monoid.
 
-``reduce`` also accepts the aggregators made of one monoid or one semiring, with the same
-results and result types as for Matrix:
+``reduce`` also accepts aggregators, including those made of several reductions, such as
+``agg.mean`` and ``agg.varp``, with the result types they have for Matrix:
 
 .. code-block:: python
 
@@ -164,9 +164,10 @@ results and result types as for Matrix:
     array([2, 1])
     >>> X.reduce(gb.agg.hypot).new().to_scalar().value  # sqrt(1 + 4 + 9)
     3.7416573867739413
+    >>> X.reduce(gb.agg.mean, axis=(1, 2)).new().to_dense()  # (1 + 2) / 2 and 3 / 1
+    array([1.5, 3. ])
 
-Aggregators made of several reductions (``agg.mean``, ``agg.varp``, ...) or of positions
-(``agg.argmin``, ``agg.first``, ...) raise ``NotImplementedError``.
+Aggregators of positions (``agg.argmin``, ``agg.first``, ...) raise ``NotImplementedError``.
 
 Contractions
 ------------

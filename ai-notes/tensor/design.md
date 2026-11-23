@@ -316,7 +316,10 @@ cached), or built from the nonempty rows of a hypersparse group (`rows_selector`
 with `(monoid, second)` or `(monoid, first)` reduces any subset of a group's axes in place,
 with no relayout. UDT values always take the REBUILD path. `reduce` also takes
 aggregators made of one monoid or one semiring (`_reduce_aggregator`), typed as Matrix types
-them. Composite aggregators (`mean`) and positional ones raise `NotImplementedError`.
+them, and composite ones (`mean`, `varp`, ...): each part is computed now as its own
+aggregator, and Matrix's finalize function combines them into the expression returned,
+which stores in the result type Matrix gives (`decisions.md`, 32). The aggregators that need
+positions (`argmin`, `first`, ...) raise `NotImplementedError`.
 
 ## Contractions and batched products
 

@@ -24,7 +24,10 @@ def _reduce_aggregator(t, op, axis, keepdims):
     multiply, with the aggregator's initial value, to every entry, then reduces with the
     semiring's monoid, then applies its finalize op. An aggregator that picks another by the
     kind of number (``agg.L1norm``) reduces with the one for the Tensor's dtype, and an
-    applybegin op, if any, is applied first.
+    applybegin op, if any, is applied first. A composite one (``agg.mean``) computes each of
+    its aggregations now and returns its finalize function's expression of them (for
+    ``mean``, ``sum / count``), which Matrix's finalize functions build from infix operators
+    that work on Tensors too.
     """
     from .operator.agg import TypedAggregator, _by_kind
 
@@ -34,7 +37,20 @@ def _reduce_aggregator(t, op, axis, keepdims):
         agg = aggs.get(t.dtype.np_type.kind, aggs["other"])
     if agg._monoid is not None:
         return _reduce_expr(t, agg._monoid, axis, keepdims)
-    if agg._semiring is None or agg._composite is not None or agg._custom is not None:
+    if agg._composite is not None:
+        typed = agg[t.dtype]  # (a KeyError for the types Matrix refuses, as peak_to_peak of FC64)
+        parts = [_reduce_aggregator(t, part, axis, keepdims).new() for part in agg._composite]
+        inner = agg._finalize(*parts, {})
+        # Matrix stores the finalize expression into an output of the aggregator's return type,
+        # which can be narrower than the expression's own (FP32 for the mean of FP32 values,
+        # where sum / count gives FP64), so this does too.
+        axis_repr = "None" if axis is None else repr(axis)
+        return TensorExpression(
+            "reduce", _composite_recipe, [t], (inner,), dtype=typed.return_type,
+            shape=inner.shape, op=typed,
+            expr_repr=f"{{0.name}}.reduce({{op}}, axis={axis_repr})",
+        )  # fmt: skip
+    if agg._semiring is None or agg._custom is not None:
         raise NotImplementedError(
             f"Tensor.reduce supports aggregators made of a monoid or a semiring; not "
             f"agg.{agg.name}"
@@ -54,6 +70,10 @@ def _reduce_aggregator(t, op, axis, keepdims):
     if agg._finalize is not None:
         rv = rv.new().apply(agg._finalize[sr.return_type])
     return rv
+
+
+def _composite_recipe(updater, inner):
+    inner.args[-2](updater, *inner.args[-1])
 
 
 def _reduce_expr(self, op, axis, keepdims, *, name="reduce", cast=None):

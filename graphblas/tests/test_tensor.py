@@ -7056,7 +7056,7 @@ def test_extract_repeated_indices(ndim, max_listed, monkeypatch):
 
 def test_reduce_aggregators():
     """``reduce`` with aggregators made of a monoid or a semiring returns what Matrix returns
-    (values and dtypes); composite ones raise.
+    (values and dtypes); the ones that need positions raise.
     """
     from graphblas import agg
 
@@ -7081,8 +7081,106 @@ def test_reduce_aggregators():
             assert got.dtype == want.dtype, (dtype, name)
             assert got.reshape(15).isclose(want, rel_tol=1e-12), (dtype, name)
             assert X.reduce(a[dtype], axis=1).new().isclose(got)
-    with pytest.raises(NotImplementedError, match="agg.mean"):
-        X.reduce(agg.mean)
+    with pytest.raises(NotImplementedError, match="agg.argmin"):
+        X.reduce(agg.argmin, axis=0)
+
+
+def _assert_same_entries(got, want):
+    """``got`` (a Tensor) holds the entries of ``want`` (a Vector or Scalar of its size), with
+    the same dtype, and NaN where ``want`` has NaN. FP32 values may differ by FP32 rounding
+    of values up to 25, and by its square root: Matrix computes ``sum / count`` and its square
+    in FP32 there, so its variance of one value is about 1e-7, not 0, and its std about 4e-4.
+    """
+    assert got.dtype == want.dtype
+    tol = {"rtol": 1e-5, "atol": 2e-3} if want.dtype in {dtypes.FP32, dtypes.FC32} else {}
+    if isinstance(want, gb.Scalar):
+        assert got.shape == ()
+        assert got.nvals == want.nvals
+        if want.nvals:
+            np.testing.assert_allclose(got.to_scalar().value, want.value, **tol)
+        return
+    (indices,), values = got.reshape(-1).to_coo()
+    want_indices, want_values = want.to_coo()
+    np.testing.assert_array_equal(indices, want_indices)
+    np.testing.assert_allclose(values, want_values, equal_nan=True, **tol)
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["mean", "peak_to_peak", "varp", "vars", "stdp", "stds", "geometric_mean", "harmonic_mean",
+     "root_mean_square"],
+)  # fmt: skip
+def test_reduce_composite_aggregators(name):
+    """``reduce`` with an aggregator made of several reductions (``agg.mean``, ``agg.varp``,
+    ...) returns what Matrix returns over one axis and over all of them: values, dtypes, NaN
+    where Matrix gives NaN (``vars`` of one entry), and missing where a fiber is empty. A type
+    Matrix refuses raises the same error.
+    """
+    from graphblas import agg
+
+    a = getattr(agg, name)
+    rng = np.random.default_rng(603)
+    types = [dtypes.FP64, dtypes.FP32, dtypes.INT64, dtypes.INT8, dtypes.BOOL]
+    if dtypes._supports_complex:
+        types += [dtypes.FC64, dtypes.FC32]
+    for dtype in types:
+        X = random_tensor((3, 4, 5), rng, density=0.4, dtype=dtype, layout=((2, 0), (1,)))[0]
+        M = X.permute_dims((0, 2, 1)).reshape(15, 4).to_matrix((0,))  # (axis 1 last)
+        try:
+            want = M.reduce_rowwise(a).new()
+        except Exception as exc:  # (a type that Matrix refuses: the Tensor refuses it too)
+            with pytest.raises(type(exc)):
+                X.reduce(a, axis=1)
+            continue
+        _assert_same_entries(X.reduce(a, axis=1).new(), want)
+        _assert_same_entries(X.reduce(a[dtype], axis=1).new(), want)
+        _assert_same_entries(X.reduce(a).new(), M.reduce_scalar(a).new())
+        # An empty Tensor: every fiber is missing
+        E = Tensor(dtype, (3, 4, 5))
+        _assert_same_entries(
+            E.reduce(a, axis=1).new(), Matrix(dtype, 15, 4).reduce_rowwise(a).new()
+        )
+    # The count is INT64 whatever the values' type, as ``agg.count`` gives it (Matrix's
+    # composite aggregators count INT8 values in INT8, which wraps at 128 entries)
+    vals = np.zeros(200, np.int8)
+    vals[0] = 1
+    X = Tensor.from_dense(vals.reshape(1, 200, 1))
+    got = X.reduce(a, axis=1).new()
+    want = {
+        "mean": vals.mean(), "peak_to_peak": 1, "varp": vals.var(), "vars": vals.var(ddof=1),
+        "stdp": vals.std(), "stds": vals.std(ddof=1), "root_mean_square": np.sqrt(0.005),
+    }  # fmt: skip
+    if name in want:
+        np.testing.assert_allclose(got.to_dense(), [[want[name]]], rtol=1e-12)
+    elif name == "geometric_mean":
+        assert got.to_dense().item() == 0
+
+
+def test_reduce_composite_aggregators_axes_and_masks():
+    """``reduce(agg.mean)`` and ``reduce(agg.varp)`` over several axes, with ``keepdims``, a
+    mask and an accumulator, match a numpy model over the present values.
+    """
+    from graphblas import agg
+
+    rng = np.random.default_rng(604)
+    X, xv, xp = random_tensor((4, 3, 5, 2), rng, density=0.5, layout=((1, 3), (0, 2)))
+    axes = (0, 2)
+    count = xp.sum(axis=axes, keepdims=True)
+    total = np.where(xp, xv, 0).sum(axis=axes, keepdims=True)
+    total2 = np.where(xp, xv * xv, 0).sum(axis=axes, keepdims=True)
+    n = np.maximum(count, 1)
+    mean = total / n
+    varp = total2 / n - mean**2
+    for op, model in [(agg.mean, mean), (agg.varp, varp)]:
+        got = X.reduce(op, axis=axes, keepdims=True).new()
+        assert got.shape == (1, 3, 1, 2)
+        check(got, np.where(count > 0, model, 0), count > 0, approx=True)
+    # A mask on the output, and an accumulator, as for any reduction
+    mask_t, _, mp = random_tensor((3, 2), rng, density=0.5)
+    C = Tensor.from_dense(np.full((3, 2), 100.0))
+    C(mask_t.S, accum=binary.plus) << X.reduce(agg.mean, axis=axes)
+    want = np.where(mp & (count[0, :, 0] > 0), 100 + mean[0, :, 0], 100.0)
+    check(C, want, np.ones((3, 2), bool), approx=True)
 
 
 def test_isequal_matrix_vector_scalar():

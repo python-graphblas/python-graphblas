@@ -5,7 +5,7 @@ says what was decided and why, and some say what would change it. "Maintainers" 
 python-graphblas maintainers. Status: everything here is experimental and may change before
 the API settles. `design.md` describes how the code implements these.
 
-The dated decisions (26 to 31) were made during development by the AI agents that wrote the
+The dated decisions (26 to 32) were made during development by the AI agents that wrote the
 Tensor, on the maintainer's instruction to decide and record a reason rather than wait. Like
 the rest, they are open to review.
 
@@ -232,6 +232,18 @@ the rest, they are open to review.
     2026-11-10. _Revisit_ if Matrix's exceptions change; a test compares
     28 keys under five operations (and on a Vector and a 3-d Tensor) against the same Matrix
     call.
+32. **Composite aggregators count in INT64 and keep Matrix's result type.**
+    `T.reduce(agg.mean)` (and `varp`, `stds`, `geometric_mean` and the rest) computes each
+    part with its own aggregator (`agg.count`, `agg.sum`, ...), as `T.reduce(agg.count)`
+    would, and combines them with Matrix's finalize function (`sum / count`), stored in the
+    type Matrix gives the result (for the mean, FP32 for FP32 values and FP64 for integers).
+    Matrix's composite reductions type each part by the values' type instead, so they count
+    INT8 values in INT8, which wraps at 128 entries: the mean of 200 INT8 entries, one 1 and
+    the rest 0, is -0.018 there and 0.005 here (and from `Vector.reduce`). _Why not follow
+    Matrix:_ that is a wrong value, and its fix belongs in Matrix. _Cost:_ FP32 results can
+    differ from Matrix's by FP32 rounding, since Matrix also divides and squares in FP32 (the
+    variance of one value is 0 here, about 1e-7 there). Decided 2026-11-22. _Revisit_ when
+    Matrix's composite aggregators change.
 
 ## Deferred, on purpose
 

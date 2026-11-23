@@ -1149,10 +1149,11 @@ class Tensor(BaseType):
         """Reduce over ``axis`` with the monoid ``op`` or an aggregator.
 
         ``axis=None`` reduces over all axes and gives a 0-d Tensor. An aggregator may be made
-        of a monoid (``agg.sum``, ``agg.max``, ...) or of a semiring (``agg.count``,
-        ``agg.count_nonzero``, ``agg.sum_of_squares``, ``agg.hypot``, ...). Composite
-        aggregators (``agg.mean``, ``agg.varp``, ...) and ones that need positions
-        (``agg.argmin``, ``agg.first``, ...) raise NotImplementedError.
+        of a monoid (``agg.sum``, ``agg.max``, ...), of a semiring (``agg.count``,
+        ``agg.count_nonzero``, ``agg.sum_of_squares``, ``agg.hypot``, ...), or of several
+        of those (``agg.mean``, ``agg.varp``, ``agg.stds``, ...); the result has the type
+        Matrix gives it. Aggregators that need positions (``agg.argmin``, ``agg.first``, ...)
+        raise NotImplementedError.
 
         A position whose fiber has no entries stays missing (it is not 0).
         """
