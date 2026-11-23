@@ -1241,11 +1241,16 @@ class BinaryOp(OpBase):
         # in between would still point at it.
         with _deferred_build_lock:
             op = self._typed_ops.get(type_)
-            if op is None:
+            if op is None and type_ in self.types:  # unless another thread deleted it
                 op = _finalize_typed_binaryop(
                     self, self._numba_func, self.name, type_, self.types[type_]
                 )
         return op
+
+    def __delitem__(self, type_):
+        # Under the lock, so a first build of the dtype in another thread cannot add it back
+        with _deferred_build_lock:
+            super().__delitem__(type_)
 
     __call__ = TypedBuiltinBinaryOp.__call__
     is_commutative = TypedBuiltinBinaryOp.is_commutative

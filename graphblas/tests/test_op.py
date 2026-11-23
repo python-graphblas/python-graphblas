@@ -7110,6 +7110,30 @@ def test_builtin_udf_builds_a_dtype_once_across_threads(monkeypatch):
 
 
 @pytest.mark.skipif("not supports_udfs")
+def test_builtin_udf_delete_waits_for_a_first_build(monkeypatch):
+    """A delete of a dtype that another thread is building takes effect after the build.
+
+    Fails if the delete runs during the build, which then adds the dtype back.
+    """
+    import threading
+
+    floordiv = BinaryOp._build("floordiv", operator.binary._floordiv, anonymous=True, cache=True)
+    deleter = threading.Thread(target=floordiv.__delitem__, args=(INT16,))
+    finalize = operator.binary._finalize_typed_binaryop
+
+    def finalize_beside_a_delete(*args):
+        deleter.start()
+        deleter.join(0.2)  # long enough for a delete that does not wait
+        return finalize(*args)
+
+    monkeypatch.setattr(operator.binary, "_finalize_typed_binaryop", finalize_beside_a_delete)
+    floordiv[INT16]
+    deleter.join()
+    assert INT16 not in floordiv.types
+    assert INT16 not in floordiv._typed_ops
+
+
+@pytest.mark.skipif("not supports_udfs")
 def test_builtin_udf_deletes_a_dtype_it_has_not_built():
     floordiv = BinaryOp._build("floordiv", operator.binary._floordiv, anonymous=True, cache=True)
     del floordiv[INT64]
