@@ -497,14 +497,21 @@ def _scatter_setitem(x, items, value):
         for k in items
     )  # fmt: skip
     coords = []
-    # numpy builds the int64 grid over x.shape only below its largest size in bytes: always
-    # on 64-bit platforms below 2**60 positions, and below 2**28 on 32-bit ones
-    if math.prod(x.shape) <= _utils._MAX_INTP // 8:
+    # The grid over x.shape costs an np.arange of each axis (an x of 2**24 x 2**24 took 256
+    # MiB for two positions), and the grid of selected coordinates a sort of each index array
+    # (for x of 1e7 x 1e7, 1e6 pairs took 1.4 times as long). So the first is used when those
+    # ranges take at most 32 MiB or 16 times the selection's coordinates, and where numpy can
+    # build it: its largest size in bytes allows 2**60 positions on 64-bit platforms and
+    # 2**28 on 32-bit ones
+    nsel = _selection_size(x.shape, key)
+    if math.prod(x.shape) <= _utils._MAX_INTP // 8 and sum(x.shape) <= builtins.max(
+        16 * x.ndim * (nsel or 0), 2**22
+    ):
         for a, n in enumerate(x.shape):
             grid = np.arange(n, dtype=np.int64).reshape([n if b == a else 1 for b in range(x.ndim)])
             coords.append(np.asarray(np.broadcast_to(grid, x.shape)[key]))
     else:
-        coords = _selected_coords(x.shape, key)
+        coords = _selected_coords(x.shape, key, empty=nsel == 0)
     shape = coords[0].shape
     size = math.prod(shape)
     if isinstance(value, Array):
@@ -535,20 +542,50 @@ def _scatter_setitem(x, items, value):
         T(D.S) << Tensor(gbdt, x.shape)
 
 
-def _selected_coords(shape, key):
+def _selection_size(shape, key):
+    """The number of positions numpy's selection by ``key`` (as ``_scatter_setitem`` builds
+    it) has, from the key alone, or None when its index arrays do not broadcast.
+    """
+    arrays = []
+    size = 1
+    axis = 0
+    for k in key:
+        if k is None or k is Ellipsis:
+            continue
+        if isinstance(k, (bool, np.bool_)):  # (an index array over a new axis, [0] or [])
+            arrays.append((int(k),))
+            continue
+        if isinstance(k, slice):
+            size *= len(range(*k.indices(shape[axis])))
+        else:
+            arrays.append(np.shape(k))
+        axis += 1
+    try:
+        return size * math.prod(np.broadcast_shapes(*arrays))
+    except ValueError:
+        return None
+
+
+def _selected_coords(shape, key, *, empty=False):
     """Each axis's coordinates of the positions ``key`` selects, laid out as numpy lays out
     the selection, from a grid of each axis's selected coordinates only. A grid over
     ``shape`` stops at numpy's largest size, 2**31 - 1 positions on 32-bit platforms such as
-    WebAssembly. Each item of the key becomes positions among its axis's coordinates.
+    WebAssembly, and costs an np.arange of each axis. Each item of the key becomes positions
+    among its axis's coordinates. For an ``empty`` selection, whose shape alone is used, a
+    slice's coordinates are a view.
     """
     picked, small = [], []
     for k in key:
-        if k is None or k is Ellipsis:
+        if k is None or k is Ellipsis or isinstance(k, (bool, np.bool_)):
             small.append(k)
             continue
         n = shape[len(picked)]
         if isinstance(k, slice):
-            picked.append(np.arange(*k.indices(n), dtype=np.int64))
+            length = len(range(*k.indices(n)))
+            if empty:
+                picked.append(np.broadcast_to(np.int64(0), (length,)))
+            else:
+                picked.append(np.arange(*k.indices(n), dtype=np.int64))
             small.append(slice(None))
         elif isinstance(k, np.ndarray):
             sel, at = np.unique(k.reshape(-1), return_inverse=True)

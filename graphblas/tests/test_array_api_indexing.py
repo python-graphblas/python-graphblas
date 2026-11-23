@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 import graphblas.array_api as xp
+from graphblas.array_api import _utils
 
 from .test_array_api_elementwise import assert_array_equal, inputs, make
 
@@ -277,12 +278,16 @@ def test_mixed_keys_order_axes_as_numpy():
         assert_array_equal(y, b)
 
 
-def test_boolean_scalars_with_index_arrays_as_numpy():
+@pytest.mark.parametrize("selected_grid", [False, True])
+def test_boolean_scalars_with_index_arrays_as_numpy(selected_grid, monkeypatch):
     """With index arrays in the key, a 0-d boolean indexes a new axis of length 1 by [0]
     (True) or [] (False), which broadcast with the other index arrays, as in numpy; alone, it
     adds an axis. getitem, setitem and the IndexError of shapes that do not broadcast agree
-    with numpy.
+    with numpy, also when setitem lays the selection out on a grid of the selected
+    coordinates, as it does for a large array.
     """
+    if selected_grid:
+        monkeypatch.setattr(_utils, "_MAX_INTP", 0)
     a = np.arange(24.0).reshape(3, 4, 2) + 1
     parts = [slice(None), 1, np.array([0, 2]), np.array([[1], [0]]), Ellipsis, None, True, False]
     checked = []
@@ -318,10 +323,13 @@ def test_boolean_scalars_with_index_arrays_as_numpy():
         x[[0, 2], [0, 1, 2]]
 
 
-def test_assigning_to_an_empty_selection_checks_the_value():
+@pytest.mark.parametrize("selected_grid", [False, True])
+def test_assigning_to_an_empty_selection_checks_the_value(selected_grid, monkeypatch):
     """A value must broadcast to the selection even when the selection is empty, as in
     numpy: through index arrays, a boolean mask with no True, or a False index.
     """
+    if selected_grid:
+        monkeypatch.setattr(_utils, "_MAX_INTP", 0)
     a = np.arange(12.0).reshape(3, 4)
     for key in [
         ([], [0]),
@@ -355,6 +363,32 @@ def test_assigning_to_an_empty_selection_checks_the_value():
     assert x.nnz == 0
     with pytest.raises(ValueError, match="cannot assign"):
         x[False] = xp.ones(3)
+
+
+def test_scatter_assignment_memory_follows_the_selection():
+    """Assigning a few positions through index arrays costs memory for those positions, not
+    an np.arange of each of x's axes: 256 MiB for an x of 2**24 x 2**24, and 32 GiB for one of
+    2**31 x 2**31.
+    """
+    import tracemalloc
+
+    x = xp.zeros((2**24, 2**24))
+    tracemalloc.start()
+    try:
+        x[[0, 1], [2, 3]] = 1.0
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak < 2**23
+    assert x.nnz == 2
+    y = xp.zeros((2**31, 2**31))
+    y[[0, 2**31 - 1], [5, 2**30]] = xp.asarray([5.0, 6.0])
+    y[[[1]], [0, 1]] = 7.0
+    coords, values = y.to_coo()
+    assert [c.tolist() for c in coords] == [[0, 1, 1, 2**31 - 1], [5, 0, 1, 2**30]]
+    assert values.tolist() == [5.0, 7.0, 7.0, 6.0]
+    with pytest.raises(ValueError, match="cannot assign"):
+        y[[], [0]] = xp.ones(3)
 
 
 def test_setitem_with_new_axes():
