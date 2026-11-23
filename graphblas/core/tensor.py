@@ -1496,6 +1496,8 @@ class TensorExpression(BaseExpression):
     __slots__ = ("_shape",)
     output_type = Tensor
     _is_tensor = True
+    # As for a Tensor and Matrix expressions: `assert X == Y` must raise, not pass on an object
+    __bool__ = Tensor.__bool__
 
     def __init__(self, method_name, func, expr_args, func_args, *, dtype, shape, op, expr_repr):
         super().__init__(
@@ -1645,6 +1647,7 @@ class _TensorInfixExpr(InfixExprBase):
 
     __slots__ = ()
     output_type = TensorExpression
+    __bool__ = Tensor.__bool__  # (as Matrix infix expressions: `assert (X | Y) == A` raises)
 
     def __init__(self, left, right):
         # A Matrix, Vector or ndarray operand of a Tensor follows Tensor rules

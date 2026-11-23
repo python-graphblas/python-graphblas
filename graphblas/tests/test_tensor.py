@@ -2135,6 +2135,32 @@ def test_infix_expression_operands():
         X.dup(float).select(">", Tensor.from_dense(np.ones(2)))
 
 
+def test_bool_of_an_expression_raises():
+    """``bool`` of a Tensor expression raises TypeError, as for a Tensor and for Matrix
+    expressions, so ``assert X == Y`` and ``if (X | Y) == A:`` raise rather than pass on an
+    expression object, which was always true.
+    """
+    A = Matrix.from_dense(np.array([[True, False], [True, True]]))
+    X = Tensor.from_dense(np.array([[True, False], [False, True]]))
+    Y = Tensor.from_dense(np.array([[False, False], [True, True]]))
+    F = X.dup(float)
+    exprs = [
+        lambda: X == Y, lambda: X != Y, lambda: X | Y, lambda: X & Y, lambda: X ^ Y,
+        lambda: F @ F, lambda: F + F, lambda: F.apply(gb.unary.ainv), lambda: X[0, :],
+        lambda: F.reduce(monoid.plus, axis=0), lambda: F.T + F, lambda: X == A,
+    ]  # fmt: skip
+    for autocompute in [False, True]:
+        with gb.config.set(autocompute=autocompute):
+            for expr in exprs:
+                with pytest.raises(TypeError, match="__bool__"):
+                    bool(expr())
+            matrix_expr = A == A
+            with pytest.raises(TypeError, match="__bool__"):
+                bool(matrix_expr)  # (Matrix's)
+    with gb.config.set(autocompute=True), pytest.raises(TypeError, match="__bool__"):
+        assert (X | Y) == A
+
+
 def test_sampled_nonempty_rows():
     """The estimate of distinct row keys from a sample: all distinct gives every entry's row,
     and repeats give at least the distinct count in the sample, at most the entries.

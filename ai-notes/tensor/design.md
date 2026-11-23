@@ -87,6 +87,8 @@ arguments. Nothing is computed until `.new()` or `T(mask, accum, replace) << exp
 `BaseExpression._new` and `Tensor._update` then call the recipe with the target's `Updater`.
 So **planning happens at assignment time**, when the target's layout and mask are known.
 Recipes issue ordinary Matrix operations, so the Recorder, burble and the JIT see them.
+As for a Tensor and Matrix expressions, `bool` of an expression raises TypeError, so
+`assert X == Y` raises rather than pass on an expression object.
 
 Every recipe ends in `_store(updater, src, shape, layout)`, the only place where the mask and
 the accumulator apply:
