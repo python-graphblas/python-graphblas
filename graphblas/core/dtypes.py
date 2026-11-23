@@ -115,8 +115,6 @@ def _get_udt_c_type_info(datatype):
     """
     from .operator.udt_codegen import _udt_c_typedef
 
-    if datatype.np_type is None:
-        return None
     return _udt_c_typedef(datatype.name, datatype.np_type)
 
 
