@@ -3052,6 +3052,23 @@ def test_einsum_outer_product_into_no_positions():
     assert R.new().shape == np.einsum("i,jk->ijk", np.ones(3), np.ones((3, 0))).shape == (3, 3, 0)
 
 
+@pytest.mark.parametrize(
+    ("xshape", "yshape"),
+    [((2,), (0, 1)), ((1, 2), (2, 0, 1)), ((2, 1, 1), (1, 2, 0)), ((2, 2, 1), (2, 0))],
+)
+def test_broadcast_mult_to_no_positions(xshape, yshape):
+    """More shapes whose broadcast ``ewise_mult`` has no positions: ``X.ewise_mult(Y)`` took
+    the diagonal scaling (GrB_DIMENSION_MISMATCH) before it went to the plain path. The other
+    order is checked too.
+    """
+    X = Tensor.from_dense(np.ones(xshape))
+    Y = Tensor.from_dense(np.ones(yshape))
+    shape = np.broadcast_shapes(xshape, yshape)
+    for R in [X.ewise_mult(Y).new(), Y.ewise_mult(X).new()]:
+        assert R.shape == shape
+        assert R.nvals == 0
+
+
 def test_broadcast_operands_and_dtypes():
     rng = np.random.default_rng(42)
     X, xv, xp = random_tensor((3, 4, 5), rng, dtype=dtypes.INT64)
