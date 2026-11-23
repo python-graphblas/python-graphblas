@@ -132,7 +132,7 @@ def assign(t, keys, value, *, mask=None, accum=None, replace=False, is_submask=F
     keys, sel = _resolve(t, keys, assign=True)
     kept = [a for a in range(t.ndim) if not isinstance(sel[a], int)]
     renum = {a: i for i, a in enumerate(kept)}
-    shape = tuple(len(sel[a]) for a in kept)
+    shape = tuple(_length(sel[a]) for a in kept)
     rows, cols = t._layout
     ridx = _group_index(t._shape, rows, sel, keys)
     cidx = _group_index(t._shape, cols, sel, keys)
@@ -584,6 +584,15 @@ def _axis_index(index, size, axis, *, scalar=False):
     return np.where(arr < 0, arr + size, arr), None
 
 
+def _length(s):
+    """``len(s)`` of an axis's selection, which for a range of more than ``sys.maxsize``
+    (2**31 - 1 on 32-bit platforms such as WebAssembly) raises OverflowError.
+    """
+    if isinstance(s, range):
+        return max(0, (s.stop - s.start + s.step - (1 if s.step > 0 else -1)) // s.step)
+    return len(s)
+
+
 def _extract_expr(self, keys):
     given = keys
     keys, sel, error = _resolve_keys(self, keys)
@@ -594,7 +603,7 @@ def _extract_expr(self, keys):
         # Matrix leaves these to GraphBLAS, which refuses them when the extract runs, or when
         # the expression is assigned to (see _out_of_range), so they are raised then
         recipe = functools.partial(_refused_recipe, error)
-    shape = tuple(len(x) for x in sel if not isinstance(x, int))
+    shape = tuple(_length(x) for x in sel if not isinstance(x, int))
     expr = TensorIndexExpr(
         "extract",
         recipe,
@@ -632,7 +641,7 @@ def _group_index(shape, axes, sel, keys, *, build=True):
     if k < len(axes):
         x = sel[axes[k]]
         if isinstance(x, range):
-            contiguous = len(x) == 1 or len(x) > 0 and x.step == 1
+            contiguous = _length(x) == 1 or _length(x) > 0 and x.step == 1
         else:
             contiguous = x.size > 0 and (x.size == 1 or bool(np.all(np.diff(x) == 1)))
         tail_full = all(full[k + 1 :])
@@ -646,9 +655,9 @@ def _group_index(shape, axes, sel, keys, *, build=True):
         if k < len(axes):
             x = sel[axes[k]]
             start = (start * shape[axes[k]] + int(x[0])) * tail
-            return slice(start, start + len(x) * tail)
+            return slice(start, start + _length(x) * tail)
         return slice(start, start + 1)
-    listed = math.prod(1 if isinstance(s, int) else len(s) for s in (sel[a] for a in axes))
+    listed = math.prod(1 if isinstance(s, int) else _length(s) for s in (sel[a] for a in axes))
     if listed > _t._MAX_LISTED:
         return None
     if not build:
@@ -677,7 +686,7 @@ def _positions(s, coord):
     if isinstance(s, range):
         d = coord - s.start
         q = d // s.step
-        return (d % s.step == 0) & (q >= 0) & (q < len(s)), q
+        return (d % s.step == 0) & (q >= 0) & (q < _length(s)), q
     order = np.argsort(s, kind="stable")
     ss = s[order]
     i = np.minimum(np.searchsorted(ss, coord), max(ss.size - 1, 0))
@@ -748,7 +757,7 @@ def _extract_recipe(updater, t, sel, keys):
     layout = Layout(
         tuple(renum[a] for a in rows if a in renum), tuple(renum[a] for a in cols if a in renum)
     )
-    shape = tuple(len(sel[a]) for a in kept)
+    shape = tuple(_length(sel[a]) for a in kept)
     # (positions to list are counted here, and listed only if the extract is chosen)
     ridx = _group_index(t._shape, rows, sel, keys, build=False)
     cidx = _group_index(t._shape, cols, sel, keys, build=False)
@@ -801,7 +810,8 @@ def _extract_recipe(updater, t, sel, keys):
         # (NELL-2's (0,1|2), j in a range: the extract listed 1.1e7 rows, the filter read 7.7e7
         # entries). Numpy work per nonempty row, then P @ M over the kept ones.
         frac = math.prod(
-            1 / t._shape[a] if isinstance(sel[a], int) else len(sel[a]) / t._shape[a] for a in axes
+            1 / t._shape[a] if isinstance(sel[a], int) else _length(sel[a]) / t._shape[a]
+            for a in axes
         )
         hrows = tl.nonempty_rows(t._M)
         cost = (

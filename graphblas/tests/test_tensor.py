@@ -5845,6 +5845,23 @@ def test_indexing_hypersparse_slab():
     assert R.nvals == int(keep.sum())
 
 
+def test_slices_past_2_31_positions():
+    """Slices that select 2**31 or more positions along an axis. ``len`` of such a range raises
+    OverflowError on 32-bit platforms such as WebAssembly, so these failed under Pyodide.
+    """
+    h = 2**39
+    T = Tensor.from_coo([[h + 1, 5], [1, 3]], [5.0, 6.0], shape=(2**40, 4))
+    S = T[h:, 1:3].new()
+    assert S.shape == (h, 2)
+    assert _as_dict(S) == {(1, 0): 5.0}
+    S = T[1::2, 1].new()
+    assert S.shape == (h,)
+    assert _as_dict(S) == {(h // 2,): 5.0}
+    U = Tensor.from_coo([[h + 1, 5], [1, 3], [0, 2]], [5.0, 6.0], shape=(2**40, 4, 3))
+    assert _as_dict(U[h:, 1:3, 0].new()) == {(1, 0): 5.0}
+    assert _as_dict(U[:, [1, 3], :].new()) == {(5, 1, 2): 6.0, (h + 1, 0, 0): 5.0}
+
+
 def test_dense_and_matrices():
     rng = np.random.default_rng(55)
     d = rng.random((3, 4, 5))
