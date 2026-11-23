@@ -181,7 +181,8 @@ def mmwrite(
             f'Bad engine value: {engine!r}. Must be "auto", "scipy", "fmm", or "fast_matrix_market"'
         )
     if backend == "suitesparse" and matrix.ss.format in {"fullr", "fullc"}:
-        array = matrix.ss.export()["values"]
+        # Array format. An export of an iso Matrix holds one value; to_dense repeats it.
+        array = matrix.to_dense()
     else:
         array = to_scipy_sparse(matrix, format="coo")
     mmwrite(

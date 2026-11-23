@@ -350,6 +350,29 @@ def test_mmread_mmwrite(engine):
 
 
 @pytest.mark.skipif("not ss")
+def test_mmwrite_mmread_full_and_iso():
+    """A Matrix with every element present round-trips through the array format, iso or not.
+
+    On suitesparse, a full Matrix is written in Matrix Market's array format, and an iso
+    one stores a single value, which must still be written as every element.
+    """
+    matrices = [
+        Matrix.from_dense(np.arange(12.0).reshape(3, 4)),
+        Matrix.from_dense(np.arange(6).reshape(2, 3)),
+        Matrix.from_scalar(1.5, 3, 4),
+        Matrix.from_scalar(7, 1, 1),
+    ]
+    if gb.backend == "suitesparse":
+        matrices.append(Matrix.ss.import_fullc(np.asfortranarray(np.arange(6.0).reshape(2, 3))))
+    for A in matrices:
+        f = BytesIO()
+        gb.io.mmwrite(f, A, engine="scipy")
+        f.seek(0)
+        B = gb.io.mmread(f, engine="scipy")
+        assert B.isequal(A, check_dtype=True)
+
+
+@pytest.mark.skipif("not ss")
 def test_mmread_asks_scipy_for_a_sparse_array(monkeypatch):
     """``mmread`` passes ``spmatrix=False`` to scipy unless the caller passes it.
 
