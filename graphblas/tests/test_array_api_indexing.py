@@ -391,6 +391,26 @@ def test_scatter_assignment_memory_follows_the_selection():
         y[[], [0]] = xp.ones(3)
 
 
+def test_scatter_assignment_past_the_densify_limit_allocates_nothing():
+    """An assignment whose selection is past the densify limit raises DensifyError before it
+    makes the selection's coordinates (112 MiB here).
+    """
+    import tracemalloc
+
+    import graphblas as gb
+
+    x = xp.zeros((4, 2**21, 2))
+    tracemalloc.start()
+    try:
+        with gb.config.set(array_api_densify_limit=10**6), pytest.raises(xp.DensifyError):
+            x[[0, 1], :, [0, 1]] = 1.0
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak < 2**23
+    assert x.nnz == 0
+
+
 def test_setitem_with_new_axes():
     # The value for a basic key with None may be shaped like numpy's selection, new axes
     # included

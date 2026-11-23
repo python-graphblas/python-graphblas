@@ -504,6 +504,8 @@ def _scatter_setitem(x, items, value):
     # build it: its largest size in bytes allows 2**60 positions on 64-bit platforms and
     # 2**28 on 32-bit ones
     nsel = _selection_size(x.shape, key)
+    if nsel:  # (before the coordinates are made)
+        _utils.check_dense(nsel, "assigning to the selected positions")
     if math.prod(x.shape) <= _utils._MAX_INTP // 8 and sum(x.shape) <= builtins.max(
         16 * x.ndim * (nsel or 0), 2**22
     ):
