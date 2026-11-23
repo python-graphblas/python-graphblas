@@ -116,21 +116,26 @@ def from_networkx(G, nodelist=None, dtype=None, weight="weight", name=None):
         offdiag = rows != cols
         rows, cols = np.concatenate([rows, cols[offdiag]]), np.concatenate([cols, rows[offdiag]])
         values = np.concatenate([values, values[offdiag]])
-    dup_op = None
     if G.is_multigraph():
         # Parallel edges share a coordinate; summing them with ``plus`` matches
-        # scipy's coo -> csr accumulation. A simple graph has no repeated
-        # coordinate, so it needs no accumulator.
-        dup_op = plus
-    elif backend == "suitesparse" and (values[[0]] == values).all():
+        # scipy's coo -> csr accumulation.
+        A = Matrix.from_coo(rows, cols, values, nrows=nlen, ncols=nlen, dup_op=plus, name=name)
+        if backend == "suitesparse":
+            # The sums can all be the same, as when no edge is parallel to another. Then
+            # store that value once (iso), as ``from_scipy_sparse`` does.
+            sums = A.to_coo(rows=False, columns=False, sort=False)[2]
+            if (sums[[0]] == sums).all():
+                A(A.S) << sums[0]
+        return A
+    if backend == "suitesparse" and (values[[0]] == values).all():
         # Every edge has the same weight, as in an unweighted graph, so store the value
         # once (iso), as ``from_scipy_sparse`` does. SuiteSparse 10.5.0 and later do not
-        # find that out after a build. A multigraph takes the ``plus`` branch above
-        # instead, since summing parallel edges can make equal weights differ.
+        # find that out after a build.
         A = Matrix(lookup_dtype(values.dtype), nrows=nlen, ncols=nlen, name=name)
         A.ss.build_scalar(rows, cols, values[0])
         return A
-    return Matrix.from_coo(rows, cols, values, nrows=nlen, ncols=nlen, dup_op=dup_op, name=name)
+    # A simple graph has no repeated coordinate, so it needs no accumulator
+    return Matrix.from_coo(rows, cols, values, nrows=nlen, ncols=nlen, name=name)
 
 
 def _from_networkx_via_scipy(G, nodelist, dtype, weight, name):

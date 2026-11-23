@@ -228,7 +228,7 @@ def _uniform_adjacency(G, nodelist, value):
     # The adjacency of G over nodelist with every entry ``value``, built entry by
     # entry from coo arrays (not iso), to compare from_networkx against.
     index = {node: i for i, node in enumerate(nodelist)}
-    coords = {(index[u], index[v]) for u, v in G.subgraph(nodelist).edges}
+    coords = {(index[u], index[v]) for u, v, *_key in G.subgraph(nodelist).edges}
     if not G.is_directed():
         coords |= {(j, i) for i, j in coords}
     rows, cols = zip(*sorted(coords), strict=True)
@@ -237,7 +237,9 @@ def _uniform_adjacency(G, nodelist, value):
 
 
 @pytest.mark.skipif("not nx")
-@pytest.mark.parametrize("graph_cls", [nx.Graph, nx.DiGraph] if nx else [])
+@pytest.mark.parametrize(
+    "graph_cls", [nx.Graph, nx.DiGraph, nx.MultiGraph, nx.MultiDiGraph] if nx else []
+)
 @pytest.mark.parametrize("selfloop", [False, True])
 @pytest.mark.parametrize("weight", [None, "weight"])
 def test_from_networkx_uniform_weights_are_iso(graph_cls, selfloop, weight):
@@ -398,6 +400,25 @@ def test_from_networkx_multigraph_is_scipy_free(monkeypatch):
     M = gb.io.from_networkx(G)
     assert M[0, 1].new().value == 5.0  # parallel edges summed
     assert M[1, 1].new().value == 4.5  # parallel self-loops summed
+
+
+@pytest.mark.skipif("not nx")
+@pytest.mark.parametrize("graph_cls", [nx.MultiGraph, nx.MultiDiGraph] if nx else [])
+def test_from_networkx_equal_sums_of_parallel_edges_are_iso(graph_cls):
+    # Parallel edges are summed, and the matrix is stored iso when every sum is the
+    # same, as from_scipy_sparse stores it
+    G = graph_cls()
+    G.add_weighted_edges_from([(0, 1, 2.5), (1, 2, 2.5)] * 2)
+    M = gb.io.from_networkx(G)
+    assert M.isequal(_uniform_adjacency(G, list(G), 5.0), check_dtype=True)
+    if suitesparse:
+        assert M.ss.is_iso
+    G.add_edge(1, 2, weight=2.5)
+    M = gb.io.from_networkx(G)
+    assert M[1, 2].new() == 7.5
+    assert M[0, 1].new() == 5.0
+    if suitesparse:
+        assert not M.ss.is_iso
 
 
 @pytest.mark.skipif("not ss")
