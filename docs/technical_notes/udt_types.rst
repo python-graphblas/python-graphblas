@@ -93,8 +93,8 @@ Without Numba
 
 Without Numba, a UDT can be registered, and its values stored, extracted, pickled and
 serialized. Of the operations on it, only ``binary.pair``, the aggregator ``count``,
-``agg.first`` and ``agg.last`` of a Vector or of a whole Matrix (``reduce_scalar``), and a
-``Scalar``'s ``==``, ``!=`` and ``isequal`` work. Other built-in operators raise
-``KeyError``, as do ``==`` and ``isequal`` on a Vector or Matrix, user-defined operators
+``agg.first`` and ``agg.last`` (of a Vector, or of a whole Matrix with ``reduce_scalar``),
+and a ``Scalar``'s ``==``, ``!=`` and ``isequal`` work. Other built-in operators raise
+``KeyError``, as do ``==`` and ``isequal`` on a Vector or Matrix. User-defined operators
 cannot be registered, and storing a value in an object of another type raises
 ``DomainMismatch``.
