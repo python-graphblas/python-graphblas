@@ -8,16 +8,18 @@
 Files go to the data directory (``--data-dir``, else ``TENSOR_BENCH_DATA``, else ``data/``
 next to this script), one subdirectory per source. Every file is checked against the SHA-256
 recorded below, and a file that does not match is deleted. (An archive its server may rebuild,
-such as eu-airlines' zip, is checked by the files unzipped from it instead.) Nothing is
-redistributed: each file comes from its publisher, and each dataset's license and citation
-are printed when it is fetched and written to ``SOURCES-<name>.md`` in its subdirectory.
-Cite the sources you use.
+such as eu-airlines' zip, is checked by the files unzipped from it instead. A column the server
+recomputes, such as the node layout in eu-airlines' nodes.csv, is left out of the check.)
+Nothing is redistributed: each file comes from its publisher, and each dataset's license and
+citation are printed when it is fetched and written to ``SOURCES-<name>.md`` in its
+subdirectory. Cite the sources you use.
 
 FROSTT tensors are also converted once to ``frostt/cache/<name>.npz`` for the benchmark
 harness (``harness/datasets.py`` does that on first use if you skip it here).
 """
 
 import argparse
+import csv
 import hashlib
 import shutil
 import sys
@@ -141,15 +143,17 @@ DATASETS = {
             (
                 "eu_airlines.csv.zip",
                 "https://networks.skewed.de/net/eu_airlines/files/eu_airlines.csv.zip",
-                24_291,
-                None,  # (Netzschleuder rebuilds the zip; the CSVs in it stay the same)
+                24_544,
+                None,  # Netzschleuder rebuilds the zip, so the CSVs in it are checked
             ),
         ],
         "unzip": {
             "edges.csv": "23ba41a3d5aba70f8714de28131462e268b1ca930447a0aaff4c3f1cde8c2a08",
-            "nodes.csv": "7f088e12846d97a6d35682c4d5eb3d59fddb295247285bf2fda0e16c63f0d730",
+            "nodes.csv": "ef16996e6b070bb21ad32527c839cf60d027ba16dbeac1a073b49bdc05bd0a30",
             "gprops.csv": "74407bf1f6cf0f6583225fb33ab6b23134a395bf5080a3621f926ec5b74d16f4",
         },
+        # nodes.csv's last column, _pos, is a drawing layout that Netzschleuder recomputes.
+        "without_last_column": {"nodes.csv"},
         "page": "https://networks.skewed.de/net/eu_airlines (Netzschleuder)",
         "what": "EU airline multiplex: 450 airports, 37 airline layers, 3,588 undirected edges; "
         "the multiplex "
@@ -262,7 +266,18 @@ DATASETS = {
 }
 
 
-def sha256(path):
+def sha256(path, without_last_column=False):
+    """The SHA-256 of the file at ``path``. With ``without_last_column``, it is the SHA-256 of
+    the CSV rows without their last column, each row's fields joined by "," and the rows by
+    newlines, in UTF-8; a file that is not UTF-8, or that the csv module rejects, gives None.
+    """
+    if without_last_column:
+        try:
+            with open(path, newline="", encoding="utf-8") as f:
+                text = "\n".join(",".join(row[:-1]) for row in csv.reader(f))
+        except (UnicodeDecodeError, csv.Error):
+            return None
+        return hashlib.sha256(text.encode()).hexdigest()
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for block in iter(lambda: f.read(1 << 20), b""):
@@ -311,7 +326,8 @@ def fetch(name, copy_from=None):
         print(f"  {fname}: SHA-256 ok")
     for fname, sha in spec.get("unzip", {}).items():
         dst = d / fname
-        if not (dst.exists() and sha256(dst) == sha):
+        cut = fname in spec.get("without_last_column", ())
+        if not (dst.exists() and sha256(dst, cut) == sha):
             archive = d / spec["files"][0][0]
             try:
                 with zipfile.ZipFile(archive) as z:
@@ -319,7 +335,7 @@ def fetch(name, copy_from=None):
                     dst.write_bytes(z.read(member))
             except (zipfile.BadZipFile, StopIteration):
                 pass
-            if not (dst.exists() and sha256(dst) == sha):
+            if not (dst.exists() and sha256(dst, cut) == sha):
                 archive.unlink()
                 dst.unlink(missing_ok=True)
                 raise SystemExit(
