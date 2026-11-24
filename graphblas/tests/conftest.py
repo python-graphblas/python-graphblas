@@ -4,7 +4,9 @@ import functools
 import itertools
 import os
 import platform
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -30,19 +32,39 @@ except ImportError:  # pragma: no cover (it is private, so it may go away)
 # SuiteSparse's own default, ``~/.SuiteSparse/GrB10.5.3``. Two ``pytest -n``
 # runs at once share these directories and can race on a kernel; a directory
 # per run would avoid that but compile every kernel anew.
+#
+# The version is that of the library loaded, which SuiteSparse names its default
+# by. The ``GxB_IMPLEMENTATION_*`` constants of suitesparse_graphblas name the
+# headers it was built against instead, and conda-forge pairs it with any later
+# patch release of the library (python-suitesparse-graphblas 10.5.2.0 with
+# graphblas 10.5.3). The library reports its version only once GraphBLAS is
+# initialized, and this process must set the path before then, so a child
+# process asks it. The child gets a throwaway cache, since GraphBLAS writes its
+# JIT sources (about 3.5 MB) into the cache when it initializes, and workers
+# sharing SuiteSparse's default would write the same files at once.
+_LIBRARY_VERSION_SCRIPT = """
+from suitesparse_graphblas import ffi, initialize, lib
+
+initialize()
+version = ffi.new("int32_t[3]")
+lib.GxB_Global_Option_get_INT32(lib.GxB_LIBRARY_VERSION, version)
+print(*version, sep=".")
+"""
 if (
     _xdist_worker := os.environ.get("PYTEST_XDIST_WORKER")
 ) and "GRAPHBLAS_CACHE_PATH" not in os.environ:
-    # Importing suitesparse_graphblas does not initialize GraphBLAS either
-    from suitesparse_graphblas import lib as _lib
-
     _home = os.environ.get("HOME") or os.environ.get("LOCALAPPDATA") or str(Path.cwd())
-    _version = (
-        f"GrB{_lib.GxB_IMPLEMENTATION_MAJOR}.{_lib.GxB_IMPLEMENTATION_MINOR}"
-        f".{_lib.GxB_IMPLEMENTATION_SUB}"
-    )
+    with tempfile.TemporaryDirectory() as _probe_cache:
+        _version = subprocess.run(
+            [sys.executable, "-c", _LIBRARY_VERSION_SCRIPT],
+            stdout=subprocess.PIPE,
+            text=True,
+            check=True,
+            timeout=60,
+            env={**os.environ, "GRAPHBLAS_CACHE_PATH": _probe_cache},
+        ).stdout.strip()
     os.environ["GRAPHBLAS_CACHE_PATH"] = str(
-        Path(_home) / ".SuiteSparse_xdist" / _version / _xdist_worker
+        Path(_home) / ".SuiteSparse_xdist" / f"GrB{_version}" / _xdist_worker
     )
 
 # Matrix and Vector reprs come from pandas. With ``display.max_columns`` at 0

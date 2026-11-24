@@ -183,12 +183,27 @@ def test_ss_import_leaves_jit_c_control_alone(jit_c_control):
         assert lines["before"] == str(gb.core.lib.GxB_JIT_RUN), report
 
 
-# A pytest-xdist worker sets PYTEST_XDIST_WORKER before it imports conftest.py
+# A pytest-xdist worker sets PYTEST_XDIST_WORKER before it imports conftest.py. The
+# ``GxB_IMPLEMENTATION_*`` constants of suitesparse_graphblas.lib are set one patch release
+# behind the library it loads, as when it was built against older headers.
 _XDIST_CACHE_PATH_PROBE = """
 import os
 
 os.environ.pop("GRAPHBLAS_CACHE_PATH", None)
 import graphblas as gb
+import suitesparse_graphblas
+
+
+class OlderHeaders:
+    def __init__(self, lib):
+        self._lib = lib
+        self.GxB_IMPLEMENTATION_SUB = lib.GxB_IMPLEMENTATION_SUB - 1
+
+    def __getattr__(self, name):
+        return getattr(self._lib, name)
+
+
+suitesparse_graphblas.lib = OlderHeaders(suitesparse_graphblas.lib)
 import graphblas.tests.conftest
 
 print("package: " + gb.__file__)
@@ -197,10 +212,10 @@ print("cache: " + os.environ["GRAPHBLAS_CACHE_PATH"])
 
 
 def test_xdist_jit_cache_path_names_the_library_version(tmp_path):
-    """Under ``pytest -n``, each worker's JIT cache path names the SuiteSparse version.
+    """Under ``pytest -n``, each worker's JIT cache path names the version of the library loaded.
 
-    SuiteSparse's default cache path does too (``~/.SuiteSparse/GrB10.5.3``). Without the
-    version, test sessions on different SuiteSparse versions share each worker's cache.
+    Not the version of the headers python-suitesparse-graphblas was built against (see
+    conftest.py). Reading the version leaves SuiteSparse's default cache alone.
     """
     lines, report = _run_in_fresh_process(
         _XDIST_CACHE_PATH_PROBE, PYTEST_XDIST_WORKER="gw7", HOME=str(tmp_path)
@@ -208,6 +223,7 @@ def test_xdist_jit_cache_path_names_the_library_version(tmp_path):
     version = ".".join(map(str, gb.ss.about["library_version"]))
     expected = tmp_path / ".SuiteSparse_xdist" / f"GrB{version}" / "gw7"
     assert lines["cache"] == str(expected), report
+    assert not (tmp_path / ".SuiteSparse").exists(), report
 
 
 _BAD_JIT_C_CONTROL_PROBE = """
