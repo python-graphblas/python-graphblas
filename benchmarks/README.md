@@ -20,6 +20,10 @@ benchmarks/
   conversions.py         from_coo, to_coo, from_dense, to_dense and scipy interop
   imports.py             cold import and first use (timeraw, in a fresh process)
   repr_bench.py          repr and _repr_html_ of small and large objects
+  tensor_ops.py          the experimental n-d Tensor: element-wise and broadcast,
+                         reductions, permute and reshape, construction, TTV / TTM /
+                         MTTKRP, tensordot and batched matmul, einsum, extraction,
+                         assignment, gather, and small-tensor overhead
   _verify.py             runs every benchmark once (not an asv file)
 ```
 
@@ -54,6 +58,17 @@ python benchmarks/_verify.py
   or add a denser matrix, for a heavier `mxm`.
 - The large kernels set `number = 1`, `warmup_time = 0`, a small `repeat` and a
   `timeout`, so asv does not batch them into runs of several seconds.
+- `tensor_ops.py` builds seeded uniform tensors in `setup` (a 3-d one of ~1e6
+  entries in 200 x 300 x 400, a 4-d one of ~5e5), so it downloads nothing. The
+  Tensor needs SuiteSparse:GraphBLAS 10 or later (its Container API); on older
+  versions every Tensor benchmark fails at setup. Its Numba kernels compile on first
+  use in a process, so the classes that use them call each operation once in
+  `setup`. Without a working C compiler the SuiteSparse JIT stays at `"run"`, the
+  Tensor's array-UDT engine is off, and the Numba or GraphBLAS engines run instead:
+  compare results only between runs made with the same JIT and Numba availability.
+  The cross-library comparisons (pydata/sparse, scipy, torch, SPLATT, TACO) are in
+  `scripts/tensor_bench/`, outside `benchmark_dir`, because asv imports every module
+  under it.
 - `imports.py` uses `timeraw_*` benchmarks, which run the returned code in a
   fresh process. A normal benchmark would read about 0 for an import, since the
   module is already imported.

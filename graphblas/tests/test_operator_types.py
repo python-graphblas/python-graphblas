@@ -207,6 +207,12 @@ IGNORE = {
     "monoid_pickle",
     "semiring_pickle",
     "_test_weak_lt",
+    # Semirings that test_tensor.py makes for the diagonal product of a float Tensor broadcast
+    # (the any monoid with the op), and any_rpow, which test_op.py::test_commutes makes when
+    # its loop over all semirings reads any_pow.commutes_to
+    "any_atan2",
+    "any_pow",
+    "any_rpow",
     # numpy-graphblas commutation (can we clean this up?)
     "band_land",
     "band_lor",
