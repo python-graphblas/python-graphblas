@@ -21,6 +21,12 @@ def _build_delayed(namespace, delayed, key, build=None):
     An op namespace's ``__getattr__`` calls this for every name it does not have, so a thread
     that asks for a name another thread is building waits for it, rather than finding it in
     neither place.
+
+    A build that raises an exception drops the name, so later lookups find nothing (a lazily
+    registered SelectOp whose op does not return BOOL). A build interrupted by
+    ``KeyboardInterrupt`` or another ``BaseException`` stays delayed for the next lookup,
+    since the interrupt says nothing about the op: a Ctrl-C during the first compile of
+    ``binary.floordiv`` would otherwise lose it for the session.
     """
     with _lazy_lock:
         if key in namespace:
@@ -35,8 +41,10 @@ def _build_delayed(namespace, delayed, key, build=None):
                 rv = func(**kwargs)
             else:
                 rv = build(key, item)
+        except Exception:
+            raise
         except BaseException:
-            delayed[key] = item  # (so the next lookup builds it again, and says why it fails)
+            delayed[key] = item
             raise
         namespace[key] = rv
         return rv

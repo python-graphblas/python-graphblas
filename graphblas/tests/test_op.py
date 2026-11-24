@@ -1365,28 +1365,48 @@ def test_lazy_op_first_used_by_threads_at_once():
         assert all(x is got[0] for x in got), namespace
 
 
-def test_lazy_op_whose_build_fails_is_built_again():
-    """A lazily registered op whose build raises stays delayed, so the next use builds it again.
+def test_lazy_op_whose_build_fails_is_dropped():
+    """A lazily registered op whose build raises is gone after its first use.
 
-    Regression: its name was gone from the delayed table, so later uses raised "has no
-    attribute", which hid the cause.
+    Later uses raise AttributeError, so ``hasattr`` is False. A SelectOp registered lazily
+    from an op that does not return BOOL goes away like this (see test_indexunary_udf).
+    """
+
+    def build():
+        raise RuntimeError("the build fails")
+
+    binary._delayed["_failing_probe"] = (build, {})
+    try:
+        with pytest.raises(RuntimeError, match="the build fails"):
+            binary._failing_probe
+        assert not hasattr(binary, "_failing_probe")
+        assert "_failing_probe" not in dir(binary)
+    finally:
+        binary._delayed.pop("_failing_probe", None)
+
+
+def test_lazy_op_whose_build_is_interrupted_is_built_again():
+    """A lazily registered op whose build is interrupted stays delayed, so the next use builds it.
+
+    Regression: after a KeyboardInterrupt during the first use of a lazily built op such as
+    ``binary.floordiv``, every later use raised "has no attribute".
     """
     calls = []
 
     def build():
         calls.append(None)
         if len(calls) == 1:
-            raise RuntimeError("the first build fails")
+            raise KeyboardInterrupt
         return calls
 
-    binary._delayed["_failing_probe"] = (build, {})
+    binary._delayed["_interrupted_probe"] = (build, {})
     try:
-        with pytest.raises(RuntimeError, match="the first build fails"):
-            binary._failing_probe
-        assert binary._failing_probe is calls
+        with pytest.raises(KeyboardInterrupt):
+            binary._interrupted_probe
+        assert binary._interrupted_probe is calls
     finally:
-        binary._delayed.pop("_failing_probe", None)
-        vars(binary).pop("_failing_probe", None)
+        binary._delayed.pop("_interrupted_probe", None)
+        vars(binary).pop("_interrupted_probe", None)
 
 
 def test_positional():
