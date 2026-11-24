@@ -394,7 +394,8 @@ def test_dup_and_clear():
     D.clear()
     assert D.nvals == 0
     check(T, values, present)
-    # A new dtype keeps an n x 1 stored Matrix held by row (Matrix.dup holds it by column)
+    # dup to a new dtype keeps an n x 1 stored Matrix by row, which Matrix.dup(dtype) would
+    # store by column
     for shape in [(2, 1), (3, 1, 1)]:
         T, values, present = random_tensor(shape, rng, density=1.0)
         check(T.dup(dtypes.FP32), values.astype(np.float32), present)
@@ -3068,6 +3069,75 @@ def test_tensordot_semirings_masks_and_errors():
         census.records.clear()
     assert R.to_coo()[1].tolist() == [2.0, 9.0]  # (2 ** 1, 3 ** 2)
     assert ("ttv", "entries") in {(r["point"], r["choice"]) for r in recs}
+
+
+def test_private_map_values():
+    # Tensor._map_values (for graphblas.array_api) applies a numpy function to the stored
+    # values, writing the results into a copy of the pattern
+    rng = np.random.default_rng(33)
+    X, xv, xp = random_tensor((4, 5, 3), rng, density=0.4)
+    Y = Tensor(dtypes.FP64, (4, 5, 3))
+    Y(X.S) << X.apply(binary.plus, right=1.0)  # (X's pattern)
+    Y = Y.relayout(((2,), (0, 1)))  # (another layout)
+    R = X._map_values(np.hypot, [Y])
+    check(R, np.where(xp, np.hypot(xv, xv + 1), 0), xp, approx=True)
+    assert R.layout == X.layout
+    # one Matrix shared by two Tensors, a dtype change, an iso Tensor, and no entries
+    R = X._map_values(lambda a, b: a * b > 1, [X.dup()], dtype=dtypes.BOOL)
+    check(R, np.where(xp, xv * xv > 1, False), xp)
+    iso = Tensor.from_coo(([0, 2], [1, 3]), 2.5, shape=(3, 4))
+    assert iso.ss.is_iso
+    check(iso._map_values(np.sqrt), np.where(iso.to_dense(0) != 0, np.sqrt(2.5), 0),
+          iso.to_dense(0) != 0, approx=True)  # fmt: skip
+    E = Tensor(dtypes.INT64, (2, 3))
+    assert E._map_values(np.negative, dtype=dtypes.FP32).dtype == dtypes.FP32
+    assert E._map_values(np.negative).nvals == 0
+    # The fallback through coordinates
+    from graphblas.core.tensor import _map_values_coo
+
+    T = Tensor.from_coo([[0, 1], [1, 2]], [1.0, 2.0], shape=(2, 3))
+    assert _map_values_coo(np.add, [T, T], dtypes.FP64).to_coo()[1].tolist() == [2.0, 4.0]
+    assert _map_values_coo(np.negative, [T], dtypes.FP64).to_coo()[1].tolist() == [-1.0, -2.0]
+    out = _map_values_coo(lambda v: np.float64(7.0), [T], dtypes.FP64)
+    assert out.to_coo()[1].tolist() == [7.0, 7.0]
+
+
+def test_masked_contraction_takes_a_transpose_descriptor():
+    # Under a mask, an operand stored as the transpose of what the product needs is passed
+    # through the transpose descriptor, not copied, so SuiteSparse can use its masked dot
+    # product (an SDDMM); the values are the masked product
+    from graphblas.core import tensor as tensor_mod
+    from graphblas.core import tensor_census as census
+
+    rng = np.random.default_rng(32)
+    X, xv, xp = random_tensor((6, 4), rng, density=0.7)
+    Y, yv, yp = random_tensor((5, 4), rng, density=0.7)
+    Mk, _, mp = random_tensor((6, 5), rng, dtype=dtypes.BOOL, density=0.4)
+    ev, ep = np_matmul(xv, xp, yv.T, yp.T)
+    rv, rp = model_update(np.zeros((6, 5)), np.zeros((6, 5), bool), ev, ep, mask=mp)
+    XT = X.relayout(((1,), (0,)))  # (X's transpose in storage)
+    for expr in [
+        X.matmul(Y.T),
+        X.tensordot(Y, ([1], [1])),
+        tensor_mod.einsum("ik,jk->ij", X, Y),
+        XT.T.T.matmul(Y.T),
+    ]:
+        census.start()
+        try:
+            R = expr.new(mask=Mk.S)
+            recs = census.stop()
+        finally:
+            census.stop()
+            census.records.clear()
+        check(R, rv, rp, approx=True)
+        moved = [r["moved"] for r in recs if r["point"] == "contract" and "moved" in r]
+        assert moved == [[False, False]], moved
+    # The same values without a mask (where the planner may still copy an operand), and
+    # under a mask with an accumulator
+    check(X.matmul(Y.T).new(), ev, ep, approx=True)
+    C, cv, cp = random_tensor((6, 5), rng)
+    C(Mk.S, binary.plus) << X.matmul(Y.T)
+    check(C, *model_update(cv, cp, ev, ep, mask=mp, accum=np.add), approx=True)
 
 
 # --------------------------------------------------------------------------------------------

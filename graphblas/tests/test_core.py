@@ -24,10 +24,17 @@ def test_import_special_attrs():
     assert len(not_hidden & gb._SPECIAL_ATTRS) == len(gb._SPECIAL_ATTRS - exclude)
     # Is everything special that needs to be?
     not_special = {x for x in dir(gb) if not x.startswith("_")} - gb._SPECIAL_ATTRS
-    assert not_special == {"backend", "config", "init", "replace", "tests"}
+    expected = {"backend", "config", "init", "replace", "tests"}
+    # ``import graphblas`` does not import graphblas.array_api, so it is an attribute of gb
+    # only once something imports it, as its test modules do at collection
+    if "graphblas.array_api" in sys.modules:
+        expected.add("array_api")
+    assert not_special == expected
     # Make sure these "not special" objects don't have objects that look special within them
+    # (the Array API namespace's einsum is its own, not gb.einsum)
+    allowed = {"array_api": {"einsum"}}
     for attr in not_special:
-        assert not set(dir(getattr(gb, attr))) & gb._SPECIAL_ATTRS
+        assert not set(dir(getattr(gb, attr))) & (gb._SPECIAL_ATTRS - allowed.get(attr, set()))
     if gb.backend != "suitesparse":
         with pytest.raises(AttributeError, match="suitesparse"):
             gb.ss
@@ -47,7 +54,12 @@ loaded = ("tensor_numba", "tensor_udt", "tensor_io")
 print("engines:", sorted(m for m in loaded if f"graphblas.core.{m}" in sys.modules))
 print("container:", tensor._has_container())
 import numpy as np
-for call in (lambda: gb.Tensor(gb.dtypes.FP64, (2, 3)), lambda: gb.einsum("ij->ji", np.eye(2))):
+import graphblas.array_api as xp
+for call in (
+    lambda: gb.Tensor(gb.dtypes.FP64, (2, 3)),
+    lambda: gb.einsum("ij->ji", np.eye(2)),
+    lambda: xp.asarray([1.0, 2.0]),
+):
     try:
         call()
         print("use: ok")
@@ -61,10 +73,10 @@ for call in (lambda: gb.Tensor(gb.dtypes.FP64, (2, 3)), lambda: gb.einsum("ij->j
 def test_tensor_exports(backend):
     """``gb.Tensor`` and ``gb.einsum`` (experimental) load lazily, like Matrix: ``import
     graphblas`` imports neither them nor Numba, and the Tensor's engines load on use. On the
-    vanilla backend they import, and using them raises.
+    vanilla backend they import, and using them raises; so does ``graphblas.array_api``, which
+    runs on the Tensor.
     """
     import subprocess
-    import sys
 
     repo_root = pathlib.Path(gb.__file__).resolve().parents[1]
     result = subprocess.run(
@@ -85,11 +97,11 @@ def test_tensor_exports(backend):
     # The subprocess reports its own SuiteSparse: this process may be on another backend
     assert lines["container"] in (["True"], ["False"]), report
     if backend == "vanilla":
-        assert lines["use"] == ["Tensor requires the suitesparse backend"] * 2, report
+        assert lines["use"] == ["Tensor requires the suitesparse backend"] * 3, report
     elif lines["container"] == ["True"]:
-        assert lines["use"] == ["ok", "ok"], report
+        assert lines["use"] == ["ok"] * 3, report
     else:  # (an older SuiteSparse: see test_tensor_old_suitesparse)
-        assert lines["use"] == ["Tensor requires SuiteSparse:GraphBLAS 10 or later"] * 2, report
+        assert lines["use"] == ["Tensor requires SuiteSparse:GraphBLAS 10 or later"] * 3, report
 
 
 _TENSOR_OLD_SS_SCRIPT = """

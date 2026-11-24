@@ -15,3 +15,4 @@ the :ref:`user_guide`.
     udt_operators
     udfs
     jit
+    array_api_contractions

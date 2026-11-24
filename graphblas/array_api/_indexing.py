@@ -1,0 +1,678 @@
+"""Indexing: ``x[key]``, ``x[key] = value``, ``take`` and ``take_along_axis``.
+
+Keys follow numpy. Integers, slices, ``...`` and ``None`` are basic indexing, which GraphBLAS
+extracts. Integer and boolean arrays are advanced indexing, which gathers from the stored
+entries, so a position the array does not store has the fill in the result too. For index
+arrays, the Array API standard specifies only a tuple of integers and integer arrays
+(vectorized indexing), or one boolean array alone; other combinations follow numpy.
+
+Costs: basic indexing is O(entries in the region). An integer index Array is made dense
+first, at O(its size). A boolean index costs O(its entries) when its fill is False, and
+O(its size) when its fill is True. Assigning to a region stores every position of the region
+when the value is a scalar other than the fill, or an array whose fill is not ``x``'s.
+Assigning through several index arrays, a multi-dimensional one, or one together with an
+integer writes each selected position: O(selection), under the densify limit.
+"""
+
+import builtins
+import math
+import operator
+
+import numpy as np
+
+from ..core.tensor import Tensor
+from . import _lazy, _utils
+from ._array import Array
+from ._utils import gb_dtype
+
+__all__ = ["take", "take_along_axis"]
+
+
+# Keys
+class _Adv:
+    """An integer index array (advanced indexing) for one axis, with nonnegative indices."""
+
+    __slots__ = ("index",)
+
+    def __init__(self, index):
+        self.index = index
+
+
+class _NewAxis:
+    """``None``, or a 0-d boolean index: a new axis of length 1 (0 for False).
+
+    numpy indexes a 0-d boolean as an index array over a new axis of length 1
+    (``_boolean_scalars``), so ``boolean`` tells the two apart.
+    """
+
+    __slots__ = ("boolean", "length")
+
+    def __init__(self, length=1, *, boolean=False):
+        self.length = length
+        self.boolean = boolean
+
+
+class _Gap:
+    """A ``...`` that covers no axis. It still separates the advanced indices on either side
+    of it, as in numpy: ``x[:, 1, ..., [0, 2]]`` of a 3-d ``x`` puts the broadcast advanced
+    axis first.
+    """
+
+    __slots__ = ()
+
+
+_GAP = _Gap()
+
+
+def _is_int(k):
+    return isinstance(k, (int, np.integer)) and not isinstance(k, (bool, np.bool_))
+
+
+def _index_array(k):
+    """Return the array index ``k``: a boolean Array unchanged, any other as a numpy array.
+    Return None when ``k`` is not an array.
+    """
+    if isinstance(k, Array):
+        if k.dtype.kind == "b":
+            return k
+        if k.dtype.kind not in "iu":
+            raise IndexError(
+                f"arrays used as indices must be of integer or boolean type: {k.dtype}"
+            )
+        return k.todense()
+    if isinstance(k, (list, np.ndarray)):
+        arr = np.asarray(k)
+        if arr.dtype.kind not in "biu":
+            if arr.size == 0:
+                return arr.astype(np.int64)
+            raise IndexError(
+                f"arrays used as indices must be of integer or boolean type: {arr.dtype}"
+            )
+        return arr
+    return None
+
+
+def _mask_coords(mask, shape):
+    """The coordinates, in C order, where the boolean ``mask`` (an Array or ndarray) is True;
+    ``shape`` is that of the axes it covers.
+    """
+    if mask.shape != tuple(shape):
+        # (the standard lets a dimension of the mask be 0 instead of the array's)
+        if any(m not in (n, 0) for m, n in zip(mask.shape, shape, strict=True)):
+            raise IndexError(f"boolean index of shape {mask.shape} does not match {shape}")
+        return tuple(np.empty(0, np.int64) for _ in mask.shape)
+    if isinstance(mask, np.ndarray):
+        return np.nonzero(mask)
+    if not mask._fill:
+        T = mask._T()
+        if T.nvals == 0:
+            return tuple(np.empty(0, np.int64) for _ in mask.shape)
+        # (stored entries may be False, equal to the fill)
+        return T.select("==", True).new().to_coo(values=False)[0]
+    _utils.check_dense(mask.size, "a boolean index whose fill is True")
+    return np.nonzero(mask.todense())
+
+
+def _normalize(x, key):
+    """``key`` as a list of items: an int, slice or _Adv for each axis of ``x``, a _NewAxis
+    for each new axis, and a _Gap for a ``...`` that covers no axis. A boolean array of M
+    dimensions becomes M _Adv items.
+    """
+    if not isinstance(key, tuple):
+        key = (key,)
+    items = []
+    for k in key:
+        if k is None:
+            items.append(_NewAxis())
+        elif k is Ellipsis or isinstance(k, slice):
+            items.append(k)
+        elif isinstance(k, (bool, np.bool_)):
+            items.append(_NewAxis(1 if k else 0, boolean=True))
+        elif _is_int(k):
+            items.append(int(k))
+        elif isinstance(k, Array) and k.ndim == 0:
+            if k.dtype.kind == "b":
+                items.append(_NewAxis(1 if k._fill else 0, boolean=True))
+            elif k.dtype.kind in "iu":
+                items.append(operator.index(k))
+            else:
+                raise IndexError(f"a 0-d index must be an integer or boolean, not {k.dtype}")
+        else:
+            arr = _index_array(k)
+            if arr is None:
+                raise IndexError(f"invalid index {k!r}")
+            items.append(arr)
+    if sum(k is Ellipsis for k in items) > 1:
+        raise IndexError("an index can only have a single ellipsis ('...')")
+
+    def width(k):
+        if isinstance(k, (np.ndarray, Array)) and k.dtype.kind == "b":
+            return k.ndim
+        return 0 if k is Ellipsis or isinstance(k, _NewAxis) else 1
+
+    consumed = sum(width(k) for k in items)
+    if consumed > x.ndim:
+        raise IndexError(f"too many indices: {consumed} for an array of {x.ndim} dimensions")
+    i = next((i for i, k in enumerate(items) if k is Ellipsis), None)
+    if i is None:
+        items.extend([slice(None)] * (x.ndim - consumed))
+    else:
+        items[i : i + 1] = [slice(None)] * (x.ndim - consumed) or [_GAP]
+    out = []
+    axis = 0
+    for k in items:
+        if isinstance(k, (_NewAxis, _Gap)):
+            out.append(k)
+            continue
+        if isinstance(k, (np.ndarray, Array)) and k.dtype.kind == "b":
+            if k.ndim == 0:  # (a 0-d boolean numpy array)
+                out.append(_NewAxis(1 if k[()] else 0, boolean=True))
+                continue
+            coords = _mask_coords(k, x.shape[axis : axis + k.ndim])
+            out.extend(_Adv(np.asarray(c, dtype=np.int64)) for c in coords)
+            axis += k.ndim
+            continue
+        n = x.shape[axis]
+        if isinstance(k, np.ndarray):
+            idx = k.astype(np.int64, copy=False)
+            if idx.size and (idx.min() < -n or idx.max() >= n):
+                raise IndexError(f"index out of bounds for axis {axis} with size {n}")
+            out.append(_Adv(np.where(idx < 0, idx + n, idx)))
+        elif isinstance(k, int):
+            if not -n <= k < n:
+                raise IndexError(f"index {k} is out of bounds for axis {axis} with size {n}")
+            out.append(k % n)
+        else:
+            out.append(k)
+        axis += 1
+    return out
+
+
+def _has_adv(items):
+    return any(isinstance(k, _Adv) for k in items)
+
+
+def _indexes_boolean_scalars(items):
+    """Whether the key's 0-d booleans must be indexed as numpy does. numpy indexes each as an
+    index array over a new axis (``_boolean_scalars``); alone among slices, ``None`` and
+    ``...``, that gives the same result as a new axis.
+    """
+    n = sum(isinstance(k, _NewAxis) and k.boolean for k in items)
+    return n > 1 or (n == 1 and any(isinstance(k, (_Adv, int)) for k in items))
+
+
+def _boolean_scalars(x, items):
+    """``(x with a length-1 axis for each 0-d boolean of the key, the items with an index
+    array there)``. numpy indexes such an axis with ``[0]`` for True and ``[]`` for False,
+    which broadcast with the other index arrays (and integers).
+    """
+    from ._manipulation import expand_dims
+
+    out = []
+    positions = []
+    axis = 0
+    for k in items:
+        if isinstance(k, _NewAxis) and k.boolean:
+            positions.append(axis)
+            k = _Adv(np.zeros(k.length, np.int64))
+        if not isinstance(k, (_NewAxis, _Gap)):
+            axis += 1
+        out.append(k)
+    return expand_dims(x, tuple(positions)), out
+
+
+def _adjacent(items):
+    """Whether the advanced items (index arrays and integers) are next to each other. numpy
+    keeps the axes of adjacent advanced items in place, and puts those of separated ones first.
+    """
+    positions = [i for i, k in enumerate(items) if isinstance(k, (_Adv, int))]
+    return positions == list(range(positions[0], positions[-1] + 1))
+
+
+def _finish(out, items, nadv):
+    """Move the advanced axes of ``out`` to where numpy puts them, and insert the new axes.
+    ``out`` has its ``nadv`` advanced axes first, then the sliced axes in order.
+    """
+    from ._manipulation import expand_dims, permute_dims
+
+    comps = []
+    placed = True
+    if nadv or _has_adv(items):
+        placed = not _adjacent(items)
+        if placed:
+            comps.append("adv")
+    for k in items:
+        if isinstance(k, (_NewAxis, slice)):
+            comps.append(k)
+        elif isinstance(k, _Gap):
+            continue
+        elif not placed:
+            comps.append("adv")
+            placed = True
+    order = []
+    new = []
+    rest = nadv
+    for c in comps:
+        if isinstance(c, str):
+            order.extend(range(nadv))
+        elif isinstance(c, slice):
+            order.append(rest)
+            rest += 1
+        else:
+            new.append((len(order) + len(new), c.length))
+    if order != list(range(len(order))):
+        out = permute_dims(out, tuple(order))
+    if new:
+        out = expand_dims(out, tuple(p for p, _ in new))
+        if any(length == 0 for _, length in new):
+            empty = {p for p, length in new if length == 0}
+            out = out[tuple(slice(0, 0) if a in empty else slice(None) for a in range(out.ndim))]
+    return out
+
+
+def _basic_shape(shape, axes_key):
+    return tuple(
+        _utils.slice_length(k, n)
+        for k, n in zip(axes_key, shape, strict=True)
+        if isinstance(k, slice)
+    )
+
+
+# getitem
+def getitem(x, key):
+    items = _normalize(x, key)
+    if _indexes_boolean_scalars(items):
+        x, items = _boolean_scalars(x, items)
+    axes_key = [k for k in items if not isinstance(k, (_NewAxis, _Gap))]
+    if _has_adv(items):
+        out, nadv = _advanced_extract(x, axes_key)
+    else:
+        # (a pending product slices its operands instead of computing first)
+        if (out := _lazy.sliced(x, axes_key)) is None:
+            out = _basic_extract(x, tuple(axes_key))
+        nadv = 0
+    return _finish(out, items, nadv)
+
+
+def _basic_extract(x, axes_key):
+    T = x._T()
+    if x.ndim == 0 or all(k == slice(None) for k in axes_key):
+        return x._copy()
+    shape = _basic_shape(T.shape, axes_key)
+    if T.nvals == 0 or 0 in shape:
+        return Array._new(Tensor(T.dtype, shape), x._fill)
+    return Array._new(T[axes_key].new(), x._fill)
+
+
+def _advanced_extract(x, axes_key):
+    """Return ``x`` indexed by ``axes_key`` (one item per axis), with the advanced axes first
+    and then the sliced ones in order, and the number of advanced axes.
+    """
+    sliced = tuple(k if isinstance(k, slice) else slice(None) for k in axes_key)
+    y = _basic_extract(x, sliced) if any(k != slice(None) for k in sliced) else x
+    adv_axes = [a for a, k in enumerate(axes_key) if not isinstance(k, slice)]
+    rest = [a for a, k in enumerate(axes_key) if isinstance(k, slice)]
+    arrays = [
+        k.index if isinstance(k, _Adv) else np.asarray(k, np.int64)
+        for k in axes_key
+        if not isinstance(k, slice)
+    ]
+    try:
+        indices = np.broadcast_arrays(*arrays)
+    except ValueError:
+        shapes = " ".join(str(a.shape) for a in arrays)
+        raise IndexError(
+            f"shape mismatch: indexing arrays could not be broadcast together with shapes {shapes}"
+        ) from None
+    S2 = indices[0].shape
+    adv_shape = tuple(y.shape[a] for a in adv_axes)
+    rest_shape = tuple(y.shape[a] for a in rest)
+    T = y._T()
+    if T.nvals == 0 or math.prod(S2) == 0 or math.prod(rest_shape) == 0:
+        return Array._new(Tensor(T.dtype, S2 + rest_shape), x._fill), len(S2)
+    if not rest:
+        # Vectorized (pointwise) indexing of every axis
+        return Array._new(T.vindex[tuple(indices)], x._fill), len(S2)
+    Tp = T.permute_dims(tuple(adv_axes) + tuple(rest))
+    if len(adv_axes) > 1:
+        flat = _utils.ravel(tuple(indices), adv_shape)
+        Tp = Tp.reshape((math.prod(adv_shape), *rest_shape))
+    else:
+        flat = indices[0]
+    return Array._new(Tp.take(flat.astype(np.int64, copy=False), axis=0), x._fill), len(S2)
+
+
+# setitem
+def setitem(x, key, value):
+    if not isinstance(x, Array):  # pragma: no cover (safety)
+        raise TypeError(type(x))
+    value = _setitem_value(x, value)
+    items = _normalize(x, key)
+    axes_key = [k for k in items if not isinstance(k, (_NewAxis, _Gap))]
+    adv = [k for k in axes_key if isinstance(k, _Adv)]
+    booleans = _indexes_boolean_scalars(items)
+    if not booleans and any(isinstance(k, _NewAxis) and k.length == 0 for k in items):
+        # A False index selects nothing, but the value must still fit the empty selection
+        if isinstance(value, Array):
+            _check_fits(value.shape, _empty_selection_shape(x, items))
+        return
+    # With one 1-d index array among slices, outer (GraphBLAS) and vectorized indexing agree
+    scatter = booleans or (
+        adv
+        and (len(adv) > 1 or adv[0].index.ndim != 1 or any(isinstance(k, int) for k in axes_key))
+    )
+    if isinstance(value, Array) and not scatter:
+        value = _without_new_axes(value, items)
+        if value.ndim == 0:
+            value = _scalar_value(value._fill, x.dtype)
+    if x.ndim == 0:
+        if isinstance(value, Array):
+            raise ValueError(f"cannot assign an array of shape {value.shape} to a 0-d array")
+        x._fill = value
+    elif scatter:
+        _scatter_setitem(x, items, value)
+    else:
+        _region_setitem(x, tuple(k.index if isinstance(k, _Adv) else k for k in axes_key), value)
+    x._facts = None
+
+
+def _without_new_axes(value, items):
+    """Drop the axes of ``value`` that line up with the new axes (``None``) of a key that
+    selects a region. numpy broadcasts the value against the selection, which has those axes
+    with length 1, but the region assigned to does not have them.
+    """
+    kinds = [k for k in items if isinstance(k, (_NewAxis, slice, _Adv))]
+    offset = len(kinds) - value.ndim
+    drop = [p - offset for p, k in enumerate(kinds) if isinstance(k, _NewAxis) and p - offset >= 0]
+    if not drop:
+        return value
+    if any(value.shape[q] != 1 for q in drop):
+        raise ValueError(
+            f"cannot assign an array of shape {value.shape} to a selection of "
+            f"{len(kinds)} dimensions whose new axes have length 1"
+        )
+    from ._manipulation import squeeze
+
+    return squeeze(value, axis=tuple(drop))
+
+
+def _check_fits(vshape, shape):
+    """Raise ValueError unless a value of shape ``vshape`` broadcasts to the selection's
+    ``shape``, also when the selection is empty.
+    """
+    # (in Python ints: on 32-bit platforms np.broadcast_shapes refuses an axis past 2**31 - 1)
+    ok = len(vshape) <= len(shape) and all(
+        v in (1, n) for v, n in zip(reversed(vshape), reversed(shape), strict=False)
+    )
+    if not ok:
+        raise ValueError(
+            f"cannot assign an array of shape {vshape} to a selection of shape {shape}"
+        )
+
+
+def _empty_selection_shape(x, items):
+    """The shape of numpy's selection for a key of slices, new axes and one False index.
+
+    It is computed from the items, since numpy refuses an array (even a broadcast view) of
+    2**63 positions or more, which an Array may have.
+    """
+    shape = []
+    dims = iter(x.shape)
+    for k in items:
+        if isinstance(k, _NewAxis):
+            shape.append(k.length)  # (None or True: 1, False: 0)
+        elif isinstance(k, slice):
+            shape.append(_utils.slice_length(k, next(dims)))
+        # (a _Gap covers no axis)
+    return tuple(shape)
+
+
+def _setitem_value(x, value):
+    """``value`` cast to ``x``'s dtype: a numpy scalar, or an Array of at least 1 dimension."""
+    from ._creation import asarray
+    from ._elementwise import cast
+
+    dt = x.dtype
+    if isinstance(value, (builtins.bool, int, float, complex, np.generic)):
+        return _scalar_value(value, dt)
+    if not isinstance(value, Array):
+        value = asarray(value)
+    if value.ndim == 0:
+        return _scalar_value(value._fill, dt)
+    return value if value.dtype == dt else cast(value, dt)
+
+
+def _scalar_value(value, dt):
+    if isinstance(value, (complex, np.complexfloating)) and dt.kind != "c":
+        raise TypeError(f"cannot assign a complex value to an array of {dt}")
+    with np.errstate(all="ignore"):
+        return np.array(value, dtype=dt)[()]
+
+
+def _region_setitem(x, key, value):
+    """Assign to the region an outer index selects (GraphBLAS assign)."""
+    T = x._T()
+    region = tuple(
+        _utils.slice_length(k, n) if isinstance(k, slice) else len(k)
+        for k, n in zip(key, x.shape, strict=True)
+        if not isinstance(k, int)
+    )
+    if not isinstance(value, Array):
+        if math.prod(region) == 0:
+            return
+        if _utils.same_value(value, x._fill):
+            if T.nvals:
+                del T[key]
+        else:
+            T[key] = _utils.gb_scalar(value, x.dtype)
+        return
+    try:
+        ok = np.broadcast_shapes(value.shape, region) == region
+    except ValueError:
+        ok = False
+    if not ok:
+        raise ValueError(
+            f"cannot assign an array of shape {value.shape} to a region of shape {region}"
+        )
+    if math.prod(region) == 0:
+        return
+    # The assign replaces the region with the value, so where the value stores nothing, x's
+    # entry is deleted
+    T[key] = _utils.with_fill(value, x._fill)._T()
+
+
+def _scatter_setitem(x, items, value):
+    """Assign through index arrays where numpy's vectorized indexing and GraphBLAS's outer
+    indexing differ (see ``setitem``): write each selected position.
+    """
+    # numpy lays out the selection: index a broadcast grid of each axis's coordinates with the
+    # key. A ``...`` that covers no axis and the new axes stay in the key, since they decide
+    # where the advanced axes go, and the value broadcasts against the new axes too.
+    key = tuple(
+        k.index if isinstance(k, _Adv)
+        else Ellipsis if isinstance(k, _Gap)
+        else bool(k.length) if isinstance(k, _NewAxis) and k.boolean
+        else None if isinstance(k, _NewAxis)
+        else k
+        for k in items
+    )  # fmt: skip
+    coords = []
+    # The grid over x.shape costs an np.arange of each axis (an x of 2**24 x 2**24 took 256
+    # MiB for two positions), and the grid of selected coordinates a sort of each index array
+    # (for x of 1e7 x 1e7, 1e6 pairs took 1.4 times as long). So the first is used when those
+    # ranges take at most 32 MiB or 16 times the selection's coordinates, and where numpy can
+    # build it: its largest size in bytes allows 2**60 positions on 64-bit platforms and
+    # 2**28 on 32-bit ones
+    sel_shape = _selection_shape(x.shape, key)
+    nsel = None if sel_shape is None else math.prod(sel_shape)
+    if nsel == 0:
+        # An empty selection writes nothing, so only its shape is checked; its coordinates
+        # could be long (x[:, [], []] beside an axis of 2**40), or past what numpy holds
+        if isinstance(value, Array):
+            _check_fits(value.shape, sel_shape)
+        return
+    if nsel:  # (before the coordinates are made)
+        _utils.check_dense(nsel, "assigning to the selected positions")
+    if math.prod(x.shape) <= _utils._MAX_INTP // 8 and sum(x.shape) <= builtins.max(
+        16 * x.ndim * (nsel or 0), 2**22
+    ):
+        for a, n in enumerate(x.shape):
+            grid = np.arange(n, dtype=np.int64).reshape([n if b == a else 1 for b in range(x.ndim)])
+            coords.append(np.asarray(np.broadcast_to(grid, x.shape)[key]))
+    else:
+        coords = _selected_coords(x.shape, key)
+    shape = coords[0].shape  # (sel_shape, as numpy lays it out)
+    if isinstance(value, Array):
+        _check_fits(value.shape, shape)
+        values = np.broadcast_to(value.todense(), shape)
+    else:
+        values = np.broadcast_to(np.asarray(value, dtype=x.dtype), shape)
+    coords = [c.reshape(-1) for c in coords]
+    values = values.reshape(-1)
+    # The last of repeated positions wins, as in numpy
+    flat = _utils.ravel(coords, x.shape)
+    _, last = np.unique(flat[::-1], return_index=True)
+    keep = np.sort(flat.size - 1 - last)
+    coords = [c[keep] for c in coords]
+    values = values[keep]
+    stored = _utils.differs(values, x._fill)
+    T = x._T()
+    gbdt = gb_dtype(x.dtype)
+    if stored.any():
+        U = Tensor.from_coo([c[stored] for c in coords], values[stored], gbdt, shape=x.shape)
+        T(U.S) << U
+    if not stored.all() and T.nvals:
+        D = Tensor.from_coo([c[~stored] for c in coords], True, shape=x.shape)
+        T(D.S) << Tensor(gbdt, x.shape)
+
+
+def _selection_shape(shape, key):
+    """The shape of numpy's selection by ``key`` (as ``_scatter_setitem`` builds it), from the
+    key alone in Python ints, or None when its index arrays do not broadcast. ``key`` holds at
+    least one index array or 0-d boolean, which ``_scatter_setitem``, the only caller, ensures.
+
+    numpy's layout: the index arrays, integers and 0-d booleans broadcast together; their
+    axes take the place of the first of them when they are adjacent in the key, and go first
+    otherwise (a ``None`` or a ``...`` between them separates them).
+    """
+    out, arrays, where = [], [], []
+    axis = 0
+    for i, k in enumerate(key):
+        if k is None:
+            out.append(1)
+        elif k is Ellipsis:
+            continue
+        elif isinstance(k, slice):
+            out.append(_utils.slice_length(k, shape[axis]))
+            axis += 1
+        else:
+            if isinstance(k, (bool, np.bool_)):  # (an index array over a new axis, [0] or [])
+                arrays.append((int(k),))
+            else:
+                arrays.append(np.shape(k))
+                axis += 1
+            where.append(i)
+            out.append(None)
+    try:
+        adv = tuple(np.broadcast_shapes(*arrays))
+    except ValueError:
+        return None
+    dims = [n for n in out if n is not None]
+    if where == list(range(where[0], where[-1] + 1)):
+        first = out.index(None)
+        return (*dims[:first], *adv, *dims[first:])
+    return (*adv, *dims)
+
+
+def _selected_coords(shape, key):
+    """Each axis's coordinates of the positions ``key`` selects, laid out as numpy lays out
+    the selection, from a grid of each axis's selected coordinates only. A grid over
+    ``shape`` stops at numpy's largest size, 2**31 - 1 positions on 32-bit platforms such as
+    WebAssembly, and costs an np.arange of each axis. Each item of the key becomes positions
+    among its axis's coordinates.
+    """
+    picked, small = [], []
+    for k in key:
+        if k is None or k is Ellipsis or isinstance(k, (bool, np.bool_)):
+            small.append(k)
+            continue
+        n = shape[len(picked)]
+        if isinstance(k, slice):
+            picked.append(np.arange(*k.indices(n), dtype=np.int64))
+            small.append(slice(None))
+        elif isinstance(k, np.ndarray):
+            sel, at = np.unique(k.reshape(-1), return_inverse=True)
+            picked.append(sel)
+            small.append(at.reshape(k.shape))
+        else:
+            picked.append(np.array([k], np.int64))
+            small.append(0)
+    small = tuple(small)
+    small_shape = tuple(p.size for p in picked)
+    coords = []
+    for a, p in enumerate(picked):
+        grid = p.reshape([p.size if b == a else 1 for b in range(len(shape))])
+        coords.append(np.asarray(np.broadcast_to(grid, small_shape)[small]))
+    return coords
+
+
+# take, take_along_axis
+
+
+def _index_operand(indices, name):
+    if isinstance(indices, Array):
+        if indices.dtype.kind not in "iu":
+            raise TypeError(f"{name} needs integer indices, not {indices.dtype}")
+        return indices.todense().astype(np.int64, copy=False)
+    arr = np.asarray(indices)
+    if arr.dtype.kind not in "iu" and arr.size:
+        raise TypeError(f"{name} needs integer indices, not {arr.dtype}")
+    return arr.astype(np.int64, copy=False)
+
+
+def _check_bounds(idx, n, axis):
+    if idx.size and (idx.min() < -n or idx.max() >= n):
+        raise IndexError(f"index out of bounds for axis {axis} with size {n}")
+
+
+def take(x, indices, /, *, axis=None):
+    """The elements of ``x`` at ``indices`` along ``axis``, which may be None for a 1-d ``x``."""
+    from ._manipulation import _normalize_axis
+
+    if not isinstance(x, Array):
+        raise TypeError(f"take needs an Array, not {type(x).__name__}")
+    idx = _index_operand(indices, "take")
+    if x.ndim == 0:
+        raise ValueError("take needs an array of at least one dimension")
+    if axis is None:
+        if x.ndim > 1:
+            raise ValueError("take needs an axis for an array of more than one dimension")
+        axis = 0
+    axis = _normalize_axis(axis, x.ndim)
+    _check_bounds(idx, x.shape[axis], axis)
+    T = x._T()
+    shape = x.shape[:axis] + idx.shape + x.shape[axis + 1 :]
+    if T.nvals == 0 or math.prod(shape) == 0:
+        return Array._new(Tensor(T.dtype, shape), x._fill)
+    return Array._new(T.take(idx, axis=axis), x._fill)
+
+
+def take_along_axis(x, indices, /, *, axis=-1):
+    from ._manipulation import _normalize_axis
+
+    if not isinstance(x, Array):
+        raise TypeError(f"take_along_axis needs an Array, not {type(x).__name__}")
+    idx = _index_operand(indices, "take_along_axis")
+    if idx.ndim != x.ndim:
+        raise ValueError("take_along_axis needs indices with as many dimensions as x")
+    axis = _normalize_axis(axis, x.ndim)
+    _check_bounds(idx, x.shape[axis], axis)
+    others = [s for a, s in enumerate(x.shape) if a != axis]
+    iothers = [s for a, s in enumerate(idx.shape) if a != axis]
+    bshape = list(np.broadcast_shapes(tuple(others), tuple(iothers)))
+    bshape.insert(axis, idx.shape[axis])
+    shape = tuple(bshape)
+    T = x._T()
+    if T.nvals == 0 or math.prod(shape) == 0:
+        return Array._new(Tensor(T.dtype, shape), x._fill)
+    return Array._new(T.take_along_axis(idx, axis=axis), x._fill)
