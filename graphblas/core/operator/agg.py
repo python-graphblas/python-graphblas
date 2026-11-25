@@ -124,9 +124,8 @@ class Aggregator:
         # under a `max` monoid, or -0.0 under `plus`: a reduce of bitmap data to a Scalar
         # loses both (see the Matrix -> Scalar step there).
         self._vector_apply = vector_apply
-        # A function that replaces the semiring path for Matrix, Vector and Scalar results,
-        # where the semiring alone can overflow (``agg.logaddexp``); a Tensor reduce, which
-        # reads ``_semiring``, does not use it
+        # A function that replaces the semiring path where the semiring alone can overflow
+        # (``agg.logaddexp``)
         self._stable = stable
         if types is None:
             if monoid is not None:
