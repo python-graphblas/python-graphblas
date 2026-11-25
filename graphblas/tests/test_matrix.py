@@ -1944,6 +1944,18 @@ def test_reduce_agg_logaddexp_past_the_range_of_exp():
         assert B.dup(int).reduce_scalar(aggr).new().dtype == dtypes.FP64
 
 
+def test_reduce_agg_logaddexp_past_the_range_of_exp_hypersparse():
+    """The second logaddexp pass over a hypersparse Matrix touches only its nonempty rows.
+    Regression: it gave every empty row an entry, which for 2**60 rows never finished.
+    """
+    A = Matrix.from_coo([0, 0, 5], [0, 1, 3], [710.0, 710.0, 1.0], nrows=2**60, ncols=2**60)
+    want = [np.logaddexp.reduce([710.0, 710.0]), 1.0]
+    for expr in [A.reduce_rowwise(agg.logaddexp), A.T.reduce_columnwise(agg.logaddexp)]:
+        indices, got = expr.new().to_coo()
+        np.testing.assert_array_equal(indices, [0, 5])
+        np.testing.assert_allclose(got, want, rtol=1e-14)
+
+
 def test_reduce_agg_logaddexp2_integers():
     """logaddexp2 on integers computes 2**x in floating point, as on floats."""
     A = Matrix.from_coo([0, 0, 1], [0, 1, 1], [-1, -1, 70])

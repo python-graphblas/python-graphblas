@@ -527,8 +527,10 @@ def _logaddexp_shifted(expr, dtype, opts, exp, log, np_log):
         rowwise = expr.method_name == "reduce_rowwise"
         reduce = x.reduce_rowwise if rowwise else x.reduce_columnwise
         shift = reduce(monoid.max).new(dtype, **opts)
-        finite = unary.isfinite(shift).new(**opts)
-        shift(mask=~finite.V, **opts) << 0.0  # (an empty group stays empty below)
+        # Mask the entries that are not finite, not the complement of those that are, which
+        # would also give every empty group an entry (2**60 of them in a hypersparse Matrix)
+        not_finite = unary.lnot(unary.isfinite(shift).new(**opts)).new(**opts)
+        shift(mask=not_finite.V, **opts) << 0.0
         D = _scaling_diag(expr, unary.ainv(shift).new(**opts), opts)
         y = semiring.any_plus(D @ x if rowwise else x @ D).new(dtype, **opts)
         y << exp(y)
