@@ -214,8 +214,8 @@ print("cache: " + os.environ["GRAPHBLAS_CACHE_PATH"])
 def test_xdist_jit_cache_path_names_the_library_version(tmp_path):
     """Under ``pytest -n``, each worker's JIT cache path names the version of the library loaded.
 
-    Not the version of the headers python-suitesparse-graphblas was built against (see
-    conftest.py). Reading the version leaves SuiteSparse's default cache alone.
+    That is, not the version of the headers python-suitesparse-graphblas was built against
+    (see conftest.py). Reading the version leaves SuiteSparse's default cache alone.
     """
     lines, report = _run_in_fresh_process(
         _XDIST_CACHE_PATH_PROBE, PYTEST_XDIST_WORKER="gw7", HOME=str(tmp_path)

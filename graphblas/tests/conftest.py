@@ -33,15 +33,16 @@ except ImportError:  # pragma: no cover (it is private, so it may go away)
 # runs at once share these directories and can race on a kernel; a directory
 # per run would avoid that but compile every kernel anew.
 #
-# The version is that of the library loaded, which SuiteSparse names its default
-# by. The ``GxB_IMPLEMENTATION_*`` constants of suitesparse_graphblas name the
-# headers it was built against instead, and conda-forge pairs it with any later
-# patch release of the library (python-suitesparse-graphblas 10.5.2.0 with
-# graphblas 10.5.3). The library reports its version only once GraphBLAS is
-# initialized, and this process must set the path before then, so a child
-# process asks it. The child gets a throwaway cache, since GraphBLAS writes its
-# JIT sources (about 3.5 MB) into the cache when it initializes, and workers
-# sharing SuiteSparse's default would write the same files at once.
+# The version is that of the library loaded, since SuiteSparse names its
+# default cache by it. The ``GxB_IMPLEMENTATION_*`` constants of
+# suitesparse_graphblas name the headers it was built against instead, and
+# conda-forge can pair it with a later patch release of the library
+# (python-suitesparse-graphblas 10.5.2.0 with graphblas 10.5.3). The library
+# reports its version only once GraphBLAS is initialized, and this process
+# must set the path before then, so a child process asks it. The child gets a
+# throwaway cache, since GraphBLAS writes its JIT sources (about 3.5 MB) into
+# the cache when it initializes, and workers sharing SuiteSparse's default
+# would write the same files at once.
 _LIBRARY_VERSION_SCRIPT = """
 from suitesparse_graphblas import ffi, initialize, lib
 
@@ -54,14 +55,14 @@ if (
     _xdist_worker := os.environ.get("PYTEST_XDIST_WORKER")
 ) and "GRAPHBLAS_CACHE_PATH" not in os.environ:
     _home = os.environ.get("HOME") or os.environ.get("LOCALAPPDATA") or str(Path.cwd())
-    with tempfile.TemporaryDirectory() as _probe_cache:
+    with tempfile.TemporaryDirectory() as _child_cache:
         _version = subprocess.run(
             [sys.executable, "-c", _LIBRARY_VERSION_SCRIPT],
             stdout=subprocess.PIPE,
             text=True,
             check=True,
             timeout=60,
-            env={**os.environ, "GRAPHBLAS_CACHE_PATH": _probe_cache},
+            env={**os.environ, "GRAPHBLAS_CACHE_PATH": _child_cache},
         ).stdout.strip()
     os.environ["GRAPHBLAS_CACHE_PATH"] = str(
         Path(_home) / ".SuiteSparse_xdist" / f"GrB{_version}" / _xdist_worker
