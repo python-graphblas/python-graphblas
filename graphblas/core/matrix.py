@@ -209,6 +209,47 @@ def _power(updater, A, n, op):
             square_expr = times(square, square)
 
 
+def _coo_from_ss_export(info):
+    """Return the ``from_coo`` arguments for a Matrix exported with ``A.ss.export(raw=True)``.
+
+    A pickle made under the suitesparse backend contains such a dict; this reads it without
+    the ss namespace. Raw arrays may be longer than the Matrix needs, so only the used
+    part of each is read.
+    """
+    fmt = info["format"]
+    nrows = info["nrows"]
+    ncols = info["ncols"]
+    values = info["values"]
+    by_col = fmt[-1] == "c"  # csc, hypercsc, bitmapc, fullc
+    nmajor, nminor = (ncols, nrows) if by_col else (nrows, ncols)
+    if fmt.startswith(("bitmap", "full")):
+        if fmt.startswith("bitmap"):
+            index = np.flatnonzero(info["bitmap"][: nmajor * nminor])
+        else:
+            index = np.arange(nmajor * nminor, dtype=np.uint64)
+        major, minor = np.divmod(index, max(nminor, 1))
+    else:  # csr, csc, hypercsr, hypercsc
+        if fmt.startswith("hyper"):
+            nvec = info["nvec"]
+            vectors = info["cols" if by_col else "rows"][:nvec]
+        else:
+            nvec = nmajor
+            vectors = np.arange(nvec, dtype=np.uint64)
+        indptr = info["indptr"][: nvec + 1].astype(np.int64)
+        index = slice(int(indptr[-1]))
+        major = np.repeat(vectors, np.diff(indptr))
+        minor = info["row_indices" if by_col else "col_indices"][index]
+    if info.get("is_iso", False):
+        # An iso export stores one value for all elements. Repeat it, since from_coo
+        # would read values[0] of a sub-array dtype such as INT64[2] as two values.
+        values = np.broadcast_to(values[:1], (major.size, *values.shape[1:]))
+    else:
+        values = values[index]
+    rows, cols = (minor, major) if by_col else (major, minor)
+    dtype = info.get("dtype")  # only a UDT has one; from_coo infers the others
+    return rows, cols, values, dtype, nrows, ncols
+
+
 class Matrix(BaseType):
     """Create a new GraphBLAS Sparse Matrix.
 
@@ -327,9 +368,14 @@ class Matrix(BaseType):
 
     @staticmethod
     def _deserialize(pieces, name):
-        if backend == "suitesparse":
-            return Matrix.ss.import_any(name=name, **pieces)
-        rows, cols, vals, dtype, nrows, ncols = pieces
+        # A pickle made under suitesparse contains an ss export dict, and one made under
+        # vanilla a tuple. Read either under either backend.
+        if isinstance(pieces, dict):
+            if backend == "suitesparse":
+                return Matrix.ss.import_any(name=name, **pieces)
+            pieces = _coo_from_ss_export(pieces)
+        # Read the pieces this version knows; a newer version may append more.
+        rows, cols, vals, dtype, nrows, ncols = pieces[:6]
         return Matrix.from_coo(rows, cols, vals, dtype, nrows=nrows, ncols=ncols, name=name)
 
     @property

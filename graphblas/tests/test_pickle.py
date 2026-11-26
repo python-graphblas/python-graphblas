@@ -1,3 +1,4 @@
+import itertools
 import multiprocessing
 import pickle
 from pathlib import Path
@@ -6,7 +7,7 @@ import numpy as np
 import pytest
 
 import graphblas as gb
-from graphblas.core import _supports_udfs as supports_udfs  # noqa: F401
+from graphblas.core import _supports_udfs as supports_udfs
 
 suitesparse = gb.backend == "suitesparse"
 
@@ -344,6 +345,26 @@ def test_udt(extra):
     assert pickle.loads(pickle.dumps(gb.binary.first[udt, int])) is gb.binary.first[udt, int]
 
 
+@pytest.mark.skipif("not supports_udfs")
+def test_udt_pickle_file_from_the_other_backend():
+    """The Vector and Matrix of UDTs in the other backend's pickle3 file load under this one."""
+    path = Path(__file__).parent / f"pickle3{'-vanilla' if suitesparse else ''}.pkl"
+    with path.open("rb") as f:
+        d = pickle.load(f)
+    v = d["v"]
+    assert v.dtype.name == "PickledUDT"
+    expected = gb.Vector(v.dtype, size=2)
+    expected[0] = (False, 1)
+    expected[1] = (True, 3)
+    assert expected.isequal(v)
+    A = d["A"]
+    assert A.dtype.name == "pickled_subdtype"
+    expected = gb.Matrix(A.dtype, nrows=1, ncols=2)
+    expected[0, 0] = (1, 2)
+    expected[0, 1] = (3, 4)
+    assert expected.isequal(A)
+
+
 # Module-level so the spawn worker can pickle it; local functions can't cross processes.
 def _crossproc_ibo_add_theta(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
     return x + y + theta
@@ -380,13 +401,16 @@ def _crossproc_worker(backend, op_name, payload, conn):
         conn.close()
 
 
-def _run_crossproc(op_name, payload):
-    """Run ``_CROSSPROC_OPS[op_name]`` in a spawned child and return what it sent after "ok"."""
+def _run_crossproc(op_name, payload, backend=None):
+    """Run ``_CROSSPROC_OPS[op_name]`` in a spawned child and return what it sent after "ok".
+
+    The child uses ``backend``, or this process's backend if None.
+    """
     ctx = multiprocessing.get_context("spawn")
     parent_conn, child_conn = ctx.Pipe(duplex=False)
     proc = ctx.Process(
         target=_crossproc_worker,
-        args=(gb.backend, op_name, payload, child_conn),
+        args=(backend or gb.backend, op_name, payload, child_conn),
     )
     proc.start()
     child_conn.close()
@@ -514,3 +538,150 @@ def test_bound_ibo_pickle_crossprocess():
         assert vals == [108, 109]
     finally:
         delattr(gb.indexbinary, op_name)
+
+
+def _cross_backend_objects():
+    """Matrices and Vectors to pickle under one backend and load under the other.
+
+    They include iso objects and, under suitesparse, one stored in each format that
+    ``ss.export`` writes. Under vanilla, the same keys have the same values.
+    """
+    objects = {
+        "iso": gb.Matrix.from_coo([0, 2], [1, 1], 7, nrows=3, ncols=2),
+        "from_scalar": gb.Matrix.from_scalar(1.5, 3, 2),
+        "empty": gb.Matrix(bool, 0, 3),
+        "v_iso": gb.Vector.from_scalar(2.5, 4),
+        "v_empty": gb.Vector(float, 0),
+    }
+    if supports_udfs:  # without Numba, vanilla cannot build a Matrix of a UDT
+        objects["udt"] = gb.Matrix.from_coo([0, 1], [1, 0], [[1, 2], [3, 4]], dtype="INT64[2]")
+        objects["v_udt"] = gb.Vector.from_coo([0, 2], [[1, 2], [3, 4]], dtype="INT64[2]")
+    A = gb.Matrix.from_coo([0, 1, 3], [2, 0, 3], [1.5, 2.5, 3.5], nrows=4, ncols=5)
+    formats = [
+        (A, ["csr", "csc", "hypercsr", "hypercsc", "bitmapr", "bitmapc"]),
+        (gb.Matrix.from_dense(np.arange(6, dtype=np.int16).reshape(2, 3)), ["fullr", "fullc"]),
+        (gb.Vector.from_coo([1, 4], [True, False], size=6), ["sparse", "bitmap"]),
+        (gb.Vector.from_dense([1, 2, 3]), ["full"]),
+    ]
+    for x, fmts in formats:
+        for fmt in fmts:
+            if gb.backend == "suitesparse":
+                objects[fmt] = type(x).ss.import_any(**x.ss.export(fmt))
+            else:
+                objects[fmt] = x.dup()
+    return objects
+
+
+def _describe(objects):
+    """Return the shape, dtype and sorted elements of each Matrix or Vector."""
+    rv = {}
+    for key, x in objects.items():
+        coords = x.to_coo()
+        elements = sorted(zip(*(c.tolist() for c in coords), strict=True))
+        rv[key] = (x.shape, x.dtype.name, elements)
+    return rv
+
+
+def _op_cross_backend(d):
+    return _describe(d), pickle.dumps(_cross_backend_objects())
+
+
+_CROSSPROC_OPS["cross_backend"] = _op_cross_backend
+
+
+@pytest.mark.slow
+def test_pickle_loads_under_the_other_backend():
+    """A Matrix or Vector pickled under one backend loads under the other, both ways.
+
+    A suitesparse pickle contains an ``ss.export`` dict and a vanilla pickle a tuple.
+    This catches a reader picked by the loading process's backend, which fails on a
+    pickle made under the other one.
+    """
+    other = "suitesparse-vanilla" if suitesparse else "suitesparse"
+    objects = _cross_backend_objects()
+    expected = _describe(objects)
+    ((loaded_there, pickled_there),) = _run_crossproc(
+        "cross_backend", pickle.dumps(objects), backend=other
+    )
+    assert loaded_there == expected
+    assert _describe(pickle.loads(pickled_there)) == expected
+
+
+def test_deserialize_vanilla_pieces():
+    """``_deserialize`` reads the tuple in a vanilla pickle, and any pieces appended to it.
+
+    A newer version may append pieces, such as the orientation of a Matrix.
+    """
+    A = gb.Matrix.from_coo([0, 2], [1, 0], [1.5, 2.5], nrows=3, ncols=2)
+    rows, cols, vals = A.to_coo()
+    pieces = (rows, cols, vals, A.dtype, 3, 2)
+    for p in [pieces, (*pieces, "columnwise")]:
+        B = gb.Matrix._deserialize(p, "B")
+        assert B.name == "B"
+        assert B.isequal(A, check_dtype=True)
+    v = gb.Vector.from_coo([1], [True], size=4)
+    pieces = (*v.to_coo(), v.dtype, 4)
+    for p in [pieces, (*pieces, "appended")]:
+        w = gb.Vector._deserialize(p, "w")
+        assert w.name == "w"
+        assert w.isequal(v, check_dtype=True)
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_deserialize_ss_export_without_ss():
+    """The vanilla reader of an ``ss.export(raw=True)`` dict gives back the Matrix or Vector.
+
+    Raw arrays can be longer than needed, an iso object stores one value, and a by-column
+    format swaps rows and columns. Each format is checked, iso or not.
+    """
+    from graphblas.core.matrix import _coo_from_ss_export as matrix_coo
+    from graphblas.core.vector import _coo_from_ss_export as vector_coo
+
+    def check(x, fmt):
+        info = x.ss.export(fmt, raw=True)
+        assert info["format"] == fmt
+        if x.ndim == 2:
+            rows, cols, values, dtype, nrows, ncols = matrix_coo(info)
+            y = gb.Matrix.from_coo(rows, cols, values, dtype, nrows=nrows, ncols=ncols)
+        else:
+            indices, values, dtype, size = vector_coo(info)
+            y = gb.Vector.from_coo(indices, values, dtype, size=size)
+        assert y.dtype == x.dtype
+        assert y.shape == x.shape
+        assert _describe({"y": y}) == _describe({"y": x})
+
+    for dtype, nrows, ncols in itertools.product(
+        ["FP64", "BOOL", "INT64[2]"], [0, 1, 4], [0, 1, 5]
+    ):
+        value, other = ([1, 2], [3, 4]) if dtype == "INT64[2]" else (1, 0)
+        rows, cols = np.nonzero(np.arange(nrows * ncols).reshape(nrows, ncols) % 3 == 1)
+        A = gb.Matrix(dtype, nrows, ncols)
+        A.ss.build_scalar(rows, cols, value)  # iso
+        B = A.dup()
+        if B.nvals > 0:
+            B[int(rows[0]), int(cols[0])] = other  # not iso
+        F = gb.Matrix.from_scalar(value, nrows, ncols, dtype)  # iso
+        G = F.dup()
+        if nrows * ncols > 0:
+            G[0, 0] = other  # not iso
+        for fmt in ["csr", "csc", "hypercsr", "hypercsc", "bitmapr", "bitmapc"]:
+            check(A, fmt)
+            check(B, fmt)
+        for fmt in ["fullr", "fullc"]:
+            check(F, fmt)
+            check(G, fmt)
+    for dtype, size in itertools.product(["FP64", "BOOL", "INT64[2]"], [0, 1, 5]):
+        value, other = ([1, 2], [3, 4]) if dtype == "INT64[2]" else (1, 0)
+        v = gb.Vector(dtype, size)
+        v.ss.build_scalar(np.arange(0, size, 2), value)  # iso
+        w = v.dup()
+        if size > 0:
+            w[0] = other  # not iso
+        for fmt in ["sparse", "bitmap"]:
+            check(v, fmt)
+            check(w, fmt)
+        u = gb.Vector.from_scalar(value, size, dtype)  # iso
+        check(u, "full")
+        if size > 0:
+            u[0] = other  # not iso
+            check(u, "full")
