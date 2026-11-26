@@ -1918,6 +1918,46 @@ def test_reduce_scalar_agg_count_exists(A):
     assert A.reduce_scalar(agg.mean).new() == 47 / 12
 
 
+def test_reduce_agg_logaddexp_past_the_range_of_exp():
+    """The logaddexp aggregators reduce as numpy does where ``exp`` overflows or underflows.
+
+    The test fails if they only take the log of the sum of ``exp(x)``, which is infinite
+    past 709 (1023 for exp2), and 0 below -745, whose log is -inf.
+    """
+    groups = [[710.0, 710.0], [-1000.0, -1000.0], [800, 3], [-740.0, -741.0], [1.0, 2.0]]
+    groups += [[np.inf, 1.0], [-np.inf, -np.inf], [np.nan, 1.0], [2000, 1500]]
+    rows = np.repeat(np.arange(len(groups)), 2)
+    values = np.concatenate(groups)
+    A = Matrix.from_coo(rows, np.tile([0, 1], len(groups)), values, nrows=len(groups) + 1)
+    for aggr, func in [(agg.logaddexp, np.logaddexp), (agg.logaddexp2, np.logaddexp2)]:
+        with np.errstate(invalid="ignore"):
+            expected = np.array([func.reduce(group) for group in groups])
+        for result in [A.reduce_rowwise(aggr).new(), A.T.reduce_columnwise(aggr).new()]:
+            indices, got = result.to_coo()
+            np.testing.assert_array_equal(indices, np.arange(len(groups)))  # the last row is empty
+            np.testing.assert_allclose(got, expected, rtol=1e-14)
+        for group, want in zip(groups, expected, strict=True):
+            got = Vector.from_coo([0, 1], group).reduce(aggr).new().value
+            np.testing.assert_allclose(got, want, rtol=1e-14)
+        B = A[[0, 2, 8], :].new()  # the rows of finite values
+        want = func.reduce(np.concatenate([groups[0], groups[2], groups[8]]))
+        np.testing.assert_allclose(B.reduce_scalar(aggr).new().value, want, rtol=1e-14)
+        assert B.dup(int).reduce_scalar(aggr).new().dtype == dtypes.FP64
+
+
+def test_reduce_agg_logaddexp_past_the_range_of_exp_hypersparse():
+    """The second logaddexp pass over a hypersparse Matrix touches only its nonempty rows.
+
+    The test hangs if the pass gives every empty row an entry (2**60 of them).
+    """
+    A = Matrix.from_coo([0, 0, 5], [0, 1, 3], [710.0, 710.0, 1.0], nrows=2**60, ncols=2**60)
+    want = [np.logaddexp.reduce([710.0, 710.0]), 1.0]
+    for expr in [A.reduce_rowwise(agg.logaddexp), A.T.reduce_columnwise(agg.logaddexp)]:
+        indices, got = expr.new().to_coo()
+        np.testing.assert_array_equal(indices, [0, 5])
+        np.testing.assert_allclose(got, want, rtol=1e-14)
+
+
 def test_reduce_agg_logaddexp2_integers():
     """logaddexp2 on integers computes 2**x in floating point, as on floats."""
     A = Matrix.from_coo([0, 0, 1], [0, 1, 1], [-1, -1, 70])
