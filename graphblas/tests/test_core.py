@@ -89,7 +89,7 @@ def test_autocompute_false_string():
         assert (v + v).nvals == 1
 
 
-_BOOL_CONFIG_PROBE = """
+_BOOL_CONFIG_SCRIPT = """
 import graphblas as gb
 
 print("package: " + gb.__file__)
@@ -105,7 +105,7 @@ def test_bool_config_from_environment():
         os.environ, PYTHONPATH=pythonpath, GRAPHBLAS_AUTOCOMPUTE="false", GRAPHBLAS_MAPNUMPY="off"
     )
     result = subprocess.run(
-        [sys.executable, "-c", _BOOL_CONFIG_PROBE],
+        [sys.executable, "-c", _BOOL_CONFIG_SCRIPT],
         capture_output=True,
         text=True,
         check=False,
@@ -115,7 +115,6 @@ def test_bool_config_from_environment():
     assert result.returncode == 0, report
     lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
     assert lines.get("package") == str(repo_root / "graphblas" / "__init__.py"), report
-    # donfig keeps each value as a string, which is truthy
     assert lines.get("parsed") == "False False", report
 
 

@@ -257,8 +257,9 @@ def _config_bool(key):
 
     donfig reads an environment variable with ``ast.literal_eval`` and keeps the string
     when that fails, so ``GRAPHBLAS_AUTOCOMPUTE=false`` gives ``'false'``, which is truthy.
-    Accept the usual spellings of true and false in any case. None (YAML null, or the
-    variable set to None) and the empty string are false. Anything else raises ValueError.
+    This accepts the usual spellings of true and false in any case. None (YAML null, or
+    the variable set to None), the empty string, and the strings "none" and "null" are
+    false. Anything else raises ValueError.
     """
     val = config.get(key)
     if val is True or val is False:
