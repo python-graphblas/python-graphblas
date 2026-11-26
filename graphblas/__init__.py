@@ -216,6 +216,12 @@ def _init(backend_arg, blocking, automatic=False):
                 blocking = False
                 passed_params["blocking"] = blocking
             initialize(blocking=blocking, memory_manager="numpy")
+        # The default that resetting nthreads restores (see core.ss.config._nthreads_default).
+        # If GraphBLAS was initialized before, it is the setting at this point.
+        nthreads = ffi.new("int32_t*")
+        if lib.GxB_Global_Option_get_INT32(lib.GxB_NTHREADS, nthreads) != 0:
+            raise RuntimeError("Could not get GraphBLAS nthreads")  # pragma: no cover (safety)
+        default_nthreads = nthreads[0]
         if backend == "suitesparse-vanilla":
             # Exclude functions that start with GxB
 
@@ -242,6 +248,7 @@ def _init(backend_arg, blocking, automatic=False):
     core.ffi = ffi
     core.lib = lib
     core.NULL = ffi.NULL
+    core._default_nthreads = default_nthreads
     if backend == "suitesparse":
         from .core.ss.jit_config import _set_jit_c_control_at_init
 

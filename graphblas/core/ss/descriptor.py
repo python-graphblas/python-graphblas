@@ -83,7 +83,7 @@ class _DescriptorConfig(BaseConfig):
         "transpose_first": False,
         "transpose_second": False,
         # GxB
-        "nthreads": 0,
+        "nthreads": 0,  # See core.ss.config._nthreads_default: SuiteSparse takes 0 as 1 thread
         "chunk": 0,
         "axb_method": "default",
         "sort": False,
@@ -123,8 +123,10 @@ def get_descriptor(**opts):
     Extended descriptor parameters
     ------------------------------
     nthreads : int
-        Maximum number of OpenMP threads to use. 0 or negative means no limit.
-        If not set, use nthreads from global config ``gb.ss.config["nthreads"]``
+        Maximum number of OpenMP threads to use. 0 or negative means the global
+        setting, ``gb.ss.config["nthreads"]``, as it is when the descriptor is made.
+        If not set, use the current Context's nthreads: the global setting, unless a
+        ``gb.ss.Context`` is engaged.
     chunk : double
     axb_method : str, {"gustavson", "dot", "hash", "saxpy", "default"}
         A hint for which matrix multiply method to use
@@ -155,7 +157,7 @@ def get_descriptor(**opts):
         level = opts.pop("compression_level", None)
         _set_compression(desc, compression, level)
     if (nthreads := opts.pop("nthreads", None)) is not None:
-        config["nthreads"] = max(0, nthreads)
+        config["nthreads"] = nthreads
     for key, val in opts.items():
         if val is False or val is None:
             continue
