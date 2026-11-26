@@ -836,7 +836,13 @@ def _array_literal_udt(dtype, value):
     # and bool casts safely into every numeric element.
     if np_type.names is not None or value.dtype.kind not in "iufc":
         return None
-    shape = np_type.subdtype[1]
+    if value.size == 0:
+        # Typed by its own shape, an empty array would have size 0, which no UDT has.
+        # Converted into the UDT, it raises numpy's "could not broadcast" error instead.
+        return None
+    # A UDT that is not an array, such as a date, has the shape (), so with one the
+    # array keeps its own shape.
+    shape = np_type.shape
     if _strip_leading_ones(value.shape) == _strip_leading_ones(shape):
         shape = value.shape
     else:

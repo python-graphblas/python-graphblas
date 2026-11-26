@@ -5132,6 +5132,56 @@ def test_udt_record_date_literals_compare_as_numpy():
         assert result[0].new().value.tolist() == (day, secs)
 
 
+def test_numeric_sequence_literal_with_a_date_or_text_udt():
+    """A numeric array, list or tuple literal with a date or bytes UDT is typed by its own shape.
+
+    Its type is the array UDT of its own dtype and shape, so, as with a number, ``==``
+    raises KeyError, ``isequal`` is False, and it does not fit as an element. Converted
+    into the UDT, ``[1]`` would be the date 1970-01-02 and compare equal to it.
+    """
+    days = dtypes.register_anonymous(np.dtype("M8[D]"), "_SeqLitDays")
+    text = dtypes.register_anonymous(np.dtype("S2"), "_SeqLitBytes")
+    for dtype, value in [(days, np.datetime64("1970-01-02")), (text, b"ab")]:
+        v = Vector(dtype, size=2)
+        v[0] = value
+        s = v[0].new()
+        for literal in [(1, 2.0), [1], np.array([1]), np.array([1.5, 2])]:
+            assert not s.isequal(literal)
+            comparisons = [lambda: s == literal]  # noqa: B023
+            if supports_udfs:
+                comparisons += [lambda: v == literal, lambda: literal != v]  # noqa: B023
+            for expr in comparisons:
+                with pytest.raises(KeyError, match="pairs only with its own type"):
+                    expr()
+            if supports_udfs:
+                with pytest.raises(ValueError, match="does not fit"):
+                    v.ewise_union(v, binary.first, literal, literal)
+
+
+def test_empty_array_literal_with_a_date_or_text_udt():
+    """An empty array, list or tuple literal with a date or bytes UDT raises numpy's ValueError.
+
+    No UDT has size 0, so the literal is converted into the UDT, and numpy cannot broadcast
+    it to one element. Typed as an array UDT of its own shape, it would raise "Unknown dtype".
+    """
+    days = dtypes.register_anonymous(np.dtype("M8[D]"), "_EmptyLitDays")
+    text = dtypes.register_anonymous(np.dtype("S2"), "_EmptyLitBytes")
+    for dtype, value in [(days, np.datetime64("1970-01-02")), (text, b"ab")]:
+        v = Vector(dtype, size=2)
+        v[0] = value
+        s = v[0].new()
+        for literal in [[], (), np.array([]), np.zeros((2, 0))]:
+            exprs = [lambda: s == literal, lambda: s.isequal(literal)]  # noqa: B023
+            if supports_udfs:
+                exprs += [
+                    lambda: v == literal,  # noqa: B023
+                    lambda: v.ewise_union(v, binary.first, literal, literal),  # noqa: B023
+                ]
+            for expr in exprs:
+                with pytest.raises(ValueError, match="could not broadcast input array"):
+                    expr()
+
+
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_typed_op_takes_a_literal_in_its_own_input_type():
     """A literal for a typed op is typed by the op's input type on its side, not by the UDT's.
