@@ -4668,10 +4668,10 @@ def test_ss_descriptors(A):
             (A @ A).new(nthreads=4, Nthreads=5)
         with pytest.raises(ValueError, match="escriptor"):
             A[0, 0].new(bad_opt=True)
-        A[0, 0].new(nthreads=4, sort=None)  # ignored, but okay
+        A[0, 0].new(nthreads=4, sort=None)  # okay: nthreads applies, sort does nothing here
         with pytest.raises(ValueError, match="escriptor"):
             A.__setitem__((0, 0), 1, bad_opt=True)
-        A.__setitem__((0, 0), 1, nthreads=4)  # ignored, but okay
+        A.__setitem__((0, 0), 1, nthreads=4)  # okay: nthreads applies to setElement
         with pytest.raises(ValueError, match="escriptor"):
             A.dup(bad_opt=True)
         A.dup(nthreads=4)

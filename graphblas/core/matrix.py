@@ -15,6 +15,7 @@ from ..exceptions import (
 )
 from . import _supports_udfs, automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _is_recording, call
+from .descriptor import call_in_context
 from .descriptor import lookup as descriptor_lookup
 from .dtypes import _raise_dtype_or_arraylike
 from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, InfixExprBase, Updater
@@ -848,12 +849,12 @@ class Matrix(BaseType):
                 else:
                     rv(mask=mask, **opts)[...] = self
         else:
-            if opts:
-                # Ignore opts for now
-                desc = descriptor_lookup(**opts)  # noqa: F841 (keep desc in scope for context)
+            # GrB_Matrix_dup takes no descriptor, but opts such as nthreads apply through
+            # the descriptor's Context (see call_in_context)
+            desc = descriptor_lookup(**opts) if opts else None
             new_mat = ffi_new("GrB_Matrix*")
             rv = Matrix._from_obj(new_mat, self.dtype, self._nrows, self._ncols, name=name)
-            call("GrB_Matrix_dup", [_Pointer(rv), self])
+            call_in_context(desc, call, "GrB_Matrix_dup", [_Pointer(rv), self])
         return rv
 
     def diag(self, k=0, dtype=None, *, name=None, **opts):
@@ -3216,21 +3217,29 @@ class Matrix(BaseType):
             rowidx, colidx = colidx, rowidx
         if result is None:
             result = Scalar(dtype, is_cscalar=is_cscalar, name=name)
-        if opts:
-            # Ignore opts for now
-            desc = descriptor_lookup(**opts)  # noqa: F841 (keep desc in scope for context)
+        # extractElement takes no descriptor, but opts such as nthreads apply through
+        # the descriptor's Context (see call_in_context)
+        desc = descriptor_lookup(**opts) if opts else None
         if is_cscalar:
             dtype_name = "UDT" if dtype._is_udt else dtype.name
             # Report an error against this Matrix (not a TransposedMatrix, which has no
             # error function): a C scalar has no GraphBLAS object to ask.
             out = _Pointer(result, exc_arg=self._matrix if self._is_transposed else self)
-            info = call(
-                f"GrB_Matrix_extractElement_{dtype_name}", [out, self, rowidx.index, colidx.index]
+            info = call_in_context(
+                desc,
+                call,
+                f"GrB_Matrix_extractElement_{dtype_name}",
+                [out, self, rowidx.index, colidx.index],
             )
             # `s << A[i, j]` extracts into `s` itself, which may already have a value
             result._empty = info is NoValue
         else:
-            call("GrB_Matrix_extractElement_Scalar", [result, self, rowidx.index, colidx.index])
+            call_in_context(
+                desc,
+                call,
+                "GrB_Matrix_extractElement_Scalar",
+                [result, self, rowidx.index, colidx.index],
+            )
         return result
 
     def _prep_for_extract(self, resolved_indexes):

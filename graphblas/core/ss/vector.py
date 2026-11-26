@@ -10,6 +10,7 @@ from ...dtypes import _INDEX, INT64, UINT64, lookup_dtype
 from ...exceptions import InvalidValue, _error_code_lookup, check_status, check_status_carg
 from .. import NULL, ffi, lib
 from ..base import call
+from ..descriptor import call_in_context
 from ..operator import get_typed_op
 from ..utils import (
     _CArray,
@@ -498,6 +499,14 @@ class ss:
         )
 
     def _export(self, format=None, *, sort=False, give_ownership=False, raw=False, method, opts):
+        # The options apply to every GraphBLAS call of the export, such as the dup, not
+        # only to those given the descriptor
+        desc = get_descriptor(**opts)
+        return call_in_context(
+            desc, self._export_with, desc, format, sort, give_ownership, raw, method
+        )
+
+    def _export_with(self, desc, format, sort, give_ownership, raw, method):
         if give_ownership:
             parent = self._parent
         else:
@@ -528,7 +537,6 @@ class ss:
         else:
             jumbled = ffi_new("bool*")
         is_iso = ffi_new("bool*")
-        desc = get_descriptor(**opts)
         desc_obj = NULL if desc is None else desc._carg
         if format == "sparse":
             vi = ffi_new("GrB_Index**")
@@ -1016,7 +1024,9 @@ class ss:
             args = ()
         check_values_size(values, dtype, nvals, is_iso)
         desc = get_descriptor(secure_import=secure_import, **opts)
-        status = getattr(lib, f"GxB_Vector_{method}_CSC")(
+        status = call_in_context(
+            desc,
+            getattr(lib, f"GxB_Vector_{method}_CSC"),
             vhandle,
             *args,
             vi,
@@ -1219,7 +1229,9 @@ class ss:
             args = ()
         check_values_size(values, dtype, size, is_iso)
         desc = get_descriptor(secure_import=secure_import, **opts)
-        status = getattr(lib, f"GxB_Vector_{method}_Bitmap")(
+        status = call_in_context(
+            desc,
+            getattr(lib, f"GxB_Vector_{method}_Bitmap"),
             vhandle,
             *args,
             vb,
@@ -1395,7 +1407,9 @@ class ss:
             args = ()
         check_values_size(values, dtype, size, is_iso)
         desc = get_descriptor(secure_import=secure_import, **opts)
-        status = getattr(lib, f"GxB_Vector_{method}_Full")(
+        status = call_in_context(
+            desc,
+            getattr(lib, f"GxB_Vector_{method}_Full"),
             vhandle,
             *args,
             vx,
@@ -1670,7 +1684,9 @@ class ss:
             p = None
         desc = get_descriptor(**opts)
         check_status(
-            lib.GxB_Vector_sort(
+            call_in_context(
+                desc,
+                lib.GxB_Vector_sort,
                 NULL if w is None else w._carg,
                 NULL if p is None else p._carg,
                 op._carg,
@@ -1740,7 +1756,9 @@ class ss:
                 check_status_carg(status, "Vector", parent._carg)
 
         check_status(
-            lib.GxB_Vector_serialize(
+            call_in_context(
+                desc,
+                lib.GxB_Vector_serialize,
                 blob_handle,
                 blob_size_handle,
                 parent._carg,
@@ -1787,8 +1805,14 @@ class ss:
         desc = get_descriptor(**opts)
         gb_obj = ffi_new("GrB_Vector*")
         check_status_carg(
-            lib.GxB_Vector_deserialize(
-                gb_obj, dtype._carg, data_obj, data.nbytes, NULL if desc is None else desc._carg
+            call_in_context(
+                desc,
+                lib.GxB_Vector_deserialize,
+                gb_obj,
+                dtype._carg,
+                data_obj,
+                data.nbytes,
+                NULL if desc is None else desc._carg,
             ),
             "Vector",
             gb_obj[0],

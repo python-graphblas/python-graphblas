@@ -16,6 +16,7 @@ from ...exceptions import (
 )
 from .. import NULL, _has_numba, ffi, lib
 from ..base import call
+from ..descriptor import call_in_context
 from ..operator import get_typed_op
 from ..utils import (
     _CArray,
@@ -823,6 +824,14 @@ class ss:
         )
 
     def _export(self, format=None, *, sort=False, give_ownership=False, raw=False, method, opts):
+        # The options apply to every GraphBLAS call of the export, such as the dup and
+        # the coo extraction, not only to those given the descriptor
+        desc = get_descriptor(**opts)
+        return call_in_context(
+            desc, self._export_with, desc, format, sort, give_ownership, raw, method
+        )
+
+    def _export_with(self, desc, format, sort, give_ownership, raw, method):
         if format is None:
             format = self.format
         else:
@@ -842,7 +851,6 @@ class ss:
             parent = self._parent.dup(name=f"M_{method}")
         dtype = parent.dtype.np_type
         index_dtype = np.dtype(np.uint64)
-        desc = get_descriptor(**opts)
         desc_obj = NULL if desc is None else desc._carg
 
         nrows = parent._nrows
@@ -903,27 +911,13 @@ class ss:
                     else:
                         parent.clear()
             elif format == "coor":
-                rv = self._export(
-                    "csr",
-                    sort=sort,
-                    give_ownership=give_ownership,
-                    raw=False,
-                    method=method,
-                    opts=opts,
-                )
+                rv = self._export_with(desc, "csr", sort, give_ownership, False, method)
                 rv["rows"] = indptr_to_indices(rv.pop("indptr"))
                 rv["cols"] = rv.pop("col_indices")
                 rv["sorted_rows"] = True
                 rv["format"] = "coor"
             elif format == "cooc":
-                rv = self._export(
-                    "csc",
-                    sort=sort,
-                    give_ownership=give_ownership,
-                    raw=False,
-                    method=method,
-                    opts=opts,
-                )
+                rv = self._export_with(desc, "csc", sort, give_ownership, False, method)
                 rv["cols"] = indptr_to_indices(rv.pop("indptr"))
                 rv["rows"] = rv.pop("row_indices")
                 rv["sorted_cols"] = True
@@ -1423,7 +1417,9 @@ class ss:
         n = nrows if method == "import" else matrix._nrows
         check_values_size(values, dtype, n, is_iso, indptr=indptr, indices=col_indices)
         desc = get_descriptor(secure_import=secure_import, **opts)
-        status = getattr(lib, f"GxB_Matrix_{method}_CSR")(
+        status = call_in_context(
+            desc,
+            getattr(lib, f"GxB_Matrix_{method}_CSR"),
             mhandle,
             *args,
             Ap,
@@ -1629,7 +1625,9 @@ class ss:
         n = ncols if method == "import" else matrix._ncols
         check_values_size(values, dtype, n, is_iso, indptr=indptr, indices=row_indices)
         desc = get_descriptor(secure_import=secure_import, **opts)
-        status = getattr(lib, f"GxB_Matrix_{method}_CSC")(
+        status = call_in_context(
+            desc,
+            getattr(lib, f"GxB_Matrix_{method}_CSC"),
             mhandle,
             *args,
             Ap,
@@ -1866,7 +1864,9 @@ class ss:
             args = ()
         check_values_size(values, dtype, nvec, is_iso, indptr=indptr, indices=col_indices)
         desc = get_descriptor(secure_import=secure_import, **opts)
-        status = getattr(lib, f"GxB_Matrix_{method}_HyperCSR")(
+        status = call_in_context(
+            desc,
+            getattr(lib, f"GxB_Matrix_{method}_HyperCSR"),
             mhandle,
             *args,
             Ap,
@@ -2106,7 +2106,9 @@ class ss:
             args = ()
         check_values_size(values, dtype, nvec, is_iso, indptr=indptr, indices=row_indices)
         desc = get_descriptor(secure_import=secure_import, **opts)
-        status = getattr(lib, f"GxB_Matrix_{method}_HyperCSC")(
+        status = call_in_context(
+            desc,
+            getattr(lib, f"GxB_Matrix_{method}_HyperCSC"),
             mhandle,
             *args,
             Ap,
@@ -2319,7 +2321,9 @@ class ss:
             args = ()
         check_values_size(values, dtype, nrows * ncols, is_iso)
         desc = get_descriptor(secure_import=secure_import, **opts)
-        status = getattr(lib, f"GxB_Matrix_{method}_BitmapR")(
+        status = call_in_context(
+            desc,
+            getattr(lib, f"GxB_Matrix_{method}_BitmapR"),
             mhandle,
             *args,
             Ab,
@@ -2527,7 +2531,9 @@ class ss:
             args = ()
         check_values_size(values, dtype, nrows * ncols, is_iso)
         desc = get_descriptor(secure_import=secure_import, **opts)
-        status = getattr(lib, f"GxB_Matrix_{method}_BitmapC")(
+        status = call_in_context(
+            desc,
+            getattr(lib, f"GxB_Matrix_{method}_BitmapC"),
             mhandle,
             *args,
             Ab,
@@ -2709,8 +2715,15 @@ class ss:
             args = ()
         check_values_size(values, dtype, nrows * ncols, is_iso)
         desc = get_descriptor(secure_import=secure_import, **opts)
-        status = getattr(lib, f"GxB_Matrix_{method}_FullR")(
-            mhandle, *args, Ax, values.nbytes, is_iso, NULL if desc is None else desc._carg
+        status = call_in_context(
+            desc,
+            getattr(lib, f"GxB_Matrix_{method}_FullR"),
+            mhandle,
+            *args,
+            Ax,
+            values.nbytes,
+            is_iso,
+            NULL if desc is None else desc._carg,
         )
         _unclaim_taken((values, Ax))
         if method == "import":
@@ -2882,8 +2895,15 @@ class ss:
             args = ()
         check_values_size(values, dtype, nrows * ncols, is_iso)
         desc = get_descriptor(secure_import=secure_import, **opts)
-        status = getattr(lib, f"GxB_Matrix_{method}_FullC")(
-            mhandle, *args, Ax, owner.nbytes, is_iso, NULL if desc is None else desc._carg
+        status = call_in_context(
+            desc,
+            getattr(lib, f"GxB_Matrix_{method}_FullC"),
+            mhandle,
+            *args,
+            Ax,
+            owner.nbytes,
+            is_iso,
+            NULL if desc is None else desc._carg,
         )
         _unclaim_taken((owner, Ax))
         if method == "import":
@@ -4261,7 +4281,9 @@ class ss:
             P = None
         desc = get_descriptor(transpose_first=order == "columnwise", **opts)
         check_status(
-            lib.GxB_Matrix_sort(
+            call_in_context(
+                desc,
+                lib.GxB_Matrix_sort,
                 NULL if C is None else C._carg,
                 NULL if P is None else P._carg,
                 op._carg,
@@ -4331,7 +4353,9 @@ class ss:
                 check_status_carg(status, "Matrix", parent._carg)
 
         check_status(
-            lib.GxB_Matrix_serialize(
+            call_in_context(
+                desc,
+                lib.GxB_Matrix_serialize,
                 blob_handle,
                 blob_size_handle,
                 parent._carg,
@@ -4378,8 +4402,14 @@ class ss:
         desc = get_descriptor(**opts)
         gb_obj = ffi_new("GrB_Matrix*")
         check_status_carg(
-            lib.GxB_Matrix_deserialize(
-                gb_obj, dtype._carg, data_obj, data.nbytes, NULL if desc is None else desc._carg
+            call_in_context(
+                desc,
+                lib.GxB_Matrix_deserialize,
+                gb_obj,
+                dtype._carg,
+                data_obj,
+                data.nbytes,
+                NULL if desc is None else desc._carg,
             ),
             "Matrix",
             gb_obj[0],

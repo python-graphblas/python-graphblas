@@ -25,9 +25,10 @@ class Context(BaseConfig):
 
     def __init__(self, engage=True, *, stack=True, nthreads=None, chunk=None, gpu_id=None):
         # Set before super().__init__(), which fixes the allowed attributes (see BaseConfig).
+        # _prev_context first, which __del__ reads if anything after gb_obj raises.
+        self._prev_context = None
         self.gb_obj = ffi_new("GxB_Context*")
         check_status_carg(lib.GxB_Context_new(self.gb_obj), "Context", self.gb_obj[0])
-        self._prev_context = None
         super().__init__()
         if stack:
             context = threadlocal.context
@@ -69,10 +70,19 @@ class Context(BaseConfig):
     def __del__(self):
         gb_obj = getattr(self, "gb_obj", None)
         if gb_obj is not None and lib is not None:  # pragma: no branch (safety)
-            try:
-                self.disengage()
-            except InvalidValue:
-                pass
+            # Freeing an engaged Context is undefined behavior in GraphBLAS. A Context
+            # that ``engage`` engaged has ``_prev_context`` set or is the current one
+            # until ``disengage``.
+            if self._prev_context is not None or threadlocal.context is self:
+                try:
+                    self.disengage()
+                except InvalidValue:
+                    pass
+            elif gb_obj[0] != ffi.NULL:  # NULL would disengage any Context
+                # A descriptor's Context is engaged only inside ``_call``. Disengage it
+                # anyway, in case two interrupts skipped both restores there. This
+                # changes nothing if another Context is engaged, and does not raise.
+                lib.GxB_Context_disengage(gb_obj[0])
             lib.GxB_Context_free(gb_obj)
 
     def engage(self):
@@ -81,14 +91,32 @@ class Context(BaseConfig):
         check_status(lib.GxB_Context_engage(self._carg), self)
         threadlocal.context = self
 
-    def _engage(self):
-        """Like engage, but don't set to threadlocal.context.
+    def _call(self, func, *args):
+        """Return ``func(*args)`` with this Context engaged on this thread.
 
-        This is useful if you want to disengage when the object is deleted by going out of scope.
+        The current Context (``threadlocal.context``: the global one, or a user's
+        ``with Context(...)``) is engaged again afterwards, even if ``func`` raises.
+        This Context is the current one while ``func`` runs, so a nested ``_call``
+        restores it. A descriptor's Context is engaged only this way, so it is never
+        left engaged after the call that was given it, whatever keeps it alive.
         """
-        if self._prev_context is None and (context := threadlocal.context) is not self:
-            self._prev_context = context
-        check_status(lib.GxB_Context_engage(self._carg), self)
+        prev = threadlocal.context
+        try:
+            try:
+                check_status(lib.GxB_Context_engage(self._carg), self)
+                threadlocal.context = self
+                return func(*args)
+            finally:
+                threadlocal.context = prev
+                lib.GxB_Context_engage(prev._carg)
+        finally:
+            # Again, because PyPy can raise KeyboardInterrupt at the first bytecode of
+            # the inner ``finally``, before its restore runs. Engaging ``prev`` twice is
+            # harmless. Its status is ignored: ``prev`` is GxB_CONTEXT_WORLD or alive
+            # (``threadlocal`` holds it), so it fails only where GraphBLAS disables
+            # Contexts (GxB_atfork_child), and then the engage above raised.
+            threadlocal.context = prev
+            lib.GxB_Context_engage(prev._carg)
 
     def disengage(self):
         prev_context = self._prev_context
