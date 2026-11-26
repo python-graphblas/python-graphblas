@@ -1,5 +1,7 @@
 # All items are dynamically added by classes in operator.py
 # This module acts as a container of Monoid instances
+from ..core import _build_delayed
+
 _delayed = {}
 
 
@@ -7,15 +9,17 @@ def __dir__():
     return globals().keys() | _delayed.keys() | {"ss"}
 
 
-def __getattr__(key):
-    if key in _delayed:
-        func, kwargs = _delayed.pop(key)
-        if isinstance(kwargs["binaryop"], str):
-            from ..binary import from_string
+def _build(key, delayed):
+    func, kwargs = delayed
+    if isinstance(kwargs["binaryop"], str):
+        from ..binary import from_string
 
-            kwargs["binaryop"] = from_string(kwargs["binaryop"])
-        rv = func(**kwargs)
-        globals()[key] = rv
+        kwargs["binaryop"] = from_string(kwargs["binaryop"])
+    return func(**kwargs)
+
+
+def __getattr__(key):
+    if (rv := _build_delayed(globals(), _delayed, key, _build)) is not None:
         return rv
     if key == "ss":
         from .. import backend

@@ -1,5 +1,7 @@
 # All items are dynamically added by classes in operator.py
 # This module acts as a container of all UnaryOp, BinaryOp, and Semiring instances
+from ..core import _build_delayed
+
 _delayed = {}
 
 
@@ -7,11 +9,12 @@ def __dir__():
     return globals().keys() | _delayed.keys() | {"ss"}
 
 
+def _build(key, module):
+    return getattr(module, key)
+
+
 def __getattr__(key):
-    if key in _delayed:
-        module = _delayed.pop(key)
-        rv = getattr(module, key)
-        globals()[key] = rv
+    if (rv := _build_delayed(globals(), _delayed, key, _build)) is not None:
         return rv
     if key == "ss":
         from .. import backend

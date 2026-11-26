@@ -130,10 +130,16 @@ def __dir__():
 
 
 def __getattr__(name):
-    if name in _delayed:
-        delayed_func, kwargs = _delayed.pop(name)
-        rv = delayed_func(**kwargs)
-        globals()[name] = rv
+    from ..core import _lazy_lock
+
+    with _lazy_lock:  # see _lazy_lock
+        return _getattr(name)
+
+
+def _getattr(name):
+    from ..core import _build_delayed
+
+    if (rv := _build_delayed(globals(), _delayed, name)) is not None:
         return rv
     if name not in _unary_names:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

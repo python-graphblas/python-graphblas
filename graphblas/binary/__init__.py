@@ -1,6 +1,6 @@
 # All items are dynamically added by classes in operator.py
 # This module acts as a container of BinaryOp instances
-from ..core import _supports_udfs
+from ..core import _build_delayed, _supports_udfs
 
 _delayed = {}
 _delayed_commutes_to = {
@@ -25,15 +25,17 @@ def __dir__():
     return globals().keys() | _delayed.keys() | {"ss"}
 
 
+def _build(key, delayed):
+    func, kwargs = delayed
+    rv = func(**kwargs)
+    if key in _delayed_commutes_to:
+        other_key = _delayed_commutes_to[key]
+        rv._commutes_to = globals().get(other_key, other_key)
+    return rv
+
+
 def __getattr__(key):
-    if key in _delayed:
-        func, kwargs = _delayed.pop(key)
-        rv = func(**kwargs)
-        globals()[key] = rv
-        if key in _delayed_commutes_to:
-            other_key = _delayed_commutes_to[key]
-            other = globals().get(other_key, other_key)
-            rv._commutes_to = other
+    if (rv := _build_delayed(globals(), _delayed, key, _build)) is not None:
         return rv
     if key == "ss":
         from .. import backend

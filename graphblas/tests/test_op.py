@@ -1304,6 +1304,112 @@ def test_lazy_op():
     assert op.from_string("numpy.lazy") is unary.numpy.lazy
 
 
+def test_lazy_op_first_used_by_threads_at_once():
+    """Threads that first get a lazily registered op at once all get it, built once.
+
+    Fails if a thread that arrives during the build finds the name neither in the namespace
+    nor in its delayed table, and raises AttributeError.
+    """
+    import threading
+    import time
+
+    from graphblas import indexbinary
+
+    calls = []
+
+    def build(**kwargs):
+        calls.append(None)
+        time.sleep(0.05)  # so that the other threads arrive during the build
+        return object()
+
+    def first_use_by_threads(namespace, name):
+        barrier = threading.Barrier(8)
+        got = []
+
+        def get():
+            barrier.wait()
+            got.append(getattr(namespace, name, None))
+
+        threads = [threading.Thread(target=get) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        return got
+
+    kwargs = {"binaryop": binary.plus, "monoid": monoid.plus}
+    path = operator.OpPath(binary, "_race_path")
+    namespaces = [binary, unary, monoid, semiring, select, indexunary, indexbinary, path]
+    namespaces += [binary.numpy, unary.numpy, monoid.numpy, semiring.numpy]
+    for namespace in [*namespaces, op, op.numpy]:
+        name = "_race_op"
+        if namespace is op or namespace is op.numpy:
+            mod = binary if namespace is op else binary.numpy
+            mod._delayed[name] = (build, {})
+            namespace._delayed[name] = mod
+        elif namespace in {monoid, monoid.numpy}:
+            namespace._delayed[name] = (build, {"binaryop": binary.plus})
+        elif namespace in {semiring, semiring.numpy}:
+            namespace._delayed[name] = (build, dict(kwargs))
+        else:
+            namespace._delayed[name] = (build, {})
+        calls.clear()
+        try:
+            got = first_use_by_threads(namespace, name)
+        finally:
+            for ns in [namespace, binary, binary.numpy]:
+                ns._delayed.pop(name, None)
+                vars(ns).pop(name, None)
+        assert len(calls) == 1, namespace
+        assert got[0] is not None, namespace
+        assert all(x is got[0] for x in got), namespace
+
+
+def test_lazy_op_whose_build_fails_is_dropped():
+    """A lazily registered op whose build raises is gone after its first use.
+
+    Later uses raise AttributeError, so ``hasattr`` is False. A SelectOp registered lazily
+    from an op that does not return BOOL goes away like this (see test_indexunary_udf in
+    test_matrix.py).
+    """
+
+    def build():
+        raise RuntimeError("the build fails")
+
+    binary._delayed["_failing_op"] = (build, {})
+    try:
+        with pytest.raises(RuntimeError, match="the build fails"):
+            binary._failing_op
+        assert not hasattr(binary, "_failing_op")
+        assert "_failing_op" not in dir(binary)
+    finally:
+        binary._delayed.pop("_failing_op", None)
+
+
+def test_lazy_op_whose_build_is_interrupted_is_built_again():
+    """A lazily registered op whose build is interrupted stays delayed, so the next use builds it.
+
+    Fails if a KeyboardInterrupt during the first build of an op, such as ``binary.floordiv``,
+    loses the op for the session.
+    """
+    calls = []
+
+    def build():
+        calls.append(None)
+        if len(calls) == 1:
+            raise KeyboardInterrupt
+        return calls
+
+    binary._delayed["_interrupted_op"] = (build, {})
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            binary._interrupted_op
+        assert binary._interrupted_op is calls
+    finally:
+        binary._delayed.pop("_interrupted_op", None)
+        vars(binary).pop("_interrupted_op", None)
+
+
 def test_positional():
     assert not unary.exp.is_positional
     assert not unary.abs[bool].is_positional
