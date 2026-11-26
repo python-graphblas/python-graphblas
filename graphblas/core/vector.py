@@ -309,8 +309,8 @@ class Vector(BaseType):
 
     @staticmethod
     def _deserialize(pieces, name):
-        # A pickle made under suitesparse holds an ss export dict, and one made under
-        # vanilla holds a tuple. Read either under either backend.
+        # A pickle made under suitesparse contains an ss export dict, and one made under
+        # vanilla a tuple. Read either under either backend.
         if isinstance(pieces, dict):
             if backend == "suitesparse":
                 return Vector.ss.import_any(name=name, **pieces)

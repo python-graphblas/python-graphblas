@@ -212,7 +212,7 @@ def _power(updater, A, n, op):
 def _coo_from_ss_export(info):
     """Return the ``from_coo`` arguments for a Matrix exported with ``A.ss.export(raw=True)``.
 
-    A pickle made under the suitesparse backend holds such a dict; this reads it without
+    A pickle made under the suitesparse backend contains such a dict; this reads it without
     the ss namespace. Raw arrays may be longer than the Matrix needs, so only the used
     part of each is read.
     """
@@ -240,8 +240,8 @@ def _coo_from_ss_export(info):
         major = np.repeat(vectors, np.diff(indptr))
         minor = info["row_indices" if by_col else "col_indices"][index]
     if info.get("is_iso", False):
-        # One value for every element. from_coo would read values[0] of a sub-array
-        # dtype such as INT64[2] as two values, so repeat it instead.
+        # An iso export stores one value for all elements. Repeat it, since from_coo
+        # would read values[0] of a sub-array dtype such as INT64[2] as two values.
         values = np.broadcast_to(values[:1], (major.size, *values.shape[1:]))
     else:
         values = values[index]
@@ -368,13 +368,13 @@ class Matrix(BaseType):
 
     @staticmethod
     def _deserialize(pieces, name):
-        # A pickle made under suitesparse holds an ss export dict, and one made under
-        # vanilla holds a tuple. Read either under either backend.
+        # A pickle made under suitesparse contains an ss export dict, and one made under
+        # vanilla a tuple. Read either under either backend.
         if isinstance(pieces, dict):
             if backend == "suitesparse":
                 return Matrix.ss.import_any(name=name, **pieces)
             pieces = _coo_from_ss_export(pieces)
-        # A newer version may append pieces, such as the orientation; read the first six
+        # Read the pieces this version knows; a newer version may append more.
         rows, cols, vals, dtype, nrows, ncols = pieces[:6]
         return Matrix.from_coo(rows, cols, vals, dtype, nrows=nrows, ncols=ncols, name=name)
 

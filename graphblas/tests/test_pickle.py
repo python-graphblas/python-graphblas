@@ -346,9 +346,9 @@ def test_udt(extra):
 
 
 @pytest.mark.skipif("not supports_udfs")
-def test_udt_pickle_file_from_the_other_backend(extra):
+def test_udt_pickle_file_from_the_other_backend():
     """The Vector and Matrix of UDTs in the other backend's pickle3 file load under this one."""
-    path = Path(__file__).parent / f"pickle3{'' if extra else '-vanilla'}.pkl"
+    path = Path(__file__).parent / f"pickle3{'-vanilla' if suitesparse else ''}.pkl"
     with path.open("rb") as f:
         d = pickle.load(f)
     v = d["v"]
@@ -543,8 +543,8 @@ def test_bound_ibo_pickle_crossprocess():
 def _cross_backend_objects():
     """Matrices and Vectors to pickle under one backend and load under the other.
 
-    Under suitesparse, they are stored in each format that ``ss.export`` writes, iso
-    or not. Under vanilla, the same keys hold the same values.
+    They include iso objects and, under suitesparse, one stored in each format that
+    ``ss.export`` writes. Under vanilla, the same keys have the same values.
     """
     objects = {
         "iso": gb.Matrix.from_coo([0, 2], [1, 1], 7, nrows=3, ncols=2),
@@ -593,7 +593,7 @@ _CROSSPROC_OPS["cross_backend"] = _op_cross_backend
 def test_pickle_loads_under_the_other_backend():
     """A Matrix or Vector pickled under one backend loads under the other, both ways.
 
-    A suitesparse pickle holds an ``ss.export`` dict and a vanilla pickle holds a tuple.
+    A suitesparse pickle contains an ``ss.export`` dict and a vanilla pickle a tuple.
     This catches a reader picked by the loading process's backend, which fails on a
     pickle made under the other one.
     """
@@ -630,7 +630,7 @@ def test_deserialize_ss_export_without_ss():
     """The vanilla reader of an ``ss.export(raw=True)`` dict gives back the Matrix or Vector.
 
     Raw arrays can be longer than needed, an iso object stores one value, and a by-column
-    format swaps rows and columns; each format is checked, iso or not.
+    format swaps rows and columns. Each format is checked, iso or not.
     """
     from graphblas.core.matrix import _coo_from_ss_export as matrix_coo
     from graphblas.core.vector import _coo_from_ss_export as vector_coo
