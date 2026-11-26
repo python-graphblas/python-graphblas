@@ -26,6 +26,7 @@ from ..utils import (
     check_values_size,
     get_order,
     get_shape,
+    index_or_none,
     ints_to_numpy_buffer,
     normalize_chunks,
     output_type,
@@ -1385,6 +1386,7 @@ class ss:
     ):
         if format is not None and format.lower() != "csr":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'csr'.")
+        nrows, ncols = index_or_none(nrows), index_or_none(ncols)
         if method == "pack" and secure_import:
             return _pack_securely(
                 cls._import_csr,
@@ -1591,6 +1593,7 @@ class ss:
     ):
         if format is not None and format.lower() != "csc":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'csc'.")
+        nrows, ncols = index_or_none(nrows), index_or_none(ncols)
         if method == "pack" and secure_import:
             return _pack_securely(
                 cls._import_csc,
@@ -1811,6 +1814,7 @@ class ss:
     ):
         if format is not None and format.lower() != "hypercsr":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'hypercsr'.")
+        nrows, ncols = index_or_none(nrows), index_or_none(ncols)
         if method == "pack" and secure_import:
             return _pack_securely(
                 cls._import_hypercsr,
@@ -2051,6 +2055,7 @@ class ss:
     ):
         if format is not None and format.lower() != "hypercsc":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'hypercsc'.")
+        nrows, ncols = index_or_none(nrows), index_or_none(ncols)
         if method == "pack" and secure_import:
             return _pack_securely(
                 cls._import_hypercsc,
@@ -2278,6 +2283,7 @@ class ss:
     ):
         if format is not None and format.lower() != "bitmapr":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'bitmapr'.")
+        nrows, ncols = index_or_none(nrows), index_or_none(ncols)
         if method == "pack" and secure_import:
             return _pack_securely(
                 cls._import_bitmapr,
@@ -2488,6 +2494,7 @@ class ss:
     ):
         if format is not None and format.lower() != "bitmapc":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'bitmapc'.")
+        nrows, ncols = index_or_none(nrows), index_or_none(ncols)
         if method == "pack" and secure_import:
             return _pack_securely(
                 cls._import_bitmapc,
@@ -2679,6 +2686,7 @@ class ss:
     ):
         if format is not None and format.lower() != "fullr":
             raise ValueError(f"Invalid format: {format!r}  Must be None or 'fullr'.")
+        nrows, ncols = index_or_none(nrows), index_or_none(ncols)
         if method == "pack" and secure_import:
             return _pack_securely(
                 cls._import_fullr,
@@ -2855,6 +2863,7 @@ class ss:
     ):
         if format is not None and format.lower() != "fullc":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'fullc'.")
+        nrows, ncols = index_or_none(nrows), index_or_none(ncols)
         if method == "pack" and secure_import:
             return _pack_securely(
                 cls._import_fullc,
@@ -3235,6 +3244,7 @@ class ss:
     ):
         if format is not None and format.lower() != "coor":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'coor'.")
+        nrows, ncols = index_or_none(nrows), index_or_none(ncols)
         if not sorted_rows:
             raise ValueError("sorted_rows must be True when importing 'coor' format")
         indptr = _coo_indptr(rows, nrows, "rows", "nrows")
@@ -3408,6 +3418,7 @@ class ss:
     ):
         if format is not None and format.lower() != "cooc":
             raise ValueError(f"Invalid format: {format!r}.  Must be None or 'cooc'.")
+        nrows, ncols = index_or_none(nrows), index_or_none(ncols)
         if not sorted_cols:
             raise ValueError("sorted_cols must be True when importing 'cooc' format")
         indptr = _coo_indptr(cols, ncols, "cols", "ncols")
