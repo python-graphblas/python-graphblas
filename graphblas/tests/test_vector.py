@@ -2,11 +2,13 @@ import cmath
 import inspect
 import itertools
 import math
+import os
 import pickle
 import sys
 import types
 import warnings
 import weakref
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -147,6 +149,85 @@ def test_from_coo_numpy_scalars_keep_dtype(np_type):
     expected = dtypes.lookup_dtype(np_type)
     assert Vector.from_coo([0, 1], [np_type(1), np_type(2)]).dtype == expected
     assert Vector.from_coo([0, 1], np.array([1, 2], np_type)).dtype == expected
+
+
+# vanilla's from_coo needs Numba to type its default dup_op for a text UDT
+@pytest.mark.skipif("not supports_udfs and not suitesparse")
+def test_durations_into_short_text():
+    """Durations stored into a text UDT too short for them are cut short, as a number is.
+
+    This holds for the values of a new Vector or Matrix, for an element and for a Scalar,
+    and each array or scalar in a list keeps its own unit. numpy before 2.4 gets these
+    values right too, but writes past the end of each string, which
+    test_durations_into_short_text_stay_in_bounds checks.
+    """
+    text = dtypes.register_anonymous(np.dtype("U4"), "_ShortTextDurations")
+    data = dtypes.register_anonymous(np.dtype("S4"), "_ShortBytesDurations")
+    durations = np.array([1, 123456], "m8[D]")
+    v = Vector.from_coo([0, 1], durations, dtype=text)
+    assert [v[0].new().value, v[1].new().value] == ["1 da", "1234"]
+    b = Vector.from_coo([0, 1], durations, dtype=data)
+    assert [b[0].new().value, b[1].new().value] == [b"1 da", b"1234"]
+    v[0] = np.array([5], "m8[D]")
+    assert v[0].new().value == "5 da"
+    v[1] = np.array(6, "m8[D]")
+    assert v[1].new().value == "6 da"
+    assert Scalar.from_value(np.array([5], "m8[D]"), text).value == "5 da"
+    A = Matrix.from_dense([durations], dtype=text)
+    assert A.to_dense().tolist() == [["1 da", "1234"]]
+    mixed = [np.timedelta64(1, "D"), np.array(3, "m8[h]")]
+    assert Vector.from_coo([0, 1], mixed, dtype=text).to_coo()[1].tolist() == ["1 da", "3 ho"]
+
+
+_SHORT_TEXT_PROBE = """
+import numpy as np
+from graphblas import Matrix, Scalar, Vector, binary, dtypes
+text = dtypes.register_anonymous(np.dtype("U4"), "_ShortTextProbe")
+durations = np.array([1, 123456], "m8[D]")
+v = Vector.from_coo([0, 1], durations, dtype=text)
+v[0] = np.array([5], "m8[D]")
+v[1] = np.array(6, "m8[D]")
+Scalar.from_value(np.array([5], "m8[D]"), text)
+(v == np.array([5], "m8[D]")).new()
+v.ewise_union(v, binary.first, durations[:1], durations[:1]).new()
+Matrix.from_dense([durations], dtype=text)
+try:
+    import pandas as pd
+except ImportError:
+    pass
+else:
+    week = np.array([1, 7], "m8[D]")  # pandas may store nanoseconds, which 123456 days overflows
+    Vector.from_coo([0, 1], pd.Series(week), dtype=text)
+    Vector.from_dense(pd.TimedeltaIndex(week), dtype=text)
+print("done")
+"""
+
+
+@pytest.mark.slow
+@pytest.mark.skipif("not supports_udfs")  # the probe's == and ewise_union need Numba
+@pytest.mark.skipif(
+    sys.platform != "darwin" or not Path("/usr/lib/libgmalloc.dylib").exists(),
+    reason="needs macOS guard malloc",
+)
+def test_durations_into_short_text_stay_in_bounds():
+    """Durations stored into a text UDT too short for them are written within each string.
+
+    The probe runs in a subprocess under macOS guard malloc, where a write past the end of a
+    string crashes the process (see ``_durations_as_text``).
+    """
+    import subprocess
+
+    env = dict(os.environ, DYLD_INSERT_LIBRARIES="/usr/lib/libgmalloc.dylib", PYTHONMALLOC="malloc")
+    result = subprocess.run(
+        [sys.executable, "-c", _SHORT_TEXT_PROBE],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=600,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert result.stdout.strip().endswith("done")
 
 
 def test_from_coo_scalar():

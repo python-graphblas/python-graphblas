@@ -323,7 +323,7 @@ def _check_literal_fits(dtype, value):
     with warnings.catch_warnings():
         warnings.simplefilter("error", RuntimeWarning)
         try:
-            target[...] = value
+            target[...] = _nats_in_leaf_units(value, target.dtype)
         except RuntimeWarning:
             raise OverflowError(
                 f"{value!r} overflows {dtype}: a literal that becomes an element of a UDT "
