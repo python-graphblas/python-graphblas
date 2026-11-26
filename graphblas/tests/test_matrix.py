@@ -1933,8 +1933,7 @@ def test_reduce_agg_composite_parts_do_not_wrap(dtype):
 
     Each reduction of 40000 entries, rowwise, columnwise, to a Scalar, or of a Vector,
     matches numpy in float64. The test fails if the count or a sum is computed in the
-    input type: in INT8 it wraps at 128, in INT16 at 32768, and in FP32, with an FP32
-    count, the sample variance of 40000 ones rounds below zero, so its std is NaN.
+    input type: in INT8 it wraps at 128, and in INT16 at 32768.
     """
     n = 40000
     values = np.stack([np.arange(n) % 3, np.ones(n)]).astype(dtypes.lookup_dtype(dtype).np_type)
@@ -1975,8 +1974,8 @@ def test_reduce_agg_variance_of_equal_floats_is_not_negative():
     """The variance of equal values that floats hold inexactly is >= 0, and its std not NaN.
 
     E[x**2] - E[x]**2 can round below 0 for values such as 0.1, and its square root is then
-    NaN. A NaN in the values still gives NaN, and the sample variance of one value NaN.
-    A complex variance has no order to clamp by, and is left as it is.
+    NaN. A NaN in the values still gives NaN, and so does the sample std of one value. A
+    complex variance has no order to clamp by, and is left as it is.
     """
     names = ["varp", "vars", "stdp", "stds"]
     for dtype, value, n in [
@@ -2021,7 +2020,7 @@ def test_reduce_agg_composite_of_integers_matches_numpy():
     """Means and variances of a few integers match numpy, which computes them in float64.
 
     The test fails if a sum, a square or a product is computed in the values' type:
-    100 + 100 wraps in INT8, 3 ** 5 = 243 in INT8, and 2**62 + 2**62 in INT64.
+    100 + 100 and 3**5 = 243 wrap in INT8, and 2**62 + 2**62 wraps in INT64.
     """
     cases = [
         ("INT8", [100, 100], "mean", np.mean),
@@ -2079,7 +2078,7 @@ def test_reduce_agg_hypot_of_large_integers():
 
 @pytest.mark.parametrize("dtype", ["BOOL", "INT8", "UINT8", "INT16", "FP32", "FP64"])
 def test_reduce_agg_count_nonzero_is_int64(dtype):
-    """count_nonzero and count_zero count in INT64, comparing each value in its own type.
+    """count_nonzero and count_zero return INT64 and match numpy, also for 0.5, -0.0 and NaN.
 
     Rowwise, columnwise, to a Scalar and for a Vector, they match numpy on 40000 entries.
     The test fails if they count in the input type, which wraps at 128 for INT8, or

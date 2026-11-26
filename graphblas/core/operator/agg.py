@@ -457,8 +457,8 @@ def _count_by_kind(agg, updater, expr, opts, *, in_composite, aggs):
     ``plus_iseq`` compare and count in INT64 for bool and integer values, which keeps the
     zero-ness of each, and in FP64 for floats, which keeps 0.5 nonzero and counts exactly
     up to 2**53. Typed by the values instead, they would count INT8 values in INT8, which
-    wraps at 128. Complex types have no ISNE or ISEQ, so complex values are compared first
-    and then counted in INT64. The result is INT64, as for ``agg.count``.
+    wraps at 128. ``plus_isne`` and ``plus_iseq`` have no complex types, so complex values
+    are compared first and then counted in INT64.
     """
     dtype = expr.args[0].dtype
     if (sub := aggs.get(dtype.np_type.kind)) is None:
@@ -627,9 +627,9 @@ def _ptp_finalize(max, min, opts):
 
 
 def _clamped(expr, opts):
-    # E[x**2] - E[x]**2 can round below 0, and its sqrt would be NaN. A masked assign, not
-    # binary.max, which is fmax and would turn a NaN variance into 0. A complex variance has
-    # no order to clamp by.
+    # E[x**2] - E[x]**2 can round below 0, and its sqrt would be NaN. Clamp with a masked
+    # assign rather than binary.max, which is fmax and would turn a NaN variance into 0. A
+    # complex variance has no order to clamp by.
     val = expr.new(**opts)
     if val.dtype.np_type.kind != "c":
         val(select.valuelt(val, 0).new(**opts).S, **opts) << 0

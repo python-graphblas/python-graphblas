@@ -8,6 +8,9 @@ Aggregators may be used in reduce methods:
 
 Aggregators are implemented as recipes that often use monoids or semirings.
 
+``count``, ``count_nonzero``, ``count_zero`` and ``L0norm`` return INT64 for values of any
+type. Indexed with a type, as in ``agg.count_nonzero[FP32]``, they return that type.
+
 Monoid-only aggregators:
     - sum
     - prod

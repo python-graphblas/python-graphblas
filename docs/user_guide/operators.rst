@@ -326,6 +326,8 @@ Calling an aggregator with a collection will perform a reduction to scalar opera
 Specifying ``rowwise=True`` or ``columnwise=True`` allows performing Matrix to
 Vector reduction rather than a full reduction to scalar.
 
+``count``, ``count_nonzero`` and ``count_zero`` return INT64 for values of any type.
+
 On integer and bool values, aggregators with a float result, such as ``mean`` and ``stds``,
 compute in that float type, as numpy does, so sums and squares do not wrap. The variances
 use the one-pass formula ``E[x**2] - E[x]**2``, which loses precision when the values are
