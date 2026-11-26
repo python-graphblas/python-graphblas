@@ -6400,10 +6400,12 @@ def test_udt_eq_compares_a_udt_that_is_neither_record_nor_array():
 
 
 def test_bool_sequence_literal_with_a_date_or_text_udt():
-    """A bool array, list or tuple literal with a date or bytes UDT is an array UDT of its own
-    shape, so ``==`` raises KeyError, ``isequal`` is False and it does not fit as an element.
-    Converted into the UDT, ``[True]`` was the date 1970-01-02 or b"True", and compared equal
-    to it.
+    """A bool array, list or tuple literal with a date or bytes UDT is typed by its own shape.
+
+    As with a number, ``==`` raises KeyError, ``isequal`` is False, and it does not fit as an
+    element. Converted into the UDT, ``[True]`` would be the date 1970-01-02 or b"True" and
+    compare equal to it. An empty one is converted, and numpy cannot broadcast it to one
+    element.
     """
     days = dtypes.register_anonymous(np.dtype("M8[D]"), "_BoolLitDays")
     text = dtypes.register_anonymous(np.dtype("S4"), "_BoolLitBytes")
@@ -6422,7 +6424,7 @@ def test_bool_sequence_literal_with_a_date_or_text_udt():
             if supports_udfs:
                 with pytest.raises(ValueError, match="does not fit"):
                     v.ewise_union(v, binary.first, literal, literal)
-        # An empty one converts into the UDT, and numpy says why it does not fit
+        # No UDT has size 0, so an empty one is converted.
         for literal in [np.array([], bool), np.zeros((2, 0), bool)]:
             exprs = [lambda: s == literal, lambda: s.isequal(literal)]  # noqa: B023
             if supports_udfs:

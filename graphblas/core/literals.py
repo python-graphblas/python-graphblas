@@ -834,16 +834,16 @@ def _array_literal_udt(dtype, value):
         return lookup_dtype(value.dtype) if value.ndim == 0 else None
     if (
         value.dtype.kind == "b"
-        and value.size  # (an empty one converts, so numpy says why it does not fit)
+        and value.size  # no UDT has size 0, so an empty array converts below
         and np_type.names is None
         and np_type.subdtype is None
     ):
-        # With a date or text UDT, a bool array is an array UDT of its own shape, so it pairs
-        # with no op and fits no element (converted, True would be the date 1970-01-02 or
-        # b"True"). Numba cannot type an array of bool, so its type is the array of uint8 it
-        # holds.
+        # Converted into a date or text UDT, True would be the date 1970-01-02 or b"True".
+        # Typed by its own shape instead, a bool array is refused as a number is: ``==``
+        # raises KeyError, and it fits no element. Numba cannot type an array of bool, so
+        # the type is the UINT8 array of the same shape.
         return lookup_dtype(np.dtype((np.uint8, value.shape)))
-    # A bool array converts as it is (a BOOL array UDT cannot be registered),
+    # Otherwise a bool array converts as it is (a BOOL array UDT cannot be registered),
     # and bool casts safely into every numeric element.
     if np_type.names is not None or value.dtype.kind not in "iufc":
         return None
