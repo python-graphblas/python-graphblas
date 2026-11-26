@@ -288,8 +288,8 @@ def normalize_values(self, values, dtype, shape=None, is_iso=False):
 def index_or_none(size):
     """Return ``size`` as a Python int, or None if it is None.
 
-    The ss imports compare and multiply the sizes they are given, and on a Scalar these
-    give expressions, which raise when autocompute is off.
+    Arithmetic or a comparison on a Scalar size gives an expression, which raises with
+    autocompute off and which Numba code cannot take with it on.
     """
     return None if size is None else index(size)
 
