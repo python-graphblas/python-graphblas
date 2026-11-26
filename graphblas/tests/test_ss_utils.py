@@ -429,7 +429,9 @@ print("done")
 
 @pytest.mark.slow
 @pytest.mark.skipif("not gb.ss.about['openmp']")
-@pytest.mark.parametrize(("initialize_first", "expected"), [(False, 3), (True, 5)])
+@pytest.mark.parametrize(
+    ("initialize_first", "expected"), [(False, 3), (True, 5)], ids=["fresh", "initialized"]
+)
 def test_nthreads_default_from_init(initialize_first, expected):
     """The default nthreads is the setting right after GraphBLAS is initialized.
 

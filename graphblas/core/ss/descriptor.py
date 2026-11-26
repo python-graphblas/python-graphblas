@@ -83,7 +83,7 @@ class _DescriptorConfig(BaseConfig):
         "transpose_first": False,
         "transpose_second": False,
         # GxB
-        "nthreads": 0,  # See core.ss.config._nthreads_default: SuiteSparse takes 0 as 1 thread
+        "nthreads": 0,  # Replaced by core.ss.config._nthreads_default
         "chunk": 0,
         "axb_method": "default",
         "sort": False,

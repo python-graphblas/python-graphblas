@@ -206,7 +206,7 @@ class GlobalConfig(BaseConfig):
         "hyper_switch": lib.GxB_HYPER_DEFAULT,
         "bitmap_switch": None,
         "format": lib.GxB_FORMAT_DEFAULT,
-        "nthreads": 0,  # See core.ss.config._nthreads_default: SuiteSparse takes 0 as 1 thread
+        "nthreads": 0,  # Replaced by core.ss.config._nthreads_default
         "chunk": 0,
         "burble": 0,
         "print_1based": 0,
