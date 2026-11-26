@@ -1389,8 +1389,8 @@ def test_lazy_op_whose_build_fails_is_dropped():
 def test_lazy_op_whose_build_is_interrupted_is_built_again():
     """A lazily registered op whose build is interrupted stays delayed, so the next use builds it.
 
-    Fails if a KeyboardInterrupt during the first build, as of ``binary.floordiv``, loses the
-    op for the session.
+    Fails if a KeyboardInterrupt during the first build of an op, such as ``binary.floordiv``,
+    loses the op for the session.
     """
     calls = []
 

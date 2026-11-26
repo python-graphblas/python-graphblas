@@ -9,11 +9,11 @@ else:
     del numba
 
 
-# One lock for every op namespace. A lazily registered op such as ``binary.floordiv`` is
-# built under it (see _build_delayed), and the numpy namespaces also hold it while they
-# build an op on its first use. It is re-entrant, since a build can get other lazy names
-# (a semiring gets its binary op and monoid), and since the numpy namespaces call
-# _build_delayed while they hold it.
+# One lock, shared by every op namespace. A lazily registered op such as
+# ``binary.floordiv`` is built under it (see _build_delayed), and the numpy namespaces
+# also hold it while they build an op on its first use. It is re-entrant, since a build
+# can get other lazy names (a semiring gets its binary op and monoid), and since the
+# numpy namespaces call _build_delayed while they hold it.
 _lazy_lock = threading.RLock()
 
 
