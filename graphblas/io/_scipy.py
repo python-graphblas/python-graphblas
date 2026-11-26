@@ -82,7 +82,7 @@ def _same_bits(data):
     # Compare unsigned ints of up to 8 bytes, the widest numpy has: two per complex128
     unit = np.dtype(f"u{math.gcd(data.dtype.itemsize, 8)}")
     bits = np.ascontiguousarray(data).view(unit).reshape(data.size, -1)
-    return all((col == col[0]).all() for col in bits.T)
+    return bool((bits == bits[0]).all())
 
 
 def to_scipy_sparse(A, format="csr"):
