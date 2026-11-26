@@ -84,9 +84,27 @@ class NotImplementedException(GraphblasException):
     """
 
 
+class AlreadySet(GraphblasException):
+    """A setting that may be set only once was set again.
+
+    For example, the name (``GrB_NAME``) of a type or operator.
+    """
+
+
 # SuiteSparse errors
 class JitError(GraphblasException):
     """SuiteSparse:GraphBLAS error using JIT."""
+
+
+class GpuError(GraphblasException):
+    """SuiteSparse:GraphBLAS error using a GPU, which only its CUDA builds can raise."""
+
+
+class OutputIsReadonly(GraphblasException):
+    """SuiteSparse:GraphBLAS cannot write to an output whose data it does not own.
+
+    For example, a Matrix or Vector loaded with ``GxB_IS_READONLY``.
+    """
 
 
 # Our errors
@@ -115,33 +133,54 @@ class NoJITWarning(UserWarning):
     """
 
 
-_error_code_lookup = {
-    # Warning
-    _lib.GrB_NO_VALUE: NoValue,
-    # API Errors
-    _lib.GrB_UNINITIALIZED_OBJECT: UninitializedObject,
-    _lib.GrB_INVALID_OBJECT: InvalidObject,
-    _lib.GrB_NULL_POINTER: NullPointer,
-    _lib.GrB_INVALID_VALUE: InvalidValue,
-    _lib.GrB_INVALID_INDEX: InvalidIndex,
-    _lib.GrB_DOMAIN_MISMATCH: DomainMismatch,
-    _lib.GrB_DIMENSION_MISMATCH: DimensionMismatch,
-    _lib.GrB_OUTPUT_NOT_EMPTY: OutputNotEmpty,
-    _lib.GrB_EMPTY_OBJECT: EmptyObject,
-    # Execution Errors
-    _lib.GrB_OUT_OF_MEMORY: OutOfMemory,
-    _lib.GrB_INSUFFICIENT_SPACE: InsufficientSpace,
-    _lib.GrB_INDEX_OUT_OF_BOUNDS: IndexOutOfBound,
-    _lib.GrB_PANIC: Panic,
-    _lib.GrB_NOT_IMPLEMENTED: NotImplementedException,
-}
+class _ErrorCodeLookup(dict):
+    """The exception class for each GrB_Info code.
+
+    A code with no class of its own, such as one that a newer GraphBLAS adds, gets
+    GraphblasException, so ``raise _error_code_lookup[info](text)`` raises the message and
+    not a KeyError.
+    """
+
+    def __missing__(self, info):
+        return GraphblasException
+
+
+_error_code_lookup = _ErrorCodeLookup(
+    {
+        # Warning
+        _lib.GrB_NO_VALUE: NoValue,
+        # API Errors
+        _lib.GrB_UNINITIALIZED_OBJECT: UninitializedObject,
+        _lib.GrB_INVALID_OBJECT: InvalidObject,
+        _lib.GrB_NULL_POINTER: NullPointer,
+        _lib.GrB_INVALID_VALUE: InvalidValue,
+        _lib.GrB_INVALID_INDEX: InvalidIndex,
+        _lib.GrB_DOMAIN_MISMATCH: DomainMismatch,
+        _lib.GrB_DIMENSION_MISMATCH: DimensionMismatch,
+        _lib.GrB_OUTPUT_NOT_EMPTY: OutputNotEmpty,
+        _lib.GrB_EMPTY_OBJECT: EmptyObject,
+        # Execution Errors
+        _lib.GrB_OUT_OF_MEMORY: OutOfMemory,
+        _lib.GrB_INSUFFICIENT_SPACE: InsufficientSpace,
+        _lib.GrB_INDEX_OUT_OF_BOUNDS: IndexOutOfBound,
+        _lib.GrB_PANIC: Panic,
+        _lib.GrB_NOT_IMPLEMENTED: NotImplementedException,
+    }
+)
 GrB_SUCCESS = _lib.GrB_SUCCESS
 GrB_NO_VALUE = _lib.GrB_NO_VALUE
+
+if hasattr(_lib, "GrB_ALREADY_SET"):  # Added in 9.0
+    _error_code_lookup[_lib.GrB_ALREADY_SET] = AlreadySet
 
 # SuiteSparse-specific errors
 _error_code_lookup[_lib.GxB_EXHAUSTED] = StopIteration
 if hasattr(_lib, "GxB_JIT_ERROR"):  # Added in 9.4
     _error_code_lookup[_lib.GxB_JIT_ERROR] = JitError
+if hasattr(_lib, "GxB_GPU_ERROR"):  # Added in 10.0
+    _error_code_lookup[_lib.GxB_GPU_ERROR] = GpuError
+if hasattr(_lib, "GxB_OUTPUT_IS_READONLY"):  # Added in 10.0
+    _error_code_lookup[_lib.GxB_OUTPUT_IS_READONLY] = OutputIsReadonly
 
 
 def check_status(response_code, args):
@@ -203,4 +242,8 @@ def check_status_carg(response_code, type_name, carg):
         string = _ffi.new("char**")
         error_func(string, carg)
         text = _ffi.string(string[0]).decode()
-    raise _error_code_lookup[response_code](text)
+    exc_class = _error_code_lookup[response_code]
+    if exc_class is GraphblasException:
+        # No class names this code, and GraphBLAS's message is often empty
+        text = f"GrB_Info {response_code}: {text}" if text else f"GrB_Info {response_code}"
+    raise exc_class(text)
