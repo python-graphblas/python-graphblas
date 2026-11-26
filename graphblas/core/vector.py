@@ -1,4 +1,5 @@
 import itertools
+import operator
 
 import numpy as np
 
@@ -219,7 +220,9 @@ class Vector(BaseType):
         self.name = f"v_{next(Vector._name_counter)}" if name is None else name
         self.gb_obj = gb_obj
         self.dtype = dtype
-        self._size = size
+        # Store a Python int, as Vector() does, in case a caller passes on a size it was
+        # given as a Scalar or a NumPy integer.
+        self._size = operator.index(size)
         self._parent = parent
         return self
 
