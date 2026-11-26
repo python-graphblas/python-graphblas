@@ -1307,8 +1307,8 @@ def test_lazy_op():
 def test_lazy_op_first_used_by_threads_at_once():
     """Threads that first get a lazily registered op at once all get it, built once.
 
-    Regression: the first thread took the name out of the delayed table before building the
-    op, and every thread that came meanwhile found it in neither place (AttributeError).
+    Fails if a thread that arrives during the build finds the name neither in the namespace
+    nor in its delayed table, and raises AttributeError.
     """
     import threading
     import time
@@ -1319,7 +1319,7 @@ def test_lazy_op_first_used_by_threads_at_once():
 
     def build(**kwargs):
         calls.append(None)
-        time.sleep(0.05)  # (threads arrive during the build)
+        time.sleep(0.05)  # so that the other threads arrive during the build
         return object()
 
     def first_use_by_threads(namespace, name):
@@ -1342,7 +1342,7 @@ def test_lazy_op_first_used_by_threads_at_once():
     namespaces = [binary, unary, monoid, semiring, select, indexunary, indexbinary, path]
     namespaces += [binary.numpy, unary.numpy, monoid.numpy, semiring.numpy]
     for namespace in [*namespaces, op, op.numpy]:
-        name = "_race_probe"
+        name = "_race_op"
         if namespace is op or namespace is op.numpy:
             mod = binary if namespace is op else binary.numpy
             mod._delayed[name] = (build, {})
@@ -1369,27 +1369,28 @@ def test_lazy_op_whose_build_fails_is_dropped():
     """A lazily registered op whose build raises is gone after its first use.
 
     Later uses raise AttributeError, so ``hasattr`` is False. A SelectOp registered lazily
-    from an op that does not return BOOL goes away like this (see test_indexunary_udf).
+    from an op that does not return BOOL goes away like this (see test_indexunary_udf in
+    test_matrix.py).
     """
 
     def build():
         raise RuntimeError("the build fails")
 
-    binary._delayed["_failing_probe"] = (build, {})
+    binary._delayed["_failing_op"] = (build, {})
     try:
         with pytest.raises(RuntimeError, match="the build fails"):
-            binary._failing_probe
-        assert not hasattr(binary, "_failing_probe")
-        assert "_failing_probe" not in dir(binary)
+            binary._failing_op
+        assert not hasattr(binary, "_failing_op")
+        assert "_failing_op" not in dir(binary)
     finally:
-        binary._delayed.pop("_failing_probe", None)
+        binary._delayed.pop("_failing_op", None)
 
 
 def test_lazy_op_whose_build_is_interrupted_is_built_again():
     """A lazily registered op whose build is interrupted stays delayed, so the next use builds it.
 
-    Regression: after a KeyboardInterrupt during the first use of a lazily built op such as
-    ``binary.floordiv``, every later use raised "has no attribute".
+    Fails if a KeyboardInterrupt during the first build, as of ``binary.floordiv``, loses the
+    op for the session.
     """
     calls = []
 
@@ -1399,14 +1400,14 @@ def test_lazy_op_whose_build_is_interrupted_is_built_again():
             raise KeyboardInterrupt
         return calls
 
-    binary._delayed["_interrupted_probe"] = (build, {})
+    binary._delayed["_interrupted_op"] = (build, {})
     try:
         with pytest.raises(KeyboardInterrupt):
-            binary._interrupted_probe
-        assert binary._interrupted_probe is calls
+            binary._interrupted_op
+        assert binary._interrupted_op is calls
     finally:
-        binary._delayed.pop("_interrupted_probe", None)
-        vars(binary).pop("_interrupted_probe", None)
+        binary._delayed.pop("_interrupted_op", None)
+        vars(binary).pop("_interrupted_op", None)
 
 
 def test_positional():

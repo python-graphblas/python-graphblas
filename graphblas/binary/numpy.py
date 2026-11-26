@@ -144,7 +144,7 @@ def __dir__():
 def __getattr__(name):
     from ..core import _lazy_lock
 
-    with _lazy_lock:  # (so that threads that first get a name at once build it once)
+    with _lazy_lock:  # see _lazy_lock
         return _getattr(name)
 
 
