@@ -1306,10 +1306,11 @@ def test_lazy_op():
 
 @pytest.mark.skipif("not supports_udfs or not suitesparse")
 def test_lazy_op_under_ss_and_nested_names():
-    """An op registered lazily under ``ss.``, or a select under any nested name, is built on
-    first use. Regression: the ``ss`` modules did not read their delayed tables, so each such
-    op raised AttributeError, and a lazy select under a nested name looked itself up by its
-    full name. Each ``ss`` module lists the names still delayed in ``dir()``.
+    """An op registered lazily under ``ss.``, or a select under a nested name, builds on use.
+
+    Before the first use, the ``ss`` module lists the name in ``dir()``. Fails if an ``ss``
+    module does not read its delayed table, or if a lazy select looks up its IndexUnaryOp by
+    its full dotted name in the nested module.
     """
     from graphblas import indexbinary
     from graphblas.core.operator import IndexBinaryOp
@@ -1335,7 +1336,7 @@ def test_lazy_op_under_ss_and_nested_names():
         assert isinstance(indexunary.ss.lazy_iu, IndexUnaryOp)
         IndexBinaryOp.register_new("ss.lazy_ib", lambda x, ix, jx, y, iy, jy, t: x, lazy=True)
         assert "lazy_ib" in dir(indexbinary.ss)
-        if _has_idxbinop:  # (SuiteSparse:GraphBLAS 9.4+ builds it)
+        if _has_idxbinop:  # IndexBinaryOp needs SuiteSparse:GraphBLAS 9.4 or later
             assert isinstance(indexbinary.ss.lazy_ib, IndexBinaryOp)
         SelectOp.register_new("ss.lazy_sel", lambda x, i, j, t: x > t, lazy=True)
         assert "lazy_sel" in dir(select.ss)
@@ -1365,15 +1366,16 @@ def test_lazy_op_under_ss_and_nested_names():
 
 @pytest.mark.skipif("not supports_udfs or not suitesparse")
 def test_register_under_ss_before_the_ss_module_is_used():
-    """An op registered under ``ss.`` before its namespace's ``ss`` module is first used goes
-    into that module. Regression: a nested path named ``ss`` took the module's place, and
-    importing the module later put it back without the op.
+    """An op registered under ``ss.`` before the namespace's ``ss`` module is used goes there.
+
+    Fails if a nested path named ``ss`` takes the module's place, since importing the module
+    later would put it back without the op.
     """
     import importlib
 
     ss = importlib.import_module("graphblas.monoid.ss")
     plus = BinaryOp.register_anonymous(lambda x, y: x + y)  # pragma: no branch (numba)
-    vars(monoid).pop("ss", None)  # (as before the first use of ``monoid.ss``)
+    vars(monoid).pop("ss", None)  # as before the first use of monoid.ss
     try:
         Monoid.register_new("ss.before_ss_used", plus, 0)
         Monoid.register_new("ss.before_ss_used_lazy", plus, 0, lazy=True)

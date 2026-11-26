@@ -404,7 +404,8 @@ class OpBase:
             path, funcname = funcname.rsplit(".", 1)
             top = modname
             for folder in path.split("."):
-                # (a namespace imports its ``ss`` module on first use, so get it, not a path)
+                # On suitesparse, ``<namespace>.ss`` is a module that the namespace imports
+                # on first use, so get it rather than put an OpPath in its place
                 if not _hasop(module, folder) and not (
                     folder == "ss" and modname == top and backend == "suitesparse"
                 ):
