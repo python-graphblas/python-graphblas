@@ -7,6 +7,7 @@ from ..dtypes import _INDEX, FP64, INT64, UINT64, lookup_dtype, unify
 from ..exceptions import DimensionMismatch, GrB_NO_VALUE, NoValue, check_status, check_status_carg
 from . import _supports_udfs, automethods, ffi, lib, utils
 from .base import BaseExpression, BaseType, _is_recording, call
+from .descriptor import call_in_context
 from .descriptor import lookup as descriptor_lookup
 from .dtypes import _raise_dtype_or_arraylike, _supports_complex
 from .expr import _ALL_INDICES, AmbiguousAssignOrExtract, IndexerResolver, InfixExprBase, Updater
@@ -696,11 +697,10 @@ class Vector(BaseType):
                 else:
                     rv(mask=mask, **opts)[...] = self
         else:
-            if opts:
-                # Ignore opts for now
-                desc = descriptor_lookup(**opts)  # noqa: F841 (keep desc in scope for context)
+            # GrB_Vector_dup takes no descriptor, but opts still apply (see call_in_context)
+            desc = descriptor_lookup(**opts) if opts else None
             rv = Vector._from_obj(ffi_new("GrB_Vector*"), self.dtype, self._size, name=name)
-            call("GrB_Vector_dup", [_Pointer(rv), self])
+            call_in_context(desc, call, "GrB_Vector_dup", [_Pointer(rv), self])
         return rv
 
     def diag(self, k=0, *, name=None):
@@ -1972,19 +1972,22 @@ class Vector(BaseType):
         idx = resolved_indexes.indices[0]
         if result is None:
             result = Scalar(dtype, is_cscalar=is_cscalar, name=name)
-        if opts:
-            # Ignore opts for now
-            desc = descriptor_lookup(**opts)  # noqa: F841 (keep desc in scope for context)
+        # extractElement takes no descriptor, but opts still apply (see call_in_context)
+        desc = descriptor_lookup(**opts) if opts else None
         if is_cscalar:
             dtype_name = "UDT" if dtype._is_udt else dtype.name
             # Report an error against this Vector: a C scalar has no GraphBLAS object
             # to ask for the error text.
             out = _Pointer(result, exc_arg=self)
-            info = call(f"GrB_Vector_extractElement_{dtype_name}", [out, self, idx.index])
+            info = call_in_context(
+                desc, call, f"GrB_Vector_extractElement_{dtype_name}", [out, self, idx.index]
+            )
             # `s << v[i]` extracts into `s` itself, which may already have a value
             result._empty = info is NoValue
         else:
-            call("GrB_Vector_extractElement_Scalar", [result, self, idx.index])
+            call_in_context(
+                desc, call, "GrB_Vector_extractElement_Scalar", [result, self, idx.index]
+            )
         return result
 
     def _prep_for_extract(self, resolved_indexes, mask=None, is_submask=False):
@@ -2407,8 +2410,7 @@ class VectorIndexExpr(AmbiguousAssignOrExtract):
             if dtype is None:
                 dtype = self.dtype
             if opts:
-                # Ignore opts for now
-                desc = descriptor_lookup(**opts)  # noqa: F841 (keep desc in scope for context)
+                descriptor_lookup(**opts)  # Check opts; GrB_Vector_new uses none of them
             return self.output_type(dtype, *self.shape, name=name)
         return self.new(dtype, mask=mask, name=name, **opts)
 

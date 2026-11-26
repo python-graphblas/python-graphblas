@@ -959,7 +959,7 @@ def test_ss_descriptors(s):
     if suitesparse:
         with pytest.raises(ValueError, match="escriptor"):
             v[0].new(bad_opt=True)
-        assert v[0].new(nthreads=4) == 10  # ignored, but okay
+        assert v[0].new(nthreads=4) == 10  # okay: nthreads applies to extractElement
         with pytest.raises(ValueError, match="escriptor"):
             v.dup(bad_opt=True)
         v.dup(nthreads=4)

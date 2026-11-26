@@ -154,3 +154,21 @@ def lookup(
                     )
         _desc_map[key] = Descriptor(desc, *key)
     return _desc_map[key]
+
+
+def call_in_context(desc, func, *args):
+    """Return ``func(*args)``, with the SuiteSparse Context of ``desc`` engaged if it has one.
+
+    Options such as ``nthreads`` give a descriptor a Context, which GraphBLAS reads from
+    the thread rather than from the descriptor. It is engaged only while ``func`` runs,
+    so it is not left engaged by whatever keeps the descriptor alive, such as the
+    traceback of a failed call.
+
+    ``call`` does this for a descriptor passed as its last argument. Use this for a
+    ``lib`` function given ``desc`` directly, and for a function that takes no
+    descriptor but should run with the options, such as ``GrB_Matrix_dup``.
+    ``desc`` may be None.
+    """
+    if desc is None or desc._context is None:
+        return func(*args)
+    return desc._context._call(func, *args)

@@ -4,6 +4,7 @@ from .. import backend, config
 from .. import replace as replace_singleton
 from ..exceptions import check_status
 from . import NULL
+from .descriptor import Descriptor
 from .descriptor import lookup as descriptor_lookup
 from .expr import AmbiguousAssignOrExtract, Updater
 from .literals import _literal_store_dtype
@@ -30,7 +31,11 @@ def call(cfunc_name, args):
     call_args = [getattr(x, "_carg", x) if x is not None else NULL for x in args]
     cfunc = libget(cfunc_name)
     try:
-        err_code = cfunc(*call_args)
+        # A GraphBLAS function takes its descriptor last (see descriptor.call_in_context)
+        if args and type(desc := args[-1]) is Descriptor and desc._context is not None:
+            err_code = desc._context._call(cfunc, *call_args)
+        else:
+            err_code = cfunc(*call_args)
     except TypeError as exc:
         # We should strive to not encounter this during normal usage
         from .recorder import gbstr
@@ -389,8 +394,7 @@ class BaseType:
                         self(**opts) << self.ewise_add(expr, accum)
                         return
                     if opts:
-                        # Ignore opts for now
-                        desc = descriptor_lookup(**opts)
+                        descriptor_lookup(**opts)  # Check opts
                     self.value = expr
                     return
 
@@ -413,8 +417,7 @@ class BaseType:
                     return
                 else:
                     if opts:
-                        # Ignore opts for now
-                        desc = descriptor_lookup(**opts)
+                        descriptor_lookup(**opts)  # Check opts
                     self.value = expr
                     return
             else:
@@ -644,8 +647,7 @@ class BaseExpression:
             and (dtype is None or self._value.dtype == dtype)
         ):
             if opts:
-                # Ignore opts for now
-                desc = descriptor_lookup(**opts)  # noqa: F841 (keep desc in scope for context)
+                descriptor_lookup(**opts)  # Check opts; the value is already computed
             if self._is_scalar and self._value._is_cscalar != is_cscalar:
                 return self._value.dup(is_cscalar=is_cscalar, name=name)
             rv = self._value

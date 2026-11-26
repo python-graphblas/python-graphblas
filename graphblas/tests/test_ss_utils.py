@@ -1,5 +1,7 @@
 import ctypes
+import gc
 import os
+import re
 import subprocess
 import sys
 import tracemalloc
@@ -418,19 +420,278 @@ def test_context():
     context.disengage()
     assert gb.core.ss.context.threadlocal.context is gb.core.ss.context.global_context
 
-    # Actually engaged, but not set in threadlocal
-    context._engage()
-    assert gb.core.ss.context.threadlocal.context is gb.core.ss.context.global_context
-    context.disengage()
-
-    context.engage()
-    context._engage()
-    assert gb.core.ss.context.threadlocal.context is context
-    context.disengage()
-
     context._context = context  # This is allowed to work with config
     with pytest.raises(AttributeError, match="_context"):
         context._context = ctx  # This is not
+
+
+def _some_context_engaged():
+    """Whether GraphBLAS has a Context engaged on this thread.
+
+    Disengaging a Context that was never engaged returns GrB_INVALID_VALUE, and does
+    nothing, if another Context is engaged; otherwise it returns GrB_SUCCESS.
+    """
+    from graphblas.core import lib
+
+    probe = gb.ss.Context(engage=False, stack=False)
+    info = lib.GxB_Context_disengage(probe._carg)
+    assert info in {lib.GrB_SUCCESS, lib.GrB_INVALID_VALUE}
+    return info == lib.GrB_INVALID_VALUE
+
+
+def _is_engaged(context):
+    """Whether ``context`` is the Context GraphBLAS has engaged on this thread."""
+    from graphblas.core import lib
+
+    if context is gb.ss.global_context:
+        return not _some_context_engaged()
+    if not _some_context_engaged():
+        return False
+    # Disengaging succeeds only for the engaged Context, so engage it again after
+    if lib.GxB_Context_disengage(context._carg) != lib.GrB_SUCCESS:
+        return False
+    assert lib.GxB_Context_engage(context._carg) == lib.GrB_SUCCESS
+    return True
+
+
+def _descriptor_context(exc):
+    """The Context of the descriptor that the traceback of ``exc`` keeps alive."""
+    tb = exc.__traceback__
+    while tb is not None:
+        desc = tb.tb_frame.f_locals.get("desc")
+        if getattr(desc, "_context", None) is not None:
+            return desc._context
+        tb = tb.tb_next
+    raise AssertionError("no descriptor with a Context in the traceback")
+
+
+def _mxm_nthreads(capfd, C, A, **opts):
+    """Compute ``C(**opts) << A @ A`` and return the thread counts its burble reports."""
+    capfd.readouterr()
+    with gb.ss.burble:
+        C(**opts) << A @ A
+    counts = [int(x) for x in re.findall(r"\(nthreads (\d+)", capfd.readouterr().out)]
+    if not counts:  # pragma: no cover (capfd may not see GraphBLAS's output everywhere)
+        pytest.skip("No burble output from GraphBLAS was captured")
+    return counts
+
+
+@pytest.fixture
+def big_square():
+    # Enough work that GrB_mxm's saxpy uses every thread it is allowed, up to 37
+    rng = np.random.default_rng(0)
+    n = 1000
+    rows = rng.integers(0, n, 50_000)
+    cols = rng.integers(0, n, 50_000)
+    return Matrix.from_coo(rows, cols, np.ones(rows.size), nrows=n, ncols=n, dup_op="plus")
+
+
+def test_descriptor_context_not_engaged_after_error(capfd, big_square):
+    """A failed call leaves no descriptor Context engaged, though its traceback is kept.
+
+    The traceback keeps the descriptor, and so its Context, alive (as IPython's
+    ``sys.last_traceback`` does). A Context engaged until it is freed would make
+    later calls on this thread run with ``nthreads=1``.
+    """
+    A = Matrix.from_coo([0, 1], [1, 0], [1, 2], nrows=2, ncols=2)
+    B = Matrix(int, 3, 3)
+    C = Matrix(float, *big_square.shape)
+    before = _mxm_nthreads(capfd, C, big_square)
+    # GrB_mxm, given the descriptor, raises
+    with pytest.raises(gb.exceptions.DimensionMismatch) as excinfo:
+        B(nthreads=1) << A @ A
+    assert _descriptor_context(excinfo.value)["nthreads"] == 1
+    assert not _some_context_engaged()
+    assert gb.core.ss.context.threadlocal.context is gb.ss.global_context
+    assert _mxm_nthreads(capfd, C, big_square) == before
+    # An unknown option raises after the descriptor's Context is made
+    with pytest.raises(ValueError, match="axb_methd") as excinfo2:
+        B(nthreads=1, axb_methd="dot") << A @ A
+    assert _descriptor_context(excinfo2.value)["nthreads"] == 1
+    assert not _some_context_engaged()
+
+
+def test_descriptor_context_nested_in_user_context(capfd, big_square):
+    """A call's descriptor Context applies to it, then the user's Context is engaged again."""
+    A = Matrix.from_coo([0, 1], [1, 0], [1, 2], nrows=2, ncols=2)
+    B = Matrix(int, 3, 3)
+    C = Matrix(float, *big_square.shape)
+    with gb.ss.Context(nthreads=3) as ctx:
+        assert _mxm_nthreads(capfd, C, big_square) == [3]
+        assert _mxm_nthreads(capfd, C, big_square, nthreads=2) == [2]
+        assert gb.core.ss.context.threadlocal.context is ctx
+        assert _is_engaged(ctx)
+        assert _mxm_nthreads(capfd, C, big_square) == [3]
+        with pytest.raises(gb.exceptions.DimensionMismatch) as excinfo:
+            B(nthreads=1) << A @ A
+        assert _descriptor_context(excinfo.value)["nthreads"] == 1
+        assert gb.core.ss.context.threadlocal.context is ctx
+        assert _is_engaged(ctx)
+        assert _mxm_nthreads(capfd, C, big_square) == [3]
+        # A descriptor's Context starts from the current Context's settings
+        assert _descriptor_context(excinfo.value)["chunk"] == ctx["chunk"]
+    assert not _some_context_engaged()
+    assert gb.core.ss.context.threadlocal.context is gb.ss.global_context
+
+
+def test_descriptor_context_freed_on_another_thread():
+    """A descriptor's Context freed on another thread changes neither thread's Context.
+
+    A Context still engaged on this thread when another thread frees it would leave
+    this thread a dangling pointer (undefined behavior).
+    """
+    import threading
+    import weakref
+
+    from graphblas.core import lib
+
+    A = Matrix.from_coo([0, 1], [1, 0], [1, 2], nrows=2, ncols=2)
+    B = Matrix(int, 3, 3)
+    box = []
+    try:
+        B(nthreads=1) << A @ A
+    except gb.exceptions.DimensionMismatch as exc:
+        box.append(exc)
+    context_ref = weakref.ref(_descriptor_context(box[0]))
+    results = {}
+
+    def drop():
+        with gb.ss.Context(nthreads=3) as ctx:
+            box.clear()  # The last reference to the exception, and so to the Context
+            gc.collect()
+            results["freed"] = context_ref() is None
+            results["current"] = gb.core.ss.context.threadlocal.context is ctx
+            results["engaged"] = _is_engaged(ctx)
+
+    thread = threading.Thread(target=drop)
+    thread.start()
+    thread.join()
+    try:
+        assert results == {"freed": True, "current": True, "engaged": True}
+        assert not _some_context_engaged()
+    finally:
+        lib.GxB_Context_engage(lib.GxB_CONTEXT_WORLD)  # Don't leave a freed one engaged
+
+
+@pytest.mark.parametrize(
+    ("prefix", "run"),
+    [
+        # Calls that take no descriptor
+        ("GrB_Matrix_dup", lambda A, v, n: A.dup(nthreads=n)),
+        ("GrB_Vector_dup", lambda A, v, n: v.dup(nthreads=n)),
+        ("GrB_Matrix_extractElement", lambda A, v, n: A[0, 1].new(nthreads=n)),
+        ("GrB_Vector_extractElement", lambda A, v, n: v[1].new(nthreads=n)),
+        ("GrB_Matrix_setElement", lambda A, v, n: A.__setitem__((0, 0), 5, nthreads=n)),
+        ("GrB_Matrix_extractTuples", lambda A, v, n: A.ss.export("coo", nthreads=n)),
+        ("GrB_Matrix_dup", lambda A, v, n: A.ss.export("csr", nthreads=n)),
+        # Calls given the descriptor
+        ("GxB_Matrix_diag", lambda A, v, n: gb.ss.diag(v, nthreads=n)),
+        ("GrB_mxm", lambda A, v, n: (A @ A).new(nthreads=n)),
+        ("GxB_Matrix_export_CSR", lambda A, v, n: A.ss.export("csr", nthreads=n)),
+        ("GxB_Vector_serialize", lambda A, v, n: v.ss.serialize(nthreads=n)),
+    ],
+)
+def test_descriptor_context_applies_to_the_call(monkeypatch, prefix, run):
+    """Options such as nthreads apply to each GraphBLAS function an operation runs.
+
+    That includes functions that take no descriptor, such as the dup of an export.
+    Stand-ins for ``lib`` record the Context as each function whose name starts
+    with ``prefix`` runs.
+    """
+    from graphblas.core import lib
+    from graphblas.core.ss import matrix as ss_matrix
+    from graphblas.core.ss import vector as ss_vector
+
+    seen = []
+
+    def watch(name, func):
+        if not name.startswith(prefix):
+            return func
+
+        def watched(*args):
+            context = gb.core.ss.context.threadlocal.context
+            seen.append((context["nthreads"], _is_engaged(context)))
+            return func(*args)
+
+        return watched
+
+    class WatchedLib:
+        def __getattr__(self, name):
+            return watch(name, getattr(lib, name))
+
+    real_libget = gb.core.base.libget
+    monkeypatch.setattr(gb.core.base, "libget", lambda name: watch(name, real_libget(name)))
+    monkeypatch.setattr(ss_matrix, "lib", WatchedLib())
+    monkeypatch.setattr(ss_vector, "lib", WatchedLib())
+    A = Matrix.from_coo([0, 1, 1], [1, 0, 1], [1, 2, 3], nrows=2, ncols=2)
+    v = Vector.from_coo([0, 1], [1, 2], size=2)
+    n = gb.ss.config["nthreads"] + 1  # Not the global setting
+    assert not seen
+    run(A, v, n)
+    assert seen == [(n, True)]
+    assert not _some_context_engaged()
+
+
+def test_context_that_failed_to_build_leaves_engaged_context(monkeypatch):
+    """Freeing a Context whose GxB_Context_new failed leaves the engaged Context alone.
+
+    Its handle is NULL, and disengaging NULL would disengage any Context.
+    """
+    from graphblas.core import lib
+    from graphblas.core.ss import context as context_module
+
+    class FailingNew:
+        def __getattr__(self, name):
+            return getattr(lib, name)
+
+        def GxB_Context_new(self, handle):
+            return lib.GrB_OUT_OF_MEMORY
+
+    with gb.ss.Context(nthreads=3) as ctx:
+        with monkeypatch.context() as m:
+            m.setattr(context_module, "lib", FailingNew())
+            with pytest.raises(gb.exceptions.OutOfMemory):
+                gb.ss.Context(engage=False)
+        gc.collect()
+        assert _is_engaged(ctx)
+
+
+def test_current_context_restored_after_interrupted_finally(monkeypatch):
+    """Context._call restores the current Context if its inner ``finally`` is cut short.
+
+    PyPy can raise KeyboardInterrupt at the first bytecode of a ``finally`` block. A
+    stand-in for ``threadlocal`` raises there, at the first restore. It raises an
+    exception of its own, since a KeyboardInterrupt that escaped would stop pytest.
+    """
+    from graphblas.core.ss import context as context_module
+
+    class Interrupt(BaseException):
+        pass
+
+    real = context_module.threadlocal
+
+    class InterruptFirstRestore:
+        sets = 0
+
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+        def __setattr__(self, name, value):
+            # The first set engages the descriptor's Context; the second restores
+            type(self).sets += 1
+            if type(self).sets == 2:
+                raise Interrupt
+            setattr(real, name, value)
+
+    with gb.ss.Context(nthreads=3) as ctx:
+        desc = gb.core.descriptor.lookup(nthreads=2)
+        with monkeypatch.context() as m:
+            m.setattr(context_module, "threadlocal", InterruptFirstRestore())
+            with pytest.raises(Interrupt):
+                desc._context._call(lambda: None)
+        assert context_module.threadlocal.context is ctx
+        assert _is_engaged(ctx)
+    assert not _some_context_engaged()
 
 
 def _libc_arena():
