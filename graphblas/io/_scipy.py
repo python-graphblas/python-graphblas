@@ -74,9 +74,12 @@ def from_scipy_sparse(A, *, dup_op=None, name=None):
 
 
 def _same_bits(data):
-    """Whether every value of ``data`` has the bits of the first. Unlike ``==``, this tells
-    -0.0 from 0.0 and matches a NaN with itself, so an iso value stands for every value.
+    """Return whether every value of ``data`` has the same bits as the first.
+
+    Unlike ``==``, this tells -0.0 from 0.0 and matches a NaN with itself, so an iso value
+    stands for every value.
     """
+    # Compare unsigned ints of up to 8 bytes, the widest numpy has: two per complex128
     unit = np.dtype(f"u{math.gcd(data.dtype.itemsize, 8)}")
     bits = np.ascontiguousarray(data).view(unit).reshape(data.size, -1)
     return all((col == col[0]).all() for col in bits.T)
