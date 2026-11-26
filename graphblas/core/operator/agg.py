@@ -487,12 +487,14 @@ agg.exists = Aggregator(
 
 
 def _logaddexp(agg, updater, expr, opts, *, in_composite, fast, exp, log, np_log, low):
-    """Reduce with ``fast``, the sum of ``exp(x)`` then its log, and where a result is not
-    finite or is below ``low``, reduce again as ``m + log(sum(exp(x - m)))``, with ``m`` the
-    largest value (0 when that is not finite), as ``scipy.special.logsumexp`` computes it, so
-    the results match ``np.logaddexp.reduce``. The sum overflows to infinity past 709 (1023 for
-    ``exp2``), and below -708 (-1022) it loses precision until it rounds to 0. Complex values,
-    which have no largest, keep ``fast``'s result.
+    """Reduce with ``fast``, then redo the results that ``exp`` put out of range.
+
+    ``fast`` takes the log of the sum of ``exp(x)``. That sum overflows to infinity past 709
+    (1023 for ``exp2``), and below -708 (-1022) it loses precision until it rounds to 0.
+    Where a result is infinite or below ``low``, the values are reduced again as
+    ``m + log(sum(exp(x - m)))``, with ``m`` the largest value (0 when that is not finite),
+    as ``scipy.special.logsumexp`` computes it, so the results match
+    ``np.logaddexp.reduce``. Complex values, which have no largest, keep ``fast``'s result.
     """
     if agg.type.np_type.kind == "c":
         return fast[agg.type]._new(updater, expr, in_composite=in_composite)
@@ -500,11 +502,12 @@ def _logaddexp(agg, updater, expr, opts, *, in_composite, fast, exp, log, np_log
     result = fast[agg.type]._new(expr.construct_output(dtype)(**opts), expr, in_composite=True)
     # A NaN result comes only from a NaN value, as numpy's would, so it is not checked
     if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
-        # Two reduces, not a copy of a value per row (max and min skip NaN)
+        # Two reduces to a Scalar find a result to redo without copying the results out;
+        # max and min skip NaN
         top = result.reduce(monoid.max).new().value
         redo = top is not None and (top == np.inf or result.reduce(monoid.min).new().value < low)
     else:
-        values = result.to_coo(indices=False)[1]  # (one value at most)
+        values = result.to_coo(indices=False)[1]  # one value at most
         redo = values.size > 0 and (values[0] == np.inf or values[0] < low)
     if redo:
         result = _logaddexp_shifted(expr, dtype, opts, exp, log, np_log)
@@ -518,16 +521,19 @@ def _logaddexp(agg, updater, expr, opts, *, in_composite, fast, exp, log, np_log
 
 
 def _logaddexp_shifted(expr, dtype, opts, exp, log, np_log):
-    """``m + log(sum(exp(x - m)))`` of each group of values, as a Vector (of size 1 for a
-    Vector or a whole Matrix), with ``m`` the group's largest value (0 when not finite).
+    """Return ``m + log(sum(exp(x - m)))`` of each group of values, as a Vector.
+
+    The Vector has size 1 for a Vector or a whole Matrix. ``m`` is the group's largest
+    value, or 0 when that is not finite.
     """
     x = expr.args[0]
     if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
         rowwise = expr.method_name == "reduce_rowwise"
         reduce = x.reduce_rowwise if rowwise else x.reduce_columnwise
         shift = reduce(monoid.max).new(dtype, **opts)
-        # Mask the entries that are not finite, not the complement of those that are, which
-        # would also give every empty group an entry (2**60 of them in a hypersparse Matrix)
+        # Set the maxima that are not finite to 0 through a mask of those entries. The
+        # complement of a mask of the finite ones would also write 0 into every empty
+        # group, and a hypersparse Matrix can have 2**60 of them.
         not_finite = unary.lnot(unary.isfinite(shift).new(**opts)).new(**opts)
         shift(mask=not_finite.V, **opts) << 0.0
         D = _scaling_diag(expr, unary.ainv(shift).new(**opts), opts)
@@ -542,7 +548,7 @@ def _logaddexp_shifted(expr, dtype, opts, exp, log, np_log):
     y << exp(y)
     total = (y.reduce if y.ndim == 1 else y.reduce_scalar)(monoid.plus).new().value
     result = expr._new_vector(dtype, size=1)
-    with np.errstate(divide="ignore"):  # (the log of 0 is -inf, as numpy's is)
+    with np.errstate(divide="ignore"):  # the log of 0 is -inf, as numpy's is
         result[0] = np_log(total) + m
     return result
 
