@@ -402,8 +402,12 @@ class OpBase:
                 raise AttributeError(f"{modname}.{funcname} is already defined")
         else:
             path, funcname = funcname.rsplit(".", 1)
-            for folder in path.split("."):
-                if not _hasop(module, folder):
+            for depth, folder in enumerate(path.split(".")):
+                # On suitesparse, ``<namespace>.ss`` is a module that the namespace imports
+                # on first use, so get it rather than put an OpPath in its place
+                if not _hasop(module, folder) and not (
+                    depth == 0 and folder == "ss" and backend == "suitesparse"
+                ):
                     setattr(module, folder, OpPath(module, folder))
                 module = getattr(module, folder)
                 modname = f"{modname}.{folder}"

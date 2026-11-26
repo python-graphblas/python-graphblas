@@ -1304,6 +1304,92 @@ def test_lazy_op():
     assert op.from_string("numpy.lazy") is unary.numpy.lazy
 
 
+@pytest.mark.skipif("not supports_udfs or not suitesparse")
+def test_lazy_op_under_ss_and_nested_names():
+    """An op registered lazily under ``ss.``, or a select under a nested name, builds on use.
+
+    Before the first use, the ``ss`` module lists the name in ``dir()``. Fails if an ``ss``
+    module does not read its delayed table, or if a lazy select looks up its IndexUnaryOp by
+    its full dotted name in the nested module.
+    """
+    from graphblas import indexbinary
+    from graphblas.core.operator import IndexBinaryOp
+    from graphblas.core.operator.indexbinary import _has_idxbinop
+
+    try:
+        UnaryOp.register_new("ss.lazy_un", lambda x: x, lazy=True)  # pragma: no branch (numba)
+        assert "lazy_un" in dir(unary.ss)
+        assert isinstance(unary.ss.lazy_un, UnaryOp)
+        BinaryOp.register_new("ss.lazy_bin", lambda x, y: x + y, lazy=True)  # pragma: no branch
+        assert "lazy_bin" in dir(binary.ss)
+        assert isinstance(binary.ss.lazy_bin, BinaryOp)
+        Monoid.register_new("ss.lazy_mon", binary.ss.lazy_bin, 0, lazy=True)
+        assert "lazy_mon" in dir(monoid.ss)
+        assert isinstance(monoid.ss.lazy_mon, Monoid)
+        Semiring.register_new("ss.lazy_sr", "ss.lazy_mon", "ss.lazy_bin", lazy=True)
+        assert "lazy_sr" in dir(semiring.ss)
+        assert isinstance(semiring.ss.lazy_sr, Semiring)
+        assert {"lazy_un", "lazy_bin", "lazy_mon", "lazy_sr"} <= set(dir(op.ss))
+        assert op.ss.lazy_bin is binary.ss.lazy_bin
+        IndexUnaryOp.register_new("ss.lazy_iu", lambda x, i, j, t: x, lazy=True)
+        assert "lazy_iu" in dir(indexunary.ss)
+        assert isinstance(indexunary.ss.lazy_iu, IndexUnaryOp)
+        IndexBinaryOp.register_new("ss.lazy_ib", lambda x, ix, jx, y, iy, jy, t: x, lazy=True)
+        assert "lazy_ib" in dir(indexbinary.ss)
+        if _has_idxbinop:  # IndexBinaryOp needs SuiteSparse:GraphBLAS 9.4 or later
+            assert isinstance(indexbinary.ss.lazy_ib, IndexBinaryOp)
+        SelectOp.register_new("ss.lazy_sel", lambda x, i, j, t: x > t, lazy=True)
+        assert "lazy_sel" in dir(select.ss)
+        assert isinstance(select.ss.lazy_sel, SelectOp)
+        SelectOp.register_new("lazy_path.lazy_sel", lambda x, i, j, t: x > t, lazy=True)
+        assert isinstance(select.lazy_path.lazy_sel, SelectOp)
+    finally:
+        # Remove every name the registrations added, built or still delayed, since other
+        # tests enumerate these modules (test_dir). Pop ``__dict__`` and ``_delayed`` directly
+        # so that ``__getattr__`` does not build a name again.
+        for module, name in [
+            (unary.ss, "lazy_un"),
+            (binary.ss, "lazy_bin"),
+            (monoid.ss, "lazy_mon"),
+            (semiring.ss, "lazy_sr"),
+            *((op.ss, name) for name in ["lazy_un", "lazy_bin", "lazy_mon", "lazy_sr"]),
+            (indexunary.ss, "lazy_iu"),
+            (indexbinary.ss, "lazy_ib"),
+            (indexunary.ss, "lazy_sel"),
+            (select.ss, "lazy_sel"),
+            (indexunary, "lazy_path"),
+            (select, "lazy_path"),
+        ]:
+            vars(module).pop(name, None)
+            module._delayed.pop(name, None)
+
+
+@pytest.mark.skipif("not supports_udfs or not suitesparse")
+def test_register_under_ss_before_the_ss_module_is_used():
+    """An op registered under ``ss.`` before the namespace's ``ss`` module is used goes there.
+
+    Fails if a nested path named ``ss`` takes the module's place, since importing the module
+    later would put it back without the op.
+    """
+    import importlib
+
+    ss = importlib.import_module("graphblas.monoid.ss")
+    plus = BinaryOp.register_anonymous(lambda x, y: x + y)  # pragma: no branch (numba)
+    vars(monoid).pop("ss", None)  # as before the first use of monoid.ss
+    try:
+        Monoid.register_new("ss.before_ss_used", plus, 0)
+        Monoid.register_new("ss.before_ss_used_lazy", plus, 0, lazy=True)
+        assert vars(monoid)["ss"] is ss
+        assert isinstance(ss.before_ss_used, Monoid)
+        assert isinstance(ss.before_ss_used_lazy, Monoid)
+    finally:
+        vars(monoid)["ss"] = ss
+        for module in [ss, op.ss]:
+            for name in ["before_ss_used", "before_ss_used_lazy"]:
+                vars(module).pop(name, None)
+                module._delayed.pop(name, None)
+
+
 def test_lazy_op_first_used_by_threads_at_once():
     """Threads that first get a lazily registered op at once all get it, built once.
 
@@ -6747,7 +6833,9 @@ def test_udt_op_pickle():
 
 
 def test_dir():
-    for mod in [unary, binary, monoid, semiring, op]:
+    from graphblas import indexbinary
+
+    for mod in [unary, binary, monoid, semiring, op, select, indexunary, indexbinary]:
         assert not set(mod._delayed) - set(dir(mod))
         assert hasattr(mod, "register_new") == ("register_new" in dir(mod))
         if suitesparse:

@@ -1,4 +1,4 @@
-from ..core import operator
+from ..core import _build_delayed, operator
 
 _delayed = {}
 
@@ -13,8 +13,12 @@ def __getattr__(name):
 
         globals()[name] = register_new
         return register_new
+    from . import _build
+
+    if (rv := _build_delayed(globals(), _delayed, name, _build)) is not None:
+        return rv
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def __dir__():
-    return sorted({*globals(), "register_new"})
+    return sorted({*globals(), *_delayed, "register_new"})
