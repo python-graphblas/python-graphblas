@@ -2,7 +2,7 @@ import itertools
 
 import numpy as np
 
-from .. import backend, binary, config, monoid
+from .. import _config_bool, backend, binary, monoid
 from ..dtypes import _INDEX, FP64, _index_dtypes, lookup_dtype, unify
 from ..exceptions import EmptyObject, check_status
 from . import _has_numba, _supports_udfs, automethods, ffi, lib, utils
@@ -584,7 +584,7 @@ class Scalar(BaseType):
                         f"Argument of from_value must be a known scalar type, not {type(value)}"
                     ) from None
         if typ is Scalar and type(value) is not Scalar:
-            if config.get("autocompute"):
+            if _config_bool("autocompute"):
                 return value.new(dtype=dtype, is_cscalar=is_cscalar, name=name)
             cls()._expect_type(
                 value,

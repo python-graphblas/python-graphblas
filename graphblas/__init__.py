@@ -248,6 +248,37 @@ def _init(backend_arg, blocking, automatic=False):
         _set_jit_c_control_at_init(jit_c_control)
 
 
+_TRUE_STRINGS = frozenset({"true", "yes", "on", "1"})
+_FALSE_STRINGS = frozenset({"false", "no", "off", "0", "null", "none", ""})
+
+
+def _config_bool(key):
+    """Return a boolean option such as ``config["autocompute"]`` as a bool.
+
+    donfig reads an environment variable with ``ast.literal_eval`` and keeps the string
+    when that fails, so ``GRAPHBLAS_AUTOCOMPUTE=false`` gives ``'false'``, which is truthy.
+    This accepts the usual spellings of true and false in any case. None (YAML null, or
+    the variable set to None), the empty string, and the strings "none" and "null" are
+    false. Anything else raises ValueError.
+    """
+    val = config.get(key)
+    if val is True or val is False:
+        return val
+    if val is None:
+        return False
+    if val in (0, 1):
+        return bool(val)
+    if isinstance(val, str):
+        if val.lower() in _TRUE_STRINGS:
+            return True
+        if val.lower() in _FALSE_STRINGS:
+            return False
+    raise ValueError(
+        f"Bad value for graphblas.config[{key!r}] (or the GRAPHBLAS_{key.upper()} environment "
+        f"variable): {val!r}. Must be True or False"
+    )
+
+
 _JIT_C_CONTROLS = ("on", "load", "run", "pause", "off")
 
 

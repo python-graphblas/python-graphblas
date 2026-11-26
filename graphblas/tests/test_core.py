@@ -1,4 +1,7 @@
+import os
 import pathlib
+import subprocess
+import sys
 import tomllib
 
 import pytest
@@ -58,6 +61,61 @@ def test_jit_c_control_config():
             pytest.raises(ValueError, match="GRAPHBLAS_JIT_C_CONTROL"),
         ):
             gb._jit_c_control_config()
+
+
+@pytest.mark.parametrize("key", ["autocompute", "mapnumpy"])
+def test_config_bool(key):
+    """A boolean option accepts the strings an environment variable gives, and rejects the rest."""
+    for val in [True, 1, "true", "True", "YES", "on", "1"]:
+        with gb.config.set({key: val}):
+            assert gb._config_bool(key) is True
+    for val in [False, 0, "false", "FALSE", "no", "off", "0", "none", "null", None, ""]:
+        with gb.config.set({key: val}):
+            assert gb._config_bool(key) is False
+    for val in ["maybe", 2, "2"]:
+        with (
+            gb.config.set({key: val}),
+            pytest.raises(ValueError, match=f"GRAPHBLAS_{key.upper()}"),
+        ):
+            gb._config_bool(key)
+
+
+def test_autocompute_false_string():
+    """``autocompute="false"``, which ``GRAPHBLAS_AUTOCOMPUTE=false`` sets, turns it off."""
+    v = gb.Vector.from_coo([0], [1])
+    with gb.config.set(autocompute="false"), pytest.raises(TypeError, match="autocompute=True"):
+        (v + v).nvals
+    with gb.config.set(autocompute="true"):
+        assert (v + v).nvals == 1
+
+
+_BOOL_CONFIG_SCRIPT = """
+import graphblas as gb
+
+print("package: " + gb.__file__)
+print(f"parsed: {gb._config_bool('autocompute')} {gb._config_bool('mapnumpy')}")
+"""
+
+
+def test_bool_config_from_environment():
+    """``GRAPHBLAS_AUTOCOMPUTE=false`` and ``GRAPHBLAS_MAPNUMPY=off`` turn the options off."""
+    repo_root = pathlib.Path(__file__).resolve().parents[2]
+    pythonpath = os.pathsep.join(filter(None, [str(repo_root), os.environ.get("PYTHONPATH")]))
+    env = dict(
+        os.environ, PYTHONPATH=pythonpath, GRAPHBLAS_AUTOCOMPUTE="false", GRAPHBLAS_MAPNUMPY="off"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", _BOOL_CONFIG_SCRIPT],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert result.returncode == 0, report
+    lines = dict(line.split(": ", 1) for line in result.stdout.splitlines() if ": " in line)
+    assert lines.get("package") == str(repo_root / "graphblas" / "__init__.py"), report
+    assert lines.get("parsed") == "False False", report
 
 
 def test_bad_libget():

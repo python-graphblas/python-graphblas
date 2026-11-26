@@ -1,6 +1,6 @@
 from contextvars import ContextVar
 
-from .. import backend, config
+from .. import _config_bool, backend
 from .. import replace as replace_singleton
 from ..exceptions import check_status
 from . import NULL
@@ -67,7 +67,7 @@ def _expect_type_message(
         if type(x) in types:
             return x, None
         if output_type(x) in types:
-            if config.get("autocompute"):
+            if _config_bool("autocompute"):
                 return x.new(), None
             extra_message = f"{extra_message}\n\n" if extra_message else ""
             extra_message += (
@@ -77,7 +77,7 @@ def _expect_type_message(
     elif type(x) is types:
         return x, None
     elif output_type(x) is types:
-        if config.get("autocompute"):
+        if _config_bool("autocompute"):
             return x.new(), None
         extra_message = f"{extra_message}\n\n" if extra_message else ""
         extra_message += (
@@ -464,7 +464,7 @@ class BaseType:
                     return
 
         if type(self) is not expr.output_type:
-            if expr.output_type._is_scalar and config.get("autocompute"):
+            if expr.output_type._is_scalar and _config_bool("autocompute"):
                 self._update(expr.new(), mask, accum, replace, input_mask, opts=opts)
                 return
             from .scalar import Scalar
