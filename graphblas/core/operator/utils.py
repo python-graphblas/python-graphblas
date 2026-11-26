@@ -99,8 +99,9 @@ def get_typed_op(op, dtype, dtype2=None, *, is_left_scalar=False, is_right_scala
             return op[
                 unify(dtype, dtype2, is_left_scalar=is_left_scalar, is_right_scalar=is_right_scalar)
             ]
-        except (TypeError, AttributeError):
-            # Failure to unify implies a dtype is UDT; some builtin operators can handle UDTs
+        except (TypeError, AttributeError):  # pragma: no cover (safety)
+            # A pair of types with a UDT returns above, and unify raises for neither built-in
+            # types nor one UDT twice, so only an op whose op[...] raises gets here.
             if op.is_positional:
                 return op[UINT64]
             if op._udt_types is None:

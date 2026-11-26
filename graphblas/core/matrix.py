@@ -674,6 +674,7 @@ class Matrix(BaseType):
             Whether to require sorted indices.
             If internally stored rowwise, the sorting will be first by rows, then by column.
             If internally stored columnwise, the sorting will be first by column, then by row.
+            The suitesparse-vanilla backend always sorts first by row, then by column.
 
         See Also
         --------
@@ -742,6 +743,7 @@ class Matrix(BaseType):
             Whether to require sorted indices.
             If internally stored rowwise, the sorting will be first by rows, then by column.
             If internally stored columnwise, the sorting will be first by column, then by row.
+            The suitesparse-vanilla backend always sorts first by row, then by column.
 
         See Also
         --------

@@ -115,8 +115,6 @@ def _get_udt_c_type_info(datatype):
     """
     from .operator.udt_codegen import _udt_c_typedef
 
-    if datatype.np_type is None:
-        return None
     return _udt_c_typedef(datatype.name, datatype.np_type)
 
 
@@ -780,6 +778,8 @@ def _dtype_to_explicit_dict(np_type):
         else:
             base_repr = base.str
         return (base_repr, shape)
+    # A numpy extension dtype that is neither a record nor an array, such as ml_dtypes'
+    # bfloat16, gets here. Its .str ('<V2') rebuilds a void dtype of the same size instead.
     return np_type.str
 
 
