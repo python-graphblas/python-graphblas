@@ -4228,7 +4228,9 @@ class ss:
             Will return None if ``False``.
         nthreads : int, optional
             The maximum number of threads to use for this operation.
-            None, 0 or negative nthreads means to use the default number of threads.
+            0 or negative means the global setting, ``gb.ss.config["nthreads"]``.
+            None, the default, means the current Context's nthreads: the global
+            setting, unless a ``gb.ss.Context`` is engaged.
 
         Returns
         -------
@@ -4292,7 +4294,9 @@ class ss:
             Level 9 is the default when using "lz4hc" compression.
         nthreads : int, optional
             The maximum number of threads to use when serializing the Matrix.
-            None, 0 or negative nthreads means to use the default number of threads.
+            0 or negative means the global setting, ``gb.ss.config["nthreads"]``.
+            None, the default, means the current Context's nthreads: the global
+            setting, unless a ``gb.ss.Context`` is engaged.
 
         For best performance, this function returns a numpy array with uint8 dtype.
         Use ``Matrix.ss.deserialize(blob)`` to create a Matrix from the result of serialization
@@ -4363,7 +4367,9 @@ class ss:
             You may need to specify the dtype to load user-defined types.
         nthreads : int, optional
             The maximum number of threads to use when deserializing.
-            None, 0 or negative nthreads means to use the default number of threads.
+            0 or negative means the global setting, ``gb.ss.config["nthreads"]``.
+            None, the default, means the current Context's nthreads: the global
+            setting, unless a ``gb.ss.Context`` is engaged.
 
         """
         if isinstance(data, np.ndarray):

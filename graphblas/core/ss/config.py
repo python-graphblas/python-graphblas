@@ -6,6 +6,27 @@ from .. import NULL, ffi, lib
 from ..utils import maybe_integral, values_to_numpy_buffer
 
 
+def _nthreads_default(context):
+    """The nthreads to set on ``context`` in place of None, 0 or a negative number.
+
+    This works around a bug in SuiteSparse:GraphBLAS: it takes nthreads of 0 or less
+    as one thread, globally and in a Context, though its User Guide says that 0
+    (GrB_DEFAULT) means the default. GraphBLAS keeps no default after GrB_init, so
+    python-graphblas reads the global setting once, right after GraphBLAS is
+    initialized (graphblas._init).
+
+    Globally, the default is that value. For a Context or a descriptor (``context`` is
+    None for a descriptor that has no Context yet), it is the current global setting,
+    as the User Guide says of a descriptor's 0.
+    """
+    from .. import _default_nthreads
+    from .context import global_context  # context.py imports this module
+
+    if context is global_context:
+        return _default_nthreads
+    return global_context["nthreads"]
+
+
 class BaseConfig(MutableMapping):
     _initialized = False
     # Subclasses should redefine these
@@ -190,6 +211,9 @@ class BaseConfig(MutableMapping):
             if key not in self._defaults:
                 raise ValueError(f"Unable to set default value for {key!r}")
             val = self._defaults[key]
+        if key == "nthreads" and val <= 0:
+            # SuiteSparse takes 0 as one thread (see _nthreads_default)
+            val = _nthreads_default(self._context)
         if val is None:
             val_obj = NULL
         elif "[" in ctype:

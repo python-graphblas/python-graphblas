@@ -119,7 +119,10 @@ class GlobalConfig(BaseConfig):
     bitmap_switch : List[double]
         Threshold that determines when to switch to bitmap format
     nthreads : int
-        Maximum number of OpenMP threads to use
+        Maximum number of OpenMP threads to use. None, 0 or negative restores the
+        default: the setting right after GraphBLAS was initialized, which GraphBLAS
+        takes from OpenMP (it follows ``OMP_NUM_THREADS``). If GraphBLAS was
+        initialized before python-graphblas, it is the setting python-graphblas found.
     chunk : double
         Control the number of threads used for small problems.
         For example, ``nthreads = floor(work / chunk)``.
@@ -203,7 +206,7 @@ class GlobalConfig(BaseConfig):
         "hyper_switch": lib.GxB_HYPER_DEFAULT,
         "bitmap_switch": None,
         "format": lib.GxB_FORMAT_DEFAULT,
-        "nthreads": 0,
+        "nthreads": 0,  # Replaced by core.ss.config._nthreads_default
         "chunk": 0,
         "burble": 0,
         "print_1based": 0,

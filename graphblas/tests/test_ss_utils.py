@@ -369,6 +369,79 @@ def test_about_attribute_assignment_raises():
     assert dict(about) == {k: about[k] for k in about}
 
 
+def test_nthreads_default():
+    """Setting nthreads to None, 0 or negative gives a default, not one thread.
+
+    SuiteSparse:GraphBLAS takes 0 or less as one thread. Globally, the default is the
+    setting right after init; for a Context or a descriptor, the current global setting.
+    """
+    from graphblas.core.ss.descriptor import get_descriptor
+
+    config = gb.ss.config
+    default = gb.core._default_nthreads
+    assert default >= 1
+    other = default + 2
+    prev = config["nthreads"]
+    try:
+        for val in [None, 0, -1]:
+            config["nthreads"] = other
+            assert config["nthreads"] == other
+            config["nthreads"] = val
+            assert config["nthreads"] == default, val
+        config["nthreads"] = other
+        context = gb.ss.Context(nthreads=other + 1, engage=False)
+        for val in [0, -1]:
+            assert gb.ss.Context(nthreads=val, engage=False)["nthreads"] == other, val
+            assert gb.ss.Context(nthreads=val, engage=False, stack=False)["nthreads"] == other
+            assert context.dup(nthreads=val, engage=False)["nthreads"] == other, val
+            assert get_descriptor(nthreads=val)._context["nthreads"] == other, val
+        for val in [None, 0, -1]:
+            context["nthreads"] = other + 1
+            context["nthreads"] = val
+            assert context["nthreads"] == other, val
+        with gb.ss.Context(nthreads=other + 1):
+            # 0 means the global setting, not the engaged Context's nthreads
+            assert gb.ss.Context(nthreads=0, engage=False)["nthreads"] == other
+            assert get_descriptor(nthreads=0)._context["nthreads"] == other
+            # None gives a descriptor nothing to set, so the engaged Context applies
+            assert get_descriptor(nthreads=None) is None
+    finally:
+        config["nthreads"] = prev
+
+
+_NTHREADS_DEFAULT_PROBE = """
+import suitesparse_graphblas as ssgb
+from suitesparse_graphblas import ffi, lib
+
+if {initialize_first}:
+    ssgb.initialize(blocking=False, memory_manager="numpy")
+    lib.GxB_Global_Option_set_INT32(lib.GxB_NTHREADS, ffi.cast("int32_t", 5))
+
+import graphblas as gb
+
+print(f"package: {{gb.__file__}}")
+gb.ss.config["nthreads"] = 7
+gb.ss.config["nthreads"] = None
+assert gb.ss.config["nthreads"] == {expected}, gb.ss.config["nthreads"]
+print("done")
+"""
+
+
+@pytest.mark.slow
+@pytest.mark.skipif("not gb.ss.about['openmp']")
+@pytest.mark.parametrize(
+    ("initialize_first", "expected"), [(False, 3), (True, 5)], ids=["fresh", "initialized"]
+)
+def test_nthreads_default_from_init(initialize_first, expected):
+    """The default nthreads is the setting right after GraphBLAS is initialized.
+
+    GraphBLAS takes it from OpenMP, which follows OMP_NUM_THREADS. If GraphBLAS was
+    initialized before python-graphblas, it is the setting by then.
+    """
+    source = _NTHREADS_DEFAULT_PROBE.format(initialize_first=initialize_first, expected=expected)
+    _run_probe(source, OMP_NUM_THREADS="3")
+
+
 def test_context_attribute_assignment_raises():
     context = gb.ss.Context(engage=False)
     with pytest.raises(AttributeError, match="item assignment"):

@@ -18,7 +18,7 @@ class Context(BaseConfig):
     if hasattr(lib, "GxB_CONTEXT_GPU_ID"):
         _options["gpu_id"] = (lib.GxB_CONTEXT_GPU_ID, "int")
     _defaults = {
-        "nthreads": 0,
+        "nthreads": 0,  # Replaced by core.ss.config._nthreads_default
         "chunk": 0,
         "gpu_id": -1,  # -1 means no GPU
     }
