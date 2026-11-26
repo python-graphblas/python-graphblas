@@ -457,6 +457,33 @@ def test_from_scipy_sparse_empty_compressed_orientation(global_format):
 
 
 @pytest.mark.skipif("not ss")
+@pytest.mark.parametrize("format", ["csr", "csc", "coo"])
+def test_from_scipy_sparse_keeps_signed_zeros(format):
+    """Values that compare equal but differ in their bits keep their bits.
+
+    On suitesparse, the csr and csc imports store values that are all the same as one iso
+    value. The test fails if they treat ``0.0`` and ``-0.0`` as the same value.
+    """
+    cases = [([0.0, -0.0], False), ([-0.0, 0.0], False), ([-0.0, -0.0], True)]
+    if dtypes._supports_complex:
+        cases.append(([0j, complex(0, -0.0)], False))
+    for data, iso in cases:
+        a = ss.coo_array((np.array(data), ([0, 1], [0, 1])), shape=(2, 2)).asformat(format)
+        A = gb.io.from_scipy_sparse(a)
+        _, _, values = A.to_coo()
+        np.testing.assert_array_equal(np.signbit(values.real), np.signbit(np.real(data)))
+        np.testing.assert_array_equal(np.signbit(values.imag), np.signbit(np.imag(data)))
+        if suitesparse and format != "coo":  # only the csr and csc imports look for iso
+            assert A.ss.is_iso is iso
+    # Values with the same bits, NaNs included, are one iso value
+    a = ss.coo_array((np.full(3, np.nan), ([0, 1, 2], [0, 1, 2])), shape=(3, 3))
+    A = gb.io.from_scipy_sparse(a.asformat(format))
+    assert np.isnan(A.to_coo()[2]).all()
+    if suitesparse and format != "coo":
+        assert A.ss.is_iso
+
+
+@pytest.mark.skipif("not ss")
 @pytest.mark.parametrize("engine", ["auto", "scipy", "fast_matrix_market"])
 def test_matrix_market_sparse_duplicates(engine):
     if engine == "fast_matrix_market" and fmm is None:  # pragma: no cover (import)

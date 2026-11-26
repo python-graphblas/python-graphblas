@@ -1,3 +1,7 @@
+import math
+
+import numpy as np
+
 from .. import backend
 from ..core.matrix import Matrix
 from ..core.utils import normalize_values, output_type
@@ -34,7 +38,7 @@ def from_scipy_sparse(A, *, dup_op=None, name=None):
         A = A.tocoo()
     if backend == "suitesparse" and A.format in {"csr", "csc"}:
         data = A.data
-        is_iso = data.size > 0 and (data[[0]] == data).all()
+        is_iso = data.size > 0 and _same_bits(data)
         if is_iso:
             data = data[[0]]
         if A.format == "csr":
@@ -67,6 +71,18 @@ def from_scipy_sparse(A, *, dup_op=None, name=None):
     return Matrix.from_coo(
         A.row, A.col, A.data, nrows=nrows, ncols=ncols, dtype=dtype, dup_op=dup_op, name=name
     )
+
+
+def _same_bits(data):
+    """Return whether every value of ``data`` has the same bits as the first.
+
+    Unlike ``==``, this tells -0.0 from 0.0 and matches a NaN with itself, so an iso value
+    stands for every value.
+    """
+    # Compare unsigned ints of up to 8 bytes, the widest numpy has: two per complex128
+    unit = np.dtype(f"u{math.gcd(data.dtype.itemsize, 8)}")
+    bits = np.ascontiguousarray(data).view(unit).reshape(data.size, -1)
+    return bool((bits == bits[0]).all())
 
 
 def to_scipy_sparse(A, format="csr"):
