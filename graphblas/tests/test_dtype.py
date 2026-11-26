@@ -641,8 +641,9 @@ def test_dtype_to_from_string():
 def test_dtype_to_string_of_a_numpy_extension_dtype():
     """``_dtype_to_string`` of bfloat16, an extension dtype that is not a record or an array.
 
-    Neither ``str(bfloat16)`` nor its ``.str`` (``'<V2'``) rebuilds it, so this reaches the
-    last case of ``_dtype_to_explicit_dict``, which returns the ``.str``.
+    Its ``str`` (``'bfloat16'``) is a name, not a literal, and its ``.str`` (``'<V2'``)
+    rebuilds a void dtype, so this reaches the last case of ``_dtype_to_explicit_dict``,
+    which returns the ``.str``.
     """
     ml_dtypes = pytest.importorskip("ml_dtypes")
     bfloat16 = np.dtype(ml_dtypes.bfloat16)
