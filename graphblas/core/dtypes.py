@@ -102,8 +102,8 @@ class DataType:
     @staticmethod
     def _deserialize(name, dtype, is_anonymous):
         if is_anonymous:
-            # Vanilla has no complex types, so its pickles hold complex values in a UDT
-            # of the numpy dtype, which is built in under SuiteSparse (FC32 and FC64).
+            # Vanilla has no complex types, so its pickles store complex values as a UDT
+            # of the numpy dtype, which SuiteSparse has built in (FC32 and FC64).
             builtin = _registry.get(dtype)
             if builtin is not None and not builtin._is_udt:
                 return builtin
