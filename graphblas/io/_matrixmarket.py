@@ -185,9 +185,9 @@ def mmwrite(
         and matrix.ss.format in {"fullr", "fullc"}
         and matrix._nrows * matrix._ncols > 0
     ):
-        # Array format. An export of an iso Matrix holds one value; to_dense repeats it.
-        # A Matrix with no elements takes the coordinate format: scipy's array writer never
-        # returns for an array with a zero dimension.
+        # Write the array format from to_dense, which repeats an iso value (an export has
+        # only one). A Matrix with a zero dimension takes the coordinate format, since
+        # scipy's array writer never returns for an array with no elements.
         array = matrix.to_dense()
     else:
         array = to_scipy_sparse(matrix, format="coo")

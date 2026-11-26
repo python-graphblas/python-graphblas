@@ -72,7 +72,7 @@ def test_typed_call():
 
 
 def test_typed_call_without_theta():
-    """A typed IndexBinaryOp called with no theta binds False, and keeps the user's function."""
+    """A typed IndexBinaryOp called with no theta binds 0, and keeps the user's function."""
 
     def add_theta(x, ix, jx, y, iy, jy, theta):  # pragma: no cover (numba)
         return x + y + theta

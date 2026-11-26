@@ -641,9 +641,9 @@ def test_dtype_to_from_string():
 def test_udt_of_a_numpy_extension_dtype():
     """A numpy extension dtype that is not a record or an array, such as bfloat16, is a UDT.
 
-    Its ``.str`` (``'<V2'``) does not rebuild it, so ``_dtype_to_string`` reaches the last
-    case of ``_dtype_to_explicit_dict``, which returns that ``.str``. Numba cannot type
-    bfloat16, so ``register_anonymous`` refuses it when Numba is installed.
+    Its ``.str`` (``'<V2'``) does not rebuild it, so ``_dtype_to_string`` returns that
+    ``.str``. Numba cannot type bfloat16, so ``register_anonymous`` refuses it when Numba is
+    installed.
     """
     ml_dtypes = pytest.importorskip("ml_dtypes")
     bfloat16 = np.dtype(ml_dtypes.bfloat16)

@@ -4609,7 +4609,7 @@ def test_from_scalar():
 
 
 def test_from_dense_with_a_zero_dimension():
-    """An array with no rows or no columns gives an empty Matrix of its shape on both backends."""
+    """``from_dense`` of an array with no rows or columns returns an empty Matrix of its shape."""
     for shape in [(3, 0), (0, 3), (0, 0)]:
         A = Matrix.from_dense(np.zeros(shape))
         assert A.shape == shape

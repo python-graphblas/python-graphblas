@@ -379,11 +379,10 @@ print("package: " + gb.__file__)
 
 @pytest.mark.skipif("not ss")
 def test_mmwrite_full_matrix_with_no_elements():
-    """A Matrix with a zero dimension, iso or not, round-trips through Matrix Market.
+    """A full Matrix with a zero dimension, iso or not, round-trips through Matrix Market.
 
-    On suitesparse such a Matrix is stored in full format, and scipy's writer for the array
-    format never returns for an array with a zero dimension, so it is written in the
-    coordinate format. The test fails if the child process times out.
+    On suitesparse such a Matrix is stored in full format, and scipy's array writer never
+    returns for it. The test fails if the child process times out.
     """
     repo_root = Path(__file__).resolve().parents[2]
     result = subprocess.run(
@@ -404,7 +403,7 @@ def test_mmwrite_mmread_full_and_iso():
     """A Matrix with every element present round-trips through the array format, iso or not.
 
     On suitesparse, a full Matrix is written in Matrix Market's array format, and an iso
-    one stores a single value, which must still be written as every element.
+    one stores a single value, which must be written once per element.
     """
     matrices = [
         Matrix.from_dense(np.arange(12.0).reshape(3, 4)),

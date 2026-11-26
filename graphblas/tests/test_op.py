@@ -2571,7 +2571,7 @@ def test_udt_auto_monoid_time_fields():
 
 @pytest.mark.skipif("not supports_udfs")
 def test_udt_min_max_identity_of_a_bool_field():
-    """``min`` and ``max`` lifted to a record give a bool field the identities of and and or."""
+    """``min`` and ``max`` lifted to a record use the identities of land and lor on a bool field."""
     udt = dtypes.register_anonymous(np.dtype([("mbi_flag", np.bool_), ("mbi_n", np.int32)]))
     int32 = np.iinfo(np.int32)
     assert monoid.min[udt].identity.value.tolist() == (True, int32.max)
