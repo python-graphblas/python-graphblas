@@ -608,9 +608,9 @@ def test_pickle_loads_under_the_other_backend():
 
 
 def test_deserialize_vanilla_pieces():
-    """``_deserialize`` reads the tuple a vanilla pickle holds, with or without an orientation.
+    """``_deserialize`` reads the tuple in a vanilla pickle, and any pieces appended to it.
 
-    A version that saves the orientation appends it as a seventh piece.
+    A newer version may append pieces, such as the orientation of a Matrix.
     """
     A = gb.Matrix.from_coo([0, 2], [1, 0], [1.5, 2.5], nrows=3, ncols=2)
     rows, cols, vals = A.to_coo()
@@ -620,9 +620,11 @@ def test_deserialize_vanilla_pieces():
         assert B.name == "B"
         assert B.isequal(A, check_dtype=True)
     v = gb.Vector.from_coo([1], [True], size=4)
-    w = gb.Vector._deserialize((*v.to_coo(), v.dtype, 4), "w")
-    assert w.name == "w"
-    assert w.isequal(v, check_dtype=True)
+    pieces = (*v.to_coo(), v.dtype, 4)
+    for p in [pieces, (*pieces, "appended")]:
+        w = gb.Vector._deserialize(p, "w")
+        assert w.name == "w"
+        assert w.isequal(v, check_dtype=True)
 
 
 @pytest.mark.skipif("not suitesparse")

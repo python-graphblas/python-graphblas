@@ -315,7 +315,8 @@ class Vector(BaseType):
             if backend == "suitesparse":
                 return Vector.ss.import_any(name=name, **pieces)
             pieces = _coo_from_ss_export(pieces)
-        indices, values, dtype, size = pieces
+        # Read the pieces this version knows; a newer version may append more.
+        indices, values, dtype, size = pieces[:4]
         return Vector.from_coo(indices, values, dtype, size=size, name=name)
 
     @property
