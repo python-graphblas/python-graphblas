@@ -687,12 +687,8 @@ def _nats_in_leaf_units(values, np_type):
     is 0 ms. Converting an array (``astype``) keeps NaT, as does a date, so each
     NaT scalar is converted that way first. ``values`` holds elements of
     ``np_type``: a list is a sequence of them, and a tuple is a record's fields
-    (or, for any other dtype, a sequence too).
-
-    numpy before 2.4 also writes past the end of each string when it casts an
-    array of durations into text too short for them, so for a text ``np_type``
-    each such array in ``values`` is made text of its own width first, which numpy
-    then cuts short as it does a number (see ``_durations_as_text``).
+    (or, for any other dtype, a sequence too). For a text ``np_type``, which has
+    no duration leaf, it returns :func:`_durations_as_text` of ``values``.
     """
     leaf = np_type
     while leaf.subdtype is not None:
@@ -716,17 +712,22 @@ def _nats_in_leaf_units(values, np_type):
     return values
 
 
-# numpy converts each of these on its own into text, which never overran
+# numpy converts each of these into text one at a time, within the string
 _TEXT_SAFE_SCALARS = (str, bytes, int, float, complex, np.generic, type(None))
 
 
 def _durations_as_text(values, kind):
     """Return ``values`` with each array of durations in it made text (``kind`` "U" or "S").
 
-    Such an array is an ndarray or anything else numpy makes one of (a pandas
-    Series or TimedeltaIndex), alone or in a list or tuple. Each is made text on
-    its own, so it keeps its own unit, as numpy keeps each scalar's (which it
-    converts one at a time, so a scalar stays as it is).
+    numpy before 2.4 writes past the end of each string when it casts an array
+    of durations into text too short for them. Made text of its own width
+    first, the array is then cut short safely, as a number is. Such an array is
+    an ndarray or anything else numpy makes one of (a pandas Series or
+    TimedeltaIndex), alone or in a list or tuple. Each is made text on its own,
+    so it keeps its own unit, as a duration scalar does. numpy converts scalars
+    one at a time, without the overrun, so they are left as they are.
+
+    MAINT 2026-11-25: remove this once python-graphblas requires numpy 2.4.
     """
     if isinstance(values, np.ndarray):
         return values.astype(kind) if values.dtype.kind == "m" else values
@@ -737,9 +738,9 @@ def _durations_as_text(values, kind):
             return values
         try:
             found = np.asarray(values).dtype.kind
-        except ValueError:  # (ragged, which numpy refuses later too)
+        except ValueError:  # ragged, which numpy refuses later too
             return values
-        except TypeError:  # (no common dtype, so look at each item)
+        except TypeError:  # no common dtype, so look at each item
             found = "O"
         if found not in "mO":
             return values
@@ -747,7 +748,7 @@ def _durations_as_text(values, kind):
         return items if isinstance(values, list) else tuple(items)
     try:
         array = np.asarray(values)
-    except (TypeError, ValueError):  # (numpy says why later)
+    except (TypeError, ValueError):  # numpy reports this later
         return values
     return array.astype(kind) if array.dtype.kind == "m" else values
 

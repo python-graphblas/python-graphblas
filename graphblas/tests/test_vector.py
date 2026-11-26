@@ -151,14 +151,15 @@ def test_from_coo_numpy_scalars_keep_dtype(np_type):
     assert Vector.from_coo([0, 1], np.array([1, 2], np_type)).dtype == expected
 
 
-@pytest.mark.skipif("not supports_udfs and not suitesparse")  # (a text UDT's dup_op)
+# vanilla's from_coo needs Numba to type its default dup_op for a text UDT
+@pytest.mark.skipif("not supports_udfs and not suitesparse")
 def test_durations_into_short_text():
-    """An array of durations converts into a text UDT too short for it by being cut short, as
-    a number is, for values, an element and a literal. So does a list of such arrays, and each
-    array or scalar in a list keeps its own unit.
+    """Durations stored into a text UDT too short for them are cut short, as a number is.
 
-    This checks the values only, which numpy before 2.4 also gets after writing past the end
-    of each string; test_durations_into_short_text_stay_in_bounds checks that it does not.
+    This holds for the values of a new Vector or Matrix, for an element and for a Scalar,
+    and each array or scalar in a list keeps its own unit. numpy before 2.4 gets these
+    values right too, but writes past the end of each string, which
+    test_durations_into_short_text_stay_in_bounds checks.
     """
     text = dtypes.register_anonymous(np.dtype("U4"), "_ShortTextDurations")
     data = dtypes.register_anonymous(np.dtype("S4"), "_ShortBytesDurations")
@@ -195,7 +196,7 @@ try:
 except ImportError:
     pass
 else:
-    week = np.array([1, 7], "m8[D]")  # (fits pandas' nanoseconds, if it uses them)
+    week = np.array([1, 7], "m8[D]")  # pandas may store nanoseconds, which 123456 days overflows
     Vector.from_coo([0, 1], pd.Series(week), dtype=text)
     Vector.from_dense(pd.TimedeltaIndex(week), dtype=text)
 print("done")
@@ -203,17 +204,16 @@ print("done")
 
 
 @pytest.mark.slow
-@pytest.mark.skipif("not supports_udfs")  # (== and ewise_union on a text UDT)
+@pytest.mark.skipif("not supports_udfs")  # the probe's == and ewise_union need Numba
 @pytest.mark.skipif(
     sys.platform != "darwin" or not Path("/usr/lib/libgmalloc.dylib").exists(),
     reason="needs macOS guard malloc",
 )
 def test_durations_into_short_text_stay_in_bounds():
-    """The conversions of test_durations_into_short_text write within each string.
+    """Durations stored into a text UDT too short for them are written within each string.
 
-    numpy before 2.4 writes past the end of each string when it casts an array of durations
-    into text too short for it (a heap overflow), so python-graphblas makes them text of their
-    own width first. Under guard malloc, an overrun crashes the process.
+    The probe runs in a subprocess under macOS guard malloc, where a write past the end of a
+    string crashes the process (see ``_durations_as_text``).
     """
     import subprocess
 
