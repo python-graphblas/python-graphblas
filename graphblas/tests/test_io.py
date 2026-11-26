@@ -432,12 +432,12 @@ def _stored_by_col(A):
 @pytest.mark.skipif("not ss")
 @pytest.mark.parametrize("global_format", [None, "by_col"])
 def test_from_scipy_sparse_empty_compressed_orientation(global_format):
-    """A csr array gives a Matrix stored by row, and a csc array by column, empty or not.
+    """A csr array returns a Matrix stored by row, and a csc array by column, empty or not.
 
-    That holds for arrays in scipy's canonical format, as these are; others are built from
-    coo. The test fails if an empty array gives ``Matrix(dtype, nrows, ncols)``, which is
-    stored in the global format: by row by default, so wrong for csc, and by column under a
-    by-column global format, so wrong for csr.
+    This is for arrays in scipy's canonical format, as these are; others are built from coo.
+    The test fails if an empty array returns ``Matrix(dtype, nrows, ncols)``. That Matrix is
+    stored in the global format, which is by row by default (wrong for csc) and by column
+    under a by-column global format (wrong for csr).
     """
     if global_format is not None:
         if gb.backend != "suitesparse":
