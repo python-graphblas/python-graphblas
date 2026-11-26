@@ -4,4 +4,5 @@ Exceptions
 .. automodule:: graphblas.exceptions
     :members: InvalidObject, InvalidIndex, DomainMismatch, DimensionMismatch,
               OutputNotEmpty, OutOfMemory, IndexOutOfBound, Panic, EmptyObject,
-              NotImplementedException, JitError, UdfParseError, NoJITWarning
+              NotImplementedException, AlreadySet, JitError, GpuError, OutputIsReadonly,
+              UdfParseError, NoJITWarning
