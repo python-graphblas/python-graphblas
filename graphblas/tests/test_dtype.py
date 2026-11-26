@@ -638,18 +638,26 @@ def test_dtype_to_from_string():
             assert dtype == dtype2
 
 
-def test_udt_of_a_numpy_extension_dtype():
-    """A numpy extension dtype that is not a record or an array, such as bfloat16, is a UDT.
+def test_dtype_to_string_of_a_numpy_extension_dtype():
+    """``_dtype_to_string`` of bfloat16, an extension dtype that is not a record or an array.
 
-    Its ``.str`` (``'<V2'``) does not rebuild it, so ``_dtype_to_string`` returns that
-    ``.str``. Numba cannot type bfloat16, so ``register_anonymous`` refuses it when Numba is
-    installed.
+    Its ``str`` (``'bfloat16'``) is a name, not a literal, and its ``.str`` (``'<V2'``)
+    rebuilds a void dtype, so this reaches the last case of ``_dtype_to_explicit_dict``,
+    which returns the ``.str``.
     """
     ml_dtypes = pytest.importorskip("ml_dtypes")
     bfloat16 = np.dtype(ml_dtypes.bfloat16)
     assert core.dtypes._dtype_to_string(bfloat16) == repr(bfloat16.str)
-    if supports_udfs:
-        return
+
+
+@pytest.mark.skipif("supports_udfs")
+def test_udt_of_a_numpy_extension_dtype():
+    """Without Numba, a numpy extension dtype such as bfloat16 is a UDT that stores values.
+
+    With Numba, ``register_anonymous`` raises, since Numba cannot type bfloat16.
+    """
+    ml_dtypes = pytest.importorskip("ml_dtypes")
+    bfloat16 = np.dtype(ml_dtypes.bfloat16)
     udt = dtypes.register_anonymous(bfloat16, "_ExtBFloat16")
     assert udt.np_type == bfloat16
     v = gb.Vector(udt, size=2)
