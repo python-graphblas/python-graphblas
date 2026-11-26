@@ -1635,7 +1635,7 @@ class Matrix(BaseType):
             rv = cls.ss.import_fullr(values, dtype=dtype, name=name)
         else:
             nrows, ncols, *rest = values.shape
-            indptr = np.arange(0, nrows * ncols + 1, ncols, dtype=np.uint64)
+            indptr = np.arange(nrows + 1, dtype=np.uint64) * np.uint64(ncols)
             cols = np.repeat(np.arange(ncols, dtype=np.uint64)[None, :], nrows, 0).ravel()
             if rest:  # sub-array dtype
                 values = values.reshape(nrows * ncols, *rest)

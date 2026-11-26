@@ -638,6 +638,36 @@ def test_dtype_to_from_string():
             assert dtype == dtype2
 
 
+def test_dtype_to_string_of_a_numpy_extension_dtype():
+    """``_dtype_to_string`` of bfloat16, an extension dtype that is not a record or an array.
+
+    Its ``str`` (``'bfloat16'``) is a name, not a literal, and its ``.str`` (``'<V2'``)
+    rebuilds a void dtype, so this reaches the last case of ``_dtype_to_explicit_dict``,
+    which returns the ``.str``.
+    """
+    ml_dtypes = pytest.importorskip("ml_dtypes")
+    bfloat16 = np.dtype(ml_dtypes.bfloat16)
+    assert core.dtypes._dtype_to_string(bfloat16) == repr(bfloat16.str)
+
+
+@pytest.mark.skipif("supports_udfs")
+def test_udt_of_a_numpy_extension_dtype():
+    """Without Numba, a numpy extension dtype such as bfloat16 is a UDT that stores values.
+
+    With Numba, ``register_anonymous`` raises, since Numba cannot type bfloat16.
+    """
+    ml_dtypes = pytest.importorskip("ml_dtypes")
+    bfloat16 = np.dtype(ml_dtypes.bfloat16)
+    udt = dtypes.register_anonymous(bfloat16, "_ExtBFloat16")
+    assert udt.np_type == bfloat16
+    v = gb.Vector(udt, size=2)
+    v[0] = ml_dtypes.bfloat16(1.5)
+    indices, values = v.to_coo()
+    assert indices.tolist() == [0]
+    assert values.dtype == bfloat16
+    assert values.tolist() == [1.5]
+
+
 def test_dtype_to_string_aligned_outer_packed_inner():
     """An aligned record with a packed record field round-trips through ``_dtype_to_string``.
 
@@ -670,6 +700,19 @@ def test_has_ss_attribute():
     else:
         with pytest.raises(AttributeError):
             dtypes.ss
+
+
+@pytest.mark.skipif("not suitesparse")
+def test_ss_register_new_checks_its_arguments():
+    """``dtypes.ss.register_new`` refuses a bad name or C definition before calling GraphBLAS."""
+    for name, definition, match in [
+        ("not a name", "typedef struct { int a ; } x ;", "valid Python identifier"),
+        ("CheckedName", "typedef struct { int a ; } Other ;", "same name as the typedef"),
+        ("CheckedEnum", "typedef int CheckedEnum ;", "Only struct typedefs"),
+    ]:
+        with pytest.raises(ValueError, match=match):
+            dtypes.ss.register_new(name, definition)
+        assert not hasattr(dtypes.ss, name)
 
 
 def test_dir():

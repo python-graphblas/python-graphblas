@@ -4285,6 +4285,44 @@ def test_ss_serialize(A):
 
 
 @pytest.mark.skipif("not suitesparse")
+def test_ss_import_hypercsr_scalar_value_is_iso():
+    """A 0-d value for ``import_hypercsr`` makes an iso Matrix, as for the other imports."""
+    A = Matrix.ss.import_hypercsr(
+        rows=[0, 2], indptr=[0, 1, 2], col_indices=[1, 0], values=np.array(5.0), nrows=3, ncols=2
+    )
+    assert A.ss.is_iso
+    assert A.isequal(Matrix.from_coo([0, 2], [1, 0], 5.0, nrows=3, ncols=2), check_dtype=True)
+
+
+@pytest.mark.skipif("not suitesparse or not supports_udfs")
+def test_ss_serialize_udt_with_a_long_name():
+    """A UDT whose GraphBLAS name is too long for the blob still round-trips.
+
+    A named UDT is stored by its short name. An anonymous one cannot be, so deserialize
+    needs ``dtype=`` and raises ValueError saying so.
+    """
+    named = dtypes.register_new(
+        "LongNamedSerUDT", np.dtype([(f"lnsu_{i:02d}_{'x' * 20}", np.int16) for i in range(10)])
+    )
+    anon = dtypes.register_anonymous(
+        np.dtype([(f"lasu_{i:02d}_{'y' * 20}", np.int32) for i in range(10)])
+    )
+    for dtype in [named, anon]:
+        A = Matrix(dtype, 2, 2)
+        A[0, 1] = tuple(range(10))
+        v = Vector(dtype, 3)
+        v[2] = tuple(range(10, 20))
+        for x in [A, v]:
+            blob = x.ss.serialize()
+            assert type(x).ss.deserialize(blob, dtype=dtype).isequal(x, check_dtype=True)
+            if dtype is named:
+                assert type(x).ss.deserialize(blob).isequal(x, check_dtype=True)
+            else:
+                with pytest.raises(ValueError, match="pass it as `dtype=`"):
+                    type(x).ss.deserialize(blob)
+
+
+@pytest.mark.skipif("not suitesparse")
 def test_ss_config(A):
     d = {}
     for key in A.ss.config:
@@ -4435,6 +4473,31 @@ def test_ss_pack_hyperhash(A):
         assert C.ss.unpack_hyperhash() is not None  # May or may not be computed
 
 
+@pytest.mark.skipif("not suitesparse")
+def test_ss_pack_hyperhash_round_trip():
+    """A hyper_hash unpacked from a hypersparse Matrix packs back, and the Matrix keeps its values.
+
+    SuiteSparse builds a hyper_hash only for more than 1024 non-empty vectors (its default
+    GxB_HYPER_HASH; checked on 9.3.1, 10.3.1, 10.5.1 and 10.5.3), so this uses 5000 rows.
+    """
+    n = 5000
+    rows, cols = np.arange(n) * 1000, np.arange(n)
+    C = Matrix.from_coo(rows, cols, np.arange(n), nrows=2**40, ncols=2**40)
+    C.ss.config["sparsity_control"] = "hypersparse"
+    expected = C.dup()
+    Y = C.ss.unpack_hyperhash(compute=True)
+    assert Y is not None
+    # .shape reads the dimensions unpack_hyperhash stores; .nrows asks GraphBLAS
+    assert [type(x) for x in Y.shape] == [int, int]
+    assert Y.shape == (Y.nrows, Y.ncols)
+    assert Y.nrows == C.nrows
+    assert C.ss.unpack_hyperhash() is None
+    C.ss.pack_hyperhash(Y)
+    assert Y.gb_obj[0] == gb.core.NULL
+    assert C.ss.unpack_hyperhash() is not None
+    assert C.isequal(expected, check_dtype=True)
+
+
 def test_to_dicts_from_dicts(A):
     assert A.isequal(Matrix.from_dicts(A.to_dicts(), int))
     assert A.isequal(Matrix.from_dicts(A.T.to_dicts("columnwise")))
@@ -4543,6 +4606,16 @@ def test_from_scalar():
     else:
         with pytest.raises(KeyError, match="eq does not work with"):
             assert A.isequal(B, check_dtype=True)
+
+
+def test_from_dense_with_a_zero_dimension():
+    """``from_dense`` of an array with no rows or columns returns an empty Matrix of its shape."""
+    for shape in [(3, 0), (0, 3), (0, 0)]:
+        A = Matrix.from_dense(np.zeros(shape))
+        assert A.shape == shape
+        assert A.nvals == 0
+        assert A.dtype == dtypes.FP64
+        assert A.to_dense().shape == shape
 
 
 def test_to_dense_from_dense():

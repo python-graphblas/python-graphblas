@@ -1,7 +1,10 @@
 import functools
+import os
+import subprocess
 import sys
 import types
 from io import BytesIO, StringIO
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -347,6 +350,75 @@ def test_mmread_mmwrite(engine):
                 raise AssertionError("Matrix M2 not as expected.  See print output above")
         success += 1
     assert success > 0
+
+
+# Run in a child process, so that a write that never returns fails the test instead of hanging
+_MMWRITE_NO_ELEMENTS_PROBE = """
+import io
+import sys
+
+import numpy as np
+
+import graphblas as gb
+
+gb.init(sys.argv[1])
+for A in [
+    gb.Matrix.from_scalar(1.5, 0, 3),
+    gb.Matrix.from_scalar(1.5, 3, 0),
+    gb.Matrix.from_dense(np.zeros((0, 3))),
+    gb.Matrix.from_dense(np.zeros((3, 0))),
+]:
+    f = io.BytesIO()
+    gb.io.mmwrite(f, A, engine="scipy")
+    f.seek(0)
+    B = gb.io.mmread(f, engine="scipy")
+    assert B.isequal(A, check_dtype=True), (A.shape, B.shape)
+print("package: " + gb.__file__)
+"""
+
+
+@pytest.mark.skipif("not ss")
+def test_mmwrite_full_matrix_with_no_elements():
+    """A full Matrix with a zero dimension, iso or not, round-trips through Matrix Market.
+
+    On suitesparse such a Matrix is stored in full format, and scipy's array writer never
+    returns for it. The test fails if the child process times out.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        [sys.executable, "-c", _MMWRITE_NO_ELEMENTS_PROBE, gb.backend],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+        env=dict(os.environ, PYTHONPATH=str(repo_root)),
+    )
+    report = f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert result.returncode == 0, report
+    assert f"package: {repo_root / 'graphblas' / '__init__.py'}" in result.stdout, report
+
+
+@pytest.mark.skipif("not ss")
+def test_mmwrite_mmread_full_and_iso():
+    """A Matrix with every element present round-trips through the array format, iso or not.
+
+    On suitesparse, a full Matrix is written in Matrix Market's array format, and an iso
+    one stores a single value, which must be written once per element.
+    """
+    matrices = [
+        Matrix.from_dense(np.arange(12.0).reshape(3, 4)),
+        Matrix.from_dense(np.arange(6).reshape(2, 3)),
+        Matrix.from_scalar(1.5, 3, 4),
+        Matrix.from_scalar(7, 1, 1),
+    ]
+    if gb.backend == "suitesparse":
+        matrices.append(Matrix.ss.import_fullc(np.asfortranarray(np.arange(6.0).reshape(2, 3))))
+    for A in matrices:
+        f = BytesIO()
+        gb.io.mmwrite(f, A, engine="scipy")
+        f.seek(0)
+        B = gb.io.mmread(f, engine="scipy")
+        assert B.isequal(A, check_dtype=True)
 
 
 @pytest.mark.skipif("not ss")

@@ -318,6 +318,17 @@ def test_apply_binary_bad(v1):
         op.plus(v1, 1, require_monoid=False)
 
 
+def test_infix_op_of_two_infix_expressions():
+    """An op over two ``|`` expressions of one type unions all four, as nested ewise_add."""
+    A = Matrix.from_coo([0, 1], [1, 0], [1, 2])
+    B = Matrix.from_coo([0, 1], [0, 0], [10, 20], nrows=2, ncols=2)
+    C = Matrix.from_coo([0], [1], [100], nrows=2, ncols=2)
+    D = Matrix.from_coo([1], [1], [1000], nrows=2, ncols=2)
+    result = binary.plus((A | B) | (C | D)).new()
+    expected = A.ewise_add(B).new().ewise_add(C.ewise_add(D).new()).new()
+    assert result.isequal(expected, check_dtype=True)
+
+
 def test_infix_nonscalars(v1, v2):
     # with pytest.raises(TypeError, match="refuse to guess"):
     assert (v1 + v2).new().isequal(op.plus(v1 | v2).new())

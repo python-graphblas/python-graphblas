@@ -180,8 +180,15 @@ def mmwrite(
         raise ValueError(
             f'Bad engine value: {engine!r}. Must be "auto", "scipy", "fmm", or "fast_matrix_market"'
         )
-    if backend == "suitesparse" and matrix.ss.format in {"fullr", "fullc"}:
-        array = matrix.ss.export()["values"]
+    if (
+        backend == "suitesparse"
+        and matrix.ss.format in {"fullr", "fullc"}
+        and matrix._nrows * matrix._ncols > 0
+    ):
+        # Write the array format from to_dense, which repeats an iso value (an export has
+        # only one). A Matrix with a zero dimension takes the coordinate format, since
+        # scipy's array writer never returns for an array with no elements.
+        array = matrix.to_dense()
     else:
         array = to_scipy_sparse(matrix, format="coo")
     mmwrite(
