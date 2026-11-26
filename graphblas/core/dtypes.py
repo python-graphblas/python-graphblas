@@ -779,7 +779,7 @@ def _dtype_to_explicit_dict(np_type):
             base_repr = base.str
         return (base_repr, shape)
     # A numpy extension dtype that is neither a record nor an array, such as ml_dtypes'
-    # bfloat16, whose .str ('<V2') does not rebuild it
+    # bfloat16, gets here. Its .str ('<V2') rebuilds a void dtype of the same size instead.
     return np_type.str
 
 
