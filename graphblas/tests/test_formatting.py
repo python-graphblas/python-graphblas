@@ -4158,8 +4158,9 @@ def test_autocompute(A, B, v):
     small = Vector(int, size=2**55)
     BIG[:] = 1
     small[0] = 2
-    # Set the column count, because pandas 3.1 fits two fewer columns than 3.0 in 80
-    # characters: it leaves room for the "..." column.
+    # pandas 3.1 fits two fewer columns than 3.0 in 80 characters, since it leaves room
+    # for the "..." column. Fixing the column count, and a width those columns fit in,
+    # gives the same repr on both.
     with pd.option_context("display.max_columns", 4, "display.width", 100):
         repr_printer(BIG.ewise_mult(small), "BIG.ewise_mult(small)")
         assert repr(BIG.ewise_mult(small)) == (

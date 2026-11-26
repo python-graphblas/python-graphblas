@@ -229,10 +229,10 @@ def _get_max_columns():
 
 
 def _with_ellipsis_row(df):
-    """Return ``df`` with a last row of "...", for more entries than it shows.
+    """Return a copy of ``df`` with a last row of "...", marking entries it does not show.
 
-    The columns become object first, as the "..." would make them: pandas 3.1 deprecates
-    setting a str into a new row of a numeric column (Pandas4Warning).
+    The columns are made object first, which the "..." would do anyway, because pandas 3.1
+    deprecates setting a str into a new row of a numeric column (Pandas4Warning).
     """
     df = df.astype(object)
     df.loc["..."] = ["..."] * df.shape[1]
