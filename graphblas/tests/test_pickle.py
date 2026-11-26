@@ -607,6 +607,59 @@ def test_pickle_loads_under_the_other_backend():
     assert _describe(pickle.loads(pickled_there)) == expected
 
 
+def _complex_objects():
+    """A complex Matrix, Vector and Scalar, and two complex dtypes, to pickle across backends."""
+    v = gb.Vector.from_coo([0, 2], [1 + 2j, 3 - 4j], size=3)
+    A = gb.Matrix.from_coo([0, 1], [1, 0], np.array([1 + 2j, 5j], np.complex64), nrows=2, ncols=3)
+    return {"v": v, "A": A, "s": gb.Scalar.from_value(1 - 1j), "FC64": v.dtype, "FC32": A.dtype}
+
+
+def _describe_complex(objects):
+    """Return each object's numpy dtype, shape and values.
+
+    Each also says whether its dtype is the one ``lookup_dtype`` returns for that numpy dtype.
+    """
+    rv = {}
+    for key, x in objects.items():
+        dtype = x if isinstance(x, gb.dtypes.DataType) else x.dtype
+        if isinstance(x, gb.Scalar):
+            values = x.value
+        elif isinstance(x, gb.dtypes.DataType):
+            values = None
+        else:
+            values = sorted(zip(*(c.tolist() for c in x.to_coo()), strict=True))
+        is_this_backends = dtype is gb.dtypes.lookup_dtype(dtype.np_type)
+        rv[key] = (dtype.np_type.str, is_this_backends, getattr(x, "shape", None), values)
+    return rv
+
+
+def _op_complex_cross_backend(d):
+    return _describe_complex(d), pickle.dumps(_complex_objects())
+
+
+_CROSSPROC_OPS["complex_cross_backend"] = _op_complex_cross_backend
+
+
+# A complex Vector on vanilla has a UDT, which vanilla cannot build without Numba
+@pytest.mark.skipif("not supports_udfs")
+@pytest.mark.slow
+def test_complex_pickle_loads_under_the_other_backend():
+    """Complex objects and dtypes pickled under one backend load under the other, both ways.
+
+    A vanilla pickle has a UDT of a complex numpy dtype, which SuiteSparse must read as FC32
+    or FC64. A SuiteSparse pickle of a complex Scalar or dtype names FC32 or FC64, which
+    vanilla must read as such a UDT.
+    """
+    other = "suitesparse-vanilla" if suitesparse else "suitesparse"
+    objects = _complex_objects()
+    expected = _describe_complex(objects)
+    ((loaded_there, pickled_there),) = _run_crossproc(
+        "complex_cross_backend", pickle.dumps(objects), backend=other
+    )
+    assert loaded_there == expected
+    assert _describe_complex(pickle.loads(pickled_there)) == expected
+
+
 def test_deserialize_vanilla_pieces():
     """``_deserialize`` reads the tuple in a vanilla pickle, and any pieces appended to it.
 
