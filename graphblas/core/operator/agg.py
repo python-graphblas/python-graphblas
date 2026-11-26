@@ -3,8 +3,8 @@ from operator import getitem
 
 import numpy as np
 
-from ... import agg, backend, binary, indexunary, monoid, semiring, unary
-from ...dtypes import BOOL, INT64, lookup_dtype
+from ... import agg, backend, binary, indexunary, monoid, select, semiring, unary
+from ...dtypes import BOOL, FP64, INT64, lookup_dtype
 from ...exceptions import UdfParseError
 from .. import _supports_udfs
 from ..utils import output_type
@@ -152,6 +152,13 @@ class Aggregator:
 
     def __getitem__(self, dtype):
         dtype = lookup_dtype(dtype)
+        if (
+            dtype._is_udt
+            and isinstance(self._custom, partial)
+            and self._custom.func is _count_by_kind
+        ):
+            # count_nonzero and count_zero compare with 0, and a UDT has no 0 to compare with
+            raise KeyError(f"{self.name} does not work with {dtype}")
         if not self._any_dtype and dtype not in self.types:
             # An aggregator made of a monoid alone works on a UDT when the monoid
             # lifts to it (``agg.sum``, ``agg.min``). The others (``agg.hypot``,
@@ -289,7 +296,9 @@ class TypedAggregator:
             results = []
             mask = updater.kwargs.get("mask")
             for cur_agg in agg._composite:
-                cur_agg = cur_agg[self.type]  # Hopefully works well enough
+                # Count in INT64, as `agg.count` does, and compute the other parts in the
+                # result type: typed by the input type, an INT8 count or sum would wrap at 128
+                cur_agg = get_typed_op(cur_agg, self.return_type)
                 arg = expr.construct_output(cur_agg.return_type)
                 results.append(cur_agg._new(arg(mask=mask, **opts), expr, in_composite=True))
             final_expr = agg._finalize(*results, opts)
@@ -313,6 +322,10 @@ class TypedAggregator:
             return agg._custom(self, updater, expr, opts, in_composite=in_composite)
 
         semiring = get_typed_op(agg._semiring, self.type, agg._initdtype)
+        if self.return_type.np_type.kind in "fc" and semiring.return_type.np_type.kind in "biu":
+            # A float result of integer values (hypot): compute in the result type, as numpy
+            # does, since the square of a large integer wraps
+            semiring = get_typed_op(agg._semiring, self.return_type, agg._initdtype)
         if expr.cfunc_name == "GrB_Matrix_reduce_Aggregator":
             # Matrix -> Vector
             A = expr.args[0]
@@ -348,8 +361,9 @@ class TypedAggregator:
                 # SuiteSparse computes `v @ init` below as one dot product, on one thread.  For
                 # an expensive multiplier, such as `pow`, an apply and a reduce on every
                 # thread are faster: 8 ms instead of 83 ms for `sum_of_squares` on 1e7
-                # entries.  For a cheap one, such as `isne`, the one pass of `v @ init` is as
-                # fast.
+                # entries.  For a cheap one, such as `isne`, they are faster unless the JIT
+                # is on: `count_nonzero` of 5e6 entries takes 1.5 ms instead of 14 ms with the
+                # JIT at "run" or "off", and 1.2 ms instead of 0.15 to 1.1 ms with it on.
                 binop = semiring.binaryop
                 x = binop(agg._initval, v) if agg._switch else binop(v, agg._initval)
                 step1 = x.new(**opts).reduce(semiring.monoid).new(**opts)._as_vector()
@@ -434,12 +448,45 @@ agg.count = Aggregator(
     any_dtype=INT64,
     from_nvals=lambda n: n,
 )
-agg.count_nonzero = Aggregator(
-    "count_nonzero", semiring=semiring.plus_isne, semiring2=semiring.plus_first
-)
-agg.count_zero = Aggregator(
-    "count_zero", semiring=semiring.plus_iseq, semiring2=semiring.plus_first
-)
+
+
+def _count_by_kind(agg, updater, expr, opts, *, in_composite, aggs):
+    """Count with the Aggregator that ``aggs`` gives for the kind of the values.
+
+    ``aggs`` maps an ``np.dtype.kind`` character to ``(aggregator, type)``. ``plus_isne`` and
+    ``plus_iseq`` compare and count in INT64 for bool and integer values, which keeps the
+    zero-ness of each, and in FP64 for floats, which keeps 0.5 nonzero and counts exactly
+    up to 2**53. Typed by the values instead, they would count INT8 values in INT8, which
+    wraps at 128. ``plus_isne`` and ``plus_iseq`` have no complex types, so complex values
+    are compared first and then counted in INT64.
+    """
+    dtype = expr.args[0].dtype
+    if (sub := aggs.get(dtype.np_type.kind)) is None:
+        raise KeyError(f"{agg.name} does not work with {dtype}")
+    sub_agg, sub_type = sub
+    return sub_agg[sub_type]._new(updater, expr, in_composite=in_composite)
+
+
+def _counter(name, sr, compare):
+    by_value = Aggregator(name, semiring=sr, semiring2=semiring.plus_first, vector_apply=True)
+    compared = Aggregator(
+        name,
+        applybegin=compare,
+        semiring=semiring.plus_first,
+        semiring2=semiring.plus_first,
+        any_dtype=INT64,
+        vector_apply=True,
+    )
+    aggs = dict.fromkeys("biu", (by_value, INT64))
+    aggs["f"] = (by_value, FP64)
+    aggs["c"] = (compared, INT64)
+    # Untyped, the result is INT64; typed by the user (count_nonzero[FP32]), it is that type
+    custom = partial(_count_by_kind, aggs=aggs)
+    return Aggregator(name, custom=custom, types=[semiring.plus_first], any_dtype=INT64)
+
+
+agg.count_nonzero = _counter("count_nonzero", semiring.plus_isne, lambda x: binary.ne(x, 0))
+agg.count_zero = _counter("count_zero", semiring.plus_iseq, lambda x: binary.eq(x, 0))
 agg.sum_of_squares = Aggregator(
     "sum_of_squares",
     initval=2,
@@ -579,12 +626,22 @@ def _ptp_finalize(max, min, opts):
     return binary.minus(max & min)
 
 
+def _clamped(expr, opts):
+    # E[x**2] - E[x]**2 can round below 0, and its sqrt would be NaN. Clamp with a masked
+    # assign rather than binary.max, which is fmax and would turn a NaN variance into 0. A
+    # complex variance has no order to clamp by.
+    val = expr.new(**opts)
+    if val.dtype.np_type.kind != "c":
+        val(select.valuelt(val, 0).new(**opts).S, **opts) << 0
+    return unary.identity(val)
+
+
 def _varp_finalize(c, x, x2, opts):
     # <x2> / n - (<x> / n)**2
     left = binary.truediv(x2 & c).new(**opts)
     right = binary.truediv(x & c).new(**opts)
     right(**opts) << binary.pow(right, 2)
-    return binary.minus(left & right)
+    return _clamped(binary.minus(left & right), opts)
 
 
 def _vars_finalize(c, x, x2, opts):
@@ -594,7 +651,7 @@ def _vars_finalize(c, x, x2, opts):
     c(**opts) << binary.minus(c, 1)
     right(**opts) << binary.truediv(right & c)
     left = binary.truediv(x2 & c).new(**opts)
-    return binary.minus(left & right)
+    return _clamped(binary.minus(left & right), opts)
 
 
 def _stdp_finalize(c, x, x2, opts):
