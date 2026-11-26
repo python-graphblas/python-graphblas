@@ -4548,8 +4548,8 @@ def test_from_scalar():
 def test_sizes_given_as_scalars_are_stored_as_ints():
     """A Scalar or NumPy integer given for nrows or ncols gives a shape of Python ints.
 
-    ``from_csr``, and on suitesparse every path through the ss imports, stores the sizes it
-    is given without going through ``Matrix()``, which converts them.
+    ``from_csr`` and, on suitesparse, every constructor that uses an ss import set the sizes
+    without going through ``Matrix()``, which converts them.
     """
     n = Scalar.from_value(3)
     m = np.uint64(4)

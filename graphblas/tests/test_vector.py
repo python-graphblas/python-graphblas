@@ -3242,8 +3242,8 @@ def test_from_scalar():
 def test_size_given_as_scalar_is_stored_as_int():
     """A Scalar or NumPy integer given for the size gives a shape of a Python int.
 
-    On suitesparse, ``from_scalar`` and the ss imports store the size they are given without
-    going through ``Vector()``, which converts it.
+    On suitesparse, ``from_scalar`` and the ss imports set the size without going through
+    ``Vector()``, which converts it.
     """
     vectors = [
         Vector.from_scalar(1.0, Scalar.from_value(3)),

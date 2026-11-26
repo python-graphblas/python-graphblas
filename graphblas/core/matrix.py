@@ -255,8 +255,8 @@ class Matrix(BaseType):
         self.gb_obj = gb_obj
         self.dtype = dtype
         self.name = f"M_{next(Matrix._name_counter)}" if name is None else name
-        # Some callers (from_csr, the ss imports) pass on the nrows and ncols they were
-        # given, which may be a Scalar or a NumPy integer; store Python ints, as Matrix() does.
+        # Store Python ints, as Matrix() does, in case a caller passes on sizes it was given
+        # as a Scalar or a NumPy integer.
         self._nrows = operator.index(nrows)
         self._ncols = operator.index(ncols)
         self._parent = parent
