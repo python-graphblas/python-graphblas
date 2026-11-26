@@ -101,7 +101,6 @@ class Aggregator:
         any_dtype=None,
         from_nvals=None,
         vector_apply=False,
-        stable=None,
     ):
         self.name = name
         self._initval_orig = initval
@@ -124,9 +123,6 @@ class Aggregator:
         # under a `max` monoid, or -0.0 under `plus`: a reduce of bitmap data to a Scalar
         # loses both (see the Matrix -> Scalar step there).
         self._vector_apply = vector_apply
-        # A function that replaces the semiring path where the semiring alone can overflow
-        # (``agg.logaddexp``)
-        self._stable = stable
         if types is None:
             if monoid is not None:
                 types = [monoid]
@@ -312,9 +308,6 @@ class TypedAggregator:
                     return parent
                 return parent._as_vector()
             return
-
-        if agg._stable is not None:
-            return agg._stable(self, updater, expr, opts, in_composite=in_composite)
 
         if agg._custom is not None:
             return agg._custom(self, updater, expr, opts, in_composite=in_composite)
@@ -564,18 +557,19 @@ agg.hypot = Aggregator(
 )
 
 
-def _logaddexp_aggregator(name, base, log, **stable):
-    """``log(sum(base ** x))``: the semiring computes it, and ``_logaddexp`` checks it."""
-    kwargs = {
-        "initval": base,
-        "semiring": semiring.plus_pow,
-        "switch": True,
-        "semiring2": semiring.plus_first,
-        "finalize": log,
-        "vector_apply": True,
-    }
-    fast = Aggregator(name, **kwargs)
-    return Aggregator(name, **kwargs, stable=partial(_logaddexp, fast=fast, log=log, **stable))
+def _logaddexp_aggregator(name, base, log, **kwargs):
+    """``log(sum(base ** x))``: a semiring aggregator computes it, and ``_logaddexp`` checks it."""
+    fast = Aggregator(
+        name,
+        initval=base,
+        semiring=semiring.plus_pow,
+        switch=True,
+        semiring2=semiring.plus_first,
+        finalize=log,
+        vector_apply=True,
+    )
+    custom = partial(_logaddexp, fast=fast, log=log, **kwargs)
+    return Aggregator(name, custom=custom, types=[fast])
 
 
 agg.logaddexp = _logaddexp_aggregator(
