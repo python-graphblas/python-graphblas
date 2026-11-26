@@ -834,7 +834,9 @@ def _array_literal_udt(dtype, value):
         return lookup_dtype(value.dtype) if value.ndim == 0 else None
     # A bool array converts as it is (a BOOL array UDT cannot be registered),
     # and bool casts safely into every numeric element.
-    if np_type.names is not None or value.dtype.kind not in "iufc" or value.size == 0:
+    if np_type.names is not None or value.dtype.kind not in "iufc":
+        return None
+    if value.size == 0:
         # An empty array's layout cannot be a UDT, so numpy says why it does not fit.
         return None
     # A UDT that is neither a record nor an array, such as a date, has the shape (),
