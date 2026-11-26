@@ -697,8 +697,7 @@ class Vector(BaseType):
                 else:
                     rv(mask=mask, **opts)[...] = self
         else:
-            # GrB_Vector_dup takes no descriptor, but opts such as nthreads apply through
-            # the descriptor's Context (see call_in_context)
+            # GrB_Vector_dup takes no descriptor, but opts still apply (see call_in_context)
             desc = descriptor_lookup(**opts) if opts else None
             rv = Vector._from_obj(ffi_new("GrB_Vector*"), self.dtype, self._size, name=name)
             call_in_context(desc, call, "GrB_Vector_dup", [_Pointer(rv), self])
@@ -1973,8 +1972,7 @@ class Vector(BaseType):
         idx = resolved_indexes.indices[0]
         if result is None:
             result = Scalar(dtype, is_cscalar=is_cscalar, name=name)
-        # extractElement takes no descriptor, but opts such as nthreads apply through
-        # the descriptor's Context (see call_in_context)
+        # extractElement takes no descriptor, but opts still apply (see call_in_context)
         desc = descriptor_lookup(**opts) if opts else None
         if is_cscalar:
             dtype_name = "UDT" if dtype._is_udt else dtype.name

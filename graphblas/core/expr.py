@@ -435,8 +435,7 @@ class Updater:
         # Occurs when user calls C(params)[index] = expr
         if resolved_indexes.is_single_element and not self.kwargs:
             # Fast path using assignElement
-            # setElement takes no descriptor, but opts such as nthreads apply through
-            # the descriptor's Context (see call_in_context)
+            # setElement takes no descriptor, but opts still apply (see call_in_context)
             desc = descriptor_lookup(**self.opts) if self.opts else None
             call_in_context(desc, self.parent._assign_element, resolved_indexes, obj)
         else:

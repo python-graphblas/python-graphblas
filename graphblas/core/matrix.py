@@ -849,8 +849,7 @@ class Matrix(BaseType):
                 else:
                     rv(mask=mask, **opts)[...] = self
         else:
-            # GrB_Matrix_dup takes no descriptor, but opts such as nthreads apply through
-            # the descriptor's Context (see call_in_context)
+            # GrB_Matrix_dup takes no descriptor, but opts still apply (see call_in_context)
             desc = descriptor_lookup(**opts) if opts else None
             new_mat = ffi_new("GrB_Matrix*")
             rv = Matrix._from_obj(new_mat, self.dtype, self._nrows, self._ncols, name=name)
@@ -3217,8 +3216,7 @@ class Matrix(BaseType):
             rowidx, colidx = colidx, rowidx
         if result is None:
             result = Scalar(dtype, is_cscalar=is_cscalar, name=name)
-        # extractElement takes no descriptor, but opts such as nthreads apply through
-        # the descriptor's Context (see call_in_context)
+        # extractElement takes no descriptor, but opts still apply (see call_in_context)
         desc = descriptor_lookup(**opts) if opts else None
         if is_cscalar:
             dtype_name = "UDT" if dtype._is_udt else dtype.name

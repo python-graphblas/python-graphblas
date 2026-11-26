@@ -25,7 +25,7 @@ class Context(BaseConfig):
 
     def __init__(self, engage=True, *, stack=True, nthreads=None, chunk=None, gpu_id=None):
         # Set before super().__init__(), which fixes the allowed attributes (see BaseConfig).
-        # _prev_context first, which __del__ reads if anything after gb_obj raises.
+        # Set _prev_context first: __del__ reads it if a later line raises.
         self._prev_context = None
         self.gb_obj = ffi_new("GxB_Context*")
         check_status_carg(lib.GxB_Context_new(self.gb_obj), "Context", self.gb_obj[0])
@@ -80,8 +80,9 @@ class Context(BaseConfig):
                     pass
             elif gb_obj[0] != ffi.NULL:  # NULL would disengage any Context
                 # A descriptor's Context is engaged only inside ``_call``. Disengage it
-                # anyway, in case two interrupts skipped both restores there. This
-                # changes nothing if another Context is engaged, and does not raise.
+                # anyway, in case interrupts skipped both restores there. The status is
+                # ignored: it is GrB_INVALID_VALUE, with no change, if another Context
+                # is engaged.
                 lib.GxB_Context_disengage(gb_obj[0])
             lib.GxB_Context_free(gb_obj)
 
@@ -97,8 +98,8 @@ class Context(BaseConfig):
         The current Context (``threadlocal.context``: the global one, or a user's
         ``with Context(...)``) is engaged again afterwards, even if ``func`` raises.
         This Context is the current one while ``func`` runs, so a nested ``_call``
-        restores it. A descriptor's Context is engaged only this way, so it is never
-        left engaged after the call that was given it, whatever keeps it alive.
+        restores it. A descriptor's Context is engaged only this way (see
+        ``call_in_context``).
         """
         prev = threadlocal.context
         try:
@@ -112,9 +113,9 @@ class Context(BaseConfig):
         finally:
             # Again, because PyPy can raise KeyboardInterrupt at the first bytecode of
             # the inner ``finally``, before its restore runs. Engaging ``prev`` twice is
-            # harmless. Its status is ignored: ``prev`` is GxB_CONTEXT_WORLD or alive
-            # (``threadlocal`` holds it), so it fails only where GraphBLAS disables
-            # Contexts (GxB_atfork_child), and then the engage above raised.
+            # harmless. Both restores ignore the status: ``prev`` is GxB_CONTEXT_WORLD
+            # or a live Context, so engaging it fails only where GraphBLAS disables
+            # Contexts (GxB_atfork_child), and there the first engage raised.
             threadlocal.context = prev
             lib.GxB_Context_engage(prev._carg)
 

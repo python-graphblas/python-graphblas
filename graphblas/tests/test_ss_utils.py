@@ -487,7 +487,7 @@ def big_square():
 
 
 def test_descriptor_context_not_engaged_after_error(capfd, big_square):
-    """A failed call leaves no descriptor Context engaged, though its traceback lives.
+    """A failed call leaves no descriptor Context engaged, though its traceback is kept.
 
     The traceback keeps the descriptor, and so its Context, alive (as IPython's
     ``sys.last_traceback`` does). A Context engaged until it is freed would make
@@ -537,9 +537,8 @@ def test_descriptor_context_nested_in_user_context(capfd, big_square):
 def test_descriptor_context_freed_on_another_thread():
     """A descriptor's Context freed on another thread changes neither thread's Context.
 
-    A Context engaged on this thread and freed on another would leave this thread a
-    dangling pointer (undefined behavior), and the other thread would disengage its
-    own Context.
+    A Context still engaged on this thread when another thread frees it would leave
+    this thread a dangling pointer (undefined behavior).
     """
     import threading
     import weakref
@@ -584,19 +583,19 @@ def test_descriptor_context_freed_on_another_thread():
         ("GrB_Vector_extractElement", lambda A, v, n: v[1].new(nthreads=n)),
         ("GrB_Matrix_setElement", lambda A, v, n: A.__setitem__((0, 0), 5, nthreads=n)),
         ("GrB_Matrix_extractTuples", lambda A, v, n: A.ss.export("coo", nthreads=n)),
+        ("GrB_Matrix_dup", lambda A, v, n: A.ss.export("csr", nthreads=n)),
         # Calls given the descriptor
         ("GxB_Matrix_diag", lambda A, v, n: gb.ss.diag(v, nthreads=n)),
         ("GrB_mxm", lambda A, v, n: (A @ A).new(nthreads=n)),
         ("GxB_Matrix_export_CSR", lambda A, v, n: A.ss.export("csr", nthreads=n)),
-        ("GrB_Matrix_dup", lambda A, v, n: A.ss.export("csr", nthreads=n)),
         ("GxB_Vector_serialize", lambda A, v, n: v.ss.serialize(nthreads=n)),
     ],
 )
 def test_descriptor_context_applies_to_the_call(monkeypatch, prefix, run):
-    """Options such as nthreads apply to each GraphBLAS function the call runs for them.
+    """Options such as nthreads apply to each GraphBLAS function an operation runs.
 
     That includes functions that take no descriptor, such as the dup of an export.
-    A stand-in for ``lib`` checks the Context as each function whose name starts
+    Stand-ins for ``lib`` record the Context as each function whose name starts
     with ``prefix`` runs.
     """
     from graphblas.core import lib
@@ -657,12 +656,12 @@ def test_context_that_failed_to_build_leaves_engaged_context(monkeypatch):
         assert _is_engaged(ctx)
 
 
-def test_descriptor_context_restored_after_interrupted_finally(monkeypatch):
+def test_current_context_restored_after_interrupted_finally(monkeypatch):
     """Context._call restores the current Context if its inner ``finally`` is cut short.
 
     PyPy can raise KeyboardInterrupt at the first bytecode of a ``finally`` block. A
-    stand-in for ``threadlocal`` raises there, at the first restore (an exception of
-    its own, since a KeyboardInterrupt that escapes would stop pytest).
+    stand-in for ``threadlocal`` raises there, at the first restore. It raises an
+    exception of its own, since a KeyboardInterrupt that escaped would stop pytest.
     """
     from graphblas.core.ss import context as context_module
 

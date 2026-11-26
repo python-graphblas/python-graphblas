@@ -144,6 +144,8 @@ def get_descriptor(**opts):
     Returns
     -------
     Descriptor or None
+        Pass it to ``call``, or make the GraphBLAS call with ``call_in_context``, so
+        that options such as ``nthreads`` apply.
 
     """
     if not opts or all(val is False or val is None for val in opts.values()):
