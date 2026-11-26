@@ -837,10 +837,11 @@ def _array_literal_udt(dtype, value):
     if np_type.names is not None or value.dtype.kind not in "iufc":
         return None
     if value.size == 0:
-        # An empty array's layout cannot be a UDT, so numpy says why it does not fit.
+        # Typed by its own shape, an empty array would have size 0, which no UDT has.
+        # Converted into the UDT, it raises numpy's "could not broadcast" error instead.
         return None
-    # A UDT that is neither a record nor an array, such as a date, has the shape (),
-    # so with one the shape is always the array's own.
+    # A UDT that is not an array, such as a date, has the shape (), so with one the
+    # array keeps its own shape.
     shape = np_type.shape
     if _strip_leading_ones(value.shape) == _strip_leading_ones(shape):
         shape = value.shape

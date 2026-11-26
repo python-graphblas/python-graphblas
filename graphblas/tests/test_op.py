@@ -5133,13 +5133,11 @@ def test_udt_record_date_literals_compare_as_numpy():
 
 
 def test_numeric_sequence_literal_with_a_date_or_text_udt():
-    """A numeric array, list or tuple literal with a date or bytes UDT is an array UDT literal.
+    """A numeric array, list or tuple literal with a date or bytes UDT is typed by its own shape.
 
-    It has its own dtype and shape, as with any UDT, so it compares as a number does: ``==``
-    raises KeyError, ``isequal`` is False, and it does not fit as an element. Typing that
-    reads the subarray shape of a UDT that has none raises "'NoneType' object is not
-    subscriptable" instead, and converting the literal into the UDT makes ``[1]`` equal
-    the date 1970-01-02.
+    Its type is the array UDT of its own dtype and shape, so, as with a number, ``==``
+    raises KeyError, ``isequal`` is False, and it does not fit as an element. Converted
+    into the UDT, ``[1]`` would be the date 1970-01-02 and compare equal to it.
     """
     days = dtypes.register_anonymous(np.dtype("M8[D]"), "_SeqLitDays")
     text = dtypes.register_anonymous(np.dtype("S2"), "_SeqLitBytes")
@@ -5161,10 +5159,10 @@ def test_numeric_sequence_literal_with_a_date_or_text_udt():
 
 
 def test_empty_array_literal_with_a_date_or_text_udt():
-    """An empty array, list or tuple literal with a date or bytes UDT raises numpy's error.
+    """An empty array, list or tuple literal with a date or bytes UDT raises numpy's ValueError.
 
-    No UDT has an empty layout, so the literal converts into the UDT, and numpy says why it
-    cannot. Typing it as an array UDT of its own shape raises "Unknown dtype" instead.
+    No UDT has size 0, so the literal is converted into the UDT, and numpy cannot broadcast
+    it to one element. Typed as an array UDT of its own shape, it would raise "Unknown dtype".
     """
     days = dtypes.register_anonymous(np.dtype("M8[D]"), "_EmptyLitDays")
     text = dtypes.register_anonymous(np.dtype("S2"), "_EmptyLitBytes")
