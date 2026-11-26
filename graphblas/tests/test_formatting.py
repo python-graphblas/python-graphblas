@@ -4158,19 +4158,23 @@ def test_autocompute(A, B, v):
     small = Vector(int, size=2**55)
     BIG[:] = 1
     small[0] = 2
-    repr_printer(BIG.ewise_mult(small), "BIG.ewise_mult(small)")
-    assert repr(BIG.ewise_mult(small)) == (
-        "gb.VectorExpression                                       size  dtype\n"
-        "v_0.ewise_mult(v_1, op=binary.times[INT64])  36028797018963968  INT64\n"
-        "\n"
-        '"Result"   nvals               size  dtype\n'
-        "gb.Vector      1  36028797018963968  INT64\n"
-        "------------------------------------------\n"
-        "index 0                 1                  ... 36028797018963966 36028797018963967\n"
-        "value                 2                    ...                                    \n"
-        "\n"
-        "Do expr.new() or other << expr to calculate the expression."
-    )
+    # pandas 3.1 fits two fewer columns than 3.0 in 80 characters, since it leaves room
+    # for the "..." column. Fixing the column count, and a width those columns fit in,
+    # gives the same repr on both.
+    with pd.option_context("display.max_columns", 4, "display.width", 100):
+        repr_printer(BIG.ewise_mult(small), "BIG.ewise_mult(small)")
+        assert repr(BIG.ewise_mult(small)) == (
+            "gb.VectorExpression                                       size  dtype\n"
+            "v_0.ewise_mult(v_1, op=binary.times[INT64])  36028797018963968  INT64\n"
+            "\n"
+            '"Result"   nvals               size  dtype\n'
+            "gb.Vector      1  36028797018963968  INT64\n"
+            "------------------------------------------\n"
+            "index 0                 1                  ... 36028797018963966 36028797018963967\n"
+            "value                 2                    ...                                    \n"
+            "\n"
+            "Do expr.new() or other << expr to calculate the expression."
+        )
     repr_printer(BIG.ewise_add(small), "BIG.ewise_add(small)")
     assert repr(BIG.ewise_add(small)) == (
         "gb.VectorExpression                                     size  dtype\n"
