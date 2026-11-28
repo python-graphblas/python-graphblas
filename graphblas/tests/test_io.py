@@ -455,6 +455,35 @@ def test_matrix_market_bad_engine():
 
 
 @pytest.mark.skipif("not ss")
+def test_mmwrite_transposed():
+    """Writing A.T gives the contents and format of A.T.new(), for full and sparse A.
+
+    On suitesparse, a full Matrix is written in the array format by a shortcut that checks
+    ``ss.format``, which a TransposedMatrix lacks.
+    """
+    F = Matrix.from_dense(np.arange(6).reshape(2, 3))
+    S = Matrix.from_coo([0, 1], [2, 0], [1.5, -2.0], nrows=2, ncols=3)
+    matrices = [F, S]
+    if suitesparse:
+        C = Matrix.ss.import_fullc(values=np.arange(6).reshape(2, 3), nrows=2, ncols=3)
+        assert (F.ss.format, C.ss.format) == ("fullr", "fullc")
+        matrices.append(C)
+    for A in matrices:
+        expected = BytesIO()
+        gb.io.mmwrite(expected, A.T.new(), engine="scipy")
+        actual = BytesIO()
+        gb.io.mmwrite(actual, A.T, engine="scipy")
+        # The coordinate format may list the entries in another order
+        header = actual.getvalue().split(b"\n", 1)[0]
+        assert header == expected.getvalue().split(b"\n", 1)[0]
+        if suitesparse and A is not S:
+            assert header == b"%%MatrixMarket matrix array integer general"
+            assert actual.getvalue() == expected.getvalue()
+        actual.seek(0)
+        assert gb.io.mmread(actual, engine="scipy").isequal(A.T.new(), check_dtype=True)
+
+
+@pytest.mark.skipif("not ss")
 @pytest.mark.skipif("fmm is not None")
 def test_matrix_market_fmm_engine_unavailable():
     # Naming the deprecated engine warns before anything else, so the caller hears
