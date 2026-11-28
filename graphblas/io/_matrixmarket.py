@@ -1,7 +1,7 @@
 import warnings
 
 from .. import backend
-from ..core.matrix import Matrix
+from ..core.matrix import Matrix, TransposedMatrix
 from ._scipy import to_scipy_sparse
 
 
@@ -149,6 +149,11 @@ def mmwrite(
         from scipy.io import mmwrite
     except ImportError:  # pragma: no cover (import)
         raise ImportError("scipy is required to write Matrix Market files") from None
+    # A TransposedMatrix has no ss namespace for the full-format check below,
+    # so write its parent's array, transposed.
+    is_transposed = type(matrix) is TransposedMatrix
+    if is_transposed:
+        matrix = matrix.T
     engine = engine.lower()
     if engine in {"fmm", "fast_matrix_market"}:
         warnings.warn(
@@ -184,6 +189,8 @@ def mmwrite(
         array = matrix.ss.export()["values"]
     else:
         array = to_scipy_sparse(matrix, format="coo")
+    if is_transposed:
+        array = array.T
     mmwrite(
         target,
         array,
